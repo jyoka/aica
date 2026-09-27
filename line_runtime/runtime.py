@@ -17,6 +17,7 @@ import sys
 import time
 from collections import defaultdict
 from contextlib import AsyncExitStack
+from datetime import datetime
 from typing import Self
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -127,25 +128,48 @@ class LineRuntime:
     async def new_conversation(self, user_id: str) -> None:
         self._threads[user_id] = await self._current(user_id) + 1
 
-    async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None) -> dict:
-        """1ターン進めて、返信(render の結果)を返す。途中経過が要らない呼び出し元(評価・API)向け。"""
+    async def current_thread(self, user_id: str) -> int:
+        """そのユーザーの今の会話番号(まだ会話が無ければ 0)。"""
+        return await self._current(user_id)
+
+    async def conversation(self, user_id: str) -> dict:
+        """今の会話: 番号・最後に保存した時刻(最後のやりとり)・画面に描き直す履歴。LLM は呼ばない。
+        返信が1つも無い会話(挨拶が失敗したなど)は、時刻を None にする(続ける相手がいない)。"""
+        n = await self._current(user_id)
+        tup = await self._saver.aget_tuple(self._cfg(user_id, n)) if n else None
+        messages = (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages", []) if tup else []
+        turns = history(messages)
+        last_at = None
+        if tup and any(t["bot"] for t in turns):
+            last_at = datetime.fromisoformat(tup.checkpoint["ts"])
+        return {"thread": n, "last_at": last_at, "turns": turns}
+
+    async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
+                     talk_thread: int | None = None) -> dict:
+        """1ターン進めて、返信(render の結果)を返す。途中経過が要らない呼び出し元(評価・API)向け。
+        会話が替わっていて送らなかったとき(talk_thread を参照)は {"stale": True, "thread": 今の会話番号}。"""
         reply = None
-        async for ev in self.handle_stream(user_id, event, text, facts):
-            if ev["kind"] == "reply":
-                reply = {k: v for k, v in ev.items() if k != "kind"}
+        async for ev in self.handle_stream(user_id, event, text, facts, talk_thread):
+            if ev["kind"] in ("reply", "stale"):
+                reply = {k: v for k, v in ev.items() if k != "kind"} | ({"stale": True} if ev["kind"] == "stale" else {})
         return reply
 
-    async def handle_stream(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None):
+    async def handle_stream(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
+                            talk_thread: int | None = None):
         """handle と同じ1ターンを、途中経過を順に出しながら進める(シミュレーター画面のリアルタイム表示用)。
         出すもの: llm(LLM の呼び出し1回: 時間・トークン・キャッシュ・呼んだツール)/ tool_start(ツールの実行が始まる:
         名前と引数。画面が「何をしているか」を出すために使う)/ tools(ツールの実行が終わった: 時間・引数・結果の要約)/
         reply(最後の返信。会話を保存し直した状態から作る)。
+        talk_thread: 本番のトーク画面が表示している会話の番号(/dev・評価は None)。ユーザーの発言なのに今の会話が
+        これと違う(別のタブで新しい会話が始まった)ときは、発言を会話に入れず LLM も呼ばずに stale(今の会話番号)を
+        出して終わる。None でなければ、LLM を呼ぶ前に thread(このターンの会話番号)を出す(挨拶が途中で失敗しても、
+        画面は新しい会話の番号を知って、次の発言を stale にしない)。
         ターン自体は裏の処理として最後まで進める。画面との接続が途中で切れて受け取りをやめても、ツールを呼んだのに
         結果が無い状態で会話が保存されることはない(そうなると次のターンが API に拒否される)。"""
         if event not in EVENTS:
             raise ValueError(f"unknown event: {event}")
         queue: asyncio.Queue = asyncio.Queue()
-        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts))
+        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts, talk_thread))
         self._running.add(task)
         task.add_done_callback(self._running.discard)
         while True:
@@ -155,14 +179,21 @@ class LineRuntime:
             yield ev
         await task  # ターンの中で起きた例外はここで呼び出し元に伝わる
 
-    async def _turn(self, queue: asyncio.Queue, user_id: str, event: str, text: str | None, facts: dict | None) -> None:
+    async def _turn(self, queue: asyncio.Queue, user_id: str, event: str, text: str | None, facts: dict | None,
+                    talk_thread: int | None) -> None:
         try:
             entry = EVENTS[event][0]
             content = event_input(event, text, facts)
             async with self._locks[user_id]:
                 if event in STARTS_NEW_CONVERSATION:
                     await self.new_conversation(user_id)
-                cfg = self._cfg(user_id, await self._current(user_id))
+                n = await self._current(user_id)
+                if talk_thread is not None and event not in STARTS_NEW_CONVERSATION and n != talk_thread:
+                    queue.put_nowait({"kind": "stale", "thread": n})
+                    return
+                if talk_thread is not None:
+                    queue.put_nowait({"kind": "thread", "thread": n})
+                cfg = self._cfg(user_id, n)
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
                 payload = {"messages": [{"role": "user", "content": content}]}
@@ -249,6 +280,37 @@ def _cards_in(value) -> list[dict]:
     if isinstance(value, list):
         return [c for v in value for c in _cards_in(v)]
     return []
+
+
+def _reply_of(msg) -> LineReply | None:
+    """会話に保存された最後の AI メッセージ(構造化返信の JSON)を LineReply に戻す。読めなければ None。"""
+    content = msg.content
+    if isinstance(content, list):
+        content = "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type", "text") == "text")
+    try:
+        return LineReply.model_validate_json(content)
+    except (TypeError, ValueError):
+        return None
+
+
+def history(messages: list) -> list[dict]:
+    """会話を、画面に描き直せる形にする(再読み込みで同じ会話を続けるとき)。1ターン1件:
+    user(ユーザーの発言。挨拶・プッシュのイベントなら None)と bot(そのターンの返信。render と同じ形、
+    返信が保存されていなければ None)。カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
+    humans = [i for i, m in enumerate(messages) if m.type == "human"]
+    turns = []
+    for k, start in enumerate(humans):
+        end = humans[k + 1] if k + 1 < len(humans) else len(messages)
+        last = messages[end - 1]
+        reply = _reply_of(last) if last.type == "ai" and not last.tool_calls else None
+        content = messages[start].content
+        user = None if isinstance(content, str) and content.startswith("[イベント:") else content
+        bot = None
+        if reply is not None:
+            bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
+                   if k2 != "tools"}
+        turns.append({"user": user, "bot": bot})
+    return turns
 
 
 def render(state: dict) -> dict:

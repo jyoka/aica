@@ -3,12 +3,16 @@
 本番の / はシナリオを選ばせない: 開いたブラウザの匿名ID そのものをユーザーにして、dip がそのユーザーの状態から
 初回訪問か再訪かを決め(/api/talk/open)、画面はそのイベントで /api/event/stream を呼んで AI 側の1通目を受け取る。
 ここでは画面と同じ呼び方で、挨拶・ユーザーの分離・会話数の上限・保存した求人を確かめる。
+
+再読み込み(task 98): 最後のやりとりから30分以内に開き直したら今の会話を続け、/api/talk/history で履歴を
+描き直す(LLM を呼ばない・会話数を使わない)。時刻は server.clock を差し替えて進める(app.later)。
 """
 
 from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -32,19 +36,40 @@ def app(tmp_path, monkeypatch):
     def set_model(model):
         monkeypatch.setattr(server, "LineRuntime", lambda: runtime.LineRuntime(model=model, in_memory=True))
 
+    def later(minutes: int):
+        """時刻を進める(最後のやりとり = チェックポイントの保存時刻 は実時刻なので、今を先へずらす)。"""
+        offset = timedelta(minutes=minutes)
+        monkeypatch.setattr(server, "clock", lambda: datetime.now(UTC) + offset)
+
     server.set_model = set_model
+    server.later = later
     yield server
-    del server.set_model
+    del server.set_model, server.later
 
 
 def open_talk(client) -> tuple[dict, dict]:
-    """画面を開いたときと同じ: /api/talk/open → そのイベントで /api/event/stream。(open の結果, 最後の返信)"""
+    """画面を開いたときと同じ: /api/talk/open → 続きなら /api/talk/history、新しい会話ならそのイベントで
+    /api/event/stream(画面が表示する会話の番号 thread つき)。(open の結果, 履歴 または 最後の返信)"""
     opened = client.post("/api/talk/open").json()
-    r = client.post("/api/event/stream", json={"user_id": opened["user"], "event": opened["event"]})
-    assert r.status_code == 200
-    evs = [json.loads(line) for line in r.text.splitlines()]
+    if opened["event"] is None:
+        r = client.get(f"/api/talk/history/{opened['user']}")
+        assert r.status_code == 200
+        return opened, r.json()
+    evs = stream(client, opened["user"], opened["event"], opened["thread"])
     assert evs[0]["kind"] == "start" and evs[0]["event"] == opened["event"]
-    return opened, evs[-1]
+    return opened, evs[-1] | {"thread": thread_of(evs)}
+
+
+def thread_of(evs: list[dict]) -> int | None:
+    """ストリームが LLM を呼ぶ前に出す、このターンの会話番号(本番のトーク画面が thread を送ったときだけ出る。
+    会話数の上限で断ったときは会話に入らないので出ない)。"""
+    return next((e["thread"] for e in evs if e["kind"] == "thread"), None)
+
+
+def stream(client, uid: str, event: str, thread: int | None, text: str | None = None) -> list[dict]:
+    r = client.post("/api/event/stream", json={"user_id": uid, "event": event, "text": text, "thread": thread})
+    assert r.status_code == 200
+    return [json.loads(line) for line in r.text.splitlines()]
 
 
 # ----------------------------- 開くと、初回訪問 / 再訪の挨拶から始まる -----------------------------
@@ -60,15 +85,16 @@ def test_first_open_greets_as_a_first_visit_and_reopening_greets_as_a_revisit(ap
         assert app.ANON_COOKIE not in client.cookies
         opened, first = open_talk(client)
         uid = client.cookies[app.ANON_COOKIE]
-        assert opened == {"user": uid, "event": "visit"}
-        assert first["entry"] == "visit" and first["tools"] == []
+        assert opened == {"user": uid, "event": "visit", "thread": 0}
+        assert first["entry"] == "visit" and first["tools"] == [] and first["thread"] == 1
         assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
 
-        # Cookie あり(同じブラウザで開き直す): 同じユーザーの再訪。要約を読んでから挨拶する
+        # Cookie あり(同じブラウザで30分を過ぎて開き直す): 同じユーザーの再訪。要約を読んでから挨拶する
+        app.later(31)
         opened, again = open_talk(client)
-        assert opened == {"user": uid, "event": "revisit"}
+        assert opened == {"user": uid, "event": "revisit", "thread": 1}
         assert again["entry"] == "revisit" and [t["name"] for t in again["tools"]] == ["get_user_conversation_summary"]
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"]
+        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
 
         # 別のブラウザ(Cookie なし)は別の匿名ユーザーの初回訪問
         client.cookies.clear()  # 別ブラウザ相当(ターンを進めるので lifespan と同じクライアントを使う)
@@ -89,7 +115,7 @@ def test_production_user_is_the_anonymous_id_itself_and_starts_empty(app):
     assert opened["user"] == uid and re.fullmatch(r"w-[0-9a-f]{16}", uid)  # 「匿名ID:sim-…」ではない
     u = app.state.user(uid)
     assert u["dip_id"] is None and u["views"] == u["saves"] == u["applications"] == u["outcomes"] == []
-    assert len(u["talk_opens"]) == 1
+    assert not u.get("talk_opens")  # 開いた記録は挨拶が返ったときに残す(ここでは挨拶を呼んでいない)
 
 
 def test_production_user_cannot_read_or_talk_as_another_user(app):
@@ -120,11 +146,230 @@ def test_daily_limit_applies_to_the_production_talk(app, monkeypatch):
     app.set_model(model)
     with TestClient(app.app) as client:
         _, first = open_talk(client)
+        app.later(31)  # 30分以内なら今の会話を続けるだけ(挨拶しない)なので、過ぎてから開き直す
         _, limited = open_talk(client)
         uid = client.cookies[app.ANON_COOKIE]
         assert client.app.state.quota.used(uid) == 1
     assert first["entry"] == "visit" and "limited" not in first
     assert limited["limited"] is True and limited["entry"] == "revisit"
+    assert model.script == []
+
+
+# ----------------------------- 再読み込み: 30分以内は今の会話を続ける(task 98) -----------------------------
+
+
+def search_jobs(holder: dict):
+    def step(messages):
+        return call("recommend_jobs", {"line_user_id": holder["uid"], "area": "渋谷", "time_band": "日中"}, "rec")
+    return step
+
+
+def test_reloading_mid_conversation_redraws_the_same_conversation_without_the_llm(app):
+    """会話の途中で再読み込みすると、同じ会話の履歴(吹き出し・求人カード・選択肢)が描き直される。
+    LLM を呼ばず(台本が尽きていても通る)、会話数も使わない。続けて話すと同じ会話に入る。"""
+    from fastapi.testclient import TestClient
+
+    from tests.test_revisit import propose
+
+    holder: dict = {}
+
+    def remembers(messages):  # 続けた発言は同じ会話に入る: 前のターンの発言がモデルに見えている
+        assert any(m.type == "human" and m.content == "渋谷で日中" for m in messages)
+        return reply(["1件目は駅から近いです。"])
+
+    model = Greeter(script=[greet, search_jobs(holder), propose, remembers])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        opened, _ = open_talk(client)
+        holder["uid"] = uid = opened["user"]
+        live = stream(client, uid, "message", 1, "渋谷で日中")[-1]
+        used = client.app.state.quota.used(uid)
+        assert model.script == [remembers]
+
+        app.later(29)  # 最後のやりとりから30分以内に開き直す(再読み込み)
+        reopened, hist = open_talk(client)
+        assert reopened == {"user": uid, "event": None, "thread": 1}
+        assert client.app.state.quota.used(uid) == used and model.script == [remembers]  # LLM も会話数も使わない
+        assert hist["thread"] == 1
+        greeting, search = hist["turns"]
+        assert greeting["user"] is None  # 挨拶のイベント(こちらから話しかけた)はユーザーの吹き出しにしない
+        assert greeting["bot"]["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
+        assert greeting["bot"]["cards"] == []
+        assert search["user"] == "渋谷で日中"
+        for k in ("bubbles", "quick_replies", "cards", "buttons"):
+            assert search["bot"][k] == live[k], k
+        assert len(search["bot"]["cards"]) == 3 and search["bot"]["quick_replies"]
+
+        # 続けて話すと同じ会話(再訪の挨拶で新しい会話を始めていない)
+        evs = stream(client, uid, "message", reopened["thread"], "1件目は?")
+        assert evs[-1]["bubbles"] == ["1件目は駅から近いです。"] and thread_of(evs) == 1
+    assert model.script == []
+
+
+def test_opening_after_30_minutes_starts_a_new_conversation_with_the_revisit_greeting(app):
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet, reply(["はい。"]), greet, greet])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        opened, _ = open_talk(client)
+        uid = opened["user"]
+        stream(client, uid, "message", 1, "こんにちは")
+        app.later(31)
+        reopened, again = open_talk(client)
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1}
+        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        hist = client.get(f"/api/talk/history/{uid}").json()  # 描き直すのは新しい会話だけ
+        assert hist["thread"] == 2 and len(hist["turns"]) == 1
+    assert model.script == []
+
+
+def test_a_message_from_an_old_tab_is_not_mixed_into_the_new_conversation(app):
+    """同じブラウザの2つのタブ: 古いタブ(会話1)を開いたまま、30分後に別のタブで新しい会話(会話2)が始まった。
+    古いタブから送った発言は会話2に入らず(LLM も会話数も使わない)、stale と今の会話番号が返る。
+    画面はそれで「別の画面で新しい会話が始まりました」と出し、最新の会話を描き直す。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet, greet, greet])  # 古いタブの初回訪問 + 新しいタブの再訪(要約 → 挨拶)
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        old_tab, _ = open_talk(client)
+        uid = old_tab["user"]
+        app.later(31)
+        _, greeted = open_talk(client)  # 別のタブ(同じ Cookie)で開いた
+        assert greeted["thread"] == 2
+        used = client.app.state.quota.used(uid)
+
+        evs = stream(client, uid, "message", 1, "古いタブからの発言")  # 古いタブは会話1を表示している
+        assert evs == [{"kind": "start", "event": "message", "entry": "A", "event_kind": "user",
+                        "model": evs[0]["model"]}, {"kind": "stale", "thread": 2}]
+        r = client.post("/api/event", json={"user_id": uid, "event": "message", "text": "古いタブから", "thread": 1})
+        assert r.json() == {"stale": True, "thread": 2}
+        assert client.app.state.quota.used(uid) == used and model.script == []
+
+        hist = client.get(f"/api/talk/history/{uid}").json()
+        assert hist["thread"] == 2
+        assert [t["user"] for t in hist["turns"]] == [None]  # 会話2は挨拶だけ。古いタブの発言は入っていない
+        assert all("古いタブ" not in str(t) for t in hist["turns"])
+    page = (app.STATIC / "talk.html").read_text(encoding="utf-8")
+    assert '"stale"' in page and "別の画面で新しい会話が始まりました" in page
+
+
+def test_stale_check_also_holds_inside_the_turn_lock(tmp_path):
+    """server の事前の照合をすり抜けても(照合とターンの間に別のタブが会話を始めた)、runtime がターンの排他の中で
+    同じ照合をして、発言を新しい会話に入れない。"""
+    import asyncio
+    import os
+
+    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    from line_runtime.runtime import LineRuntime
+
+    model = Greeter(script=[greet, greet])
+
+    async def go():
+        async with LineRuntime(model=model, in_memory=True) as rt:
+            await rt.handle("w-0000000000000001", "visit", talk_thread=0)
+            await rt.handle("w-0000000000000001", "visit", talk_thread=1)
+            stale = await rt.handle("w-0000000000000001", "message", "古いタブ", talk_thread=1)
+            conv = await rt.conversation("w-0000000000000001")
+            return stale, conv
+
+    stale, conv = asyncio.run(go())
+    assert stale == {"stale": True, "thread": 2}
+    assert conv["thread"] == 2 and [t["user"] for t in conv["turns"]] == [None]
+    assert model.script == []
+
+
+def test_stale_found_inside_the_turn_lock_gives_the_turn_back(app, monkeypatch):
+    """事前の照合(ロックの外)をすり抜けて会話数を使った後に、runtime が stale と判定したら会話数を返す。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet, greet, greet])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        old_tab, _ = open_talk(client)
+        uid = old_tab["user"]
+        app.later(31)
+        open_talk(client)
+        used = client.app.state.quota.used(uid)
+
+        async def passes(body):  # 照合とターンの間に別のタブが会話を始めた、の再現
+            return None
+
+        monkeypatch.setattr(app, "_stale", passes)
+        assert stream(client, uid, "message", 1, "古いタブから")[-1] == {"kind": "stale", "thread": 2}
+        r = client.post("/api/event", json={"user_id": uid, "event": "message", "text": "古いタブから", "thread": 1})
+        assert r.json() == {"stale": True, "thread": 2}
+        assert client.app.state.quota.used(uid) == used and model.script == []
+
+
+def test_a_failed_first_greeting_leaves_the_next_open_as_a_first_visit(app, monkeypatch):
+    """初回の挨拶が失敗・上限で返らなかったら、開いた記録を残さない: 次に開いても初回訪問(「おかえりなさい」と言わない)。"""
+    from fastapi.testclient import TestClient
+
+    def broken(messages):
+        raise RuntimeError("API が落ちた")
+
+    model = Greeter(script=[broken, greet])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        opened = client.post("/api/talk/open").json()
+        uid = opened["user"]
+        assert opened["event"] == "visit"
+        evs = stream(client, uid, "visit", opened["thread"])
+        assert evs[-1]["kind"] == "error" and thread_of(evs) == 1  # 画面は失敗しても新しい会話の番号を知る
+        assert not app.state.user(uid).get("talk_opens")
+
+        # 30分以内でも、返信の無い会話は続けない(続ける相手がいない): 初回訪問から始め直す
+        opened, first = open_talk(client)
+        assert opened["event"] == "visit"
+        assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
+        assert len(app.state.user(uid)["talk_opens"]) == 1  # 挨拶が返ったので、ここで記録する
+
+    # 上限で挨拶が返らなかったときも記録しない
+    monkeypatch.setenv("LINE_SIM_DAILY_TURN_LIMIT", "1")
+    app.set_model(Greeter(script=[]))
+    with TestClient(app.app) as client:
+        opened = client.post("/api/talk/open").json()
+        uid = opened["user"]
+        assert client.app.state.quota.take(uid)  # 今日の枠を使い切っている
+        assert stream(client, uid, "visit", opened["thread"])[-1]["limited"] is True
+        assert not app.state.user(uid).get("talk_opens")
+        assert client.post("/api/talk/open").json()["event"] == "visit"
+
+
+def test_history_is_readable_only_by_the_owner_cookie(app):
+    """履歴の API は本人の匿名ID(Cookie)でしか読めない: 他人のユーザーID・シナリオ用ユーザー・Cookie なしは 403。"""
+    from fastapi.testclient import TestClient
+
+    with TestClient(app.app) as a:
+        b = TestClient(app.app)
+        ua = a.post("/api/talk/open").json()["user"]
+        ub = b.post("/api/talk/open").json()["user"]
+        assert a.get(f"/api/talk/history/{ua}").json() == {"thread": 0, "turns": []}
+        assert a.get(f"/api/talk/history/{ub}").status_code == 403
+        assert b.get(f"/api/talk/history/{ua}").status_code == 403
+        assert a.get(f"/api/talk/history/{ua}:sim-new").status_code == 403
+        nobody = TestClient(app.app)
+        assert nobody.get(f"/api/talk/history/{ua}").status_code == 403
+
+
+def test_dev_scenarios_do_not_record_talk_opens_or_check_threads(app):
+    """/dev の挙動は変えない: シナリオの挨拶・発言は thread を送らないので、照合も開いた記録もしない。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet, reply(["はい。"])])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        client.get("/dev")
+        started = client.post("/api/scenarios/F-follow-new/start").json()
+        user = started["user"]
+        r = client.post("/api/event/stream", json={"user_id": user, "event": started["event"]})
+        greeted = [json.loads(line) for line in r.text.splitlines()]
+        r = client.post("/api/event/stream", json={"user_id": user, "event": "message", "text": "こんにちは"})
+        answered = [json.loads(line) for line in r.text.splitlines()]
+    assert all(e["kind"] != "thread" for e in greeted + answered) and answered[-1]["bubbles"] == ["はい。"]
+    assert not app.state.user(user).get("talk_opens")
     assert model.script == []
 
 
@@ -171,8 +416,8 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
     # dip の状態・構成図・トレース・シナリオ一覧は出さない(呼びもしない)
     for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/dip/", "restart"):
         assert dev_only not in page, dev_only
-    # 開いたら dip に初回訪問か再訪かを聞いて始める。ナビは3つの置き場
-    assert "/api/talk/open" in page
+    # 開いたら dip に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場
+    assert "/api/talk/open" in page and "/api/talk/history/" in page
     for place in ("トーク", "保存した求人", "プロフィール", "準備中", "/api/saved/"):
         assert place in page, place
     assert 'id="resume"' in page and 'id="voice"' in page  # ヘッダーの2つのボタンは今のまま(置き場を変えるのは次の task)

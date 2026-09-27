@@ -1,7 +1,8 @@
 """Web: 本番のトーク画面(/)+ 開発者画面(/dev: シナリオ起動・dip の状態・処理の流れ)+ LIFF 画面(dip 側のモック)。
 
 本番の / は求職者が使うトーク1画面。シナリオを選ばせず、開いたブラウザの匿名ユーザー(匿名ID そのもの)について
-dip が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から始まる。
+最後のやりとりから30分以内なら今の会話を続け(/api/talk/history で履歴を描き直す。LLM は呼ばない)、
+過ぎていれば dip が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から新しい会話を始める。
 /dev のシナリオは評価と同じ一覧(evals/scenarios.json)。どれも AI 側の1通目から始まる。
 
     ./.venv/bin/python -m line_runtime.server   # http://127.0.0.1:8030
@@ -23,6 +24,7 @@ import os
 import re
 import secrets
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from html import escape
 from typing import Annotated
 
@@ -78,11 +80,22 @@ def _require_own(request: Request, user_id: str) -> None:
 
 LIMIT_REASON = "本日の会話数の上限に達している"
 
+# 本番のトーク画面: 最後のやりとりからこの時間内に開き直したら(再読み込み・タブの開き直し)、今の会話を続ける
+TALK_RESUME_WINDOW = timedelta(minutes=30)
+
+
+def clock() -> datetime:
+    """今の時刻(テストで差し替える)。会話の最後のやりとり(チェックポイントの保存時刻、UTC)と比べる。"""
+    return datetime.now(UTC)
+
 
 class EventIn(BaseModel):
     user_id: str
     event: str
     text: str | None = None
+    # 本番のトーク画面が表示している会話の番号(/api/talk/open が返す)。/dev・評価は送らない。
+    # 送られたら: 発言は今の会話がこれと同じときだけ受け付ける(違えば stale)/ 挨拶が返ったら開いた記録を残す
+    thread: int | None = None
 
 
 @asynccontextmanager
@@ -122,12 +135,31 @@ async def me(request: Request, response: Response):
 @app.post("/api/talk/open")
 async def talk_open(request: Request, response: Response):
     """本番のトーク画面を開いた: ユーザーは匿名ID そのもの(シナリオ用ユーザーは使わない)。
-    dip がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで /api/event/stream を呼び、
-    AI 側の1通目(挨拶)が届く。状態を初期に戻すことはしない。"""
+    - 最後のやりとりから30分以内: 今の会話を続ける(event は None)。画面は /api/talk/history で履歴を描き直す。
+      LLM は呼ばず、会話数も使わない。
+    - それ以外: dip がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで
+      /api/event/stream を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。開いた記録は挨拶が返ったときに残す。
+    thread は画面が表示する会話の番号(発言のときに送り返す。新しい会話なら挨拶のストリームの thread で置き換わる)。
+    状態を初期に戻すことはしない。"""
     uid = _issue(request, response)
-    async with app.state.rt.user_lock(uid):  # 進行中のターンと記録が交差しないように
-        event = logic.open_talk(state, uid)
-    return {"user": uid, "event": event}
+    rt = app.state.rt
+    async with rt.user_lock(uid):  # 進行中のターンと交差しないように
+        conv = await rt.conversation(uid)
+    if conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW:
+        return {"user": uid, "event": None, "thread": conv["thread"]}
+    return {"user": uid, "event": logic.talk_entry(state, uid), "thread": conv["thread"]}
+
+
+@app.get("/api/talk/history/{user_id}")
+async def talk_history(user_id: str, request: Request):
+    """本番のトーク画面に描き直す、今の会話の履歴(吹き出し・求人カード・選択肢)。LLM は呼ばない。
+    読めるのは本人の匿名ID(Cookie)だけ(Cookie の無い呼び出しも断る)。"""
+    if _anon(request) != user_id:
+        raise HTTPException(403, "このブラウザのユーザーIDではありません")
+    rt = app.state.rt
+    async with rt.user_lock(user_id):
+        conv = await rt.conversation(user_id)
+    return {"thread": conv["thread"], "turns": conv["turns"]}
 
 
 @app.get("/api/saved/{user_id}")
@@ -178,12 +210,19 @@ async def event(body: EventIn, request: Request):
         if not gate["allowed"]:
             return {"sent": False, "reason": gate["reason"]}
         facts = gate["facts"]
+    stale = await _stale(body)
+    if stale is not None:  # 会話数を使う前に断る(runtime もターンの排他の中で同じ照合をする)
+        return {"stale": True, "thread": stale}
     if not quota.take(body.user_id):
         return limit_reply(entry)
     try:
-        return await app.state.rt.handle(body.user_id, body.event, body.text, facts)
+        r = await app.state.rt.handle(body.user_id, body.event, body.text, facts, talk_thread=body.thread)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    if r and r.get("stale"):  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す
+        quota.refund(body.user_id)
+    _record_open(body, r)
+    return r
 
 
 @app.post("/api/event/stream")
@@ -210,16 +249,38 @@ async def event_stream(body: EventIn, request: Request):
                 yield _line({"kind": "reply", "sent": False, "reason": gate["reason"]})
                 return
             facts = gate["facts"]
+        stale = await _stale(body)
+        if stale is not None:  # 別のタブで新しい会話が始まっていた: 発言を混ぜず、会話数も使わない
+            yield _line({"kind": "stale", "thread": stale})
+            return
         if not quota.take(body.user_id):  # 上限を超えたら LLM を呼ばずに案内だけ返す
             yield _line({"kind": "reply", **limit_reply(entry)})
             return
         try:
-            async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts):
+            async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts, talk_thread=body.thread):
+                if ev["kind"] == "reply":
+                    _record_open(body, ev)
+                elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: 会話数を返す
+                    quota.refund(body.user_id)
                 yield _line(ev)
         except Exception as e:  # noqa: BLE001  API・MCP のエラーも画面に出す(応答を返し始めた後なので HTTP のエラーにはできない)
             yield _line({"kind": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+
+async def _stale(body: EventIn) -> int | None:
+    """本番のトーク画面からの発言で、今の会話が画面の会話と違えば今の会話番号(違わなければ None)。"""
+    if body.thread is None or EVENTS[body.event][1] != "user":
+        return None
+    n = await app.state.rt.current_thread(body.user_id)
+    return n if n != body.thread else None
+
+
+def _record_open(body: EventIn, reply: dict | None) -> None:
+    """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。"""
+    if body.thread is not None and EVENTS[body.event][1] == "greet" and reply and not reply.get("stale"):
+        logic.record_talk_open(state, body.user_id)
 
 
 def _require_text(body: EventIn) -> None:

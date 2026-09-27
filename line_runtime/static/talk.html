@@ -121,6 +121,7 @@
   const $ = (id) => document.getElementById(id);
   const log = $("log"), input = $("t"), sendBtn = $("send");
   let current = null, busy = false;  // current: このブラウザのユーザーID(匿名ID そのもの)
+  let thread = null;  // この画面が表示している会話の番号(発言のときに送り、別のタブで会話が替わっていないかを照合する)
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const now = () => new Date().toTimeString().slice(0, 5);
@@ -129,7 +130,8 @@
 
   // ---------- トークルーム ----------
   function sys(text) { log.appendChild(el("div", "sys", text)); scroll(); }
-  function me(text) { const r = el("div", "row me"); r.append(el("span", "time", now()), el("div", "bubble", text)); log.appendChild(r); scroll(); }
+  // time: 描き直した履歴は送った時刻が分からないので出さない("")
+  function me(text, time = now()) { const r = el("div", "row me"); if (time) r.appendChild(el("span", "time", time)); r.appendChild(el("div", "bubble", text)); log.appendChild(r); scroll(); }
   function botCol() {
     const r = el("div", "row bot"), c = el("div", "col");
     r.append(el("div", "avatar", "B"), c); c.appendChild(el("span", "who", "バイトル"));
@@ -170,10 +172,10 @@
     c.append(inner, btns); return c;
   }
 
-  function renderReply(r, col) {
+  function renderReply(r, col, time = now()) {
     col.querySelector(".typing")?.remove();
     for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
-    if (r.bubbles.length) col.appendChild(el("span", "time", now()));
+    if (r.bubbles.length && time) col.appendChild(el("span", "time", time));
     if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
     for (const b of r.buttons) {
       const w = el("div", "liff"), a = el("a", null, b.label);
@@ -193,6 +195,10 @@
       if (slow) setWait(col, WAIT_LABEL[slow.name](slow.args));
     } else if (ev.kind === "tools") {
       setWait(col, null);  // ツールが終わったら「何をしているか」を消す(続きは通常の「…」)
+    } else if (ev.kind === "stale") {
+      col.parentElement.remove();  // 別のタブで新しい会話が始まっていた(発言は送られていない)。fire が最新の会話を描き直す
+    } else if (ev.kind === "thread") {
+      thread = ev.thread;  // 挨拶で新しい会話が始まったら、その番号に替わる
     } else if (ev.kind === "reply") {
       if (ev.sent === false) col.parentElement.remove();  // 本番の画面はプッシュを起こさないので、ここには来ない
       else renderReply(ev, col);
@@ -206,15 +212,25 @@
     if (busy || !current) return;
     setBusy(true); disableChips();
     const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
+    let stale = false;
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                      body: JSON.stringify({ user_id: current, event, text }) });
+                                                      body: JSON.stringify({ user_id: current, event, text, thread }) });
       if (!res.ok) throw new Error(res.status + " " + await res.text());
       const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
       for (;;) {
         const { value, done } = await reader.read(); if (done) break;
         buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (line.trim()) onEvent(JSON.parse(line), col); }
+        let i; while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line); onEvent(ev, col); if (ev.kind === "stale") stale = true;
+        }
+      }
+      if (stale) {
+        if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
+        try { await restore(); sys("別の画面で新しい会話が始まりました。最新の会話を表示しています。"); }
+        catch (e) { sys("別の画面で新しい会話が始まりました。ページを開き直してください。"); console.error(e); }
       }
     } catch (e) {
       typing.remove(); col.appendChild(el("div", "bubble", "通信できませんでした。少し時間をおいて、もう一度お試しください。"));
@@ -312,14 +328,28 @@
     }
   }
 
-  // ---------- 開いたら: 初回訪問か再訪かは dip が決め、AI 側の1通目から始める ----------
+  // ---------- 今の会話の履歴を描き直す(再読み込み・別のタブで会話が替わったとき。LLM は呼ばない) ----------
+  async function restore() {
+    const res = await fetch(`/api/talk/history/${encodeURIComponent(current)}`);
+    if (!res.ok) throw new Error(res.status + " " + await res.text());
+    const h = await res.json();
+    log.innerHTML = ""; thread = h.thread;
+    for (const t of h.turns) {
+      if (t.user != null) me(t.user, "");
+      if (t.bot) { disableChips(); renderReply(t.bot, botCol(), ""); }  // 選べるのは最後の返信の選択肢だけ
+    }
+  }
+
+  // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
   (async () => {
     setBusy(true); $("voice").disabled = true;
     let opened;
-    try { opened = await post("/api/talk/open", {}); }
-    catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
-    current = opened.user; $("voice").disabled = false; setBusy(false);
-    fire(opened.event);
+    try {
+      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread;
+      if (opened.event == null) await restore();
+    } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
+    $("voice").disabled = false; setBusy(false);
+    if (opened.event != null) fire(opened.event);
   })();
 </script>
 </body>
