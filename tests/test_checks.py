@@ -157,14 +157,19 @@ def test_revisit_reasking_a_saved_preference_is_a_violation():
 
     sc = next(s for s in load_scenarios() if s["id"] == "R-revisit")
     msgs = [None, "そのとおりで、エリアは原宿も入れてほしい", "はい"]
-    for confirm in ("エリアは渋谷と原宿でよいですか?", "原宿も入れますね。エリアは渋谷・原宿の2つで探しますか?"):
+    for confirm in ("エリアは渋谷と原宿でよいですか?", "原宿も入れますね。エリアは渋谷・原宿の2つで探しますか?",
+                    "エリアは渋谷と原宿の2つですね?", "エリアは渋谷と原宿で合っていますか?",
+                    "原宿も追加しますね。エリアは渋谷・原宿でOKですか?"):
         turns[1]["bubbles"] = [confirm]
         assert not any("聞き直した" in v for v in conversation_checks(sc, turns, msgs)["violations"]), confirm
-    for blank in ("承知しました。どのエリアで探しますか?", "渋谷以外だと、どのエリアがいいですか?"):  # 値を示さない白紙の問いは聞き直し
+    for blank in ("承知しました。どのエリアで探しますか?", "渋谷以外だと、どのエリアがいいですか?",
+                  "渋谷以外のどのエリアで探しますか?"):  # 値を示さない白紙の問いは聞き直し
         turns[1]["bubbles"] = [blank]
         assert any("聞き直した" in v and "area" in v for v in conversation_checks(sc, turns, msgs)["violations"]), blank
-    turns[1]["bubbles"] = ["夕方ですね。日中から変えて、どの時間帯にしますか?"]
-    assert any("time_band" in v for v in conversation_checks(sc, turns, [None, "夕方がいい", "はい"])["violations"])
+    for blank in ("夕方ですね。日中から変えて、どの時間帯にしますか?", "夕方ですね。日中以外なら、どの時間帯でよいですか?"):
+        turns[1]["bubbles"] = [blank]
+        v = conversation_checks(sc, turns, [None, "夕方がいい", "はい"])["violations"]
+        assert any("time_band" in x for x in v), blank
 
 
 def test_reask_exemption_does_not_leak_across_keys_or_snapshot_saves():
@@ -178,6 +183,10 @@ def test_reask_exemption_does_not_leak_across_keys_or_snapshot_saves():
     cases = [  # (ターン, 本人の発言)
         ([t(["どこで働きたいですか?"]), t(["渋谷ですね。"], {"area": "渋谷"}),
           t(["接客のお仕事ですね、どのエリアで働きたいですか?"], {"job_type": "接客"})], [None, "渋谷", "接客の仕事がいい"]),
+        ([t(["どこで働きたいですか?"]), t(["渋谷ですね。"], {"area": "渋谷"}),
+          t(["接客のお仕事ですね、どのエリアで探しますか?"], {"job_type": "接客"})], [None, "渋谷", "接客の仕事がいい"]),
+        ([t(["どこで働きたいですか?"]), t(["渋谷ですね。"], {"area": "渋谷"}),
+          t(["接客ですね。接客でどのエリアで探しますか?"], {"job_type": "接客"})], [None, "渋谷", "接客の仕事がいい"]),
         ([t(["いつ働けますか?"]), t(["夕方ですね。"], {"time_band": "夕方"}), t(["承知しました。どの時間帯がいいですか?"])],
          [None, "夕方", "時間はあまり取れないかも"]),
         ([t(["どこで働きたいですか?"]), t(["渋谷ですね。"], {"area": "渋谷"}),
@@ -216,7 +225,9 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
                     "最近はカフェのお仕事を見てましたか?", "最近カフェの求人をチェックされていましたか?",
                     "最近カフェのお仕事を探していましたか?", "最近カフェのお仕事を探されていましたか?",
                     "最近はカフェのお仕事をお探しでしたか?", "最近カフェのお仕事が気になっていましたか?",
-                    "最近カフェの求人をよく見てくださっていましたね。今日も探しますか?"):
+                    "最近カフェの求人をよく見てくださっていましたね。今日も探しますか?",
+                    "最近カフェの求人を見ていましたね。どれか気になっていましたか?",  # 1通目の言及と追いかけの問いで1回
+                    "最近カフェの求人を見ていましたね。今も探していらっしゃいますか?"):
         once = [dict(ok[0], bubbles=[mention]), ok[1]]
         assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", once)), mention
     for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",

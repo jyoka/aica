@@ -225,14 +225,14 @@ def _question_part(b: str) -> str:
 
 # 本人の発言から取る「今回の値」の候補から外す、項目名そのものの語
 _KEY_WORDS = {"エリア", "時間帯", "時間", "職種", "勤務地", "仕事", "求人", "希望", "条件"}
-# 値を示して確かめる形(「渋谷と原宿でよいですか?」「渋谷・原宿の2つで探しますか?」)。「どの〜がいいですか?」は白紙の問いで確認ではない
-CONFIRM = re.compile(r"(で|に)(よい|いい|よろしい|大丈夫)(です|でしょう)?か|で(探し|進め|お探しし)ます(か|ね)")
+# 疑問詞。これを含む問い(「どのエリアで探しますか?」)は白紙の問いで、値を示して確かめる形ではない
+WH_WORD = re.compile(r"どの|どこ|どんな|何|いつ|どれ|どちら|どう")
 
 
 def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded: dict | None = None) -> list[str]:
     """保存済みの項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。
     seeded は会話の前から保存されている希望(再訪): 1通目で確認した後は、差分だけを受け取る。
-    確認の形の質問に既知の値(保存した値か、そのターンの本人の発言にある語)が入っていれば、聞き直しではない
+    疑問詞の無い確認の問いに既知の値(保存した値か、そのターンの本人の発言にある語)が入っていれば、聞き直しではない
     (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
     (同じ値の保存し直しは数えない)。"""
     saved = {k: 0 for k in seeded or {}}
@@ -255,7 +255,7 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
             q = _question_part(b)
             for k, at in saved.items():
                 if at < i and k in REASK and REASK[k].search(q) and not (
-                        CONFIRM.search(q) and any(w in q for w in [*known.get(k, []), *said])):
+                        not WH_WORD.search(q) and any(w in q for w in [*known.get(k, []), *said])):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
     return out
 
@@ -269,7 +269,8 @@ def recent_activity_violations(turns: list[dict]) -> list[str]:
     out = []
     if not RECENT_ACTIVITY_T1.search(first):
         out.append("T1: 再訪の挨拶で最近の行動に触れていない")
-    mentions = len(RECENT_ACTIVITY_T1.findall(first)) + sum(
+    # 1通目は1つの挨拶なので、言及と追いかけの問い(「見ていましたね。今も探していらっしゃいますか?」)で1回と数える
+    mentions = int(bool(RECENT_ACTIVITY_T1.search(first))) + sum(
         len(RECENT_ACTIVITY.findall(b)) for r in turns[1:] for b in r["bubbles"])
     if mentions > 1:
         out.append(f"最近の行動に{mentions}回触れた(1回だけ)")
