@@ -57,7 +57,7 @@ LINE 由来の follow / crm_reply は 2026-09-27 の CRM 削除で、初回訪�
 
 | ツール | 役割 |
 |---|---|
-| `get_user_conversation_summary` | ユーザーの状況の要約(直近の応募・フォーム離脱・閲覧の傾向・直近の接触・本人が話した希望)。会話の最初に呼ぶ。閲覧した求人名は返さない |
+| `get_user_conversation_summary` | ユーザーの状況の要約(今の雇用区分・直近の応募・フォーム離脱・閲覧の傾向・直近の接触・本人が話した希望)。会話の最初に呼ぶ。閲覧した求人名は返さない |
 | `get_user_recent_applications` / `get_application_status` | 応募と選考の状況 |
 | `get_user_form_exit` / `resume_application_form` | 途中の応募フォームの続き。個人情報の項目はトークで受け取らず LIFF 画面へ |
 | `recommend_jobs` | 条件に合う求人を最大3件、理由と `match_score` つきで返す |
@@ -65,6 +65,7 @@ LINE 由来の follow / crm_reply は 2026-09-27 の CRM 削除で、初回訪�
 | `answer_job_question` | 仕事内容・面接などの質問に答える材料(FAQ・求人情報) |
 | `save_job` | 求人の保存 |
 | `save_user_preferences` | 本人が話した希望の保存(長期メモリ) |
+| `set_search_track` | 雇用区分(アルバイト・パート / 正社員 / 未定)の切り替え。根拠は本人の発言そのまま。履歴(いつ・どの区分へ・根拠・取り消しか)を残し、取り消しも同じツールで記録する |
 | `record_conversation_outcome` | 会話の結果(提案・相談・支援・待つ)の記録。待つ(wait)はユーザーが断ったときだけ受け付ける |
 
 ほかに Resource `baitoru://faq` と、入口ごとのシナリオを返す Prompt `baitoru_assistant(entry)`。

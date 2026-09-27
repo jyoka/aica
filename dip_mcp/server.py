@@ -37,7 +37,7 @@ Area = Annotated[str | None, Field(description=(
 
 @mcp.tool()
 def get_user_conversation_summary(line_user_id: UserId) -> dict:
-    """ユーザーの状況要約(直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望・
+    """ユーザーの状況要約(今の雇用区分・直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望・
     アップロードした履歴書の読み取り結果)を返す。会話の最初と、本人が履歴書をアップロードした後に呼ぶ。
     要約は仮説であり、生の行動ログは含まない。"""
     return logic.conversation_summary(state, line_user_id)
@@ -134,6 +134,23 @@ def save_user_preferences(
     本人が言っていないこと(推測・行動履歴からの補完)や、氏名・住所・連絡先は保存しない
     (電話番号・メールアドレス・住所らしい値はツールでも弾く)。"""
     return logic.save_preferences(state, line_user_id, preferences)
+
+
+@mcp.tool()
+def set_search_track(
+    line_user_id: UserId,
+    track: Annotated[str, Field(description=(
+        f"切り替える先の雇用区分。次の中から1つ: {' / '.join(logic.TRACKS)}。"
+        "取り消し(undo)のときは、要約の track_history の最後の from(切り替える前の区分)"))],
+    evidence: Annotated[str, Field(description=(
+        "切り替えの根拠になった本人の発言そのまま(要約・言い換えをしない)。"
+        "履歴書の内容や行動履歴は根拠にしない。取り消しのときは、取り消しを求めた本人の発言"))],
+    undo: Annotated[bool, Field(description="直前の切り替えの取り消しなら true")] = False,
+) -> dict:
+    """本人の発話から判断した雇用区分(アルバイト・パート / 正社員 / 未定)に切り替え、履歴(いつ・どの区分へ・根拠・
+    取り消しか)を記録する。今の区分は get_user_conversation_summary の search_track に出る(初回は未定)。
+    今と同じ区分なら記録しない。弱い・混在した合図では呼ばず、先に1問で確かめる。"""
+    return logic.set_search_track(state, line_user_id, track, evidence, undo)
 
 
 @mcp.tool()
