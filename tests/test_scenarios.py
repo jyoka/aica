@@ -1,6 +1,6 @@
 """シナリオの一覧(evals/scenarios.json)と、シナリオを始める準備(evals/scenarios.py)。実 LLM なし。
 
-どのシナリオも AI 側の1通目(友だち追加の挨拶・dip のプッシュ・dip の配信)から始まること、
+どのシナリオも AI 側の1通目(初回訪問・再訪の挨拶、dip のプッシュ)から始まること、
 同じシナリオを何度始めても前回の接触でプッシュが止まらないことを確かめる。
 """
 
@@ -30,24 +30,22 @@ def state(tmp_path):
 def test_scenario_list_has_titles_and_no_user_first_start():
     ids = [sc["id"] for sc in SCENARIOS]
     assert len(ids) == len(set(ids))
+    assert set(ids) == {"F-follow-new", "B-exit", "pii", "Q-job-question", "R-revisit"}  # 新規ユーザー系だけ
     for sc in SCENARIOS:
         assert sc["title"] and sc["desc"] and sc["event"] in EVENTS
         assert sc["event"] != "message"  # ユーザーのメッセージ待ちから始まるものは無い
-        assert (sc["text"] is not None) == (sc["event"] == "crm_reply")  # 配信への返信だけ、最初の返信の文を持つ
 
 
 @pytest.mark.parametrize("sc", SCENARIOS, ids=[sc["id"] for sc in SCENARIOS])
 def test_every_scenario_starts_from_the_ai_side_even_twice(state, sc):
-    for _ in range(2):  # 2回目も、1回目のプッシュ・配信が接触として残って止まることがない
-        broadcast = prepare(state, sc)
+    for _ in range(2):  # 2回目も、1回目のプッシュが接触として残って止まることがない
+        prepare(state, sc)
         kind = EVENTS[sc["event"]][1]
         if kind == "push":
             gate = logic.push_trigger(state, sc["user"], sc["event"])
             assert gate["allowed"], gate
-        elif sc["event"] == "crm_reply":
-            assert broadcast["sent"] and broadcast["message"] and broadcast["quick_replies"]
         else:
-            assert kind == "follow" and broadcast is None
+            assert kind == "greet"
 
 
 def test_reset_user_leaves_other_users_alone(state):
@@ -67,7 +65,7 @@ def test_revisit_scenario_seeds_preferences_after_reset(state):
     assert {k: v["value"] for k, v in prefs.items()} == sc["seed_preferences"]
 
 
-def test_start_endpoint_resets_and_returns_the_broadcast(tmp_path, monkeypatch):
+def test_start_endpoint_resets_the_user(tmp_path, monkeypatch):
     monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
@@ -81,11 +79,12 @@ def test_start_endpoint_resets_and_returns_the_broadcast(tmp_path, monkeypatch):
     with TestClient(server.app) as client:
         listed = client.get("/api/scenarios").json()
         assert [s["id"] for s in listed] == [sc["id"] for sc in SCENARIOS]
-        r = client.post("/api/scenarios/C-dormant/start").json()
-        assert r["user"] == "sim-dormant" and r["event"] == "crm_reply" and r["broadcast"]["cards"]
+        r = client.post("/api/scenarios/R-revisit/start").json()
+        assert r == {"user": "sim-new", "event": "revisit"}
+        assert logic.stated_preferences(server.state.user("sim-new"))  # 再訪の種(前に話した希望)が入る
         # 一度プッシュした後でも、始め直せばまたプッシュできる
         assert logic.push_trigger(server.state, "sim-exit", "form_exit")["allowed"]
-        assert client.post("/api/scenarios/B-exit/start").json()["broadcast"] is None
+        client.post("/api/scenarios/B-exit/start")
         assert logic.push_trigger(server.state, "sim-exit", "form_exit")["allowed"]
         assert client.post("/api/scenarios/nope/start").status_code == 404
 
@@ -135,9 +134,6 @@ def test_eval_harness_runs_every_scenario_offline(tmp_path, monkeypatch):
     for sc, r in zip(SCENARIOS, results, strict=True):
         assert r["turns"] >= 2, sc["id"]
         assert r["transcript"][0]["who"] == "agent", sc["id"]  # 1通目は AI 側
-        if sc["event"] == "crm_reply":
-            assert r["transcript"][0]["text"].startswith("[dip の配信]")
-            assert r["transcript"][1] == {"who": "user", "text": sc["text"]}
 
 
 def test_scenarios_after_a_server_restart_start_a_fresh_conversation(tmp_path, monkeypatch):
@@ -153,15 +149,15 @@ def test_scenarios_after_a_server_restart_start_a_fresh_conversation(tmp_path, m
     model = ScriptedModel(script=[reply(["こんにちは。何を探しますか?"]) for _ in range(3)])
     monkeypatch.setattr(server, "LineRuntime", lambda: runtime.LineRuntime(model=model))
 
-    def start_follow(client):
+    def start_visit(client):
         client.post("/api/scenarios/F-follow-new/start")
-        return client.post("/api/event", json={"user_id": "sim-new", "event": "follow"}).json()
+        return client.post("/api/event", json={"user_id": "sim-new", "event": "visit"}).json()
 
     with TestClient(server.app) as client:
-        start_follow(client)
-        start_follow(client)
+        start_visit(client)
+        start_visit(client)
     with TestClient(server.app) as client:  # 再起動
-        start_follow(client)
+        start_visit(client)
         rt = server.app.state.rt
 
         async def history():

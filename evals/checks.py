@@ -16,7 +16,9 @@ QUICK_MAX = 4
 JOBS_MAX = 3
 ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いらない|大丈夫|特にない|あとで")
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
-# 「考えます」「迷って」は断りに数えない(迷いのポイントを聞いて支援するのが正しく、配信を止めるのは違反)
+# この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
+QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?[。!!]?")  # fullmatch で使う
+# 「考えます」「迷って」は断りに数えない(迷いのポイントを聞いて支援するのが正しく、wait を記録するのは違反)
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 PII_VALUE = re.compile(r"0\d{1,4}-?\d{1,4}-?\d{3,4}|@")
@@ -180,12 +182,10 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     first = turns[0] if turns else None
     violations = [v for i, r in enumerate(turns) for v in turn_violations(i, r)]
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
-    # 配信に「今はいい」と返されて始まった会話は、最初の返信で質問しないのが正しい
-    refused_first = bool(user_msgs) and bool(REFUSAL.search(user_msgs[0] or ""))
-    if first and not refused_first and not (_questions(first["bubbles"]) or first["quick_replies"]):
+    if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")
-    if set(outcomes) & {"wait", "stop"} and not any(REFUSAL.search(m or "") for m in user_msgs):
-        violations.append("断られていないのに wait/stop を記録した(終わりの挨拶を拒否と取り違えると配信が止まる)")
+    if "wait" in outcomes and not any(REFUSAL.search(m or "") for m in user_msgs):
+        violations.append("断られていないのに wait を記録した(終わりの挨拶を拒否と取り違えている)")
     stopped_last = len(user_msgs) >= len(turns) > 0 and bool(STOP_REQUEST.search(user_msgs[len(turns) - 1] or ""))
     if turns and not turns[-1]["quick_replies"] and not stopped_last:
         violations.append(f"T{len(turns)}: 最後の返信に選択肢がない(次に開いた人が書くしかない)")
@@ -196,18 +196,13 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
             violations.append(f"T1: 前に本人が話した希望({'・'.join(seeds)})に触れず、聞き直している")
-    if sc.get("no_jobs") and any(r["cards"] for r in turns):
-        violations.append("求人を出してはいけない状況で求人カードを出した")
     if sc.get("pii_test"):
         pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:
             violations.append(f"T{pii_turn + 1}: 個人情報を書かれた後に入力画面を案内していない")
-    if sc.get("expect_quick_end"):
-        stop_turn = next((i for i, m in enumerate(user_msgs) if m and ("今はいい" in m or "送らないで" in m)), None)
-        if stop_turn is not None and stop_turn < len(turns):
-            r = turns[stop_turn]
-            if _questions(r["bubbles"]) or r["cards"]:
-                violations.append(f"T{stop_turn + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
+    for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
+        if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
+            violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
     return {
         "turns": len(turns),
         "branch_turn": branch_turn,

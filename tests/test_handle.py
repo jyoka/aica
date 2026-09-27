@@ -70,11 +70,29 @@ def test_cards_survive_parallel_tool_calls_and_multiple_turns(tmp_path):
         call("answer_job_question", {"question": "仕事内容", "job_id": "b1202"}, "t3"),
         reply(["チャット中心の事務です。"], job_ids=["b1202"]),
     ])
-    r1, r2, r3 = run(model, [("sim-new", "follow", None), ("sim-new", "message", "渋谷周りでいい"),
+    r1, r2, r3 = run(model, [("sim-new", "visit", None), ("sim-new", "message", "渋谷周りでいい"),
                               ("sim-new", "message", "オフィス事務")], tmp_path)
     assert r1["cards"] == []
     assert [c["job_id"] for c in r2["cards"]] == ["b0601", "b1202", "a003"]
     assert [c["job_id"] for c in r3["cards"]] == ["b1202"]
+
+
+def test_ima_wa_ii_ends_the_conversation_politely(tmp_path):
+    """「今はいい」の台本: 質問や求人を続けず、wait を記録して丁寧に終える(配信の停止処理はもう無い)。"""
+    from evals.checks import conversation_checks
+
+    model = ScriptedModel(script=[
+        reply(["こんにちは。バイト探しをお手伝いします。何かお探しですか?"],
+              quick_replies=["求人を探す", "応募履歴を確認", "使い方", "今はいい"]),
+        call("record_conversation_outcome",
+             {"line_user_id": "sim-new", "outcome": "wait", "reason": "今はいい", "confidence": 0.9}),
+        reply(["承知しました。またいつでもお声がけください。"], quick_replies=["求人を探す", "使い方"]),
+    ])
+    r1, r2 = run(model, [("sim-new", "visit", None), ("sim-new", "message", "今はいい")], tmp_path)
+    rec = next(t for t in r2["tools"] if t["name"] == "record_conversation_outcome")
+    assert rec["result"]["recorded"]["outcome"] == "wait"  # 記録されるだけで、配信の抑制のような副作用はない
+    checks = conversation_checks({"expect_outcome": ["wait"]}, [r1, r2], [None, "今はいい"])
+    assert checks["outcome_as_expected"] and checks["violations"] == []
 
 
 def test_handle_stream_reports_llm_and_tool_steps_before_the_reply(tmp_path):
@@ -124,10 +142,10 @@ def test_stream_endpoint_reports_a_denied_push_without_calling_the_llm(tmp_path,
     server.state = State(tmp_path / "state.json")
     server.state.reset()
     with TestClient(server.app) as client:
-        r = client.post("/api/event/stream", json={"user_id": "sim-stopped", "event": "new_match"})
+        r = client.post("/api/event/stream", json={"user_id": "sim-new", "event": "form_exit"})
         evs = [json.loads(line) for line in r.text.splitlines()]
     assert [e["kind"] for e in evs] == ["start", "gate", "reply"]
-    assert evs[1]["allowed"] is False and "抑制" in evs[1]["reason"]
+    assert evs[1]["allowed"] is False and "未連携" in evs[1]["reason"]
     assert evs[2]["sent"] is False
 
 

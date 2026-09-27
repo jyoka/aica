@@ -51,8 +51,8 @@ def test_pull_voice_results_returns_undelivered_once(state):
     logic.record_voice_result(state, "sim-new", jobs, DRAFT)
     pulled = logic.pull_voice_results(state, "sim-new")
     assert len(pulled) == 1 and pulled[0]["draft_markdown"] == DRAFT
-    assert logic.pull_voice_results(state, "sim-new") == []  # 2回目は空(配信済み)
-    # 配信済みでも、下書きの表示ページからは id で読める
+    assert logic.pull_voice_results(state, "sim-new") == []  # 2回目は空(受け取り済み)
+    # 受け取り済みでも、下書きの表示ページからは id で読める
     assert logic.voice_result(state, "sim-new", pulled[0]["id"])["draft_markdown"] == DRAFT
     assert logic.voice_result(state, "sim-new", 99) is None
 

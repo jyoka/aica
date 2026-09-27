@@ -13,7 +13,6 @@ import copy
 import json
 import re
 from collections import Counter
-from datetime import timedelta
 
 from dip_mcp import embedding
 from dip_mcp.data import (
@@ -48,13 +47,6 @@ def _recent(items: list[dict], key: str, days: int = HISTORY_DAYS) -> list[dict]
     return [i for i in items if _days_ago(i[key]) <= days]
 
 
-def active_suppression(user: dict) -> dict | None:
-    for o in sorted(user.get("outcomes", []), key=lambda o: o["at"], reverse=True):
-        if o["outcome"] in ("wait", "stop") and parse_ts(o["valid_until"]) > now():
-            return {"outcome": o["outcome"], "reason": o["reason"], "until": _md(o["valid_until"])}
-    return None
-
-
 def preferences(user: dict, jobs: dict[str, BaitoJob]) -> dict:
     """直近の応募・閲覧・保存から、エリア・時間帯・職種の傾向を数える(多い順)。"""
     refs = [a["job_id"] for a in _recent(user.get("applications", []), "applied_at")]
@@ -86,7 +78,6 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
     views = _recent(user.get("views", []), "at", 30)
     saves = _recent(user.get("saves", []), "at", 30)
     contacts = sorted(user.get("contacts", []), key=lambda c: c["at"], reverse=True)
-    suppression = active_suppression(user)
 
     last_app = None
     if apps:
@@ -103,17 +94,10 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         form_exit = {"job_id": e["job_id"], "title": j.title if j else "", "hours_ago": hours,
                      "remaining": e["remaining"]}
 
-    last_activity = max([a["applied_at"] for a in user.get("applications", [])]
-                        + [v["at"] for v in user.get("views", [])] + [s["at"] for s in user.get("saves", [])],
-                        default=None)
-    if suppression:
-        segment = "suppressed"
-    elif form_exit:
+    if form_exit:
         segment = "form_exit"
     elif last_app and last_app["days_ago"] <= 14 and "連絡待ち" in last_app["status"]:
         segment = "applied_waiting"
-    elif last_activity is None or _days_ago(last_activity) > 30:
-        segment = "dormant"
     elif (views or saves) and not (last_app and last_app["days_ago"] <= 30):
         segment = "browsing"
     else:
@@ -129,11 +113,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "saves_30d": len(saves),
         "tendency": preferences(user, jobs),
         "last_contact": ({"channel": contacts[0]["channel"], "when": _md(contacts[0]["at"]),
-                          "message": contacts[0]["message"],
-                          # 配信で送った求人(ID と名前)。返信を受けたとき、どの求人の話かを分かるように
-                          "jobs": [{"job_id": i, "title": jobs[i].title} for i in contacts[0].get("job_ids", []) if i in jobs]}
-                         if contacts else None),
-        "suppression": suppression,
+                          "message": contacts[0]["message"]} if contacts else None),
         "stated_preferences": stated_preferences(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。",
@@ -293,7 +273,7 @@ def match_breakdown(job: BaitoJob, tend: dict) -> dict[str, float]:
 
 def recommend(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
               keywords=None, exclude_ids: list[str] | None = None, limit: int = MAX_JOBS,
-              posted_within_days: int | None = None, tendency_reasons: bool = False) -> dict:
+              posted_within_days: int | None = None) -> dict:
     if err := _job_type_error(job_type):
         return err
     jobs = load_jobs()  # 傾向と理由(過去の応募との比較)は全体の求人から数える
@@ -320,9 +300,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
             b["keywords"] = round(SIM_WEIGHT * sims.get(j.job_id, 0.0), 2)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    # tendency_reasons: 時間帯の指定が無いとき、本人の傾向の時間帯に合うことを理由にする(配信用。通常の推薦の理由は変えない)
-    band = lambda j: time_band or (next((t for t in j.time_bands if t in tend["time_band"]), None) if tendency_reasons else None)
-    top = [job_card(j, _reasons(j, area, band(j), job_type, user, jobs)) | {"match_score": score, "score_breakdown": b}
+    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs)) | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
     return {"total": len(hits), "jobs": top}
 
@@ -506,7 +484,7 @@ def save_preferences(state: State, line_user_id: str, preferences: dict[str, str
 
 def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None,
                         draft_markdown: str, files: list[str] | None = None) -> dict:
-    """音声アドバイザー(voice-resume)の結果を預かる。トークが取りに来る(pull)まで未配信として持つ。
+    """音声アドバイザー(voice-resume)の結果を預かる。トークが取りに来る(pull)まで未受け取りとして持つ。
 
     求人カードは dip の求人データから作り直す(job_id が dip に無いものは捨てる)。
     トークに出る求人が dip の返した事実だけになる、という LINE 側の決まりを守るため。
@@ -536,7 +514,7 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
 
 
 def pull_voice_results(state: State, line_user_id: str) -> list[dict]:
-    """未配信の音声相談の結果を返し、配信済みにする(トークの画面が呼ぶ)。"""
+    """未受け取りの音声相談の結果を返し、受け取り済みにする(トークの画面が呼ぶ)。"""
     pulled: list[dict] = []
 
     def apply(u):
@@ -559,39 +537,33 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
 
 # ----------------------------- 会話結果の記録 -----------------------------
 
-OUTCOMES = ("propose", "consult", "support", "wait", "stop")
-# wait / stop の reason に要る断りの言葉。dip はトークの本文を見られないので、LINE 側 LLM が書いた reason で見る。
+OUTCOMES = ("propose", "consult", "support", "wait")
+# wait の reason に要る断りの言葉。dip はトークの本文を見られないので、LINE 側 LLM が書いた reason で見る。
 # 「考えます」「迷って」は断りではなく迷いのサインなので入れない(迷いのポイントを聞いて支援する)。
-# 一覧に無い言い方で断られたときは記録されない(配信が止まらない側に倒す。止めるべきでないのに止めるよりよい)
+# 一覧に無い言い方で断られたときは記録されない(wait を記録しない側に倒す。断っていない人を wait にするよりよい)
 REFUSAL_WORDS = re.compile(r"今はいい|いらない|要らない|やめ|止め|送らないで|あとで|後で|また今度|結構|不要")
 
 
-def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float,
-                   valid_days: int) -> dict:
+def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float) -> dict:
     if outcome not in OUTCOMES:
         return {"error": f"outcome は {OUTCOMES} のいずれか"}
-    if outcome in ("wait", "stop") and not REFUSAL_WORDS.search(reason or ""):  # 断っていない人の配信を止めない
-        return {"error": "wait / stop はユーザーが断ったときだけ記録できます。reason に、ユーザーが断った言葉"
+    if outcome == "wait" and not REFUSAL_WORDS.search(reason or ""):  # 断っていない人を wait にしない
+        return {"error": "wait はユーザーが断ったときだけ記録できます。reason に、ユーザーが断った言葉"
                          "(例:「今はいい」「もう送らないで」)をそのまま入れてください。断っていなければ、"
                          "直前の分岐の結果(consult など)で記録するか、会話を続けてください。"}
     reason = PII_VALUE.sub("[個人情報を削除]", reason)  # 理由の文にユーザーの連絡先が紛れ込んでも保存しない
     rec = {"at": now().isoformat(), "outcome": outcome, "reason": reason,
-           "confidence": max(0.0, min(1.0, confidence)),
-           "valid_until": (now() + timedelta(days=max(0, valid_days))).isoformat()}
+           "confidence": max(0.0, min(1.0, confidence))}
     state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
-    effect = "配信を抑制" if outcome in ("wait", "stop") and valid_days > 0 else "配信ルールは変更なし"
-    return {"recorded": rec, "effect": f"{effect}({_md(rec['valid_until'])}まで)"}
+    return {"recorded": rec}
 
 
-# ----------------------------- プッシュ(行動イベント → LINE から話しかける) -----------------------------
-# LINE からこちらが先に話しかけられるのは、友だち追加(応答・無料)と、プッシュ(通数課金)だけ。
+# ----------------------------- プッシュ(行動イベント → こちらから話しかける) -----------------------------
+# こちらから先に話しかけるのは、初回訪問・再訪の挨拶と、プッシュだけ。
 # プッシュしてよいか・何を根拠に話しかけるかは dip が決める。LINE 側はここで許可されたものだけを送る。
 
-PUSH_TRIGGERS = ("form_exit", "app_status", "saved_closing", "new_match")
-PUSH_INTERVAL_DAYS = 3  # 同じ人への接触(CRM 配信を含む)の最短間隔。シミュレーション用の仮の値
-NEW_POSTING_DAYS = 2
-CLOSING_SOON_DAYS = 3
-APP_STATUS_UPDATE = "面接の日程について店舗から連絡あり(登録メールを確認)"  # シミュレーションで起こす選考状況の変化
+PUSH_TRIGGERS = ("form_exit",)
+PUSH_INTERVAL_DAYS = 3  # 同じ人への接触の最短間隔。シミュレーション用の仮の値
 
 
 def _deny(reason: str) -> dict:
@@ -599,103 +571,24 @@ def _deny(reason: str) -> dict:
 
 
 def push_trigger(state: State, line_user_id: str, trigger: str) -> dict:
-    """dip の行動イベントを受けて、LINE にプッシュで話しかけてよいかを決め、話しかける根拠(事実)を返す。
+    """dip の行動イベントを受けて、プッシュで話しかけてよいかを決め、話しかける根拠(事実)を返す。
     許可したら接触として記録する(次の頻度判定と、会話中の summary の last_contact に使われる)。"""
     if trigger not in PUSH_TRIGGERS:
         return _deny(f"trigger は {PUSH_TRIGGERS} のいずれか")
-    user, jobs = state.user(line_user_id), load_jobs()
+    user = state.user(line_user_id)
     if not user.get("dip_id"):
         return _deny("dip ID と未連携なので行動イベントがない")
-    if s := active_suppression(user):
-        return _deny(f"配信抑制中({s['until']}まで)")
     recent = [c for c in user.get("contacts", []) if _days_ago(c["at"]) < PUSH_INTERVAL_DAYS]
     if recent:
         return _deny(f"{PUSH_INTERVAL_DAYS}日以内に接触済み({_md(recent[-1]['at'])} {recent[-1]['channel']})")
 
     facts = None
-    if trigger == "form_exit":
-        e = form_exit(state, line_user_id)
-        if e:
-            facts = {k: e[k] for k in ("job_id", "title", "remaining_fields", "remaining_needs_liff")}
-    elif trigger == "app_status":
-        waiting = [a for a in recent_applications(state, line_user_id) if "連絡待ち" in a["status"]]
-        if waiting:
-            a = waiting[0]
-            facts = {"job_id": a["job_id"], "title": a["title"], "applied": a["applied"], "new_status": APP_STATUS_UPDATE}
-    elif trigger == "saved_closing":
-        listings = load_listings()
-        for sv in _recent(user.get("saves", []), "at", 30):
-            end = listings.get(sv["job_id"], {}).get("listing_end")
-            if end and 0 <= -_days_ago(end) <= CLOSING_SOON_DAYS and sv["job_id"] in jobs:
-                job = jobs[sv["job_id"]]
-                facts = {"job_id": job.job_id, "title": job.title, "listing_end": _md(end),
-                         "days_left": -_days_ago(end), "card": job_card(job, _reasons(job, None, None, None, user, jobs))}
-                break
-    elif trigger == "new_match":
-        # 職種が傾向に合い、さらにエリアか時間帯も合うものだけ(職種だけ合う昼の求人で夜の人に話しかけない)
-        tend = preferences(user, jobs)
-        new = recommend(state, line_user_id, posted_within_days=NEW_POSTING_DAYS, limit=MAX_JOBS)["jobs"]
-        new = [j for j in new if j["job_type"] in tend["job_type"]
-               and (j["area"] in tend["area"] or set(jobs[j["job_id"]].time_bands) & set(tend["time_band"]))]
-        if new:
-            facts = {"posted_within_days": NEW_POSTING_DAYS, "count": len(new),
-                     "jobs": new,  # recommend の結果 = カードの形
-                     "matched_on": tend}
+    e = form_exit(state, line_user_id)
+    if e:
+        facts = {k: e[k] for k in ("job_id", "title", "remaining_fields", "remaining_needs_liff")}
     if facts is None:
         return _deny(f"{trigger} の根拠になる事実がない")
 
-    def apply(u):
-        if trigger == "app_status":
-            for a in u.get("applications", []):
-                if a["job_id"] == facts["job_id"]:
-                    a["status"] = APP_STATUS_UPDATE
-        u.setdefault("contacts", []).append({"at": now().isoformat(), "channel": "LINE AI通知", "message": trigger})
-
-    state.update(line_user_id, apply)
+    state.update(line_user_id, lambda u: u.setdefault("contacts", []).append(
+        {"at": now().isoformat(), "channel": "LINE AI通知", "message": trigger}))
     return {"allowed": True, "trigger": trigger, "facts": facts}
-
-
-# ----------------------------- CRM 配信(dip の既存の配信。LINE の AI ではない) -----------------------------
-
-CRM_REPLIES = ["気になる求人がある", "ほかの条件で探したい", "今はいい"]
-
-
-def crm_broadcast(state: State, line_user_id: str) -> dict:
-    """その人に送る CRM 配信の中身を作り、接触として記録する。LLM は使わない。
-    本人の傾向に合う新着を優先し、無ければ傾向の職種で条件に近い求人を、最大3件のカードで出す。
-    返信のヒント(クイックリプライ)を付け、送った求人は接触の記録に残す(返信を受けた AI が要約で分かる)。"""
-    user, jobs = state.user(line_user_id), load_jobs()
-    if s := active_suppression(user):  # 「今はいい」「送らないで」を尊重する(プッシュと同じ)
-        return {"sent": False, "reason": f"配信抑制中({s['until']}まで)"}
-    cards: list[dict] = []
-    if not user.get("dip_id"):
-        message = "バイトルのお仕事探しを、このトークで相談できます。気になるものを選んでください。"
-        replies = ["求人を探す", "使い方", "今はいい"]
-    else:
-        tend = preferences(user, jobs)
-        topic = tend["job_type"][0] if tend["job_type"] else "お仕事"
-        fits = lambda j: j["job_type"] in tend["job_type"] and (
-            j["area"] in tend["area"] or set(jobs[j["job_id"]].time_bands) & set(tend["time_band"]))
-        new = [j for j in recommend(state, line_user_id, posted_within_days=NEW_POSTING_DAYS, tendency_reasons=True)["jobs"]
-               if fits(j)]
-        # 本文の職種は、実際に載せる求人の職種から作る(本文と中身をずらさない)
-        kinds = lambda cs: "・".join(dict.fromkeys(c["job_type"] for c in cs))
-        if new:
-            cards = new[:MAX_JOBS]
-            message = f"{kinds(cards)}の新着求人が{len(cards)}件入りました。最近見ていた条件に近いものです。"
-        elif tend["job_type"]:
-            cards = recommend(state, line_user_id, job_type=topic, tendency_reasons=True)["jobs"]
-            message = f"最近見ていた{kinds(cards) or topic}のお仕事から、条件に近い求人を{len(cards)}件選びました。"
-        if not cards:
-            message = "新しいお仕事が入っています。このトークで、条件に合う求人を一緒に探せます。"
-        replies = CRM_REPLIES if cards else ["求人を探す", "使い方", "今はいい"]
-    record = {"at": now().isoformat(), "channel": "CRM配信", "message": message, "job_ids": [c["job_id"] for c in cards]}
-
-    def apply(u):
-        contacts = u.setdefault("contacts", [])
-        # 同じ日の CRM 配信は置き換える(何度も押して接触の記録が増え、プッシュが止まり続けないように)
-        contacts[:] = [c for c in contacts if not (c["channel"] == "CRM配信" and _days_ago(c["at"]) == 0)]
-        contacts.append(record)
-
-    state.update(line_user_id, apply)
-    return {"sent": True, "message": message, "cards": cards, "quick_replies": replies}

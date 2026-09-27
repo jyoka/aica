@@ -26,8 +26,8 @@ def state(tmp_path):
 
 
 @pytest.mark.parametrize("user,segment", [
-    ("sim-yoru", "browsing"), ("sim-exit", "form_exit"), ("sim-dormant", "dormant"),
-    ("sim-applied", "applied_waiting"), ("sim-stopped", "suppressed"), ("sim-new", "unlinked"),
+    ("sim-yoru", "browsing"), ("sim-exit", "form_exit"),
+    ("sim-applied", "applied_waiting"), ("sim-new", "unlinked"),
     ("never-seen", "unlinked"),
 ])
 def test_summary_segments(state, user, segment):
@@ -147,8 +147,8 @@ def test_resume_form_rejects_pii_in_values_of_other_fields(state):
 
 
 def test_outcome_reason_is_scrubbed_of_pii(state):
-    logic.record_outcome(state, "sim-dormant", "consult", "電話は090-1234-5678、メールは a.b@example.com", 0.5, 7)
-    reason = state.user("sim-dormant")["outcomes"][-1]["reason"]
+    logic.record_outcome(state, "sim-yoru", "consult", "電話は090-1234-5678、メールは a.b@example.com", 0.5)
+    reason = state.user("sim-yoru")["outcomes"][-1]["reason"]
     assert "090-1234-5678" not in reason and "example.com" not in reason
 
 
@@ -158,22 +158,23 @@ def test_liff_submit_turns_exit_into_application(state):
     assert logic.conversation_summary(state, "sim-exit")["segment"] == "applied_waiting"
 
 
-def test_wait_outcome_suppresses_until_valid(state):
-    r = logic.record_outcome(state, "sim-dormant", "wait", "今はいい", 0.8, 30)
-    assert "抑制" in r["effect"]
-    s = logic.conversation_summary(state, "sim-dormant")
-    assert s["segment"] == "suppressed" and s["suppression"]["until"] == "10/23"
-    assert "error" in logic.record_outcome(state, "sim-dormant", "spam", "", 1, 1)
+def test_wait_outcome_is_recorded_without_side_effects(state):
+    r = logic.record_outcome(state, "sim-yoru", "wait", "今はいい", 0.8)
+    assert r["recorded"]["outcome"] == "wait"
+    assert state.user("sim-yoru")["outcomes"][-1]["reason"] == "今はいい"
+    assert logic.conversation_summary(state, "sim-yoru")["segment"] == "browsing"  # 記録しても状況は変わらない
+    assert "error" in logic.record_outcome(state, "sim-yoru", "spam", "", 1)
+    assert "error" in logic.record_outcome(state, "sim-yoru", "stop", "もう送らないで", 0.9)  # stop は無くなった
 
 
 def test_wait_without_refusal_words_is_not_recorded(state):
-    # 「別のこと」を選んだだけの人を wait にすると、本人の知らないところで配信が止まる(spike 2026-09-25)
-    r = logic.record_outcome(state, "sim-dormant", "wait", "別のことを選んだ。内容は未確認", 0.6, 30)
-    assert "error" in r and not state.user("sim-dormant").get("outcomes")
+    # 「別のこと」を選んだだけの人を wait にしない(断っていない人を wait と記録しない。spike 2026-09-25)
+    r = logic.record_outcome(state, "sim-yoru", "wait", "別のことを選んだ。内容は未確認", 0.6)
+    assert "error" in r and not state.user("sim-yoru").get("outcomes")
     # 「考えます」は迷いのサインで、断りではない(迷いのポイントを聞いて支援する)
-    assert "error" in logic.record_outcome(state, "sim-dormant", "wait", "ありがとう、考えます", 0.6, 30)
-    assert "抑制" in logic.record_outcome(state, "sim-dormant", "stop", "もう送らないで", 0.9, 30)["effect"]
-    assert logic.record_outcome(state, "sim-dormant", "consult", "面接の質問", 0.8, 7)["recorded"]["outcome"] == "consult"
+    assert "error" in logic.record_outcome(state, "sim-yoru", "wait", "ありがとう、考えます", 0.6)
+    assert logic.record_outcome(state, "sim-yoru", "wait", "もう送らないで", 0.9)["recorded"]["outcome"] == "wait"
+    assert logic.record_outcome(state, "sim-yoru", "consult", "面接の質問", 0.8)["recorded"]["outcome"] == "consult"
 
 
 # ----------------------------- 案件への質問(案件単位の FAQ) -----------------------------
@@ -296,38 +297,24 @@ def test_preferences_reject_unknown_keys_and_pii(state):
     assert "電話番号" not in state.user("sim-yoru")["preferences"]
 
 
-# ----------------------------- プッシュ(dip の行動イベント → LINE から話しかける) -----------------------------
+# ----------------------------- プッシュ(dip の行動イベント → こちらから話しかける) -----------------------------
 
 
-def test_push_denied_for_unlinked_suppressed_and_unknown_trigger(state):
-    assert not logic.push_trigger(state, "sim-new", "new_match")["allowed"]  # 未連携
-    r = logic.push_trigger(state, "sim-stopped", "new_match")
-    assert not r["allowed"] and "抑制" in r["reason"]
+def test_push_denied_for_unlinked_and_unknown_trigger(state):
+    assert not logic.push_trigger(state, "sim-new", "form_exit")["allowed"]  # 未連携
     assert not logic.push_trigger(state, "sim-yoru", "spam")["allowed"]
 
 
 def test_push_frequency_cap_and_contact_is_recorded(state):
-    r = logic.push_trigger(state, "sim-yoru", "new_match")
-    assert r["allowed"] and {j["job_id"] for j in r["facts"]["jobs"]} == {"b0103", "b0205"}  # 昼の b0102 は除く
-    assert state.user("sim-yoru")["contacts"][-1]["channel"] == "LINE AI通知"
-    again = logic.push_trigger(state, "sim-yoru", "new_match")
+    r = logic.push_trigger(state, "sim-exit", "form_exit")
+    assert r["allowed"]
+    assert state.user("sim-exit")["contacts"][-1]["channel"] == "LINE AI通知"
+    again = logic.push_trigger(state, "sim-exit", "form_exit")
     assert not again["allowed"] and "日以内" in again["reason"]
-    # 休眠ユーザーは今日 CRM 配信を受けているので、同じ日にはプッシュしない
-    assert not logic.push_trigger(state, "sim-dormant", "new_match")["allowed"]
 
 
 def test_push_needs_a_fact_to_talk_about(state):
-    assert not logic.push_trigger(state, "sim-yoru", "saved_closing")["allowed"]  # 保存した求人がない
-    assert not logic.push_trigger(state, "sim-yoru", "app_status")["allowed"]  # 連絡待ちの応募がない
-    assert not logic.push_trigger(state, "sim-applied", "form_exit")["allowed"]
-
-
-def test_push_saved_closing_and_app_status_facts(state):
-    r = logic.push_trigger(state, "sim-browsing", "saved_closing")
-    assert r["allowed"] and r["facts"]["job_id"] == "a003" and r["facts"]["listing_end"] == "9/25"
-    r = logic.push_trigger(state, "sim-applied", "app_status")
-    assert r["allowed"] and r["facts"]["job_id"] == "a001"
-    assert logic.recent_applications(state, "sim-applied")[0]["status"] == r["facts"]["new_status"]
+    assert not logic.push_trigger(state, "sim-applied", "form_exit")["allowed"]  # 途中のフォームがない
 
 
 def test_push_form_exit_facts(state):
@@ -340,65 +327,10 @@ def test_recommend_can_limit_to_new_postings(state):
     assert set(ids) == {"b0102", "b0103", "b0205"}
 
 
-# ----------------------------- CRM 配信(届いた配信) -----------------------------
-
-
-def test_crm_broadcast_has_cards_appeal_and_quick_replies(state):
-    b = logic.crm_broadcast(state, "sim-dormant")
-    assert 1 <= len(b["cards"]) <= 3 and all(c["reasons"] for c in b["cards"])
-    assert all(c["job_type"] == "カフェ" for c in b["cards"])  # 本人の傾向(カフェ)に合う求人
-    assert "カフェ" in b["message"]
-    assert "今はいい" in b["quick_replies"] and len(b["quick_replies"]) <= 4
-
-
-def test_crm_broadcast_is_recorded_so_the_ai_knows_what_was_sent(state):
-    b = logic.crm_broadcast(state, "sim-dormant")
-    last = logic.conversation_summary(state, "sim-dormant")["last_contact"]
-    assert last["channel"] == "CRM配信" and last["message"] == b["message"]
-    assert [j["job_id"] for j in last["jobs"]] == [c["job_id"] for c in b["cards"]]
-
-
-def test_crm_broadcast_prefers_new_postings_that_fit(state):
-    b = logic.crm_broadcast(state, "sim-yoru")  # 夜の飲食を見ている人。新着の夜の飲食(b0103・b0205)がある
-    assert {c["job_id"] for c in b["cards"]} <= {"b0103", "b0205"} and "新着" in b["message"]
-
-
 def test_new_postings_keep_reasons_from_past_applications(state):
     # 新着だけに絞っても、7月に応募した飲食ホールと同系統、という本人の履歴に基づく理由は付く
     b0103 = next(j for j in logic.recommend(state, "sim-yoru", posted_within_days=2)["jobs"] if j["job_id"] == "b0103")
     assert "7月に応募した飲食ホールと同系統" in b0103["reasons"]
-
-
-def test_crm_broadcast_message_names_the_job_types_it_actually_sends(state):
-    b = logic.crm_broadcast(state, "sim-yoru")
-    for t in {c["job_type"] for c in b["cards"]}:
-        assert t in b["message"]
-
-
-def test_crm_broadcast_respects_suppression(state):
-    b = logic.crm_broadcast(state, "sim-stopped")  # 「もう送らないで」で抑制中
-    assert b["sent"] is False and "抑制" in b["reason"]
-    assert all(c["channel"] != "CRM配信" for c in state.user("sim-stopped").get("contacts", []))
-
-
-def test_crm_broadcast_twice_on_the_same_day_keeps_one_record(state):
-    logic.crm_broadcast(state, "sim-yoru")
-    logic.crm_broadcast(state, "sim-yoru")
-    crm = [c for c in state.user("sim-yoru")["contacts"] if c["channel"] == "CRM配信"]
-    assert len(crm) == 1
-
-
-def test_inferred_time_band_reason_is_only_for_the_broadcast(state):
-    # 通常の推薦の理由は変えない(駅近・日払いなどを押し出さない)
-    b0105 = next(j for j in logic.recommend(state, "sim-yoru")["jobs"] if j["job_id"] == "b0105")
-    assert not any(r.startswith("夜の勤務") for r in b0105["reasons"])
-    cards = logic.crm_broadcast(state, "sim-yoru")["cards"]
-    assert any(r.endswith(")") and "の勤務(" in r for c in cards for r in c["reasons"])
-
-
-def test_crm_broadcast_for_unlinked_user_still_offers_a_start(state):
-    b = logic.crm_broadcast(state, "sim-new")
-    assert b["quick_replies"] and "求人を探す" in b["quick_replies"]
 
 
 # ----------------------------- MCP 境界 -----------------------------

@@ -105,10 +105,9 @@ async def scenarios():
 
 @app.post("/api/scenarios/{scenario_id}/start")
 async def start_scenario(scenario_id: str, request: Request):
-    """シナリオを最初から始める: そのユーザーの dip の状態を初期に戻す。1通目が dip の配信なら、配信の中身
-    (本文・求人カード・返信のヒント)を返す。友だち追加・プッシュは、続けて画面が /api/event/stream を呼ぶ。
-    新しい会話は、どのシナリオでも最初のイベント(follow・プッシュ・crm_reply)が始めるので、ここでは始めない
-    (ここでも始めると会話番号が1つ飛び、再起動後に前の会話へ戻ってしまう)。
+    """シナリオを最初から始める: そのユーザーの dip の状態を初期に戻す。続けて画面が /api/event/stream を呼び、
+    AI 側の1通目(挨拶・プッシュ)が届く。新しい会話は、どのシナリオでも最初のイベント(visit・revisit・プッシュ)が
+    始めるので、ここでは始めない(ここでも始めると会話番号が1つ飛び、再起動後に前の会話へ戻ってしまう)。
     進行中のターンが終わってから初期化する(終わったターンの記録が、初期化した状態に書き込まれないように)。
     Cookie を持つブラウザには、そのブラウザ専用のユーザー「匿名ID:シナリオユーザー」を作って始める
     (同じシナリオを2人が同時に使っても混線しない)。"""
@@ -118,11 +117,8 @@ async def start_scenario(scenario_id: str, request: Request):
     anon = _anon(request)
     user = f"{anon}:{sc['user']}" if anon else sc["user"]
     async with app.state.rt.user_lock(user):
-        try:
-            broadcast = prepare(state, sc, user)
-        except RuntimeError as e:
-            raise HTTPException(409, str(e)) from e
-    return {"user": user, "event": sc["event"], "broadcast": broadcast}
+        prepare(state, sc, user)
+    return {"user": user, "event": sc["event"]}
 
 
 @app.post("/api/event")
@@ -206,7 +202,7 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
 
 @app.post("/api/voice/{user_id}/pull")
 async def voice_pull(user_id: str, request: Request):
-    """未配信の音声相談の結果を返し、配信済みにする(トークの画面が定期的に呼ぶ)。"""
+    """未受け取りの音声相談の結果を返し、受け取り済みにする(トークの画面が定期的に呼ぶ)。"""
     _require_own(request, user_id)
     return {"results": logic.pull_voice_results(state, user_id)}
 

@@ -14,14 +14,12 @@ SUMMARY = ("get_user_conversation_summary", {"last_contact": {"when": "9/23"}})
 
 
 def test_facts_from_tools_push_and_user_are_not_violations():
-    push = {"job_id": "a003", "title": "カフェホール 渋谷道玄坂", "listing_end": "9/25", "days_left": 2}
+    push = {"job_id": "a002", "title": "コンビニスタッフ(夜勤)", "remaining_fields": ["電話番号", "希望開始日"]}
     job = ("answer_job_question", {"job": {"title": "カフェホール 渋谷道玄坂", "employer": "コーヒースタンド ドウゲン",
                                            "hourly_wage": 1250, "walk_min": 6}})
     turns = [
-        turn(["保存されている「カフェホール 渋谷道玄坂」の掲載が9/25で終わりそうです。"], [SUMMARY]),
+        turn(["「コンビニスタッフ(夜勤)」の応募フォームが途中のようです。"], [SUMMARY]),
         turn(["コーヒースタンド ドウゲンです。渋谷駅徒歩6分、時給1,250円。"], [job]),
-        turn(["承知しました。10月23日まで、こちらからのご案内はお休みします。"],
-             [("record_conversation_outcome", {"effect": "配信を抑制(10/23まで)"})]),
     ]
     assert fact_violations(turns, ["詳しく聞きたい", "時給は1200円以上がいい"], push) == []
 
@@ -83,21 +81,47 @@ def test_numbers_are_checked_against_the_same_unit_only():
     assert ok == []
 
 
-def test_date_parts_of_full_dates_and_prompt_examples_are_not_evidence():
-    rec = ("record_conversation_outcome", {"effect": "配信を抑制(2026/09/30まで)"})
-    assert fact_violations([turn(["9月30日までお休みします。"], [rec])], ["今はいい"], None) == []
-    # dip の Prompt の例文にある「10月23日」は事実の根拠にならない
-    v = fact_violations([turn(["10月23日までお休みします。"], [SUMMARY])], ["今はいい"], None)
+def test_dates_match_full_dates_but_unreturned_dates_are_violations():
+    listing = ("answer_job_question", {"hits": [{"a": "掲載は2026/09/30までです。"}]})
+    assert fact_violations([turn(["掲載は9月30日までです。"], [listing])], ["いつまで?"], None) == []
+    # ツールが返していない日付は事実の根拠にならない
+    v = fact_violations([turn(["掲載は10月23日までです。"], [SUMMARY])], ["いつまで?"], None)
     assert any("10/23" in x for x in v)
 
 
 def test_ending_without_choices_is_allowed_only_right_after_a_stop_request():
     from evals.checks import conversation_checks
 
-    sc = {"expect_outcome": ["wait", "stop"]}
+    sc = {"expect_outcome": ["wait"]}
     ask = {**turn(["探しているお仕事はありますか?"]), "quick_replies": ["求人を探す", "今はいい"]}
-    done = turn(["承知しました。10月23日まで、こちらからのご案内はお休みします。"])  # 選択肢なし
+    done = turn(["承知しました。またいつでもお声がけください。"])  # 選択肢なし
     v = conversation_checks(sc, [ask, done], [None, "もう送らないで"])["violations"]
     assert not any("選択肢がない" in x for x in v)  # 「もう送らないで」の後は「承知しました」で終えてよい
     v = conversation_checks(sc, [ask, done], [None, "ありがとう"])["violations"]
     assert any("選択肢がない" in x for x in v)
+
+
+def test_questions_or_jobs_right_after_a_refusal_are_violations():
+    from evals.checks import conversation_checks
+
+    sc = {"expect_outcome": ["wait"]}
+    ask = {**turn(["探しているお仕事はありますか?"]), "quick_replies": ["求人を探す", "今はいい"]}
+    push_more = {**turn(["条件を変えて探しますか?"]), "quick_replies": ["条件を変える", "今はいい"]}
+    v = conversation_checks(sc, [ask, push_more], [None, "今はいい"])["violations"]
+    assert any("質問や求人を続けた" in x for x in v)
+    done = {**turn(["承知しました。またいつでもお声がけください。"]), "quick_replies": ["求人を探す", "使い方"]}
+    assert conversation_checks(sc, [ask, done], [None, "今はいい"])["violations"] == []
+
+
+def test_phrase_inside_a_longer_message_is_not_a_refusal():
+    """「今はいい感じの…を探したい」のような部分一致は断りではなく、続けて質問してよい。"""
+    from evals.checks import conversation_checks
+
+    sc = {"expect_outcome": ["propose"]}
+    ask = {**turn(["渋谷ですね。時間帯の希望はありますか?"]), "quick_replies": ["日中", "夜", "今はいい"]}
+    v = conversation_checks(sc, [ask], ["今はいい感じのカフェバイトを渋谷で探したい"])["violations"]
+    assert not any("質問や求人を続けた" in x for x in v)
+    # 語尾ゆれ(「今はいいです。」)は発言そのものなら断りとして扱う
+    push_more = {**turn(["条件を変えて探しますか?"]), "quick_replies": ["条件を変える", "今はいい"]}
+    v = conversation_checks(sc, [ask, push_more], [None, "今はいいです。"])["violations"]
+    assert any("質問や求人を続けた" in x for x in v)

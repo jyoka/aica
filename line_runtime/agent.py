@@ -51,7 +51,6 @@ class LineReply(BaseModel):
 class LineState(AgentState):
     entry: NotRequired[str]
     line_user_id: NotRequired[str]
-    push_facts: NotRequired[dict]  # dip が許可したプッシュの根拠の事実(カードの描画にも使う)
 
 
 class ScenarioMiddleware(AgentMiddleware):
