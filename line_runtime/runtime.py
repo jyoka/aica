@@ -1,9 +1,9 @@
-"""LINE 側ランタイム: イベント(トーク・配信への返信・友だち追加・dip からのプッシュ)を受けて会話を進める。
+"""LINE 側ランタイム: イベント(トーク・初回訪問・再訪・dip からのプッシュ)を受けて会話を進める。
 
 - dip の MCP サーバーとは1本のセッションを張りっぱなしにする(呼び出しごとに子プロセスを起こさない)。
 - 会話は AsyncSqliteSaver に保存。入口となるイベント(トーク以外)が来たら新しい会話を始め、
   その入口に合う dip のシナリオを使う。トークの続きはそのまま同じ会話。
-- こちらから話しかけるのは友だち追加(応答)と dip からのプッシュだけ。プッシュしてよいかは dip が決め
+- こちらから話しかけるのは初回訪問・再訪の挨拶と dip からのプッシュだけ。プッシュしてよいかは dip が決め
   (dip_mcp.logic.push_trigger)、ここには許可されたものが根拠の事実つきで来る。LINE 側は判断しない。
 """
 
@@ -32,19 +32,17 @@ _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
 ])
 
 # イベント種別 -> (入口, エージェントへの入力。None ならユーザーの発言そのもの)
-# 種別: user = ユーザーの発言で始まる / follow = 友だち追加(応答で返せる) / push = dip からのプッシュ依頼
+# 種別: user = ユーザーの発言で始まる / greet = トークを開いた(こちらから挨拶する) / push = dip からのプッシュ依頼
 EVENTS = {
     "message": ("A", "user"),
-    "crm_reply": ("C", "user"),
-    "follow": ("follow", "follow"),
+    "visit": ("visit", "greet"),
+    "revisit": ("revisit", "greet"),
     "form_exit": ("D", "push"),
-    "app_status": ("app_status", "push"),
-    "saved_closing": ("saved_closing", "push"),
-    "new_match": ("new_match", "push"),
 }
 # リッチメニューは既存運用のまま触らない(入口にしない)。メニュー相当の選択肢はトーク内のクイックリプライで出す。
 STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if e != "message"}
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
+GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 
 
 def event_input(event: str, text: str | None, facts: dict | None) -> str:
@@ -54,8 +52,8 @@ def event_input(event: str, text: str | None, facts: dict | None) -> str:
         if not (text or "").strip():
             raise ValueError(f"{event} には空でない text が必要です")
         return text
-    if kind == "follow":
-        return f"[イベント: 友だち追加(ブロック解除を含む)] {FIRST_MESSAGE}"
+    if kind == "greet":
+        return f"[イベント: {GREETINGS[event]}] {FIRST_MESSAGE}"
     if facts is None:
         raise ValueError(f"{event} は dip が許可したプッシュなので facts が必要です")
     return f"[イベント: dip からのプッシュ依頼 {event}] 根拠の事実: {json.dumps(facts, ensure_ascii=False)} {FIRST_MESSAGE}"
@@ -165,8 +163,6 @@ class LineRuntime:
                 payload = {"messages": [{"role": "user", "content": content}]}
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
-                    if facts is not None:
-                        payload["push_facts"] = facts
                 args: dict[str, dict] = {}
                 t = time.perf_counter()
                 async for chunk in self.agent.astream(payload, cfg, stream_mode="updates"):
@@ -216,8 +212,8 @@ def _summary(result) -> str:
         return f"{len(result['jobs'])} 件を返す(条件に合う {result.get('total', '?')} 件)"
     if "segment" in result:
         return f"状況: {result['segment']}"
-    if "effect" in result:
-        return result["effect"]
+    if "recorded" in result:
+        return f"記録: {result['recorded'].get('outcome')}"
     if "saved" in result:
         return f"保存: {', '.join(map(str, result['saved'])) or 'なし'}"
     return ", ".join(list(result)[:4])
@@ -252,8 +248,8 @@ def render(state: dict) -> dict:
     reply: LineReply = state.get("structured_response") or LineReply(bubbles=["(返信を生成できませんでした)"])
     msgs = state["messages"]
     last_human = max(i for i, m in enumerate(msgs) if m.type == "human")
-    # カードにできるのは dip が返した求人だけ(どのツールの結果でも、プッシュの根拠の事実でも)。モデルが作った求人は出さない。
-    sources = [_tool_payload(m) for m in msgs if m.type == "tool"] + [state.get("push_facts")]
+    # カードにできるのは dip のツールが返した求人だけ。モデルが作った求人は出さない。
+    sources = [_tool_payload(m) for m in msgs if m.type == "tool"]
     jobs: dict[str, dict] = {}
     for c in (c for src in sources for c in _cards_in(src)):
         jobs.setdefault(c["job_id"], c)  # 最初に返ったもの(たいてい recommend_jobs の、条件に沿った理由つき)を使う

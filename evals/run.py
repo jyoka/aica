@@ -1,7 +1,7 @@
 """シナリオ評価: 模擬ユーザー(LLM)と LINE 側ランタイムを会話させ、設計書のルールと KPI で採点する。
 
 各シナリオはそのユーザーの dip の状態を初期に戻してから走る(評価全体で独立した一時ファイル)。
-シナリオの一覧は画面と共通(scenarios.json)。どれも AI 側の1通目から始まる(evals/scenarios.py)。
+シナリオの一覧は画面と共通(scenarios.json)。どれも AI 側の1通目(挨拶・プッシュ)から始まる(evals/scenarios.py)。
 計測するのはランタイム側の LLM 呼び出しだけ(模擬ユーザーとジャッジは除外)。
 
 各シナリオを --repeat 回(既定1)くり返し、集計と比較は evalkit(リポジトリ直下の evalkit/)に任せる。
@@ -57,11 +57,6 @@ JUDGE_SYSTEM = """あなたは LINE の AI アシスタントの会話品質を�
 }"""
 
 
-def _format_broadcast(b: dict) -> str:
-    return _format_agent({"bubbles": [f"[dip の配信] {b['message']}"], "cards": b["cards"], "buttons": [],
-                          "quick_replies": b["quick_replies"]})
-
-
 def _format_agent(r: dict) -> str:
     parts = list(r["bubbles"])
     for c in r["cards"]:
@@ -80,7 +75,7 @@ class SimTurn(BaseModel):
 
 async def sim_reply(client, persona: str, transcript: list[dict]) -> dict:
     """模擬ユーザーの次の発言。構造化出力で受け取り(自由記述の JSON は壊れやすい)、空なら1回だけ取り直す。"""
-    # どのシナリオも AI 側(LINE の AI か dip の配信)の1通目から始まるので、模擬ユーザーから見て user から始まる
+    # どのシナリオも AI 側の1通目から始まるので、模擬ユーザーから見て user から始まる
     msgs = [{"role": "user" if t["who"] == "agent" else "assistant", "content": t["text"]} for t in transcript]
     for _ in range(2):
         turn = await llm.parse(client, model=SIM_MODEL[config.PROVIDER], max_tokens=1000, schema=SimTurn,
@@ -94,8 +89,8 @@ async def judge(client, transcript: list[dict], turns: list[dict], facts: dict |
     log = "\n".join(f"{'アシスタント' if t['who'] == 'agent' else 'ユーザー'}: {t['text']}" for t in transcript)
     tools = [{"name": t["name"], "result": t["result"]} for r in turns for t in r["tools"]]
     user = f"## 会話ログ\n{log}\n\n## 事業者ツールの結果\n{json.dumps(tools, ensure_ascii=False)[:12000]}"
-    if facts:  # プッシュの根拠の事実・配信の中身も事業者が渡した情報(これが無いと、本物の事実を作り話と判定してしまう)
-        user += f"\n\n## 事業者がプッシュ・配信で渡した情報\n{json.dumps(facts, ensure_ascii=False)}"
+    if facts:  # プッシュの根拠の事実も事業者が渡した情報(これが無いと、本物の事実を作り話と判定してしまう)
+        user += f"\n\n## 事業者がプッシュで渡した情報\n{json.dumps(facts, ensure_ascii=False)}"
     text = await llm.text(client, model=JUDGE_MODEL[config.PROVIDER], max_tokens=3000, effort="low",
                           system=JUDGE_SYSTEM, messages=[{"role": "user", "content": user}])
     return json.loads(text[text.index("{"):text.rindex("}") + 1])
@@ -118,7 +113,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool) -> dict:
     from evals.scenarios import prepare
     from line_runtime.runtime import EVENTS
 
-    broadcast = prepare(State(), sc)  # 新しい会話は最初のイベント(follow・プッシュ・crm_reply)が始める
+    prepare(State(), sc)  # 新しい会話は最初のイベント(visit・revisit・プッシュ)が始める
     facts = push_facts = None
     if EVENTS[sc["event"]][1] == "push":  # 本番と同じく、プッシュしてよいかは dip が決める
         gate = logic.push_trigger(State(), sc["user"], sc["event"])
@@ -126,10 +121,8 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool) -> dict:
             raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
         facts = push_facts = gate["facts"]
     transcript, turns, user_msgs, seconds, marks = [], [], [], [], []
-    if broadcast:  # 1通目は dip の配信。ユーザーはそれに返信する(sc["text"])
-        transcript.append({"who": "agent", "text": _format_broadcast(broadcast)})
-    given = push_facts or broadcast  # dip がこの会話の前に渡した情報(事実性の照合の根拠)
-    event, text = sc["event"], sc["text"]
+    given = push_facts  # dip がこの会話の前に渡した情報(事実性の照合の根拠)
+    event, text = sc["event"], None
     for _ in range(MAX_TURNS):
         if text is not None:
             transcript.append({"who": "user", "text": text})
@@ -162,7 +155,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool) -> dict:
             turns.append(r)
             transcript.append({"who": "agent", "text": _format_agent(r)})
             break
-    result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts, "broadcast": broadcast,
+    result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts,
               **conversation_checks(sc, turns, user_msgs, given),
               "latency_p50": round(statistics.median(seconds), 1), "latency_max": round(max(seconds), 1),
               **_usage(meter, marks), "transcript": transcript,

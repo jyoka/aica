@@ -174,7 +174,7 @@
   <aside class="panel">
     <div class="step">
       <h2><span class="n">1</span>シナリオを選ぶ</h2>
-      <div class="hint">押すと、そのユーザーの dip の状態を初期に戻し、AI 側の1通目(挨拶・プッシュ・dip の配信)から会話が始まります。</div>
+      <div class="hint">押すと、そのユーザーの dip の状態を初期に戻し、AI 側の1通目(挨拶・プッシュ)から会話が始まります。</div>
       <div id="scenarios"></div>
     </div>
     <div class="step">
@@ -259,20 +259,20 @@
   const TOOLS = ["get_user_conversation_summary", "get_user_recent_applications", "get_user_form_exit", "recommend_jobs",
                  "relax_conditions", "answer_job_question", "get_application_status", "resume_application_form", "save_job",
                  "save_user_preferences", "record_conversation_outcome"];
-  const SEGMENT = { browsing: ["比較検討中", ""], form_exit: ["フォーム離脱", ""], dormant: ["休眠", ""], applied_waiting: ["応募済み・連絡待ち", "ok"],
-                    suppressed: ["配信抑制中", "warn"], unlinked: ["未連携", ""], active: ["利用中", "ok"] };
-  const PUSH_LABEL = { form_exit: "応募フォームの途中離脱", app_status: "応募先から選考の連絡", saved_closing: "保存した求人の掲載終了が近い", new_match: "傾向に合う新着求人" };
-  const OUTCOME = { propose: "提案", consult: "相談", support: "支援", wait: "待つ", stop: "停止" };
+  const SEGMENT = { browsing: ["比較検討中", ""], form_exit: ["フォーム離脱", ""], applied_waiting: ["応募済み・連絡待ち", "ok"],
+                    unlinked: ["未連携", ""], active: ["利用中", "ok"] };
+  const PUSH_LABEL = { form_exit: "応募フォームの途中離脱" };
+  const EVENT_LABEL = { visit: "初回訪問", revisit: "再訪(トークを開き直した)" };
+  const OUTCOME = { propose: "提案", consult: "相談", support: "支援", wait: "待つ" };
   const PREF = { area: "エリア", time_band: "時間帯", job_type: "職種", min_wage: "時給の下限", experience: "経験", days_per_week: "週の日数",
                  skills: "できること", certifications: "資格・免許" };
   const $ = (id) => document.getElementById(id);
   const log = $("log"), input = $("t"), sendBtn = $("send");
   // シナリオの1通目の出どころ: [まとめ, アイコンの文字, アイコンの色, 見出し]
-  const GROUPS = [["follow", "F", "line-ic", "友だち追加(AI から挨拶・費用なし)"],
-                  ["push", "P", "push-ic", "dip からのプッシュ(送るかは dip が判定)"],
-                  ["crm", "C", "user-ic", "dip の配信に返信する"]];
-  const groupOf = (event) => event === "follow" ? "follow" : event === "crm_reply" ? "crm" : "push";
-  let scenarios = [], scenario = null, current = null, busy = false, pendingEvent = null, t0 = 0, sums = null;
+  const GROUPS = [["greet", "V", "line-ic", "トークを開く(AI から挨拶)"],
+                  ["push", "P", "push-ic", "dip からのプッシュ(送るかは dip が判定)"]];
+  const groupOf = (event) => EVENT_LABEL[event] ? "greet" : "push";
+  let scenarios = [], scenario = null, current = null, busy = false, t0 = 0, sums = null;
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const now = () => new Date().toTimeString().slice(0, 5);
@@ -369,7 +369,7 @@
       const push = ev.event_kind === "push";
       $("n-llm-d").textContent = ev.model;
       light(push ? ["n-event"] : ["n-user"], {}); if (!push) $("l-user").classList.add("on");
-      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : ev.event === "follow" ? "LINE のイベント: 友だち追加" : "ユーザーのメッセージ",
+      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : "ユーザーのメッセージ",
                `入口のシナリオ <code>${esc(ev.entry)}</code> ・ LINE 側 AI <code>${esc(ev.model)}</code>`, 0);
       if (!push) light(["n-llm"], { thinking: true });
     } else if (ev.kind === "gate") {
@@ -430,8 +430,7 @@
   function send(text) {
     if (busy || !current || !text.trim()) return;
     me(text); input.value = "";
-    const ev = pendingEvent || "message"; pendingEvent = null;  // dip の配信への最初の返信だけ crm_reply
-    fire(ev, text);
+    fire("message", text);
   }
 
   // ---------- 左: シナリオと dip の状態 ----------
@@ -460,7 +459,6 @@
     try {
       const d = await dip(current), s = d.summary;
       const rows = [["状況", segBadge(s.segment)]];
-      if (s.suppression) rows.push(["配信の抑制", `${OUTCOME[s.suppression.outcome] || s.suppression.outcome}(${s.suppression.until} まで)`]);
       if (d.applications.length) rows.push(["応募", d.applications.map(a => `${a.job_id} ${a.status}`).join(" / ")]);
       if (d.saves.length) rows.push(["保存した求人", d.saves.map(x => x.job_id).join(", ")]);
       const prefs = Object.entries(s.stated_preferences || {});
@@ -481,22 +479,13 @@
     try { r = await post(`/api/scenarios/${encodeURIComponent(id)}/start`, {}); }
     catch (e) { sys(`シナリオを始められない: ${e.message}`); return; }
     finally { busy = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); }
-    scenario = sc; current = r.user; pendingEvent = null; $("voice").disabled = false;
+    scenario = sc; current = r.user; $("voice").disabled = false;
     document.querySelectorAll("#scenarios .act").forEach(b => b.classList.toggle("armed", b.dataset.id === id));
     log.innerHTML = ""; $("trace").innerHTML = '<div class="empty">会話を始めると、ここに処理が順に出ます。</div>';
     $("totals").innerHTML = ""; light([]);
     sys(`${sc.title}(${current} のトークルーム)`);
     refreshState();
-    if (r.broadcast) {
-      // 1通目は dip の配信(LINE の AI ではない)。ユーザーの次の入力を、配信への返信として送る
-      const b = r.broadcast;
-      sys("[dip の CRM 配信]");
-      const col = botCol(); col.appendChild(el("div", "bubble", b.message)); col.appendChild(el("span", "time", "配信"));
-      renderReply({ bubbles: [], cards: b.cards, buttons: [], quick_replies: b.quick_replies }, col);
-      pendingEvent = "crm_reply"; sendBtn.disabled = false;
-      return;
-    }
-    sys(sc.event === "follow" ? "[LINE のイベント] 友だち追加" : `[dip のイベント] ${PUSH_LABEL[sc.event]}`);
+    sys(EVENT_LABEL[sc.event] ? `[イベント] ${EVENT_LABEL[sc.event]}` : `[dip のイベント] ${PUSH_LABEL[sc.event]}`);
     fire(sc.event);
   }
 

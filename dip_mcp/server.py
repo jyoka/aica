@@ -37,7 +37,7 @@ Area = Annotated[str | None, Field(description=(
 
 @mcp.tool()
 def get_user_conversation_summary(line_user_id: UserId) -> dict:
-    """ユーザーの状況要約(直近の応募・フォーム離脱・閲覧傾向・直近の接触・配信抑制)を返す。会話の最初に呼ぶ。
+    """ユーザーの状況要約(直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望)を返す。会話の最初に呼ぶ。
     要約は仮説であり、生の行動ログは含まない。"""
     return logic.conversation_summary(state, line_user_id)
 
@@ -139,27 +139,26 @@ def save_user_preferences(
 def record_conversation_outcome(
     line_user_id: UserId,
     outcome: Annotated[str, Field(description=(
-        "propose / consult / support / wait / stop。wait / stop は配信を止める(ユーザーに見えない副作用)ので、"
-        "ユーザーが断ったとき(「今はいい」「やめた」「まだ考え中」「もう送らないで」など)だけ使う。"
+        "propose / consult / support / wait。wait は、ユーザーが断ったとき"
+        "(「今はいい」「やめた」「もう送らないで」など)だけ使う。"
         "選択肢を選んで話を続けている・聞きたいことがまだ言葉になっていない・終わりの挨拶のときは使わない"))],
-    reason: Annotated[str, Field(description="その結果になった理由(ユーザーの言葉を短く)。wait / stop のときは、ユーザーが断った言葉をそのまま")],
+    reason: Annotated[str, Field(description="その結果になった理由(ユーザーの言葉を短く)。wait のときは、ユーザーが断った言葉をそのまま")],
     confidence: Annotated[float, Field(description="確からしさ 0〜1")],
-    valid_days: Annotated[int, Field(description="この結果を有効とする日数(wait・stop は配信を抑制する日数)")],
 ) -> dict:
-    """会話の結果を記録する。wait / stop は配信抑制に反映される。ユーザーが断っていないのに wait / stop を記録してはいけない。"""
-    return logic.record_outcome(state, line_user_id, outcome, reason, confidence, valid_days)
+    """会話の結果を記録する。ユーザーが断っていないのに wait を記録してはいけない。"""
+    return logic.record_outcome(state, line_user_id, outcome, reason, confidence)
 
 
 @mcp.resource("baitoru://faq", mime_type="application/json")
 def faq() -> str:
-    """よくある質問(応募・面接・シフト・給与・配信停止など)。"""
+    """よくある質問(応募・面接・シフト・給与など)。"""
     return (FIXTURES / "faq.json").read_text(encoding="utf-8")
 
 
 @mcp.prompt()
 def baitoru_assistant(entry: str = "A") -> str:
-    """dip が提供する対話シナリオ。entry は入口(A: トーク / C: 配信への返信 / follow: 友だち追加 /
-    D: フォーム離脱・app_status: 選考状況の変化・saved_closing: 保存求人の掲載終了間近・new_match: 新着 のプッシュ)。"""
+    """dip が提供する対話シナリオ。entry は入口(A: トーク / visit: 初回訪問 / revisit: 再訪 /
+    D: フォーム離脱のプッシュ)。"""
     base = (PROMPTS / "baitoru_assistant.md").read_text(encoding="utf-8")
     entries = json.loads((PROMPTS / "entries.json").read_text(encoding="utf-8"))
     return f"{base}\n## この会話の入口\n{entries.get(entry, entries['A'])}\n"

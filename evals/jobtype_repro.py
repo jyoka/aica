@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 # F-follow-new#1 の手順1〜3。渋谷のカフェの求人は a003 と b0303 の2件
-CASE = {"user": "sim-new", "event": "follow", "text": None, "script": ["求人を探す", "飲食・カフェ", "渋谷"]}
+CASE = {"user": "sim-new", "event": "visit", "text": None, "script": ["求人を探す", "飲食・カフェ", "渋谷"]}
 EXPECT = {"a003", "b0303"}
 SEARCH_TOOLS = ("recommend_jobs", "relax_conditions")
 
