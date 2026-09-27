@@ -115,15 +115,17 @@ class State:
         with self._lock():
             self._write({"users": copy.deepcopy(load_users())})
 
-    def reset_user(self, line_user_id: str) -> None:
-        """1人だけ初期状態に戻す。fixtures に無いユーザーは消す(未連携の新規に戻る)。"""
+    def reset_user(self, line_user_id: str, template: str | None = None) -> None:
+        """1人だけ初期状態に戻す。fixtures に無いユーザーは消す(未連携の新規に戻る)。
+        template を与えると、そのシナリオ用ユーザーの初期状態を line_user_id に写す
+        (ブラウザごとの匿名ユーザーが、同じシナリオを他の人と混線せずに使えるように)。"""
         with self._lock():
             data = self._read()
-            u = load_users().get(line_user_id)
+            u = load_users().get(template or line_user_id)
             if u is None:
                 data["users"].pop(line_user_id, None)
             else:
-                data["users"][line_user_id] = copy.deepcopy(u)
+                data["users"][line_user_id] = copy.deepcopy(u) | {"line_user_id": line_user_id}
             self._write(data)
 
     def user(self, line_user_id: str) -> dict:

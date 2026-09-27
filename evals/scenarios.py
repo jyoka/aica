@@ -18,9 +18,11 @@ def load_scenarios() -> list[dict]:
     return json.loads(SCENARIOS.read_text(encoding="utf-8"))
 
 
-def prepare(state: State, sc: dict) -> None:
+def prepare(state: State, sc: dict, user: str | None = None) -> None:
     """そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まる)。
-    再訪のシナリオなら前に本人が話した希望を入れる。"""
-    state.reset_user(sc["user"])
+    再訪のシナリオなら前に本人が話した希望を入れる。
+    user を与えると、シナリオ用ユーザーの初期状態をそのIDに写して始める(ブラウザごとの匿名ユーザー用)。"""
+    user = user or sc["user"]
+    state.reset_user(user, template=sc["user"])
     if sc.get("seed_preferences"):
-        logic.save_preferences(state, sc["user"], sc["seed_preferences"])
+        logic.save_preferences(state, user, sc["seed_preferences"])

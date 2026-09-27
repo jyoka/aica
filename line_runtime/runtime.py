@@ -5,6 +5,7 @@
   その入口に合う dip のシナリオを使う。トークの続きはそのまま同じ会話。
 - こちらから話しかけるのは初回訪問・再訪の挨拶と dip からのプッシュだけ。プッシュしてよいかは dip が決め
   (dip_mcp.logic.push_trigger)、ここには許可されたものが根拠の事実つきで来る。LINE 側は判断しない。
+- LLM の呼び出しは費用台帳(data/costs.jsonl)に1回1行、誰の会話に使ったか(user_id)つきで記録する。
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
+from line_runtime.ledger import Ledger
 
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
     ("line_runtime.agent", "LineReply"), ("line_runtime.agent", "Button"),
@@ -67,9 +69,10 @@ def dip_connection() -> dict:
 
 
 class LineRuntime:
-    def __init__(self, model=None, in_memory: bool = False) -> None:
+    def __init__(self, model=None, in_memory: bool = False, ledger: Ledger | None = None) -> None:
         self._model = model
         self._in_memory = in_memory
+        self.ledger = ledger  # 費用台帳(LLM 呼び出し1回1行、user_id つき)。None なら __aenter__ で既定を作る
         self._stack = AsyncExitStack()
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._threads: dict[str, int] = {}  # ユーザーごとの現在の会話番号(初回参照時にチェックポイントから復元)
@@ -91,6 +94,8 @@ class LineRuntime:
         else:
             config.DATA_DIR.mkdir(parents=True, exist_ok=True)
             path = str(config.DATA_DIR / "line_checkpoints.db")
+        if self.ledger is None:
+            self.ledger = Ledger(None if self._in_memory else config.DATA_DIR / "costs.jsonl")
         saver = await self._stack.enter_async_context(AsyncSqliteSaver.from_conn_string(path))
         saver.serde = _SERDE
         self._saver = saver
@@ -175,7 +180,10 @@ class LineRuntime:
                                 calls = getattr(m, "tool_calls", None) or []
                                 for c in calls:
                                     args[c["id"]] = c["args"]
-                                queue.put_nowait({"kind": "llm", "ms": ms, **_usage(m),
+                                usage = _usage(m)
+                                model_name = (getattr(m, "response_metadata", None) or {}).get("model_name") or config.MODEL
+                                self.ledger.record(user_id, event, model_name, usage)
+                                queue.put_nowait({"kind": "llm", "ms": ms, **usage,
                                                   "tool_calls": [c["name"] for c in calls]})
                                 if calls:
                                     # ツールの実行はここから始まる(終わりは tools イベント)。

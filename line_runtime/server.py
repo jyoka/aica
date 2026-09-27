@@ -6,16 +6,22 @@
 
 LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip の State を直接使う。
 エージェントとの会話は LineRuntime(MCP 経由)だけを通る。
+
+マルチユーザー: 初回アクセスでブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する(認証・招待制はしない)。
+シナリオはブラウザ専用のユーザー「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても
+会話・長期メモリ・行動履歴・費用台帳が混線しない。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
+import secrets
 from contextlib import asynccontextmanager
 from html import escape
 
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -32,6 +38,33 @@ from line_runtime.runtime import EVENTS, LineRuntime
 
 STATIC = config.ROOT / "line_runtime" / "static"
 state = State()
+
+# ブラウザごとの匿名ユーザーID(Cookie)。ブラウザ側には ID しか置かず、状態はすべてサーバー側でこの ID にひも付く。
+ANON_COOKIE = "aica_uid"
+ANON_ID = re.compile(r"w-[0-9a-f]{16}")
+ANON_COOKIE_MAX_AGE = 400 * 24 * 3600  # ブラウザが Cookie を保持できる上限(約400日)いっぱい
+
+
+def _anon(request: Request) -> str | None:
+    v = request.cookies.get(ANON_COOKIE, "")
+    return v if ANON_ID.fullmatch(v) else None
+
+
+def _issue(request: Request, response: Response) -> str:
+    """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。"""
+    uid = _anon(request)
+    if uid is None:
+        uid = f"w-{secrets.token_hex(8)}"
+        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True)
+    return uid
+
+
+def _require_own(request: Request, user_id: str) -> None:
+    """Cookie を持つブラウザは、自分のユーザー(匿名IDそのもの、または「匿名ID:シナリオユーザー」)だけを扱える。
+    Cookie の無い呼び出し(テスト・評価・voice-resume のバックエンド)は従来どおり user_id を信頼する。"""
+    anon = _anon(request)
+    if anon and user_id != anon and not user_id.startswith(f"{anon}:"):
+        raise HTTPException(403, "このブラウザのユーザーIDではありません")
 
 
 class EventIn(BaseModel):
@@ -52,8 +85,17 @@ app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
 
 
 @app.get("/")
-async def index():
-    return FileResponse(STATIC / "talk.html")
+async def index(request: Request):
+    """トーク画面。初回アクセスならこのブラウザの匿名ユーザーIDを発行する(Cookie)。"""
+    resp = FileResponse(STATIC / "talk.html")
+    _issue(request, resp)
+    return resp
+
+
+@app.get("/api/me")
+async def me(request: Request, response: Response):
+    """このブラウザの匿名ユーザーID(無ければ発行)。"""
+    return {"user_id": _issue(request, response)}
 
 
 @app.get("/api/scenarios")
@@ -62,21 +104,26 @@ async def scenarios():
 
 
 @app.post("/api/scenarios/{scenario_id}/start")
-async def start_scenario(scenario_id: str):
+async def start_scenario(scenario_id: str, request: Request):
     """シナリオを最初から始める: そのユーザーの dip の状態を初期に戻す。続けて画面が /api/event/stream を呼び、
     AI 側の1通目(挨拶・プッシュ)が届く。新しい会話は、どのシナリオでも最初のイベント(visit・revisit・プッシュ)が
     始めるので、ここでは始めない(ここでも始めると会話番号が1つ飛び、再起動後に前の会話へ戻ってしまう)。
-    進行中のターンが終わってから初期化する(終わったターンの記録が、初期化した状態に書き込まれないように)。"""
+    進行中のターンが終わってから初期化する(終わったターンの記録が、初期化した状態に書き込まれないように)。
+    Cookie を持つブラウザには、そのブラウザ専用のユーザー「匿名ID:シナリオユーザー」を作って始める
+    (同じシナリオを2人が同時に使っても混線しない)。"""
     sc = next((s for s in load_scenarios() if s["id"] == scenario_id), None)
     if sc is None:
         raise HTTPException(404, f"シナリオ {scenario_id} はない")
-    async with app.state.rt.user_lock(sc["user"]):
-        prepare(state, sc)
-    return {"user": sc["user"], "event": sc["event"]}
+    anon = _anon(request)
+    user = f"{anon}:{sc['user']}" if anon else sc["user"]
+    async with app.state.rt.user_lock(user):
+        prepare(state, sc, user)
+    return {"user": user, "event": sc["event"]}
 
 
 @app.post("/api/event")
-async def event(body: EventIn):
+async def event(body: EventIn, request: Request):
+    _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
     facts = None
@@ -93,9 +140,10 @@ async def event(body: EventIn):
 
 
 @app.post("/api/event/stream")
-async def event_stream(body: EventIn):
+async def event_stream(body: EventIn, request: Request):
     """1ターンの途中経過を1行1件の JSON で順に返す(画面のリアルタイム表示用)。
     start → (プッシュなら gate)→ llm / tool_start / tools … → reply。途中で失敗したら error。"""
+    _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
 
@@ -124,8 +172,9 @@ def _line(obj: dict) -> str:
 
 
 @app.get("/api/dip/{user_id}")
-async def dip_view(user_id: str):
+async def dip_view(user_id: str, request: Request):
     """dip 側から見たユーザー状態(デバッグ用): 要約と記録された会話結果。"""
+    _require_own(request, user_id)
     u = state.user(user_id)
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": u.get("saves", []), "applications": u.get("applications", []),
@@ -143,26 +192,32 @@ class VoiceResultIn(BaseModel):
 
 
 @app.post("/api/voice/result")
-async def voice_result_in(body: VoiceResultIn):
-    """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。"""
+async def voice_result_in(body: VoiceResultIn, request: Request):
+    """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。
+    呼ぶのは voice-resume のバックエンド(Cookie なし)。Cookie を持つブラウザが他人のトークへ
+    結果を差し込めないよう、ここも所有チェックを通す。"""
+    _require_own(request, body.line_user_id)
     return logic.record_voice_result(state, body.line_user_id, body.jobs, body.draft_markdown, body.files)
 
 
 @app.post("/api/voice/{user_id}/pull")
-async def voice_pull(user_id: str):
+async def voice_pull(user_id: str, request: Request):
     """未受け取りの音声相談の結果を返し、受け取り済みにする(トークの画面が定期的に呼ぶ)。"""
+    _require_own(request, user_id)
     return {"results": logic.pull_voice_results(state, user_id)}
 
 
 @app.get("/liff/voice")
-async def liff_voice(user: str):
+async def liff_voice(user: str, request: Request):
     """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。"""
+    _require_own(request, user)
     return RedirectResponse(f"{config.VOICE_RESUME_URL}/?user={user}")
 
 
 @app.get("/liff/voice/draft", response_class=HTMLResponse)
-async def liff_voice_draft(user: str, rid: int):
+async def liff_voice_draft(user: str, rid: int, request: Request):
     """音声相談で作った履歴書の下書きを表示する(トークの結果メッセージのリンク先)。"""
+    _require_own(request, user)
     r = logic.voice_result(state, user, rid)
     if r is None or not r.get("draft_markdown"):
         return HTMLResponse(_page("履歴書の下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
@@ -175,7 +230,8 @@ async def liff_voice_draft(user: str, rid: int):
 # ----------------------------- LIFF(dip の応募フォーム画面のモック) -----------------------------
 
 @app.get("/liff/apply", response_class=HTMLResponse)
-async def liff_form(user: str, job: str):
+async def liff_form(user: str, job: str, request: Request):
+    _require_own(request, user)
     j = load_jobs().get(job)
     exit_ = logic.form_exit(state, user)
     if j is None or exit_ is None or exit_["job_id"] != job:
@@ -191,7 +247,8 @@ async def liff_form(user: str, job: str):
 
 
 @app.post("/liff/apply", response_class=HTMLResponse)
-async def liff_submit(user: str = Form(...), job: str = Form(...)):
+async def liff_submit(request: Request, user: str = Form(...), job: str = Form(...)):
+    _require_own(request, user)
     # 入力値は保存しない(シミュレーション)。応募の確定だけを dip の状態に反映する。
     logic.submit_application(state, user, job)
     return _page("応募完了", "<p>応募しました。店舗からの連絡をお待ちください。</p><p>このタブを閉じてトークに戻れます。</p>")
