@@ -68,10 +68,11 @@
   /* ---------- 中央: トークルーム ---------- */
   .phone { display: flex; flex-direction: column; background: var(--room); border-radius: 18px; overflow: hidden; min-height: 0; }
   header { background: var(--head); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
-  header .name { font-weight: 700; flex: 1; } header small { opacity: .7; }
-  #voice { border: 1px solid #ffffff55; background: #ffffff14; color: #fff; border-radius: 8px;
+  header .name { font-weight: 700; flex: none; white-space: nowrap; }
+  header small { opacity: .7; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #voice, #resume { border: 1px solid #ffffff55; background: #ffffff14; color: #fff; border-radius: 8px;
            padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-  #voice:hover { background: #ffffff2b; } #voice:disabled { opacity: .45; cursor: default; }
+  #voice:hover, #resume:hover { background: #ffffff2b; } #voice:disabled, #resume:disabled { opacity: .45; cursor: default; }
   #log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
   #log > * { flex-shrink: 0; }  /* 一覧があふれても中身を縮めない(縮むと求人カードが途中で切れていた) */
   .sys { align-self: center; font-size: 11px; color: #fff; background: #0003; border-radius: 10px; padding: 3px 10px; margin: 4px 0; text-align: center; max-width: 92%; }
@@ -190,6 +191,8 @@
   <!-- 中央: LINE のトークルーム -->
   <div class="phone">
     <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small>
+      <button type="button" id="resume" title="履歴書(PDF / JPEG / PNG)を読み取って、相談に使う">📄 履歴書</button>
+      <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>
       <button type="button" id="voice" title="音声アドバイザーと話す(LIFF のように別タブで開く)">🎤 音声で相談</button></header>
     <div id="log"></div>
     <form id="f"><input id="t" autocomplete="off" placeholder="メッセージを入力"><button id="send">送信</button></form>
@@ -463,6 +466,7 @@
       if (d.saves.length) rows.push(["保存した求人", d.saves.map(x => x.job_id).join(", ")]);
       const prefs = Object.entries(s.stated_preferences || {});
       rows.push(["本人の希望", prefs.length ? prefs.map(([k, v]) => `${PREF[k] || k}: ${v.value}`).join(" / ") : "まだない"]);
+      if (s.uploaded_resume) rows.push(["履歴書", `読み取り済み(${s.uploaded_resume.uploaded})`]);
       if (s.last_contact) rows.push(["直近の接触", `${s.last_contact.when} ${s.last_contact.channel}`]);
       rows.push(["会話の結果", d.outcomes.length ? d.outcomes.slice(-3).map(o => `${OUTCOME[o.outcome] || o.outcome}(${o.reason})`).join(" / ") : "まだない"]);
       const dl = el("dl");
@@ -479,7 +483,7 @@
     try { r = await post(`/api/scenarios/${encodeURIComponent(id)}/start`, {}); }
     catch (e) { sys(`シナリオを始められない: ${e.message}`); return; }
     finally { busy = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); }
-    scenario = sc; current = r.user; $("voice").disabled = false;
+    scenario = sc; current = r.user; $("voice").disabled = false; $("resume").disabled = false;
     document.querySelectorAll("#scenarios .act").forEach(b => b.classList.toggle("armed", b.dataset.id === id));
     log.innerHTML = ""; $("trace").innerHTML = '<div class="empty">会話を始めると、ここに処理が順に出ます。</div>';
     $("totals").innerHTML = ""; light([]);
@@ -519,6 +523,50 @@
   }
   setInterval(pollVoice, 4000);
 
+  // ---------- 履歴書のアップロード(resume-intake) ----------
+  // ファイルを選ぶ → /api/resume/{user}/upload で読み取り(dip の状態に保存)→ 結果の確認をトークに出す。
+  // 「この内容で相談する」を押すと、同じユーザーの会話が読み取り結果(summary の uploaded_resume)を参照して続く。
+  // 氏名・連絡先は保存されないので、トークにも出さない(ファイル名も出さない。氏名が入りがちなため)。
+  $("resume").onclick = () => { if (current && !busy) $("resume-file").click(); };
+  $("resume-file").onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f || !current || busy) return;
+    busy = true; sendBtn.disabled = true; disableChips(); $("resume").disabled = true;
+    document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
+    sys("[履歴書] アップロードしたファイルを読み取っています…");
+    const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const res = await fetch(`/api/resume/${encodeURIComponent(current)}/upload`, { method: "POST", body: fd });
+      if (!res.ok) { let m = res.status + ""; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
+      renderResume(await res.json(), col);
+    } catch (err) {
+      typing.remove(); col.appendChild(el("div", "bubble", "履歴書を読み取れませんでした: " + err.message));
+    } finally {
+      busy = false; sendBtn.disabled = false; $("resume").disabled = false;
+      document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); refreshState();
+    }
+  };
+  function renderResume(d, col) {
+    const r = d.result.resume;
+    const lines = [];
+    if (r.work_history.length) lines.push("職歴: " + r.work_history.map(w => [w.organization, w.employment_type].filter(Boolean).join("・")).join(" / "));
+    if (r.education.length) lines.push("学歴: " + r.education.map(x => x.school).join(" / "));
+    if (r.skills.length) lines.push("スキル: " + r.skills.join("、"));
+    if (r.certifications.length) lines.push("資格: " + r.certifications.map(c => c.name).join("、"));
+    const bubbles = d.empty
+      ? ["履歴書から読み取れた項目がありませんでした。ファイルが履歴書か、写りを確認してもう一度お試しください。", ...r.unconfirmed.slice(0, 1)]
+      : ["履歴書を読み取りました。内容をご確認ください。", ...(lines.length ? [lines.join("\n")] : []),
+         ...(r.unconfirmed.length ? [`読み取れなかった点が${r.unconfirmed.length}件あります。`] : [])];
+    renderReply({ bubbles: bubbles.slice(0, 3), cards: [], quick_replies: [],
+                  buttons: d.empty ? [] : [{ label: "読み取り結果を見る", url: d.view_url }] }, col);
+    if (!d.empty) {
+      const box = el("div", "chips"), b = el("button", null, "この内容で相談する"); b.type = "button";
+      b.onclick = () => send("履歴書をアップロードしました。この内容をふまえて相談させてください。");
+      box.appendChild(b); log.appendChild(box); scroll();
+    }
+  }
+
   // ---------- 画面の幅に合わせたタブ ----------
   const narrow = () => matchMedia("(max-width: 759px)").matches;
   function setTab(t) {
@@ -538,6 +586,7 @@
   (async () => {
     sendBtn.disabled = true;  // シナリオを選ぶまでは送れない(会話の相手が決まっていない)
     $("voice").disabled = true;  // 音声相談も、相手(ユーザー)が決まってから
+    $("resume").disabled = true;  // 履歴書のアップロードも同じ
     scenarios = await (await fetch("/api/scenarios")).json();
     renderScenarios();
     sys("シナリオを選ぶと、AI 側の1通目から会話が始まります");
