@@ -1,6 +1,8 @@
-"""シミュレーター(Web): LINE 風トークルーム + シナリオ起動 + LIFF 画面(dip 側のモック)。
+"""Web: 本番のトーク画面(/)+ 開発者画面(/dev: シナリオ起動・dip の状態・処理の流れ)+ LIFF 画面(dip 側のモック)。
 
-シナリオは評価と同じ一覧(evals/scenarios.json)。どれも AI 側の1通目から始まる。
+本番の / は求職者が使うトーク1画面。シナリオを選ばせず、開いたブラウザの匿名ユーザー(匿名ID そのもの)について
+dip が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から始まる。
+/dev のシナリオは評価と同じ一覧(evals/scenarios.json)。どれも AI 側の1通目から始まる。
 
     ./.venv/bin/python -m line_runtime.server   # http://127.0.0.1:8030
 
@@ -8,7 +10,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 エージェントとの会話は LineRuntime(MCP 経由)だけを通る。
 
 マルチユーザー: 初回アクセスでブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する(認証・招待制はしない)。
-シナリオはブラウザ専用のユーザー「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても
+本番の / は匿名ID そのものをユーザーIDにする。/dev のシナリオはブラウザ専用のユーザー「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても
 会話・長期メモリ・行動履歴・費用台帳が混線しない。
 
 会話数の上限(line_runtime.quota): 1人1日あたりのターン数に上限があり、超えたら LLM を呼ばずに丁寧に打ち切る。
@@ -97,8 +99,16 @@ app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
 
 @app.get("/")
 async def index(request: Request):
-    """トーク画面。初回アクセスならこのブラウザの匿名ユーザーIDを発行する(Cookie)。"""
+    """本番のトーク画面(求職者が使う1画面)。初回アクセスならこのブラウザの匿名ユーザーIDを発行する(Cookie)。"""
     resp = FileResponse(STATIC / "talk.html")
+    _issue(request, resp)
+    return resp
+
+
+@app.get("/dev")
+async def dev(request: Request):
+    """開発者画面(評価・説明用): シナリオの起動・dip から見た状態・構成図と処理の流れ。"""
+    resp = FileResponse(STATIC / "dev.html")
     _issue(request, resp)
     return resp
 
@@ -107,6 +117,24 @@ async def index(request: Request):
 async def me(request: Request, response: Response):
     """このブラウザの匿名ユーザーID(無ければ発行)。"""
     return {"user_id": _issue(request, response)}
+
+
+@app.post("/api/talk/open")
+async def talk_open(request: Request, response: Response):
+    """本番のトーク画面を開いた: ユーザーは匿名ID そのもの(シナリオ用ユーザーは使わない)。
+    dip がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで /api/event/stream を呼び、
+    AI 側の1通目(挨拶)が届く。状態を初期に戻すことはしない。"""
+    uid = _issue(request, response)
+    async with app.state.rt.user_lock(uid):  # 進行中のターンと記録が交差しないように
+        event = logic.open_talk(state, uid)
+    return {"user": uid, "event": event}
+
+
+@app.get("/api/saved/{user_id}")
+async def saved(user_id: str, request: Request):
+    """そのユーザーが保存した求人(本番のトーク画面の「保存した求人」)。"""
+    _require_own(request, user_id)
+    return {"jobs": logic.saved_jobs(state, user_id)}
 
 
 @app.get("/api/scenarios")
