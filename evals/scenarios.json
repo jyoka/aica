@@ -41,8 +41,8 @@
  },
  {
   "id": "R-revisit",
-  "title": "再訪(前回の希望あり)",
-  "desc": "前に話した希望が残っている人。トークを開き直して再開",
+  "title": "再訪(希望あり)",
+  "desc": "前に話した希望が残っている人がトークを開き直す。希望を確認形で聞き、差分だけ受け取って提案",
   "user": "sim-new",
   "event": "revisit",
   "seed_preferences": {
@@ -56,6 +56,19 @@
    "wait"
   ],
   "expect_uses_preferences": true
+ },
+ {
+  "id": "R-revisit-browsing",
+  "title": "再訪(行動履歴のみ)",
+  "desc": "話した希望は無く、閲覧・保存だけある人がトークを開き直す。最近の閲覧に1回だけ触れる",
+  "user": "sim-browsing",
+  "event": "revisit",
+  "persona": "最近バイトルでカフェやアパレルの求人を見ていた。このトークで希望を話したことはない。最近見ていた仕事について聞かれたら、そうだと答え、渋谷で日中のカフェを探したいと伝える。求人を見せられたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "propose",
+   "wait"
+  ],
+  "expect_recent_activity": true
  },
  {
   "id": "Q-job-question",

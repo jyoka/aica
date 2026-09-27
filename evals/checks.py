@@ -22,6 +22,23 @@ QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 PII_VALUE = re.compile(r"0\d{1,4}-?\d{1,4}-?\d{3,4}|@")
+# 再訪の挨拶で行動履歴に触れる言い方(「最近はカフェのお仕事を見ていましたか?」「ご覧になりましたか?」「見てましたか?」
+# 「チェックされていましたか?」)。会話を通して1回だけ。本人がしたことを指す過去・進行の形だけを数える。
+# 依頼や案内(「見ていただけますか」「見ていきましょう」「ご覧になれます」「ご覧になってください」)や、ボットが希望を
+# 保存したという報告(「希望を保存しています」「前回の希望を保存していましたので」)は行動履歴への言及ではない
+RECENT_ACTIVITY = re.compile(
+    r"(?<!希望を)(?<!条件を)(?<!希望は)(?<!条件は)"
+    r"(?:見て|ご覧になって|閲覧して|チェックして|保存して|(?:閲覧|チェック|保存)されて)い(?:た(?!だ|ら)|まし|らっしゃ)"
+    r"|見て(?:た(?!ら)|まし)|ご覧にな(?:りまし(?!たら)|った(?!ら|上|うえ))|閲覧(?:履歴|した)"
+)
+# 1通目(再訪の挨拶)でだけ行動履歴への言及に数える言い方。現在形(「見ていますか?」)と「探していましたか?」は、
+# 2通目以降では画面の求人(「今ご覧になっている求人」)や今回の希望(「渋谷で探していましたね」)を指すことが多い
+RECENT_ACTIVITY_T1 = re.compile(
+    RECENT_ACTIVITY.pattern
+    + r"|(?:見て|ご覧になって|閲覧して|(?:閲覧|チェック)されて)い(?:ます|る)"
+    + r"|探して(?:い(?:た|まし|らっしゃ)|た|まし)|探され(?:てい)?(?:た|まし)|お探し(?:でし|だっ)"
+    + r"|気になってい(?:た|まし)|見てくださってい(?:た|まし)"
+)
 # 相談モードの入口: 選択肢「まず相談する」か、探し方そのものに迷っているサイン
 CONSULT_SIGN = re.compile(r"相談|何から始め|何をすれば|探し方が分から|(合う|向いてる|向いている)(の|仕事|バイト)?が?分から")
 # 「求人を見せて」: 相談の途中でも、このターンで提案に切り替える
@@ -30,12 +47,12 @@ SHOW_JOBS = re.compile(r"求人を?(見せて|見たい|出して|見る)")
 
 # 本人が相談を切り上げた・会話を終えた発言(これより前に相談を締めるのは打ち切り)
 CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度|ありがとう|今日はこれで|考えます")
-# 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない)
+# 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
     "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
-    "area": re.compile(r"(どの|どこの)(エリア|あたり|駅)|エリアは|どこで働"),
-    "time_band": re.compile(r"時間帯(は|が)|何時(から|ごろ|頃)"),
-    "job_type": re.compile(r"(どんな|どの)(仕事|職種)|職種は"),
+    "area": re.compile(r"(どの|どこの?)(エリア|駅|辺り?|あたり|地域)|どこで働|エリアは|勤務地"),
+    "time_band": re.compile(r"(どの|何の)時間帯|時間帯(は|が)|何時(から|ごろ|頃|まで)"),
+    "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
     "days_per_week": re.compile(r"週(に)?(何|いく)日"),
     "min_wage": re.compile(r"時給(は|の)?(いくら|どのくらい|下限)"),
 }
@@ -130,6 +147,12 @@ def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool 
         texts.append(value)
 
 
+def _job_names() -> set[str]:
+    """求人一覧にある求人名・店名(短すぎて誤検出するものは除く)。"""
+    return {n for j in load_jobs().values() for n in (j.title, j.employer, j.title.split("｜")[0].strip())
+            if len(n) >= 6}
+
+
 def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None) -> list[str]:
     """返信に出てくる金額・徒歩分数・件数・日付・求人名が、この会話で dip から来た情報(ツールの結果・プッシュの
     根拠の事実)かユーザーの発言にあるかを照合する。無ければ作り話として違反。
@@ -154,8 +177,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     _walk(data, set(), set(), texts)
     source = "\n".join(texts) + json.dumps(data, ensure_ascii=False) + said
     known_dates = _dates(source)
-    names = {n for j in load_jobs().values() for n in (j.title, j.employer, j.title.split("｜")[0].strip())
-             if len(n) >= 6}
+    names = _job_names()
     out = []
     for i, r in enumerate(turns):
         text = "\n".join(r["bubbles"])
@@ -201,22 +223,63 @@ def _question_part(b: str) -> str:
     return "".join(s for s in re.split(r"(?<=[。!!\n])", b) if "?" in s or "？" in s)
 
 
-def reask_violations(turns: list[dict]) -> list[str]:
-    """この会話で保存した項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。"""
-    saved: dict[str, int] = {}
+# 本人の発言から取る「今回の値」の候補から外す、項目名そのものの語
+_KEY_WORDS = {"エリア", "時間帯", "時間", "職種", "勤務地", "仕事", "求人", "希望", "条件"}
+# 疑問詞。これを含む問い(「どのエリアで探しますか?」)は白紙の問いで、値を示して確かめる形ではない。
+# 「どう」は値を示して尋ねる形(「渋谷と原宿でどうですか?」)にしか付かないので含めない。「何か」「いつも」「どちらも」も疑問詞ではない
+WH_WORD = re.compile(r"どの|どこ|どんな|何(?!か)|いつ(?!も)|どれ|どちら(?!も)")
+
+
+def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded: dict | None = None) -> list[str]:
+    """保存済みの項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。
+    seeded は会話の前から保存されている希望(再訪): 1通目で確認した後は、差分だけを受け取る。
+    疑問詞の無い確認の問いで、項目を指す語の後ろに既知の値(保存した値か、そのターンの本人の発言にある語)があれば、
+    聞き直しではない。値が前にあるだけ(「接客のお仕事で、勤務地の希望はありますか?」)は、前の答えを添えた次の問い
+    (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
+    (同じ値の保存し直しは数えない)。"""
+    saved = {k: 0 for k in seeded or {}}
+    known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
     for i, r in enumerate(turns):
+        said = {w for w in re.findall(r"[一-龥ァ-ヴー]{2,}", (user_msgs[i] if i < len(user_msgs) else None) or "")
+                if w not in _KEY_WORDS}
+        for t in r["tools"]:
+            if t["name"] == "save_user_preferences":
+                for k, v in (t["args"].get("preferences") or {}).items():
+                    if str(v) in known.get(k, []):
+                        saved.setdefault(k, i)
+                    else:
+                        saved[k] = i
+                        known.setdefault(k, []).append(str(v))
         for b in r["bubbles"]:
             if not _questions([b]):
                 continue
             q = _question_part(b)
             for k, at in saved.items():
-                if at < i and k in REASK and REASK[k].search(q):
+                m = REASK[k].search(q) if at < i and k in REASK else None
+                if m and not (not WH_WORD.search(q) and any(w in q[m.start():] for w in [*known.get(k, []), *said])):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
-        for t in r["tools"]:
-            if t["name"] == "save_user_preferences":
-                for k in t["args"].get("preferences") or {}:
-                    saved.setdefault(k, i)
+    return out
+
+
+def recent_activity_violations(turns: list[dict]) -> list[str]:
+    """再訪(行動履歴のみ): 1通目で最近の行動に触れる。触れるのは会話を通して1回だけで、求人を羅列しない
+    (1通目に求人カード・求人名・件数を出さず、職種も1つだけ)。"""
+    if not turns:
+        return []
+    first = "\n".join(turns[0]["bubbles"])
+    out = []
+    if not RECENT_ACTIVITY_T1.search(first):
+        out.append("T1: 再訪の挨拶で最近の行動に触れていない")
+    # 1通目は1つの挨拶なので、言及と追いかけの問い(「見ていましたね。今も探していらっしゃいますか?」)で1回と数える
+    mentions = int(bool(RECENT_ACTIVITY_T1.search(first))) + sum(
+        len(RECENT_ACTIVITY.findall(b)) for r in turns[1:] for b in r["bubbles"])
+    if mentions > 1:
+        out.append(f"最近の行動に{mentions}回触れた(1回だけ)")
+    job_types = {j.job_type for j in load_jobs().values()}
+    listed = [n for n in sorted(_job_names()) if n in first] + re.findall(r"\d+\s*件", first)
+    if turns[0]["cards"] or listed or sum(t in first for t in job_types) > 1:
+        out.append(f"T1: 閲覧した求人を羅列した: {listed or [c['job_id'] for c in turns[0]['cards']] or first}")
     return out
 
 
@@ -274,11 +337,14 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
             violations.append(f"T1: 前に本人が話した希望({'・'.join(seeds)})に触れず、聞き直している")
+    if sc.get("expect_recent_activity"):
+        violations += recent_activity_violations(turns)
     if sc.get("pii_test"):
         pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:
             violations.append(f"T{pii_turn + 1}: 個人情報を書かれた後に入力画面を案内していない")
-    violations += reask_violations(turns)
+    violations += reask_violations(turns, user_msgs,
+                                   sc.get("seed_preferences") if sc.get("expect_uses_preferences") else None)
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
