@@ -1,0 +1,10 @@
+# langchain-mcp-adapters 0.3 は mcp 2.x の API 変更(FastMCP → MCPServer 等)に未対応のため 1.x に留める。
+mcp>=1.24,<2
+langchain-mcp-adapters>=0.3,<0.4
+langchain>=1.4,<2
+langchain-anthropic>=1.7,<2
+langchain-openai>=1.6,<2
+langgraph-checkpoint-sqlite>=3.1
+fastapi>=0.115
+uvicorn>=0.30
+pytest>=8.3

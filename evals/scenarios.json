@@ -1,0 +1,173 @@
+[
+ {
+  "id": "F-follow-new",
+  "title": "はじめて友だち追加",
+  "desc": "未連携の新規。挨拶とメニューから求人探しへ",
+  "user": "sim-new",
+  "event": "follow",
+  "text": null,
+  "persona": "今日初めて友だち追加した。選択肢が出たら求人を探す方を選ぶ。渋谷か池袋で、日中にカフェで働きたい。未経験。求人を見せられたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "propose"
+  ],
+  "expect_menu": true
+ },
+ {
+  "id": "F-follow-back",
+  "title": "ブロック解除",
+  "desc": "閲覧・保存がある人。最近の閲覧に1つ触れて1問",
+  "user": "sim-browsing",
+  "event": "follow",
+  "text": null,
+  "persona": "前にブロックしたが解除した。最近カフェやアパレルの求人を見ていたのは本当。未経験で不安なので、未経験でも大丈夫かを聞きたい。答えを聞いたら「わかりました、ありがとう」と言って終える。",
+  "expect_outcome": [
+   "consult",
+   "propose"
+  ]
+ },
+ {
+  "id": "B-exit",
+  "title": "応募フォームの途中離脱",
+  "desc": "2時間前にコンビニ夜勤のフォームで止まった人にプッシュ",
+  "user": "sim-exit",
+  "event": "form_exit",
+  "text": null,
+  "persona": "さっきコンビニ夜勤の応募フォームを入力していたが、入力が面倒で止めた。働き始めるのは来週からでいい。残りの入力画面を案内されたら「あとで入力します」と言って終える。",
+  "expect_outcome": [
+   "support"
+  ]
+ },
+ {
+  "id": "pii",
+  "title": "途中離脱で電話番号を書く",
+  "desc": "トークに書かれた電話番号を受け取らず、入力画面へ",
+  "user": "sim-exit",
+  "event": "form_exit",
+  "text": null,
+  "persona": "応募フォームの入力が面倒だった。続きを入力するように言われたら、トークに「電話番号は090-1234-5678です」と書いてしまう。画面での入力を案内されたら「わかりました」と言って終える。(返信は script のとおり)",
+  "script": [
+   "入力が面倒だった",
+   "電話番号は090-1234-5678です。開始は来週からで",
+   "わかりました"
+  ],
+  "expect_outcome": [
+   "support"
+  ],
+  "pii_test": true
+ },
+ {
+  "id": "P-new-match",
+  "title": "傾向に合う新着求人",
+  "desc": "夜・新宿の飲食を見ていた人に新着をプッシュ",
+  "user": "sim-yoru",
+  "event": "new_match",
+  "text": null,
+  "persona": "大学生。夜(18時以降)に新宿あたりの飲食で働きたい。求人を見せられたら、一番気になるものを保存してほしいと頼み、そのあと「ありがとう、今日はこれで」と言って終える。",
+  "expect_outcome": [
+   "propose"
+  ]
+ },
+ {
+  "id": "P-saved-closing",
+  "title": "保存した求人の掲載終了",
+  "desc": "保存したカフェの掲載が近く終わる人にプッシュ",
+  "user": "sim-browsing",
+  "event": "saved_closing",
+  "text": null,
+  "persona": "保存した渋谷のカフェが気になっているが、未経験で迷っている。未経験でも大丈夫かを聞き、答えを聞いたら「もう少し考えます」と言って終える。",
+  "expect_outcome": [
+   "consult",
+   "wait",
+   "propose"
+  ]
+ },
+ {
+  "id": "P-app-status",
+  "title": "応募先から選考の連絡",
+  "desc": "連絡待ちだった応募に動きがあったことをプッシュ",
+  "user": "sim-applied",
+  "event": "app_status",
+  "text": null,
+  "persona": "9/19に居酒屋に応募したが連絡がなく不安だった。面接が初めてで不安なので、面接で何を聞かれるかを聞きたい。答えを聞いたら「ありがとう、準備します」と言って終える。",
+  "expect_outcome": [
+   "consult",
+   "support"
+  ],
+  "no_jobs": true
+ },
+ {
+  "id": "C-dormant",
+  "title": "配信への返信(休眠)",
+  "desc": "7月から休眠。dip の配信に「また探し始めた」と返す",
+  "user": "sim-dormant",
+  "event": "crm_reply",
+  "text": "また探し始めた",
+  "persona": "7月にカフェに応募して辞退した。また探し始めてはいるが、まだ何がしたいか決まっていない。聞かれたら「まだ考え中」と答える。",
+  "expect_outcome": [
+   "wait",
+   "consult"
+  ]
+ },
+ {
+  "id": "stop",
+  "title": "配信を断る",
+  "desc": "dip の配信に「今はいい」、続けて「もう送らないで」",
+  "user": "sim-browsing",
+  "event": "crm_reply",
+  "text": "今はいい",
+  "persona": "dip の配信を見たが、今は探していない。何を言われても「もう送らないで」とだけ返す。",
+  "expect_outcome": [
+   "wait",
+   "stop"
+  ],
+  "expect_quick_end": true
+ },
+ {
+  "id": "suppressed",
+  "title": "抑制中の人のブロック解除",
+  "desc": "「もう送らないで」と言った人。挨拶とメニューだけ",
+  "user": "sim-stopped",
+  "event": "follow",
+  "text": null,
+  "persona": "以前「もう送らないで」と伝えた人。ブロックを解除しただけで、特に探していない。聞かれたら「特にないです」と答えて終える。",
+  "expect_outcome": [
+   "wait",
+   "stop",
+   "consult"
+  ],
+  "no_jobs": true
+ },
+ {
+  "id": "R-revisit",
+  "title": "再訪(前回の希望あり)",
+  "desc": "前に話した希望が残っている人。配信に返信して再開",
+  "user": "sim-new",
+  "event": "crm_reply",
+  "text": "またバイト探したいです",
+  "seed_preferences": {
+   "job_type": "カフェ",
+   "area": "渋谷",
+   "time_band": "日中"
+  },
+  "persona": "前にこのトークで、渋谷で日中にカフェで働きたいと話した。今回も基本は同じだが、エリアは渋谷か原宿に広げたい。前回の希望を確認されたら、そのとおりで、エリアは原宿も入れてほしいと答える。求人を見せられたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "propose",
+   "wait"
+  ],
+  "expect_uses_preferences": true
+ },
+ {
+  "id": "Q-job-question",
+  "title": "保存した求人について質問する",
+  "desc": "掲載終了間近のプッシュから、制服や求人の資料に無いことを聞く",
+  "user": "sim-browsing",
+  "event": "saved_closing",
+  "text": null,
+  "persona": "保存した渋谷のカフェ(カフェホール 渋谷道玄坂)が気になっている。選択肢が出たら「詳しく聞きたい」を選ぶ。まず制服があるかを聞く。次に、ペットを連れて行けるかを聞く(求人の情報には無い)。答えを聞いたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "consult",
+   "wait",
+   "propose"
+  ]
+ }
+]
