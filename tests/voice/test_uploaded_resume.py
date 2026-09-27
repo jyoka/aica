@@ -128,8 +128,8 @@ def test_long_resume_keeps_whole_lines_and_the_important_facts(monkeypatch):
     }
     note = uploaded_resume_note(resume)
     facts = _facts(note)
-    assert sum(len(f) + 1 for f in facts) <= RESUME_NOTE_MAX_CHARS + 20  # 上限(+ 省略の1行)に収まる
-    assert facts[-1].startswith("- ほか ") and facts[-1].endswith("件は省略")
+    assert sum(len(f) + 1 for f in facts[:-1]) <= RESUME_NOTE_MAX_CHARS  # 上限に収まる(省略の1行は別)
+    assert facts[-1].startswith("- 長いので省略した項目: ")
 
     # 行の途中で切れていない: 残った行はどれも、上限なしで作った行のどれかとそのまま一致する
     monkeypatch.setattr(prompts, "RESUME_NOTE_MAX_CHARS", 100_000)
@@ -168,5 +168,28 @@ def test_education_only_resume_is_still_used():
     advisor, greeting = asyncio.run(prepare_advisor(Dip(), U1))
     assert "学歴: みほん高等学校(在学中" in advisor.instructions
     assert "みほん中学校" not in advisor.instructions  # 1行だけ(在学中か最終学歴)
+    assert "在学中なので、授業のある時間帯は働けない前提" in advisor.instructions
     assert "履歴書" in greeting and "確認形で1回" in greeting and "みほん高等学校に在学中" in greeting
     assert "職種" in greeting and "近い仕事で探すか" not in greeting  # 職歴が無いので職種から聞く
+
+
+def test_long_skills_or_summary_do_not_push_out_the_recent_job():
+    """スキル欄が450字以上(26項目)でも、職務要約がとても長くても、直近の職歴と読み取れなかった点は残る。"""
+    skills = [f"スキル項目その{i:02d}の説明が少し長め" for i in range(26)]
+    assert len("、".join(skills)) >= 450
+    resume = {
+        "uploaded": "9/23", "skills": skills, "unconfirmed": ["前職の退職時期"],
+        "job_summary": "長い職務要約。" * 100,
+        "work_history": [{"organization": "古い店", "period": "2018年4月〜2019年3月"},
+                         {"organization": "直近の店", "period": "2023年5月〜現在", "duties": ["レジ", "品出し"]}],
+        "preferences": {"desired_work": ["カフェ"]},
+    }
+    note = uploaded_resume_note(resume)
+    facts = "\n".join(_facts(note))
+    assert "直近の店" in facts and "読み取れなかった点: 前職の退職時期" in facts
+    assert "スキル項目その04" in facts and "スキル項目その05" not in facts and "(ほか 21 件)" in facts
+    # 入らない長い行だけを飛ばし、後ろの短い行(希望)は残す。飛ばした項目は名前で書く
+    assert "長い職務要約" not in facts and "履歴書に書いてある希望: カフェ" in facts
+    assert "長いので省略した項目: 職務要約" in facts
+    # 在学中の学歴が無いので、時間帯の1行は足さない
+    assert "在学中なので" not in note

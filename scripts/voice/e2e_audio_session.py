@@ -115,9 +115,11 @@ async def _run_conversation(user: str | None = None) -> None:
     await dip.start()
     # トークから入った相談として通すとき: ワーカー(voice_resume.agent)と同じ準備で、会話の前に
     # dip の要約から前回の希望と、トークでアップロードした履歴書を読み、確認形で使わせる
-    advisor, _ = await prepare_advisor(dip, user)
     if user:
-        print(f"ユーザー: {user}")
+        summary = await dip.get_user_conversation_summary(user)
+        print(f"ユーザー: {user} / 前回の希望: {summary.get('stated_preferences') or 'なし'}"
+              f" / 履歴書: {'あり' if summary.get('uploaded_resume') else 'なし'}")
+    advisor, _ = await prepare_advisor(dip, user)
 
     session = AgentSession(
         llm=lk_openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT)

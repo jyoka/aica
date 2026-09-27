@@ -171,10 +171,11 @@ def stated_preferences_note(stated: dict | None) -> str:
     )
 
 
-# 指示に入れる履歴書の要点の上限(文字数)。音声の指示が長くなりすぎないよう、1行ずつ足して超える行は入れない
+# 指示に入れる履歴書の要点の上限(文字数)。音声の指示が長くなりすぎないよう、収まらない行は入れない
 RESUME_NOTE_MAX_CHARS = 600
 RESUME_MAX_WORKS = 3  # 職歴は新しい順にこの件数まで
 RESUME_MAX_DUTIES = 3  # 職歴1件あたりの、やっていたこと・任されたことの件数
+RESUME_MAX_SKILLS = 5  # できることの件数(残りは「ほか N 件」)
 
 
 def _join(items, sep="・") -> str:
@@ -202,32 +203,30 @@ def _latest_education(resume: dict) -> dict | None:
     return (_newest_first(current) or _newest_first(schools) or [None])[0]
 
 
-def _resume_facts(resume: dict) -> list[str]:
-    """dip の要約の uploaded_resume から、面談に使う要点を大事な順に1行ずつ拾う。
+def _resume_facts(resume: dict) -> list[tuple[str, str]]:
+    """dip の要約の uploaded_resume から、面談に使う要点を大事な順に (項目名, 行) で拾う。
 
     決まった項目だけを読む(personal や未知の項目は読まない = 氏名・連絡先は指示に入らない)。
-    短くて大事な項目(資格・できること・読み取れなかった点・学歴・職務要約・希望)を先に、
-    職歴は新しい順に RESUME_MAX_WORKS 件まで。学歴は在学中か最終学歴の1行だけ。自己PR は入れない。
+    短くて大事な項目(資格・読み取れなかった点・できること・学歴)を先に、次に職歴(新しい順に
+    RESUME_MAX_WORKS 件まで)、そのあと職務要約・希望。できることは先頭 RESUME_MAX_SKILLS 件まで。
+    学歴は在学中か最終学歴の1行だけ。自己PR は入れない。
     """
     lines = []
     if resume.get("certifications"):
         certs = [c.get("name", "") + (f"({c['acquired']})" if c.get("acquired") else "")
                  for c in resume["certifications"]]
-        lines.append(f"- 資格・免許: {_join(certs, '、')}")
-    if resume.get("skills"):
-        lines.append(f"- できること: {_join(resume['skills'], '、')}")
+        lines.append(("資格・免許", f"- 資格・免許: {_join(certs, '、')}"))
     if resume.get("unconfirmed"):
-        lines.append(f"- 読み取れなかった点: {_join(resume['unconfirmed'], '、')}")
+        lines.append(("読み取れなかった点", f"- 読み取れなかった点: {_join(resume['unconfirmed'], '、')}"))
+    skills = [x for x in resume.get("skills") or [] if x]
+    if skills:
+        rest = len(skills) - RESUME_MAX_SKILLS
+        lines.append(("できること", f"- できること: {_join(skills[:RESUME_MAX_SKILLS], '、')}"
+                      + (f"(ほか {rest} 件)" if rest > 0 else "")))
     edu = _latest_education(resume)
     if edu:
         head = _join([edu.get("status"), edu.get("period")], "、")
-        lines.append(f"- 学歴: {edu['school']}" + (f"({head})" if head else ""))
-    if resume.get("job_summary"):
-        lines.append(f"- 職務要約: {resume['job_summary']}")
-    prefs = resume.get("preferences") or {}
-    wishes = _join([*prefs.get("desired_work", []), *prefs.get("conditions", []), *prefs.get("notes", [])], "、")
-    if wishes:
-        lines.append(f"- 履歴書に書いてある希望: {wishes}")
+        lines.append(("学歴", f"- 学歴: {edu['school']}" + (f"({head})" if head else "")))
     works = _newest_first(resume.get("work_history") or [])
     for w in works[:RESUME_MAX_WORKS]:
         head = _join([w.get("employment_type"), w.get("role"), w.get("period")], "、")
@@ -236,24 +235,33 @@ def _resume_facts(resume: dict) -> list[str]:
             line += f" やっていたこと: {_join(w['duties'][:RESUME_MAX_DUTIES])}"
         if w.get("achievements"):
             line += f" 任されたこと: {_join(w['achievements'][:RESUME_MAX_DUTIES])}"
-        lines.append(line)
+        lines.append(("職歴", line))
     if len(works) > RESUME_MAX_WORKS:
-        lines.append(f"- ほかに古い職歴が {len(works) - RESUME_MAX_WORKS} 件")
+        lines.append(("職歴", f"- ほかに古い職歴が {len(works) - RESUME_MAX_WORKS} 件"))
+    if resume.get("job_summary"):
+        lines.append(("職務要約", f"- 職務要約: {resume['job_summary']}"))
+    prefs = resume.get("preferences") or {}
+    wishes = _join([*prefs.get("desired_work", []), *prefs.get("conditions", []), *prefs.get("notes", [])], "、")
+    if wishes:
+        lines.append(("履歴書の希望", f"- 履歴書に書いてある希望: {wishes}"))
     for o in resume.get("other_experience") or []:
-        lines.append(f"- {o.get('kind', 'その他の経験')}: {o.get('title', '')}")
+        lines.append(("職歴以外の経験", f"- {o.get('kind', 'その他の経験')}: {o.get('title', '')}"))
     return lines
 
 
-def _fit(lines: list[str], limit: int) -> list[str]:
-    """行の途中では切らず、1行ずつ足して、上限を超える行から先は入れない(入らなかった件数を最後に書く)。"""
-    kept, used = [], 0
-    for line in lines:
+def _fit(lines: list[tuple[str, str]], limit: int) -> list[str]:
+    """行の途中では切らず、上限に収まる行だけを順に入れる。入らない行は飛ばして次を見る
+    (長い1行のせいで後ろの行まで落とさないため)。飛ばした項目は名前で最後に書く。"""
+    kept, dropped, used = [], {}, 0
+    for label, line in lines:
         if used + len(line) + 1 > limit:
-            break
+            dropped[label] = dropped.get(label, 0) + 1
+            continue
         kept.append(line)
         used += len(line) + 1
-    if len(kept) < len(lines):
-        kept.append(f"- ほか {len(lines) - len(kept)} 件は省略")
+    if dropped:
+        names = [label + (f"({n}件)" if n > 1 else "") for label, n in dropped.items()]
+        kept.append(f"- 長いので省略した項目: {'、'.join(names)}")
     return kept
 
 
@@ -268,6 +276,11 @@ def uploaded_resume_note(resume: dict | None) -> str:
     if not lines:
         return ""
     facts = "\n".join(_fit(lines, RESUME_NOTE_MAX_CHARS))
+    edu = _latest_education(resume)
+    in_school = (
+        "- 在学中なので、授業のある時間帯は働けない前提で、働ける時間帯を確かめる。\n"
+        if edu and "在学" in edu.get("status", "") else ""
+    )
     return (
         f"\n## アップロードした履歴書({resume.get('uploaded', '')} にトークでアップロード。読み取り結果の要点)\n"
         + facts
@@ -275,8 +288,8 @@ def uploaded_resume_note(resume: dict | None) -> str:
         "- これは本人がアップロードした履歴書に書いてあった事実。ここにある経験・資格・できることは聞き直さない。"
         "確認形で使い(例:「履歴書ではコンビニで2年半レジと品出しをされていたんですね」)、次の1問や求人の提案につなげる。\n"
         "- 「読み取れなかった点」は、必要なときだけ1問で確かめる。\n"
-        "- 在学中なら、授業のある時間帯は働けない前提で、働ける時間帯を確かめる。\n"
-        "- 履歴書の希望と、本人が会話で話した希望が食い違うときは、会話で話した希望を優先する。\n"
+        + in_school
+        + "- 履歴書の希望と、本人が会話で話した希望が食い違うときは、会話で話した希望を優先する。\n"
         "- 履歴書の内容を propose_jobs の experience / skills / certifications に入れてよいのは、"
         "本人が会話で「そうです」と確かめたものだけ。\n"
     )
