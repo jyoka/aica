@@ -37,7 +37,7 @@ from dip_mcp import logic
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
-from line_runtime.quota import DailyQuota, daily_limit, limit_reply
+from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
 from line_runtime.runtime import EVENTS, LineRuntime
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -210,8 +210,7 @@ async def dip_view(user_id: str, request: Request):
     u = state.user(user_id)
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": u.get("saves", []), "applications": u.get("applications", []),
-            "last_contact": (u.get("contacts") or [None])[-1],
-            "resume_uploaded": (u.get("resume_upload") or {}).get("uploaded_at")}
+            "last_contact": (u.get("contacts") or [None])[-1]}
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
@@ -286,6 +285,8 @@ async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFi
         raise HTTPException(400, "ファイルが空です")
     if len(data) > resume_config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
+    if not app.state.quota.take(user_id):  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
+        raise HTTPException(429, LIMIT_MESSAGE)
     try:
         draft, usage = await extract_bytes(name, data, resume_client())
     except Exception as e:  # API のエラーは画面に理由を出す

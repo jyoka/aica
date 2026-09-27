@@ -104,6 +104,22 @@ def test_upload_rejects_unsupported_files_and_other_users(app):
     assert app.stub.calls == []  # どれも読み取り(API)まで行かない
 
 
+def test_upload_counts_against_the_daily_quota(app, monkeypatch):
+    """アップロードも1ターン扱い: 上限に達したら OpenAI を呼ばずに案内だけ返す(費用の防波堤を迂回させない)。"""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("LINE_SIM_DAILY_TURN_LIMIT", "1")
+    with TestClient(app.app) as client:
+        client.get("/api/me")
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        assert _upload(client, user).status_code == 200  # 1回目は読み取れて、ターンを1つ使う
+        assert app.app.state.quota.used(user) == 1
+        r = _upload(client, user)
+        assert r.status_code == 429
+        assert "上限" in r.json()["detail"]
+    assert len(app.stub.calls) == 1  # 2回目は読み取り(API)まで行かない
+
+
 def test_unreadable_upload_is_marked_empty_and_keeps_the_earlier_result(app, monkeypatch):
     """読めなかったファイルは「読み取れなかった」と返すだけで、前に読み取れた結果を上書きしない。"""
     from fastapi.testclient import TestClient
