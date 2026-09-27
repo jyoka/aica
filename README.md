@@ -110,6 +110,25 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 - 費用台帳: LLM の呼び出し1回ごとに `data/costs.jsonl` へ1行
   (時刻・`user_id`・イベント・モデル・トークン・`cost_usd`)。料金表は `line_runtime/ledger.py` が正で、評価の計測(`evals/meter.py`)も同じ表を使う。
 
+### 会話数の上限と費用の集計
+
+API 費用の暴走を防ぐため、1人1日あたりのターン数(LLM を呼ぶ1往復。ユーザーの発言・挨拶・プッシュそれぞれ1回)に上限がある。
+
+- 上限は環境変数 `LINE_SIM_DAILY_TURN_LIMIT`(`.env` でも可。未設定なら 50、`0` 以下なら上限なし)。
+- 数える単位は人(ブラウザの匿名ID)。`匿名ID:シナリオユーザー` はシナリオを替えても同じ枠を使う。
+- 上限を超えると、LLM を呼ばずに「本日のご利用回数の上限に達した・明日また使える」という案内を返す(返信に `limited: true`)。
+  プッシュは dip に聞く前に送らないと決める。空の発言は数える前に 400 で断る。
+- 日付は日本時間で区切り、日付が変わると数え直す。当日の数は `data/quota.json` に保存する(再起動しても消えない)。
+- 対象は Web の API(`/api/event`・`/api/event/stream`)だけ。評価(`evals.run`)は `LineRuntime` を直接使うので上限はかからない。
+
+費用台帳のユーザー別・日別(日本時間)の集計:
+
+```bash
+./.venv/bin/python -m line_runtime.ledger                      # data/costs.jsonl を人・日ごとに表で(合計行つき)
+./.venv/bin/python -m line_runtime.ledger --date 2026-09-27    # その日だけ
+./.venv/bin/python -m line_runtime.ledger --by-user-id --json  # シナリオユーザーごとに分けて JSON で
+```
+
 ## 動かし方
 
 ```bash
