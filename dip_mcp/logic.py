@@ -27,6 +27,8 @@ from dip_mcp.data import (
     now,
     parse_ts,
 )
+from resume_intake.extract import scrub_pii
+from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
 
 HISTORY_DAYS = 90
 MAX_JOBS = 3
@@ -66,12 +68,17 @@ def stated_preferences(user: dict) -> dict:
     return {k: {"value": v["value"], "saved": _md(v["at"])} for k, v in (user.get("preferences") or {}).items()}
 
 
+RESUME_NOTE = ("uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。"
+               "経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。")
+
+
 def conversation_summary(state: State, line_user_id: str) -> dict:
     user = state.user(line_user_id)
     if not user.get("dip_id"):
         return {"linked": False, "segment": "unlinked", "stated_preferences": stated_preferences(user),
+                "uploaded_resume": uploaded_resume(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
-                        "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"}
+                        "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。" + RESUME_NOTE}
     jobs = load_jobs()
     apps = sorted(_recent(user.get("applications", []), "applied_at"), key=lambda a: a["applied_at"], reverse=True)
     exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"]) <= 7]
@@ -115,8 +122,9 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "last_contact": ({"channel": contacts[0]["channel"], "when": _md(contacts[0]["at"]),
                           "message": contacts[0]["message"]} if contacts else None),
         "stated_preferences": stated_preferences(user),
+        "uploaded_resume": uploaded_resume(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
-                "stated_preferences は本人が前に話した希望(行動データより優先する)。",
+                "stated_preferences は本人が前に話した希望(行動データより優先する)。" + RESUME_NOTE,
     }
 
 
@@ -533,6 +541,50 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
         if r.get("id") == result_id:
             return r
     return None
+
+
+# ----------------------------- アップロードした履歴書(resume-intake の読み取り結果) -----------------------------
+
+
+def save_resume_upload(state: State, line_user_id: str, result: dict) -> dict:
+    """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
+
+    ファイル本体・ファイル名(氏名が入りがち)は保存しない。personal は何が来ても空欄で保存し、
+    resume の文字列からは電話番号・メール・郵便番号をもう一度落とす(読み取り側の防御に重ねる)。
+    """
+    resume = ResumeDraft.model_validate(scrub_pii(result.get("resume") or {})).model_dump()
+    rec = {"format_version": str(result.get("format_version", "")), "source": "upload",
+           "created_at": str(result.get("created_at", "")), "uploaded_at": now().isoformat(),
+           "personal": {k: "" for k in PERSONAL_KEYS}, "resume": resume}
+
+    def apply(u):
+        u["resume_upload"] = rec
+
+    state.update(line_user_id, apply)
+    return copy.deepcopy(rec)
+
+
+def resume_upload(state: State, line_user_id: str) -> dict | None:
+    """保存済みの履歴書の読み取り結果(無ければ None)。"""
+    return copy.deepcopy(state.user(line_user_id).get("resume_upload"))
+
+
+def _compact(value):
+    """空文字・空配列・空の辞書を落とす(要約に載せる量を減らす)。"""
+    if isinstance(value, dict):
+        out = {k: _compact(v) for k, v in value.items()}
+        return {k: v for k, v in out.items() if v not in ("", [], {}, None)}
+    if isinstance(value, list):
+        return [c for c in (_compact(v) for v in value) if c not in ("", [], {}, None)]
+    return value
+
+
+def uploaded_resume(user: dict) -> dict | None:
+    """会話の要約に載せる形の、アップロードした履歴書(書いてある項目だけ)。無ければ None。"""
+    rec = user.get("resume_upload")
+    if not rec:
+        return None
+    return {"uploaded": _md(rec["uploaded_at"]), **_compact(rec["resume"])}
 
 
 # ----------------------------- 会話結果の記録 -----------------------------

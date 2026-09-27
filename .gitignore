@@ -5,6 +5,8 @@ __pycache__/
 .env
 # 会話チェックポイントと dip 側のシミュレーション状態・音声相談の下書き(直下の data/ だけ。voice_resume/data/ は参考データなので入れる)
 /data/
+# 音声 E2E の出力(本人の音声 .wav・文字起こしが書かれ得る。commit 済みの証跡 png は追跡されたまま)
+/voice_resume/results/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
