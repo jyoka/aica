@@ -144,6 +144,10 @@ def test_revisit_reasking_a_saved_preference_is_a_violation():
     for t in turns:
         t["quick_replies"] = ["今はいい"]
     assert any("聞き直した" in v and "area" in v for v in _checks("R-revisit", turns))
+    for ask, key in (("勤務地はどこがいいですか?", "area"), ("どの辺で働きたいですか?", "area"),
+                     ("何時まで働けますか?", "time_band")):
+        turns[1]["bubbles"] = [ask]
+        assert any("聞き直した" in v and key in v for v in _checks("R-revisit", turns)), ask
     turns[1]["bubbles"] = ["承知しました。渋谷・日中のカフェで探しますか?"]  # 確認して進むのは聞き直しではない
     assert not any("聞き直した" in v for v in _checks("R-revisit", turns))
 
@@ -158,11 +162,16 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
     assert any("触れていない" in v for v in _checks("R-revisit-browsing", silent))
     twice = [ok[0], dict(ok[1], bubbles=["閲覧していたカフェに近い求人です。"])]
     assert any("2回触れた" in v for v in _checks("R-revisit-browsing", twice))
-    # 丁寧な依頼は行動履歴への言及に数えない。「ご覧になっていましたか」は言及に数える
-    polite = [ok[0], dict(ok[1], bubbles=["気になる求人があれば詳細を見ていただけますか?", "ぜひ見ていってください。ご覧ください。"])]
+    # 丁寧な依頼・案内や、希望を保存したという報告は行動履歴への言及に数えない。「ご覧になっていましたか」は言及に数える
+    polite = [ok[0], dict(ok[1], bubbles=["気になる求人があれば詳細を見ていただけますか?", "ぜひ見ていってください。ご覧ください。",
+                                          "条件に合う求人を一緒に見ていきましょう。", "詳細はこちらからご覧になれます。",
+                                          "詳しくはご覧になってください。", "渋谷・日中のカフェで希望を保存しています。",
+                                          "前回の希望を保存していましたので、その条件で探します。"])]
     assert not any("行動" in v for v in _checks("R-revisit-browsing", polite))
-    goran = [dict(ok[0], bubbles=["最近はカフェのお仕事をご覧になっていましたか?"]), ok[1]]
-    assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", goran))
+    for mention in ("最近はカフェのお仕事をご覧になっていましたか?", "最近カフェのお仕事をご覧になりましたか?",
+                    "最近はカフェのお仕事を見てましたか?", "最近カフェの求人をチェックされていましたか?"):
+        once = [dict(ok[0], bubbles=[mention]), ok[1]]
+        assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", once)), mention
     for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",
                     "最近はカフェやアパレル販売を見ていましたか?"):
         listed = [dict(ok[0], bubbles=[listing]), ok[1]]
