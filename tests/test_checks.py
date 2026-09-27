@@ -125,3 +125,45 @@ def test_phrase_inside_a_longer_message_is_not_a_refusal():
     push_more = {**turn(["条件を変えて探しますか?"]), "quick_replies": ["条件を変える", "今はいい"]}
     v = conversation_checks(sc, [ask, push_more], [None, "今はいいです。"])["violations"]
     assert any("質問や求人を続けた" in x for x in v)
+
+
+# ----------------------------- 再訪の挨拶(evals/checks.py の conversation_checks) -----------------------------
+
+
+def _checks(sc_id: str, turns: list[dict]) -> list[str]:
+    from evals.checks import conversation_checks
+    from evals.scenarios import load_scenarios
+
+    sc = next(s for s in load_scenarios() if s["id"] == sc_id)
+    return conversation_checks(sc, turns, [None] + ["はい"] * (len(turns) - 1))["violations"]
+
+
+def test_revisit_reasking_a_saved_preference_is_a_violation():
+    turns = [turn(["前回は渋谷・日中・カフェでしたが、今回も同じですか?"]),
+             turn(["承知しました。どのエリアで探しますか?"]), turn(["探します。"])]
+    for t in turns:
+        t["quick_replies"] = ["今はいい"]
+    assert any("聞き直した" in v and "area" in v for v in _checks("R-revisit", turns))
+    turns[1]["bubbles"] = ["承知しました。渋谷・日中のカフェで探しますか?"]  # 確認して進むのは聞き直しではない
+    assert not any("聞き直した" in v for v in _checks("R-revisit", turns))
+
+
+def test_revisit_browsing_must_mention_once_and_not_list_jobs():
+    ok = [turn(["最近はカフェのお仕事を見ていましたか?"]), turn(["渋谷・日中のカフェです。"])]
+    for t in ok:
+        t["quick_replies"] = ["今はいい"]
+    assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", ok))
+
+    silent = [dict(ok[0], bubbles=["こんにちは。何をしますか?"]), ok[1]]
+    assert any("触れていない" in v for v in _checks("R-revisit-browsing", silent))
+    twice = [ok[0], dict(ok[1], bubbles=["閲覧していたカフェに近い求人です。"])]
+    assert any("2回触れた" in v for v in _checks("R-revisit-browsing", twice))
+    # 丁寧な依頼は行動履歴への言及に数えない。「ご覧になっていましたか」は言及に数える
+    polite = [ok[0], dict(ok[1], bubbles=["気になる求人があれば詳細を見ていただけますか?", "ぜひ見ていってください。ご覧ください。"])]
+    assert not any("行動" in v for v in _checks("R-revisit-browsing", polite))
+    goran = [dict(ok[0], bubbles=["最近はカフェのお仕事をご覧になっていましたか?"]), ok[1]]
+    assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", goran))
+    for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",
+                    "最近はカフェやアパレル販売を見ていましたか?"):
+        listed = [dict(ok[0], bubbles=[listing]), ok[1]]
+        assert any("羅列" in v for v in _checks("R-revisit-browsing", listed)), listing

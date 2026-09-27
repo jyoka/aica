@@ -22,6 +22,15 @@ QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 PII_VALUE = re.compile(r"0\d{1,4}-?\d{1,4}-?\d{3,4}|@")
+# 再訪の挨拶で行動履歴に触れる言い方(「最近はカフェのお仕事を見ていましたか?」「ご覧になっていましたか?」)。会話を通して1回だけ
+# 丁寧な依頼(「見ていただけますか」「見ていってください」「ご覧ください」)は行動履歴への言及ではない
+RECENT_ACTIVITY = re.compile(r"見てい(?!ただ|って|く)|ご覧(?!ください|いただ)|閲覧|チェックしてい|保存してい")
+# 保存済みの希望を聞き直す質問(再訪で前の希望を確認した後は、差分だけを受け取る)
+REASK = {
+    "area": re.compile(r"(どの|どこの?)(エリア|駅|辺り|あたり|地域)|どこで働|エリアは"),
+    "time_band": re.compile(r"(どの|何の)時間帯|時間帯は|何時(から|ごろ|頃)"),
+    "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
+}
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
 
@@ -107,6 +116,12 @@ def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool 
         texts.append(value)
 
 
+def _job_names() -> set[str]:
+    """求人一覧にある求人名・店名(短すぎて誤検出するものは除く)。"""
+    return {n for j in load_jobs().values() for n in (j.title, j.employer, j.title.split("｜")[0].strip())
+            if len(n) >= 6}
+
+
 def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None) -> list[str]:
     """返信に出てくる金額・徒歩分数・件数・日付・求人名が、この会話で dip から来た情報(ツールの結果・プッシュの
     根拠の事実)かユーザーの発言にあるかを照合する。無ければ作り話として違反。
@@ -131,8 +146,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     _walk(data, set(), set(), texts)
     source = "\n".join(texts) + json.dumps(data, ensure_ascii=False) + said
     known_dates = _dates(source)
-    names = {n for j in load_jobs().values() for n in (j.title, j.employer, j.title.split("｜")[0].strip())
-             if len(n) >= 6}
+    names = _job_names()
     out = []
     for i, r in enumerate(turns):
         text = "\n".join(r["bubbles"])
@@ -173,6 +187,36 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
     return out
 
 
+def reask_violations(turns: list[dict], keys: list[str]) -> list[str]:
+    """再訪(希望あり): 1通目で前の希望を確認した後に、保存済みの項目(keys)を聞き直していないか。"""
+    out = []
+    for i, r in enumerate(turns[1:], start=1):
+        asks = [b for b in r["bubbles"] if _questions([b])]
+        for k in keys:
+            if k in REASK and any(REASK[k].search(b) for b in asks):
+                out.append(f"T{i + 1}: 保存済みの希望({k})を聞き直した")
+    return out
+
+
+def recent_activity_violations(turns: list[dict]) -> list[str]:
+    """再訪(行動履歴のみ): 1通目で最近の行動に触れる。触れるのは会話を通して1回だけで、求人を羅列しない
+    (1通目に求人カード・求人名・件数を出さず、職種も1つだけ)。"""
+    if not turns:
+        return []
+    first = "\n".join(turns[0]["bubbles"])
+    out = []
+    if not RECENT_ACTIVITY.search(first):
+        out.append("T1: 再訪の挨拶で最近の行動に触れていない")
+    mentions = sum(len(RECENT_ACTIVITY.findall(b)) for r in turns for b in r["bubbles"])
+    if mentions > 1:
+        out.append(f"最近の行動に{mentions}回触れた(1回だけ)")
+    job_types = {j.job_type for j in load_jobs().values()}
+    listed = [n for n in sorted(_job_names()) if n in first] + re.findall(r"\d+\s*件", first)
+    if turns[0]["cards"] or listed or sum(t in first for t in job_types) > 1:
+        out.append(f"T1: 閲覧した求人を羅列した: {listed or [c['job_id'] for c in turns[0]['cards']] or first}")
+    return out
+
+
 def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts: dict | None = None) -> dict:
     """会話全体の判定(KPI と シナリオ固有の期待)。"""
     tools_by_turn = [[t["name"] for t in r["tools"]] for r in turns]
@@ -196,6 +240,10 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
             violations.append(f"T1: 前に本人が話した希望({'・'.join(seeds)})に触れず、聞き直している")
+    if sc.get("expect_uses_preferences"):
+        violations += reask_violations(turns, list(sc.get("seed_preferences") or {}))
+    if sc.get("expect_recent_activity"):
+        violations += recent_activity_violations(turns)
     if sc.get("pii_test"):
         pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:

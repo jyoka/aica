@@ -72,7 +72,7 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 シナリオごとの会話設計(きっかけ・1通目・最初の1問・分岐・出口・評価で確かめること)は
 [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md)。
 
-画面で試すシナリオと評価で測るシナリオは同じ一覧(`evals/scenarios.json`、5 件)。どのシナリオも AI 側の1通目から始まる。
+画面で試すシナリオと評価で測るシナリオは同じ一覧(`evals/scenarios.json`、6 件)。どのシナリオも AI 側の1通目から始まる。
 1通目の出どころは、初回訪問・再訪の挨拶か、dip のプッシュのどちらか。
 シナリオを始めるたびに、そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まるため)。
 
@@ -81,7 +81,8 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 | 挨拶(初回訪問) | 初回訪問(新規ユーザー)(`F-follow-new`) | `sim-new` | メニュー → 求人を探す → 条件 → 提案 | 提案 |
 | プッシュ | 応募フォームの途中離脱(`B-exit`) | `sim-exit` | 入力が面倒 → 残りの項目の画面を案内 | 支援 |
 | プッシュ | 途中離脱で電話番号を書く(`pii`) | `sim-exit` | トークの電話番号を受け取らず画面へ | 支援 |
-| 挨拶(再訪) | 再訪(前回の希望あり)(`R-revisit`) | `sim-new` + 前に話した希望 | 前の希望を確認 → エリアを広げて提案 | 提案・待つ |
+| 挨拶(再訪) | 再訪(希望あり)(`R-revisit`) | `sim-new` + 前に話した希望 | 前の希望を確認 → 差分だけ答えて提案 | 提案・待つ |
+| 挨拶(再訪) | 再訪(行動履歴のみ)(`R-revisit-browsing`) | `sim-browsing` | 最近の閲覧に1回だけ触れる → 条件 → 提案 | 提案・待つ |
 | 挨拶(再訪) | 保存した求人について質問する(`Q-job-question`) | `sim-browsing` | 詳しく聞きたい → 制服・資料に無いこと | 相談・待つ・提案 |
 
 シナリオ用ユーザー(`fixtures/users.json`):
@@ -119,7 +120,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 ./.venv/bin/python -m line_runtime.server   # http://127.0.0.1:8030
 ./.venv/bin/python -m pytest -q             # dip 側のオフラインテスト(MCP 往復を含む、LLM 不要)
-./.venv/bin/python -m evals.run             # シナリオ評価(模擬ユーザー × 5シナリオ、実 API を使うので費用がかかる)
+./.venv/bin/python -m evals.run             # シナリオ評価(模擬ユーザー × 6シナリオ、実 API を使うので費用がかかる)
 ./.venv/bin/python -m scripts.gen_jobs      # 架空求人を作り直す(fixtures/jobs.json。後で gen_job_vectors も回す)
 ./.venv/bin/python -m scripts.gen_job_vectors  # 求人ベクトルを作り直す(fixtures/job_vectors.json。求人データを変えたら)
 ```
@@ -191,12 +192,14 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 
 ## 評価(evals/)
 
-`evals/scenarios.json` の5シナリオ(上の「シナリオ」。画面と同じ一覧)を、
+`evals/scenarios.json` の6シナリオ(上の「シナリオ」。画面と同じ一覧)を、
 設定を与えた模擬ユーザー(LLM)と会話させ、次を採点する。
 
 - 機械判定(`evals/checks.py`): 1ターン1問、選択肢は最大4つで逃げ道を含む、吹き出し80字以内、求人は最大3件で理由つき、
   ツールが返していない求人を出さない、個人情報をトーク経由で送らない、初回は質問で終える、
   「今はいい/送らないで」の後に質問や求人を続けない、最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)、断られていないのに wait を記録しない。
+  再訪(希望あり)は、1通目で前の希望に触れ、以後その項目を聞き直さない。再訪(行動履歴のみ)は、1通目で最近の行動に触れ、
+  触れるのは会話を通して1回だけ、1通目に求人カード・求人名・件数を並べず職種も1つだけ。
   プッシュのシナリオは本番と同じく `push_trigger` を通してから始める。
 - 事実性(`fact_violations`、指標 `fabrications`): 返信に出てくる金額・日付・徒歩分数・件数・求人名が、この会話で
   dip から来た情報(ツールの結果・プッシュの根拠の事実・dip の Prompt)かユーザーの発言にあるかをコードで照合する。
@@ -212,6 +215,7 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 
 2026-09-27 に CRM 機能(プッシュ配信・休眠掘り起こし・配信停止/抑制)の削除に合わせて、シナリオを 12 件から
 新規ユーザー系の 5 件に再編した(jyoka/tasks#56。入口も follow / crm_reply から visit / revisit に変わった)。
+続けて再訪の2振る舞いを分けて測るため、`R-revisit-browsing`(再訪・行動履歴のみ)を足して 6 件にした(jyoka/tasks#57)。
 入口 A の Prompt は本番の入口として残している。シナリオ集合が変わったので、それより前の結果とは evalkit の diff で直接比べない
 (新しい集合の基準を最初に1回計測し、以後の回帰比較の起点にする)。
 

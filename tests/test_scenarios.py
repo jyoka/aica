@@ -30,7 +30,7 @@ def state(tmp_path):
 def test_scenario_list_has_titles_and_no_user_first_start():
     ids = [sc["id"] for sc in SCENARIOS]
     assert len(ids) == len(set(ids))
-    assert set(ids) == {"F-follow-new", "B-exit", "pii", "Q-job-question", "R-revisit"}  # 新規ユーザー系だけ
+    assert set(ids) == {"F-follow-new", "B-exit", "pii", "Q-job-question", "R-revisit", "R-revisit-browsing"}  # 新規ユーザー系だけ
     for sc in SCENARIOS:
         assert sc["title"] and sc["desc"] and sc["event"] in EVENTS
         assert sc["event"] != "message"  # ユーザーのメッセージ待ちから始まるものは無い
