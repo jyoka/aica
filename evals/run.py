@@ -52,7 +52,7 @@ JUDGE_SYSTEM = """あなたは LINE の AI アシスタントの会話品質を�
   "factuality": <ツール結果にない行動履歴・求人情報・事実を語っていないか。1件でも作り話があれば3以下>,
   "fabrications": ["<作り話の具体例。無ければ空>"],
   "tone": <敬体・短文・絵文字なし・押しつけがましくないか>,
-  "design_fit": <先に理解し1問だけ聞き、3ターン以内に 提案/相談/支援/待つ のどれかに進み、拒否を即尊重する、という設計の狙いどおりか>,
+  "design_fit": <先に理解し1問だけ聞き、3ターン以内に 提案/相談/支援/待つ のどれかに進み、拒否を即尊重する、という設計の狙いどおりか。相談モード〔まず相談する・何から始めればいいか分からない〕では、3ターンを超えても1問ずつのヒアリングを続けてよく、「求人を見せて」で即提案に切り替えるのが狙い>,
   "comment": "<1〜2文>"
 }"""
 
@@ -123,7 +123,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool) -> dict:
     transcript, turns, user_msgs, seconds, marks = [], [], [], [], []
     given = push_facts  # dip がこの会話の前に渡した情報(事実性の照合の根拠)
     event, text = sc["event"], None
-    for _ in range(MAX_TURNS):
+    for _ in range(sc.get("max_turns", MAX_TURNS)):  # 相談モードはヒアリングの分だけ長くなる
         if text is not None:
             transcript.append({"who": "user", "text": text})
         user_msgs.append(text)
