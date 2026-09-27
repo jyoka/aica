@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import re
+
 # 会話の流れ。この順に進む(テストとトランスクリプトの流れ確認でも使う)。
 STAGES = (
     ("wishes", "希望条件"),
@@ -169,46 +171,90 @@ def stated_preferences_note(stated: dict | None) -> str:
     )
 
 
-# 指示に入れる履歴書の要点の上限(文字数)。音声の指示が長くなりすぎないよう、超えた分は切る
+# 指示に入れる履歴書の要点の上限(文字数)。音声の指示が長くなりすぎないよう、1行ずつ足して超える行は入れない
 RESUME_NOTE_MAX_CHARS = 600
+RESUME_MAX_WORKS = 3  # 職歴は新しい順にこの件数まで
+RESUME_MAX_DUTIES = 3  # 職歴1件あたりの、やっていたこと・任されたことの件数
 
 
 def _join(items, sep="・") -> str:
     return sep.join(str(x) for x in items if x)
 
 
+def _period_start(period: str) -> tuple[int, int] | None:
+    """「2022年5月〜2024年12月」のような期間の始まり(年, 月)。読めなければ None。"""
+    m = re.search(r"(\d{4})\s*年(?:\s*(\d{1,2})\s*月)?", period or "")
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else None
+
+
+def _newest_first(items: list[dict]) -> list[dict]:
+    """期間の始まりが新しい順。どれか1件でも期間が読めなければ、末尾を最新とみなして逆順にする。"""
+    starts = [_period_start(i.get("period", "")) for i in items]
+    if items and all(starts):
+        return [i for _, i in sorted(zip(starts, items, strict=True), key=lambda p: p[0], reverse=True)]
+    return list(reversed(items))
+
+
+def _latest_education(resume: dict) -> dict | None:
+    """在学中の学歴があればそれ、無ければ最終学歴(いちばん新しいもの)。"""
+    schools = [e for e in resume.get("education") or [] if e.get("school")]
+    current = [e for e in schools if "在学" in e.get("status", "")]
+    return (_newest_first(current) or _newest_first(schools) or [None])[0]
+
+
 def _resume_facts(resume: dict) -> list[str]:
-    """dip の要約の uploaded_resume から、面談に使う要点を1行ずつ拾う。
+    """dip の要約の uploaded_resume から、面談に使う要点を大事な順に1行ずつ拾う。
 
     決まった項目だけを読む(personal や未知の項目は読まない = 氏名・連絡先は指示に入らない)。
-    学歴・自己PR は面談の材料としては優先度が低いので入れない。
+    短くて大事な項目(資格・できること・読み取れなかった点・学歴・職務要約・希望)を先に、
+    職歴は新しい順に RESUME_MAX_WORKS 件まで。学歴は在学中か最終学歴の1行だけ。自己PR は入れない。
     """
     lines = []
-    for w in resume.get("work_history") or []:
-        head = _join([w.get("employment_type"), w.get("role"), w.get("period")], "、")
-        line = f"- 職歴: {w.get('organization', '')}" + (f"({head})" if head else "")
-        if w.get("duties"):
-            line += f" やっていたこと: {_join(w['duties'])}"
-        if w.get("achievements"):
-            line += f" 任されたこと: {_join(w['achievements'])}"
-        lines.append(line)
     if resume.get("certifications"):
         certs = [c.get("name", "") + (f"({c['acquired']})" if c.get("acquired") else "")
                  for c in resume["certifications"]]
         lines.append(f"- 資格・免許: {_join(certs, '、')}")
     if resume.get("skills"):
         lines.append(f"- できること: {_join(resume['skills'], '、')}")
+    if resume.get("unconfirmed"):
+        lines.append(f"- 読み取れなかった点: {_join(resume['unconfirmed'], '、')}")
+    edu = _latest_education(resume)
+    if edu:
+        head = _join([edu.get("status"), edu.get("period")], "、")
+        lines.append(f"- 学歴: {edu['school']}" + (f"({head})" if head else ""))
     if resume.get("job_summary"):
         lines.append(f"- 職務要約: {resume['job_summary']}")
-    for o in resume.get("other_experience") or []:
-        lines.append(f"- {o.get('kind', 'その他の経験')}: {o.get('title', '')}")
     prefs = resume.get("preferences") or {}
     wishes = _join([*prefs.get("desired_work", []), *prefs.get("conditions", []), *prefs.get("notes", [])], "、")
     if wishes:
         lines.append(f"- 履歴書に書いてある希望: {wishes}")
-    if resume.get("unconfirmed"):
-        lines.append(f"- 読み取れなかった点: {_join(resume['unconfirmed'], '、')}")
+    works = _newest_first(resume.get("work_history") or [])
+    for w in works[:RESUME_MAX_WORKS]:
+        head = _join([w.get("employment_type"), w.get("role"), w.get("period")], "、")
+        line = f"- 職歴: {w.get('organization', '')}" + (f"({head})" if head else "")
+        if w.get("duties"):
+            line += f" やっていたこと: {_join(w['duties'][:RESUME_MAX_DUTIES])}"
+        if w.get("achievements"):
+            line += f" 任されたこと: {_join(w['achievements'][:RESUME_MAX_DUTIES])}"
+        lines.append(line)
+    if len(works) > RESUME_MAX_WORKS:
+        lines.append(f"- ほかに古い職歴が {len(works) - RESUME_MAX_WORKS} 件")
+    for o in resume.get("other_experience") or []:
+        lines.append(f"- {o.get('kind', 'その他の経験')}: {o.get('title', '')}")
     return lines
+
+
+def _fit(lines: list[str], limit: int) -> list[str]:
+    """行の途中では切らず、1行ずつ足して、上限を超える行から先は入れない(入らなかった件数を最後に書く)。"""
+    kept, used = [], 0
+    for line in lines:
+        if used + len(line) + 1 > limit:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    if len(kept) < len(lines):
+        kept.append(f"- ほか {len(lines) - len(kept)} 件は省略")
+    return kept
 
 
 def uploaded_resume_note(resume: dict | None) -> str:
@@ -216,13 +262,12 @@ def uploaded_resume_note(resume: dict | None) -> str:
 
     LINE 側のプロンプト(baitoru_assistant.md の uploaded_resume の決まり)と同じ考え方:
     書いてある経験・資格・スキルは聞き直さず、確認形で使って次の1問や提案につなげる。
-    要点は RESUME_NOTE_MAX_CHARS 文字で切る。履歴書が無ければ空文字(追記しない)。
+    要点は RESUME_NOTE_MAX_CHARS 文字に収まる行だけを入れる。履歴書が無ければ空文字(追記しない)。
     """
-    facts = "\n".join(_resume_facts(resume or {}))
-    if not facts:
+    lines = _resume_facts(resume or {})
+    if not lines:
         return ""
-    if len(facts) > RESUME_NOTE_MAX_CHARS:
-        facts = facts[:RESUME_NOTE_MAX_CHARS] + "…(長いので以下省略)"
+    facts = "\n".join(_fit(lines, RESUME_NOTE_MAX_CHARS))
     return (
         f"\n## アップロードした履歴書({resume.get('uploaded', '')} にトークでアップロード。読み取り結果の要点)\n"
         + facts
@@ -230,19 +275,28 @@ def uploaded_resume_note(resume: dict | None) -> str:
         "- これは本人がアップロードした履歴書に書いてあった事実。ここにある経験・資格・できることは聞き直さない。"
         "確認形で使い(例:「履歴書ではコンビニで2年半レジと品出しをされていたんですね」)、次の1問や求人の提案につなげる。\n"
         "- 「読み取れなかった点」は、必要なときだけ1問で確かめる。\n"
+        "- 在学中なら、授業のある時間帯は働けない前提で、働ける時間帯を確かめる。\n"
         "- 履歴書の希望と、本人が会話で話した希望が食い違うときは、会話で話した希望を優先する。\n"
         "- 履歴書の内容を propose_jobs の experience / skills / certifications に入れてよいのは、"
         "本人が会話で「そうです」と確かめたものだけ。\n"
     )
 
 
-def _resume_headline(resume: dict | None) -> str:
-    """挨拶で触れる履歴書の一言(最初の職歴。無ければできること)。"""
+def _resume_example(resume: dict | None) -> str:
+    """挨拶で履歴書に触れる例文(直近の職歴。無ければ学歴・できること)。"""
     resume = resume or {}
-    for w in resume.get("work_history") or []:
+    works = _newest_first(resume.get("work_history") or [])
+    if works:
+        w = works[0]
         duties = _join((w.get("duties") or [])[:2])
-        return f"{w.get('organization', '')}" + (f"で{duties}" if duties else "")
-    return _join((resume.get("skills") or [])[:2], "、")
+        return f"履歴書では{w.get('organization', '')}" + (f"で{duties}" if duties else "") + "をされていたんですね"
+    edu = _latest_education(resume)
+    if edu:
+        now = "に在学中なんですね" if "在学" in edu.get("status", "") else "のご出身なんですね"
+        return f"履歴書では{edu['school']}{now}"
+    if resume.get("skills"):
+        return f"履歴書では{_join(resume['skills'][:2], '、')}が得意とのことですね"
+    return "アップロードしていただいた履歴書を拝見しました"
 
 
 def greeting_instructions(stated: dict | None = None, resume: dict | None = None) -> str:
@@ -250,16 +304,17 @@ def greeting_instructions(stated: dict | None = None, resume: dict | None = None
 
     両方あるときは、履歴書には確認形で1回触れるだけにして、最初の1問は前に話した希望の確認にする
     (希望は検索条件に直結し、履歴書の経験は会話の中で使えるため)。
+    履歴書だけなら、職歴があれば「経験に近い仕事で探すか」、無ければ(学歴だけなど)従来どおり職種を聞く。
     """
     base = (
         "まず一言で挨拶し、バイト探しの希望と経験を5分ほどで聞くこと、"
         "終わると求人の提案と履歴書の下書きが出ることを短く伝えてください。"
     )
-    headline = _resume_headline(resume) if uploaded_resume_note(resume) else ""
-    if headline:
+    has_resume = bool(uploaded_resume_note(resume))
+    if has_resume:
         base += (
-            f"続けて、アップロードされた履歴書を見たことに確認形で1回だけ触れてください"
-            f"(例:「履歴書では{headline}をされていたんですね」)。履歴書にあることは聞き直さないでください。"
+            "続けて、アップロードされた履歴書を見たことに確認形で1回だけ触れてください"
+            f"(例:「{_resume_example(resume)}」)。履歴書にあることは聞き直さないでください。"
         )
     items = [
         f"{PREFERENCE_LABELS.get(k, k)}は{_stated_value(v)}"
@@ -273,7 +328,7 @@ def greeting_instructions(stated: dict | None = None, resume: dict | None = None
             + ")を確認形で1回だけ確かめてください(例:「前回は◯◯とのことでしたが、"
             "今回も同じですか?」)。同じことを聞き直さないでください。"
         )
-    if headline:
+    if has_resume and (resume or {}).get("work_history"):
         return base + (
             "そのあと最初の質問として、履歴書の経験に近い仕事で探すか、別の仕事を探しているかを1問だけ聞いてください。"
         )
