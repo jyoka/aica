@@ -214,7 +214,8 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 ```
 トーク「音声で相談」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
    → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に user_id を載せる
-   → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望は確認形で1回だけ・聞き直さない)
+   → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望 stated_preferences と、
+     トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
    → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
    → 終わり: 結果を propose / consult で記録し、POST /api/voice/result で求人と下書きをこちらへ返す
    → トークが POST /api/voice/{user}/pull で受け取り、求人カード(dip の求人データから作り直す)と

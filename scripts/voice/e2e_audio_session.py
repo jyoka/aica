@@ -37,7 +37,7 @@ from livekit.plugins import openai as lk_openai
 from openai import AsyncOpenAI
 
 from voice_resume import config
-from voice_resume.advisor import ResumeAdvisor
+from voice_resume.agent import prepare_advisor
 from voice_resume.dip import DipMCP
 from voice_resume.flow import verify_flow
 from voice_resume.outputs import history_transcript
@@ -113,14 +113,13 @@ async def _run_conversation(user: str | None = None) -> None:
 
     dip = DipMCP()
     await dip.start()
-    # トークから入った相談として通すとき: ワーカー(voice_resume.agent)と同じく、
-    # 会話の前に dip の要約から前回の希望を読み、確認形で1回だけ使わせる
-    stated = None
+    # トークから入った相談として通すとき: ワーカー(voice_resume.agent)と同じ準備で、会話の前に
+    # dip の要約から前回の希望と、トークでアップロードした履歴書を読み、確認形で使わせる
     if user:
         summary = await dip.get_user_conversation_summary(user)
-        stated = summary.get("stated_preferences") or None
-        print(f"ユーザー: {user} / 前回の希望: {stated or 'なし'}")
-    advisor = ResumeAdvisor(dip=dip, user_id=user, stated_preferences=stated)
+        print(f"ユーザー: {user} / 前回の希望: {summary.get('stated_preferences') or 'なし'}"
+              f" / 履歴書: {'あり' if summary.get('uploaded_resume') else 'なし'}")
+    advisor, _ = await prepare_advisor(dip, user)
 
     session = AgentSession(
         llm=lk_openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT)

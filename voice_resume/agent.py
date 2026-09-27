@@ -48,6 +48,26 @@ def participant_user_id(participant) -> str | None:
     return str(uid) if uid else None
 
 
+async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAdvisor, str]:
+    """面談を始める前の準備。dip の要約を読んでアドバイザーと最初の発話への指示を組み立てる。"""
+    # 会話の前に dip の要約を読み、前に話した希望(stated_preferences)と、トークでアップロードした
+    # 履歴書(uploaded_resume)があれば確認形で使う(LINE 側のプロンプトと同じ決まり。同じことを聞き直さない)
+    stated: dict | None = None
+    resume: dict | None = None
+    if dip is not None and user_id:
+        try:
+            summary = await dip.get_user_conversation_summary(user_id)
+            stated = summary.get("stated_preferences") or None
+            resume = summary.get("uploaded_resume") or None
+        except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
+            logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", exc)
+    logger.info("面談を開始: user_id=%s 前回の希望=%s 履歴書=%s", user_id or "(不明)", stated or "なし",
+                "あり" if resume else "なし")
+
+    advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume)
+    return advisor, greeting_instructions(stated, resume)
+
+
 async def entrypoint(ctx: agents.JobContext) -> None:
     # 求人の提案: dip 側 MCP サーバー(dip_mcp)へ stdio でつなぐ。失敗しても面談は続ける
     dip: DipMCP | None = DipMCP()
@@ -64,18 +84,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     participant = await ctx.wait_for_participant()
     user_id = participant_user_id(participant)
 
-    # 会話の前に dip の要約を読み、前に話した希望(stated_preferences)があれば
-    # 確認形で1回だけ使う(LINE 側のプロンプトと同じ決まり。同じことを聞き直さない)
-    stated: dict | None = None
-    if dip is not None and user_id:
-        try:
-            summary = await dip.get_user_conversation_summary(user_id)
-            stated = summary.get("stated_preferences") or None
-        except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
-            logger.warning("get_user_conversation_summary 失敗(希望の確認なしで続行): %s", exc)
-    logger.info("面談を開始: user_id=%s 前回の希望=%s", user_id or "(不明)", stated or "なし")
-
-    advisor = ResumeAdvisor(dip=dip, room=ctx.room, user_id=user_id, stated_preferences=stated)
+    advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
         llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT),
@@ -123,7 +132,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     ctx.room.on("data_received", _on_data)
 
-    await session.generate_reply(instructions=greeting_instructions(stated))
+    await session.generate_reply(instructions=greeting)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,11 @@ from voice_resume.jobs import (
     spoken_job_line,
 )
 from voice_resume.outputs import history_transcript, write_outputs
-from voice_resume.prompts import ADVISOR_INSTRUCTIONS, stated_preferences_note
+from voice_resume.prompts import (
+    ADVISOR_INSTRUCTIONS,
+    stated_preferences_note,
+    uploaded_resume_note,
+)
 from voice_resume.wages import WageReference, answer_from_reference, load_reference
 
 logger = logging.getLogger("voice-resume.advisor")
@@ -43,10 +47,12 @@ class ResumeAdvisor(Agent):
     def __init__(
         self, *, dip=None, draft_client_factory=None, research_client_factory=None, room=None,
         wage_reference: WageReference | None = None, user_id: str | None = None,
-        stated_preferences: dict | None = None, talk_poster=None,
+        stated_preferences: dict | None = None, uploaded_resume: dict | None = None, talk_poster=None,
     ) -> None:
-        # LINE から入った相談なら、前に本人が話した希望を指示に足す(確認形で1回・聞き直さない)
-        super().__init__(instructions=ADVISOR_INSTRUCTIONS + stated_preferences_note(stated_preferences))
+        # LINE から入った相談なら、前に本人が話した希望と、トークでアップロードした履歴書の要点を
+        # 指示に足す(確認形で使い・聞き直さない)
+        super().__init__(instructions=ADVISOR_INSTRUCTIONS + stated_preferences_note(stated_preferences)
+                         + uploaded_resume_note(uploaded_resume))
         self._dip = dip  # DipMCP(またはテスト用スタブ)。None なら求人提案は不可の旨を返す
         self._draft_client_factory = draft_client_factory  # () -> AsyncOpenAI 互換
         self._research_client_factory = research_client_factory  # () -> AsyncOpenAI 互換
