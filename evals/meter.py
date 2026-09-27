@@ -19,24 +19,7 @@ from anthropic.resources.beta.messages import Messages as BetaMessages
 from anthropic.resources.messages import AsyncMessages, Messages
 from openai.resources.responses import AsyncResponses, Responses
 
-# $/1M tokens (input, output)。キャッシュ書込 1.25x / 読込 0.1x(GPT-6 も同じ)、web search は $10/1k 回。
-PRICES = {
-    "claude-haiku-4-5": (1.0, 5.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-sonnet-5": (2.0, 10.0),
-    "claude-opus-4-8": (5.0, 25.0),
-    "claude-opus-5": (5.0, 25.0),
-    "gpt-6-sol": (2.0, 10.0),
-    "gpt-6-luna": (0.1, 0.5),
-}
-WEB_SEARCH_PER_CALL = 0.01
-
-
-def _price(model: str) -> tuple[float, float]:
-    for prefix, p in PRICES.items():
-        if model.startswith(prefix):
-            return p
-    return (0.0, 0.0)
+from line_runtime.ledger import cost_usd  # 料金表は費用台帳(line_runtime/ledger.py)が正
 
 
 @dataclass
@@ -51,11 +34,8 @@ class Call:
 
     @property
     def cost(self) -> float:
-        pin, pout = _price(self.model)
-        return (
-            (self.input_tokens + 1.25 * self.cache_write + 0.1 * self.cache_read) * pin
-            + self.output_tokens * pout
-        ) / 1e6 + self.web_searches * WEB_SEARCH_PER_CALL
+        return cost_usd(self.model, self.input_tokens, self.output_tokens, self.cache_write, self.cache_read,
+                        self.web_searches)
 
 
 class Meter:
