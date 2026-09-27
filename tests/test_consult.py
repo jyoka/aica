@@ -259,10 +259,27 @@ def test_checks_do_not_read_putting_off_jobs_as_show_me_jobs():
     turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["どのあたりで探しますか?"]),
              turn(["承知しました。また声をかけてくださいね。"], quick_replies=CLOSING)]
     for later in ("求人を見るのはあとでいいです", "求人を見るのはまた今度で"):
-        v = conversation_checks(SC, turns, [None, "求人を探す", later])["violations"]
+        v = conversation_checks(CONSULT, turns, [None, "まず相談する", later])["violations"]
         assert not any("「求人を見せて」の後に" in x for x in v), v
-    v = conversation_checks(SC, turns, [None, "求人を探す", "今はいいから求人を見せて"])["violations"]
+    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "今はいいから求人を見せて"])["violations"]
     assert "T3: 「求人を見せて」の後に求人を探さなかった" in v
+
+
+def test_show_me_jobs_outside_consult_may_get_a_clarifying_question():
+    """非相談フローでは「求人を見たい」に絞り込みの1問を返してよい(即提案の指示はプロンプト上、相談モードだけ)。"""
+    turns = [turn(["どうしますか?"], quick_replies=MENU),
+             turn(["どのあたりで探しますか?"], quick_replies=["渋谷", "新宿", "今はいい"])]
+    v = conversation_checks(SC, turns, [None, "バイトの求人を見たいです"])["violations"]
+    assert v == []
+
+
+def test_restating_saved_values_in_a_summary_is_not_a_reask():
+    """まとめの平叙文で保存済みの値を復唱し、同じ吹き出しの質問で先へ進むのは聞き直しではない。"""
+    turns = [turn(["どうしますか?"], quick_replies=MENU),
+             turn(["時間帯はいつがよいですか?"], [("save_user_preferences", {"preferences": {"time_band": "夕方"}})]),
+             turn(["未経験、時間帯は夕方で整理しました。この内容で求人を見ますか?"], quick_replies=["見る", "今はいい"])]
+    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "夕方です"])["violations"]
+    assert not any("聞き直した" in x for x in v), v
 
 
 def test_checks_catch_unsaved_consult_answers():

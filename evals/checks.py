@@ -196,6 +196,11 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
     return out
 
 
+def _question_part(b: str) -> str:
+    """吹き出しのうち質問の文だけ(疑問符を含む文)。保存済みの値を復唱するまとめの平叙文は聞き直しではない。"""
+    return "".join(s for s in re.split(r"(?<=[。!!\n])", b) if "?" in s or "？" in s)
+
+
 def reask_violations(turns: list[dict]) -> list[str]:
     """この会話で保存した項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。"""
     saved: dict[str, int] = {}
@@ -204,8 +209,9 @@ def reask_violations(turns: list[dict]) -> list[str]:
         for b in r["bubbles"]:
             if not _questions([b]):
                 continue
+            q = _question_part(b)
             for k, at in saved.items():
-                if at < i and k in REASK and REASK[k].search(b):
+                if at < i and k in REASK and REASK[k].search(q):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
         for t in r["tools"]:
             if t["name"] == "save_user_preferences":
@@ -234,6 +240,11 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
         if "record_conversation_outcome" in names and not turns[i]["cards"] and "recommend_jobs" not in names:
             out.append(f"T{i + 1}: 本人が切り上げる前に相談を締めた")
             break
+    for i in range(entry, min(len(turns), len(user_msgs))):  # 相談の途中でも「求人を見せて」には、そのターンで求人を出す
+        m = user_msgs[i] or ""
+        if m and asks_for_jobs(m) and not (turns[i]["cards"] or {"recommend_jobs", "relax_conditions"}
+                                           & {t["name"] for t in turns[i]["tools"]}):
+            out.append(f"T{i + 1}: 「求人を見せて」の後に求人を探さなかった")
     saved = {k for r in turns for t in r["tools"] if t["name"] == "save_user_preferences"
              for k in (t["args"].get("preferences") or {})}
     out += [f"相談で聞いた「{k}」を保存していない" for k in sc.get("expect_saved_preferences") or [] if k not in saved]
@@ -267,10 +278,6 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:
             violations.append(f"T{pii_turn + 1}: 個人情報を書かれた後に入力画面を案内していない")
-    for i, m in enumerate(user_msgs[:len(turns)]):  # 「求人を見せて」には、そのターンで求人を出す(相談の途中でも)
-        if m and asks_for_jobs(m) and not (turns[i]["cards"] or {"recommend_jobs", "relax_conditions"}
-                                              & {t["name"] for t in turns[i]["tools"]}):
-            violations.append(f"T{i + 1}: 「求人を見せて」の後に求人を探さなかった")
     violations += reask_violations(turns)
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
