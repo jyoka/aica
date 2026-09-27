@@ -225,14 +225,16 @@ def _question_part(b: str) -> str:
 
 # 本人の発言から取る「今回の値」の候補から外す、項目名そのものの語
 _KEY_WORDS = {"エリア", "時間帯", "時間", "職種", "勤務地", "仕事", "求人", "希望", "条件"}
-# 疑問詞。これを含む問い(「どのエリアで探しますか?」)は白紙の問いで、値を示して確かめる形ではない
-WH_WORD = re.compile(r"どの|どこ|どんな|何|いつ|どれ|どちら|どう")
+# 疑問詞。これを含む問い(「どのエリアで探しますか?」)は白紙の問いで、値を示して確かめる形ではない。
+# 「どう」は値を示して尋ねる形(「渋谷と原宿でどうですか?」)にしか付かないので含めない。「何か」「いつも」「どちらも」も疑問詞ではない
+WH_WORD = re.compile(r"どの|どこ|どんな|何(?!か)|いつ(?!も)|どれ|どちら(?!も)")
 
 
 def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded: dict | None = None) -> list[str]:
     """保存済みの項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。
     seeded は会話の前から保存されている希望(再訪): 1通目で確認した後は、差分だけを受け取る。
-    疑問詞の無い確認の問いに既知の値(保存した値か、そのターンの本人の発言にある語)が入っていれば、聞き直しではない
+    疑問詞の無い確認の問いで、項目を指す語の後ろに既知の値(保存した値か、そのターンの本人の発言にある語)があれば、
+    聞き直しではない。値が前にあるだけ(「接客のお仕事で、勤務地の希望はありますか?」)は、前の答えを添えた次の問い
     (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
     (同じ値の保存し直しは数えない)。"""
     saved = {k: 0 for k in seeded or {}}
@@ -254,8 +256,8 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
                 continue
             q = _question_part(b)
             for k, at in saved.items():
-                if at < i and k in REASK and REASK[k].search(q) and not (
-                        not WH_WORD.search(q) and any(w in q for w in [*known.get(k, []), *said])):
+                m = REASK[k].search(q) if at < i and k in REASK else None
+                if m and not (not WH_WORD.search(q) and any(w in q[m.start():] for w in [*known.get(k, []), *said])):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
     return out
 
