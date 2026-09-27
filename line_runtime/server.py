@@ -10,6 +10,8 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 マルチユーザー: 初回アクセスでブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する(認証・招待制はしない)。
 シナリオはブラウザ専用のユーザー「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても
 会話・長期メモリ・行動履歴・費用台帳が混線しない。
+
+会話数の上限(line_runtime.quota): 1人1日あたりのターン数に上限があり、超えたら LLM を呼ばずに丁寧に打ち切る。
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from dip_mcp import logic
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
+from line_runtime.quota import DailyQuota, daily_limit, limit_reply
 from line_runtime.runtime import EVENTS, LineRuntime
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -70,6 +73,9 @@ def _require_own(request: Request, user_id: str) -> None:
         raise HTTPException(403, "このブラウザのユーザーIDではありません")
 
 
+LIMIT_REASON = "本日の会話数の上限に達している"
+
+
 class EventIn(BaseModel):
     user_id: str
     event: str
@@ -79,6 +85,7 @@ class EventIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.load_env()
+    app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json")
     async with LineRuntime() as rt:
         app.state.rt = rt
         yield
@@ -129,13 +136,21 @@ async def event(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
+    _require_text(body)
+    entry, kind = EVENTS[body.event]
+    quota = app.state.quota
     facts = None
-    if EVENTS[body.event][1] == "push":
+    if kind == "push":
+        # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
+        if not quota.available(body.user_id):
+            return {"sent": False, "reason": LIMIT_REASON}
         # ここは dip のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを dip が決める。
         gate = logic.push_trigger(state, body.user_id, body.event)
         if not gate["allowed"]:
             return {"sent": False, "reason": gate["reason"]}
         facts = gate["facts"]
+    if not quota.take(body.user_id):
+        return limit_reply(entry)
     try:
         return await app.state.rt.handle(body.user_id, body.event, body.text, facts)
     except ValueError as e:
@@ -149,18 +164,26 @@ async def event_stream(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
+    _require_text(body)
 
     async def lines():
         entry, kind = EVENTS[body.event]
         yield _line({"kind": "start", "event": body.event, "entry": entry, "event_kind": kind, "model": config.MODEL})
         facts = None
+        quota = app.state.quota
         if kind == "push":
+            if not quota.available(body.user_id):
+                yield _line({"kind": "reply", "sent": False, "reason": LIMIT_REASON})
+                return
             gate = logic.push_trigger(state, body.user_id, body.event)
             yield _line({"kind": "gate", **gate})
             if not gate["allowed"]:
                 yield _line({"kind": "reply", "sent": False, "reason": gate["reason"]})
                 return
             facts = gate["facts"]
+        if not quota.take(body.user_id):  # 上限を超えたら LLM を呼ばずに案内だけ返す
+            yield _line({"kind": "reply", **limit_reply(entry)})
+            return
         try:
             async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts):
                 yield _line(ev)
@@ -168,6 +191,12 @@ async def event_stream(body: EventIn, request: Request):
             yield _line({"kind": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+
+def _require_text(body: EventIn) -> None:
+    """空の発言は、会話数を使う前に断る(上限の1回分を無駄にしない)。"""
+    if EVENTS[body.event][1] == "user" and not (body.text or "").strip():
+        raise HTTPException(400, f"{body.event} には空でない text が必要です")
 
 
 def _line(obj: dict) -> str:
