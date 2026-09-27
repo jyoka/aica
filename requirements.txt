@@ -8,3 +8,12 @@ langgraph-checkpoint-sqlite>=3.1
 fastapi>=0.115
 uvicorn>=0.30
 pytest>=8.3
+# 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ OpenAI + Cartesia TTS(ja)+ Silero VAD
+# + 多言語 turn detector。オフラインテストも livekit-agents を import するので、同じ venv に入れる。
+livekit-agents[turn-detector]>=1.8
+livekit-plugins-openai>=1.8
+livekit-plugins-deepgram>=1.8
+livekit-plugins-cartesia>=1.8
+livekit-plugins-silero>=1.8
+livekit-api>=1.2
+openai>=1.99

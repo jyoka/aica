@@ -4,8 +4,9 @@
 
 旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、line-sim のコア
 (会話ランタイム `line_runtime/`・dip 側 MCP `dip_mcp/`・評価基盤 `evals/` + `evalkit/`・テスト・架空データ `fixtures/`)を
-履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブ・voice-resume・resume-intake は
-持ってきていない(voice / resume の移植は別 issue)。
+履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブ・resume-intake は
+持ってきていない(resume の移植は別 issue)。音声棚卸しアドバイザー(voice-resume)は同じコミットから
+`voice_resume/` に移植した(task 62。下の「音声相談」)。
 
 LINE 公式アカウントの AI モード上で動くアルバイト探しアシスタントを、自分の手元で再現して試すためのもの。
 **LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)を MCP で分ける**という本番の境界をそのまま作り、
@@ -136,17 +137,21 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 ## 音声相談(voice-resume との連携)
 
-> **注意**: voice-resume はこのリポジトリには未移植(別 issue)。受け口(`/liff/voice` や `/api/voice/*`)は
-> 旧 line-sim と同じまま残してあるが、音声アドバイザー本体は旧リポジトリ `jyoka/aica_ra_a2a_poc` の `voice-resume/` にある。
+トークルームの右上「🎤 音声で相談」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))に
+LIFF のように入れる(旧リポジトリの task 40 を task 62 で移植)。
+音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・履歴書の下書きは、
+同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
 
-トークルームの右上「🎤 音声で相談」から、音声アドバイザー(`voice-resume/`)に LIFF のように入れる(task 40)。
-音声で聞いた希望・提案した求人・履歴書の下書きは、同じユーザーの dip の状態と LINE のトークに戻る。
+ユーザーの対応付けは匿名ユーザーID(上の「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、
+トークで使っているユーザー `匿名ID:シナリオユーザー`(例 `w-…:sim-new`)をそのまま音声側へ渡し、
+dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP ツールの引数名は `line_user_id` のまま)。
+音声構成は旧リポジトリと同じ(LiveKit Cloud + Deepgram nova-3 + OpenAI gpt-6-sol + Cartesia sonic-3.5)。
 
 ```
-トーク「音声で相談」→ GET /liff/voice?user=<line_user_id>
-   → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に line_user_id を載せる
+トーク「音声で相談」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
+   → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に user_id を載せる
    → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望は確認形で1回だけ・聞き直さない)
-   → 会話中: recommend_jobs をその line_user_id で呼ぶ / 本人が言った希望を save_user_preferences で保存
+   → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
    → 終わり: 結果を propose / consult で記録し、POST /api/voice/result で求人と下書きをこちらへ返す
    → トークが POST /api/voice/{user}/pull で受け取り、求人カード(dip の求人データから作り直す)と
      「履歴書の下書きを見る」(GET /liff/voice/draft)を描く
@@ -157,16 +162,26 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - 会話結果の記録はコードが propose(求人を提案できた)/ consult(提案なし)だけを書く。
   wait は音声側からは記録しない(断っていない人を wait と記録しない決まり)。
 
-動かし方(3プロセス。voice-resume は旧リポジトリのものを使う。セットアップは旧リポジトリの `voice-resume/README.md`):
+動かし方(3プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`):
 
 ```bash
-# 1) line-sim(このリポジトリの直下)
+# リポジトリ直下の .env に(下の表の「音声相談」の必須の5つ + OPENAI_API_KEY)
+#   LIVEKIT_URL=wss://<project>.livekit.cloud
+#   LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...
+#   DEEPGRAM_API_KEY=...  CARTESIA_API_KEY=...  OPENAI_API_KEY=...
+./.venv/bin/python -m voice_resume.agent download-files     # 初回のみ(VAD / turn detector のモデル)
+
+# 1) トーク(line_runtime)
 ./.venv/bin/python -m line_runtime.server                  # http://127.0.0.1:8030
-# 2) voice-resume のワーカー(旧リポジトリの voice-resume/ で)
+# 2) voice-resume のワーカー(LiveKit Cloud に接続して待受)
 ./.venv/bin/python -m voice_resume.agent dev
-# 3) voice-resume の会話ページ(同じく旧リポジトリの voice-resume/ で)
+# 3) voice-resume の会話ページ
 ./.venv/bin/uvicorn voice_resume.server:app --port 8090
 ```
+
+オフラインテスト(実 API なし。台本(文字起こし)駆動の会話の流れ・検索引数・下書き、dip の MCP 結合、匿名ユーザーID のスコープ)は
+`./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
+(費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
 
 → <http://127.0.0.1:8030> でシナリオを選ぶ → 右上「🎤 音声で相談」→ 別タブで面談(マイク許可)
 → 面談が終わる(締めの挨拶か「面談を終える」)と、数秒でトークに求人カードと下書きのリンクが届く。
@@ -188,6 +203,19 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `DIP_STATE_PATH` | `data/state.json` | dip 側のシミュレーション状態 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シミュレーション上の現在時刻 |
 | `VOICE_RESUME_URL` | `http://127.0.0.1:8090` | 音声アドバイザーの会話ページ(「音声で相談」の飛び先) |
+
+音声相談(voice_resume)で使うもの。キーはリポジトリ直下の `.env` に置く(`voice_resume/config.py` が読む。トークだけ試すなら不要):
+
+| 環境変数 | 既定 | 用途 |
+|---|---|---|
+| `LIVEKIT_URL` | なし(必須) | LiveKit Cloud のプロジェクト URL(`wss://….livekit.cloud`)。会話ページのサーバーとワーカーの両方が使う |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。会話ページのサーバーが部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
+| `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
+| `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
+| `OPENAI_API_KEY` | なし(必須) | 会話の LLM・履歴書の下書き・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
+| `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 面談の結果(求人・下書き)を返すトーク(line_runtime)の URL |
+| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 面談ごとの下書き・文字起こし・求人提案の保存先 |
+| `VOICE_RESUME_*`(モデル・ボイス・ターン判定) | `voice_resume/config.py` | STT / LLM / TTS のモデル、ボイスと速さ、ターン判定の待ち時間 |
 
 ## 評価(evals/)
 

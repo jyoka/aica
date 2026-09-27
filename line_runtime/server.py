@@ -184,8 +184,9 @@ async def dip_view(user_id: str, request: Request):
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
 
 class VoiceResultIn(BaseModel):
-    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。"""
-    line_user_id: str
+    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。
+    user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID のスコープ「匿名ID:シナリオユーザー」)。"""
+    user_id: str
     jobs: list[dict] = []
     draft_markdown: str = ""
     files: list[str] = []
@@ -196,8 +197,8 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。
     呼ぶのは voice-resume のバックエンド(Cookie なし)。Cookie を持つブラウザが他人のトークへ
     結果を差し込めないよう、ここも所有チェックを通す。"""
-    _require_own(request, body.line_user_id)
-    return logic.record_voice_result(state, body.line_user_id, body.jobs, body.draft_markdown, body.files)
+    _require_own(request, body.user_id)
+    return logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files)
 
 
 @app.post("/api/voice/{user_id}/pull")
