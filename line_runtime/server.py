@@ -38,6 +38,7 @@ from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
 from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
+from line_runtime.resume_confirm import resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -300,9 +301,12 @@ async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFi
     result = finalize(draft)
     empty = draft.model_dump(exclude={"unconfirmed"}) == type(draft)().model_dump(exclude={"unconfirmed"})
     if empty:  # 読めなかったファイルで、前に読み取れた結果を上書きしない
-        return {"result": result, "empty": True, "view_url": None}
+        return {"result": result, "empty": True, "view_url": None,
+                "bubbles": resume_bubbles(result["resume"], empty=True)}
     rec = logic.save_resume_upload(state, user_id, result)
-    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}"}
+    # トークに出す確認は要点だけ(80字以内の吹き出し)。全文は view_url の「読み取り結果を見る」で見せる
+    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}",
+            "bubbles": resume_bubbles(rec["resume"])}
 
 
 @app.get("/liff/resume", response_class=HTMLResponse)

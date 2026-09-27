@@ -177,7 +177,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 トーク右上「📄 履歴書」→ ファイルを選ぶ → POST /api/resume/{user_id}/upload(multipart、10MB まで)
    → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
-   → トークに読み取り結果の確認(職歴・学歴・資格)と「読み取り結果を見る」(GET /liff/resume)を出す
+   → トークに読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume。全文)を出す
    → 「この内容で相談する」→ LINE 側 AI が get_user_conversation_summary を呼び直し、uploaded_resume を参照して続ける
 ```
 

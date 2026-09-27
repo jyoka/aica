@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from html import escape
 from types import SimpleNamespace
 
 import pytest
@@ -193,3 +194,118 @@ def test_prompt_tells_the_agent_to_use_the_uploaded_resume():
     for entry in ("A", "visit", "revisit", "D"):
         text = baitoru_assistant(entry)
         assert "uploaded_resume" in text and "履歴書をアップロードしました" in text
+
+
+# ----------------------------- トークに出す確認は要点だけ(task 89) -----------------------------
+
+# 架空の人物の職務経歴書(スキル欄が長い)。スキル欄を全部つなぐと数百字になる
+LONG_SKILLS = [
+    "プログラミング言語: Python(Django、FastAPI、pandas)、TypeScript(React、Next.js)、Go、SQL を業務で5年以上使用",
+    "クラウド: AWS(EC2、ECS、Lambda、RDS、S3、CloudFront)の設計・構築・運用、Terraform による IaC 化",
+    "データ基盤: BigQuery と dbt を使った分析基盤の構築、Airflow によるワークフロー管理と監視の整備",
+    "チームマネジメント: 5〜8名のチームのリーダーとして採用・育成・評価・1on1 を担当",
+    "Microsoft Office(Word、Excel、PowerPoint)で社内資料・マニュアルを作成",
+]
+
+
+def _long_resume(**kw) -> dict:
+    d = clean_draft().model_dump()
+    d["skills"] = LONG_SKILLS
+    d["work_history"] = [dict(d["work_history"][0], organization=o, employment_type=t) for o, t in (
+        ("みほんシステムズ株式会社", "正社員"), ("架空データ合同会社", "契約社員"),
+        ("コンビニみほん駅前店", "アルバイト"), ("みほん書店", "アルバイト"))]
+    d["certifications"] = [{"name": n, "acquired": ""} for n in (
+        "基本情報技術者", "応用情報技術者", "AWS 認定ソリューションアーキテクト - アソシエイト", "普通自動車第一種運転免許")]
+    d.update(kw)
+    return d
+
+
+def test_confirm_bubbles_stay_short_for_a_long_resume():
+    from line_runtime.resume_confirm import resume_bubbles
+
+    assert len("、".join(LONG_SKILLS)) > 300  # 前の出し方だとこれが1つの吹き出しになっていた
+    for unconfirmed in ([], ["職歴2社目の在籍期間の終わり"], ["職歴2社目の在籍期間の終わり", "資格の取得年", "学歴の卒業年"]):
+        bubbles = resume_bubbles(_long_resume(unconfirmed=unconfirmed))
+        text = "\n".join(bubbles)
+        assert len(bubbles) <= 3 and all(len(b) <= 80 for b in bubbles), bubbles
+        # 職歴は勤め先と雇用形態、スキルは見出しだけ、資格は名前。超えた分は「ほか N 件」
+        assert "みほんシステムズ株式会社・正社員" in text and "職歴" in text
+        assert "スキル: プログラミング言語、クラウド、データ基盤 ほか 2 件" in text
+        assert "基本情報技術者" in text and "Django" not in text
+    bubbles = resume_bubbles(_long_resume(unconfirmed=[]))
+    text = "\n".join(bubbles)
+    assert "ほか 1 件" in text  # 職歴4件・資格4件のうち3件を出して残りは件数
+    assert "コンビニみほん駅前店・アルバイト" in text and "みほん書店" not in text
+    assert "資格: 基本情報技術者、応用情報技術者" in text and "普通自動車" not in text
+
+
+def test_confirm_bubbles_show_the_first_unconfirmed_point():
+    from line_runtime.resume_confirm import resume_bubbles
+
+    one = resume_bubbles(_long_resume(unconfirmed=["職歴2社目の在籍期間の終わり"]))
+    assert one[-1] == "読み取れなかった点: 職歴2社目の在籍期間の終わり"
+    many = resume_bubbles(_long_resume(unconfirmed=["職歴2社目の在籍期間の終わり", "資格の取得年", "学歴の卒業年"]))
+    assert many[-1].startswith("読み取れなかった点: 職歴2社目の在籍期間の終わり")
+    assert "ほか 2 件は「読み取り結果を見る」で確認できます" in many[-1]
+    long_point = resume_bubbles(_long_resume(unconfirmed=["あ" * 200, "い"]))
+    assert len(long_point[-1]) <= 80 and "ほか 1 件" in long_point[-1]
+    empty = resume_bubbles(ResumeDraft(unconfirmed=["画像が不鮮明で読み取れなかった"]).model_dump(), empty=True)
+    assert "読み取れた項目がありませんでした" in empty[0] and empty[1] == "画像が不鮮明で読み取れなかった"
+
+
+def test_confirm_bubbles_for_a_short_resume():
+    from line_runtime.resume_confirm import resume_bubbles
+
+    bubbles = resume_bubbles(clean_draft().model_dump())
+    assert len(bubbles) <= 3 and all(len(b) <= 80 for b in bubbles)
+    assert "職歴: コンビニみほん駅前店" in bubbles[0] and "スキル: 接客" in "\n".join(bubbles)
+
+
+def test_upload_response_carries_short_bubbles_and_the_full_view_is_unchanged(app, monkeypatch):
+    """アップロードの応答に確認の吹き出し(要点)が載り、「読み取り結果を見る」は全文のまま。"""
+    from fastapi.testclient import TestClient
+
+    long = ResumeDraft.model_validate(_long_resume(unconfirmed=["職歴2社目の在籍期間の終わり", "資格の取得年"]))
+    monkeypatch.setattr(app, "resume_client", lambda: StubClient(long))
+    with TestClient(app.app) as client:
+        body = _upload(client, "sim-new").json()
+        assert len(body["bubbles"]) <= 3 and all(len(b) <= 80 for b in body["bubbles"])
+        assert "読み取れなかった点: 職歴2社目の在籍期間の終わり" in body["bubbles"][-1]
+        assert not any(p in json.dumps(body["bubbles"], ensure_ascii=False) for p in PII)
+        assert body["result"]["resume"]["skills"] == LONG_SKILLS  # 保存内容は全文のまま
+        page = client.get(body["view_url"]).text
+        assert all(escape(s) in page for s in LONG_SKILLS) and "みほん書店" in page and "資格の取得年" in page
+
+
+def test_confirm_bubbles_never_drop_a_section():
+    """職歴・スキル・資格は空でなければ必ず出る(収まらなくても「資格 N 件」の形で)。順番も崩れない。"""
+    import random
+
+    from line_runtime.resume_confirm import resume_bubbles
+
+    d = clean_draft().model_dump()
+    d["work_history"] = [dict(d["work_history"][0], organization=o, employment_type="正社員") for o in (
+        "株式会社みほんコンサルティング", "みほん情報システム株式会社", "架空ソリューションズ株式会社", "みほん商事株式会社")]
+    d["skills"] = ["要件定義・基本設計・詳細設計: 業務系", "Java・Spring Boot による開発", "チームリーダーとして5名をまとめた"]
+    d["certifications"] = [{"name": n, "acquired": ""} for n in ("応用情報技術者試験", "基本情報技術者試験")]
+    d["unconfirmed"] = ["2社目の退職年月"]
+    text = "\n".join(resume_bubbles(d))
+    assert "資格" in text and text.index("職歴") < text.index("スキル") < text.index("資格")
+
+    rng = random.Random(89)
+    words = "みほん架空株式会社情報システム開発運用設計ABCDEFG営業接客販売管理"
+    word = lambda n: "".join(rng.choice(words) for _ in range(rng.randint(1, n)))
+    for _ in range(300):
+        d = clean_draft().model_dump()
+        d["work_history"] = [dict(d["work_history"][0], organization=word(20), employment_type=word(5))
+                             for _ in range(rng.randint(0, 6))]
+        d["skills"] = [word(60) for _ in range(rng.randint(0, 8))]
+        d["certifications"] = [{"name": word(30), "acquired": ""} for _ in range(rng.randint(0, 6))]
+        d["unconfirmed"] = [word(120) for _ in range(rng.randint(0, 4))]
+        bubbles = resume_bubbles(d)
+        assert len(bubbles) <= 3 and all(len(b) <= 80 for b in bubbles), bubbles
+        text = "\n".join(bubbles)
+        present = [label for label, key in (("職歴", "work_history"), ("スキル", "skills"), ("資格", "certifications"))
+                   if d[key]]
+        assert all(label in text for label in present), (present, bubbles)
+        assert [text.index(label) for label in present] == sorted(text.index(label) for label in present)

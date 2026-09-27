@@ -548,16 +548,8 @@
     }
   };
   function renderResume(d, col) {
-    const r = d.result.resume;
-    const lines = [];
-    if (r.work_history.length) lines.push("職歴: " + r.work_history.map(w => [w.organization, w.employment_type].filter(Boolean).join("・")).join(" / "));
-    if (r.education.length) lines.push("学歴: " + r.education.map(x => x.school).join(" / "));
-    if (r.skills.length) lines.push("スキル: " + r.skills.join("、"));
-    if (r.certifications.length) lines.push("資格: " + r.certifications.map(c => c.name).join("、"));
-    const bubbles = d.empty
-      ? ["履歴書から読み取れた項目がありませんでした。ファイルが履歴書か、写りを確認してもう一度お試しください。", ...r.unconfirmed.slice(0, 1)]
-      : ["履歴書を読み取りました。内容をご確認ください。", ...(lines.length ? [lines.join("\n")] : []),
-         ...(r.unconfirmed.length ? [`読み取れなかった点が${r.unconfirmed.length}件あります。`] : [])];
+    // 吹き出しの中身(要点だけ・80字以内)はサーバーが組み立てる(line_runtime/resume_confirm.py)
+    const bubbles = d.bubbles;
     renderReply({ bubbles: bubbles.slice(0, 3), cards: [], quick_replies: [],
                   buttons: d.empty ? [] : [{ label: "読み取り結果を見る", url: d.view_url }] }, col);
     if (!d.empty) {
