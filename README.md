@@ -5,7 +5,7 @@
 旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、line-sim のコア
 (会話ランタイム `line_runtime/`・dip 側 MCP `dip_mcp/`・評価基盤 `evals/` + `evalkit/`・テスト・架空データ `fixtures/`)を
 履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブ・voice-resume・resume-intake は
-持ってきていない(voice / resume の移植は別 issue)。
+持ってきていない(voice の移植は別 issue)。resume-intake(履歴書の読み取り)は task 63 で `resume_intake/` に移植した。
 
 LINE 公式アカウントの AI モード上で動くアルバイト探しアシスタントを、自分の手元で再現して試すためのもの。
 **LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)を MCP で分ける**という本番の境界をそのまま作り、
@@ -153,6 +153,37 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
   dip のツールの呼び出し(引数・結果の要約)、プッシュの判定を順に出し、構成図の動いている部分を光らせる。
   画面は `POST /api/event/stream`(1行1件の JSON で途中経過を返す)を使う。`POST /api/event` は返信だけをまとめて返す。
 
+## 履歴書のアップロード(resume_intake)
+
+旧リポジトリの `resume-intake/`(`cda42fd`)を `resume_intake/` に移植し、トークからアップロードできるようにした(task 63)。
+履歴書(PDF / JPEG / PNG)を OpenAI API(構造化出力。既定 `gpt-6-sol`、`RESUME_INTAKE_MODEL` で差し替え可)で読み取り、
+[履歴書下書きの共通スキーマ](docs/design/resume-draft-schema.md)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
+
+```
+トーク右上「📄 履歴書」→ ファイルを選ぶ → POST /api/resume/{user_id}/upload(multipart、10MB まで)
+   → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
+   → トークに読み取り結果の確認(職歴・学歴・資格)と「読み取り結果を見る」(GET /liff/resume)を出す
+   → 「この内容で相談する」→ LINE 側 AI が get_user_conversation_summary を呼び直し、uploaded_resume を参照して続ける
+```
+
+- 個人情報: 氏名・生年月日・住所・電話・メールは保存しない。プロンプトで「書かない」を指示し、`personal` はコードで常に空欄、
+  文字列に混ざった電話番号・メール・郵便番号は読み取り直後(`scrub_pii`)と dip への保存時の2回、機械的に除く。
+  ファイル名(氏名が入りがち)も保存せず、トークにも出さない。
+- 読めないファイル(白紙・別書類・不鮮明)は「読み取れなかった」と理由を返すだけで保存しない(前に読み取れた結果を上書きしない)。
+- シナリオを始め直すとそのユーザーの dip の状態が初期に戻るので、アップロードした結果も消える。
+- 読み取り1回ごとに費用台帳へ `event: resume_upload` の行が付く。
+
+CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリに入れない):
+
+```bash
+./.venv/bin/python -m resume_intake.cli resume_intake/samples/01_clean.pdf   # 結果は data/resume_intake/ にも保存
+./.venv/bin/python -m resume_intake.run_samples                               # 実 API で正解(samples/expected/)と比較
+./.venv/bin/python resume_intake/samples/make_samples.py                      # サンプルを作り直す(reportlab / pillow が要る)
+```
+
+テストは `tests/test_resume_intake.py`(移植した読み取りのテスト)と `tests/test_resume_upload.py`(アップロード → 保存 →
+同じユーザーの会話からの参照)。どちらも OpenAI・LLM はスタブで、実 API は呼ばない。
+
 ## 音声相談(voice-resume との連携)
 
 > **注意**: voice-resume はこのリポジトリには未移植(別 issue)。受け口(`/liff/voice` や `/api/voice/*`)は
@@ -206,6 +237,7 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `DIP_MCP_URL` | なし(stdio) | dip MCP サーバーの URL |
 | `DIP_STATE_PATH` | `data/state.json` | dip 側のシミュレーション状態 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シミュレーション上の現在時刻 |
+| `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りに使う OpenAI モデル(アップロードは常に OpenAI。`OPENAI_API_KEY` が要る) |
 | `VOICE_RESUME_URL` | `http://127.0.0.1:8090` | 音声アドバイザーの会話ページ(「音声で相談」の飛び先) |
 
 ## 評価(evals/)

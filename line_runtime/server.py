@@ -22,8 +22,9 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from html import escape
+from typing import Annotated
 
-from fastapi import FastAPI, Form, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -36,8 +37,10 @@ from dip_mcp import logic
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
-from line_runtime.quota import DailyQuota, daily_limit, limit_reply
+from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
 from line_runtime.runtime import EVENTS, LineRuntime
+from resume_intake import config as resume_config
+from resume_intake.extract import extract_bytes, finalize, media_type
 
 STATIC = config.ROOT / "line_runtime" / "static"
 state = State()
@@ -254,6 +257,84 @@ async def liff_voice_draft(user: str, rid: int, request: Request):
             f"<pre style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px'>"
             f"{escape(r['draft_markdown'])}</pre>")
     return _page("履歴書の下書き", body)
+
+
+# ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
+
+
+def resume_client():
+    """履歴書の読み取りに使う OpenAI のクライアント(テストでは固定応答のスタブに差し替える)。"""
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI()
+
+
+@app.post("/api/resume/{user_id}/upload")
+async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFile, File()]):
+    """トークからアップロードされた履歴書(PDF / JPEG / PNG)を読み取り、そのユーザーの dip の状態に保存する。
+    ファイルはディスクに置かず、ファイル名も保存しない。personal は常に空欄、文字列中の電話・メール・郵便番号は除く。
+    保存した結果は get_user_conversation_summary の uploaded_resume として、同じユーザーの会話から参照される。"""
+    _require_own(request, user_id)
+    name = file.filename or ""
+    try:
+        media_type(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    data = await file.read(resume_config.MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise HTTPException(400, "ファイルが空です")
+    if len(data) > resume_config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
+    if not app.state.quota.take(user_id):  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
+        raise HTTPException(429, LIMIT_MESSAGE)
+    try:
+        draft, usage = await extract_bytes(name, data, resume_client())
+    except Exception as e:  # API のエラーは画面に理由を出す
+        raise HTTPException(502, f"履歴書を読み取れませんでした: {type(e).__name__}") from e
+    app.state.rt.ledger.record(user_id, "resume_upload", resume_config.MODEL,
+                               {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens})
+    result = finalize(draft)
+    empty = draft.model_dump(exclude={"unconfirmed"}) == type(draft)().model_dump(exclude={"unconfirmed"})
+    if empty:  # 読めなかったファイルで、前に読み取れた結果を上書きしない
+        return {"result": result, "empty": True, "view_url": None}
+    rec = logic.save_resume_upload(state, user_id, result)
+    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}"}
+
+
+@app.get("/liff/resume", response_class=HTMLResponse)
+async def liff_resume(user: str, request: Request):
+    """アップロードした履歴書の読み取り結果を表示する(トークの「読み取り結果を見る」のリンク先)。"""
+    _require_own(request, user)
+    rec = logic.resume_upload(state, user)
+    if rec is None:
+        return HTMLResponse(_page("履歴書の読み取り結果", "<p>読み取った履歴書はありません。</p>"), status_code=404)
+    return _page("履歴書の読み取り結果", _resume_html(rec["resume"]))
+
+
+def _resume_html(r: dict) -> str:
+    """読み取り結果(resume_intake.schema.ResumeDraft の形)を読める HTML に。書いてある項目だけ出す。"""
+    def line(*parts: str) -> str:
+        return escape(" ".join(x for x in parts if x))
+
+    pref = r["preferences"]
+    sec: list[tuple[str, list[str]]] = [  # 各行はエスケープ済みの HTML
+        ("職務要約", [line(r["job_summary"])] if r["job_summary"] else []),
+        ("自己PR", [line(r["self_pr"])] if r["self_pr"] else []),
+        ("学歴", [line(e["period"], e["school"], e["status"]) for e in r["education"]]),
+        ("職歴", [line(w["period"], w["organization"], w["employment_type"], w["role"])
+                  + "".join(f"<br>・{escape(d)}" for d in w["duties"] + w["achievements"]) for w in r["work_history"]]),
+        ("その他の経験", [line(o["kind"], o["title"], o["description"]) for o in r["other_experience"]]),
+        ("スキル", [line(x) for x in r["skills"]]),
+        ("資格・免許", [line(c["name"], c["acquired"]) for c in r["certifications"]]),
+        ("希望", [line(x) for x in pref["desired_work"] + pref["conditions"] + pref["notes"]]),
+        ("読み取れなかった点", [line(x) for x in r["unconfirmed"]]),
+    ]
+    rows = "".join(
+        f"<h3 style='font-size:14px;margin:14px 0 4px'>{t}</h3><ul style='margin:0;padding-left:18px;font-size:13px'>"
+        + "".join(f"<li>{v}</li>" for v in items) + "</ul>"
+        for t, items in sec if items)
+    return ("<p>アップロードした履歴書から読み取った内容です。氏名・住所・電話番号・メールアドレスは保存していません。"
+            "内容は必ずご自身で確認してください。</p>" + (rows or "<p>読み取れた項目はありませんでした。</p>"))
 
 
 # ----------------------------- LIFF(dip の応募フォーム画面のモック) -----------------------------
