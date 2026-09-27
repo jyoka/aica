@@ -169,12 +169,98 @@ def stated_preferences_note(stated: dict | None) -> str:
     )
 
 
-def greeting_instructions(stated: dict | None = None) -> str:
-    """会話の最初の発話への指示。前に話した希望があれば、聞き直さずに確認形で始める。"""
+# 指示に入れる履歴書の要点の上限(文字数)。音声の指示が長くなりすぎないよう、超えた分は切る
+RESUME_NOTE_MAX_CHARS = 600
+
+
+def _join(items, sep="・") -> str:
+    return sep.join(str(x) for x in items if x)
+
+
+def _resume_facts(resume: dict) -> list[str]:
+    """dip の要約の uploaded_resume から、面談に使う要点を1行ずつ拾う。
+
+    決まった項目だけを読む(personal や未知の項目は読まない = 氏名・連絡先は指示に入らない)。
+    学歴・自己PR は面談の材料としては優先度が低いので入れない。
+    """
+    lines = []
+    for w in resume.get("work_history") or []:
+        head = _join([w.get("employment_type"), w.get("role"), w.get("period")], "、")
+        line = f"- 職歴: {w.get('organization', '')}" + (f"({head})" if head else "")
+        if w.get("duties"):
+            line += f" やっていたこと: {_join(w['duties'])}"
+        if w.get("achievements"):
+            line += f" 任されたこと: {_join(w['achievements'])}"
+        lines.append(line)
+    if resume.get("certifications"):
+        certs = [c.get("name", "") + (f"({c['acquired']})" if c.get("acquired") else "")
+                 for c in resume["certifications"]]
+        lines.append(f"- 資格・免許: {_join(certs, '、')}")
+    if resume.get("skills"):
+        lines.append(f"- できること: {_join(resume['skills'], '、')}")
+    if resume.get("job_summary"):
+        lines.append(f"- 職務要約: {resume['job_summary']}")
+    for o in resume.get("other_experience") or []:
+        lines.append(f"- {o.get('kind', 'その他の経験')}: {o.get('title', '')}")
+    prefs = resume.get("preferences") or {}
+    wishes = _join([*prefs.get("desired_work", []), *prefs.get("conditions", []), *prefs.get("notes", [])], "、")
+    if wishes:
+        lines.append(f"- 履歴書に書いてある希望: {wishes}")
+    if resume.get("unconfirmed"):
+        lines.append(f"- 読み取れなかった点: {_join(resume['unconfirmed'], '、')}")
+    return lines
+
+
+def uploaded_resume_note(resume: dict | None) -> str:
+    """本人がトークでアップロードした履歴書(dip の要約の uploaded_resume)を、指示への追記にする。
+
+    LINE 側のプロンプト(baitoru_assistant.md の uploaded_resume の決まり)と同じ考え方:
+    書いてある経験・資格・スキルは聞き直さず、確認形で使って次の1問や提案につなげる。
+    要点は RESUME_NOTE_MAX_CHARS 文字で切る。履歴書が無ければ空文字(追記しない)。
+    """
+    facts = "\n".join(_resume_facts(resume or {}))
+    if not facts:
+        return ""
+    if len(facts) > RESUME_NOTE_MAX_CHARS:
+        facts = facts[:RESUME_NOTE_MAX_CHARS] + "…(長いので以下省略)"
+    return (
+        f"\n## アップロードした履歴書({resume.get('uploaded', '')} にトークでアップロード。読み取り結果の要点)\n"
+        + facts
+        + "\n"
+        "- これは本人がアップロードした履歴書に書いてあった事実。ここにある経験・資格・できることは聞き直さない。"
+        "確認形で使い(例:「履歴書ではコンビニで2年半レジと品出しをされていたんですね」)、次の1問や求人の提案につなげる。\n"
+        "- 「読み取れなかった点」は、必要なときだけ1問で確かめる。\n"
+        "- 履歴書の希望と、本人が会話で話した希望が食い違うときは、会話で話した希望を優先する。\n"
+        "- 履歴書の内容を propose_jobs の experience / skills / certifications に入れてよいのは、"
+        "本人が会話で「そうです」と確かめたものだけ。\n"
+    )
+
+
+def _resume_headline(resume: dict | None) -> str:
+    """挨拶で触れる履歴書の一言(最初の職歴。無ければできること)。"""
+    resume = resume or {}
+    for w in resume.get("work_history") or []:
+        duties = _join((w.get("duties") or [])[:2])
+        return f"{w.get('organization', '')}" + (f"で{duties}" if duties else "")
+    return _join((resume.get("skills") or [])[:2], "、")
+
+
+def greeting_instructions(stated: dict | None = None, resume: dict | None = None) -> str:
+    """会話の最初の発話への指示。前に話した希望やアップロードした履歴書があれば、聞き直さずに確認形で始める。
+
+    両方あるときは、履歴書には確認形で1回触れるだけにして、最初の1問は前に話した希望の確認にする
+    (希望は検索条件に直結し、履歴書の経験は会話の中で使えるため)。
+    """
     base = (
         "まず一言で挨拶し、バイト探しの希望と経験を5分ほどで聞くこと、"
         "終わると求人の提案と履歴書の下書きが出ることを短く伝えてください。"
     )
+    headline = _resume_headline(resume) if uploaded_resume_note(resume) else ""
+    if headline:
+        base += (
+            f"続けて、アップロードされた履歴書を見たことに確認形で1回だけ触れてください"
+            f"(例:「履歴書では{headline}をされていたんですね」)。履歴書にあることは聞き直さないでください。"
+        )
     items = [
         f"{PREFERENCE_LABELS.get(k, k)}は{_stated_value(v)}"
         for k, v in (stated or {}).items()
@@ -186,6 +272,10 @@ def greeting_instructions(stated: dict | None = None) -> str:
             + "、".join(items)
             + ")を確認形で1回だけ確かめてください(例:「前回は◯◯とのことでしたが、"
             "今回も同じですか?」)。同じことを聞き直さないでください。"
+        )
+    if headline:
+        return base + (
+            "そのあと最初の質問として、履歴書の経験に近い仕事で探すか、別の仕事を探しているかを1問だけ聞いてください。"
         )
     return base + "そのあと最初の質問として、どんなバイトを探しているか(職種)を聞いてください。"
 
