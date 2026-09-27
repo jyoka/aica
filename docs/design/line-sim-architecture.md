@@ -107,25 +107,26 @@ gpt-6-sol の水準は 2026-09-26 の12シナリオ評価(`sim-20260926-130904`)
 
 ### 音声相談(voice-resume との連携)
 
-voice-resume 本体はこのリポジトリには未移植(旧リポジトリ `jyoka/aica_ra_a2a_poc` の `voice-resume/`。移植は別 issue)。
-受け口(`/liff/voice`・`/api/voice/*`)は旧 line-sim と同じまま残している。
+voice-resume 本体は旧リポジトリ `jyoka/aica_ra_a2a_poc`(`cda42fd`)の `voice-resume/` を `voice_resume/` に移植した(task 62)。
 
-トークルーム右上の「🎤 音声で相談」から、音声アドバイザー(`voice-resume/`)に LIFF のように入れる。
-音声で聞いた希望・提案した求人・履歴書の下書きは、同じユーザーの dip の状態と LINE のトークに戻る。
+トークルーム右上の「🎤 音声で相談」から、音声アドバイザー(`voice_resume/`)に LIFF のように入れる。
+音声で聞いた希望・提案した求人・履歴書の下書きは、同じユーザーの dip の状態とトークに戻る。
 
-- 導線: 「音声で相談」→ `GET /liff/voice?user=<line_user_id>` → voice-resume の会話ページ(`?user=` つき)。
-  `line_user_id` は LiveKit の participant metadata で音声ワーカーまで届く。
+- ユーザーの対応付け: 旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、トークのユーザー
+  `匿名ID:シナリオユーザー`(マルチユーザーの匿名ユーザーID のスコープ)を使う。dip の MCP ツールの引数名は `line_user_id` のまま。
+- 導線: 「音声で相談」→ `GET /liff/voice?user=<ユーザーID>` → voice-resume の会話ページ(`?user=` つき)。
+  ユーザーID は LiveKit の participant metadata(`{"user_id": ...}`)で音声ワーカーまで届く。
 - 会話中: ワーカーは会話の前に dip の要約(`get_user_conversation_summary`)を読み、前に話した希望が
-  あれば確認形で1回だけ使う。求人検索(`recommend_jobs` / `relax_conditions`)はその `line_user_id` で呼び、
+  あれば確認形で1回だけ使う。求人検索(`recommend_jobs` / `relax_conditions`)はそのユーザーID で呼び、
   本人が言った希望(経験・できること・資格を含む8項目)は `save_user_preferences` で保存する(上の長期メモリと同じ入れ物)。
 - 終わり: 会話結果はコードが propose(提案できた)/ consult(提案なし)だけを記録する
-  (wait は断っていない人を wait にしない決まりのため、音声側からは記録しない)。求人と下書きは `POST /api/voice/result` で
-  line-sim へ送られ、dip の `record_voice_result` が未受け取りの `voice_results` として預かる。
+  (wait は断っていない人を wait にしない決まりのため、音声側からは記録しない)。求人と下書きは `POST /api/voice/result`(`user_id` つき)で
+  トーク(line_runtime)へ送られ、dip の `record_voice_result` が未受け取りの `voice_results` として預かる。
   トークが `POST /api/voice/{user}/pull` で未受け取り分を受け取り、求人カード(`job_id` を dip の求人データと
   照合してコードで作り直す。dip に無い求人はカードにならない)と「履歴書の下書きを見る」
   (`GET /liff/voice/draft`)を描く。
 - 起動手順と画面の流れは `README.md` の「音声相談(voice-resume との連携)」、
-  音声側の構成は `voice-resume/README.md`。
+  音声側の構成は `voice_resume/README.md`。
 
 ### 返信のルール(dip の Prompt)
 

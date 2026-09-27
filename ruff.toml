@@ -1,7 +1,7 @@
-# line-sim 配下のみに効く。実行ディレクトリによらず dip_mcp / line_runtime / evals / resume_intake を
+# line-sim 配下のみに効く。実行ディレクトリによらず dip_mcp / line_runtime / evals / resume_intake / voice_resume を
 # ローカルパッケージとして扱い、import の並び(I001)の判定を安定させる。
 [lint.isort]
-known-first-party = ["dip_mcp", "line_runtime", "evals", "resume_intake"]
+known-first-party = ["dip_mcp", "line_runtime", "evals", "resume_intake", "voice_resume"]
 
 [lint.per-file-ignores]
 # 評価レポートの見出し・結果ファイル名の時刻はローカル時刻で十分(既知の DTZ005 ×2)

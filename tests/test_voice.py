@@ -95,7 +95,7 @@ def test_voice_result_round_trip_over_the_api(client):
     """voice-resume が結果を送る → トークが pull で1回だけ受け取る → 下書きページが開ける。"""
     jobs, ids = _voice_jobs()
     r = client.post("/api/voice/result", json={
-        "line_user_id": "sim-new", "jobs": jobs, "draft_markdown": DRAFT, "files": ["out/resume.md"],
+        "user_id": "sim-new", "jobs": jobs, "draft_markdown": DRAFT, "files": ["out/resume.md"],
     })
     assert r.status_code == 200 and r.json()["cards"] == 2
 

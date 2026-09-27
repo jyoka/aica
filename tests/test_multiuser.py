@@ -67,7 +67,7 @@ def test_two_browsers_get_scoped_scenario_users_and_cannot_touch_each_other(tmp_
         assert a.post(f"/api/voice/{rb['user']}/pull").status_code == 403
         assert a.get("/liff/apply", params={"user": rb["user"], "job": "a003"}).status_code == 403
         # 相手のトークへ音声相談の結果を差し込むこともできない
-        assert a.post("/api/voice/result", json={"line_user_id": rb["user"], "draft_markdown": "偽の下書き"}).status_code == 403
+        assert a.post("/api/voice/result", json={"user_id": rb["user"], "draft_markdown": "偽の下書き"}).status_code == 403
         # Cookie の無い呼び出し(評価・テスト)は従来どおり user_id を信頼する
         nc = TestClient(server.app)
         assert nc.post("/api/scenarios/F-follow-new/start").json()["user"] == "sim-new"

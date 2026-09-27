@@ -1,8 +1,8 @@
 # 履歴書下書きの JSON スキーマ(共通形)
 
-音声棚卸し(`voice-resume/`)と、履歴書のアップロードと読み取り(`resume_intake/`)で共有する形。
-このドキュメントが正で、実装は `resume_intake/schema.py`(pydantic)と、旧リポジトリ `jyoka/aica_ra_a2a_poc` の
-`voice-resume/voice_resume/schema.py`(このリポジトリには未移植)にある。形を変えるときは両方を更新すること。
+音声棚卸し(`voice_resume/`)と、履歴書のアップロードと読み取り(`resume_intake/`)で共有する形。
+このドキュメントが正で、実装は `resume_intake/schema.py` と `voice_resume/schema.py`(どちらも pydantic、task 62 で移植済み)の
+2か所に複製されている。形を変えるときは必ず両方を更新すること。
 
 ## 決まりごと
 

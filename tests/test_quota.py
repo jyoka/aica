@@ -109,6 +109,24 @@ def test_over_the_limit_gets_a_polite_notice_without_calling_the_llm_and_recover
     assert q.used(user) == 1
 
 
+def test_voice_page_counts_against_the_daily_quota(tmp_path, monkeypatch):
+    """「音声で相談」も実 API を使うので1ターン扱い: 上限に達したら音声ページへ送らずに案内だけ返す。"""
+    server, model = _server(tmp_path, monkeypatch, "1")
+    from fastapi.testclient import TestClient
+
+    with TestClient(server.app) as client:
+        client.get("/api/me")
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        r = client.get("/liff/voice", params={"user": user}, follow_redirects=False)
+        assert r.status_code == 307  # 1回目は音声ページへ(1ターン消費)
+        assert server.app.state.quota.used(user) == 1
+        r = client.get("/liff/voice", params={"user": user}, follow_redirects=False)
+        assert r.status_code == 429 and LIMIT_MESSAGE in r.text
+        # テキストの会話も同じ枠なので、もう使えない
+        assert client.post("/api/event", json={"user_id": user, "event": "message", "text": "hi"}).json()["limited"]
+        assert model.calls == 0
+
+
 def test_limit_comes_from_env_with_a_default(monkeypatch):
     monkeypatch.delenv("LINE_SIM_DAILY_TURN_LIMIT", raising=False)
     assert daily_limit() == DEFAULT_LIMIT > 0

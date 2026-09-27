@@ -1,0 +1,17 @@
+{
+  "survey": "マイナビ「2026年8月度 アルバイト・パート平均時給レポート」",
+  "period": "2026年8月",
+  "source": "マイナビキャリアリサーチLab",
+  "source_url": "https://career-research.mynavi.jp/wp-content/uploads/2026/09/heikinnzikyuu202608.pdf",
+  "entries": [
+    {
+      "area": "全国",
+      "average_wage": 1303
+    },
+    {
+      "area": "東京都",
+      "average_wage": 1428
+    }
+  ],
+  "fetched_at": "2026-09-26"
+}

@@ -216,8 +216,9 @@ async def dip_view(user_id: str, request: Request):
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
 
 class VoiceResultIn(BaseModel):
-    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。"""
-    line_user_id: str
+    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。
+    user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID のスコープ「匿名ID:シナリオユーザー」)。"""
+    user_id: str
     jobs: list[dict] = []
     draft_markdown: str = ""
     files: list[str] = []
@@ -228,8 +229,8 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。
     呼ぶのは voice-resume のバックエンド(Cookie なし)。Cookie を持つブラウザが他人のトークへ
     結果を差し込めないよう、ここも所有チェックを通す。"""
-    _require_own(request, body.line_user_id)
-    return logic.record_voice_result(state, body.line_user_id, body.jobs, body.draft_markdown, body.files)
+    _require_own(request, body.user_id)
+    return logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files)
 
 
 @app.post("/api/voice/{user_id}/pull")
@@ -241,8 +242,11 @@ async def voice_pull(user_id: str, request: Request):
 
 @app.get("/liff/voice")
 async def liff_voice(user: str, request: Request):
-    """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。"""
+    """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。
+    音声セッションも実 API を使うので、会話数上限を1ターン消費してから通す。"""
     _require_own(request, user)
+    if not app.state.quota.take(user):  # 上限を超えたら音声ページへ送らずに案内だけ返す
+        return HTMLResponse(_page("音声相談", f"<p>{LIMIT_MESSAGE}</p>"), status_code=429)
     return RedirectResponse(f"{config.VOICE_RESUME_URL}/?user={user}")
 
 
