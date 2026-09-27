@@ -2,78 +2,35 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LINE AI シミュレーター</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>バイトル AIアシスタント</title>
 <style>
-  /* LINE トークルーム風。端末のダークモードに関係なくこの配色で固定 */
+  /* LINE トークルーム風(スマホ前提の1画面)。端末のダークモードに関係なくこの配色で固定。
+     開発者画面(/dev の dev.html)と同じ部品・配色を使う */
   :root {
     --room: #8fa9d3; --head: #2f3a4f; --me: #95e05b; --bot: #fff; --text: #1a1d23; --sub: #5f6775; --faint: #8a93a3;
     --chip: #1f5fd1; --chip-line: #c9d6ee; --ok: #06c755; --ok-dark: #05a346; --ok-soft: #e7f8ee;
-    --panel: #ffffff; --bg: #e4e8ef; --line: #e3e7ee; --soft: #f3f5f8; --warn: #b3261e; --warn-soft: #fdecea;
-    --llm: #6d4bd8; --llm-soft: #efeafc; --tool: #0b72c9; --tool-soft: #e6f1fb; --gate: #b86a00; --gate-soft: #fdf1df;
+    --bg: #e4e8ef; --line: #e3e7ee; --soft: #f3f5f8;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); }
+  body { margin: 0; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text);
+         overflow-x: hidden; }
   button { font-family: inherit; }
-  /* 広い画面は3列。各列は画面の高さに収め、中でスクロールする */
-  .wrap { display: grid; grid-template-columns: 300px minmax(340px, 420px) minmax(360px, 480px); grid-template-rows: minmax(0, 1fr);
-          gap: 14px; justify-content: center; height: 100dvh; padding: 14px; }
-  .panel, .phone, .arch { min-height: 0; }
-  .tabs { display: none; gap: 4px; background: #d3d9e3; border-radius: 10px; padding: 3px; }
-  .tabs button { flex: 1; border: 0; background: none; border-radius: 8px; padding: 7px 0; font-size: 12.5px; font-weight: 700; color: var(--sub); cursor: pointer; }
-  .tabs button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px #0000001a; }
-  /* 中くらいの画面: 左の列は「操作」と「構成と処理」をタブで切り替え、右にトーク */
-  @media (max-width: 1239px) {
-    .wrap { grid-template-columns: minmax(300px, 400px) minmax(340px, 440px); grid-template-rows: auto minmax(0, 1fr); }
-    .tabs { display: flex; grid-column: 1; grid-row: 1; } .tabs [data-tab="talk"] { display: none; }
-    .panel, .arch { grid-column: 1; grid-row: 2; } .phone { grid-column: 2; grid-row: 1 / span 2; }
-    body[data-tab="arch"] .panel, body:not([data-tab="arch"]) .arch { display: none; }
-  }
-  /* 狭い画面: 上のタブで1つずつ表示 */
-  @media (max-width: 759px) {
-    .wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); padding: 8px; gap: 8px; }
-    .tabs [data-tab="talk"] { display: block; }
-    .panel, .arch, .phone { grid-column: 1; grid-row: 2; }
-    body[data-tab="talk"] .panel, body[data-tab="arch"] .panel, body[data-tab="panel"] .phone, body[data-tab="arch"] .phone,
-    body[data-tab="panel"] .arch, body[data-tab="talk"] .arch { display: none; }
-    body[data-tab="arch"] .arch { display: flex; } body[data-tab="panel"] .panel { display: block; }
-  }
+  /* 1列だけ。広い画面でもスマホの幅で中央に置く */
+  .app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; background: var(--room); overflow: hidden; }
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view[hidden] { display: none; }
 
-  /* ---------- 左: 操作パネル ---------- */
-  .panel, .arch { background: var(--panel); border-radius: 14px; overflow-y: auto; font-size: 13px; }
-  .panel { padding: 14px 14px 18px; }
-  .step { margin-bottom: 16px; }
-  .step h2 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
-  .step h2 .n { width: 20px; height: 20px; border-radius: 50%; background: var(--head); color: #fff; font-size: 11px;
-                display: inline-flex; align-items: center; justify-content: center; }
-  .hint { color: var(--sub); font-size: 11.5px; margin: -2px 0 8px; line-height: 1.5; }
-  .badge { font-size: 10.5px; font-weight: 700; border-radius: 6px; padding: 1px 6px; background: var(--soft); color: var(--sub); white-space: nowrap; }
-  .badge.warn { background: var(--warn-soft); color: var(--warn); } .badge.ok { background: var(--ok-soft); color: var(--ok-dark); }
-  .group { margin: 10px 0 4px; font-size: 11px; font-weight: 700; color: var(--faint); letter-spacing: .02em; }
-  .act { display: flex; gap: 8px; width: 100%; text-align: left; margin: 5px 0; padding: 8px 10px; border: 1px solid var(--line);
-         border-radius: 10px; background: #fff; cursor: pointer; align-items: flex-start; }
-  .act:hover { border-color: #c7cfdb; } .act:disabled { opacity: .5; cursor: default; }
-  .act .ic { flex: none; width: 22px; height: 22px; border-radius: 6px; font-size: 11px; font-weight: 800; display: inline-flex;
-             align-items: center; justify-content: center; }
-  .act .t { font-weight: 700; font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; } .act .d { color: var(--sub); font-size: 11px; margin-top: 2px; line-height: 1.45; }
-  .ic.user-ic { background: var(--soft); color: var(--head); } .ic.line-ic { background: var(--ok-soft); color: var(--ok-dark); }
-  .ic.push-ic { background: var(--gate-soft); color: var(--gate); }
-  .act.armed { border-color: var(--ok); box-shadow: 0 0 0 2px #06c75533; }
-  .state { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
-  .state dl { margin: 0; display: grid; grid-template-columns: 84px 1fr; gap: 5px 8px; font-size: 12px; }
-  .state dt { color: var(--sub); } .state dd { margin: 0; line-height: 1.45; word-break: break-word; }
-  .restart { width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 4px; font-size: 12px; cursor: pointer; }
-
-  /* ---------- 中央: トークルーム ---------- */
-  .phone { display: flex; flex-direction: column; background: var(--room); border-radius: 18px; overflow: hidden; min-height: 0; }
-  header { background: var(--head); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
-  header .name { font-weight: 700; flex: none; white-space: nowrap; }
-  header small { opacity: .7; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header { background: var(--head); color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+  header .name { font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #voice, #resume { border: 1px solid #ffffff55; background: #ffffff14; color: #fff; border-radius: 8px;
-           padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+           padding: 5px 9px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; flex: none; }
   #voice:hover, #resume:hover { background: #ffffff2b; } #voice:disabled, #resume:disabled { opacity: .45; cursor: default; }
-  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+
+  /* ---------- トーク ---------- */
+  #log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
   #log > * { flex-shrink: 0; }  /* 一覧があふれても中身を縮めない(縮むと求人カードが途中で切れていた) */
   .sys { align-self: center; font-size: 11px; color: #fff; background: #0003; border-radius: 10px; padding: 3px 10px; margin: 4px 0; text-align: center; max-width: 92%; }
   .row { display: flex; gap: 8px; align-items: flex-end; } .row.me { justify-content: flex-end; }
@@ -91,10 +48,10 @@
   /* 時間のかかるツールの間だけ、点の前に「何をしているか」の一言を出す */
   .typing .wait { font-size: 12.5px; color: var(--sub); margin-right: 4px; }
 
-  /* 求人カード(LINE の Flex Message のカルーセル風) */
+  /* 求人カード(LINE の Flex Message のカルーセル風)。横にはカルーセルの中だけでスクロールする */
   .cards { display: flex; gap: 8px; overflow-x: auto; margin-left: 40px; max-width: calc(100% - 40px); padding: 2px 12px 6px 0;
            scroll-snap-type: x mandatory; }
-  .jc { flex: none; width: 236px; background: #fff; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column;
+  .jc { flex: none; width: 236px; max-width: 100%; background: #fff; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column;
         scroll-snap-align: start; box-shadow: 0 1px 2px #0000001a; }
   .jc .in { padding: 12px 13px 10px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
   .jc .meta { font-size: 11px; color: var(--faint); }
@@ -117,165 +74,53 @@
   .chips button { background: #fff; color: var(--chip); border: 1px solid var(--chip-line); border-radius: 16px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
   .chips button:disabled { color: #9aa7bd; cursor: default; }
   form { display: flex; gap: 8px; padding: 8px 10px; background: #fff; border-top: 1px solid var(--line); }
-  input { flex: 1; font-size: 16px; padding: 9px 14px; border: 0; border-radius: 20px; background: #f1f3f6; outline: none; }
-  form button { border: 0; background: none; color: var(--ok); font-weight: 700; font-size: 15px; cursor: pointer; }
+  input { flex: 1; min-width: 0; font-size: 16px; padding: 9px 14px; border: 0; border-radius: 20px; background: #f1f3f6; outline: none; }
+  form button { border: 0; background: none; color: var(--ok); font-weight: 700; font-size: 15px; cursor: pointer; flex: none; }
   form button:disabled { color: #b8c0cc; }
 
-  /* ---------- 右: 構成図と処理の流れ ---------- */
-  .arch { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
-  .arch h2 { font-size: 13px; margin: 0 0 8px; }
-  .arch svg { width: 100%; height: auto; display: block; }
-  .zone { stroke: none; } .zone.line { fill: #ecfaf1; } .zone.dip { fill: #ebf3fc; }
-  .zl { font-size: 11px; font-weight: 800; letter-spacing: .04em; } .zl.line { fill: var(--ok-dark); } .zl.dip { fill: var(--tool); }
-  .node rect.box { fill: #fff; stroke: #d3dae5; stroke-width: 1.5; transition: fill .25s, stroke .25s; }
-  .node .nt { font-size: 12.5px; font-weight: 700; fill: var(--text); } .node .nd { font-size: 10px; fill: var(--sub); }
-  .node .icon { fill: none; stroke: var(--faint); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: stroke .25s; }
-  .node.on rect.box { stroke: var(--ok); fill: var(--ok-soft); stroke-width: 2.5; } .node.on .icon { stroke: var(--ok-dark); }
-  .node.llm.on rect.box { stroke: var(--llm); fill: var(--llm-soft); } .node.llm.on .icon { stroke: var(--llm); }
-  .node.dip.on rect.box { stroke: var(--tool); fill: var(--tool-soft); } .node.dip.on .icon { stroke: var(--tool); }
-  .node.gate.on rect.box { stroke: var(--gate); fill: var(--gate-soft); } .node.gate.on .icon { stroke: var(--gate); }
-  .node.no rect.box { stroke: var(--warn); fill: var(--warn-soft); } .node.no .icon { stroke: var(--warn); }
-  .link { fill: none; stroke: #b7c0ce; stroke-width: 2; transition: stroke .25s; }
-  .link.on { stroke: var(--tool); stroke-width: 2.5; stroke-dasharray: 7 5; animation: flow .6s linear infinite; }
-  @keyframes flow { to { stroke-dashoffset: -12; } }
-  .ll { font-size: 9.5px; fill: var(--faint); }
-  .spinner { display: none; fill: none; stroke: var(--llm); stroke-width: 2.2; stroke-dasharray: 16 8; transform-box: fill-box; transform-origin: center; }
-  .node.thinking .spinner { display: inline; animation: rot .9s linear infinite; }
-  @keyframes rot { to { transform: rotate(360deg); } }
-  .tools-h { font-size: 11px; color: var(--sub); margin: 8px 0 4px; }
-  .toolgrid { display: flex; flex-wrap: wrap; gap: 4px; }
-  .tchip { font-size: 9.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft); color: var(--sub);
-           border-radius: 5px; padding: 2px 5px; transition: all .25s; }
-  .tchip.on { background: var(--tool); color: #fff; }
-  .trace { display: flex; flex-direction: column; gap: 6px; }
-  .ev { display: grid; grid-template-columns: 46px 1fr; gap: 8px; font-size: 11.5px; border-left: 3px solid var(--line); padding: 5px 0 5px 8px; }
-  .ev .ms { color: var(--faint); font-variant-numeric: tabular-nums; }
-  .ev .h { font-weight: 700; } .ev .x { color: var(--sub); margin-top: 2px; line-height: 1.5; word-break: break-word; }
-  .ev.llm { border-left-color: var(--llm); } .ev.llm .h { color: var(--llm); }
-  .ev.tool { border-left-color: var(--tool); } .ev.tool .h { color: var(--tool); }
-  .ev.gate { border-left-color: var(--gate); } .ev.gate .h { color: var(--gate); }
-  .ev.reply { border-left-color: var(--ok); } .ev.reply .h { color: var(--ok-dark); }
-  .ev.err { border-left-color: var(--warn); } .ev.err .h { color: var(--warn); }
-  .ev code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; background: var(--soft); border-radius: 4px; padding: 0 4px; }
-  .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .totals div { background: var(--soft); border-radius: 8px; padding: 6px 8px; }
-  .totals small { display: block; font-size: 10px; color: var(--sub); } .totals b { font-size: 14px; font-variant-numeric: tabular-nums; }
-  .empty { color: var(--faint); font-size: 12px; padding: 6px 0; }
+  /* ---------- 保存した求人・プロフィール ---------- */
+  .page { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); padding: 14px 12px; }
+  .page h2 { font-size: 15px; margin: 0 0 10px; }
+  .page .note { color: var(--sub); font-size: 13px; line-height: 1.6; }
+  .saved-list { display: flex; flex-direction: column; gap: 10px; }
+  .saved-list .jc { width: 100%; }
+
+  /* ---------- 下のナビ(トーク / 保存した求人 / プロフィール) ---------- */
+  nav.bottom { display: flex; background: #fff; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  nav.bottom button { flex: 1; min-width: 0; border: 0; background: none; padding: 8px 2px 9px; font-size: 11px; font-weight: 700; color: var(--faint);
+                      display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+  nav.bottom button .i { font-size: 18px; line-height: 1; }
+  nav.bottom button.on { color: var(--ok-dark); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <!-- 狭い・中くらいの画面で表示を切り替えるタブ(広い画面では出ない) -->
-  <nav class="tabs" id="tabs">
-    <button type="button" data-tab="panel">操作</button>
-    <button type="button" data-tab="talk">トーク</button>
-    <button type="button" data-tab="arch">構成と処理の流れ</button>
+<div class="app">
+  <header><span class="name">バイトル</span>
+    <button type="button" id="resume" title="履歴書(PDF / JPEG / PNG)を読み取って、相談に使う">📄 履歴書</button>
+    <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>
+    <button type="button" id="voice" title="音声アドバイザーと話す(別タブで開く)">🎤 音声で相談</button></header>
+  <main>
+    <section class="view" id="v-talk">
+      <div id="log"></div>
+      <form id="f"><input id="t" autocomplete="off" placeholder="メッセージを入力"><button id="send">送信</button></form>
+    </section>
+    <section class="view" id="v-saved" hidden>
+      <div class="page"><h2>保存した求人</h2><div class="saved-list" id="saved"></div></div>
+    </section>
+    <section class="view" id="v-profile" hidden>
+      <div class="page"><h2>プロフィール</h2><p class="note">準備中です。</p></div>
+    </section>
+  </main>
+  <nav class="bottom" id="nav">
+    <button type="button" data-view="talk" class="on"><span class="i">💬</span>トーク</button>
+    <button type="button" data-view="saved"><span class="i">🔖</span>保存した求人</button>
+    <button type="button" data-view="profile"><span class="i">👤</span>プロフィール</button>
   </nav>
-  <!-- 左: シナリオの操作 -->
-  <aside class="panel">
-    <div class="step">
-      <h2><span class="n">1</span>シナリオを選ぶ</h2>
-      <div class="hint">押すと、そのユーザーの dip の状態を初期に戻し、AI 側の1通目(挨拶・プッシュ)から会話が始まります。</div>
-      <div id="scenarios"></div>
-    </div>
-    <div class="step">
-      <h2><span class="n">2</span>dip から見た状態</h2>
-      <div class="state" id="state"><div class="empty">-</div></div>
-    </div>
-    <div class="step">
-      <h2><span class="n">3</span>やり直す</h2>
-      <button type="button" class="restart" id="restart">このシナリオを最初から</button>
-    </div>
-  </aside>
-
-  <!-- 中央: LINE のトークルーム -->
-  <div class="phone">
-    <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small>
-      <button type="button" id="resume" title="履歴書(PDF / JPEG / PNG)を読み取って、相談に使う">📄 履歴書</button>
-      <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>
-      <button type="button" id="voice" title="音声アドバイザーと話す(LIFF のように別タブで開く)">🎤 音声で相談</button></header>
-    <div id="log"></div>
-    <form id="f"><input id="t" autocomplete="off" placeholder="メッセージを入力"><button id="send">送信</button></form>
-  </div>
-
-  <!-- 右: 全体の構成と、このターンの処理の流れ -->
-  <section class="arch">
-    <div>
-      <h2>システムの構成</h2>
-      <svg viewBox="0 0 440 330" role="img" aria-label="LINE 側と dip 側を MCP でつなぐ構成図">
-        <defs>
-          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#8a93a3"/></marker>
-        </defs>
-        <rect class="zone line" x="6" y="6" width="202" height="318" rx="14"/>
-        <rect class="zone dip" x="232" y="6" width="202" height="318" rx="14"/>
-        <text class="zl line" x="20" y="27">LINE(LY の AI モード)</text>
-        <text class="zl dip" x="246" y="27">dip(事業者)</text>
-
-        <!-- 矢印 -->
-        <path class="link" id="l-user" d="M107 98 V186" marker-start="url(#ah)" marker-end="url(#ah)"/>
-        <text class="ll" x="114" y="146">メッセージ / 返信</text>
-        <path class="link" id="l-mcp" d="M194 218 H244" marker-start="url(#ah)" marker-end="url(#ah)"/>
-        <text class="ll" x="204" y="210">MCP</text>
-        <path class="link" id="l-state" d="M333 248 V262" marker-end="url(#ah)"/>
-        <path class="link" id="l-event" d="M333 98 V110" marker-end="url(#ah)"/>
-        <path class="link" id="l-gate" d="M246 140 C 222 140, 222 196, 198 200" marker-end="url(#ah)"/>
-        <text class="ll" x="214" y="160">許可</text>
-
-        <!-- ユーザー -->
-        <g class="node" id="n-user"><rect class="box" x="20" y="42" width="174" height="56" rx="10"/>
-          <circle class="icon" cx="40" cy="64" r="5"/><path class="icon" d="M31 80 a9 9 0 0 1 18 0"/>
-          <text class="nt" x="58" y="65">ユーザー</text><text class="nd" x="58" y="82">LINE のトークルーム</text></g>
-        <!-- LINE 側 AI -->
-        <g class="node llm" id="n-llm"><rect class="box" x="20" y="190" width="174" height="56" rx="10"/>
-          <path class="icon" d="M40 206 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 z"/>
-          <circle class="spinner" cx="181" cy="203" r="6"/>
-          <text class="nt" x="58" y="213">LINE 側 AI</text><text class="nd" x="58" y="230" id="n-llm-d">Claude・業務の知識なし</text></g>
-        <!-- dip の行動イベント -->
-        <g class="node gate" id="n-event"><rect class="box" x="246" y="42" width="174" height="56" rx="10"/>
-          <path class="icon" d="M259 78 h16 M261 78 v-9 a6 6 0 0 1 12 0 v9 M265 82 h4"/>
-          <text class="nt" x="284" y="65">行動イベント</text><text class="nd" x="284" y="82">フォーム離脱・選考の連絡</text></g>
-        <!-- 送ってよいか -->
-        <g class="node gate" id="n-gate"><rect class="box" x="246" y="112" width="174" height="56" rx="10"/>
-          <path class="icon" d="M267 126 l9 4 v7 c0 6 -4 9 -9 11 c-5 -2 -9 -5 -9 -11 v-7 z M263 138 l3 3 6 -6"/>
-          <text class="nt" x="284" y="135">送ってよいか</text><text class="nd" x="284" y="152">push_trigger(コード)</text></g>
-        <!-- dip MCP サーバー -->
-        <g class="node dip" id="n-dip"><rect class="box" x="246" y="190" width="174" height="56" rx="10"/>
-          <rect class="icon" x="258" y="204" width="18" height="8" rx="2"/><rect class="icon" x="258" y="216" width="18" height="8" rx="2"/>
-          <text class="nt" x="284" y="213">dip MCP サーバー</text><text class="nd" x="284" y="230">ツール 11 個・LLM なし</text></g>
-        <!-- dip の状態 -->
-        <g class="node dip" id="n-state"><rect class="box" x="246" y="264" width="174" height="50" rx="10"/>
-          <ellipse class="icon" cx="267" cy="279" rx="8" ry="3"/><path class="icon" d="M259 279 v12 a8 3 0 0 0 16 0 v-12"/>
-          <text class="nt" x="284" y="285">dip の状態</text><text class="nd" x="284" y="301">応募・保存・希望・会話結果</text></g>
-      </svg>
-      <div class="tools-h">dip のツール(呼ばれたものが光る)</div>
-      <div class="toolgrid" id="tools"></div>
-    </div>
-    <div>
-      <h2>このターンの処理の流れ</h2>
-      <div class="totals" id="totals"></div>
-      <div class="trace" id="trace" style="margin-top:8px"><div class="empty">会話を始めると、ここに処理が順に出ます。</div></div>
-    </div>
-  </section>
 </div>
 <script>
-  const TOOLS = ["get_user_conversation_summary", "get_user_recent_applications", "get_user_form_exit", "recommend_jobs",
-                 "relax_conditions", "answer_job_question", "get_application_status", "resume_application_form", "save_job",
-                 "save_user_preferences", "record_conversation_outcome"];
-  const SEGMENT = { browsing: ["比較検討中", ""], form_exit: ["フォーム離脱", ""], applied_waiting: ["応募済み・連絡待ち", "ok"],
-                    unlinked: ["未連携", ""], active: ["利用中", "ok"] };
-  const PUSH_LABEL = { form_exit: "応募フォームの途中離脱" };
-  const EVENT_LABEL = { visit: "初回訪問", revisit: "再訪(トークを開き直した)" };
-  const OUTCOME = { propose: "提案", consult: "相談", support: "支援", wait: "待つ" };
-  const PREF = { area: "エリア", time_band: "時間帯", job_type: "職種", min_wage: "時給の下限", experience: "経験", days_per_week: "週の日数",
-                 skills: "できること", certifications: "資格・免許" };
   const $ = (id) => document.getElementById(id);
   const log = $("log"), input = $("t"), sendBtn = $("send");
-  // シナリオの1通目の出どころ: [まとめ, アイコンの文字, アイコンの色, 見出し]
-  const GROUPS = [["greet", "V", "line-ic", "トークを開く(AI から挨拶)"],
-                  ["push", "P", "push-ic", "dip からのプッシュ(送るかは dip が判定)"]];
-  const groupOf = (event) => EVENT_LABEL[event] ? "greet" : "push";
-  let scenarios = [], scenario = null, current = null, busy = false, t0 = 0, sums = null;
+  let current = null, busy = false;  // current: このブラウザのユーザーID(匿名ID そのもの)
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const now = () => new Date().toTimeString().slice(0, 5);
@@ -291,6 +136,7 @@
     log.appendChild(r); scroll(); return c;
   }
   function disableChips() { log.querySelectorAll(".chips button").forEach(b => b.disabled = true); }
+  function setBusy(on) { busy = on; sendBtn.disabled = on || !current; $("resume").disabled = on || !current; }
 
   // 時間のかかるツールの待ち時間に出す一言(tool_start で出し、tools / reply / error で消す)。
   // 一覧に無いツールは速いので、通常の「…」のまま
@@ -305,9 +151,11 @@
     if (label) { typing.prepend(el("span", "wait", label)); scroll(); }
   }
 
-  function jobCard(j) {
+  // saved: 「保存した求人」の一覧に出すカード(保存ボタンは出さず、トークで聞くだけ)
+  function jobCard(j, saved = false) {
     const c = el("div", "jc"), inner = el("div", "in");
-    inner.append(el("div", "meta", `${j.job_type} · ${j.area}`), el("div", "ttl", j.title), el("div", "emp", j.employer));
+    inner.append(el("div", "meta", `${j.job_type} · ${j.area}` + (j.saved_at ? ` · ${j.saved_at}に保存` : "")),
+                 el("div", "ttl", j.title), el("div", "emp", j.employer));
     const w = el("div", "wage"); w.append(el("small", null, "時給"), el("b", null, `${yen(j.hourly_wage)}円`)); inner.appendChild(w);
     const tags = el("div", "tags");
     for (const t of [j.shift, `週${j.days_min}日〜`, `${j.station.replace(/駅$/, "")}駅 徒歩${j.walk_min}分`]) tags.appendChild(el("span", "tag", t));
@@ -315,9 +163,11 @@
     inner.appendChild(tags);
     if (j.reasons?.length) { const why = el("div", "why"); why.append(el("span", null, "おすすめ"), document.createTextNode(j.reasons.join(" / "))); inner.appendChild(why); }
     const btns = el("div", "btns");
-    const more = el("button", "go", "詳しく見る"); more.type = "button"; more.onclick = () => send(`「${j.title}」について詳しく教えて`);
-    const keep = el("button", "keep", "保存"); keep.type = "button"; keep.onclick = () => send(`「${j.title}」(${j.job_id})を保存して`);
-    btns.append(more, keep); c.append(inner, btns); return c;
+    const more = el("button", "go", saved ? "トークで詳しく聞く" : "詳しく見る"); more.type = "button";
+    more.onclick = () => { showView("talk"); send(`「${j.title}」について詳しく教えて`); };
+    btns.appendChild(more);
+    if (!saved) { const keep = el("button", "keep", "保存"); keep.type = "button"; keep.onclick = () => send(`「${j.title}」(${j.job_id})を保存して`); btns.appendChild(keep); }
+    c.append(inner, btns); return c;
   }
 
   function renderReply(r, col) {
@@ -337,81 +187,24 @@
     scroll();
   }
 
-  // ---------- 右: 構成図の点灯と処理の流れ ----------
-  const nodes = ["n-user", "n-llm", "n-dip", "n-state", "n-event", "n-gate"], links = ["l-user", "l-mcp", "l-state", "l-event", "l-gate"];
-  function light(ids, extra = {}) {
-    nodes.forEach(n => $(n).classList.remove("on", "thinking", "no")); links.forEach(l => $(l).classList.remove("on"));
-    document.querySelectorAll(".tchip").forEach(c => c.classList.toggle("on", (extra.tools || []).includes(c.dataset.tool)));
-    ids.forEach(id => $(id).classList.add("on"));
-    if (extra.thinking) $("n-llm").classList.add("thinking");
-    if (extra.denied) $("n-gate").classList.add("no");
-  }
-  function traceRow(kind, head, detail, ms) {
-    if ($("trace").querySelector(".empty")) $("trace").innerHTML = "";
-    const r = el("div", `ev ${kind}`), right = el("div");
-    right.appendChild(el("div", "h", head));
-    if (detail) { const x = el("div", "x"); x.innerHTML = detail; right.appendChild(x); }
-    r.append(el("div", "ms", ms == null ? "" : `+${(ms / 1000).toFixed(1)}s`), right);
-    $("trace").appendChild(r); r.scrollIntoView({ block: "nearest" });
-  }
-  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const brief = (args) => Object.entries(args || {}).filter(([k]) => k !== "line_user_id")
-    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
-  function renderTotals() {
-    const cache = sums.inTok ? Math.round(sums.cache / sums.inTok * 100) + "%" : "-";
-    $("totals").innerHTML = "";
-    for (const [k, v] of [["かかった時間", `${((performance.now() - t0) / 1000).toFixed(1)}秒`], ["LLM の呼び出し", `${sums.llm}回`],
-                          ["入力トークン", sums.inTok ? yen(sums.inTok) : "-"], ["キャッシュから", cache]]) {
-      const d = el("div"); d.append(el("small", null, k), el("b", null, v)); $("totals").appendChild(d);
-    }
-  }
-
   function onEvent(ev, col) {
-    if (ev.kind === "start") {
-      $("trace").innerHTML = ""; sums = { llm: 0, inTok: 0, cache: 0 }; t0 = performance.now();
-      const push = ev.event_kind === "push";
-      $("n-llm-d").textContent = ev.model;
-      light(push ? ["n-event"] : ["n-user"], {}); if (!push) $("l-user").classList.add("on");
-      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : "ユーザーのメッセージ",
-               `入口のシナリオ <code>${esc(ev.entry)}</code> ・ LINE 側 AI <code>${esc(ev.model)}</code>`, 0);
-      if (!push) light(["n-llm"], { thinking: true });
-    } else if (ev.kind === "gate") {
-      light(["n-event", "n-gate"], { denied: !ev.allowed }); $("l-event").classList.add("on");
-      traceRow("gate", ev.allowed ? "dip の判定: 送ってよい" : "dip の判定: 送らない",
-               ev.allowed ? `根拠の事実を LINE 側 AI に渡す: <code>${esc(JSON.stringify(ev.facts).slice(0, 140))}</code>` : esc(ev.reason), null);
-      if (ev.allowed) { light(["n-gate", "n-llm"], { thinking: true }); $("l-gate").classList.add("on"); }
-    } else if (ev.kind === "llm") {
-      sums.llm += 1; sums.inTok += ev.input_tokens || 0; sums.cache += ev.cache_read || 0;
-      const tok = ev.input_tokens != null ? `入力 ${yen(ev.input_tokens)}(キャッシュから ${yen(ev.cache_read || 0)})・出力 ${yen(ev.output_tokens)} トークン` : "";
-      const next = ev.tool_calls.length ? `→ ツールを呼ぶ: ${ev.tool_calls.map(t => `<code>${esc(t)}</code>`).join(" ")}` : "→ 返信を作った";
-      traceRow("llm", "LINE 側 AI(LLM)", `${tok}<br>${next}`, ev.ms);
-      if (ev.tool_calls.length) { light(["n-llm", "n-dip"], { tools: ev.tool_calls }); $("l-mcp").classList.add("on"); }
-    } else if (ev.kind === "tool_start") {
+    if (ev.kind === "tool_start") {
       const slow = ev.calls.find(c => WAIT_LABEL[c.name]);
       if (slow) setWait(col, WAIT_LABEL[slow.name](slow.args));
     } else if (ev.kind === "tools") {
       setWait(col, null);  // ツールが終わったら「何をしているか」を消す(続きは通常の「…」)
-      for (const c of ev.calls) traceRow("tool", `dip のツール: ${c.name}`, `${esc(brief(c.args)) || "引数なし"}<br>→ ${esc(c.summary)}`, ev.ms);
-      light(["n-dip", "n-state"], { tools: ev.calls.map(c => c.name) }); $("l-state").classList.add("on");
-      setTimeout(() => { if (busy) light(["n-llm"], { thinking: true }); }, 350);  // 返信が先に届いていたら戻さない
     } else if (ev.kind === "reply") {
-      if (ev.sent === false) { col.parentElement.remove(); sys(`[dip] プッシュしない: ${ev.reason}`); light([], { denied: true }); }
-      else {
-        renderReply(ev, col);
-        traceRow("reply", "LINE の返信", `吹き出し ${ev.bubbles.length}・求人カード ${ev.cards.length}・選択肢 ${ev.quick_replies.length}` +
-                 (ev.unknown_job_ids.length ? `・<b>どのツールも返していない求人ID ${esc(ev.unknown_job_ids.join(", "))}</b>` : ""), null);
-        light(["n-user"]); $("l-user").classList.add("on");
-      }
-      renderTotals();
+      if (ev.sent === false) col.parentElement.remove();  // 本番の画面はプッシュを起こさないので、ここには来ない
+      else renderReply(ev, col);
     } else if (ev.kind === "error") {
-      col.querySelector(".typing")?.remove(); col.appendChild(el("div", "bubble", "エラー: " + ev.message));
-      traceRow("err", "エラー", esc(ev.message), null); light([]);
+      col.querySelector(".typing")?.remove(); col.appendChild(el("div", "bubble", "うまく返信できませんでした。少し時間をおいて、もう一度お試しください。"));
+      console.error(ev.message);
     }
   }
 
   async function fire(event, text) {
-    if (busy) return;
-    busy = true; sendBtn.disabled = true; disableChips(); document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
+    if (busy || !current) return;
+    setBusy(true); disableChips();
     const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -424,10 +217,10 @@
         let i; while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (line.trim()) onEvent(JSON.parse(line), col); }
       }
     } catch (e) {
-      typing.remove(); col.appendChild(el("div", "bubble", "エラー: " + e.message));
-      traceRow("err", "エラー(接続)", esc(e.message), null); light([]);
+      typing.remove(); col.appendChild(el("div", "bubble", "通信できませんでした。少し時間をおいて、もう一度お試しください。"));
+      console.error(e);
     }
-    finally { busy = false; sendBtn.disabled = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); refreshState(); }
+    finally { setBusy(false); }
   }
 
   function send(text) {
@@ -435,66 +228,32 @@
     me(text); input.value = "";
     fire("message", text);
   }
+  $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
 
-  // ---------- 左: シナリオと dip の状態 ----------
   async function post(url, body) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(res.status + " " + await res.text()); return res.json();
   }
-  const dip = async (uid) => (await fetch("/api/dip/" + encodeURIComponent(uid))).json();
-  function segBadge(seg) { const [t, k] = SEGMENT[seg] || [seg, ""]; return el("span", `badge ${k}`, t); }
 
-  function renderScenarios() {
-    const box = $("scenarios"); box.innerHTML = "";
-    for (const [g, ic, cls, label] of GROUPS) {
-      box.appendChild(el("div", "group", label));
-      for (const sc of scenarios.filter(x => groupOf(x.event) === g)) {
-        const b = el("button", "act"); b.type = "button"; b.dataset.id = sc.id;
-        const t = el("div", "t", sc.title); t.appendChild(el("span", "badge", sc.user));
-        const txt = el("span"); txt.append(t, el("div", "d", sc.desc));
-        b.append(el("span", `ic ${cls}`, ic), txt);
-        b.onclick = () => startScenario(sc.id);
-        box.appendChild(b);
-      }
-    }
+  // ---------- 下のナビ: トーク / 保存した求人 / プロフィール ----------
+  function showView(v) {
+    for (const s of ["talk", "saved", "profile"]) $("v-" + s).hidden = s !== v;
+    document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+    if (v === "saved") loadSaved();
+    if (v === "talk") scroll();
   }
-  async function refreshState() {
+  document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showView(b.dataset.view));
+
+  async function loadSaved() {
+    const box = $("saved");
+    if (!current) { box.innerHTML = '<p class="note">読み込み中です。</p>'; return; }
     try {
-      const d = await dip(current), s = d.summary;
-      const rows = [["状況", segBadge(s.segment)]];
-      if (d.applications.length) rows.push(["応募", d.applications.map(a => `${a.job_id} ${a.status}`).join(" / ")]);
-      if (d.saves.length) rows.push(["保存した求人", d.saves.map(x => x.job_id).join(", ")]);
-      const prefs = Object.entries(s.stated_preferences || {});
-      rows.push(["本人の希望", prefs.length ? prefs.map(([k, v]) => `${PREF[k] || k}: ${v.value}`).join(" / ") : "まだない"]);
-      if (s.uploaded_resume) rows.push(["履歴書", `読み取り済み(${s.uploaded_resume.uploaded})`]);
-      if (s.last_contact) rows.push(["直近の接触", `${s.last_contact.when} ${s.last_contact.channel}`]);
-      rows.push(["会話の結果", d.outcomes.length ? d.outcomes.slice(-3).map(o => `${OUTCOME[o.outcome] || o.outcome}(${o.reason})`).join(" / ") : "まだない"]);
-      const dl = el("dl");
-      for (const [k, v] of rows) { dl.appendChild(el("dt", null, k)); const dd = el("dd"); v instanceof Node ? dd.appendChild(v) : dd.textContent = v; dl.appendChild(dd); }
-      $("state").innerHTML = ""; $("state").appendChild(dl);
-    } catch (e) { $("state").textContent = e.message; }
+      const jobs = (await (await fetch(`/api/saved/${encodeURIComponent(current)}`)).json()).jobs;
+      box.innerHTML = "";
+      if (!jobs.length) { box.appendChild(el("p", "note", "保存した求人はまだありません。トークで気になる求人の「保存」を押すと、ここに並びます。")); return; }
+      jobs.forEach(j => box.appendChild(jobCard(j, true)));
+    } catch (e) { box.innerHTML = ""; box.appendChild(el("p", "note", "読み込めませんでした。")); }
   }
-  async function startScenario(id) {
-    if (busy) return;  // 返信を待っている間に切り替えると、前のシナリオへの返信が新しいトークに出てしまう
-    const sc = scenarios.find(x => x.id === id);
-    if (narrow()) setTab("talk");  // 狭い画面では、始めたトークを見せる
-    busy = true; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
-    let r;
-    try { r = await post(`/api/scenarios/${encodeURIComponent(id)}/start`, {}); }
-    catch (e) { sys(`シナリオを始められない: ${e.message}`); return; }
-    finally { busy = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); }
-    scenario = sc; current = r.user; $("voice").disabled = false; $("resume").disabled = false;
-    document.querySelectorAll("#scenarios .act").forEach(b => b.classList.toggle("armed", b.dataset.id === id));
-    log.innerHTML = ""; $("trace").innerHTML = '<div class="empty">会話を始めると、ここに処理が順に出ます。</div>';
-    $("totals").innerHTML = ""; light([]);
-    sys(`${sc.title}(${current} のトークルーム)`);
-    refreshState();
-    sys(EVENT_LABEL[sc.event] ? `[イベント] ${EVENT_LABEL[sc.event]}` : `[dip のイベント] ${PUSH_LABEL[sc.event]}`);
-    fire(sc.event);
-  }
-
-  $("restart").onclick = () => { if (scenario) startScenario(scenario.id); };
-  $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
 
   // ---------- 音声相談(voice-resume との連携) ----------
   // トークの「音声で相談」から LIFF のように別タブで開く。相談が終わると voice-resume が
@@ -502,15 +261,15 @@
   $("voice").onclick = () => {
     if (!current) return;
     window.open("/liff/voice?user=" + encodeURIComponent(current), "_blank", "noopener");
-    sys("[音声相談] 別タブで音声アドバイザーが開きます。相談が終わると、結果がこのトークに届きます。");
+    sys("別タブで音声アドバイザーが開きます。相談が終わると、結果がこのトークに届きます。");
   };
   async function pollVoice() {
     if (!current || busy) return;  // ターンの途中には差し込まない(次の周回で受け取る)
     let results;
     try { results = (await post(`/api/voice/${encodeURIComponent(current)}/pull`, {})).results; }
-    catch (e) { return; }  // line-sim 再起動中など。次の周回でまた試す
+    catch (e) { return; }  // 再起動中など。次の周回でまた試す
     for (const r of results || []) {
-      sys("[音声相談の結果が届きました]");
+      sys("音声相談の結果が届きました");
       const col = botCol();
       renderReply({
         bubbles: ["音声の相談でお話しした内容です。ご提案した求人と、履歴書の下書きをご確認ください。"],
@@ -519,7 +278,6 @@
         quick_replies: [],
       }, col);
     }
-    if ((results || []).length) refreshState();  // 保存された希望・会話の結果を左の状態にも反映
   }
   setInterval(pollVoice, 4000);
 
@@ -531,9 +289,8 @@
   $("resume-file").onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = "";
     if (!f || !current || busy) return;
-    busy = true; sendBtn.disabled = true; disableChips(); $("resume").disabled = true;
-    document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
-    sys("[履歴書] アップロードしたファイルを読み取っています…");
+    showView("talk"); setBusy(true); disableChips();
+    sys("アップロードした履歴書を読み取っています…");
     const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
     try {
       const fd = new FormData(); fd.append("file", f);
@@ -542,15 +299,11 @@
       renderResume(await res.json(), col);
     } catch (err) {
       typing.remove(); col.appendChild(el("div", "bubble", "履歴書を読み取れませんでした: " + err.message));
-    } finally {
-      busy = false; sendBtn.disabled = false; $("resume").disabled = false;
-      document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); refreshState();
-    }
+    } finally { setBusy(false); }
   };
   function renderResume(d, col) {
     // 吹き出しの中身(要点だけ・80字以内)はサーバーが組み立てる(line_runtime/resume_confirm.py)
-    const bubbles = d.bubbles;
-    renderReply({ bubbles: bubbles.slice(0, 3), cards: [], quick_replies: [],
+    renderReply({ bubbles: d.bubbles.slice(0, 3), cards: [], quick_replies: [],
                   buttons: d.empty ? [] : [{ label: "読み取り結果を見る", url: d.view_url }] }, col);
     if (!d.empty) {
       const box = el("div", "chips"), b = el("button", null, "この内容で相談する"); b.type = "button";
@@ -559,29 +312,14 @@
     }
   }
 
-  // ---------- 画面の幅に合わせたタブ ----------
-  const narrow = () => matchMedia("(max-width: 759px)").matches;
-  function setTab(t) {
-    if (!narrow() && t === "talk") t = "panel";  // 中くらいの画面ではトークは常に表示
-    document.body.dataset.tab = t;
-    document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-  }
-  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
-  // 幅の区切りをまたいだら選び直す(読み込み直後は幅が決まっていないことがあるので、変化のたびに判定する)
-  const mq = matchMedia("(max-width: 759px)");
-  // シナリオを選ぶまではトークが空なので、狭い画面でも操作(シナリオの一覧)を先に見せる
-  mq.addEventListener("change", () => setTab(mq.matches && scenario ? "talk" : "panel"));
-  addEventListener("resize", () => setTab(document.body.dataset.tab || "panel"));
-  setTab("panel");
-  for (const t of TOOLS) { const c = el("span", "tchip", t); c.dataset.tool = t; $("tools").appendChild(c); }
-
+  // ---------- 開いたら: 初回訪問か再訪かは dip が決め、AI 側の1通目から始める ----------
   (async () => {
-    sendBtn.disabled = true;  // シナリオを選ぶまでは送れない(会話の相手が決まっていない)
-    $("voice").disabled = true;  // 音声相談も、相手(ユーザー)が決まってから
-    $("resume").disabled = true;  // 履歴書のアップロードも同じ
-    scenarios = await (await fetch("/api/scenarios")).json();
-    renderScenarios();
-    sys("シナリオを選ぶと、AI 側の1通目から会話が始まります");
+    setBusy(true); $("voice").disabled = true;
+    let opened;
+    try { opened = await post("/api/talk/open", {}); }
+    catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
+    current = opened.user; $("voice").disabled = false; setBusy(false);
+    fire(opened.event);
   })();
 </script>
 </body>

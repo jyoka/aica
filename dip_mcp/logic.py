@@ -452,6 +452,28 @@ def save_job(state: State, line_user_id: str, job_id: str) -> dict:
     return {"saved": job_id, "saves_total": len(u["saves"])}
 
 
+def saved_jobs(state: State, line_user_id: str) -> list[dict]:
+    """保存した求人を新しい順に、求人カードの形で(本番のトーク画面の「保存した求人」)。掲載が無くなった求人は出さない。"""
+    jobs = load_jobs()
+    saves = sorted(state.user(line_user_id).get("saves", []), key=lambda s: s["at"], reverse=True)
+    return [job_card(jobs[s["job_id"]], []) | {"saved_at": _md(s["at"])} for s in saves if s["job_id"] in jobs]
+
+
+# ----------------------------- トークを開いた(初回訪問か再訪か) -----------------------------
+
+
+def open_talk(state: State, line_user_id: str) -> str:
+    """本番のトーク画面を開いたことを記録し、入口のイベント(初回訪問 visit / 再訪 revisit)を返す。
+    前に開いた記録が無ければ初回訪問。LINE 側はこの結果の挨拶から会話を始める。"""
+    before: list[str] = []
+
+    def apply(u):
+        before.extend(u.get("talk_opens", []))
+        u["talk_opens"] = [*u.get("talk_opens", []), now().isoformat()][-20:]  # 判定に要るのは有無だけなので短く保つ
+    state.update(line_user_id, apply)
+    return "revisit" if before else "visit"
+
+
 # ----------------------------- 本人が話した希望(長期メモリ) -----------------------------
 
 # experience / skills / certifications の分け方(task 41):
