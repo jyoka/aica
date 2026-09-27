@@ -1,0 +1,30 @@
+{
+  "job_summary": "",
+  "self_pr": "",
+  "education": [
+    {"period": "2019年4月〜2022年3月", "school": "みほん県立第一高等学校", "status": "卒業"}
+  ],
+  "work_history": [
+    {
+      "period": "2022年5月〜2024年12月",
+      "organization": "コンビニみほん駅前店",
+      "employment_type": "アルバイト",
+      "role": "",
+      "duties": ["レジ", "品出し"],
+      "achievements": ["飲料の発注を任された"]
+    }
+  ],
+  "other_experience": [
+    {"kind": "部活動", "title": "サッカー部", "description": "高校で3年間所属(ディフェンダー)"}
+  ],
+  "skills": [],
+  "certifications": [
+    {"name": "普通自動車第一種運転免許", "acquired": "2023年3月"}
+  ],
+  "preferences": {
+    "desired_work": ["体を動かす仕事"],
+    "conditions": ["週4日以上"],
+    "notes": []
+  },
+  "unconfirmed": []
+}

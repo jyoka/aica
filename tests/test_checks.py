@@ -151,6 +151,18 @@ def test_revisit_reasking_a_saved_preference_is_a_violation():
     turns[1]["bubbles"] = ["承知しました。渋谷・日中のカフェで探しますか?"]  # 確認して進むのは聞き直しではない
     assert not any("聞き直した" in v for v in _checks("R-revisit", turns))
 
+    # 本人が変えた項目を、今回の値で確かめるのは聞き直しではない(R-revisit のペルソナは「エリアは原宿も入れてほしい」と答える)
+    from evals.checks import conversation_checks
+    from evals.scenarios import load_scenarios
+
+    sc = next(s for s in load_scenarios() if s["id"] == "R-revisit")
+    msgs = [None, "そのとおりで、エリアは原宿も入れてほしい", "はい"]
+    for confirm in ("エリアは渋谷と原宿でよいですか?", "原宿も入れますね。エリアは渋谷・原宿の2つで探しますか?"):
+        turns[1]["bubbles"] = [confirm]
+        assert not any("聞き直した" in v for v in conversation_checks(sc, turns, msgs)["violations"]), confirm
+    turns[1]["bubbles"] = ["承知しました。どのエリアで探しますか?"]  # 答えを受け取った後に白紙で聞くのは聞き直し
+    assert any("聞き直した" in v and "area" in v for v in conversation_checks(sc, turns, msgs)["violations"])
+
 
 def test_revisit_browsing_must_mention_once_and_not_list_jobs():
     ok = [turn(["最近はカフェのお仕事を見ていましたか?"]), turn(["渋谷・日中のカフェです。"])]
@@ -168,8 +180,13 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
                                           "詳しくはご覧になってください。", "渋谷・日中のカフェで希望を保存しています。",
                                           "前回の希望を保存していましたので、その条件で探します。"])]
     assert not any("行動" in v for v in _checks("R-revisit-browsing", polite))
+    # 2通目以降の、画面の求人を指す現在形は行動履歴への言及に数えない
+    now = [ok[0], dict(ok[1], bubbles=["今ご覧になっている求人の詳細を見ますか?",
+                                       "いま見ている求人について聞きたいことはありますか?"])]
+    assert not any("行動" in v for v in _checks("R-revisit-browsing", now))
     for mention in ("最近はカフェのお仕事をご覧になっていましたか?", "最近カフェのお仕事をご覧になりましたか?",
-                    "最近はカフェのお仕事を見てましたか?", "最近カフェの求人をチェックされていましたか?"):
+                    "最近はカフェのお仕事を見てましたか?", "最近カフェの求人をチェックされていましたか?",
+                    "最近カフェのお仕事を探していましたか?"):
         once = [dict(ok[0], bubbles=[mention]), ok[1]]
         assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", once)), mention
     for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",

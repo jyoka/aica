@@ -6,5 +6,17 @@ langchain-anthropic>=1.7,<2
 langchain-openai>=1.6,<2
 langgraph-checkpoint-sqlite>=3.1
 fastapi>=0.115
+# 履歴書の読み取り(resume_intake。Responses API の構造化出力 responses.parse)
+openai>=1.99
+pydantic>=2.8
 uvicorn>=0.30
 pytest>=8.3
+# 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ OpenAI + Cartesia TTS(ja)+ Silero VAD
+# + 多言語 turn detector。オフラインテストも livekit-agents を import するので、同じ venv に入れる。
+livekit-agents[turn-detector]>=1.8
+livekit-plugins-openai>=1.8
+livekit-plugins-deepgram>=1.8
+livekit-plugins-cartesia>=1.8
+livekit-plugins-silero>=1.8
+livekit-api>=1.2
+openai>=1.99

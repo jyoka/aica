@@ -10,6 +10,8 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 マルチユーザー: 初回アクセスでブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する(認証・招待制はしない)。
 シナリオはブラウザ専用のユーザー「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても
 会話・長期メモリ・行動履歴・費用台帳が混線しない。
+
+会話数の上限(line_runtime.quota): 1人1日あたりのターン数に上限があり、超えたら LLM を呼ばずに丁寧に打ち切る。
 """
 
 from __future__ import annotations
@@ -20,8 +22,9 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from html import escape
+from typing import Annotated
 
-from fastapi import FastAPI, Form, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -34,7 +37,10 @@ from dip_mcp import logic
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
+from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
 from line_runtime.runtime import EVENTS, LineRuntime
+from resume_intake import config as resume_config
+from resume_intake.extract import extract_bytes, finalize, media_type
 
 STATIC = config.ROOT / "line_runtime" / "static"
 state = State()
@@ -67,6 +73,9 @@ def _require_own(request: Request, user_id: str) -> None:
         raise HTTPException(403, "このブラウザのユーザーIDではありません")
 
 
+LIMIT_REASON = "本日の会話数の上限に達している"
+
+
 class EventIn(BaseModel):
     user_id: str
     event: str
@@ -76,6 +85,7 @@ class EventIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.load_env()
+    app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json")
     async with LineRuntime() as rt:
         app.state.rt = rt
         yield
@@ -126,13 +136,21 @@ async def event(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
+    _require_text(body)
+    entry, kind = EVENTS[body.event]
+    quota = app.state.quota
     facts = None
-    if EVENTS[body.event][1] == "push":
+    if kind == "push":
+        # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
+        if not quota.available(body.user_id):
+            return {"sent": False, "reason": LIMIT_REASON}
         # ここは dip のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを dip が決める。
         gate = logic.push_trigger(state, body.user_id, body.event)
         if not gate["allowed"]:
             return {"sent": False, "reason": gate["reason"]}
         facts = gate["facts"]
+    if not quota.take(body.user_id):
+        return limit_reply(entry)
     try:
         return await app.state.rt.handle(body.user_id, body.event, body.text, facts)
     except ValueError as e:
@@ -146,18 +164,26 @@ async def event_stream(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
+    _require_text(body)
 
     async def lines():
         entry, kind = EVENTS[body.event]
         yield _line({"kind": "start", "event": body.event, "entry": entry, "event_kind": kind, "model": config.MODEL})
         facts = None
+        quota = app.state.quota
         if kind == "push":
+            if not quota.available(body.user_id):
+                yield _line({"kind": "reply", "sent": False, "reason": LIMIT_REASON})
+                return
             gate = logic.push_trigger(state, body.user_id, body.event)
             yield _line({"kind": "gate", **gate})
             if not gate["allowed"]:
                 yield _line({"kind": "reply", "sent": False, "reason": gate["reason"]})
                 return
             facts = gate["facts"]
+        if not quota.take(body.user_id):  # 上限を超えたら LLM を呼ばずに案内だけ返す
+            yield _line({"kind": "reply", **limit_reply(entry)})
+            return
         try:
             async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts):
                 yield _line(ev)
@@ -165,6 +191,12 @@ async def event_stream(body: EventIn, request: Request):
             yield _line({"kind": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+
+def _require_text(body: EventIn) -> None:
+    """空の発言は、会話数を使う前に断る(上限の1回分を無駄にしない)。"""
+    if EVENTS[body.event][1] == "user" and not (body.text or "").strip():
+        raise HTTPException(400, f"{body.event} には空でない text が必要です")
 
 
 def _line(obj: dict) -> str:
@@ -184,8 +216,9 @@ async def dip_view(user_id: str, request: Request):
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
 
 class VoiceResultIn(BaseModel):
-    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。"""
-    line_user_id: str
+    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。
+    user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID のスコープ「匿名ID:シナリオユーザー」)。"""
+    user_id: str
     jobs: list[dict] = []
     draft_markdown: str = ""
     files: list[str] = []
@@ -196,8 +229,8 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。
     呼ぶのは voice-resume のバックエンド(Cookie なし)。Cookie を持つブラウザが他人のトークへ
     結果を差し込めないよう、ここも所有チェックを通す。"""
-    _require_own(request, body.line_user_id)
-    return logic.record_voice_result(state, body.line_user_id, body.jobs, body.draft_markdown, body.files)
+    _require_own(request, body.user_id)
+    return logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files)
 
 
 @app.post("/api/voice/{user_id}/pull")
@@ -209,8 +242,11 @@ async def voice_pull(user_id: str, request: Request):
 
 @app.get("/liff/voice")
 async def liff_voice(user: str, request: Request):
-    """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。"""
+    """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。
+    音声セッションも実 API を使うので、会話数上限を1ターン消費してから通す。"""
     _require_own(request, user)
+    if not app.state.quota.take(user):  # 上限を超えたら音声ページへ送らずに案内だけ返す
+        return HTMLResponse(_page("音声相談", f"<p>{LIMIT_MESSAGE}</p>"), status_code=429)
     return RedirectResponse(f"{config.VOICE_RESUME_URL}/?user={user}")
 
 
@@ -225,6 +261,84 @@ async def liff_voice_draft(user: str, rid: int, request: Request):
             f"<pre style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px'>"
             f"{escape(r['draft_markdown'])}</pre>")
     return _page("履歴書の下書き", body)
+
+
+# ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
+
+
+def resume_client():
+    """履歴書の読み取りに使う OpenAI のクライアント(テストでは固定応答のスタブに差し替える)。"""
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI()
+
+
+@app.post("/api/resume/{user_id}/upload")
+async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFile, File()]):
+    """トークからアップロードされた履歴書(PDF / JPEG / PNG)を読み取り、そのユーザーの dip の状態に保存する。
+    ファイルはディスクに置かず、ファイル名も保存しない。personal は常に空欄、文字列中の電話・メール・郵便番号は除く。
+    保存した結果は get_user_conversation_summary の uploaded_resume として、同じユーザーの会話から参照される。"""
+    _require_own(request, user_id)
+    name = file.filename or ""
+    try:
+        media_type(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    data = await file.read(resume_config.MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise HTTPException(400, "ファイルが空です")
+    if len(data) > resume_config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
+    if not app.state.quota.take(user_id):  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
+        raise HTTPException(429, LIMIT_MESSAGE)
+    try:
+        draft, usage = await extract_bytes(name, data, resume_client())
+    except Exception as e:  # API のエラーは画面に理由を出す
+        raise HTTPException(502, f"履歴書を読み取れませんでした: {type(e).__name__}") from e
+    app.state.rt.ledger.record(user_id, "resume_upload", resume_config.MODEL,
+                               {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens})
+    result = finalize(draft)
+    empty = draft.model_dump(exclude={"unconfirmed"}) == type(draft)().model_dump(exclude={"unconfirmed"})
+    if empty:  # 読めなかったファイルで、前に読み取れた結果を上書きしない
+        return {"result": result, "empty": True, "view_url": None}
+    rec = logic.save_resume_upload(state, user_id, result)
+    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}"}
+
+
+@app.get("/liff/resume", response_class=HTMLResponse)
+async def liff_resume(user: str, request: Request):
+    """アップロードした履歴書の読み取り結果を表示する(トークの「読み取り結果を見る」のリンク先)。"""
+    _require_own(request, user)
+    rec = logic.resume_upload(state, user)
+    if rec is None:
+        return HTMLResponse(_page("履歴書の読み取り結果", "<p>読み取った履歴書はありません。</p>"), status_code=404)
+    return _page("履歴書の読み取り結果", _resume_html(rec["resume"]))
+
+
+def _resume_html(r: dict) -> str:
+    """読み取り結果(resume_intake.schema.ResumeDraft の形)を読める HTML に。書いてある項目だけ出す。"""
+    def line(*parts: str) -> str:
+        return escape(" ".join(x for x in parts if x))
+
+    pref = r["preferences"]
+    sec: list[tuple[str, list[str]]] = [  # 各行はエスケープ済みの HTML
+        ("職務要約", [line(r["job_summary"])] if r["job_summary"] else []),
+        ("自己PR", [line(r["self_pr"])] if r["self_pr"] else []),
+        ("学歴", [line(e["period"], e["school"], e["status"]) for e in r["education"]]),
+        ("職歴", [line(w["period"], w["organization"], w["employment_type"], w["role"])
+                  + "".join(f"<br>・{escape(d)}" for d in w["duties"] + w["achievements"]) for w in r["work_history"]]),
+        ("その他の経験", [line(o["kind"], o["title"], o["description"]) for o in r["other_experience"]]),
+        ("スキル", [line(x) for x in r["skills"]]),
+        ("資格・免許", [line(c["name"], c["acquired"]) for c in r["certifications"]]),
+        ("希望", [line(x) for x in pref["desired_work"] + pref["conditions"] + pref["notes"]]),
+        ("読み取れなかった点", [line(x) for x in r["unconfirmed"]]),
+    ]
+    rows = "".join(
+        f"<h3 style='font-size:14px;margin:14px 0 4px'>{t}</h3><ul style='margin:0;padding-left:18px;font-size:13px'>"
+        + "".join(f"<li>{v}</li>" for v in items) + "</ul>"
+        for t, items in sec if items)
+    return ("<p>アップロードした履歴書から読み取った内容です。氏名・住所・電話番号・メールアドレスは保存していません。"
+            "内容は必ずご自身で確認してください。</p>" + (rows or "<p>読み取れた項目はありませんでした。</p>"))
 
 
 # ----------------------------- LIFF(dip の応募フォーム画面のモック) -----------------------------

@@ -137,8 +137,9 @@ def test_stream_endpoint_reports_a_denied_push_without_calling_the_llm(tmp_path,
     from fastapi.testclient import TestClient
 
     from dip_mcp.data import State
-    from line_runtime import server
+    from line_runtime import config, server
 
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # 会話数の数(quota.json)・会話を本物の data/ に書かない
     server.state = State(tmp_path / "state.json")
     server.state.reset()
     with TestClient(server.app) as client:
@@ -156,7 +157,9 @@ def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tm
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from fastapi.testclient import TestClient
 
-    from line_runtime import server
+    from line_runtime import config, server
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # 会話数の数(quota.json)・会話を本物の data/ に書かない
 
     class FailingRuntime:
         """ツールの実行が始まった直後に落ちるランタイム(タイムアウト・MCP 断の代わり)。"""

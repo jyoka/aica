@@ -4,8 +4,9 @@
 
 旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、line-sim のコア
 (会話ランタイム `line_runtime/`・dip 側 MCP `dip_mcp/`・評価基盤 `evals/` + `evalkit/`・テスト・架空データ `fixtures/`)を
-履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブ・voice-resume・resume-intake は
-持ってきていない(voice / resume の移植は別 issue)。
+履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブは持ってきていない。
+resume-intake(履歴書の読み取り)は task 63 で `resume_intake/` に、音声棚卸しアドバイザー(voice-resume)は
+task 62 で `voice_resume/` に移植した(下の「音声相談」)。
 
 LINE 公式アカウントの AI モード上で動くアルバイト探しアシスタントを、自分の手元で再現して試すためのもの。
 **LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)を MCP で分ける**という本番の境界をそのまま作り、
@@ -46,7 +47,7 @@ API が使えないときは従来の部分一致に戻る(検索は止めない
 本人が会話で話した希望は `save_user_preferences` で dip に保存し、次の会話の要約(`stated_preferences`)で返す。長期メモリは LINE 側ではなく dip 側が持つ。
 
 リッチメニューは既存運用のまま触らない前提。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、
-トーク内の選択肢(クイックリプライ)として出す(挨拶だけ・意図が不明なときの最初の1問)。
+トーク内の選択肢(クイックリプライ)として出す(挨拶だけ・意図が不明なときの最初の1問。初回訪問の挨拶では「使い方」の代わりに「まず相談する」)。
 
 ### こちらから話しかける(待つだけにしない)
 
@@ -72,7 +73,7 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 シナリオごとの会話設計(きっかけ・1通目・最初の1問・分岐・出口・評価で確かめること)は
 [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md)。
 
-画面で試すシナリオと評価で測るシナリオは同じ一覧(`evals/scenarios.json`、6 件)。どのシナリオも AI 側の1通目から始まる。
+画面で試すシナリオと評価で測るシナリオは同じ一覧(`evals/scenarios.json`、9 件)。どのシナリオも AI 側の1通目から始まる。
 1通目の出どころは、初回訪問・再訪の挨拶か、dip のプッシュのどちらか。
 シナリオを始めるたびに、そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まるため)。
 
@@ -84,6 +85,9 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 | 挨拶(再訪) | 再訪(希望あり)(`R-revisit`) | `sim-new` + 前に話した希望 | 前の希望を確認 → 差分だけ答えて提案 | 提案・待つ |
 | 挨拶(再訪) | 再訪(行動履歴のみ)(`R-revisit-browsing`) | `sim-browsing` | 最近の閲覧に1回だけ触れる → 条件 → 提案 | 提案・待つ |
 | 挨拶(再訪) | 保存した求人について質問する(`Q-job-question`) | `sim-browsing` | 詳しく聞きたい → 制服・資料に無いこと | 相談・待つ・提案 |
+| 挨拶(初回訪問) | 探し方が分からない → 相談 → 提案(`C-consult-propose`) | `sim-new` | 「何から始めれば」→ 相談モードで1問ずつ → 提案 | 提案 |
+| 挨拶(初回訪問) | 相談だけで終える(`C-consult-only`) | `sim-new` | まず相談する → 1問答える → 今はいい | 相談・待つ |
+| 挨拶(初回訪問) | 相談の途中で提案へ切替(`C-consult-switch`) | `sim-new` | まず相談する → 1問答える → 求人を見せて | 提案 |
 
 シナリオ用ユーザー(`fixtures/users.json`):
 
@@ -96,6 +100,16 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 | `sim-new` | dip ID 未連携 |
 
 時刻は 2026-09-23 12:00 に固定(`SIM_NOW` で変更可)。
+
+### 相談モード(何から始めればいいか分からない人向け)
+
+別のエージェントやグラフではなく、dip の Prompt(`baitoru_assistant.md` の「相談モード」)のステージ指針と、入口の選択肢で動く。
+
+- 入口: 初回挨拶の選択肢「まず相談する」か、会話中の迷いのサイン(「何から始めれば」「自分に合うのが分からない」)。
+- 経験・興味・不安・生活の制約を1問ずつ聞く。相談中は「3ターン以内に分岐」を緩め、ヒアリングが終わるか本人が切り上げるまで続けてよい。
+- 「自分に何が合うか分からない」には、経験と興味から向いていそうな職種を理由つきで挙げる。
+- 話した内容は長期メモリ(`save_user_preferences` の8項目)に保存し、そのまま求人提案の条件にする(言い直し不要)。
+- 「今はいい」なら提案なしで終える。途中で「求人を見せて」と言えば、その時点までの内容ですぐ提案に切り替える。
 
 ## マルチユーザー(匿名ユーザーID)
 
@@ -110,6 +124,25 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
   これはアクセス制御ではなく取り違え(混線)の防止。
 - 費用台帳: LLM の呼び出し1回ごとに `data/costs.jsonl` へ1行
   (時刻・`user_id`・イベント・モデル・トークン・`cost_usd`)。料金表は `line_runtime/ledger.py` が正で、評価の計測(`evals/meter.py`)も同じ表を使う。
+
+### 会話数の上限と費用の集計
+
+API 費用の暴走を防ぐため、1人1日あたりのターン数(LLM を呼ぶ1往復。ユーザーの発言・挨拶・プッシュそれぞれ1回)に上限がある。
+
+- 上限は環境変数 `LINE_SIM_DAILY_TURN_LIMIT`(`.env` でも可。未設定なら 50、`0` 以下なら上限なし)。
+- 数える単位は人(ブラウザの匿名ID)。`匿名ID:シナリオユーザー` はシナリオを替えても同じ枠を使う。
+- 上限を超えると、LLM を呼ばずに「本日のご利用回数の上限に達した・明日また使える」という案内を返す(返信に `limited: true`)。
+  プッシュは dip に聞く前に送らないと決める。空の発言は数える前に 400 で断る。
+- 日付は日本時間で区切り、日付が変わると数え直す。当日の数は `data/quota.json` に保存する(再起動しても消えない)。
+- 対象は Web の API(`/api/event`・`/api/event/stream`)だけ。評価(`evals.run`)は `LineRuntime` を直接使うので上限はかからない。
+
+費用台帳のユーザー別・日別(日本時間)の集計:
+
+```bash
+./.venv/bin/python -m line_runtime.ledger                      # data/costs.jsonl を人・日ごとに表で(合計行つき)
+./.venv/bin/python -m line_runtime.ledger --date 2026-09-27    # その日だけ
+./.venv/bin/python -m line_runtime.ledger --by-user-id --json  # シナリオユーザーごとに分けて JSON で
+```
 
 ## 動かし方
 
@@ -135,19 +168,54 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
   dip のツールの呼び出し(引数・結果の要約)、プッシュの判定を順に出し、構成図の動いている部分を光らせる。
   画面は `POST /api/event/stream`(1行1件の JSON で途中経過を返す)を使う。`POST /api/event` は返信だけをまとめて返す。
 
-## 音声相談(voice-resume との連携)
+## 履歴書のアップロード(resume_intake)
 
-> **注意**: voice-resume はこのリポジトリには未移植(別 issue)。受け口(`/liff/voice` や `/api/voice/*`)は
-> 旧 line-sim と同じまま残してあるが、音声アドバイザー本体は旧リポジトリ `jyoka/aica_ra_a2a_poc` の `voice-resume/` にある。
-
-トークルームの右上「🎤 音声で相談」から、音声アドバイザー(`voice-resume/`)に LIFF のように入れる(task 40)。
-音声で聞いた希望・提案した求人・履歴書の下書きは、同じユーザーの dip の状態と LINE のトークに戻る。
+旧リポジトリの `resume-intake/`(`cda42fd`)を `resume_intake/` に移植し、トークからアップロードできるようにした(task 63)。
+履歴書(PDF / JPEG / PNG)を OpenAI API(構造化出力。既定 `gpt-6-sol`、`RESUME_INTAKE_MODEL` で差し替え可)で読み取り、
+[履歴書下書きの共通スキーマ](docs/design/resume-draft-schema.md)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
 
 ```
-トーク「音声で相談」→ GET /liff/voice?user=<line_user_id>
-   → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に line_user_id を載せる
+トーク右上「📄 履歴書」→ ファイルを選ぶ → POST /api/resume/{user_id}/upload(multipart、10MB まで)
+   → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
+   → トークに読み取り結果の確認(職歴・学歴・資格)と「読み取り結果を見る」(GET /liff/resume)を出す
+   → 「この内容で相談する」→ LINE 側 AI が get_user_conversation_summary を呼び直し、uploaded_resume を参照して続ける
+```
+
+- 個人情報: 氏名・生年月日・住所・電話・メールは保存しない。プロンプトで「書かない」を指示し、`personal` はコードで常に空欄、
+  文字列に混ざった電話番号・メール・郵便番号は読み取り直後(`scrub_pii`)と dip への保存時の2回、機械的に除く。
+  ファイル名(氏名が入りがち)も保存せず、トークにも出さない。
+- 読めないファイル(白紙・別書類・不鮮明)は「読み取れなかった」と理由を返すだけで保存しない(前に読み取れた結果を上書きしない)。
+- シナリオを始め直すとそのユーザーの dip の状態が初期に戻るので、アップロードした結果も消える。
+- 読み取り1回ごとに費用台帳へ `event: resume_upload` の行が付く。
+
+CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリに入れない):
+
+```bash
+./.venv/bin/python -m resume_intake.cli resume_intake/samples/01_clean.pdf   # 結果は data/resume_intake/ にも保存
+./.venv/bin/python -m resume_intake.run_samples                               # 実 API で正解(samples/expected/)と比較
+./.venv/bin/python resume_intake/samples/make_samples.py                      # サンプルを作り直す(reportlab / pillow が要る)
+```
+
+テストは `tests/test_resume_intake.py`(移植した読み取りのテスト)と `tests/test_resume_upload.py`(アップロード → 保存 →
+同じユーザーの会話からの参照)。どちらも OpenAI・LLM はスタブで、実 API は呼ばない。
+
+## 音声相談(voice-resume との連携)
+
+トークルームの右上「🎤 音声で相談」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))に
+LIFF のように入れる(旧リポジトリの task 40 を task 62 で移植)。
+音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・履歴書の下書きは、
+同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
+
+ユーザーの対応付けは匿名ユーザーID(上の「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、
+トークで使っているユーザー `匿名ID:シナリオユーザー`(例 `w-…:sim-new`)をそのまま音声側へ渡し、
+dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP ツールの引数名は `line_user_id` のまま)。
+音声構成は旧リポジトリと同じ(LiveKit Cloud + Deepgram nova-3 + OpenAI gpt-6-sol + Cartesia sonic-3.5)。
+
+```
+トーク「音声で相談」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
+   → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に user_id を載せる
    → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望は確認形で1回だけ・聞き直さない)
-   → 会話中: recommend_jobs をその line_user_id で呼ぶ / 本人が言った希望を save_user_preferences で保存
+   → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
    → 終わり: 結果を propose / consult で記録し、POST /api/voice/result で求人と下書きをこちらへ返す
    → トークが POST /api/voice/{user}/pull で受け取り、求人カード(dip の求人データから作り直す)と
      「履歴書の下書きを見る」(GET /liff/voice/draft)を描く
@@ -158,16 +226,26 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - 会話結果の記録はコードが propose(求人を提案できた)/ consult(提案なし)だけを書く。
   wait は音声側からは記録しない(断っていない人を wait と記録しない決まり)。
 
-動かし方(3プロセス。voice-resume は旧リポジトリのものを使う。セットアップは旧リポジトリの `voice-resume/README.md`):
+動かし方(3プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`):
 
 ```bash
-# 1) line-sim(このリポジトリの直下)
+# リポジトリ直下の .env に(下の表の「音声相談」の必須の5つ + OPENAI_API_KEY)
+#   LIVEKIT_URL=wss://<project>.livekit.cloud
+#   LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...
+#   DEEPGRAM_API_KEY=...  CARTESIA_API_KEY=...  OPENAI_API_KEY=...
+./.venv/bin/python -m voice_resume.agent download-files     # 初回のみ(VAD / turn detector のモデル)
+
+# 1) トーク(line_runtime)
 ./.venv/bin/python -m line_runtime.server                  # http://127.0.0.1:8030
-# 2) voice-resume のワーカー(旧リポジトリの voice-resume/ で)
+# 2) voice-resume のワーカー(LiveKit Cloud に接続して待受)
 ./.venv/bin/python -m voice_resume.agent dev
-# 3) voice-resume の会話ページ(同じく旧リポジトリの voice-resume/ で)
+# 3) voice-resume の会話ページ
 ./.venv/bin/uvicorn voice_resume.server:app --port 8090
 ```
+
+オフラインテスト(実 API なし。台本(文字起こし)駆動の会話の流れ・検索引数・下書き、dip の MCP 結合、匿名ユーザーID のスコープ)は
+`./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
+(費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
 
 → <http://127.0.0.1:8030> でシナリオを選ぶ → 右上「🎤 音声で相談」→ 別タブで面談(マイク許可)
 → 面談が終わる(締めの挨拶か「面談を終える」)と、数秒でトークに求人カードと下書きのリンクが届く。
@@ -188,16 +266,30 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `DIP_MCP_URL` | なし(stdio) | dip MCP サーバーの URL |
 | `DIP_STATE_PATH` | `data/state.json` | dip 側のシミュレーション状態 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シミュレーション上の現在時刻 |
+| `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りに使う OpenAI モデル(アップロードは常に OpenAI。`OPENAI_API_KEY` が要る) |
 | `VOICE_RESUME_URL` | `http://127.0.0.1:8090` | 音声アドバイザーの会話ページ(「音声で相談」の飛び先) |
+
+音声相談(voice_resume)で使うもの。キーはリポジトリ直下の `.env` に置く(`voice_resume/config.py` が読む。トークだけ試すなら不要):
+
+| 環境変数 | 既定 | 用途 |
+|---|---|---|
+| `LIVEKIT_URL` | なし(必須) | LiveKit Cloud のプロジェクト URL(`wss://….livekit.cloud`)。会話ページのサーバーとワーカーの両方が使う |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。会話ページのサーバーが部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
+| `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
+| `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
+| `OPENAI_API_KEY` | なし(必須) | 会話の LLM・履歴書の下書き・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
+| `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 面談の結果(求人・下書き)を返すトーク(line_runtime)の URL |
+| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 面談ごとの下書き・文字起こし・求人提案の保存先 |
+| `VOICE_RESUME_*`(モデル・ボイス・ターン判定) | `voice_resume/config.py` | STT / LLM / TTS のモデル、ボイスと速さ、ターン判定の待ち時間 |
 
 ## 評価(evals/)
 
-`evals/scenarios.json` の6シナリオ(上の「シナリオ」。画面と同じ一覧)を、
+`evals/scenarios.json` の9シナリオ(上の「シナリオ」。画面と同じ一覧)を、
 設定を与えた模擬ユーザー(LLM)と会話させ、次を採点する。
 
 - 機械判定(`evals/checks.py`): 1ターン1問、選択肢は最大4つで逃げ道を含む、吹き出し80字以内、求人は最大3件で理由つき、
   ツールが返していない求人を出さない、個人情報をトーク経由で送らない、初回は質問で終える、
-  「今はいい/送らないで」の後に質問や求人を続けない、最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)、断られていないのに wait を記録しない。
+  「今はいい/送らないで」の後に質問や求人を続けない、「求人を見せて」のターンで求人を探す、この会話で保存した項目を聞き直さない、最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)、断られていないのに wait を記録しない。
   再訪(希望あり)は、1通目で前の希望に触れ、以後その項目を聞き直さない。再訪(行動履歴のみ)は、1通目で最近の行動に触れ、
   触れるのは会話を通して1回だけ、1通目に求人カード・求人名・件数を並べず職種も1つだけ。
   プッシュのシナリオは本番と同じく `push_trigger` を通してから始める。
@@ -207,7 +299,9 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
   dip の Prompt は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
   その場で作った架空の求人名そのものは文字列では見分けにくいので、ここは実在の求人の出し間違いを捕まえる。
   保存した希望(`save_user_preferences`)が本人の発言に出てこない場合も違反にする(本人が決めていない条件を記録しない)。
-- KPI: 3ターン以内に分岐(提案/相談/支援/待つ)へ到達した割合、会話結果を記録した割合、期待どおりの出口の割合。
+  相談モードのシナリオ(`consult_mode`)では、初回の選択肢に「まず相談する」がある、相談の入口で求人を出さずに1問から始める、
+  本人が切り上げる前に相談を締めない、相談で聞いた項目を保存する、も見る。
+- KPI: 3ターン以内に分岐(提案/相談/支援/待つ)へ到達した割合(相談モードのシナリオは規則を緩めているので測らない)、会話結果を記録した割合、期待どおりの出口の割合。
 - 費用と効率(エージェント側の呼び出しだけ): `cost_usd`、`llm_calls`、`cache_hit_rate`(入力のうちプロンプトキャッシュから読めた割合。
   読めた分は 0.1 倍の料金。シナリオとユーザーIDを会話の途中で変えないのは、この割合を保つため)。
 - LLM ジャッジ(`--judge` のときだけ): トーン、設計の狙いとの一致、コードで拾えない作り話。gpt-6-sol(anthropic なら Opus 5)を呼ぶので費用がかかる。

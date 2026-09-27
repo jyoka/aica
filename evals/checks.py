@@ -29,17 +29,40 @@ PII_VALUE = re.compile(r"0\d{1,4}-?\d{1,4}-?\d{3,4}|@")
 RECENT_ACTIVITY = re.compile(
     r"(?<!希望を)(?<!条件を)(?<!希望は)(?<!条件は)"
     r"(?:見て|ご覧になって|閲覧して|チェックして|保存して|(?:閲覧|チェック|保存)されて)い(?:た(?!だ)|まし|らっしゃ)"
-    r"|(?:見て|ご覧になって|閲覧して|(?:閲覧|チェック)されて)い(?:ます|る)"
     r"|見て(?:た|まし)|ご覧にな(?:りまし|った(?!ら))|閲覧(?:履歴|した)"
 )
-# 保存済みの希望を聞き直す質問(再訪で前の希望を確認した後は、差分だけを受け取る)
+# 1通目(再訪の挨拶)でだけ行動履歴への言及に数える言い方。現在形(「見ていますか?」)と「探していましたか?」は、
+# 2通目以降では画面の求人(「今ご覧になっている求人」)や今回の希望(「渋谷で探していましたね」)を指すことが多い
+RECENT_ACTIVITY_T1 = re.compile(
+    RECENT_ACTIVITY.pattern
+    + r"|(?:見て|ご覧になって|閲覧して|(?:閲覧|チェック)されて)い(?:ます|る)"
+    + r"|探して(?:い(?:た|まし|らっしゃ)|た|まし)"
+)
+# 相談モードの入口: 選択肢「まず相談する」か、探し方そのものに迷っているサイン
+CONSULT_SIGN = re.compile(r"相談|何から始め|何をすれば|探し方が分から|(合う|向いてる|向いている)(の|仕事|バイト)?が?分から")
+# 「求人を見せて」: 相談の途中でも、このターンで提案に切り替える
+SHOW_JOBS = re.compile(r"求人を?(見せて|見たい|出して|見る)")
+
+
+# 本人が相談を切り上げた・会話を終えた発言(これより前に相談を締めるのは打ち切り)
+CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度|ありがとう|今日はこれで|考えます")
+# 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
+    "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
     "area": re.compile(r"(どの|どこの?)(エリア|駅|辺り?|あたり|地域)|どこで働|エリアは|勤務地"),
-    "time_band": re.compile(r"(どの|何の)時間帯|時間帯は|何時(から|ごろ|頃|まで)"),
+    "time_band": re.compile(r"(どの|何の)時間帯|時間帯(は|が)|何時(から|ごろ|頃|まで)"),
     "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
+    "days_per_week": re.compile(r"週(に)?(何|いく)日"),
+    "min_wage": re.compile(r"時給(は|の)?(いくら|どのくらい|下限)"),
 }
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
+
+
+def asks_for_jobs(m: str) -> bool:
+    """「求人を見せて」の依頼か。後ろに断りが続く「求人を見るのはあとでいいです」は依頼ではない。"""
+    hit = SHOW_JOBS.search(m)
+    return bool(hit) and not REFUSAL.search(m, hit.end())
 
 
 def _questions(bubbles: list[str]) -> int:
@@ -194,14 +217,38 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
     return out
 
 
-def reask_violations(turns: list[dict], keys: list[str]) -> list[str]:
-    """再訪(希望あり): 1通目で前の希望を確認した後に、保存済みの項目(keys)を聞き直していないか。"""
+def _question_part(b: str) -> str:
+    """吹き出しのうち質問の文だけ(疑問符を含む文)。保存済みの値を復唱するまとめの平叙文は聞き直しではない。"""
+    return "".join(s for s in re.split(r"(?<=[。!!\n])", b) if "?" in s or "？" in s)
+
+
+# 本人の発言から取る「今回の値」の候補から外す、項目名そのものの語
+_KEY_WORDS = {"エリア", "時間帯", "職種", "勤務地", "仕事", "求人", "希望", "条件"}
+
+
+def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded: dict | None = None) -> list[str]:
+    """保存済みの項目を、後のターンでもう一度聞いていないか(相談で話したことを提案の前に聞き直さない)。
+    seeded は会話の前から保存されている希望(再訪): 1通目で確認した後は、差分だけを受け取る。
+    質問に既知の値(保存した値か、そのターンの本人の発言にある語)が入っていれば確認であって聞き直しではない
+    (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。本人がそのターンで保存し直した項目も、そのターンは聞いてよい。"""
+    saved = {k: 0 for k in seeded or {}}
+    known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
-    for i, r in enumerate(turns[1:], start=1):
-        asks = [b for b in r["bubbles"] if _questions([b])]
-        for k in keys:
-            if k in REASK and any(REASK[k].search(b) for b in asks):
-                out.append(f"T{i + 1}: 保存済みの希望({k})を聞き直した")
+    for i, r in enumerate(turns):
+        said = {w for w in re.findall(r"[一-龥ァ-ヴー]{2,}", (user_msgs[i] if i < len(user_msgs) else None) or "")
+                if w not in _KEY_WORDS}
+        for t in r["tools"]:
+            if t["name"] == "save_user_preferences":
+                for k, v in (t["args"].get("preferences") or {}).items():
+                    saved[k] = i
+                    known.setdefault(k, []).append(str(v))
+        for b in r["bubbles"]:
+            if not _questions([b]):
+                continue
+            q = _question_part(b)
+            for k, at in saved.items():
+                if at < i and k in REASK and REASK[k].search(q) and not any(w in q for w in [*known.get(k, []), *said]):
+                    out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
     return out
 
 
@@ -212,15 +259,47 @@ def recent_activity_violations(turns: list[dict]) -> list[str]:
         return []
     first = "\n".join(turns[0]["bubbles"])
     out = []
-    if not RECENT_ACTIVITY.search(first):
+    if not RECENT_ACTIVITY_T1.search(first):
         out.append("T1: 再訪の挨拶で最近の行動に触れていない")
-    mentions = sum(len(RECENT_ACTIVITY.findall(b)) for r in turns for b in r["bubbles"])
+    mentions = len(RECENT_ACTIVITY_T1.findall(first)) + sum(
+        len(RECENT_ACTIVITY.findall(b)) for r in turns[1:] for b in r["bubbles"])
     if mentions > 1:
         out.append(f"最近の行動に{mentions}回触れた(1回だけ)")
     job_types = {j.job_type for j in load_jobs().values()}
     listed = [n for n in sorted(_job_names()) if n in first] + re.findall(r"\d+\s*件", first)
     if turns[0]["cards"] or listed or sum(t in first for t in job_types) > 1:
         out.append(f"T1: 閲覧した求人を羅列した: {listed or [c['job_id'] for c in turns[0]['cards']] or first}")
+    return out
+
+
+def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> list[str]:
+    """相談モード(sc["consult_mode"])の判定。入口では求人を出さずに1問聞き、本人が切り上げる前に相談を締めない。"""
+    out = []
+    first = turns[0] if turns else None
+    if sc.get("expect_consult_menu") and first and not any("相談" in q for q in first["quick_replies"]):
+        out.append(f"T1: 初回の選択肢に「まず相談する」が無い: {first['quick_replies']}")
+    entry = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m and CONSULT_SIGN.search(m)), None)
+    if entry is None:
+        return out
+    r = turns[entry]
+    if r["cards"] or any(t["name"] == "recommend_jobs" for t in r["tools"]) or not _questions(r["bubbles"]):
+        out.append(f"T{entry + 1}: 相談の入口で、ヒアリングの1問から始めていない")
+    for i in range(entry, len(turns)):
+        m = user_msgs[i] or ""
+        if i > entry and (CONSULT_CUTOFF.search(m) or asks_for_jobs(m)):
+            break
+        names = [t["name"] for t in turns[i]["tools"]]
+        if "record_conversation_outcome" in names and not turns[i]["cards"] and "recommend_jobs" not in names:
+            out.append(f"T{i + 1}: 本人が切り上げる前に相談を締めた")
+            break
+    for i in range(entry, min(len(turns), len(user_msgs))):  # 相談の途中でも「求人を見せて」には、そのターンで求人を出す
+        m = user_msgs[i] or ""
+        if m and asks_for_jobs(m) and not (turns[i]["cards"] or {"recommend_jobs", "relax_conditions"}
+                                           & {t["name"] for t in turns[i]["tools"]}):
+            out.append(f"T{i + 1}: 「求人を見せて」の後に求人を探さなかった")
+    saved = {k for r in turns for t in r["tools"] if t["name"] == "save_user_preferences"
+             for k in (t["args"].get("preferences") or {})}
+    out += [f"相談で聞いた「{k}」を保存していない" for k in sc.get("expect_saved_preferences") or [] if k not in saved]
     return out
 
 
@@ -247,21 +326,24 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
             violations.append(f"T1: 前に本人が話した希望({'・'.join(seeds)})に触れず、聞き直している")
-    if sc.get("expect_uses_preferences"):
-        violations += reask_violations(turns, list(sc.get("seed_preferences") or {}))
     if sc.get("expect_recent_activity"):
         violations += recent_activity_violations(turns)
     if sc.get("pii_test"):
         pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:
             violations.append(f"T{pii_turn + 1}: 個人情報を書かれた後に入力画面を案内していない")
+    violations += reask_violations(turns, user_msgs,
+                                   sc.get("seed_preferences") if sc.get("expect_uses_preferences") else None)
+    if sc.get("consult_mode"):
+        violations += consult_violations(sc, turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
     return {
         "turns": len(turns),
         "branch_turn": branch_turn,
-        "branch_within_3": branch_turn is not None and branch_turn <= 3,
+        # 相談モードのシナリオは「3ターン以内に分岐」を緩める(ヒアリングが終わるか本人が切り上げるまで続けてよい)ので測らない
+        "branch_within_3": None if sc.get("consult_mode") else branch_turn is not None and branch_turn <= 3,
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": bool(set(outcomes) & set(sc["expect_outcome"])),

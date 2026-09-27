@@ -82,5 +82,70 @@
    "wait",
    "propose"
   ]
+ },
+ {
+  "id": "C-consult-propose",
+  "title": "探し方が分からない → 相談 → 提案",
+  "desc": "何から始めればいいか分からない新規ユーザー。迷いのサインから相談に入り、ヒアリングして提案へ",
+  "user": "sim-new",
+  "event": "visit",
+  "persona": "今日初めてこのトークを開いた。選択肢は選ばず、「バイトを探したいけど、何から始めればいいか分からない」と書く。バイトは未経験(高校の文化祭で模擬店の接客をしたくらい)。人と話すのは好き。未経験でもついていけるかが不安。働けるのは平日の夕方、週3日くらい、池袋あたり。聞かれたことに1つずつ答える。聞いた内容で求人を見るかを聞かれたら見ると答える。求人を見せられたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "propose"
+  ],
+  "expect_menu": true,
+  "consult_mode": true,
+  "expect_consult_menu": true,
+  "expect_saved_preferences": [
+   "experience",
+   "time_band"
+  ],
+  "max_turns": 10
+ },
+ {
+  "id": "C-consult-only",
+  "title": "相談だけで終える",
+  "desc": "「まず相談する」で相談に入り、少し話したところで「今はいい」。提案なしで終える",
+  "user": "sim-new",
+  "event": "visit",
+  "persona": "今日初めてこのトークを開いた。まず相談したい。バイトは未経験。少し話したら、今日は求人までは見ずに「今はいい」で終える。(返信は script のとおり)",
+  "script": [
+   "まず相談する",
+   "バイトは未経験です",
+   "今はいい"
+  ],
+  "expect_outcome": [
+   "consult",
+   "wait"
+  ],
+  "expect_menu": true,
+  "consult_mode": true,
+  "expect_consult_menu": true,
+  "expect_saved_preferences": [
+   "experience"
+  ]
+ },
+ {
+  "id": "C-consult-switch",
+  "title": "相談の途中で提案へ切り替える",
+  "desc": "「まず相談する」でヒアリング中に「求人を見せて」。その時点の内容ですぐ提案へ",
+  "user": "sim-new",
+  "event": "visit",
+  "persona": "今日初めてこのトークを開いた。まず相談したい。居酒屋のホールを1年やっていた。1問答えたところで、待ちきれずに「求人を見せて」と言う。求人を見せられたら「ありがとう、考えます」と言って終える。(返信は script のとおり)",
+  "script": [
+   "まず相談する",
+   "居酒屋のホールを1年やっていました",
+   "求人を見せて",
+   "ありがとう、考えます"
+  ],
+  "expect_outcome": [
+   "propose"
+  ],
+  "expect_menu": true,
+  "consult_mode": true,
+  "expect_consult_menu": true,
+  "expect_saved_preferences": [
+   "experience"
+  ]
  }
 ]

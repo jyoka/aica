@@ -37,7 +37,8 @@ Area = Annotated[str | None, Field(description=(
 
 @mcp.tool()
 def get_user_conversation_summary(line_user_id: UserId) -> dict:
-    """ユーザーの状況要約(直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望)を返す。会話の最初に呼ぶ。
+    """ユーザーの状況要約(直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望・
+    アップロードした履歴書の読み取り結果)を返す。会話の最初と、本人が履歴書をアップロードした後に呼ぶ。
     要約は仮説であり、生の行動ログは含まない。"""
     return logic.conversation_summary(state, line_user_id)
 
