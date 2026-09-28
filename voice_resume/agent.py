@@ -50,21 +50,25 @@ def participant_user_id(participant) -> str | None:
 
 async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAdvisor, str]:
     """面談を始める前の準備。dip の要約を読んでアドバイザーと最初の発話への指示を組み立てる。"""
-    # 会話の前に dip の要約を読み、前に話した希望(stated_preferences)と、トークでアップロードした
-    # 履歴書(uploaded_resume)があれば確認形で使う(LINE 側のプロンプトと同じ決まり。同じことを聞き直さない)
+    # 会話の前に dip の要約を読み、前に話した希望・相談で分かったこと(stated_preferences)、前の会話の
+    # 相談のまとめ(consultation_summary)、トークでアップロードした履歴書(uploaded_resume)があれば確認形で使う
+    # (LINE 側のプロンプトと同じ要約・同じ決まり。同じことを聞き直さない)
     stated: dict | None = None
     resume: dict | None = None
+    consultation: dict | None = None
     if dip is not None and user_id:
         try:
             summary = await dip.get_user_conversation_summary(user_id)
             stated = summary.get("stated_preferences") or None
             resume = summary.get("uploaded_resume") or None
+            consultation = summary.get("consultation_summary") or None
         except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
             logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", exc)
-    logger.info("面談を開始: user_id=%s 前回の希望=%s 履歴書=%s", user_id or "(不明)", stated or "なし",
-                "あり" if resume else "なし")
+    logger.info("面談を開始: user_id=%s 前回の希望=%s 相談のまとめ=%s 履歴書=%s", user_id or "(不明)",
+                stated or "なし", "あり" if consultation else "なし", "あり" if resume else "なし")
 
-    advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume)
+    advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume,
+                            consultation_summary=consultation)
     return advisor, greeting_instructions(stated, resume)
 
 

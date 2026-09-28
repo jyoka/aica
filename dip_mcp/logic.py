@@ -71,6 +71,11 @@ def stated_preferences(user: dict) -> dict:
 RESUME_NOTE = ("uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。"
                "経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。")
 
+PROFILE_NOTE = ("stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・"
+                "やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。"
+                "consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。"
+                "続きから始める材料にする。")
+
 TRACK_NOTE = ("search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。"
               "track_history は直近の切り替え(根拠の発言つき)。")
 
@@ -79,14 +84,19 @@ def _track_summary(user: dict) -> dict:
     return {"search_track": search_track(user), "track_history": track_history(user)}
 
 
+def _profile_summary(user: dict) -> dict:
+    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書)。"""
+    return {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
+            "uploaded_resume": uploaded_resume(user)}
+
+
 def conversation_summary(state: State, line_user_id: str) -> dict:
     user = state.user(line_user_id)
     if not user.get("dip_id"):
-        return {"linked": False, "segment": "unlinked", **_track_summary(user),
-                "stated_preferences": stated_preferences(user), "uploaded_resume": uploaded_resume(user),
+        return {"linked": False, "segment": "unlinked", **_track_summary(user), **_profile_summary(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + TRACK_NOTE + RESUME_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE}
     jobs = load_jobs()
     apps = sorted(_recent(user.get("applications", []), "applied_at"), key=lambda a: a["applied_at"], reverse=True)
     exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"]) <= 7]
@@ -130,10 +140,10 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "tendency": preferences(user, jobs),
         "last_contact": ({"channel": contacts[0]["channel"], "when": _md(contacts[0]["at"]),
                           "message": contacts[0]["message"]} if contacts else None),
-        "stated_preferences": stated_preferences(user),
-        "uploaded_resume": uploaded_resume(user),
+        **_profile_summary(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
-                "stated_preferences は本人が前に話した希望(行動データより優先する)。" + TRACK_NOTE + RESUME_NOTE,
+                "stated_preferences は本人が前に話した希望(行動データより優先する)。"
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE,
     }
 
 
@@ -483,26 +493,52 @@ def open_talk(state: State, line_user_id: str) -> str:
     return "revisit" if before else "visit"
 
 
-# ----------------------------- 本人が話した希望(長期メモリ) -----------------------------
+# ----------------------------- 本人が話した希望と、本人について(長期メモリ) -----------------------------
 
 # experience / skills / certifications の分け方(task 41):
 #   experience: これまで何をしてきたか(職歴・未経験など。例: コンビニで1年半)
 #   skills: 本人が「できる」と言った作業・スキル(例: レジ打ちと品出し)
 #   certifications: 持っている資格・免許(例: 普通自動車免許)
+# 相談で分かったこと(aica v2 の D。jyoka/tasks#61 を吸収): 区分に共通の purpose〜concerns と、
+# 正社員を探すときの条件 min_annual_salary〜start_timing。値は本人の言葉のまま短い文で
 PREFERENCE_KEYS = {"area": "エリア・駅", "time_band": "時間帯", "job_type": "職種", "min_wage": "時給の下限(円)",
                    "experience": "経験(未経験など)", "days_per_week": "週の日数",
-                   "skills": "できること", "certifications": "資格・免許"}
+                   "skills": "できること", "certifications": "資格・免許",
+                   "purpose": "目的", "strengths": "強み", "wants": "やりたいこと", "avoids": "避けたいこと",
+                   "concerns": "不安", "min_annual_salary": "希望年収の下限", "work_style": "働き方",
+                   "start_timing": "働き始める時期"}
+# 正社員を探すときだけ聞く条件(アルバイト・パートの相談では聞かない。保存は区分に関係なく受け付ける)
+FULLTIME_PREFERENCE_KEYS = ("min_annual_salary", "work_style", "start_timing")
+PREFERENCE_VALUE_MAX = 100  # 本人の言葉のまま短い文で。長い値は要約・会話ログの貼り付けになりがちなので保存しない
 
 
-# 住所らしい値(番地・丁目・「1-2-3」の形)。氏名はコードでは見分けられないので、Prompt で保存させない
-ADDRESS_LIKE = re.compile(r"\d+-\d+(-\d+)?|丁目|番地")
+# 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
+# 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
+# 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える
+ADDRESS_LIKE = re.compile(
+    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
+    r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
+    r"|丁目|番地"
+)
+
+
+def _preference_error(key: str, value) -> str | None:
+    """保存しない理由(保存してよければ None)。個人情報らしい値の防御は全項目に効かせる。"""
+    if key not in PREFERENCE_KEYS:
+        return "unknown_key"
+    v = str(value)
+    if PII_VALUE.search(v) or ADDRESS_LIKE.search(v):
+        return "personal_info"
+    if len(v.strip()) > PREFERENCE_VALUE_MAX:
+        return "too_long"
+    return None
 
 
 def save_preferences(state: State, line_user_id: str, preferences: dict[str, str | int]) -> dict:
-    """本人が会話で話した希望を保存する(次の会話の要約で返す)。決まった項目だけ。
-    電話番号・メールアドレス・住所らしい値は保存しない。値は文字列にそろえる。"""
-    rejected = [k for k, v in preferences.items()
-                if k not in PREFERENCE_KEYS or PII_VALUE.search(str(v)) or ADDRESS_LIKE.search(str(v))]
+    """本人が会話で話した希望と、本人について分かったこと(目的・強みなど)を保存する(次の会話の要約で返す)。
+    決まった項目だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は保存しない。値は文字列にそろえる。"""
+    errors = {k: e for k, v in preferences.items() if (e := _preference_error(k, v))}
+    rejected = list(errors)
     keep = {k: str(v).strip() for k, v in preferences.items() if k not in rejected and str(v).strip()}
 
     def apply(u):
@@ -513,8 +549,14 @@ def save_preferences(state: State, line_user_id: str, preferences: dict[str, str
     state.update(line_user_id, apply)
     out = {"saved": list(keep), "rejected": rejected}
     if rejected:
-        out["note"] = (f"保存できるのは {', '.join(PREFERENCE_KEYS)} だけ。"
-                       "電話番号・メールアドレス・住所など個人情報を含む値は保存しない。")
+        notes = []
+        if "unknown_key" in errors.values():
+            notes.append(f"保存できるのは {', '.join(PREFERENCE_KEYS)} だけ。")
+        if "personal_info" in errors.values():
+            notes.append("電話番号・メールアドレス・住所など個人情報を含む値は保存しない。")
+        if "too_long" in errors.values():
+            notes.append(f"値は{PREFERENCE_VALUE_MAX}字以内。本人の言葉のまま短い文にして保存し直す。")
+        out["note"] = "".join(notes)
     return out
 
 
@@ -681,18 +723,39 @@ OUTCOMES = ("propose", "consult", "support", "wait")
 REFUSAL_WORDS = re.compile(r"今はいい|いらない|要らない|やめ|止め|送らないで|あとで|後で|また今度|結構|不要")
 
 
-def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float) -> dict:
+CONSULTATION_SUMMARY_MAX = 200  # 相談のまとめの字数の上限
+
+
+def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float,
+                   summary: str | None = None) -> dict:
+    """会話の結果を記録する。summary は相談のまとめ(200字以内。本人の発言に基づく事実と、次に確かめることだけ)。
+    まとめは次の会話(チャット・音声)の要約の consultation_summary に出る。200字を超えたら何も記録しない
+    (書き直して呼び直してもらう。途中で切ると「次に確かめること」が落ちるため)。"""
     if outcome not in OUTCOMES:
         return {"error": f"outcome は {OUTCOMES} のいずれか"}
     if outcome == "wait" and not REFUSAL_WORDS.search(reason or ""):  # 断っていない人を wait にしない
         return {"error": "wait はユーザーが断ったときだけ記録できます。reason に、ユーザーが断った言葉"
                          "(例:「今はいい」「もう送らないで」)をそのまま入れてください。断っていなければ、"
                          "直前の分岐の結果(consult など)で記録するか、会話を続けてください。"}
+    summary = str(summary or "").strip()
+    if len(summary) > CONSULTATION_SUMMARY_MAX:
+        return {"error": f"summary(相談のまとめ)が{len(summary)}字です。{CONSULTATION_SUMMARY_MAX}字以内に書き直して、"
+                         "もう一度呼んでください(本人の発言に基づく事実と、次に確かめることだけ)。何も記録していません。"}
     reason = PII_VALUE.sub("[個人情報を削除]", reason)  # 理由の文にユーザーの連絡先が紛れ込んでも保存しない
     rec = {"at": now().isoformat(), "outcome": outcome, "reason": reason,
            "confidence": max(0.0, min(1.0, confidence))}
+    if summary:
+        rec["summary"] = PII_VALUE.sub("[個人情報を削除]", summary)
     state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
     return {"recorded": rec}
+
+
+def consultation_summary(user: dict) -> dict | None:
+    """要約に載せる、いちばん新しい相談のまとめ(記録した日と、その会話の結果つき)。無ければ None。"""
+    rec = next((o for o in reversed(user.get("outcomes") or []) if o.get("summary")), None)
+    if rec is None:
+        return None
+    return {"text": rec["summary"], "recorded": _md(rec["at"]), "outcome": rec["outcome"]}
 
 
 # ----------------------------- プッシュ(行動イベント → こちらから話しかける) -----------------------------

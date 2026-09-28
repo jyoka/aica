@@ -21,7 +21,9 @@ QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?
 # 「考えます」「迷って」は断りに数えない(迷いのポイントを聞いて支援するのが正しく、wait を記録するのは違反)
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
-PII_VALUE = re.compile(r"0\d{1,4}-?\d{1,4}-?\d{3,4}|@")
+# dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
+# 年収の桁表記(「年収3000000円」)は電話番号に数えない(dip_mcp/data.py の PII_VALUE)
+PII_VALUE = re.compile(DIP_PII_VALUE.pattern + r"|@")
 # 再訪の挨拶で行動履歴に触れる言い方(「最近はカフェのお仕事を見ていましたか?」「ご覧になりましたか?」「見てましたか?」
 # 「チェックされていましたか?」)。会話を通して1回だけ。本人がしたことを指す過去・進行の形だけを数える。
 # 依頼や案内(「見ていただけますか」「見ていきましょう」「ご覧になれます」「ご覧になってください」)や、ボットが希望を
@@ -55,7 +57,30 @@ REASK = {
     "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
     "days_per_week": re.compile(r"週(に)?(何|いく)日"),
     "min_wage": re.compile(r"時給(は|の)?(いくら|どのくらい|下限)"),
+    # 相談で分かった本人のこと(aica v2 の D)。白紙で聞く問いだけを数える(掘り下げは PROFILE_FOLLOW_UP で外す)
+    "purpose": re.compile(r"(なぜ|どうして|何のために)(今|いま)?、?(お?仕事|バイト|アルバイト)?を?(探|転職|働き)"
+                          r"|(お?仕事|バイト|アルバイト|転職)(探し)?の(目的|理由)|探(す|している|そうと思った)(目的|理由)"
+                          r"|目的(は|を|って)"),
+    "strengths": re.compile(r"強み(は|を|って|として)"),
+    "wants": re.compile(r"(やりたい|やってみたい|挑戦したい|してみたい)(こと|お?仕事)|興味(の|が)ある(こと|お?仕事)"),
+    "avoids": re.compile(r"(避けたい|やりたくない|したくない|苦手な)(こと|お?仕事|作業)"),
+    "concerns": re.compile(r"(不安|心配)(な|に思う|に感じる)?(こと|点)|(不安|心配)(は|が)(あり|ござい)"
+                           r"|気になる(こと|点)(は|が|って)"),
+    # 正社員を探すときの条件
+    "min_annual_salary": re.compile(r"年収(は|の)?(いくら|どの(くらい|ぐらい)|どれ(くらい|ぐらい)|下限|希望|ご希望|目安)"
+                                    r"|(希望|ご希望)の?年収"),
+    "work_style": re.compile(r"(どんな|どのような|希望の|ご希望の)働き方|働き方(は|の(ご?希望)|について|に(ご?希望|こだわり))"
+                             r"|リモート(は|を)?(ご?希望)"),
+    "start_timing": re.compile(r"いつ(から|ごろ|頃)(から)?(働|入社|転職|始め|勤務)|いつまでに(転職|入社|働)"
+                               r"|(入社|転職|勤務開始|開始|働き始め)(の|る)?(時期|タイミング)"),
 }
+# 相談で分かった本人のこと(目的・強み・やりたいこと・避けたいこと・不安)は、保存した後に掘り下げてよい
+# (playbook の決まり: 目的とやりたいことは1回は掘り下げる)。掘り下げ・追加を求める問いは聞き直しに数えない
+PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")
+# 特定の求人・面接・応募について聞く問い(「この求人について不安な点はありますか?」)は、保存した不安の聞き直しではない
+REASK_TARGETED = {"concerns": re.compile(r"(この|こちらの|その|あの)(求人|お?仕事|お店|職場|会社)|求人|面接|応募|仕事内容|職場")}
+PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|たとえば|どんな場面|どういう(こと|意味|点|ところ)"
+                               r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに")
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
 
@@ -236,7 +261,8 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
     疑問詞の無い確認の問いで、項目を指す語の後ろに既知の値(保存した値か、そのターンの本人の発言にある語)があれば、
     聞き直しではない。値が前にあるだけ(「接客のお仕事で、勤務地の希望はありますか?」)は、前の答えを添えた次の問い
     (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
-    (同じ値の保存し直しは数えない)。"""
+    (同じ値の保存し直しは数えない)。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
+    (「それはなぜですか?」「具体的にはどんな場面ですか?」「他に不安なことはありますか?」)は聞き直しではない。"""
     saved = {k: 0 for k in seeded or {}}
     known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
@@ -257,6 +283,10 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
             q = _question_part(b)
             for k, at in saved.items():
                 m = REASK[k].search(q) if at < i and k in REASK else None
+                if m and k in PROFILE_KEYS and PROFILE_FOLLOW_UP.search(q):
+                    continue
+                if m and k in REASK_TARGETED and REASK_TARGETED[k].search(q):
+                    continue
                 if m and not (not WH_WORD.search(q) and any(w in q[m.start():] for w in [*known.get(k, []), *said])):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
     return out
