@@ -60,7 +60,8 @@ def test_new_items_are_saved_and_show_up_in_the_summary(tmp_path):
 
 @pytest.mark.parametrize("key", sorted(logic.PREFERENCE_KEYS))
 @pytest.mark.parametrize("value", ["連絡は090-1234-5678まで", "09012345678", "taro@example.com に送って",
-                                   "みほん市1-2-3", "みほん町3丁目", "5番地の近く", "みほん町3-5のあたり"])
+                                   "みほん市1-2-3", "みほん町3丁目", "5番地の近く", "みほん町3-5のあたり",
+                                   "03-12345678", "090-1234-5678,よろしく"])
 def test_personal_info_is_rejected_for_every_item(tmp_path, key, value):
     state = _state(tmp_path)
     r = logic.save_preferences(state, UID, {key: value})
@@ -93,7 +94,8 @@ def test_annual_salary_digits_are_not_mistaken_for_a_phone_number(tmp_path):
     """C の PR レビューからの後続指摘: 「年収3000000円」を電話番号と誤認して、保存・根拠・評価で消さない。"""
     for text in ("年収3000000円", "年収3,000,000円以上", "年収5000000円くらいで転職したい", "時給1200円"):
         assert not PII_VALUE.search(text), text
-    for text in ("090-1234-5678", "09012345678", "03-1234-5678", "0120-123-456", "taro@example.com"):
+    for text in ("090-1234-5678", "09012345678", "03-1234-5678", "0120-123-456", "taro@example.com",
+                 "03-12345678", "06-12345678", "連絡は090-1234-5678,", "090-1234-5678,よろしく", "090-1234-5678, よろしく"):
         assert PII_VALUE.search(text), text  # 電話番号・メールは今までどおり捕まえる
 
     state = _state(tmp_path)
@@ -273,6 +275,10 @@ FINE = [  # (保存した項目, 保存した値, 後のターンの問い): 確
     ("concerns", "未経験で通用するか不安", "こちらのカフェの求人で、気になる点はありますか?"),
     ("concerns", "未経験で通用するか不安", "面接で気になることはありますか?"),
     ("concerns", "未経験で通用するか不安", "応募する前に心配なことはありますか?"),
+    ("concerns", "未経験で通用するか不安", "こちらの3件で気になる点はありますか?"),
+    ("concerns", "未経験で通用するか不安", "この3件の中で気になる点はありますか?"),
+    ("concerns", "未経験で通用するか不安", "ご紹介したお店で気になることはありますか?"),
+    ("concerns", "未経験で通用するか不安", "シフトについて気になることはありますか?"),
     ("purpose", "生活費の足しに", "どうして夜に働きたいのですか?"),
     ("purpose", "生活費の足しに", "なぜ接客のお仕事を探しているのですか?"),
 ]
