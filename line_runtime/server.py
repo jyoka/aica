@@ -138,13 +138,17 @@ async def talk_open(request: Request, response: Response):
     - 最後のやりとりから30分以内: 今の会話を続ける(event は None)。画面は /api/talk/history で履歴を描き直す。
       LLM は呼ばず、会話数も使わない。
     - それ以外: dip がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで
-      /api/event/stream を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。開いた記録は挨拶が返ったときに残す。
+      /api/event/stream を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。開いた記録は挨拶が返ったときに残す
+      (返す途中で接続が切れて残せなかったら、次に開いたとき、保存された挨拶から補う)。
     thread は画面が表示する会話の番号(発言のときに送り返す。新しい会話なら挨拶のストリームの thread で置き換わる)。
     状態を初期に戻すことはしない。"""
     uid = _issue(request, response)
     rt = app.state.rt
     async with rt.user_lock(uid):  # 進行中のターンと交差しないように
         conv = await rt.conversation(uid)
+    if conv["greeted"] and logic.talk_entry(state, uid) == "visit":
+        # 挨拶は保存されたが、画面に返す途中で接続が切れて記録できなかった: 会った相手なので記録を補う
+        logic.record_talk_open(state, uid)
     if conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW:
         return {"user": uid, "event": None, "thread": conv["thread"]}
     return {"user": uid, "event": logic.talk_entry(state, uid), "thread": conv["thread"]}

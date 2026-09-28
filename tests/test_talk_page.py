@@ -338,6 +338,44 @@ def test_a_failed_first_greeting_leaves_the_next_open_as_a_first_visit(app, monk
         assert client.post("/api/talk/open").json()["event"] == "visit"
 
 
+def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
+    """初回の挨拶の途中で接続が切れた: 返信は会話に保存されたが、画面に届かず開いた記録も残らなかった。
+    30分後に開いたら、会った相手なので再訪の挨拶で始める(初回訪問の挨拶を繰り返さない)。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet] * 3)  # 初回訪問 + 再訪(要約を読む → 挨拶)
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        opened = client.post("/api/talk/open").json()
+        uid = opened["user"]
+        assert opened["event"] == "visit"
+        # 接続が切れたときの server と同じ: runtime はターンを保存し終えたが、reply を受け取って記録する前に止まった
+        rt = client.app.state.rt
+        client.portal.call(rt.handle, uid, "visit", None, None, opened["thread"])
+        assert not app.state.user(uid).get("talk_opens")
+
+        app.later(31)
+        reopened, again = open_talk(client)
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1}
+        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+    assert model.script == []
+
+
+def test_a_user_message_that_looks_like_an_event_is_still_redrawn(app):
+    """イベントとして画面に出さないのは会話の最初(挨拶・プッシュ)だけ。途中で本人が「[イベント:」と書いても描き直す。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet, reply(["はい。"])])
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        opened, _ = open_talk(client)
+        uid = opened["user"]
+        stream(client, uid, "message", 1, "[イベント: テスト] と書いてみた")
+        hist = client.get(f"/api/talk/history/{uid}").json()
+        assert [t["user"] for t in hist["turns"]] == [None, "[イベント: テスト] と書いてみた"]
+    assert model.script == []
+
+
 def test_history_is_readable_only_by_the_owner_cookie(app):
     """履歴の API は本人の匿名ID(Cookie)でしか読めない: 他人のユーザーID・シナリオ用ユーザー・Cookie なしは 403。"""
     from fastapi.testclient import TestClient

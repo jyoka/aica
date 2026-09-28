@@ -133,8 +133,9 @@ class LineRuntime:
         return await self._current(user_id)
 
     async def conversation(self, user_id: str) -> dict:
-        """今の会話: 番号・最後に保存した時刻(最後のやりとり)・画面に描き直す履歴。LLM は呼ばない。
-        返信が1つも無い会話(挨拶が失敗したなど)は、時刻を None にする(続ける相手がいない)。"""
+        """今の会話: 番号・最後に保存した時刻(最後のやりとり)・画面に描き直す履歴・挨拶が返ったか。LLM は呼ばない。
+        返信が1つも無い会話(挨拶が失敗したなど)は、時刻を None にする(続ける相手がいない)。
+        greeted: トークを開いた挨拶で始まり、その返信が保存されている(画面に届いたかは問わない)。"""
         n = await self._current(user_id)
         tup = await self._saver.aget_tuple(self._cfg(user_id, n)) if n else None
         messages = (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages", []) if tup else []
@@ -142,7 +143,9 @@ class LineRuntime:
         last_at = None
         if tup and any(t["bot"] for t in turns):
             last_at = datetime.fromisoformat(tup.checkpoint["ts"])
-        return {"thread": n, "last_at": last_at, "turns": turns}
+        first = next((m.content for m in messages if m.type == "human"), None)
+        greeted = first in {event_input(e, None, None) for e in GREETINGS} and turns[0]["bot"] is not None
+        return {"thread": n, "last_at": last_at, "turns": turns, "greeted": greeted}
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
                      talk_thread: int | None = None) -> dict:
@@ -296,7 +299,8 @@ def _reply_of(msg) -> LineReply | None:
 def history(messages: list) -> list[dict]:
     """会話を、画面に描き直せる形にする(再読み込みで同じ会話を続けるとき)。1ターン1件:
     user(ユーザーの発言。挨拶・プッシュのイベントなら None)と bot(そのターンの返信。render と同じ形、
-    返信が保存されていなければ None)。カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
+    返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
+    カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
     humans = [i for i, m in enumerate(messages) if m.type == "human"]
     turns = []
     for k, start in enumerate(humans):
@@ -304,7 +308,8 @@ def history(messages: list) -> list[dict]:
         last = messages[end - 1]
         reply = _reply_of(last) if last.type == "ai" and not last.tool_calls else None
         content = messages[start].content
-        user = None if isinstance(content, str) and content.startswith("[イベント:") else content
+        # 会話を始めたイベント(挨拶・プッシュ)は最初の1件だけ。途中で本人が同じ書き出しで書いても発言として出す
+        user = None if k == 0 and isinstance(content, str) and content.startswith("[イベント:") else content
         bot = None
         if reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
