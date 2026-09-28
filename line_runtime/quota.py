@@ -84,6 +84,18 @@ class DailyQuota:
             return True
 
 
+    def refund(self, user_id: str) -> None:
+        """take で使った1ターン分を返す(LLM を呼ばずに終わったとき。例: 別のタブで会話が替わっていた)。"""
+        with self._lock:
+            self._roll()
+            key = person(user_id)
+            if self._counts.get(key, 0) > 0:
+                self._counts[key] -= 1
+                if self.path:
+                    self.path.write_text(json.dumps({"day": self._day, "counts": self._counts}, ensure_ascii=False),
+                                         encoding="utf-8")
+
+
 def limit_reply(entry: str | None) -> dict:
     """上限を超えたときの返信(render と同じ形。LLM は呼ばない)。"""
     return {"entry": entry, "bubbles": [LIMIT_MESSAGE], "quick_replies": [], "cards": [], "unknown_job_ids": [],

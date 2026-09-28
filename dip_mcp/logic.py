@@ -471,16 +471,17 @@ def saved_jobs(state: State, line_user_id: str) -> list[dict]:
 # ----------------------------- トークを開いた(初回訪問か再訪か) -----------------------------
 
 
-def open_talk(state: State, line_user_id: str) -> str:
-    """本番のトーク画面を開いたことを記録し、入口のイベント(初回訪問 visit / 再訪 revisit)を返す。
-    前に開いた記録が無ければ初回訪問。LINE 側はこの結果の挨拶から会話を始める。"""
-    before: list[str] = []
+def talk_entry(state: State, line_user_id: str) -> str:
+    """本番のトーク画面で新しい会話を始めるときの入口のイベント(初回訪問 visit / 再訪 revisit)。記録はしない。
+    前に開いた記録(挨拶が返った記録)が無ければ初回訪問。LINE 側はこの結果の挨拶から会話を始める。"""
+    return "revisit" if state.user(line_user_id).get("talk_opens") else "visit"
 
-    def apply(u):
-        before.extend(u.get("talk_opens", []))
-        u["talk_opens"] = [*u.get("talk_opens", []), now().isoformat()][-20:]  # 判定に要るのは有無だけなので短く保つ
-    state.update(line_user_id, apply)
-    return "revisit" if before else "visit"
+
+def record_talk_open(state: State, line_user_id: str) -> None:
+    """トーク画面を開いて挨拶が返ったことを記録する(次からは再訪)。挨拶が失敗・上限で返らなかったときは呼ばない
+    (呼ぶと、次に開いたとき会ってもいない相手に「おかえりなさい」と言ってしまう)。"""
+    state.update(line_user_id, lambda u: u.__setitem__(
+        "talk_opens", [*u.get("talk_opens", []), now().isoformat()][-20:]))  # 判定に要るのは有無だけなので短く保つ
 
 
 # ----------------------------- 本人が話した希望(長期メモリ) -----------------------------
