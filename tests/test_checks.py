@@ -70,6 +70,20 @@ def test_preferences_confirmed_from_last_time_or_combined_are_not_violations():
     assert preference_violations([t1, t2], said) == ["T2: 本人が言っていない希望を保存した: area=渋谷と新宿"]
 
 
+def test_free_text_items_in_the_persons_own_words_are_not_violations():
+    """相談で分かった本人のこと(自由記述)は、助詞や言い回しが違っても、内容語の大半が発言にあれば作り話ではない。"""
+    said = ["人と話すのは好きです", "未経験でもついていけるかが不安です"]
+    fine = [("concerns", "未経験でもついていけるか不安"), ("concerns", "未経験でついていけるか"),
+            ("wants", "人と話すこと"), ("wants", "人と話す仕事"), ("strengths", "人と話すのが好き")]
+    for k, v in fine:
+        t = turn(["承知しました。"], [("save_user_preferences", {"saved": [k]})])
+        t["tools"][0]["args"] = {"preferences": {k: v}}
+        assert preference_violations([t], said) == [], (k, v)
+    t = turn(["承知しました。"], [("save_user_preferences", {"saved": ["concerns"]})])
+    t["tools"][0]["args"] = {"preferences": {"concerns": "残業が多いこと"}}  # 誰も言っていない
+    assert preference_violations([t], said) == ["T1: 本人が言っていない希望を保存した: concerns=残業が多いこと"]
+
+
 def test_numbers_are_checked_against_the_same_unit_only():
     # ID や日付の数字(J0020 の 20、total の 12)は、徒歩や件数の根拠にならない
     rec = ("recommend_jobs", {"total": 12, "jobs": [{"job_id": "J0020", "walk_min": 4, "hourly_wage": 1200,

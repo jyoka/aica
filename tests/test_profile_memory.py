@@ -290,6 +290,31 @@ def test_confirming_or_deepening_a_saved_new_item_is_not_a_reask(key, value, ask
     assert reask_violations(turns, [None, "はい", "はい"]) == [], ask
 
 
+# 求人を提案した(recommend_jobs を呼び、カードを出した)ターン以降に、迷っている点を聞く問い。提案への問いで、聞き直しではない
+FINE_AFTER_PROPOSAL = [
+    "時給・シフト・場所のうち、気になる点はどれですか?",
+    "ありがとうございます。気になる点はありますか?",
+    "3件ご紹介しました。気になる点はありますか?",
+    "研修がある求人を選びました。気になる点はありますか?",
+]
+
+
+def _proposal(bubbles):
+    t = _t(bubbles)
+    t["tools"] = [{"name": "recommend_jobs", "args": {}}]
+    t["cards"] = [{"job_id": "a001", "reasons": ["研修あり"]}]
+    return t
+
+
+@pytest.mark.parametrize("ask", FINE_AFTER_PROPOSAL)
+def test_asking_what_bothers_them_after_proposing_jobs_is_not_a_reask(ask):
+    saved = [_t(["どうしますか?"]), _t(["承知しました。"], {"concerns": "未経験で通用するか不安"})]
+    assert reask_violations([*saved, _proposal([ask])], [None, "はい", "はい"]) == [], ask
+    assert reask_violations([*saved, _proposal(["ご紹介します。"]), _t([ask])], [None, "はい", "はい", "はい"]) == [], ask
+    # 提案の前なら、同じ問いは保存した不安の聞き直し
+    assert any("「concerns」を聞き直した" in x for x in reask_violations([*saved, _t([ask])], [None, "はい", "はい"])), ask
+
+
 @pytest.mark.parametrize(("key", "value", "ask"), REASKS)
 def test_asking_an_item_that_is_not_saved_yet_is_not_a_reask(key, value, ask):
     """まだ保存していない項目を聞くのは、ヒアリングそのもの(聞き直しではない)。"""

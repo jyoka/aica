@@ -225,9 +225,28 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     return out
 
 
+# 本人の言葉を短い文で保存する項目(aica v2 の D)。語の完全一致ではなく、内容語の大半が発言にあるかで見る
+FREE_TEXT_KEYS = PROFILE_KEYS + ("work_style", "start_timing")
+# 保存する文を整えるときに足されやすい、中身の無い語(「人と話す仕事」の「仕事」)
+_FILLER_WORDS = {"仕事", "こと", "職場", "環境", "希望"}
+
+
+def _content_words(text: str) -> list[str]:
+    """漢字・カタカナ2文字以上の内容語。無ければ漢字1文字ずつ(「人と話すこと」の「人」「話」)。"""
+    runs = [w for w in re.findall(r"[一-龥々]+|[ァ-ヴー]+", text) if w not in _FILLER_WORDS]
+    return [w for w in runs if len(w) >= 2] or [c for w in runs for c in w if re.match(r"[一-龥]", c)]
+
+
+def _free_text_ok(v: str, said: str) -> bool:
+    """助詞や言い回しの違い(「未経験でもついていけるかが不安です」→「未経験でついていけるか」)は作り話ではない。"""
+    words = _content_words(v)
+    return not words or sum(w in said for w in words) * 2 > len(words)
+
+
 def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
     """保存した希望が、本人の発言か、前に保存済みの希望(要約の stated_preferences)に基づくか。
-    数字(時給・日数)は数字で、それ以外は「渋谷と原宿」のような並びを区切って語ごとに照合する。"""
+    数字(時給・日数)は数字で、自由記述の項目(FREE_TEXT_KEYS)は内容語の大半で、それ以外は
+    「渋谷と原宿」のような並びを区切って語ごとに照合する。"""
     prior = [str(p["value"]) for r in turns for t in r["tools"] if t["name"] == "get_user_conversation_summary"
              and isinstance(t["result"], dict) for p in (t["result"].get("stated_preferences") or {}).values()]
     said = "\n".join([m or "" for m in user_msgs] + prior)
@@ -241,7 +260,12 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
                 v = str(v)
                 nums = _numbers(v)
                 words = [w for w in re.split(r"[とや・、,/\s]+|または|および", v) if w]
-                ok = nums <= said_nums if nums else all(w in said for w in words)
+                if nums:
+                    ok = nums <= said_nums
+                elif k in FREE_TEXT_KEYS:
+                    ok = _free_text_ok(v, said)
+                else:
+                    ok = all(w in said for w in words)
                 if not ok:
                     out.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
     return out
@@ -265,14 +289,18 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
     疑問詞の無い確認の問いで、項目を指す語の後ろに既知の値(保存した値か、そのターンの本人の発言にある語)があれば、
     聞き直しではない。値が前にあるだけ(「接客のお仕事で、勤務地の希望はありますか?」)は、前の答えを添えた次の問い
     (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
-    (同じ値の保存し直しは数えない)。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
+    (同じ値の保存し直しは数えない)。求人を提案したターン(recommend_jobs・カード)以降は、不安(concerns)の問いを
+    提案への問いとみなして数えない。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
     (「それはなぜですか?」「具体的にはどんな場面ですか?」「他に不安なことはありますか?」)は聞き直しではない。"""
     saved = {k: 0 for k in seeded or {}}
     known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
+    proposed = False
     for i, r in enumerate(turns):
         said = {w for w in re.findall(r"[一-龥ァ-ヴー]{2,}", (user_msgs[i] if i < len(user_msgs) else None) or "")
                 if w not in _KEY_WORDS}
+        # 求人を提案した後に迷っている点を聞くのは、提案への問い(「3件ご紹介しました。気になる点はありますか?」)
+        proposed = proposed or bool(r["cards"]) or any(t["name"] == "recommend_jobs" for t in r["tools"])
         for t in r["tools"]:
             if t["name"] == "save_user_preferences":
                 for k, v in (t["args"].get("preferences") or {}).items():
@@ -289,7 +317,7 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
                 m = REASK[k].search(q) if at < i and k in REASK else None
                 if m and k in PROFILE_KEYS and PROFILE_FOLLOW_UP.search(q):
                     continue
-                if m and k in REASK_TARGETED and REASK_TARGETED[k].search(q):
+                if m and k in REASK_TARGETED and (proposed or REASK_TARGETED[k].search(q)):
                     continue
                 if m and not (not WH_WORD.search(q) and any(w in q[m.start():] for w in [*known.get(k, []), *said])):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
