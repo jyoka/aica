@@ -29,7 +29,8 @@ line_runtime  ── LINE 側(LY Runtime のスタンドイン)
 dip_mcp  ── dip 側(baitoru-mcp のシミュレーション)
       Tool:     get_user_conversation_summary / get_user_recent_applications / get_user_form_exit /
                 recommend_jobs / relax_conditions / answer_job_question / get_application_status /
-                resume_application_form / save_job / save_user_preferences / record_conversation_outcome
+                resume_application_form / save_job / save_user_preferences / set_search_track /
+                record_conversation_outcome
       Resource: baitoru://faq
       Prompt:   baitoru_assistant(entry=A|visit|revisit|D)  会話の骨格・対話ルール・入口ごとの最初の1問
       Logic:    push_trigger  プッシュしてよいか(未連携・直近の接触・根拠の事実)と、話しかける根拠を決める
@@ -45,6 +46,7 @@ API が使えないときは従来の部分一致に戻る(検索は止めない
 モデルが選ぶのは出す求人の ID だけで、ツールが返していない ID はカードにならない。
 推薦の各求人には、本人の傾向との合い具合 `match_score`(内訳 `score_breakdown`)が付く(LLM を使わずに計算)。
 本人が会話で話した希望は `save_user_preferences` で dip に保存し、次の会話の要約(`stated_preferences`)で返す。長期メモリは LINE 側ではなく dip 側が持つ。
+いま探している雇用区分(アルバイト・パート / 正社員 / 未定)は、本人の発言を根拠に `set_search_track` で切り替えて dip に履歴ごと残し、要約の `search_track` で返す(初回は未定。ADR-0001)。
 
 リッチメニューは既存運用のまま触らない前提。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、
 トーク内の選択肢(クイックリプライ)として出す(挨拶だけ・意図が不明なときの最初の1問。初回訪問の挨拶では「使い方」の代わりに「まず相談する」)。

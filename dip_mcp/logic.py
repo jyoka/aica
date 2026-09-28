@@ -71,14 +71,22 @@ def stated_preferences(user: dict) -> dict:
 RESUME_NOTE = ("uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。"
                "経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。")
 
+TRACK_NOTE = ("search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。"
+              "track_history は直近の切り替え(根拠の発言つき)。")
+
+
+def _track_summary(user: dict) -> dict:
+    return {"search_track": search_track(user), "track_history": track_history(user)}
+
 
 def conversation_summary(state: State, line_user_id: str) -> dict:
     user = state.user(line_user_id)
     if not user.get("dip_id"):
-        return {"linked": False, "segment": "unlinked", "stated_preferences": stated_preferences(user),
-                "uploaded_resume": uploaded_resume(user),
+        return {"linked": False, "segment": "unlinked", **_track_summary(user),
+                "stated_preferences": stated_preferences(user), "uploaded_resume": uploaded_resume(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
-                        "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。" + RESUME_NOTE}
+                        "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
+                        + TRACK_NOTE + RESUME_NOTE}
     jobs = load_jobs()
     apps = sorted(_recent(user.get("applications", []), "applied_at"), key=lambda a: a["applied_at"], reverse=True)
     exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"]) <= 7]
@@ -113,6 +121,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
     return {
         "linked": True,
         "segment": segment,
+        **_track_summary(user),
         "last_application": last_app,
         "form_exit": form_exit,
         "recent_views": {"count_30d": len(views), "by_job_type": dict(Counter(
@@ -124,7 +133,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "stated_preferences": stated_preferences(user),
         "uploaded_resume": uploaded_resume(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
-                "stated_preferences は本人が前に話した希望(行動データより優先する)。" + RESUME_NOTE,
+                "stated_preferences は本人が前に話した希望(行動データより優先する)。" + TRACK_NOTE + RESUME_NOTE,
     }
 
 
@@ -507,6 +516,60 @@ def save_preferences(state: State, line_user_id: str, preferences: dict[str, str
         out["note"] = (f"保存できるのは {', '.join(PREFERENCE_KEYS)} だけ。"
                        "電話番号・メールアドレス・住所など個人情報を含む値は保存しない。")
     return out
+
+
+# ----------------------------- 雇用区分(ADR-0001) -----------------------------
+# 本人の発話を根拠に切り替え、履歴(いつ・どの区分へ・根拠・取り消しか)を残す。初回は未定。
+# 合図の強弱(明示・強い合図は1回で切り替え、弱い合図は1問で確かめる)の判断は Prompt に書き、ここでは記録だけする。
+
+TRACKS = ("アルバイト・パート", "正社員", "未定")
+DEFAULT_TRACK = "未定"
+TRACK_HISTORY_IN_SUMMARY = 5  # 要約に載せる直近の切り替え(取り消しの画面が直前の切り替えを見られるように)
+EVIDENCE_MAX = 200
+
+
+def search_track(user: dict) -> str:
+    """今の雇用区分(切り替えの記録が無ければ未定)。"""
+    history = user.get("track_history") or []
+    return history[-1]["track"] if history else DEFAULT_TRACK
+
+
+def track_history(user: dict) -> list[dict]:
+    """要約に載せる形の、直近の切り替えの履歴(古い順)。"""
+    return [{"when": _md(h["at"]), "from": h["from"], "track": h["track"], "evidence": h["evidence"],
+             "undo": h["undo"]} for h in (user.get("track_history") or [])[-TRACK_HISTORY_IN_SUMMARY:]]
+
+
+def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False) -> dict:
+    """雇用区分を切り替えて履歴に残す。evidence は根拠になった本人の発言そのまま。
+    undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。"""
+    if track not in TRACKS:
+        return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
+    evidence = PII_VALUE.sub("[個人情報を削除]", str(evidence or "").strip())[:EVIDENCE_MAX]
+    if not evidence:
+        return {"error": "evidence に、切り替えの根拠になった本人の発言をそのまま入れてください"
+                         "(履歴書の内容や推測だけでは切り替えない)。"}
+    result: dict = {}
+
+    def apply(u):
+        history = u.get("track_history") or []
+        current = search_track(u)
+        if undo:
+            if not history or history[-1]["undo"]:
+                result["error"] = "取り消せる切り替えがありません(切り替えの記録が無いか、直前の記録がすでに取り消し)"
+                return
+            if track != history[-1]["from"]:
+                result["error"] = f"取り消しの track には、切り替える前の区分({history[-1]['from']})を渡してください"
+                return
+        elif track == current:
+            result.update({"track": current, "changed": False})
+            return
+        rec = {"at": now().isoformat(), "from": current, "track": track, "evidence": evidence, "undo": undo}
+        u["track_history"] = [*history, rec]
+        result.update({"track": track, "changed": True, "recorded": rec})
+
+    state.update(line_user_id, apply)
+    return result
 
 
 # ----------------------------- 音声相談の結果(トークへ戻す) -----------------------------
