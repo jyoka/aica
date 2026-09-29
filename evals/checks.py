@@ -110,6 +110,8 @@ def turn_violations(i: int, r: dict) -> list[str]:
     for b in r["bubbles"]:
         if len(b) > BUBBLE_MAX:
             v.append(f"吹き出しが{len(b)}字(80字以内)")
+    if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、文字で答えたい人の選択肢が無い
+        v.append(f"操作ボタン({'/'.join(r['actions'])})に「文字で話す」などの選択肢が無い")
     if len(r["cards"]) > JOBS_MAX:
         v.append(f"求人カードが{len(r['cards'])}件(最大3)")
     if any(not c.get("reasons") for c in r["cards"]):

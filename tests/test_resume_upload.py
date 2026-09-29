@@ -193,7 +193,9 @@ def test_prompt_tells_the_agent_to_use_the_uploaded_resume():
 
     for entry in ("A", "visit", "revisit", "D"):
         text = baitoru_assistant(entry)
-        assert "uploaded_resume" in text and "履歴書をアップロードしました" in text
+        assert "uploaded_resume" in text and "[イベント: 本人が履歴書(PDF)をアップロード]" in text
+        # いつ履歴書・音声を差し出すか(返信の actions)の決まりがある
+        assert "resume_upload" in text and "voice_consult" in text and "文字で話す" in text
 
 
 # ----------------------------- トークに出す確認は要点だけ(task 89) -----------------------------

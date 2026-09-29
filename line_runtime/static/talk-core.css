@@ -1,0 +1,23 @@
+/* talk-core.js が作る部品の見た目(本番の / と開発者画面 /dev で共通)。配色の変数は各画面の :root にある */
+
+/* 本人が送ったファイル(ファイル名は出さず「履歴書(PDF)」のような種類だけ) */
+.bubble.file { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+.bubble.file .fi { width: 30px; height: 30px; border-radius: 8px; background: #ffffffb3; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+/* AI が差し出す操作(ファイルを選ぶ・話して伝える)。押しても発言は送らない */
+.chips button.action { background: var(--ok-soft); color: var(--ok-dark); border-color: #9fdfb8; font-weight: 700; }
+.chips button.action:disabled { background: #fff; color: #9aa7bd; border-color: var(--chip-line); }
+
+/* 入力欄の左の「+」と、そのメニュー(入力欄のすぐ上に開く) */
+form button.plus { width: 34px; height: 34px; border-radius: 50%; padding: 0; background: #f1f3f6; color: var(--sub);
+                   font-size: 22px; font-weight: 400; line-height: 1; align-self: center; }
+form button.plus[aria-expanded="true"] { background: var(--ok-soft); color: var(--ok-dark); }
+form button.plus:disabled { color: #b8c0cc; background: #f1f3f6; }
+.plus-menu { background: #fff; border-top: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.plus-menu[hidden] { display: none; }
+.plus-menu button { display: flex; align-items: center; gap: 10px; border: 0; background: none; text-align: left; padding: 9px 8px;
+                    border-radius: 10px; cursor: pointer; color: var(--text); }
+.plus-menu button:hover { background: var(--soft); }
+.plus-menu .mi { width: 36px; height: 36px; border-radius: 50%; background: var(--soft); display: flex; align-items: center; justify-content: center;
+                 font-size: 18px; flex: none; }
+.plus-menu b { display: block; font-size: 14px; } .plus-menu small { display: block; font-size: 11.5px; color: var(--sub); margin-top: 1px; }

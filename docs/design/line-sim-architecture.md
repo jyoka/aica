@@ -111,12 +111,12 @@ gpt-6-sol の水準は 2026-09-26 の12シナリオ評価(`sim-20260926-130904`)
 
 voice-resume 本体は旧リポジトリ `jyoka/aica_ra_a2a_poc`(`cda42fd`)の `voice-resume/` を `voice_resume/` に移植した(task 62)。
 
-トークルーム右上の「🎤 音声で相談」から、音声アドバイザー(`voice_resume/`)に LIFF のように入れる。
+トークの中の導線(AI が差し出す [話して伝える(音声・約5分)]、入力欄の「+」→「音声で相談する」。task 91)から、音声アドバイザー(`voice_resume/`)に LIFF のように入れる。
 音声で聞いた希望・提案した求人・履歴書の下書きは、同じユーザーの dip の状態とトークに戻る。
 
 - ユーザーの対応付け: 旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、トークのユーザー
   `匿名ID:シナリオユーザー`(マルチユーザーの匿名ユーザーID のスコープ)を使う。dip の MCP ツールの引数名は `line_user_id` のまま。
-- 導線: 「音声で相談」→ `GET /liff/voice?user=<ユーザーID>` → voice-resume の会話ページ(`?user=` つき)。
+- 導線: [話して伝える] /「+」→「音声で相談する」→ `GET /liff/voice?user=<ユーザーID>` → voice-resume の会話ページ(`?user=` つき)。
   ユーザーID は LiveKit の participant metadata(`{"user_id": ...}`)で音声ワーカーまで届く。
 - 会話中: ワーカーは会話の前に dip の要約(`get_user_conversation_summary`)を読み、前に話した希望が
   あれば確認形で1回だけ使う。求人検索(`recommend_jobs` / `relax_conditions`)はそのユーザーID で呼び、

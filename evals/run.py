@@ -57,12 +57,17 @@ JUDGE_SYSTEM = """あなたは LINE の AI アシスタントの会話品質を�
 }"""
 
 
+ACTION_LABEL = {"resume_upload": "ファイルを選ぶ(履歴書)", "voice_consult": "話して伝える(音声・約5分)"}
+
+
 def _format_agent(r: dict) -> str:
     parts = list(r["bubbles"])
     for c in r["cards"]:
         parts.append(f"[求人カード] {c['title']} / 時給{c['hourly_wage']}円 / {c['shift']} / 理由: {'・'.join(c.get('reasons', []))}")
     for b in r["buttons"]:
         parts.append(f"[ボタン] {b['label']}")
+    for a in r.get("actions", []):
+        parts.append(f"[操作] {ACTION_LABEL.get(a, a)}")
     if r["quick_replies"]:
         parts.append("[選択肢] " + " / ".join(r["quick_replies"]))
     return "\n".join(parts)

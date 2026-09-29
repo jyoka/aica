@@ -175,7 +175,13 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
     発言は新しい会話に入らず(LLM も会話数も使わない)、古いタブに「別の画面で新しい会話が始まりました」と出して最新の会話を描き直す。
 - 下のナビは3つ: トーク / 保存した求人(`GET /api/saved/{user_id}`。保存した求人をカードで一覧)/ プロフィール(準備中)。
 - dip の状態・構成図・処理の流れ・シナリオ一覧は出さない。会話数の上限とユーザーの分離は本番の画面にも効く。
-- ヘッダーの「📄 履歴書」「🎤 音声で相談」は下の各節のとおり。
+- 履歴書と音声相談は会話の中から入る(task 91。ヘッダーの常設ボタンは無い):
+  - AI が経歴を聞く場面(相談モードの経験の1問など)で、返信の `actions` として [ファイルを選ぶ] [話して伝える(音声・約5分)] を
+    差し出す(`quick_replies` の「文字で話す」「今はいい」と並ぶ。押しても発言は送られない)。いつ出すかは dip の Prompt(「履歴書・音声の提案」)。
+  - 自分から使う人は、入力欄の左の「+」から「履歴書・職務経歴書を送る」「音声で相談する」に入れる(LINE と同じ置き場)。
+  - 詳しくは下の各節。
+- トークの部品(吹き出し・求人カード・返信の描画・ストリームの読み取り・待ちの表示・「+」メニュー・履歴書・音声)は
+  `line_runtime/static/talk-core.js`(と `talk-core.css`)にあり、本番の `/` と開発者画面の `/dev` が共通に使う。
 
 **開発者画面 <http://127.0.0.1:8030/dev>**(評価・説明用。3列。合言葉などの制限は無い)
 - 左: ① シナリオを選ぶ(1通目の出どころ = 挨拶(初回訪問・再訪)/ dip のプッシュ でまとめた一覧。押すとその1通目から始まる)→
@@ -194,11 +200,18 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 [履歴書下書きの共通スキーマ](docs/design/resume-draft-schema.md)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
 
 ```
-トーク右上「📄 履歴書」→ ファイルを選ぶ → POST /api/resume/{user_id}/upload(multipart、10MB まで)
+AI が差し出す [ファイルを選ぶ] か、入力欄の「+」→「履歴書・職務経歴書を送る」→ ファイルを選ぶ
+   → 本人側にファイルの吹き出し「履歴書(PDF)」(ファイル名は出さない)、AI 側は「入力中」
+   → POST /api/resume/{user_id}/upload(multipart、10MB まで。会話数を1つ使う)
    → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
-   → トークに読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume。全文)を出す
-   → 「この内容で相談する」→ LINE 側 AI が get_user_conversation_summary を呼び直し、uploaded_resume を参照して続ける
+   → AI 側に読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume。全文)を出す
+   → 画面が POST /api/event/stream を event=resume_upload で呼ぶ(本人の1ターン。会話数を1つ使う)。LINE 側 AI には
+     「[イベント: 本人が履歴書(PDF)をアップロード]」と画面に出した確認が渡り、get_user_conversation_summary を呼び直して
+     uploaded_resume を見て、確認を繰り返さずに次の1問を返す
 ```
+
+- アップロードは本人の1ターン。定型文を本人の発言として送ることはしない。再読み込みで描き直すときも、ファイルの吹き出し → 確認 → 次の1問 の順に出る
+  (会話にはファイルの表示名と確認の吹き出しだけを保存する)。
 
 - 個人情報: 氏名・生年月日・住所・電話・メールは保存しない。プロンプトで「書かない」を指示し、`personal` はコードで常に空欄、
   文字列に混ざった電話番号・メール・郵便番号は読み取り直後(`scrub_pii`)と dip への保存時の2回、機械的に除く。
@@ -220,7 +233,7 @@ CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリ
 
 ## 音声相談(voice-resume との連携)
 
-トークルームの右上「🎤 音声で相談」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))に
+AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))に
 LIFF のように入れる(旧リポジトリの task 40 を task 62 で移植)。
 音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・履歴書の下書きは、
 同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
@@ -231,7 +244,7 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 音声構成は旧リポジトリと同じ(LiveKit Cloud + Deepgram nova-3 + OpenAI gpt-6-sol + Cartesia sonic-3.5)。
 
 ```
-トーク「音声で相談」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
+トーク [話して伝える] / 「+」→「音声で相談する」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
    → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に user_id を載せる
    → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望 stated_preferences と、
      トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
@@ -267,7 +280,7 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 `./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
 (費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
 
-→ <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 右上「🎤 音声で相談」→ 別タブで面談(マイク許可)
+→ <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 入力欄の「+」→「音声で相談する」→ 別タブで面談(マイク許可)
 → 面談が終わる(締めの挨拶か「面談を終える」)と、数秒でトークに求人カードと下書きのリンクが届く。
 開発者画面では、左の「dip から見た状態」の「本人の希望」「会話の結果」にも反映される。
 

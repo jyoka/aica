@@ -25,9 +25,6 @@
 
   header { background: var(--head); color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
   header .name { font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #voice, #resume { border: 1px solid #ffffff55; background: #ffffff14; color: #fff; border-radius: 8px;
-           padding: 5px 9px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; flex: none; }
-  #voice:hover, #resume:hover { background: #ffffff2b; } #voice:disabled, #resume:disabled { opacity: .45; cursor: default; }
 
   /* ---------- トーク ---------- */
   #log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -92,13 +89,11 @@
   nav.bottom button .i { font-size: 18px; line-height: 1; }
   nav.bottom button.on { color: var(--ok-dark); }
 </style>
+<link rel="stylesheet" href="/static/talk-core.css">
 </head>
 <body>
 <div class="app">
-  <header><span class="name">バイトル</span>
-    <button type="button" id="resume" title="履歴書(PDF / JPEG / PNG)を読み取って、相談に使う">📄 履歴書</button>
-    <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>
-    <button type="button" id="voice" title="音声アドバイザーと話す(別タブで開く)">🎤 音声で相談</button></header>
+  <header><span class="name">バイトル</span></header>
   <main>
     <section class="view" id="v-talk">
       <div id="log"></div>
@@ -117,85 +112,25 @@
     <button type="button" data-view="profile"><span class="i">👤</span>プロフィール</button>
   </nav>
 </div>
+<script src="/static/talk-core.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   const log = $("log"), input = $("t"), sendBtn = $("send");
   let current = null, busy = false;  // current: このブラウザのユーザーID(匿名ID そのもの)
   let thread = null;  // この画面が表示している会話の番号(発言のときに送り、別のタブで会話が替わっていないかを照合する)
 
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const now = () => new Date().toTimeString().slice(0, 5);
-  const scroll = () => { log.scrollTop = log.scrollHeight; };
-  const yen = (n) => Number(n).toLocaleString("ja-JP");
-
-  // ---------- トークルーム ----------
-  function sys(text) { log.appendChild(el("div", "sys", text)); scroll(); }
-  // time: 描き直した履歴は送った時刻が分からないので出さない("")
-  function me(text, time = now()) { const r = el("div", "row me"); if (time) r.appendChild(el("span", "time", time)); r.appendChild(el("div", "bubble", text)); log.appendChild(r); scroll(); }
-  function botCol() {
-    const r = el("div", "row bot"), c = el("div", "col");
-    r.append(el("div", "avatar", "B"), c); c.appendChild(el("span", "who", "バイトル"));
-    log.appendChild(r); scroll(); return c;
-  }
-  function disableChips() { log.querySelectorAll(".chips button").forEach(b => b.disabled = true); }
-  function setBusy(on) { busy = on; sendBtn.disabled = on || !current; $("resume").disabled = on || !current; }
-
-  // 時間のかかるツールの待ち時間に出す一言(tool_start で出し、tools / reply / error で消す)。
-  // 一覧に無いツールは速いので、通常の「…」のまま
-  const WAIT_LABEL = {
-    recommend_jobs: (args) => (args?.exclude_ids?.length ? "🔍 ほかの求人を探しています…" : "🔍 ぴったりの求人を探しています…"),
-    relax_conditions: () => "🔍 条件を見直して探しています…",
-  };
-  function setWait(col, label) {
-    const typing = col.querySelector(".typing");
-    if (!typing) return;
-    typing.querySelector(".wait")?.remove();
-    if (label) { typing.prepend(el("span", "wait", label)); scroll(); }
-  }
-
-  // saved: 「保存した求人」の一覧に出すカード(保存ボタンは出さず、トークで聞くだけ)
-  function jobCard(j, saved = false) {
-    const c = el("div", "jc"), inner = el("div", "in");
-    inner.append(el("div", "meta", `${j.job_type} · ${j.area}` + (j.saved_at ? ` · ${j.saved_at}に保存` : "")),
-                 el("div", "ttl", j.title), el("div", "emp", j.employer));
-    const w = el("div", "wage"); w.append(el("small", null, "時給"), el("b", null, `${yen(j.hourly_wage)}円`)); inner.appendChild(w);
-    const tags = el("div", "tags");
-    for (const t of [j.shift, `週${j.days_min}日〜`, `${j.station.replace(/駅$/, "")}駅 徒歩${j.walk_min}分`]) tags.appendChild(el("span", "tag", t));
-    for (const p of (j.perks || []).slice(0, 3)) tags.appendChild(el("span", "tag perk", p));  // アピールポイント(待遇)
-    inner.appendChild(tags);
-    if (j.reasons?.length) { const why = el("div", "why"); why.append(el("span", null, "おすすめ"), document.createTextNode(j.reasons.join(" / "))); inner.appendChild(why); }
-    const btns = el("div", "btns");
-    const more = el("button", "go", saved ? "トークで詳しく聞く" : "詳しく見る"); more.type = "button";
-    more.onclick = () => { showView("talk"); send(`「${j.title}」について詳しく教えて`); };
-    btns.appendChild(more);
-    if (!saved) { const keep = el("button", "keep", "保存"); keep.type = "button"; keep.onclick = () => send(`「${j.title}」(${j.job_id})を保存して`); btns.appendChild(keep); }
-    c.append(inner, btns); return c;
-  }
-
-  function renderReply(r, col, time = now()) {
-    col.querySelector(".typing")?.remove();
-    for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
-    if (r.bubbles.length && time) col.appendChild(el("span", "time", time));
-    if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
-    for (const b of r.buttons) {
-      const w = el("div", "liff"), a = el("a", null, b.label);
-      a.href = b.url; a.target = "_blank"; a.rel = "noopener"; w.appendChild(a); log.appendChild(w);
-    }
-    if (r.quick_replies.length) {
-      const box = el("div", "chips");
-      for (const q of r.quick_replies) { const b = el("button", null, q); b.type = "button"; b.onclick = () => send(q); box.appendChild(b); }
-      log.appendChild(box);
-    }
-    scroll();
-  }
+  // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は /dev と共通(talk-core.js)
+  const talk = createTalk({
+    log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
+    send: (text) => send(text), fire: (event) => fire(event), showTalk: () => showView("talk"),
+    getThread: () => thread, onStale: () => redrawLatest(),
+  });
+  const { el, sys, me, botCol, disableChips, renderReply } = talk;
+  function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
 
   function onEvent(ev, col) {
-    if (ev.kind === "tool_start") {
-      const slow = ev.calls.find(c => WAIT_LABEL[c.name]);
-      if (slow) setWait(col, WAIT_LABEL[slow.name](slow.args));
-    } else if (ev.kind === "tools") {
-      setWait(col, null);  // ツールが終わったら「何をしているか」を消す(続きは通常の「…」)
-    } else if (ev.kind === "stale") {
+    talk.onStep(ev, col);  // 待ちの表示(tool_start / tools)
+    if (ev.kind === "stale") {
       col.parentElement.remove();  // 別のタブで新しい会話が始まっていた(発言は送られていない)。fire が最新の会話を描き直す
     } else if (ev.kind === "thread") {
       thread = ev.thread;  // 挨拶で新しい会話が始まったら、その番号に替わる
@@ -203,7 +138,7 @@
       if (ev.sent === false) col.parentElement.remove();  // 本番の画面はプッシュを起こさないので、ここには来ない
       else renderReply(ev, col);
     } else if (ev.kind === "error") {
-      col.querySelector(".typing")?.remove(); col.appendChild(el("div", "bubble", "うまく返信できませんでした。少し時間をおいて、もう一度お試しください。"));
+      talk.fail(col, "うまく返信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(ev.message);
     }
   }
@@ -211,32 +146,28 @@
   async function fire(event, text) {
     if (busy || !current) return;
     setBusy(true); disableChips();
-    const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
+    const col = talk.typingCol();
     let stale = false;
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
                                                       body: JSON.stringify({ user_id: current, event, text, thread }) });
       if (!res.ok) throw new Error(res.status + " " + await res.text());
-      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
-      for (;;) {
-        const { value, done } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, i); buf = buf.slice(i + 1);
-          if (!line.trim()) continue;
-          const ev = JSON.parse(line); onEvent(ev, col); if (ev.kind === "stale") stale = true;
-        }
-      }
+      await talk.readStream(res, (ev) => { onEvent(ev, col); if (ev.kind === "stale") stale = true; });
       if (stale) {
         if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
-        try { await restore(); sys("別の画面で新しい会話が始まりました。最新の会話を表示しています。"); }
-        catch (e) { sys("別の画面で新しい会話が始まりました。ページを開き直してください。"); console.error(e); }
+        await redrawLatest();
       }
     } catch (e) {
-      typing.remove(); col.appendChild(el("div", "bubble", "通信できませんでした。少し時間をおいて、もう一度お試しください。"));
+      talk.fail(col, "通信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(e);
     }
     finally { setBusy(false); }
+  }
+
+  // 別のタブで新しい会話が始まっていた: 最新の会話を描き直す
+  async function redrawLatest() {
+    try { await restore(); sys("別の画面で新しい会話が始まりました。最新の会話を表示しています。"); }
+    catch (e) { sys("別の画面で新しい会話が始まりました。ページを開き直してください。"); console.error(e); }
   }
 
   function send(text) {
@@ -256,7 +187,7 @@
     for (const s of ["talk", "saved", "profile"]) $("v-" + s).hidden = s !== v;
     document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
     if (v === "saved") loadSaved();
-    if (v === "talk") scroll();
+    if (v === "talk") talk.scroll();
   }
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showView(b.dataset.view));
 
@@ -267,65 +198,8 @@
       const jobs = (await (await fetch(`/api/saved/${encodeURIComponent(current)}`)).json()).jobs;
       box.innerHTML = "";
       if (!jobs.length) { box.appendChild(el("p", "note", "保存した求人はまだありません。トークで気になる求人の「保存」を押すと、ここに並びます。")); return; }
-      jobs.forEach(j => box.appendChild(jobCard(j, true)));
+      jobs.forEach(j => box.appendChild(talk.jobCard(j, true)));
     } catch (e) { box.innerHTML = ""; box.appendChild(el("p", "note", "読み込めませんでした。")); }
-  }
-
-  // ---------- 音声相談(voice-resume との連携) ----------
-  // トークの「音声で相談」から LIFF のように別タブで開く。相談が終わると voice-resume が
-  // /api/voice/result に結果(dip の求人・下書き)を送り、ここが pull で受け取ってトークに描く。
-  $("voice").onclick = () => {
-    if (!current) return;
-    window.open("/liff/voice?user=" + encodeURIComponent(current), "_blank", "noopener");
-    sys("別タブで音声アドバイザーが開きます。相談が終わると、結果がこのトークに届きます。");
-  };
-  async function pollVoice() {
-    if (!current || busy) return;  // ターンの途中には差し込まない(次の周回で受け取る)
-    let results;
-    try { results = (await post(`/api/voice/${encodeURIComponent(current)}/pull`, {})).results; }
-    catch (e) { return; }  // 再起動中など。次の周回でまた試す
-    for (const r of results || []) {
-      sys("音声相談の結果が届きました");
-      const col = botCol();
-      renderReply({
-        bubbles: ["音声の相談でお話しした内容です。ご提案した求人と、履歴書の下書きをご確認ください。"],
-        cards: r.cards || [],
-        buttons: r.draft_markdown ? [{ label: "履歴書の下書きを見る", url: `/liff/voice/draft?user=${encodeURIComponent(current)}&rid=${r.id}` }] : [],
-        quick_replies: [],
-      }, col);
-    }
-  }
-  setInterval(pollVoice, 4000);
-
-  // ---------- 履歴書のアップロード(resume-intake) ----------
-  // ファイルを選ぶ → /api/resume/{user}/upload で読み取り(dip の状態に保存)→ 結果の確認をトークに出す。
-  // 「この内容で相談する」を押すと、同じユーザーの会話が読み取り結果(summary の uploaded_resume)を参照して続く。
-  // 氏名・連絡先は保存されないので、トークにも出さない(ファイル名も出さない。氏名が入りがちなため)。
-  $("resume").onclick = () => { if (current && !busy) $("resume-file").click(); };
-  $("resume-file").onchange = async (e) => {
-    const f = e.target.files[0]; e.target.value = "";
-    if (!f || !current || busy) return;
-    showView("talk"); setBusy(true); disableChips();
-    sys("アップロードした履歴書を読み取っています…");
-    const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
-    try {
-      const fd = new FormData(); fd.append("file", f);
-      const res = await fetch(`/api/resume/${encodeURIComponent(current)}/upload`, { method: "POST", body: fd });
-      if (!res.ok) { let m = res.status + ""; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
-      renderResume(await res.json(), col);
-    } catch (err) {
-      typing.remove(); col.appendChild(el("div", "bubble", "履歴書を読み取れませんでした: " + err.message));
-    } finally { setBusy(false); }
-  };
-  function renderResume(d, col) {
-    // 吹き出しの中身(要点だけ・80字以内)はサーバーが組み立てる(line_runtime/resume_confirm.py)
-    renderReply({ bubbles: d.bubbles.slice(0, 3), cards: [], quick_replies: [],
-                  buttons: d.empty ? [] : [{ label: "読み取り結果を見る", url: d.view_url }] }, col);
-    if (!d.empty) {
-      const box = el("div", "chips"), b = el("button", null, "この内容で相談する"); b.type = "button";
-      b.onclick = () => send("履歴書をアップロードしました。この内容をふまえて相談させてください。");
-      box.appendChild(b); log.appendChild(box); scroll();
-    }
   }
 
   // ---------- 今の会話の履歴を描き直す(再読み込み・別のタブで会話が替わったとき。LLM は呼ばない) ----------
@@ -336,19 +210,20 @@
     log.innerHTML = ""; thread = h.thread;
     for (const t of h.turns) {
       if (t.user != null) me(t.user, "");
+      if (t.upload) { talk.meFile(t.upload.file, ""); talk.resumeConfirm(t.upload, botCol(), ""); }  // 履歴書を送ったターン
       if (t.bot) { disableChips(); renderReply(t.bot, botCol(), ""); }  // 選べるのは最後の返信の選択肢だけ
     }
   }
 
   // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
   (async () => {
-    setBusy(true); $("voice").disabled = true;
+    setBusy(true);
     let opened;
     try {
       opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread;
       if (opened.event == null) await restore();
     } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
-    $("voice").disabled = false; setBusy(false);
+    setBusy(false);
     if (opened.event != null) fire(opened.event);
   })();
 </script>

@@ -6,7 +6,7 @@ Prompt(シナリオ)と Tool だけで動く。ここにバイトル固有のル
 
 from __future__ import annotations
 
-from typing import NotRequired
+from typing import Literal, NotRequired
 
 from langchain.agents import AgentState, create_agent
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
@@ -33,6 +33,9 @@ LINE の共通ルール:
 - quick_replies: タップで返せる選択肢(0〜4個、各20字以内)。
 - job_ids: 求人カード(Flex)として表示する求人ID(0〜3件)。このターンまでに事業者のツールが返した求人のものだけ。
 - buttons: 画面を開くボタン(事業者のツールが返した URL だけ)。
+- actions: トークの操作を差し出すボタン(0〜2個)。resume_upload = 履歴書・職務経歴書のファイルを選ぶ、
+  voice_consult = 音声相談を始める。事業者のシナリオが案内する場面でだけ付ける。quick_replies(押すと本人の発言として
+  送られる選択肢)とは別で、押しても発言は送られない。
 """
 
 
@@ -46,6 +49,8 @@ class LineReply(BaseModel):
     quick_replies: list[str] = Field(default_factory=list, description="クイックリプライ(0〜4個、各20字以内)")
     job_ids: list[str] = Field(default_factory=list, description="求人カードとして表示する求人ID(0〜3件)")
     buttons: list[Button] = Field(default_factory=list, description="画面を開くボタン")
+    actions: list[Literal["resume_upload", "voice_consult"]] = Field(
+        default_factory=list, description="トークの操作(resume_upload: 履歴書を選ぶ / voice_consult: 音声相談を始める)")
 
 
 class LineState(AgentState):

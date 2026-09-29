@@ -458,7 +458,17 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
     assert "/api/talk/open" in page and "/api/talk/history/" in page
     for place in ("トーク", "保存した求人", "プロフィール", "準備中", "/api/saved/"):
         assert place in page, place
-    assert 'id="resume"' in page and 'id="voice"' in page  # ヘッダーの2つのボタンは今のまま(置き場を変えるのは次の task)
+    # ヘッダーに履歴書・音声のボタンは無い(入力欄の「+」と、AI が差し出す操作から入る。task 91)
+    header = re.search(r"<header>.*?</header>", page, re.DOTALL).group(0)
+    assert "履歴書" not in header and "音声" not in header and 'id="resume"' not in page and 'id="voice"' not in page
+    for p in (page, dev.text):  # どちらの画面もトークの部品は共通のファイルから
+        assert '<script src="/static/talk-core.js">' in p and "createTalk(" in p
+        assert "function renderReply" not in p and "function jobCard" not in p
+    with TestClient(app.app) as client:
+        core = client.get("/static/talk-core.js")
+        assert core.status_code == 200 and "function renderReply" in core.text
+        assert client.get("/static/talk-core.css").status_code == 200
+        assert client.get("/static/talk.html").status_code == 404  # 共通部品以外は出さない
     # /dev は今までの3列(シナリオの起動・状態・構成図と処理の流れ)
     for part in ('id="scenarios"', 'id="state"', 'id="trace"', "/api/scenarios/", "/api/dip/"):
         assert part in dev.text, part

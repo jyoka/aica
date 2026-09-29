@@ -20,6 +20,7 @@ from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import Self
 
+from langchain_core.messages import HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.prompts import load_mcp_prompt
 from langchain_mcp_adapters.tools import load_mcp_tools
@@ -36,14 +37,16 @@ _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
 
 # イベント種別 -> (入口, エージェントへの入力。None ならユーザーの発言そのもの)
 # 種別: user = ユーザーの発言で始まる / greet = トークを開いた(こちらから挨拶する) / push = dip からのプッシュ依頼
+# / upload = 本人が履歴書をアップロードした(読み取り結果は dip に保存済み。本人の1ターンとして今の会話に入る)
 EVENTS = {
     "message": ("A", "user"),
+    "resume_upload": ("A", "upload"),
     "visit": ("visit", "greet"),
     "revisit": ("revisit", "greet"),
     "form_exit": ("D", "push"),
 }
 # リッチメニューは既存運用のまま触らない(入口にしない)。メニュー相当の選択肢はトーク内のクイックリプライで出す。
-STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if e != "message"}
+STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("greet", "push")}
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 
@@ -57,6 +60,12 @@ def event_input(event: str, text: str | None, facts: dict | None) -> str:
         return text
     if kind == "greet":
         return f"[イベント: {GREETINGS[event]}] {FIRST_MESSAGE}"
+    if kind == "upload":
+        if not facts:
+            raise ValueError(f"{event} には読み取り結果の facts が必要です")
+        return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取り結果は dip に保存済みで、トークには次の確認を"
+                f"出しました: {json.dumps(facts['shown'], ensure_ascii=False)} "
+                "この確認は繰り返さず、読み取り結果を見て会話を続けてください。")
     if facts is None:
         raise ValueError(f"{event} は dip が許可したプッシュなので facts が必要です")
     return f"[イベント: dip からのプッシュ依頼 {event}] 根拠の事実: {json.dumps(facts, ensure_ascii=False)} {FIRST_MESSAGE}"
@@ -199,7 +208,10 @@ class LineRuntime:
                 cfg = self._cfg(user_id, n)
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
-                payload = {"messages": [{"role": "user", "content": content}]}
+                # アップロードは本人の1ターン。画面に描き直すため、ファイルの表示名と確認の吹き出しを添えて保存する
+                # (ファイル名は受け取らないので残らない)
+                human = HumanMessage(content, additional_kwargs={"upload": facts} if EVENTS[event][1] == "upload" else {})
+                payload = {"messages": [human]}
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
                 args: dict[str, dict] = {}
@@ -298,8 +310,10 @@ def _reply_of(msg) -> LineReply | None:
 
 def history(messages: list) -> list[dict]:
     """会話を、画面に描き直せる形にする(再読み込みで同じ会話を続けるとき)。1ターン1件:
-    user(ユーザーの発言。挨拶・プッシュのイベントなら None)と bot(そのターンの返信。render と同じ形、
+    user(ユーザーの発言。挨拶・プッシュ・アップロードのイベントなら None)と bot(そのターンの返信。render と同じ形、
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
+    アップロードのターンには upload(file: 「履歴書(PDF)」のような表示名、shown: 読み取り結果の確認の吹き出し、
+    view_url: 読み取り結果の画面)も付く。
     カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
     humans = [i for i, m in enumerate(messages) if m.type == "human"]
     turns = []
@@ -310,11 +324,14 @@ def history(messages: list) -> list[dict]:
         content = messages[start].content
         # 会話を始めたイベント(挨拶・プッシュ)は最初の1件だけ。途中で本人が同じ書き出しで書いても発言として出す
         user = None if k == 0 and isinstance(content, str) and content.startswith("[イベント:") else content
+        upload = messages[start].additional_kwargs.get("upload")
+        if upload:
+            user = None
         bot = None
         if reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}
-        turns.append({"user": user, "bot": bot})
+        turns.append({"user": user, "bot": bot} | ({"upload": upload} if upload else {}))
     return turns
 
 
@@ -339,5 +356,6 @@ def render(state: dict) -> dict:
         "unknown_job_ids": [j for j in reply.job_ids if j not in jobs],
         # ボタンは dip の画面(LIFF)の URL だけを通す。モデルが作った URL は表示しない。
         "buttons": [b.model_dump() for b in reply.buttons if b.url.startswith("/liff/")],
+        "actions": list(dict.fromkeys(reply.actions)),  # 画面が「ファイルを選ぶ」「話して伝える」のボタンにする
         "tools": turn_tools,
     }
