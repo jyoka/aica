@@ -284,6 +284,23 @@ def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered,
     assert "コンビニみほん駅前店" not in advisor.instructions
 
 
+def test_a_link_from_before_the_resume_was_deleted_does_not_open_the_next_upload(remembered):
+    """プロフィール画面で読み取り結果を消してから別の履歴書をアップロードしても、消す前のターンの
+    「読み取り結果を見る」は新しい結果を開かず、置き換わったことを伝える(番号は消しても戻らない)。"""
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        up = lambda: client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
+                                 files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).json()["view_url"]
+        first = up()
+        assert client.delete("/api/profile/resume").json()["resume"] is None
+        second = up()
+        assert first != second
+        old = client.get(first)
+        assert old.status_code == 404 and "置き換わりました" in old.text and "コンビニみほん駅前店" not in old.text
+        assert "コンビニみほん駅前店" in client.get(second).text
+
+
 def test_deleted_voice_draft_is_gone_with_its_files(remembered, tmp_path):
     from voice_resume import config as voice_config
 

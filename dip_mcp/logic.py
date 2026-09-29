@@ -807,6 +807,8 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
 def save_resume_upload(state: State, line_user_id: str, result: dict, file: str = "") -> dict:
     """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
     id はそのユーザーのアップロードの通し番号(トークの「読み取り結果を見る」が、どのアップロードの結果かを指す)。
+    番号は resume_upload_seq から振る: プロフィール画面で読み取り結果を消しても番号は戻らないので、
+    消す前のターンのリンクが、あとのアップロードを開くことはない。
 
     ファイル本体・ファイル名(氏名が入りがち)は保存しない。file はトークに出す表示名(「履歴書(PDF)」のような
     種類だけ)。personal は何が来ても空欄で保存し、
@@ -819,7 +821,11 @@ def save_resume_upload(state: State, line_user_id: str, result: dict, file: str 
 
     def apply(u):
         prev = u.get("resume_upload")
-        rec["id"] = prev.get("id", 0) + 1 if prev else 0
+        seq = u.get("resume_upload_seq")
+        if seq is None:  # 連番を持つ前の記録: 今ある結果の次から
+            seq = prev.get("id", 0) + 1 if prev else 0
+        rec["id"] = seq
+        u["resume_upload_seq"] = seq + 1
         u["resume_upload"] = rec
 
     state.update(line_user_id, apply)
