@@ -142,6 +142,16 @@ def test_persona_with_a_resume_uploads_when_offered_and_is_judged(tmp_path, monk
     assert r["judge"]["depth"]["asked_purpose"]["quoted"]  # 引用は実際の会話ログにある
     m = to_run(r, 0)["metrics"]
     assert m["track_ok"] is True and m["depth_purpose"] is True and m["depth_dig"] is False
+    # 結果にはツールの args と result つきのターンが残り、JSON を通しても今の評価器で再判定できる(実 API なし)
+    from evals.run import recheck
+
+    detail = json.loads(json.dumps(to_run(r, 0)["detail"], ensure_ascii=False, default=str))
+    assert any(t["name"] == "set_search_track" and t["args"]["track"] == "正社員" and "result" in t
+               for turn in detail["turn_log"] for t in turn["tools"])
+    again = recheck(detail)
+    assert again["track_checks"] == r["track_checks"] and again["violations"] == r["violations"]
+    with pytest.raises(ValueError):  # turn_log を保存する前の結果(2026-09-29 の基準)は再判定できない
+        recheck({k: v for k, v in detail.items() if k != "turn_log"})
 
 
 def test_persona_uploads_by_the_fallback_turn_when_never_offered(tmp_path, monkeypatch):
@@ -183,16 +193,31 @@ def _cases(n):
     return [(SCENARIOS[i], 0) for i in list(SCENARIOS)[:n]]
 
 
+class Paid:
+    """このプロセスが払った額の偽物(本物は Meter の合計)。run_one が pay で増やす。"""
+
+    def __init__(self):
+        self.total = 0.0
+
+    def pay(self, usd):
+        self.total += usd
+
+    def __call__(self):
+        return self.total
+
+
 def test_run_stops_before_the_next_scenario_once_the_ledger_reaches_4_dollars(tmp_path):
     ledger = tmp_path / "budget.jsonl"
     budget.record(ledger, "earlier", 3.95)
     ran, logs = [], []
 
+    paid = Paid()
+
     async def run_one(sc, rep):
         ran.append(sc["id"])
-        return 0.06  # 1回目で累計 4.01
+        paid.pay(0.06)  # 1回目で累計 4.01
 
-    stopped = asyncio.run(run_cases(_cases(3), run_one, ledger, "this-run", log=logs.append))
+    stopped = asyncio.run(run_cases(_cases(3), run_one, paid, ledger, "this-run", log=logs.append))
     assert stopped is True and len(ran) == 1
     assert budget.spent(ledger) == pytest.approx(4.01)
     assert any("$4.00 に達したので止めます" in x for x in logs)
@@ -208,9 +233,8 @@ def test_nothing_runs_when_the_ledger_is_already_at_the_limit(tmp_path):
 
     async def run_one(sc, rep):
         ran.append(sc["id"])
-        return 0.01
 
-    assert asyncio.run(run_cases(_cases(2), run_one, ledger, "x", log=lambda m: None)) is True
+    assert asyncio.run(run_cases(_cases(2), run_one, Paid(), ledger, "x", log=lambda m: None)) is True
     assert ran == []
     with pytest.raises(budget.BudgetExceeded):
         budget.check(ledger)
@@ -219,11 +243,67 @@ def test_nothing_runs_when_the_ledger_is_already_at_the_limit(tmp_path):
 def test_runs_below_the_limit_record_every_case(tmp_path):
     ledger = tmp_path / "budget.jsonl"
 
-    async def run_one(sc, rep):
-        return 0.02
+    paid, saved = Paid(), []
 
-    assert asyncio.run(run_cases(_cases(3), run_one, ledger, "x", log=lambda m: None)) is False
+    async def run_one(sc, rep):
+        paid.pay(0.02)
+
+    after = lambda: saved.append(budget.spent(ledger))
+    assert asyncio.run(run_cases(_cases(3), run_one, paid, ledger, "x", log=lambda m: None, after=after)) is False
     assert len(budget.rows(ledger)) == 3 and budget.spent(ledger) == pytest.approx(0.06)
+    # 結果の保存は台帳に載せたあと(保存した累計がその回の分を含む)
+    assert saved == pytest.approx([0.02, 0.04, 0.06])
+
+
+def test_interrupted_run_still_records_what_it_paid(tmp_path):
+    # Ctrl-C(KeyboardInterrupt)で止めても、その回に払った分は台帳に載り、例外はそのまま上がる
+    ledger = tmp_path / "budget.jsonl"
+    paid, ran = Paid(), []
+
+    async def run_one(sc, rep):
+        ran.append(sc["id"])
+        paid.pay(0.03)
+        if len(ran) == 2:
+            paid.pay(0.01)  # 2回目は途中まで払ってから止められる
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(run_cases(_cases(3), run_one, paid, ledger, "x", log=lambda m: None))
+    rows = budget.rows(ledger)
+    assert len(ran) == 2 and len(rows) == 2
+    assert rows[0]["cost_usd"] == pytest.approx(0.03) and "interrupted" not in rows[0]
+    assert rows[1]["cost_usd"] == pytest.approx(0.04) and rows[1]["interrupted"] is True
+    assert budget.spent(ledger) == pytest.approx(0.07)
+
+
+def test_main_marks_the_result_as_interrupted(tmp_path, monkeypatch):
+    # main でも、止めたときに結果の json に stopped を書いてから上げ直す(実 API もランタイムも使わない)
+    from evals import run
+
+    class FakeRuntime:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    async def interrupted_scenario(*a, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run, "HERE", tmp_path)
+    monkeypatch.setattr(run.llm, "client", lambda: None)
+    monkeypatch.setattr(run, "run_scenario", interrupted_scenario)
+    monkeypatch.setattr("line_runtime.runtime.LineRuntime", FakeRuntime)
+    monkeypatch.setattr("evals.meter.Meter.install", lambda self: self)
+    ledger = tmp_path / "budget.jsonl"
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(run.main("B-exit", False, 1, 8, ledger))
+    doc = json.loads(next((tmp_path / "results").glob("sim-*.json")).read_text())
+    assert doc["stopped"] == "interrupted" and "実行を途中で止めた" in run.report(doc)
+    assert budget.rows(ledger)[0]["interrupted"] is True
 
 
 def test_main_refuses_to_start_when_over_the_limit(tmp_path, monkeypatch):

@@ -376,7 +376,15 @@ LLM ジャッジは既定でオフ(`--judge` で有効)。結果は1回ごとに
   (エージェント・模擬ユーザー・ジャッジの合計)を足し、実行のたびに累計を出す。シナリオを始める前に累計が **$4** に達していたら
   止まる(終了コード 2)。続けるかはユーザーと決める。`./.venv/bin/python -m evals.budget` で累計と実行ごとの内訳。
   dip の MCP の子プロセスが呼ぶ embedding(求人の意味検索)は計測の外(1回 1k トークン未満で、1円にも届かない)。
-- 基準の計測(2026-09-29、全15シナリオ × 2回): `evals/baseline/`。
+  実行を途中で止めても(Ctrl-C)、その回に払った分は台帳に載り(`interrupted: true`)、結果の json に `stopped: "interrupted"` を書く。
+  **SIGKILL(`kill -9`)やプロセスの異常終了は防げない**ので、そのときは払った分(OpenAI の使用量画面などで確かめる)を
+  `{"at": "...", "run": "sim-...", "cost_usd": 0.05, "note": "kill したので手で足した"}` の形で台帳に手で1行足す。
+  台帳は `.gitattributes` で `merge=union` にしてあるので、別のブランチで足した行はマージで両方残る。
+- 基準の計測(2026-09-29、全15シナリオ × 2回の予定が途中で止まり 26 回、$1.2628): `evals/baseline/`。
+  2回目の T-side-job、T-student-first、T-blank-parent、T-switch-to-fulltime の4本が欠けている。
+- 結果の `detail` にはターンごとの生の返信(`turn_log`。dip のツールの args と result を含む)・本人の発言・アップロードを残すので、
+  評価器(`evals/checks.py`)を直したあとは `evals.run.recheck(detail)` で実 API を使わずに機械判定をやり直せる
+  (`evals/baseline/` の 2026-09-29 の結果は保存を始める前のもので、再判定できない)。
 実行エラーになった回は失敗として数えず、件数を別に出す。
 
 結果は `evals/results/sim-*.md`(集計 + 会話ログ)と `sim-*.json`(evalkit 形式)。変更の前後を比べるには:

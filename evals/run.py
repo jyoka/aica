@@ -164,7 +164,9 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
               "upload_turn": upload["turn"] + 1 if upload else None,
               "latency_p50": round(statistics.median(seconds), 1), "latency_max": round(max(seconds), 1),
               **_usage(meter, marks), "transcript": transcript,
-              "tools": [[t["name"] for t in r["tools"]] for r in turns]}
+              "tools": [[t["name"] for t in r["tools"]] for r in turns],
+              # 評価器を直したあとでオフラインで再判定するための生の材料(ツールの args と result を含む。recheck)
+              "turn_log": turns, "user_msgs": user_msgs, "upload": upload}
     if use_judge:
         resume = sc.get("upload_resume") or sc.get("seed_resume")
         result["judge"] = await judge(client, JUDGE_MODEL[config.PROVIDER], transcript,
@@ -195,6 +197,10 @@ def to_run(r: dict, rep: int) -> dict:
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}
 
 
+STOPPED_NOTE = {True: "(上限に達したので途中で止めた)", "budget": "(上限に達したので途中で止めた)",
+                "interrupted": "(実行を途中で止めた)"}
+
+
 def report(doc: dict) -> str:
     from evals.judge import DEPTH_LABELS
 
@@ -209,7 +215,7 @@ def report(doc: dict) -> str:
          f"ターン上限: {c.get('max_turns')}"),
         (f"- この実行の費用(エージェント・模擬ユーザー・ジャッジ): ${doc.get('spent_usd', 0):.4f}"
          f"、費用台帳の累計: ${doc.get('ledger_total_usd', 0):.4f}"
-         + ("(上限に達したので途中で止めた)" if doc.get("stopped") else "")),
+         + STOPPED_NOTE.get(doc.get("stopped"), "")),
         summary_md(doc),
         "## ルール違反",
         "",
@@ -246,6 +252,18 @@ def report(doc: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def recheck(detail: dict, sc: dict | None = None) -> dict:
+    """保存した結果の detail(turn_log・user_msgs・upload)から、今の evals/checks.py で機械判定をやり直す(実 API を使わない)。
+    detail に turn_log が無い結果(2026-09-29 の基準など、保存を始める前のもの)は再判定できない。"""
+    from evals.checks import conversation_checks
+    from evals.scenarios import load_scenarios
+
+    if "turn_log" not in detail:
+        raise ValueError(f"{detail.get('id')}: turn_log が保存されていない結果は再判定できない")
+    sc = sc or next(x for x in load_scenarios() if x["id"] == detail["id"])
+    return conversation_checks(sc, detail["turn_log"], detail["user_msgs"], detail.get("push_facts"), detail.get("upload"))
+
+
 def select(scenarios: list[dict], only: str | None) -> list[dict]:
     """--only(カンマ区切りのシナリオID)で絞る。知らない ID は、費用を使う前にエラーにする。"""
     if not only:
@@ -257,10 +275,12 @@ def select(scenarios: list[dict], only: str | None) -> list[dict]:
     return [sc for sc in scenarios if sc["id"] in ids]
 
 
-async def run_cases(cases: list[tuple[dict, int]], run_one, ledger: Path, run_name: str, log=print) -> bool:
+async def run_cases(cases: list[tuple[dict, int]], run_one, spent, ledger: Path, run_name: str, log=print,
+                    after=None) -> bool:
     """(シナリオ, 回) を順に回す。各シナリオを始める前に費用台帳の累計を見て、上限に達していたら止める(True を返す)。
-    run_one(sc, rep) はその1回にかかった費用(エージェント・模擬ユーザー・ジャッジの合計)を返す。
-    失敗した回でも、払った分は台帳に載せる。"""
+    spent() はこのプロセスがここまでに払った額(エージェント・模擬ユーザー・ジャッジの合計)で、その回の前後の差を台帳に載せる。
+    run_one が失敗しても、途中で止められても(Ctrl-C の KeyboardInterrupt・CancelledError)、払った分は finally で載せてから
+    例外をそのまま上げる。after() は台帳に載せたあとに毎回呼ぶ(結果の保存)。"""
     for sc, rep in cases:
         try:
             total = budget.check(ledger)
@@ -268,9 +288,16 @@ async def run_cases(cases: list[tuple[dict, int]], run_one, ledger: Path, run_na
             log(f"!! {e}")
             return True
         log(f"== {sc['id']} #{rep + 1}(累計 ${total:.4f})")
-        cost = await run_one(sc, rep)
-        budget.record(ledger, run_name, cost, case=sc["id"], rep=rep)
-        log(f"   この回 ${cost:.4f} / {budget.line(ledger)}")
+        before, done = spent(), False
+        try:
+            await run_one(sc, rep)
+            done = True
+        finally:
+            cost = spent() - before
+            budget.record(ledger, run_name, cost, case=sc["id"], rep=rep, **({} if done else {"interrupted": True}))
+            log(f"   この回 ${cost:.4f}{'' if done else '(途中で止めた)'} / {budget.line(ledger)}")
+        if after:
+            after()
     return False
 
 
@@ -290,17 +317,20 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
            "config": {"provider": config.PROVIDER, "model": config.MODEL, "sim_model": SIM_MODEL[config.PROVIDER],
                       "judge": use_judge, "judge_model": JUDGE_MODEL[config.PROVIDER] if use_judge else None,
                       "max_turns": max_turns, "repeat": repeat},
-           "directions": DIRECTIONS, "runs": runs, "spent_usd": 0.0}
+           "directions": DIRECTIONS, "runs": runs, "spent_usd": 0.0, "stopped": None}
     out.parent.mkdir(exist_ok=True)
 
+    def spent() -> float:  # このプロセスの全呼び出し(エージェント・模擬ユーザー・ジャッジ)の合計
+        return meter.summary()["cost_usd"]
+
     def save() -> None:  # 1回ごとに上書き保存(止めても払った分の結果が残る)
+        doc["spent_usd"] = spent()
         doc["ledger_total_usd"] = budget.spent(ledger)
-        out.with_suffix(".json").write_text(json.dumps(doc, ensure_ascii=False, indent=2))
+        out.with_suffix(".json").write_text(json.dumps(doc, ensure_ascii=False, indent=2, default=str))
         out.with_suffix(".md").write_text(report(doc))
 
     async with LineRuntime(in_memory=True) as rt:
-        async def run_one(sc: dict, rep: int) -> float:
-            k = meter.mark()
+        async def run_one(sc: dict, rep: int) -> None:
             try:
                 r = await run_scenario(rt, client, meter, sc, use_judge, max_turns)
             except Exception as e:  # noqa: BLE001  1件の失敗で評価全体を止めない
@@ -309,25 +339,21 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
             else:
                 print(json.dumps({x: r[x] for x in ("turns", "branch_turn", "outcomes", "track_ok", "violations",
                                                       "latency_p50", "cost_usd")}, ensure_ascii=False), flush=True)
-            cost = meter.summary(k)["cost_usd"]
-            doc["spent_usd"] = round(doc["spent_usd"] + cost, 6)
             runs.append(to_run(r, rep))
-            return cost
 
         cases = [(sc, rep) for rep in range(repeat) for sc in scenarios]
-        stopped = await run_cases(cases, lambda sc, rep: _saving(run_one(sc, rep), save), ledger, out.name,
-                                  log=lambda m: print(m, flush=True))
-    doc["stopped"] = stopped
+        try:
+            stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
+                                      after=save)
+        except BaseException:  # Ctrl-C など。台帳には run_cases が載せたので、結果にも止めたことを書いて上げ直す
+            doc["stopped"] = "interrupted"
+            save()
+            raise
+    doc["stopped"] = "budget" if stopped else None
     save()
     print(f"この実行 ${doc['spent_usd']:.4f} / {budget.line(ledger)}")
     print(f"-> {out}.md")
     return 2 if stopped else 0
-
-
-async def _saving(coro, save) -> float:
-    cost = await coro
-    save()
-    return cost
 
 
 if __name__ == "__main__":
