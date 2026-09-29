@@ -171,7 +171,7 @@ def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tm
     class FailingRuntime:
         """ツールの実行が始まった直後に落ちるランタイム(タイムアウト・MCP 断の代わり)。"""
 
-        async def handle_stream(self, user_id, event, text=None, facts=None, talk_thread=None):
+        async def handle_stream(self, user_id, event, text=None, facts=None, talk_thread=None, notice=None):
             yield {"kind": "llm", "ms": 1, "tool_calls": ["recommend_jobs"]}
             yield {"kind": "tool_start", "calls": [{"name": "recommend_jobs", "args": {"area": "渋谷"}}]}
             raise RuntimeError("MCP が落ちた")

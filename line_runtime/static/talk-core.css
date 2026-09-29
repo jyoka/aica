@@ -51,3 +51,10 @@ form button.plus:disabled { color: #b8c0cc; background: #f1f3f6; }
 .vs-end { border: 0; border-radius: 999px; padding: 12px; font-size: 15px; font-weight: 700; background: #e5484d; color: #fff; cursor: pointer; }
 .vs-end:disabled { background: #e6e9ef; color: #9aa3b2; cursor: default; }
 .vs-end[hidden] { display: none; }
+/* 通話中に × を押したときの確認 */
+.vs-confirm { background: #fff7e6; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+.vs-confirm[hidden] { display: none; }
+.vs-confirm p { margin: 0 0 8px; }
+.vs-confirm-btns { display: flex; gap: 8px; }
+.vs-confirm-btns button { flex: 1; border: 0; border-radius: 999px; padding: 9px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.vs-confirm-btns .keep { background: var(--ok); color: #fff; } .vs-confirm-btns .quit { background: var(--soft); color: #c0392b; }

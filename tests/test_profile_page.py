@@ -1,0 +1,513 @@
+"""わたしのプロフィール(task 95)の台本テスト。実 LLM なし、dip の MCP は本物、履歴書の読み取りはスタブ。
+
+aica が本人について覚えていること(雇用区分・目的・希望・経歴・相談のまとめ・履歴書・音声の下書き・保存・応募)を、
+本人が見て、直して、消せる。確かめること:
+(1) 画面の API に全項目が出る(空の項目も)。画面では空の項目が「まだありません」になる(ブラウザ)
+(2) 直す・消すと、次の返信の前に AI へ伝わる(会話の途中なら知らせ、要約もすぐ変わる)。AI は直した値で話し、
+    消した項目を前提にしない
+(3) 履歴書の読み取り結果と音声の下書きを丸ごと消せる。消した後はチャットの要約にも音声の指示にも出ない
+(4) 「すべて消す」で長期メモリと会話が消え、次に開くと初回訪問として始まる(会話数の上限の数は消さない)
+(5) 他人のユーザーIDでの閲覧・変更は 403(Cookie の無い呼び出しも断る)
+(6) 手で直すときも、電話番号・メール・住所らしい値は弾く
+追記(UX 刷新 3/3 のレビューから): 通話中の × は確認を出す / 閉じた後に届いた結果は次のターンの前に描く(ブラウザ)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from types import SimpleNamespace
+
+import pytest
+from langchain_core.outputs import ChatGeneration, ChatResult
+
+from dip_mcp import logic
+from line_runtime.runtime import _tool_payload
+from tests.test_handle import ScriptedModel, call, reply
+from tests.test_resume_intake import StubClient
+from tests.test_resume_upload import FILENAME, clean_draft
+from tests.test_talk_actions import browser, livekit  # noqa: F401  フィクスチャ
+from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
+    app,
+    open_talk,
+    stream,
+)
+
+MENU = ["求人を探す", "まず相談する", "今はいい"]
+NOTICE = "[お知らせ: 本人がプロフィール画面で"
+
+
+class Rememberer(ScriptedModel):
+    """覚えていることを前提に話す偽のモデル(何度でも返す)。会話の中でいちばん新しい情報(要約のツール結果か、
+    プロフィールを変えた知らせ)の希望で話す。「要約を読んで」と言われたら要約を読み直す。"""
+
+    contexts: list = []  # noqa: RUF012  モデルに渡った会話
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        return ChatResult(generations=[ChatGeneration(message=self.respond(messages))])
+
+    @staticmethod
+    def latest(messages) -> dict:
+        prefs: dict = {}
+        for m in messages:
+            if m.type == "tool" and m.name == "get_user_conversation_summary":
+                s = _tool_payload(m)
+                prefs = {k: v["value"] for k, v in s["stated_preferences"].items()}
+                prefs["uploaded_resume"] = s["uploaded_resume"]
+            elif m.type == "human" and m.content.startswith(NOTICE):
+                now = json.loads(re.search(r"今の内容: (\{.*\}) これを前提", m.content).group(1))
+                prefs = dict(now["stated_preferences"]) | {"uploaded_resume": now["uploaded_resume"] == "あり"}
+        return prefs
+
+    def respond(self, messages):
+        self.contexts.append(list(messages))
+        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        last = max(i for i, m in enumerate(messages) if m.type == "human")
+        human, turn = messages[last].content, messages[last + 1:]
+        if human.startswith("[イベント:") and "アップロード" not in human or human == "要約を読んで":
+            if not any(m.type == "tool" for m in turn):
+                return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
+            if human.startswith("[イベント:"):
+                return reply(["こんにちは。お仕事探しをお手伝いします。何をしますか?"], quick_replies=MENU)
+        if "アップロード" in human:
+            if not any(m.type == "tool" for m in turn):
+                return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
+            return reply(["履歴書を拝見しました。近い仕事で探しますか?"], quick_replies=["はい", "今はいい"])
+        p = self.latest(messages)
+        said = [f"エリアは{p['area']}で探しますね。" if p.get("area") else "エリアはどこにしますか?"]
+        if p.get("purpose"):
+            said.append(f"目的は「{p['purpose']}」ですね。")
+        if p.get("uploaded_resume"):
+            said.append("履歴書の経歴も踏まえます。")
+        return reply(said, quick_replies=["はい", "今はいい"])
+
+
+@pytest.fixture
+def remembered(app, monkeypatch, tmp_path):  # noqa: F811
+    model = Rememberer()
+    model.contexts = []
+    app.set_model(model)
+    stub = StubClient(clean_draft(), usage=SimpleNamespace(input_tokens=1000, output_tokens=500))
+    monkeypatch.setattr(app, "resume_client", lambda: stub)
+    from voice_resume import config as voice_config
+
+    monkeypatch.setattr(voice_config, "OUT_DIR", tmp_path / "voice-out")
+    app.model = model
+    yield app
+    del app.model
+
+
+def _client(app):  # noqa: F811
+    from fastapi.testclient import TestClient
+
+    return TestClient(app.app)
+
+
+def _items(profile: dict) -> dict:
+    return {it["key"]: it["value"] for s in profile["sections"] for it in s["items"]}
+
+
+# ----------------------------- (1) 画面に出る項目 -----------------------------
+
+
+def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid = opened["user"]
+        p = client.get(f"/api/profile/{uid}").json()
+        assert [s["title"] for s in p["sections"]] == ["目的", "希望", "経歴"]
+        items = _items(p)
+        # 区分が未定なら正社員の条件(年収・働き方・時期)は出さない。ほかは空でも出す(画面が「まだありません」)
+        assert set(items) == set(logic.PREFERENCE_KEYS) - set(logic.FULLTIME_PREFERENCE_KEYS)
+        assert all(v is None for v in items.values())
+        assert p["track"]["current"] == "未定" and p["track"]["history"] == []
+        assert p["consultation_summary"] is None and p["resume"] is None and p["voice_drafts"] == []
+        assert p["saved_jobs"] == [] and p["applications"] == []
+
+        # 覚えたことが出る: 区分(いつ・どの発言で)・目的・希望・経歴・相談のまとめ・履歴書・下書き・保存・応募
+        logic.set_search_track(remembered.state, uid, "正社員", "転職を考えています")
+        logic.save_preferences(remembered.state, uid, {"purpose": "転職", "area": "渋谷", "skills": "Excel",
+                                                       "min_annual_salary": "500万円以上"})
+        logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "転職で渋谷を希望。次に確かめること: 職種")
+        assert client.post(f"/api/resume/{uid}/upload", params={"thread": greeting["thread"]},
+                           files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 200
+        client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 職務経歴書\n- 営業5年"})
+        job = min(logic.load_jobs())
+        logic.save_job(remembered.state, uid, job)
+        logic.submit_application(remembered.state, uid, sorted(logic.load_jobs())[1])
+        p = client.get(f"/api/profile/{uid}").json()
+        items = _items(p)
+        assert items["purpose"] == "転職" and items["area"] == "渋谷" and items["skills"] == "Excel"
+        assert items["min_annual_salary"] == "500万円以上" and "work_style" in items  # 正社員なら条件も出す
+        assert p["track"]["current"] == "正社員"
+        assert p["track"]["history"][0] == {"when": "9/23", "from": "未定", "track": "正社員",
+                                                 "evidence": "転職を考えています", "undo": False}
+        assert p["consultation_summary"]["text"].startswith("転職で渋谷")
+        assert p["resume"]["view_url"] == f"/liff/resume?user={uid}" and p["resume"]["highlights"]
+        assert FILENAME not in json.dumps(p, ensure_ascii=False)  # ファイル名は出さない(保存もしていない)
+        assert [d["id"] for d in p["voice_drafts"]] == [0]
+        assert p["voice_drafts"][0]["view_url"] == f"/liff/voice/draft?user={uid}&rid=0"
+        assert [j["job_id"] for j in p["saved_jobs"]] == [job]
+        assert len(p["applications"]) == 1 and p["applications"][0]["title"]
+
+
+# ----------------------------- (2) 直す・消すと、次の返信の前に AI へ伝わる -----------------------------
+
+
+def test_edits_reach_the_ai_before_the_next_reply(remembered):
+    """会話の途中で直す・消すと、次の本人の発言の直前に知らせが入り、AI は直した値で話し、消した項目を前提にしない。
+    要約もすぐ変わる(次に読み直しても、直した値だけが出る)。"""
+    with _client(remembered) as client:
+        client.get("/")
+        uid = client.cookies[remembered.ANON_COOKIE]
+        logic.save_preferences(remembered.state, uid, {"area": "新宿", "purpose": "生活費の足しに"})
+        _, greeting = open_talk(client)
+        th = greeting["thread"]
+        before = stream(client, uid, "message", th, "探して")[-1]
+        assert before["bubbles"] == ["エリアは新宿で探しますね。", "目的は「生活費の足しに」ですね。"]
+
+        assert client.put(f"/api/profile/{uid}/items/area", json={"value": "渋谷"}).status_code == 200
+        p = client.delete(f"/api/profile/{uid}/items/purpose").json()
+        assert _items(p)["area"] == "渋谷" and _items(p)["purpose"] is None
+        # 要約はすぐ変わる(次の会話・音声が読む)
+        stated = logic.conversation_summary(remembered.state, uid)["stated_preferences"]
+        assert {k: v["value"] for k, v in stated.items()} == {"area": "渋谷"}
+
+        after = stream(client, uid, "message", th, "探して")[-1]
+        assert after["bubbles"] == ["エリアは渋谷で探しますね。"]
+        assert not any("生活費" in b or "新宿" in b for b in after["bubbles"])
+        # 知らせは本人の発言の直前に1回だけ入り、消した項目を名前で伝える
+        ctx = remembered.model.contexts[-1]
+        assert ctx[-1].content == "探して" and ctx[-2].content.startswith(NOTICE)
+        assert "エリア・駅を「渋谷」に直した" in ctx[-2].content and "目的を消した" in ctx[-2].content
+        assert "生活費" not in ctx[-2].content
+        # 渡し終えた知らせは次のターンに持ち越さない。画面の履歴にも出さない
+        stream(client, uid, "message", th, "ありがとう")
+        assert sum(m.content.startswith(NOTICE) for m in remembered.model.contexts[-1] if m.type == "human") == 1
+        assert remembered.state.user(uid).get("profile_changes") == []
+        turns = client.get(f"/api/talk/history/{uid}").json()["turns"]
+        assert [t["user"] for t in turns] == [None, "探して", "探して", "ありがとう"]
+        assert turns[1]["bot"]["bubbles"] == before["bubbles"]  # 知らせの前のターンの返信も欠けない
+        assert all(NOTICE not in json.dumps(t, ensure_ascii=False) for t in turns)
+
+        # AI が要約を読み直しても、直した値だけ
+        stream(client, uid, "message", th, "要約を読んで")
+        summary = next(_tool_payload(m) for m in reversed(remembered.model.contexts[-1]) if m.type == "tool")
+        assert {k: v["value"] for k, v in summary["stated_preferences"].items()} == {"area": "渋谷"}
+
+
+def test_a_new_conversation_reads_the_edited_profile_without_a_notice(remembered):
+    """新しい会話(30分後の再訪)は最初に要約を読むので、知らせは挟まず、要約に直した値が出る。"""
+    with _client(remembered) as client:
+        opened, first = open_talk(client)
+        uid = opened["user"]
+        client.put(f"/api/profile/{uid}/items/area", json={"value": "池袋"})
+        client.put(f"/api/profile/{uid}/track", json={"track": "アルバイト・パート"})
+        remembered.later(31)
+        _, greeting = open_talk(client)
+        assert greeting["thread"] == first["thread"] + 1
+        assert remembered.state.user(uid).get("profile_changes") == []  # 挨拶が返ったら渡し終えた扱い
+        r = stream(client, uid, "message", greeting["thread"], "探して")[-1]
+        assert r["bubbles"] == ["エリアは池袋で探しますね。"]
+        assert not any(m.type == "human" and m.content.startswith(NOTICE) for m in remembered.model.contexts[-1])
+        summary = logic.conversation_summary(remembered.state, uid)
+        assert summary["search_track"] == "アルバイト・パート"
+        assert summary["track_history"][-1]["evidence"] == "(プロフィール画面で本人が選んだ)"
+
+
+def test_track_and_consultation_summary_can_be_edited_and_deleted(remembered):
+    with _client(remembered) as client:
+        opened, _ = open_talk(client)
+        uid = opened["user"]
+        logic.set_search_track(remembered.state, uid, "正社員", "転職したい")
+        logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "転職を考えている")
+        logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "前のまとめ: 渋谷で転職")
+
+        p = client.put(f"/api/profile/{uid}/items/consultation_summary", json={"value": "副業を探している"}).json()
+        assert p["consultation_summary"]["text"] == "副業を探している"
+        assert client.put(f"/api/profile/{uid}/items/consultation_summary",
+                          json={"value": "あ" * 201}).status_code == 400
+        # 消すと、前のまとめが繰り上がって出ることもない
+        p = client.delete(f"/api/profile/{uid}/items/consultation_summary").json()
+        assert p["consultation_summary"] is None
+        assert logic.conversation_summary(remembered.state, uid)["consultation_summary"] is None
+        assert len(remembered.state.user(uid)["outcomes"]) == 2  # 会話の結果の記録は残す
+
+        assert client.put(f"/api/profile/{uid}/track", json={"track": "社長"}).status_code == 400
+        p = client.delete(f"/api/profile/{uid}/track").json()
+        assert p["track"] == {"current": "未定", "choices": ["アルバイト・パート", "正社員", "未定"], "history": []}
+        assert logic.conversation_summary(remembered.state, uid)["search_track"] == "未定"
+        assert client.put(f"/api/profile/{uid}/items/nickname", json={"value": "x"}).status_code == 400
+        assert client.put(f"/api/profile/{uid}/items/area", json={"value": "  "}).status_code == 400
+
+
+# ----------------------------- (3) 履歴書と音声の下書きを丸ごと消す -----------------------------
+
+
+def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered, tmp_path):
+    from voice_resume.agent import prepare_advisor
+    from voice_resume.dip import DipMCP
+
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        assert client.post(f"/api/resume/{uid}/upload", params={"thread": th},
+                           files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 200
+        stream(client, uid, "resume_upload", th)
+        assert "履歴書の経歴も踏まえます。" in stream(client, uid, "message", th, "探して")[-1]["bubbles"]
+
+        p = client.delete(f"/api/profile/{uid}/resume").json()
+        assert p["resume"] is None
+        assert logic.conversation_summary(remembered.state, uid)["uploaded_resume"] is None
+        assert client.get(f"/liff/resume?user={uid}").status_code == 404
+        # チャット: 次の返信の前に「消した」と伝わり、履歴書を前提にしない
+        r = stream(client, uid, "message", th, "探して")[-1]
+        assert "履歴書の経歴も踏まえます。" not in r["bubbles"]
+        assert "履歴書の読み取り結果を消した" in remembered.model.contexts[-1][-2].content
+        # アップロードのターンも、消した後は読み取り結果が無いので始められない
+        assert client.post("/api/event/stream", json={"user_id": uid, "event": "resume_upload",
+                                                      "thread": th}).status_code == 400
+
+    # 音声: 同じ要約を読むので、面談の指示にも入らない(本物の dip MCP)
+    async def start():
+        dip = DipMCP()
+        await dip.start()
+        try:
+            return await prepare_advisor(dip, uid)
+        finally:
+            await dip.aclose()
+
+    advisor, _ = asyncio.run(start())
+    assert "コンビニみほん駅前店" not in advisor.instructions
+
+
+def test_deleted_voice_draft_is_gone_with_its_files(remembered, tmp_path):
+    from voice_resume import config as voice_config
+
+    out = voice_config.OUT_DIR
+    out.mkdir(parents=True)
+    files = [out / "resume-draft-1.md", out / "transcript-1.json"]
+    for f in files:
+        f.write_text("下書き", encoding="utf-8")
+    outside = tmp_path / "not-voice.txt"
+    outside.write_text("消さない", encoding="utf-8")
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid = opened["user"]
+        client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 下書き\n- 営業5年",
+                                                "files": [str(f) for f in files] + [str(outside)]})
+        assert client.get(f"/liff/voice/draft?user={uid}&rid=0").status_code == 200
+
+        p = client.delete(f"/api/profile/{uid}/voice/0").json()
+        assert p["voice_drafts"] == []
+        assert client.get(f"/liff/voice/draft?user={uid}&rid=0").status_code == 404
+        assert not any(f.exists() for f in files) and outside.exists()  # 音声の出力先の外は消さない
+        assert client.delete(f"/api/profile/{uid}/voice/0").status_code == 404
+        r = stream(client, uid, "message", greeting["thread"], "探して")[-1]
+        assert r["kind"] == "reply"
+        assert "音声相談の下書きを消した" in remembered.model.contexts[-1][-2].content
+
+
+# ----------------------------- (4) すべて消す -----------------------------
+
+
+def test_forget_all_starts_over_as_a_first_visit(remembered):
+    with _client(remembered) as client:
+        client.get("/")
+        uid = client.cookies[remembered.ANON_COOKIE]
+        _, greeting = open_talk(client)
+        stream(client, uid, "message", greeting["thread"], "探して")
+        logic.save_preferences(remembered.state, uid, {"area": "新宿", "purpose": "生活費"})
+        logic.save_job(remembered.state, uid, min(logic.load_jobs()))
+        remembered.later(31)
+        _, again = open_talk(client)
+        assert again["entry"] == "revisit"  # 覚えているので再訪
+        used = client.app.state.quota.used(uid)
+
+        assert client.post(f"/api/profile/{uid}/forget").json() == {"forgotten": True}
+        p = client.get(f"/api/profile/{uid}").json()
+        assert all(v is None for v in _items(p).values()) and p["saved_jobs"] == []
+        assert client.get(f"/api/talk/history/{uid}").json() == {"thread": 0, "turns": []}  # 会話も消える
+        # 30分以内に開き直しても、前の会話を続けず初回訪問として始まる
+        remembered.later(0)
+        opened, first = open_talk(client)
+        assert opened["event"] == "visit" and first["entry"] == "visit" and first["thread"] == 1
+        assert client.app.state.quota.used(uid) == used + 1  # 会話数の上限の数は消さない(挨拶の1回分だけ増える)
+        assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
+
+
+# ----------------------------- (5) 他人のユーザーID は 403 -----------------------------
+
+
+def test_another_users_profile_can_be_neither_read_nor_changed(remembered):
+    with _client(remembered) as a:
+        b = _client(remembered)
+        ua = a.post("/api/talk/open").json()["user"]
+        ub = b.post("/api/talk/open").json()["user"]
+        logic.save_preferences(remembered.state, ub, {"area": "渋谷"})
+        assert a.get(f"/api/profile/{ua}").status_code == 200
+        calls = [("get", ""), ("put", "/items/area"), ("delete", "/items/area"), ("put", "/track"),
+                 ("delete", "/track"), ("delete", "/resume"), ("delete", "/voice/0"), ("delete", "/saved/x"),
+                 ("post", "/forget")]
+        for method, path in calls:
+            body = {"json": {"value": "新宿", "track": "正社員"}} if method == "put" else {}
+            assert getattr(a, method)(f"/api/profile/{ub}{path}", **body).status_code == 403, (method, path)
+            # Cookie の無い呼び出しも断る
+            anon = _client(remembered)
+            assert getattr(anon, method)(f"/api/profile/{ub}{path}", **body).status_code == 403, (method, path)
+        assert logic.stated_preferences(remembered.state.user(ub))["area"]["value"] == "渋谷"  # 変わっていない
+        # 「匿名ID:シナリオユーザー」(/dev)のプロフィールも、本番の画面からは扱わない
+        assert a.get(f"/api/profile/{ua}:sim-new").status_code == 403
+
+
+# ----------------------------- (6) 個人情報らしい値は、手で直すときも弾く -----------------------------
+
+
+@pytest.mark.parametrize("value", ["090-1234-5678", "連絡は09012345678", "misaki@example.com",
+                                   "新宿区西新宿2-8-1", "西新宿三丁目", "1-2-3 に住んでいます"])
+def test_personal_info_is_rejected_when_editing_by_hand(remembered, value):
+    with _client(remembered) as client:
+        uid = client.post("/api/talk/open").json()["user"]
+        for key in ("area", "experience", "consultation_summary"):
+            r = client.put(f"/api/profile/{uid}/items/{key}", json={"value": value})
+            assert r.status_code == 400 and "個人情報" in r.json()["detail"], (key, value)
+        p = client.get(f"/api/profile/{uid}").json()
+        assert all(v is None for v in _items(p).values()) and p["consultation_summary"] is None
+        assert remembered.state.user(uid).get("profile_changes") in (None, [])
+
+
+def test_values_that_only_look_like_numbers_are_kept_when_editing_by_hand(remembered):
+    with _client(remembered) as client:
+        uid = client.post("/api/talk/open").json()["user"]
+        for key, value in (("min_annual_salary", "年収400-500万円"), ("start_timing", "3-6か月以内"),
+                           ("area", "新宿区")):
+            assert client.put(f"/api/profile/{uid}/items/{key}", json={"value": value}).status_code == 200, value
+        assert client.put(f"/api/profile/{uid}/items/wants", json={"value": "あ" * 101}).status_code == 400
+
+
+# ----------------------------- ブラウザ(Playwright と Chromium があるときだけ) -----------------------------
+
+
+def test_profile_screen_in_the_browser(remembered, browser, served_profile):  # noqa: F811
+    """ナビの「プロフィール」で覚えていることが出る(空の項目は「まだありません」)。直す・個人情報を弾く・
+    「すべて消す」(確認の1段つき)で、トークが初回訪問からやり直しになる。"""
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    page.goto(served_profile + "/")
+    page.get_by_text("こんにちは。お仕事探しをお手伝いします。何をしますか?").wait_for()
+    uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
+    logic.save_preferences(remembered.state, uid, {"area": "新宿", "purpose": "生活費の足しに"})
+    logic.set_search_track(remembered.state, uid, "アルバイト・パート", "空いた時間にバイトを")
+
+    page.locator("#nav button[data-view=profile]").click()
+    prof = page.locator("#profile")
+    prof.locator(".pcard").first.wait_for()
+    text = prof.inner_text()
+    for title in ("雇用区分", "目的", "希望", "経歴", "相談のまとめ", "履歴書の読み取り結果", "音声相談の下書き",
+                  "保存した求人", "応募した求人", "すべて消す"):
+        assert title in text, title
+    assert "生活費の足しに" in text and "「空いた時間にバイトを」で 未定 → アルバイト・パート" in text
+    assert prof.locator(".pv.empty", has_text="まだありません").count() >= 8
+
+    # 直す: 本人の言葉で上書き。電話番号は弾いて理由を出す
+    row = prof.locator('.prow[data-key="area"]')
+    row.locator("button.edit").click()
+    row.locator("textarea").fill("090-1234-5678")
+    row.locator("button.ok").click()
+    row.locator(".perr", has_text="個人情報").wait_for()
+    row.locator("textarea").fill("渋谷")
+    row.locator("button.ok").click()
+    prof.locator('.prow[data-key="area"] .pv', has_text="渋谷").wait_for()
+    prof.locator('.prow[data-key="purpose"] button.del').click()
+    prof.locator('.prow[data-key="purpose"] .pv.empty').wait_for()
+    assert logic.stated_preferences(remembered.state.user(uid)).keys() == {"area"}
+
+    # トークに戻って話すと、直した値で返事が来る
+    page.locator("#nav button[data-view=talk]").click()
+    page.locator("#t").fill("探して")
+    page.locator("#send").click()
+    page.get_by_text("エリアは渋谷で探しますね。").wait_for()
+    assert "生活費" not in page.locator("#log .row.bot").last.inner_text()
+
+    # すべて消す: 確認の1段を挟み、やめれば何も消えない
+    page.locator("#nav button[data-view=profile]").click()
+    forget = prof.locator('.prow[data-key="forget"]')
+    forget.wait_for()
+    forget.locator("button.del").click()
+    forget.locator(".pconfirm", has_text="元に戻せません").wait_for()
+    forget.locator(".pconfirm button", has_text="やめる").click()
+    assert logic.stated_preferences(remembered.state.user(uid))
+    forget.locator("button.del").click()
+    forget.locator(".pconfirm button.danger").click()
+    page.locator("#v-talk").wait_for(state="visible")
+    page.get_by_text("こんにちは。お仕事探しをお手伝いします。何をしますか?").wait_for()
+    assert page.locator("#log .row.me").count() == 0  # 前の会話は描かない
+    assert logic.stated_preferences(remembered.state.user(uid)) == {}
+    assert remembered.state.user(uid).get("talk_opens")  # 初回訪問の挨拶が返った
+    page.reload()
+    page.get_by_text("こんにちは。お仕事探しをお手伝いします。何をしますか?").wait_for()
+    context.close()
+
+
+def test_voice_sheet_asks_before_closing_mid_call_and_a_late_result_is_drawn_before_the_next_turn(
+        remembered, browser, served_profile, livekit):  # noqa: F811
+    """通話中に × を押すと確認が出る。結果が届く前に閉じても、結果は会話に入るので、次の発言の前に履歴を読み直して描く。"""
+    from tests.test_talk_actions import _fake_livekit, _post_json
+
+    context = browser.new_context()
+    requests = _fake_livekit(context)
+    page = context.new_page()
+    page.goto(served_profile + "/")
+    page.get_by_text("こんにちは。お仕事探しをお手伝いします。何をしますか?").wait_for()
+    uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
+    page.locator("#plus").click()
+    page.locator("#menu-voice").click()
+    page.wait_for_function("window.__lk && window.__lk.mic === true && !document.getElementById('voice-end').disabled")
+    page.locator("#voice-close").click()
+    page.locator("#voice-confirm", has_text="通話中です").wait_for()
+    assert page.evaluate("window.__lk.disconnected") == 0  # まだ切らない
+    page.locator("#voice-quit").click()
+    page.locator("#voice-sheet").wait_for(state="hidden")
+
+    # 閉じた後に結果が届く(会話には入るが、この画面はもう待っていない)
+    room = next(u for u in requests if "/wait?" in u).split("room=")[1]
+    _post_json(served_profile + "/api/voice/result", {"user_id": uid, "room": room, "draft_markdown": "# 下書き",
+                                                      "preferences": {"area": "中野"}})
+    page.wait_for_timeout(500)
+    assert page.get_by_text("音声でお話しした内容をまとめました。").count() == 0
+    page.locator("#t").fill("探して")
+    page.locator("#send").click()
+    summary = page.locator("#log .row.bot", has_text="音声でお話しした内容をまとめました。")
+    summary.wait_for()
+    assert "エリア: 中野" in summary.inner_text()
+    # 結果 → 本人の発言 → AI の返信 の順に並ぶ
+    rows = page.locator("#log > .row").all_inner_texts()
+    i = next(k for k, t in enumerate(rows) if "音声でお話しした内容をまとめました。" in t)
+    assert "探して" in rows[i + 1]
+    page.locator("#log .row.bot").nth(-1).get_by_text("エリアは").wait_for()
+    context.close()
+
+
+@pytest.fixture
+def served_profile(remembered):
+    """本物の HTTP サーバー(uvicorn)で画面を出す(tests/test_talk_actions.py の served と同じ)。"""
+    import threading
+    import time
+
+    import uvicorn
+
+    from tests.test_talk_actions import _free_port
+
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(remembered.app, host="127.0.0.1", port=port, log_level="warning"))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    for _ in range(300):
+        if server.started:
+            break
+        time.sleep(0.05)
+    assert server.started
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    th.join(10)

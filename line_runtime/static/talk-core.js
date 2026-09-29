@@ -10,6 +10,7 @@
 //     showTalk,                 // (任意)トークの表示に切り替える(本番の下のナビ)
 //     getThread, onStale,       // (任意)表示中の会話の番号 / 別のタブで会話が替わっていたとき(本番だけ)
 //     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は dip の状態を読み直す)
+//     beforeTurn,               // (任意)本人のターン(発言・アップロード)の前に呼ぶ(本番: 閉じたシートの結果を描き直す)
 //   });
 function createTalk(o) {
   const log = o.log;
@@ -179,7 +180,9 @@ function createTalk(o) {
     const f = fileInput.files[0]; fileInput.value = "";
     const user = o.getUser();
     if (!f || !user || o.isBusy()) return;
-    o.showTalk?.(); o.setBusy(true); disableChips();
+    o.showTalk?.(); o.setBusy(true);
+    try { await o.beforeTurn?.(); } catch (e) { console.error(e); }
+    disableChips();
     meFile(fileLabel(f.name));
     const col = typingCol();
     let d = null;
@@ -220,11 +223,19 @@ function createTalk(o) {
   const vStatus = el("div", "vs-status"); vStatus.id = "voice-status"; vStatus.setAttribute("aria-live", "polite");
   const vCaps = el("div", "vs-caps"); vCaps.id = "voice-captions";
   const vEnd = el("button", "vs-end", "面談を終える"); vEnd.type = "button"; vEnd.id = "voice-end";
+  // 通話中に × を押したときの確認(誤って押して面談が切れないように。会話数は戻らない)
+  const vConfirm = el("div", "vs-confirm"); vConfirm.id = "voice-confirm"; vConfirm.hidden = true;
+  const vKeep = el("button", "keep", "面談を続ける"); vKeep.type = "button"; vKeep.id = "voice-keep";
+  const vQuit = el("button", "quit", "終了して閉じる"); vQuit.type = "button"; vQuit.id = "voice-quit";
+  const vBtns = el("div", "vs-confirm-btns"); vBtns.append(vKeep, vQuit);
+  vConfirm.append(el("p", null, "通話中です。閉じると面談はここで終わり、使った会話数は戻りません。閉じますか?"), vBtns);
   panel.append(vHead, el("p", "vs-note", "アドバイザーと話しながら、希望と経験を5分ほどで伺います。氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。"),
-               vOrb, vStatus, vCaps, vEnd);
+               vOrb, vStatus, vCaps, vConfirm, vEnd);
   sheet.appendChild(panel); document.body.appendChild(sheet);
 
   let voice = null;  // 開いている間の通話: { user, since, roomName, room, agent, me, working, ended, stalled, done, abort }
+  // 結果が届く前にシートを閉じた面談の、次に待つ結果の番号(届いた結果は会話に入るので、次のターンの前に描き直す)
+  let voicePendingSince = null;
   const END_WAIT_MS = 120000;  // 「面談を終える」からまとめが届くまでの待ちの上限(過ぎたら、閉じてよいと案内する)
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   function vSet(state, text) { sheet.dataset.state = state; vStatus.textContent = text; }
@@ -268,7 +279,7 @@ function createTalk(o) {
     const v = voice = { user, since: null, roomName: null, room: null, agent: null, me: false, working: null,
                         ended: false, stalled: false, done: false, abort: new AbortController() };
     let room = null;
-    vCaps.replaceChildren(); vEnd.hidden = false; vEnd.disabled = true;
+    vCaps.replaceChildren(); vEnd.hidden = false; vEnd.disabled = true; vConfirm.hidden = true;
     sheet.hidden = false; vSet("connecting", "接続の準備をしています…");
     try {
       const res = await fetch(`/api/voice/${encodeURIComponent(user)}/start`, { method: "POST" });
@@ -334,13 +345,18 @@ function createTalk(o) {
   function closeVoice() {
     const v = voice;
     if (!v) return;
-    voice = null;
+    voice = null; vConfirm.hidden = true;
+    if (!v.done && v.since != null && voicePendingSince == null) voicePendingSince = v.since;
     v.abort.abort();  // 待っている問い合わせもやめる(閉じた後に届いた結果は、会話に入っているので再読み込みで出る)
     v.room?.disconnect();
     sheet.hidden = true; sheet.querySelectorAll("audio").forEach(a => a.remove());
     scroll();
   }
-  vClose.onclick = () => closeVoice();
+  // 通話中(つながっていて、まとめがまだ届いていない)なら、閉じる前に確かめる
+  const inCall = (v) => !!(v && v.room && !v.done && !v.stalled);
+  vClose.onclick = () => { if (inCall(voice)) { vConfirm.hidden = false; vKeep.focus(); } else closeVoice(); };
+  vKeep.onclick = () => { vConfirm.hidden = true; };
+  vQuit.onclick = () => closeVoice();
 
   // シートが開いている間だけ、この面談(部屋)の結果が届くのを待つ(サーバーが最長 25 秒待って返すのを繰り返す)
   async function waitResult(v) {
@@ -369,6 +385,13 @@ function createTalk(o) {
     if (voice === v) closeVoice();
   }
 
+  // 閉じたシートの面談の結果が、まだ画面に出ていないかもしれない(出ていなければ次に待つ結果の番号、無ければ null)
+  const voicePending = () => voicePendingSince;
+  // 描き直した履歴に、その結果(voice_result がその番号以上の返信)が入っていたら待つのをやめる
+  function voiceShown(turns) {
+    if (voicePendingSince != null && turns.some(t => t.bot && t.bot.voice_result >= voicePendingSince)) voicePendingSince = null;
+  }
+
   return { el, now, scroll, yen, sys, me, meFile, botCol, typingCol, disableChips, fail, setWait, onStep, readStream,
-           jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled };
+           jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled, voicePending, voiceShown };
 }

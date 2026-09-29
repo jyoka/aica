@@ -455,9 +455,9 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
     # dip の状態・構成図・トレース・シナリオ一覧は出さない(呼びもしない)
     for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/dip/", "restart"):
         assert dev_only not in page, dev_only
-    # 開いたら dip に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場
+    # 開いたら dip に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場(プロフィールは task 95)
     assert "/api/talk/open" in page and "/api/talk/history/" in page
-    for place in ("トーク", "保存した求人", "プロフィール", "準備中", "/api/saved/"):
+    for place in ("トーク", "保存した求人", "プロフィール", "/api/saved/", "/api/profile/"):
         assert place in page, place
     # ヘッダーに履歴書・音声のボタンは無い(入力欄の「+」と、AI が差し出す操作から入る。task 91)
     header = re.search(r"<header>.*?</header>", page, re.DOTALL).group(0)

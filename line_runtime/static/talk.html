@@ -82,6 +82,28 @@
   .saved-list { display: flex; flex-direction: column; gap: 10px; }
   .saved-list .jc { width: 100%; }
 
+  /* わたしのプロフィール: 覚えていることを項目ごとのカードで。直す・消すはその場で */
+  .pcard { background: #fff; border-radius: 14px; padding: 12px 13px; margin-bottom: 10px; box-shadow: 0 1px 2px #0000001a; }
+  .pcard h3 { font-size: 14px; margin: 0 0 6px; }
+  .prow { border-top: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; gap: 4px; }
+  .pcard h3 + .prow, .pcard h3 + .pnote + .prow { border-top: 0; }
+  .prow .pl { font-size: 11.5px; color: var(--sub); }
+  .pcard .pv { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .pcard .pv.empty { color: var(--faint); }
+  .pcard .pv small { color: var(--faint); font-size: 11px; margin-left: 6px; }
+  .pbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pbtns button, .pbtns a { border: 1px solid var(--chip-line); background: #fff; color: var(--chip); border-radius: 14px; padding: 4px 11px;
+                            font-size: 12.5px; cursor: pointer; text-decoration: none; }
+  .pbtns button.del { color: #c0392b; border-color: #f0c9c4; }
+  .pbtns button.ok { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 700; }
+  .pedit { display: flex; flex-direction: column; gap: 6px; }
+  .pedit textarea { font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid #ccd; border-radius: 10px; resize: vertical; min-height: 44px; }
+  .perr { color: #c0392b; font-size: 12.5px; }
+  .pnote { color: var(--sub); font-size: 12px; line-height: 1.55; margin: 0 0 6px; }
+  .pconfirm { background: #fff7e6; border-radius: 10px; padding: 8px 10px; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 6px; }
+  .pcard.danger h3 { color: #c0392b; }
+  .pbtns button.danger { background: #e5484d; border-color: #e5484d; color: #fff; font-weight: 700; }
+
   /* ---------- 下のナビ(トーク / 保存した求人 / プロフィール) ---------- */
   nav.bottom { display: flex; background: #fff; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
   nav.bottom button { flex: 1; min-width: 0; border: 0; background: none; padding: 8px 2px 9px; font-size: 11px; font-weight: 700; color: var(--faint);
@@ -103,7 +125,7 @@
       <div class="page"><h2>保存した求人</h2><div class="saved-list" id="saved"></div></div>
     </section>
     <section class="view" id="v-profile" hidden>
-      <div class="page"><h2>プロフィール</h2><p class="note">準備中です。</p></div>
+      <div class="page" id="profile"><h2>わたしのプロフィール</h2><p class="note">読み込み中です。</p></div>
     </section>
   </main>
   <nav class="bottom" id="nav">
@@ -123,7 +145,7 @@
   const talk = createTalk({
     log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
     send: (text) => send(text), fire: (event) => fire(event), showTalk: () => showView("talk"),
-    getThread: () => thread, onStale: () => redrawLatest(),
+    getThread: () => thread, onStale: () => redrawLatest(), beforeTurn: () => showVoiceResult(),
   });
   const { el, sys, me, botCol, disableChips, renderReply } = talk;
   function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
@@ -170,10 +192,20 @@
     catch (e) { sys("別の画面で新しい会話が始まりました。ページを開き直してください。"); console.error(e); }
   }
 
-  function send(text) {
+  async function send(text) {
     if (busy || !current || !text.trim()) return;
-    me(text); input.value = "";
+    input.value = "";
+    setBusy(true);
+    try { await showVoiceResult(); } catch (e) { console.error(e); }
+    setBusy(false);
+    me(text);
     fire("message", text);
+  }
+
+  // 音声相談のシートを結果が届く前に閉じた: 結果は会話(LLM の文脈)に入るので、次のターンの前に履歴を読み直して描く
+  async function showVoiceResult() {
+    if (talk.voicePending() == null) return;
+    talk.voiceShown((await restore()).turns);
   }
   $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
 
@@ -187,6 +219,7 @@
     for (const s of ["talk", "saved", "profile"]) $("v-" + s).hidden = s !== v;
     document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
     if (v === "saved") loadSaved();
+    if (v === "profile") loadProfile();
     if (v === "talk") talk.scroll();
   }
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -213,10 +246,155 @@
       if (t.upload) { talk.meFile(t.upload.file, ""); talk.resumeConfirm(t.upload, botCol(), ""); }  // 履歴書を送ったターン
       if (t.bot) { disableChips(); renderReply(t.bot, botCol(), ""); }  // 選べるのは最後の返信の選択肢だけ
     }
+    return h;
+  }
+
+  // ---------- わたしのプロフィール: aica が覚えていることを見る・直す・消す ----------
+  // 読むのも変えるのも本人の匿名ID(Cookie)だけ。変えたことは次の返信の前に AI へ伝わる(サーバーの _profile_notice)
+  async function api(method, url, body) {
+    const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {},
+                                   body: body ? JSON.stringify(body) : undefined });
+    if (!res.ok) { let m = "うまくいきませんでした。もう一度お試しください。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
+    return res.json();
+  }
+  const profileUrl = (path = "") => `/api/profile/${encodeURIComponent(current)}${path}`;
+  const EMPTY = "まだありません";
+
+  async function loadProfile() {
+    const box = $("profile");
+    if (!current) return;
+    try { renderProfile(await api("GET", profileUrl())); }
+    catch (e) { box.replaceChildren(el("h2", null, "わたしのプロフィール"), el("p", "note", "読み込めませんでした。")); console.error(e); }
+  }
+  // 変える操作をして、返ってきた最新のプロフィールで描き直す(失敗したら err に理由を出す)
+  async function change(method, path, body, err) {
+    try { renderProfile(await api(method, profileUrl(path), body)); }
+    catch (e) { if (err) err.textContent = e.message; else alert(e.message); }
+  }
+  function btn(text, cls, onclick) { const b = el("button", cls, text); b.type = "button"; b.onclick = onclick; return b; }
+  function card(title, note) {
+    const c = el("div", "pcard"); c.appendChild(el("h3", null, title));
+    if (note) c.appendChild(el("p", "pnote", note));
+    return c;
+  }
+  // 確認の1段(消すと元に戻せないもの)
+  function confirmIn(row, text, okText, run) {
+    row.querySelector(".pconfirm")?.remove();
+    const c = el("div", "pconfirm"), b = el("div", "pbtns");
+    b.append(btn(okText, "danger", run), btn("やめる", null, () => c.remove()));
+    c.append(el("span", null, text), b); row.appendChild(c);
+  }
+  // 1項目の行: 値(無ければ「まだありません」)と、直す・消す。直すと本人の言葉で上書き
+  function itemRow(label, value, saved, path, multiline) {
+    const row = el("div", "prow"); row.dataset.key = path;
+    row.appendChild(el("span", "pl", label));
+    const v = el("div", "pv" + (value ? "" : " empty"), value || EMPTY);
+    if (value && saved) v.appendChild(el("small", null, `${saved}`));
+    const btns = el("div", "pbtns");
+    btns.appendChild(btn("直す", "edit", () => {
+      const f = el("div", "pedit"), t = el("textarea"), err = el("div", "perr"), b = el("div", "pbtns");
+      t.value = value || ""; t.rows = multiline ? 4 : 1; t.setAttribute("aria-label", label);
+      b.append(btn("保存", "ok", () => change("PUT", `/items/${path}`, { value: t.value }, err)), btn("やめる", null, () => { f.remove(); btns.hidden = false; }));
+      f.append(t, err, b); row.appendChild(f); btns.hidden = true; t.focus();
+    }));
+    if (value) btns.appendChild(btn("消す", "del", () => change("DELETE", `/items/${path}`)));
+    row.append(v, btns); return row;
+  }
+
+  function renderProfile(p) {
+    const box = $("profile");
+    box.replaceChildren(el("h2", null, "わたしのプロフィール"),
+      el("p", "note", "aica があなたについて覚えていることです。直したり消したりすると、次の返信から反映されます。"));
+
+    // 雇用区分と、いつ・どの発言で切り替わったか
+    const tc = card("雇用区分"), tr = el("div", "prow"); tr.dataset.key = "track";
+    tr.append(el("div", "pv", p.track.current === "未定" ? "未定(まだ決まっていません)" : p.track.current));
+    if (p.track.history.length) {
+      for (const h of p.track.history) {
+        tr.appendChild(el("div", "pnote", `${h.when} 「${h.evidence}」で ${h.from} → ${h.track}${h.undo ? "(取り消し)" : ""}`));
+      }
+    } else tr.appendChild(el("div", "pnote", "切り替えの記録は" + EMPTY));
+    const tb = el("div", "pbtns");
+    tb.appendChild(btn("直す", "edit", () => {
+      tb.hidden = true; const b = el("div", "pbtns");
+      for (const c of p.track.choices.filter(c => c !== p.track.current)) b.appendChild(btn(c, "ok", () => change("PUT", "/track", { track: c })));
+      b.appendChild(btn("やめる", null, () => { b.remove(); tb.hidden = false; })); tr.appendChild(b);
+    }));
+    if (p.track.history.length) tb.appendChild(btn("消す", "del", () => change("DELETE", "/track")));
+    tr.appendChild(tb); tc.appendChild(tr); box.appendChild(tc);
+
+    // 目的・希望・経歴(本人が話したこと)
+    for (const s of p.sections) {
+      const c = card(s.title);
+      for (const it of s.items) c.appendChild(itemRow(it.label, it.value, it.saved, it.key));
+      box.appendChild(c);
+    }
+    // 相談のまとめ(前の会話を締めたときの記録。チャットと音声で引き継ぐ)
+    const sc = card("相談のまとめ");
+    const cs = p.consultation_summary;
+    sc.appendChild(itemRow("前の会話で残したまとめ", cs ? cs.text : null, cs ? cs.recorded : null, "consultation_summary", true));
+    box.appendChild(sc);
+
+    // アップロードした履歴書の読み取り結果(全文は「読み取り結果を見る」)。丸ごと消せる
+    const rc = card("履歴書の読み取り結果"), rr = el("div", "prow"); rr.dataset.key = "resume";
+    if (p.resume) {
+      rr.appendChild(el("div", "pv", p.resume.highlights.join("\n") || "読み取れた項目はありませんでした"));
+      rr.appendChild(el("span", "pl", `${p.resume.uploaded} に${p.resume.file || "履歴書"}から読み取り`));
+      const b = el("div", "pbtns"), a = el("a", null, "読み取り結果を見る");
+      a.href = p.resume.view_url; a.target = "_blank"; a.rel = "noopener";
+      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。", "消す", () => change("DELETE", "/resume"))));
+      rr.appendChild(b);
+    } else rr.appendChild(el("div", "pv empty", EMPTY));
+    rc.appendChild(rr); box.appendChild(rc);
+
+    // 音声相談の結果(職務経歴書の下書き)
+    const vc = card("音声相談の下書き");
+    if (!p.voice_drafts.length) vc.appendChild(el("div", "pv empty", EMPTY));
+    for (const d of p.voice_drafts) {
+      const r = el("div", "prow"); r.dataset.key = `voice-${d.id}`;
+      r.appendChild(el("div", "pv", `${d.at} の音声相談から作った下書き`));
+      const b = el("div", "pbtns"), a = el("a", null, "下書きを見る");
+      a.href = d.view_url; a.target = "_blank"; a.rel = "noopener";
+      b.append(a, btn("消す", "del", () => confirmIn(r, "この下書きを丸ごと消します。", "消す", () => change("DELETE", `/voice/${d.id}`))));
+      r.appendChild(b); vc.appendChild(r);
+    }
+    box.appendChild(vc);
+
+    // 保存した求人・応募した求人
+    const jc = card("保存した求人");
+    if (!p.saved_jobs.length) jc.appendChild(el("div", "pv empty", EMPTY));
+    for (const j of p.saved_jobs) {
+      const r = el("div", "prow"); r.dataset.key = `saved-${j.job_id}`;
+      r.append(el("div", "pv", j.title), el("span", "pl", `${j.employer} · ${j.saved_at}に保存`));
+      const b = el("div", "pbtns"); b.appendChild(btn("保存をやめる", "del", () => change("DELETE", `/saved/${encodeURIComponent(j.job_id)}`)));
+      r.appendChild(b); jc.appendChild(r);
+    }
+    box.appendChild(jc);
+    const ac = card("応募した求人");
+    if (!p.applications.length) ac.appendChild(el("div", "pv empty", EMPTY));
+    for (const a of p.applications) {
+      const r = el("div", "prow"); r.append(el("div", "pv", a.title || a.job_id), el("span", "pl", `${a.applied}に応募 · ${a.status}`)); ac.appendChild(r);
+    }
+    box.appendChild(ac);
+
+    // すべて消す(長期メモリの初期化)。確認の1段を挟む
+    const dc = card("すべて消す", "aica が覚えていること・保存した求人・これまでの会話をすべて消します。次に開くと、はじめての訪問として始まります。");
+    dc.classList.add("danger");
+    const dr = el("div", "prow"); dr.dataset.key = "forget";
+    const db = el("div", "pbtns");
+    db.appendChild(btn("すべて消す", "del", () => confirmIn(dr, "本当にすべて消しますか?元に戻せません。", "すべて消す", forgetAll)));
+    dr.appendChild(db); dc.appendChild(dr); box.appendChild(dc);
+  }
+
+  async function forgetAll() {
+    try { await api("POST", profileUrl("/forget")); }
+    catch (e) { alert(e.message); return; }
+    log.innerHTML = ""; thread = null;
+    showView("talk"); start();  // 開き直す: dip は初回訪問として挨拶から始める
   }
 
   // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
-  (async () => {
+  async function start() {
     setBusy(true);
     let opened;
     try {
@@ -225,7 +403,8 @@
     } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
     setBusy(false);
     if (opened.event != null) fire(opened.event);
-  })();
+  }
+  start();
 </script>
 </body>
 </html>
