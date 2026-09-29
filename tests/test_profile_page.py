@@ -347,7 +347,7 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
         assert client.post("/api/profile/forget").json() == {"forgotten": True}
         p = client.get("/api/profile").json()
         assert all(v is None for v in _items(p).values()) and p["saved_jobs"] == []
-        assert client.get("/api/talk/history").json() == {"thread": 0, "turns": []}  # 会話も消える
+        assert client.get("/api/talk/history").json() == {"thread": 0, "turns": [], "search_track": "未定"}  # 会話も消える
         # 30分以内に開き直しても、前の会話を続けず初回訪問として始まる
         remembered.later(0)
         opened, first = open_talk(client)

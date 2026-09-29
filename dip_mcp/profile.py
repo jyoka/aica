@@ -35,6 +35,8 @@ RESUME_LABEL = "履歴書の読み取り結果"
 TRACK_LABEL = "雇用区分"
 VOICE_DRAFT_LABEL = "音声相談の下書き"
 BY_USER = "(プロフィール画面で本人が選んだ)"  # 画面から区分を変えたときの根拠(本人の発言の代わり)
+# トークの切り替えの表示のボタンで取り消したときの根拠(本人の発言の代わり。ボタンを押したこと自体が本人の意思)
+UNDO_BY_BUTTON = "(トークの切り替えの表示のボタンで、本人が取り消した)"
 MAX_CHANGES = 20  # 知らせとして残す変更の数(渡す前に何度も直しても膨らませない)
 
 
@@ -72,9 +74,10 @@ def view(state: State, line_user_id: str) -> dict:
     }
 
 
-def _note(u: dict, action: str, what: str, value: str | None = None) -> None:
-    """次の本人のターンの前に AI へ渡す、変えたことの知らせ。"""
-    rec = {"at": now().isoformat(), "action": action, "what": what} | ({"value": value} if value is not None else {})
+def _note(u: dict, action: str, what: str, value: str | None = None, undone: str | None = None) -> None:
+    """次の本人のターンの前に AI へ渡す、変えたことの知らせ。undone は取り消した切り替えの区分(取り消しのときだけ)。"""
+    rec = ({"at": now().isoformat(), "action": action, "what": what} | ({"value": value} if value is not None else {})
+           | ({"undone": undone} if undone is not None else {}))
     u["profile_changes"] = [*u.get("profile_changes", []), rec][-MAX_CHANGES:]
 
 
@@ -159,13 +162,54 @@ def set_track(state: State, line_user_id: str, track: str) -> dict:
 
 
 def delete_track(state: State, line_user_id: str) -> dict:
-    """雇用区分を消す: 切り替えの記録ごと消して未定に戻す。"""
+    """雇用区分を消す: 切り替えの記録ごと消して未定に戻す(トークの表示の「取り消し」とは別。あちらは直前の
+    切り替え1件を元に戻し、取り消しとして記録に残す)。"""
     def apply(u):
         if u.pop("track_history", None):
             _note(u, "消した", TRACK_LABEL)
 
     state.update(line_user_id, apply)
     return {"deleted": "track", "track": logic.DEFAULT_TRACK}
+
+
+# ----------------------------- トークの切り替えの表示(task 96) -----------------------------
+# 区分が切り替わったターンに、トークが AI の返信の前に出す表示。元は set_search_track が dip に記録した切り替え
+# (返信文からは推測しない)。表示のボタンで、その切り替えを取り消せる(直前の切り替えのときだけ)。
+
+
+def switch_status(state: State, line_user_id: str, switch_id: str) -> str:
+    """トークに出した切り替えの表示(記録の id)の、今の状態。dip の記録から決める。
+    undoable: 直前の切り替えで、まだ取り消せる / undone: すぐ後の記録がその取り消し /
+    past: 後に別の切り替えがある(取り消しの記録そのものも、取り消せないのでここ) / gone: 記録が消された(プロフィールの「消す」)"""
+    history = state.user(line_user_id).get("track_history") or []
+    i = next((k for k, h in enumerate(history) if h.get("id") == switch_id), None)
+    if i is None:
+        return "gone"
+    if i + 1 < len(history):
+        return "undone" if history[i + 1]["undo"] else "past"
+    return "past" if history[i]["undo"] else "undoable"
+
+
+def undo_switch(state: State, line_user_id: str, switch_id: str) -> dict:
+    """トークの表示のボタンで、その切り替え(記録の id)を取り消して元の区分に戻す。取り消しとして記録に残し、
+    次の本人のターンの前に AI へ知らせる(要約を読み直し、同じ切り替えをすぐに繰り返さないように)。
+    直前の切り替えでなければ(後に別の切り替えがある・すでに取り消した・記録が消された)取り消さない。"""
+    status = switch_status(state, line_user_id, switch_id)
+    if status != "undoable":
+        return {"error": status, "message": UNDO_ERRORS[status]}
+    rec = (state.user(line_user_id).get("track_history") or [])[-1]
+    r = logic.set_search_track(state, line_user_id, rec["from"], UNDO_BY_BUTTON, undo=True)
+    if "error" in r:
+        return {"error": "past", "message": r["error"]}
+    state.update(line_user_id, lambda u: _note(u, "取り消した", TRACK_LABEL, rec["from"], undone=rec["track"]))
+    return {"track": rec["from"], "undone": rec["track"], "recorded": r["recorded"]}
+
+
+UNDO_ERRORS = {
+    "undone": "この切り替えは、もう取り消してあります。",
+    "past": "このあとに区分が切り替わっているので、ここからは取り消せません。区分はプロフィールで直せます。",
+    "gone": "切り替えの記録が消されています。区分はプロフィールで直せます。",
+}
 
 
 def delete_resume(state: State, line_user_id: str) -> dict:
@@ -225,9 +269,13 @@ def take_changes(state: State, line_user_id: str, n: int) -> None:
 
 def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
     """次の本人のターンの前に AI へ渡す知らせ。変えたことと、今の内容(要約と同じ形)を並べる。"""
-    done = []
+    done, undone = [], []
     for c in changes:
-        done.append(f"{c['what']}を「{c['value']}」に直した" if "value" in c else f"{c['what']}を消した")
+        if c["action"] == "取り消した":
+            done.append(f"{c['what']}の「{c['undone']}」への切り替えを取り消して「{c['value']}」に戻した")
+            undone.append(c["undone"])
+        else:
+            done.append(f"{c['what']}を「{c['value']}」に直した" if "value" in c else f"{c['what']}を消した")
     user = state.user(line_user_id)
     now_ = {"search_track": logic.search_track(user),
             "stated_preferences": {k: v["value"] for k, v in logic.stated_preferences(user).items()},
@@ -237,4 +285,7 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
             f"変えたこと: {'、'.join(dict.fromkeys(done))}。"
             f"今の内容: {json.dumps(now_, ensure_ascii=False)} "
             "これを前提に話す。消した項目と直す前の値は、この会話の前の部分や前に読んだ要約に出ていても使わず、触れない。"
-            "変えたことを長々と確認しない。")
+            "変えたことを長々と確認しない。"
+            + (f"雇用区分の切り替えが取り消されたので、返信の前に get_user_conversation_summary を読み直し、今の区分"
+               f"(search_track)で続ける。本人がはっきり言わない限り、「{'」「'.join(dict.fromkeys(undone))}」へ"
+               "すぐに切り替え直さない(set_search_track を呼ばない)。" if undone else ""))

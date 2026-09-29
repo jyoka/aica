@@ -210,9 +210,10 @@ async def talk_open(request: Request):
     if conv["greeted"] and logic.talk_entry(state, uid) == "visit":
         # 挨拶は保存されたが、画面に返す途中で接続が切れて記録できなかった: 会った相手なので記録を補う
         logic.record_talk_open(state, uid)
+    track = logic.search_track(state.user(uid))  # ヘッダーの「正社員で相談中」
     if conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW:
-        return {"user": uid, "event": None, "thread": conv["thread"]}
-    return {"user": uid, "event": logic.talk_entry(state, uid), "thread": conv["thread"]}
+        return {"user": uid, "event": None, "thread": conv["thread"], "search_track": track}
+    return {"user": uid, "event": logic.talk_entry(state, uid), "thread": conv["thread"], "search_track": track}
 
 
 @app.get("/api/talk/history")
@@ -223,7 +224,34 @@ async def talk_history(request: Request):
     rt = app.state.rt
     async with rt.user_lock(user_id):
         conv = await rt.conversation(user_id)
-    return {"thread": conv["thread"], "turns": conv["turns"]}
+    for t in conv["turns"]:
+        _track_status(user_id, t["bot"])
+    return {"thread": conv["thread"], "turns": conv["turns"], "search_track": logic.search_track(state.user(user_id))}
+
+
+def _track_status(user_id: str, reply: dict | None) -> dict | None:
+    """返信の切り替えの表示(track_switch)に、今の状態(取り消せるか・取り消したか)を dip の記録から足す。"""
+    sw = (reply or {}).get("track_switch")
+    if sw:
+        sw["status"] = profile.switch_status(state, user_id, sw["id"])
+    return reply
+
+
+class UndoIn(BaseModel):
+    id: str  # 取り消す切り替えの記録の id(返信の track_switch.id)
+
+
+@app.post("/api/talk/{user_id}/track/undo")
+async def talk_track_undo(user_id: str, body: UndoIn, request: Request):
+    """トークの切り替えの表示のボタン: その切り替えを取り消して元の区分に戻す(dip に取り消しとして記録。LLM は呼ばず、
+    会話数も使わない)。AI には次の本人のターンの前に知らせる(_profile_notice)。直前の切り替えでなければ 409。
+    本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
+    _require_browser_own(request, user_id)
+    async with app.state.rt.user_lock(user_id):
+        r = profile.undo_switch(state, user_id, body.id)
+    if "error" in r:
+        raise HTTPException(409, r["message"])
+    return {"search_track": r["track"], "undone": r["undone"], "status": "undone"}
 
 
 @app.get("/api/saved")
@@ -287,7 +315,9 @@ async def event(body: EventIn, request: Request):
     if r and r.get("stale"):  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す
         quota.refund(body.user_id)
     _record_open(body, r, changes)
-    return r
+    if r and not r.get("stale") and r.get("sent") is not False:
+        r["search_track"] = logic.search_track(state.user(body.user_id))
+    return _track_status(body.user_id, r)
 
 
 @app.post("/api/event/stream")
@@ -328,6 +358,7 @@ async def event_stream(body: EventIn, request: Request):
                                                        notice=notice):
                 if ev["kind"] == "reply":
                     _record_open(body, ev, changes)
+                    _track_status(body.user_id, ev)["search_track"] = logic.search_track(state.user(body.user_id))
                 elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: 会話数を返す
                     quota.refund(body.user_id)
                 yield _line(ev)
