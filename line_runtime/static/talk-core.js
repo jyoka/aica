@@ -171,8 +171,8 @@ function createTalk(o) {
     if (!user || o.isBusy()) return;
     b.disabled = true; o.setBusy(true);  // 取り消しが dip に届く前に次の発言を送らない(AI への知らせが間に合うように)
     try {
-      const res = await fetch(`/api/talk/${encodeURIComponent(user)}/track/undo`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sw.id }) });
+      const res = await fetch("/api/talk/track/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: user, id: sw.id }) });
       let d = null; try { d = await res.json(); } catch (_) {}
       if (!res.ok) { b.remove(); box.appendChild(el("span", "done", d?.detail || "取り消せませんでした。")); return; }
       b.remove(); box.dataset.status = "undone";

@@ -36,7 +36,7 @@ from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
 )
 
 MENU = ["求人を探す", "まず相談する", "今はいい"]
-NOTICE = "[お知らせ: 本人がプロフィール画面で"
+NOTICE = "[お知らせ: 本人が画面で"
 
 
 class Rememberer(ScriptedModel):

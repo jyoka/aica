@@ -281,7 +281,8 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
             "stated_preferences": {k: v["value"] for k, v in logic.stated_preferences(user).items()},
             "consultation_summary": (logic.consultation_summary(user) or {}).get("text"),
             "uploaded_resume": "あり" if user.get("resume_upload") else "なし"}
-    return ("[お知らせ: 本人がプロフィール画面で、aica が覚えていることを変えました] "
+    where = "トークの表示のボタンで" if all(c["action"] == "取り消した" for c in changes) else "画面で"
+    return (f"[お知らせ: 本人が{where}、aica が覚えていることを変えました] "
             f"変えたこと: {'、'.join(dict.fromkeys(done))}。"
             f"今の内容: {json.dumps(now_, ensure_ascii=False)} "
             "これを前提に話す。消した項目と直す前の値は、この会話の前の部分や前に読んだ要約に出ていても使わず、触れない。"

@@ -5,7 +5,7 @@
     呼んだターン・根拠の無い呼び出しで記録されなかったターンには付かない
 (2) 表示は dip の記録(set_search_track の recorded)から作り、返信文には依存しない(文で「切り替えた」と言っても、
     記録が無ければ出さない。文で何も言わなくても、記録があれば出す)
-(3) 表示のボタン(/api/talk/{user}/track/undo)で元の区分に戻り、dip に取り消しとして記録される(根拠はボタンを
+(3) 表示のボタン(/api/talk/track/undo)で元の区分に戻り、dip に取り消しとして記録される(根拠はボタンを
     押したこと)。次のターンの前に知らせが届き、AI は要約を読み直して、戻した区分で続ける(同じ切り替えを繰り返さない)
 (4) 直前の切り替えでなければ(後に別の切り替え・取り消し済み・記録ごと消した)取り消さない。他人は取り消せない
 (5) ブラウザ: ヘッダーに今の区分が出て、表示は AI の返信の前に出て、ボタンで戻る。再読み込みしても dip の記録どおり。
@@ -35,7 +35,7 @@ from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
 )
 from tests.test_track import switch
 
-NOTICE = "[お知らせ: 本人がプロフィール画面で"
+NOTICE = "[お知らせ: 本人がトークの表示のボタンで"
 WELCOME = "こんにちは。お仕事探しをお手伝いします。何をしますか?"
 # 本人の発言 → 台本のモデルが呼ぶ set_search_track(区分, 根拠)。根拠が空なら dip が記録しない
 SWITCHES = {"正社員で探したい": ("正社員", "正社員で探したい"), "転職を考えています": ("正社員", "転職を考えています"),
@@ -121,7 +121,7 @@ def test_the_switch_shows_only_on_the_turn_that_switched(switched):
         # 次の切り替えが出ると、前の表示はもう取り消せない(再読み込みの履歴も dip の記録どおり)
         r = stream(client, uid, "message", th, "バイトを探しています")[-1]
         assert r["track_switch"]["from"] == "正社員" and r["track_switch"]["status"] == "undoable"
-        turns = client.get(f"/api/talk/history/{uid}").json()
+        turns = client.get("/api/talk/history").json()
         assert turns["search_track"] == "アルバイト・パート"
         shown = [t["bot"]["track_switch"] for t in turns["turns"]]
         assert [s and (s["track"], s["status"]) for s in shown] == [
@@ -163,7 +163,7 @@ def test_the_button_undoes_the_switch_and_the_next_reply_continues_in_the_restor
         used = client.app.state.quota.used(uid)
         calls = len(switched.model.contexts)
 
-        r = client.post(f"/api/talk/{uid}/track/undo", json={"id": shown["id"]})
+        r = client.post("/api/talk/track/undo", json={"user_id": uid, "id": shown["id"]})
         assert r.status_code == 200
         assert r.json() == {"search_track": "アルバイト・パート", "undone": "正社員", "status": "undone"}
         # dip に取り消しとして記録(根拠はボタンを押したこと)。LLM は呼ばず、会話数も使わない
@@ -173,9 +173,9 @@ def test_the_button_undoes_the_switch_and_the_next_reply_continues_in_the_restor
                                                            "evidence": profile.UNDO_BY_BUTTON, "undo": True}
         assert len(switched.model.contexts) == calls and client.app.state.quota.used(uid) == used
         # もう一度押しても取り消さない。履歴の表示も「取り消した」になる
-        again = client.post(f"/api/talk/{uid}/track/undo", json={"id": shown["id"]})
+        again = client.post("/api/talk/track/undo", json={"user_id": uid, "id": shown["id"]})
         assert again.status_code == 409 and "取り消して" in again.json()["detail"]
-        h = client.get(f"/api/talk/history/{uid}").json()
+        h = client.get("/api/talk/history").json()
         assert h["turns"][-1]["bot"]["track_switch"]["status"] == "undone" and h["search_track"] == "アルバイト・パート"
 
         # 次のターン: 発言の直前に知らせが入り、AI は要約を読み直して、戻した区分で返す(切り替え直さない)
@@ -191,7 +191,7 @@ def test_the_button_undoes_the_switch_and_the_next_reply_continues_in_the_restor
         assert switched.state.user(uid).get("profile_changes") == []  # 渡し終えた
         # その次のターンには知らせを持ち越さない
         stream(client, uid, "message", th, "ありがとう")
-        assert not any(m.type == "human" and m.content.startswith(NOTICE)
+        assert not any(m.type == "human" and m.content.startswith("[お知らせ:")
                        for m in switched.model.contexts[-1][-3:])
 
 
@@ -200,6 +200,7 @@ def test_the_prompt_tells_the_ai_not_to_repeat_an_undone_switch(switched):
         open_talk(client)
     system = switched.model.contexts[-1][0].content
     assert "元に戻すボタン" in system and "同じ切り替えを繰り返さない" in system
+    assert "本人がはっきり頼んだら通常どおり切り替える" in system
 
 
 # ----------------------------- (4) 取り消せないとき -----------------------------
@@ -211,21 +212,21 @@ def test_only_the_latest_switch_can_be_undone_and_only_by_its_owner(switched):
         uid, th = opened["user"], greeting["thread"]
         first = stream(client, uid, "message", th, "正社員で探したい")[-1]["track_switch"]
         second = stream(client, uid, "message", th, "バイトを探しています")[-1]["track_switch"]
-        r = client.post(f"/api/talk/{uid}/track/undo", json={"id": first["id"]})
+        r = client.post("/api/talk/track/undo", json={"user_id": uid, "id": first["id"]})
         assert r.status_code == 409 and "このあとに区分が切り替わっている" in r.json()["detail"]
 
         # 他人のブラウザ・Cookie の無い呼び出しは取り消せない
         other = _client(switched)
-        other.get("/api/me")
-        assert other.post(f"/api/talk/{uid}/track/undo", json={"id": second["id"]}).status_code == 403
-        assert _client(switched).post(f"/api/talk/{uid}/track/undo", json={"id": second["id"]}).status_code == 403
+        other.get("/")
+        assert other.post("/api/talk/track/undo", json={"user_id": uid, "id": second["id"]}).status_code == 403
+        assert _client(switched).post("/api/talk/track/undo", json={"user_id": uid, "id": second["id"]}).status_code == 401
         assert logic.search_track(switched.state.user(uid)) == "アルバイト・パート"
 
         # プロフィールの「記録ごと消す」は取り消しとは別: 記録が無くなり、表示のボタンからは戻せない
-        client.delete(f"/api/profile/{uid}/track")
-        r = client.post(f"/api/talk/{uid}/track/undo", json={"id": second["id"]})
+        client.delete("/api/profile/track")
+        r = client.post("/api/talk/track/undo", json={"user_id": uid, "id": second["id"]})
         assert r.status_code == 409 and "記録が消されています" in r.json()["detail"]
-        h = client.get(f"/api/talk/history/{uid}").json()
+        h = client.get("/api/talk/history").json()
         assert h["turns"][-1]["bot"]["track_switch"]["status"] == "gone" and h["search_track"] == "未定"
 
         # AI が会話で取り消した切り替え(undo の記録)は「戻しました」と出し、ボタンでは取り消せない
@@ -233,7 +234,7 @@ def test_only_the_latest_switch_can_be_undone_and_only_by_its_owner(switched):
         logic.set_search_track(switched.state, uid, "未定", "やっぱり違う", undo=True)
         undo_id = _last_record(switched, uid)["id"]
         assert profile.switch_status(switched.state, uid, undo_id) == "past"
-        assert client.post(f"/api/talk/{uid}/track/undo", json={"id": undo_id}).status_code == 409
+        assert client.post("/api/talk/track/undo", json={"user_id": uid, "id": undo_id}).status_code == 409
 
 
 # ----------------------------- (5) ブラウザ(Playwright と Chromium があるときだけ) -----------------------------
@@ -343,7 +344,7 @@ def test_a_closed_voice_sheet_stops_redrawing_the_history_after_the_end_wait(
     page.locator("#voice-close").click()
     page.locator("#voice-quit").click()
     page.locator("#voice-sheet").wait_for(state="hidden")
-    history = lambda: sum("/api/talk/history/" in u for u in requests)
+    history = lambda: sum("/api/talk/history" in u for u in requests)
 
     before = history()
     _say(page, "ありがとう")  # 閉じた直後は、結果が届いているかもしれないので読み直す
@@ -369,5 +370,5 @@ def test_history_and_open_carry_the_current_track_for_the_header(switched):
         stream(client, uid, "message", greeting["thread"], "転職を考えています")
         reopened = client.post("/api/talk/open").json()
         assert reopened["event"] is None and reopened["search_track"] == "正社員"
-        h = client.get(f"/api/talk/history/{uid}").json()
+        h = client.get("/api/talk/history").json()
         assert [t["bot"]["track_switch"] and t["bot"]["track_switch"]["track"] for t in h["turns"]] == [None, "正社員"]

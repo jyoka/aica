@@ -238,17 +238,18 @@ def _track_status(user_id: str, reply: dict | None) -> dict | None:
 
 
 class UndoIn(BaseModel):
+    user_id: str
     id: str  # 取り消す切り替えの記録の id(返信の track_switch.id)
 
 
-@app.post("/api/talk/{user_id}/track/undo")
-async def talk_track_undo(user_id: str, body: UndoIn, request: Request):
+@app.post("/api/talk/track/undo")
+async def talk_track_undo(body: UndoIn, request: Request):
     """トークの切り替えの表示のボタン: その切り替えを取り消して元の区分に戻す(dip に取り消しとして記録。LLM は呼ばず、
     会話数も使わない)。AI には次の本人のターンの前に知らせる(_profile_notice)。直前の切り替えでなければ 409。
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
-    _require_browser_own(request, user_id)
-    async with app.state.rt.user_lock(user_id):
-        r = profile.undo_switch(state, user_id, body.id)
+    _require_own(request, body.user_id)
+    async with app.state.rt.user_lock(body.user_id):
+        r = profile.undo_switch(state, body.user_id, body.id)
     if "error" in r:
         raise HTTPException(409, r["message"])
     return {"search_track": r["track"], "undone": r["undone"], "status": "undone"}
