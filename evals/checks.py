@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal
 
 from dip_mcp.data import PII_VALUE as DIP_PII_VALUE
 from dip_mcp.data import ROOT, load_jobs
@@ -139,18 +140,30 @@ DATES = (  # 年つきの日付を先に。月/日 は数字や / に挟まれ�
 )
 # 返信の中の「事実の主張」: 単位ごとに、根拠として認める dip のデータの項目名と、文中の書き方
 UNITS = {
+    # 求人の給与は pay(下の _pay_amounts)。hourly_wage は pay に移す前(v1)の会話の記録を読むため
     "円": ({"hourly_wage", "min_wage"}, re.compile(r"(\d[\d,]*)\s*円")),
     "徒歩分": ({"walk_min"}, re.compile(r"徒歩\s*(\d+)\s*分")),
     "件": ({"total", "total_now", "total_after", "count", "count_30d", "saves_30d", "saves_total", "days_left"},
           re.compile(r"(\d+)\s*件")),
 }
 RANGE_YEN = re.compile(r"(\d[\d,]*)\s*[〜~～-]\s*\d[\d,]*\s*円")  # 「1,200〜1,500円」の下限側
+# 万の単位の金額(正社員の年収・月給。「年収450万〜650万円」「月給28万円」「年収600万以上」)。
+# 小数も1つの金額として読む(「月給27.5万円」は 27.5。「1.5万」の「5万」だけを拾わない)。
+# 「450〜650万円」の下限側は RANGE_MAN で拾う
+MAN = re.compile(r"(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s*万")
+RANGE_MAN = re.compile(r"(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s*[〜~～-]\s*\d[\d,]*(?:\.\d+)?\s*万")
+PAY_KINDS = ("時給", "月給", "年収")
 _DIP_PROMPTS = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "dip_mcp" / "prompts").iterdir())
                        if p.suffix in (".md", ".json"))
 
 
 def _int(x: str) -> int:
     return int(x.replace(",", ""))
+
+
+def _man(x: str) -> Decimal:
+    """万の単位の金額(「27.5」「1,000」)を数として読む。27.5 と 275000 円 / 10000 を同じ値として比べるため。"""
+    return Decimal(x.replace(",", ""))
 
 
 def _numbers(text: str) -> set[int]:
@@ -178,6 +191,19 @@ def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool 
         texts.append(value)
 
 
+def _pay_amounts(value, out: set[int]) -> None:
+    """dip のデータの中の給与(pay = {kind: 時給|月給|年収, min, max}、円)の金額を集める。
+    min / max はどこにでもある名前なので、pay の形の辞書の中だけを見る。"""
+    if isinstance(value, dict):
+        if value.get("kind") in PAY_KINDS:
+            out.update(int(v) for k in ("min", "max") if isinstance(v := value.get(k), int) and not isinstance(v, bool))
+        for v in value.values():
+            _pay_amounts(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _pay_amounts(v, out)
+
+
 def _job_names() -> set[str]:
     """求人一覧にある求人名・店名(短すぎて誤検出するものは除く)。"""
     return {n for j in load_jobs().values() for n in (j.title, j.employer, j.title.split("｜")[0].strip())
@@ -187,6 +213,8 @@ def _job_names() -> set[str]:
 def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None) -> list[str]:
     """返信に出てくる金額・徒歩分数・件数・日付・求人名が、この会話で dip から来た情報(ツールの結果・プッシュの
     根拠の事実)かユーザーの発言にあるかを照合する。無ければ作り話として違反。
+    金額は、円で書いたもの(時給1,350円)は円の値と、万で書いたもの(年収450万〜650万円・月給28万円)は万の値と照合する。
+    dip の給与(pay、円)は両方の根拠にする(4500000 円 = 450万、275000 円 = 27.5万)。
     数字は同じ単位の値とだけ照合する(ID や日付に含まれる数字を、徒歩の分数や件数の根拠にしない)。
     dip の Prompt(ルール)は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
     架空の求人名そのものは文字列では見分けにくいので、求人一覧に実在する求人をこの会話で受け取らずに出したものを捕まえる。"""
@@ -204,8 +232,14 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
         if label == "円":
             nums |= {_int(x) for x in RANGE_YEN.findall(text)}
         known[label] = nums
+    pay: set[int] = set()
+    _pay_amounts(data, pay)
+    known["円"] |= pay
     texts: list[str] = []
     _walk(data, set(), set(), texts)
+    man_text = "\n".join(texts) + _DIP_PROMPTS
+    known_man = ({Decimal(y) / 10000 for y in pay} | {Decimal(n) for n in said_nums}
+                 | {_man(x) for rx in (MAN, RANGE_MAN) for x in rx.findall(man_text + said)})
     source = "\n".join(texts) + json.dumps(data, ensure_ascii=False) + said
     known_dates = _dates(source)
     names = _job_names()
@@ -220,6 +254,9 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
                 if n not in known[label]:
                     shown = f"徒歩{n}分" if label == "徒歩分" else f"{n}{label}"
                     out.append(f"T{i + 1}: dip の情報にない「{shown}」")
+        for n in dict.fromkeys(_man(x) for rx in (MAN, RANGE_MAN) for x in rx.findall(text)):
+            if n not in known_man:
+                out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
         for m, d in sorted(_dates(text) - known_dates):
             out.append(f"T{i + 1}: dip の情報にない日付「{m}/{d}」")
         for n in sorted(n for n in names if n in text and n not in source):

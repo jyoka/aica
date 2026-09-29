@@ -31,6 +31,66 @@ def test_wage_date_walk_and_count_not_in_any_source_are_violations():
     assert any("徒歩2分" in x for x in v) and any("5件" in x for x in v)
 
 
+FULLTIME = ("recommend_jobs", {"total": 4, "jobs": [
+    {"job_id": "f0201", "title": "プロダクトマネージャー(BtoB SaaS)", "employment_type": "正社員",
+     "pay": {"kind": "年収", "min": 6500000, "max": 9500000}, "pay_text": "年収650万〜950万円", "walk_min": 5},
+    {"job_id": "f0104", "title": "賃貸仲介の営業(店舗でのご案内)", "employment_type": "正社員",
+     "pay": {"kind": "月給", "min": 260000, "max": 350000}, "pay_text": "月給26万〜35万円", "walk_min": 4},
+    {"job_id": "b0101", "title": "居酒屋ホールスタッフ", "employment_type": "アルバイト・パート",
+     "pay": {"kind": "時給", "min": 1350, "max": None}, "pay_text": "時給1350円", "walk_min": 4}]})
+
+
+def test_annual_and_monthly_pay_from_dip_are_not_violations():
+    # dip の pay(円)を、万で書いても円で書いても根拠にする。幅の下限だけ・上限だけ・「〜」の片側に万が無い書き方も同じ
+    turns = [turn(["年収650万〜950万円のPMの求人と、月給26万〜35万円の営業の求人があります。"], [FULLTIME]),
+             turn(["PMの求人は年収650〜950万円、下限は6,500,000円です。月給は35万円までです。"]),
+             turn(["居酒屋は時給1,350円です。"])]
+    assert fact_violations(turns, ["正社員で探したい"], None) == []
+
+
+def test_pay_the_person_said_is_not_a_violation():
+    # 本人が言った希望年収(「600万以上」)を繰り返すのは作り話ではない
+    turns = [turn(["年収600万円以上で探しますね。"], [SUMMARY])]
+    assert fact_violations(turns, ["年収は600万以上がいい"], None) == []
+
+
+def test_annual_pay_not_from_dip_is_still_a_violation():
+    # 捏造の検出は今まで通り: dip が返していない年収・月給、幅の片側の書き換え、時給の作り話
+    turns = [turn(["年収800万円も狙えます。"], [FULLTIME]),
+             turn(["PMは年収650〜1000万円です。"]),
+             turn(["月給40万円の求人もあります。", "時給1,600円です。"])]
+    v = fact_violations(turns, ["正社員で探したい"], None)
+    assert any("T1" in x and "800万円" in x for x in v)
+    assert any("T2" in x and "1000万円" in x for x in v)
+    assert any("T3" in x and "40万円" in x for x in v) and any("T3" in x and "1600円" in x for x in v)
+    assert not any("650" in x or "950" in x for x in v)
+
+
+def test_monthly_pay_with_a_decimal_is_checked():
+    # 「月給27.5万円」のような小数の万も金額として照合する: dip の pay(275000 円)なら根拠あり、無ければ作り話
+    decimal = ("recommend_jobs", {"jobs": [{"job_id": "f0105", "employment_type": "正社員",
+                                            "pay": {"kind": "月給", "min": 275000, "max": 350000}}]})
+    assert fact_violations([turn(["月給27.5万円からです。"], [decimal])], ["正社員で探したい"], None) == []
+    v = fact_violations([turn(["月給27.5万円です。"], [FULLTIME])], ["正社員で探したい"], None)
+    assert any("27.5万円" in x for x in v)
+
+
+def test_decimal_man_is_not_read_as_its_last_digits():
+    # 「1.5万」の「5万」を別の金額として拾わない(dip に5万が無くても、1.5万が根拠ありなら違反にしない)
+    bonus = ("answer_job_question", {"job": {"pay": {"kind": "月給", "min": 260000, "max": 350000}},
+                                     "answer": "資格手当は月1.5万円です。"})
+    assert fact_violations([turn(["資格手当は月1.5万円です。"], [bonus])], ["手当は?"], None) == []
+    v = fact_violations([turn(["資格手当は月1.5万円です。"], [FULLTIME])], ["手当は?"], None)
+    assert any("1.5万円" in x for x in v) and not any("「5万円」" in x for x in v)
+
+
+def test_min_and_max_outside_pay_are_not_taken_as_pay():
+    # min / max という名前の数字でも、pay の形(kind が 時給・月給・年収)でなければ給与の根拠にしない
+    other = ("get_user_conversation_summary", {"range": {"min": 8000000, "max": 800}})
+    v = fact_violations([turn(["年収800万円の求人があります。"], [other])], ["こんにちは"], None)
+    assert any("800万円" in x for x in v)
+
+
 def test_real_job_not_returned_in_this_conversation_is_a_violation():
     # 求人一覧に実在する求人名でも、この会話でツールが返していなければ作り話と同じ扱い
     turns = [turn(["「居酒屋ホール 新宿西口」はいかがですか?"], [SUMMARY])]

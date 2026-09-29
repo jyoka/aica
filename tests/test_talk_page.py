@@ -436,7 +436,7 @@ def test_saved_jobs_place_shows_what_this_user_saved_in_the_talk(app):
         other_uid = other.post("/api/talk/open").json()["user"]
         assert other.get(f"/api/saved/{other_uid}").json() == {"jobs": []}
     assert [j["job_id"] for j in jobs] == ["a003"]
-    assert {"title", "employer", "hourly_wage", "shift", "station", "walk_min", "saved_at"} <= jobs[0].keys()
+    assert {"title", "employer", "pay", "pay_text", "shift", "station", "walk_min", "saved_at"} <= jobs[0].keys()
     assert model.script == []
 
 

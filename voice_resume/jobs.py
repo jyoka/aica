@@ -93,14 +93,14 @@ def relax_option_line(option: dict) -> str:
 
 
 def spoken_job_line(job: dict) -> str:
-    """求人1件の読み上げ文(職種・場所・時給・一言)。音声用なので短い1文にする。"""
+    """求人1件の読み上げ文(職種・場所・給与・一言)。音声用なので短い1文にする。"""
     place = job.get("station") or job.get("area") or ""
     note = (job.get("reasons") or [""])[0] or (job.get("perks") or [""])[0]
     parts = [f"{job.get('job_type', '')}のお仕事"]
     if place:
         parts.append(f"場所は{place}")
-    if job.get("hourly_wage"):
-        parts.append(f"時給{job['hourly_wage']}円")
+    if job.get("pay_text"):  # dip の求人カードの給与の表示(時給1350円 など)
+        parts.append(job["pay_text"])
     if note:
         parts.append(note)
     return "、".join(p for p in parts if p) + "です。"

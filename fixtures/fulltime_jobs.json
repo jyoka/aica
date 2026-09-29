@@ -1,0 +1,1797 @@
+[
+  {
+    "job_id": "f0101",
+    "title": "法人営業(中小企業向け業務SaaS)",
+    "employer": "株式会社クラウドミツバ",
+    "employment_type": "正社員",
+    "job_type": "営業",
+    "area": "渋谷",
+    "station": "渋谷",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 5000000,
+      "max": 7500000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "インセンティブあり",
+      "服装自由"
+    ],
+    "description": "中小企業向けの勤怠・経費の管理サービスを、商談から契約まで担当します。問い合わせからの商談が中心で、飛び込みの営業はありません。導入後はカスタマーサクセスの担当に引き継ぎます。",
+    "drawback": "四半期の最後の月は目標の追い込みで商談が増え、残業が多くなります。",
+    "required_experience": [
+      "法人営業の経験3年以上"
+    ],
+    "preferred_experience": [
+      "IT商材の営業経験",
+      "チームのリーダー経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": true,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0102",
+    "title": "海外営業(英語・中国語を使う電子部品の営業)",
+    "employer": "東雲電子工業株式会社",
+    "employment_type": "正社員",
+    "job_type": "営業",
+    "area": "品川",
+    "station": "品川",
+    "walk_min": 7,
+    "pay": {
+      "kind": "年収",
+      "min": 5500000,
+      "max": 8000000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "語学手当",
+      "退職金制度",
+      "英語を活かせる"
+    ],
+    "description": "アジアと北米の電機メーカーに、自社の電子部品を提案します。既存の取引先が中心で、見積もり・納期の調整から新製品の提案まで担当します。社内の技術者と組んで商談に出ます。",
+    "drawback": "時差のある取引先との会議が夜に入る日が月に数回あり、年4〜5回の海外出張があります。",
+    "required_experience": [
+      "法人営業の経験",
+      "ビジネスレベルの英語"
+    ],
+    "preferred_experience": [
+      "中国語",
+      "海外出張の経験",
+      "製造業の取引の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 25
+    },
+    "holidays": {
+      "annual_days": 123,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0103",
+    "title": "ルート営業(オフィス用品・既存のお客様中心)",
+    "employer": "株式会社みどり事務機",
+    "employment_type": "正社員",
+    "job_type": "営業",
+    "area": "大宮",
+    "station": "大宮",
+    "walk_min": 9,
+    "pay": {
+      "kind": "年収",
+      "min": 3800000,
+      "max": 5200000
+    },
+    "time_bands": [],
+    "shift": "8:45〜17:45(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "社用車あり"
+    ],
+    "description": "埼玉県内の企業や学校を社用車で回り、オフィス用品や複合機の追加注文・入れ替えを提案します。新規の開拓は少なく、長く付き合いのあるお客様が中心です。",
+    "drawback": "1日に5〜8件を車で回るため移動が多く、夏場の積み下ろしは体力を使います。",
+    "required_experience": [
+      "普通自動車免許"
+    ],
+    "preferred_experience": [
+      "営業か接客の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0104",
+    "title": "賃貸仲介の営業(店舗でのご案内)",
+    "employer": "株式会社ソラマド不動産",
+    "employment_type": "正社員",
+    "job_type": "営業",
+    "area": "池袋",
+    "station": "池袋",
+    "walk_min": 4,
+    "pay": {
+      "kind": "月給",
+      "min": 260000,
+      "max": 350000
+    },
+    "time_bands": [],
+    "shift": "10:00〜19:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "歩合給あり",
+      "宅建の資格手当",
+      "未経験OK"
+    ],
+    "description": "来店されたお客様の希望を聞き、物件の紹介・内見の同行・契約の手続きまでを担当します。反響の多い駅前の店舗なので、こちらから電話をかける営業はほとんどありません。",
+    "drawback": "休みは火・水曜で土日は出勤です。1〜3月の繁忙期は残業が月40時間ほどになります。",
+    "required_experience": [],
+    "preferred_experience": [
+      "接客・販売の経験",
+      "宅地建物取引士"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 25
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": "試用期間中は歩合給なし"
+    }
+  },
+  {
+    "job_id": "f0201",
+    "title": "プロダクトマネージャー(BtoB SaaS)",
+    "employer": "株式会社ハコニワテック",
+    "employment_type": "正社員",
+    "job_type": "企画・PM",
+    "area": "新宿",
+    "station": "新宿",
+    "walk_min": 5,
+    "pay": {
+      "kind": "年収",
+      "min": 6500000,
+      "max": 9500000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイムなし)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "ストックオプション",
+      "服装自由",
+      "リモート可"
+    ],
+    "description": "法人向けの業務管理サービスで、機能の企画から開発チームとの仕様づくり、リリース後の効果の測定までを担当します。営業・カスタマーサクセスと組んで顧客の声を集め、優先順位を決めます。",
+    "drawback": "顧客・開発・営業の間の調整が多く、会議が1日4〜5本になる日があります。",
+    "required_experience": [
+      "Webサービスの企画かプロジェクトマネジメントの経験3年以上"
+    ],
+    "preferred_experience": [
+      "法人営業の経験",
+      "英語での会議の経験"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": true,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0202",
+    "title": "インバウンド旅行サービスの事業企画(多言語)",
+    "employer": "株式会社トラベルリンク上野",
+    "employment_type": "正社員",
+    "job_type": "企画・PM",
+    "area": "上野",
+    "station": "上野",
+    "walk_min": 3,
+    "pay": {
+      "kind": "年収",
+      "min": 4800000,
+      "max": 7000000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム10:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "語学手当",
+      "英語を活かせる"
+    ],
+    "description": "海外からの旅行者向けの体験ツアーの企画と、海外の旅行会社との提携を担当します。ツアーの採算の計算、現地の事業者との調整、多言語のサイトの改善まで幅広く関わります。",
+    "drawback": "海外の提携先との打ち合わせが夕方以降になることがあり、繁忙期は週末のツアーに立ち会うこともあります。",
+    "required_experience": [
+      "事業企画かプロジェクト管理の経験2年以上",
+      "英語(日常会話以上)"
+    ],
+    "preferred_experience": [
+      "中国語か韓国語",
+      "旅行・観光業界の経験",
+      "法人営業の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": true,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0203",
+    "title": "Webディレクター(受託のサイト制作)",
+    "employer": "株式会社なかのデザインワークス",
+    "employment_type": "正社員",
+    "job_type": "企画・PM",
+    "area": "中野",
+    "station": "中野",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 4500000,
+      "max": 6200000
+    },
+    "time_bands": [],
+    "shift": "10:00〜19:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "服装自由"
+    ],
+    "description": "企業のサイト制作で、要件の聞き取り・スケジュールと予算の管理・デザイナーやエンジニアへの指示を担当します。1人で3〜4件の案件を同時に進めます。",
+    "drawback": "納品の前は案件が重なり、残業が月40時間近くになることがあります。",
+    "required_experience": [
+      "Web制作の進行管理の経験1年以上"
+    ],
+    "preferred_experience": [
+      "お客様への提案の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 25
+    },
+    "holidays": {
+      "annual_days": 122,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0204",
+    "title": "店舗DXのプロジェクトマネージャー(小売チェーン本部)",
+    "employer": "株式会社ハマベ・リテールホールディングス",
+    "employment_type": "正社員",
+    "job_type": "企画・PM",
+    "area": "横浜",
+    "station": "横浜",
+    "walk_min": 8,
+    "pay": {
+      "kind": "年収",
+      "min": 6000000,
+      "max": 8500000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "退職金制度",
+      "住宅手当"
+    ],
+    "description": "スーパー60店舗のレジ・在庫・発注の仕組みを入れ替えるプロジェクトを率います。ITベンダーの管理、店舗への説明、導入後の定着までを担当します。",
+    "drawback": "店舗への導入の立ち会いで、月に数回は早朝や閉店後の作業があります。",
+    "required_experience": [
+      "社内外のプロジェクトを率いた経験"
+    ],
+    "preferred_experience": [
+      "小売・飲食業界の経験",
+      "ITベンダーとの折衝の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": true,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0301",
+    "title": "Webアプリケーションエンジニア(自社サービス)",
+    "employer": "株式会社ハコニワテック",
+    "employment_type": "正社員",
+    "job_type": "エンジニア",
+    "area": "渋谷",
+    "station": "渋谷",
+    "walk_min": 8,
+    "pay": {
+      "kind": "年収",
+      "min": 5500000,
+      "max": 8500000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイムなし)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "書籍・研修の補助",
+      "リモート可"
+    ],
+    "description": "家計簿アプリのサーバー側とWeb画面の開発を担当します。企画の段階から加わり、設計・実装・テスト・リリースまでを少人数のチームで進めます。",
+    "drawback": "月に1回ほど、夜間の障害に備える当番があります。",
+    "required_experience": [
+      "Web開発の実務経験2年以上"
+    ],
+    "preferred_experience": [
+      "クラウドでの運用経験",
+      "チームでのコードレビューの経験"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": true,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0302",
+    "title": "社内SE(情報システム・海外拠点のサポートあり)",
+    "employer": "川崎精機株式会社",
+    "employment_type": "正社員",
+    "job_type": "エンジニア",
+    "area": "川崎",
+    "station": "川崎",
+    "walk_min": 10,
+    "pay": {
+      "kind": "年収",
+      "min": 4500000,
+      "max": 6500000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "退職金制度",
+      "資格取得支援"
+    ],
+    "description": "社員800名のメーカーで、PC・ネットワーク・業務システムの運用と、社内からの問い合わせ対応を担当します。タイと中国の拠点とも、英語のメールでやりとりします。",
+    "drawback": "工場や拠点の機器のトラブルで、急な対応が入ることがあります。",
+    "required_experience": [
+      "PCかネットワークの運用経験"
+    ],
+    "preferred_experience": [
+      "英語のメール対応",
+      "業務システムの導入経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 124,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0303",
+    "title": "インフラエンジニア(クラウドの設計・運用)",
+    "employer": "株式会社シナガワクラウドサービス",
+    "employment_type": "正社員",
+    "job_type": "エンジニア",
+    "area": "品川",
+    "station": "品川",
+    "walk_min": 5,
+    "pay": {
+      "kind": "年収",
+      "min": 6000000,
+      "max": 9000000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "オンコール手当",
+      "リモート可"
+    ],
+    "description": "金融・小売のお客様のシステムを動かすクラウド環境の設計・構築・運用を担当します。監視の自動化や費用の見直しにも取り組みます。",
+    "drawback": "障害のときは夜間・休日にも呼び出しがあります(オンコールは月1〜2回)。",
+    "required_experience": [
+      "サーバーかクラウドの構築・運用の経験3年以上"
+    ],
+    "preferred_experience": [
+      "英語の技術文書を読める"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": true,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 123,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0304",
+    "title": "ITサポートエンジニア(未経験から・研修3か月)",
+    "employer": "株式会社ブクロITソリューションズ",
+    "employment_type": "正社員",
+    "job_type": "エンジニア",
+    "area": "池袋",
+    "station": "池袋",
+    "walk_min": 3,
+    "pay": {
+      "kind": "月給",
+      "min": 240000,
+      "max": 280000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "資格取得支援",
+      "研修あり"
+    ],
+    "description": "3か月の研修でPC・ネットワークの基礎を学んだあと、お客様企業からの問い合わせ対応とPCの設定を担当します。経験を積んだあと、サーバーの運用に進む道もあります。",
+    "drawback": "最初の半年は問い合わせ対応が中心で、開発の仕事はしません。",
+    "required_experience": [],
+    "preferred_experience": [
+      "接客・コールセンターの経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": "研修中も給与は同じ"
+    }
+  },
+  {
+    "job_id": "f0401",
+    "title": "貿易事務(英語の書類を扱う)",
+    "employer": "株式会社ミナト通商",
+    "employment_type": "正社員",
+    "job_type": "事務・管理",
+    "area": "横浜",
+    "station": "関内",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 3800000,
+      "max": 5000000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "英語を活かせる"
+    ],
+    "description": "食品の輸入で、海外の仕入れ先とのメール・請求書の確認、船便の手配、通関業者とのやりとりを担当します。英語は読み書きが中心で、電話は多くありません。",
+    "drawback": "船便の到着が重なる月末は、書類の締め切りに追われます。",
+    "required_experience": [
+      "事務の経験1年以上",
+      "英語の読み書き"
+    ],
+    "preferred_experience": [
+      "貿易実務の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0402",
+    "title": "経理(IT企業の月次決算)",
+    "employer": "株式会社ハコニワテック",
+    "employment_type": "正社員",
+    "job_type": "事務・管理",
+    "area": "新宿",
+    "station": "西新宿",
+    "walk_min": 4,
+    "pay": {
+      "kind": "年収",
+      "min": 4500000,
+      "max": 6500000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "リモート可"
+    ],
+    "description": "月次決算、請求・支払いの管理、監査法人とのやりとりを担当します。会計システムの入れ替えなど、仕事の進め方を良くする取り組みにも関われます。",
+    "drawback": "決算期(4〜5月)は残業が月40時間ほどになります。",
+    "required_experience": [
+      "経理の実務経験2年以上"
+    ],
+    "preferred_experience": [
+      "日商簿記2級",
+      "上場企業での経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": true,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 125,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0403",
+    "title": "人事・採用担当(中途採用が中心)",
+    "employer": "株式会社さいたまケアネット",
+    "employment_type": "正社員",
+    "job_type": "事務・管理",
+    "area": "大宮",
+    "station": "大宮",
+    "walk_min": 5,
+    "pay": {
+      "kind": "年収",
+      "min": 4200000,
+      "max": 6000000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "退職金制度"
+    ],
+    "description": "介護施設を運営する会社の本部で、中途採用の募集・面接の調整・入社の手続きを担当します。求人の原稿づくりや、採用イベントへの出展も任せます。",
+    "drawback": "採用の繁忙期(3〜6月)は、面接の日程が夕方以降に入ることがあります。",
+    "required_experience": [
+      "人事か採用の実務経験1年以上、または法人営業の経験"
+    ],
+    "preferred_experience": [
+      "人材業界の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0404",
+    "title": "一般事務(総務・受付)",
+    "employer": "上野ビルマネジメント株式会社",
+    "employment_type": "正社員",
+    "job_type": "事務・管理",
+    "area": "上野",
+    "station": "上野",
+    "walk_min": 2,
+    "pay": {
+      "kind": "月給",
+      "min": 220000,
+      "max": 260000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "残業少なめ"
+    ],
+    "description": "ビル管理会社の総務として、書類の作成・備品の管理・来客と電話の対応を担当します。パソコンは文書と表計算の入力ができれば大丈夫です。",
+    "drawback": "来客・電話の対応が多く、自分の作業が途中で止まりやすい職場です。",
+    "required_experience": [],
+    "preferred_experience": [
+      "事務の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 5
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0501",
+    "title": "アパレルの店長候補(セレクトショップ)",
+    "employer": "株式会社ルミエールスタイル",
+    "employment_type": "正社員",
+    "job_type": "販売・サービス",
+    "area": "新宿",
+    "station": "新宿三丁目",
+    "walk_min": 3,
+    "pay": {
+      "kind": "月給",
+      "min": 250000,
+      "max": 320000
+    },
+    "time_bands": [],
+    "shift": "シフト制(10:30〜20:30のうち実働8時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "社員割引"
+    ],
+    "description": "新宿の路面店で、接客・販売のほか、売上の管理やスタッフのシフトづくりを学び、1〜2年で店長を目指します。",
+    "drawback": "休みはシフト制で、土日とセールの期間は休みを取りにくいです。",
+    "required_experience": [
+      "接客販売の経験1年以上"
+    ],
+    "preferred_experience": [
+      "アパレル販売の経験",
+      "スタッフの指導の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0502",
+    "title": "ホテルのフロント(英語・中国語を活かす)",
+    "employer": "ホテル上野パークサイド",
+    "employment_type": "正社員",
+    "job_type": "販売・サービス",
+    "area": "上野",
+    "station": "京成上野",
+    "walk_min": 4,
+    "pay": {
+      "kind": "月給",
+      "min": 240000,
+      "max": 290000
+    },
+    "time_bands": [],
+    "shift": "シフト制(7:00〜16:00 / 14:00〜23:00 / 夜勤 22:00〜翌8:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "語学手当",
+      "英語を活かせる",
+      "未経験OK"
+    ],
+    "description": "海外からのお客様が6割のホテルで、チェックイン・アウト、観光の案内、予約の管理を担当します。英語か中国語での接客を日常的に使います。",
+    "drawback": "月に4〜5回の夜勤があり、休みはシフト制です。",
+    "required_experience": [
+      "英語か中国語での接客ができる"
+    ],
+    "preferred_experience": [
+      "ホテル・接客の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0503",
+    "title": "カフェの店舗運営(社員・店長候補)",
+    "employer": "株式会社もりのまど珈琲",
+    "employment_type": "正社員",
+    "job_type": "販売・サービス",
+    "area": "吉祥寺",
+    "station": "吉祥寺",
+    "walk_min": 5,
+    "pay": {
+      "kind": "月給",
+      "min": 240000,
+      "max": 300000
+    },
+    "time_bands": [],
+    "shift": "シフト制(6:30〜22:00のうち実働8時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "まかない"
+    ],
+    "description": "吉祥寺の3店舗で、接客・ドリンクづくりから、発注・売上の管理・アルバイトの育成までを担当します。入社後はまず1店舗で店の運営を覚えます。",
+    "drawback": "早番は6時半からで、休みはシフト制です。",
+    "required_experience": [],
+    "preferred_experience": [
+      "飲食・カフェの経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 108,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0504",
+    "title": "家電量販店の販売(法人のお客様の窓口あり)",
+    "employer": "株式会社デンキノオオミヤ",
+    "employment_type": "正社員",
+    "job_type": "販売・サービス",
+    "area": "大宮",
+    "station": "大宮",
+    "walk_min": 3,
+    "pay": {
+      "kind": "年収",
+      "min": 3800000,
+      "max": 4800000
+    },
+    "time_bands": [],
+    "shift": "シフト制(9:30〜21:30のうち実働8時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "社員割引",
+      "未経験OK"
+    ],
+    "description": "パソコン・スマートフォンの売り場で、個人のお客様への接客と、近くの企業からのまとめ買いの窓口を担当します。",
+    "drawback": "年末と3月の繁忙期は、立ち仕事の時間が長くなります。",
+    "required_experience": [],
+    "preferred_experience": [
+      "接客販売の経験",
+      "法人営業の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0601",
+    "title": "生産管理(食品工場)",
+    "employer": "株式会社かわさきデリカフーズ",
+    "employment_type": "正社員",
+    "job_type": "製造・技術",
+    "area": "川崎",
+    "station": "川崎",
+    "walk_min": 12,
+    "pay": {
+      "kind": "年収",
+      "min": 4200000,
+      "max": 5800000
+    },
+    "time_bands": [],
+    "shift": "8:00〜17:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "退職金制度",
+      "社員食堂"
+    ],
+    "description": "コンビニ向けのお惣菜をつくる工場で、生産の計画、原材料の手配、製造ラインの進み具合の管理を担当します。",
+    "drawback": "工場の中には冷蔵のエリアがあり、夏でも上着が要ります。",
+    "required_experience": [
+      "製造業の現場か生産管理の経験"
+    ],
+    "preferred_experience": [
+      "食品工場の経験",
+      "フォークリフトの免許"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 118,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0602",
+    "title": "設備保全(機械・電気)",
+    "employer": "大宮プレス工業株式会社",
+    "employment_type": "正社員",
+    "job_type": "製造・技術",
+    "area": "大宮",
+    "station": "宮原",
+    "walk_min": 10,
+    "pay": {
+      "kind": "年収",
+      "min": 4500000,
+      "max": 6200000
+    },
+    "time_bands": [],
+    "shift": "8:30〜17:30(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "資格取得支援",
+      "退職金制度"
+    ],
+    "description": "自動車部品をつくるプレス機と搬送設備の点検・修理・改善を担当します。故障を減らすための計画づくりも任せます。",
+    "drawback": "設備が止まったときは、夜間でも呼び出しがあります。",
+    "required_experience": [
+      "機械か電気の保全の経験"
+    ],
+    "preferred_experience": [
+      "第二種電気工事士"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 119,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0603",
+    "title": "品質管理(化粧品メーカー)",
+    "employer": "株式会社ハマユリ化粧品",
+    "employment_type": "正社員",
+    "job_type": "製造・技術",
+    "area": "横浜",
+    "station": "新横浜",
+    "walk_min": 7,
+    "pay": {
+      "kind": "年収",
+      "min": 4000000,
+      "max": 5600000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "社員割引"
+    ],
+    "description": "化粧品の原料と製品の検査、品質の記録、海外の原料メーカーとのやりとりを担当します。検査の多くは機器を使います。",
+    "drawback": "監査の前は書類の準備で残業が増えます。",
+    "required_experience": [
+      "品質管理か検査の実務経験1年以上"
+    ],
+    "preferred_experience": [
+      "英語の文書を読める",
+      "化学系の学部の卒業"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 122,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0604",
+    "title": "CADオペレーター・設計の補助(未経験から)",
+    "employer": "株式会社なかの設計事務所",
+    "employment_type": "正社員",
+    "job_type": "製造・技術",
+    "area": "中野",
+    "station": "中野",
+    "walk_min": 7,
+    "pay": {
+      "kind": "月給",
+      "min": 230000,
+      "max": 280000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "未経験OK",
+      "研修あり"
+    ],
+    "description": "建物の設備の図面を、設計者の指示に沿ってCADで描きます。最初の2か月は研修で操作を覚えます。",
+    "drawback": "図面の細かい修正が続き、画面に向かう時間が長い仕事です。",
+    "required_experience": [],
+    "preferred_experience": [
+      "CADの操作の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 2,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0701",
+    "title": "介護職員(特別養護老人ホーム)",
+    "employer": "社会福祉法人なかの陽だまり会",
+    "employment_type": "正社員",
+    "job_type": "医療・介護",
+    "area": "中野",
+    "station": "新井薬師前",
+    "walk_min": 8,
+    "pay": {
+      "kind": "月給",
+      "min": 240000,
+      "max": 300000
+    },
+    "time_bands": [],
+    "shift": "シフト制(早番7:00〜16:00 / 遅番11:00〜20:00 / 夜勤16:30〜翌9:30)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "資格取得支援",
+      "未経験OK",
+      "退職金制度"
+    ],
+    "description": "入居者100名の施設で、食事・入浴・排せつの介助と、日々の暮らしの支えを担当します。資格が無くても、先輩について1か月の研修から始めます。",
+    "drawback": "月に4〜5回の夜勤があり、身体の介助で腰に負担がかかります。",
+    "required_experience": [],
+    "preferred_experience": [
+      "介護職員初任者研修",
+      "介護の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0702",
+    "title": "看護師(クリニック・日勤のみ)",
+    "employer": "医療法人社団きちじょうじ内科クリニック",
+    "employment_type": "正社員",
+    "job_type": "医療・介護",
+    "area": "吉祥寺",
+    "station": "吉祥寺",
+    "walk_min": 2,
+    "pay": {
+      "kind": "年収",
+      "min": 4500000,
+      "max": 5500000
+    },
+    "time_bands": [],
+    "shift": "8:45〜18:30(休憩2時間。土曜は13:00まで)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "夜勤なし"
+    ],
+    "description": "内科クリニックで、診察の補助・採血・点滴・予防接種を担当します。夜勤はありません。",
+    "drawback": "午前の外来は患者さんが多く、昼休みが短くなることがあります。",
+    "required_experience": [
+      "看護師免許"
+    ],
+    "preferred_experience": [
+      "内科か外来の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0703",
+    "title": "医療事務(総合病院の受付・会計)",
+    "employer": "医療法人社団いけぶくろ中央病院",
+    "employment_type": "正社員",
+    "job_type": "医療・介護",
+    "area": "池袋",
+    "station": "池袋",
+    "walk_min": 7,
+    "pay": {
+      "kind": "月給",
+      "min": 220000,
+      "max": 260000
+    },
+    "time_bands": [],
+    "shift": "シフト制(8:30〜17:30 / 11:00〜20:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "資格取得支援"
+    ],
+    "description": "外来の受付・会計と、診療報酬の請求(レセプト)の作業を担当します。資格は入社後に取れるよう支援します。",
+    "drawback": "月初はレセプトの作業で、残業が月20時間ほど増えます。",
+    "required_experience": [],
+    "preferred_experience": [
+      "医療事務の資格",
+      "受付・接客の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 115,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0704",
+    "title": "生活相談員(デイサービス)",
+    "employer": "株式会社こうえんじケアサポート",
+    "employment_type": "正社員",
+    "job_type": "医療・介護",
+    "area": "高円寺",
+    "station": "高円寺",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 3800000,
+      "max": 4700000
+    },
+    "time_bands": [],
+    "shift": "8:30〜17:30(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "資格手当"
+    ],
+    "description": "デイサービスの利用の相談、ご家族やケアマネジャーとの連絡、利用の計画づくりを担当します。送迎や介助に入ることもあります。",
+    "drawback": "ご家族からの相談の電話が夕方に集中します。",
+    "required_experience": [
+      "社会福祉士か介護福祉士",
+      "相談業務の経験"
+    ],
+    "preferred_experience": [
+      "普通自動車免許"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 115,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0801",
+    "title": "英会話スクールの講師(日本語と英語で教える)",
+    "employer": "スピークアップ英語学院",
+    "employment_type": "正社員",
+    "job_type": "教育",
+    "area": "渋谷",
+    "station": "渋谷",
+    "walk_min": 4,
+    "pay": {
+      "kind": "年収",
+      "min": 3800000,
+      "max": 5000000
+    },
+    "time_bands": [],
+    "shift": "シフト制(平日13:00〜21:30、土日9:30〜18:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "英語を活かせる"
+    ],
+    "description": "社会人と中高生を対象に、少人数の英会話レッスンと、学習の進み具合の相談を担当します。教材は用意されたものを使います。",
+    "drawback": "授業は平日の夜と土日が中心で、休みは平日になります。",
+    "required_experience": [
+      "英語で授業ができる(TOEIC 850点程度)"
+    ],
+    "preferred_experience": [
+      "中国語か韓国語",
+      "講師・研修の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 110,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0802",
+    "title": "学習塾の教室長候補(小中学生)",
+    "employer": "株式会社まなびや高円寺",
+    "employment_type": "正社員",
+    "job_type": "教育",
+    "area": "高円寺",
+    "station": "高円寺",
+    "walk_min": 3,
+    "pay": {
+      "kind": "年収",
+      "min": 4200000,
+      "max": 5600000
+    },
+    "time_bands": [],
+    "shift": "13:00〜22:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK"
+    ],
+    "description": "教室の運営、保護者との面談、講師のアルバイトの採用と育成、授業の一部を担当します。1年ほどで教室長を目指します。",
+    "drawback": "受験期(12〜2月)は、土日の出勤が増えます。",
+    "required_experience": [],
+    "preferred_experience": [
+      "塾講師の経験",
+      "接客・営業の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 112,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0803",
+    "title": "社会人向け研修の企画・講師(法人のお客様向け)",
+    "employer": "株式会社ビジネスラーニング新宿",
+    "employment_type": "正社員",
+    "job_type": "教育",
+    "area": "新宿",
+    "station": "新宿",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 5000000,
+      "max": 7000000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "リモート可"
+    ],
+    "description": "企業の新人・管理職向けの研修(営業・リーダーシップ・プロジェクト管理)の内容を企画し、講師として登壇します。お客様企業の人事と、研修の目的の聞き取りから担当します。",
+    "drawback": "研修の当日は、朝早くからお客様の会社に出向きます。",
+    "required_experience": [
+      "法人営業かマネジメントの経験3年以上"
+    ],
+    "preferred_experience": [
+      "人前で話す経験",
+      "英語での研修の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": true,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 122,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0804",
+    "title": "日本語学校の教務スタッフ(多言語で留学生を支える)",
+    "employer": "上野国際日本語学院",
+    "employment_type": "正社員",
+    "job_type": "教育",
+    "area": "上野",
+    "station": "上野",
+    "walk_min": 5,
+    "pay": {
+      "kind": "年収",
+      "min": 3600000,
+      "max": 4500000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "英語を活かせる"
+    ],
+    "description": "留学生のクラス分け・出席の管理・進学の相談と、授業の一部を担当します。英語・中国語・ベトナム語のできるスタッフが一緒に働いています。",
+    "drawback": "入学の時期(4月・10月)は、手続きで残業が増えます。",
+    "required_experience": [
+      "日本語教師の資格か、教える経験"
+    ],
+    "preferred_experience": [
+      "英語・中国語・ベトナム語のどれか"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0901",
+    "title": "Webデザイナー(自社のネット通販)",
+    "employer": "株式会社きちじょうじ雑貨店",
+    "employment_type": "正社員",
+    "job_type": "クリエイティブ",
+    "area": "吉祥寺",
+    "station": "吉祥寺",
+    "walk_min": 7,
+    "pay": {
+      "kind": "年収",
+      "min": 4000000,
+      "max": 5800000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイム11:00〜15:00)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "社員割引",
+      "リモート可"
+    ],
+    "description": "雑貨のネット通販で、商品ページ・バナー・メールマガジンのデザインを担当します。売上の数字を見ながら、ページの改善も提案します。",
+    "drawback": "セールの前は短い納期で多くのバナーをつくります。",
+    "required_experience": [
+      "Webデザインの実務経験2年以上(作品集を提出)"
+    ],
+    "preferred_experience": [
+      "コーディングの経験"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": true,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0902",
+    "title": "編集・ライター(ビジネス向けWebメディア)",
+    "employer": "株式会社しんじゅく編集室",
+    "employment_type": "正社員",
+    "job_type": "クリエイティブ",
+    "area": "新宿",
+    "station": "新宿御苑前",
+    "walk_min": 3,
+    "pay": {
+      "kind": "年収",
+      "min": 4200000,
+      "max": 6000000
+    },
+    "time_bands": [],
+    "shift": "10:00〜19:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "リモート可"
+    ],
+    "description": "働く人向けのWebメディアで、企画・取材・執筆・外部ライターの原稿の編集を担当します。営業やITの現場の取材が多い媒体です。",
+    "drawback": "締め切りの前は、夜遅くまで原稿の確認が続くことがあります。",
+    "required_experience": [
+      "編集か記事制作の経験"
+    ],
+    "preferred_experience": [
+      "営業かITの業界の経験",
+      "英語での取材"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0903",
+    "title": "動画クリエイター(企業のPR動画)",
+    "employer": "株式会社こうえんじフィルムズ",
+    "employment_type": "正社員",
+    "job_type": "クリエイティブ",
+    "area": "高円寺",
+    "station": "高円寺",
+    "walk_min": 5,
+    "pay": {
+      "kind": "月給",
+      "min": 250000,
+      "max": 320000
+    },
+    "time_bands": [],
+    "shift": "10:00〜19:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年1回",
+      "服装自由"
+    ],
+    "description": "企業の採用・商品紹介の動画の企画・撮影・編集を担当します。撮影から納品まで、1本を小さなチームで仕上げます。",
+    "drawback": "撮影の日は、早朝や土日になることがあります。",
+    "required_experience": [
+      "動画編集の経験"
+    ],
+    "preferred_experience": [
+      "撮影の経験",
+      "企画書をつくった経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 25
+    },
+    "holidays": {
+      "annual_days": 118,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f0904",
+    "title": "UI/UXデザイナー(法人向けアプリ)",
+    "employer": "株式会社シナガワクラウドサービス",
+    "employment_type": "正社員",
+    "job_type": "クリエイティブ",
+    "area": "品川",
+    "station": "品川",
+    "walk_min": 5,
+    "pay": {
+      "kind": "年収",
+      "min": 5500000,
+      "max": 8000000
+    },
+    "time_bands": [],
+    "shift": "フレックス(コアタイムなし)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "リモート可"
+    ],
+    "description": "法人向けの管理アプリの画面の設計と、利用者へのインタビューを担当します。プロダクトマネージャー・エンジニアと組んで仕様を決めます。",
+    "drawback": "開発チームとのすり合わせが多く、デザインの作業の時間を確保しにくい週があります。",
+    "required_experience": [
+      "UIデザインの経験3年以上"
+    ],
+    "preferred_experience": [
+      "プロダクトマネージャーと組んで仕様を決めた経験",
+      "英語"
+    ],
+    "work_style": {
+      "remote": "可",
+      "flex": true,
+      "overtime_hours": 15
+    },
+    "holidays": {
+      "annual_days": 123,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f1001",
+    "title": "物流センターの管理者候補",
+    "employer": "株式会社かわさきロジパーク",
+    "employment_type": "正社員",
+    "job_type": "物流",
+    "area": "川崎",
+    "station": "川崎",
+    "walk_min": 15,
+    "pay": {
+      "kind": "年収",
+      "min": 4000000,
+      "max": 5500000
+    },
+    "time_bands": [],
+    "shift": "8:00〜17:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK",
+      "資格取得支援"
+    ],
+    "description": "ネット通販の物流センターで、入荷・出荷の計画、スタッフ50名の配置、協力会社との調整を担当します。",
+    "drawback": "繁忙期(11〜12月)は出荷の量が倍になり、残業が月30時間ほどになります。",
+    "required_experience": [],
+    "preferred_experience": [
+      "倉庫のリーダーの経験",
+      "フォークリフトの免許"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 115,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f1002",
+    "title": "配送ドライバー(中型トラック・ルート配送)",
+    "employer": "大宮通運株式会社",
+    "employment_type": "正社員",
+    "job_type": "物流",
+    "area": "大宮",
+    "station": "日進",
+    "walk_min": 12,
+    "pay": {
+      "kind": "月給",
+      "min": 280000,
+      "max": 360000
+    },
+    "time_bands": [],
+    "shift": "6:30〜15:30(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "退職金制度"
+    ],
+    "description": "スーパーの店舗へ、決まったルートで食品を届けます。1日に回るのは6〜8店舗です。",
+    "drawback": "朝6時台からの勤務で、荷物の積み下ろしがあります。",
+    "required_experience": [
+      "中型自動車免許(8t限定可)"
+    ],
+    "preferred_experience": [
+      "配送の経験"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 108,
+      "weekends_holidays": false
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f1003",
+    "title": "国際物流のコーディネーター(英語)",
+    "employer": "株式会社ヨコハマ・グローバルフォワーディング",
+    "employment_type": "正社員",
+    "job_type": "物流",
+    "area": "横浜",
+    "station": "横浜",
+    "walk_min": 6,
+    "pay": {
+      "kind": "年収",
+      "min": 4200000,
+      "max": 6000000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "英語を活かせる"
+    ],
+    "description": "輸出入の荷物の船や飛行機の手配、海外の代理店との英語のやりとり、通関の書類の確認を担当します。",
+    "drawback": "海外とのやりとりで、夕方以降にメールが集中します。",
+    "required_experience": [
+      "英語のメール対応"
+    ],
+    "preferred_experience": [
+      "通関かフォワーダーの経験",
+      "法人営業の経験"
+    ],
+    "work_style": {
+      "remote": "一部可",
+      "flex": false,
+      "overtime_hours": 20
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  },
+  {
+    "job_id": "f1004",
+    "title": "倉庫の在庫管理(正社員)",
+    "employer": "株式会社うえの物流サービス",
+    "employment_type": "正社員",
+    "job_type": "物流",
+    "area": "上野",
+    "station": "稲荷町",
+    "walk_min": 4,
+    "pay": {
+      "kind": "月給",
+      "min": 230000,
+      "max": 270000
+    },
+    "time_bands": [],
+    "shift": "9:00〜18:00(休憩1時間)",
+    "days_min": null,
+    "perks": [
+      "社会保険完備",
+      "賞与年2回",
+      "未経験OK"
+    ],
+    "description": "アパレルの倉庫で、在庫の数の管理、棚卸し、出荷の指示づくりを担当します。パソコンで在庫の表を扱う時間と、倉庫の中で確かめる時間が半々です。",
+    "drawback": "棚卸しの日は倉庫の中を歩き回り、体力を使います。",
+    "required_experience": [],
+    "preferred_experience": [
+      "倉庫の経験",
+      "表計算ソフトの操作"
+    ],
+    "work_style": {
+      "remote": "不可",
+      "flex": false,
+      "overtime_hours": 10
+    },
+    "holidays": {
+      "annual_days": 120,
+      "weekends_holidays": true
+    },
+    "employment_terms": {
+      "probation_months": 3,
+      "notes": ""
+    }
+  }
+]

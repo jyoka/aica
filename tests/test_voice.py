@@ -42,7 +42,7 @@ def test_record_voice_result_rebuilds_cards_from_dip_jobs_only(state):
     cards = results[0]["cards"]
     assert [c["job_id"] for c in cards] == ids
     # カードの中身(時給・駅など)は dip の求人データの値。理由は voice 側の検索時のものを使う
-    assert cards[0]["hourly_wage"] == load_jobs()[ids[0]].hourly_wage
+    assert cards[0]["pay"] == load_jobs()[ids[0]].pay.model_dump()
     assert cards[0]["reasons"] == ["夕方の勤務"]
 
 

@@ -2,6 +2,7 @@
 
 実在の求人サイトは使わない(規約と、実店舗の情報を持ち込まないため)。職種ごとに LLM で作る。
 作り直したら scripts/gen_job_vectors.py も回す(求人ベクトルがずれたままだと pytest が落ちる)。
+正社員の求人(fixtures/fulltime_jobs.json)はこのスクリプトでは作らない(手で書いた架空の40件)。
 
     ./.venv/bin/python -m scripts.gen_jobs [--per 5]
 """
@@ -14,7 +15,7 @@ import json
 
 from pydantic import BaseModel
 
-from dip_mcp.data import FIXTURES, BaitoJob
+from dip_mcp.data import FIXTURES, BaitoJob, Pay
 from line_runtime import config, llm
 from line_runtime.config import load_env
 
@@ -36,20 +37,34 @@ SYSTEM = f"""あなたは日本のアルバイト求人票を作るライター�
 - 同じ職種でもエリア・時間帯・時給がばらつくようにする。"""
 
 
+class Draft(BaseModel):
+    """LLM に作らせるアルバイト求人の形(給与は時給だけなので hourly_wage で受け取り、BaitoJob の pay に移す)。"""
+    title: str
+    employer: str
+    area: str
+    station: str
+    walk_min: int
+    hourly_wage: int
+    time_bands: list[str]
+    shift: str
+    days_min: int
+    perks: list[str]
+    description: str
+    drawback: str
+
+
 class Batch(BaseModel):
-    jobs: list[BaitoJob]
+    jobs: list[Draft]
 
 
 async def gen(client, job_type: str, n: int, idx: int) -> list[BaitoJob]:
     batch = await llm.parse(
         client, model=MODEL[config.PROVIDER], max_tokens=12000, effort="low", system=SYSTEM, schema=Batch,
-        messages=[{"role": "user", "content": f"職種「{job_type}」の求人を{n}件。job_type は「{job_type}」、job_id は空文字でよい。"}],
+        messages=[{"role": "user", "content": f"職種「{job_type}」の求人を{n}件。"}],
     )
-    jobs = batch.jobs
-    for i, j in enumerate(jobs, 1):
-        j.job_id = f"b{idx:02d}{i:02d}"
-        j.job_type = job_type
-    return jobs
+    return [BaitoJob(**d.model_dump(exclude={"hourly_wage"}), job_id=f"b{idx:02d}{i:02d}",
+                     employment_type="アルバイト・パート", job_type=job_type, pay=Pay(kind="時給", min=d.hourly_wage))
+            for i, d in enumerate(batch.jobs, 1)]
 
 
 async def main(per: int) -> None:

@@ -284,7 +284,8 @@ def _tool_payload(msg) -> object:
         return content
 
 
-CARD_KEYS = {"job_id", "title", "employer", "hourly_wage", "shift", "station", "walk_min", "reasons"}
+# 給与の項目(pay。v1 の会話の記録では hourly_wage)は見ない: どちらの形の記録でも求人カードとして拾うため
+CARD_KEYS = {"job_id", "title", "employer", "shift", "station", "walk_min", "reasons"}
 
 
 def _cards_in(value) -> list[dict]:

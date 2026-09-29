@@ -1,8 +1,9 @@
 """求人全件のベクトルを作って fixtures/job_vectors.json に保存する(recommend_jobs の意味検索用)。
 
-求人データ(anchor_jobs.json / jobs.json)を変えたら回し直す(ずれたままだと pytest が落ちる。
+求人データ(anchor_jobs.json / jobs.json / fulltime_jobs.json)を変えたら回し直す(ずれたままだと pytest が落ちる。
 ずれた求人は実行時には意味検索から外れ、部分一致だけで見る)。
-実 API(OpenAI embeddings、text-embedding-3-small)を使うが、63件で $0.001 もかからない。
+実 API(OpenAI embeddings、text-embedding-3-small)を使うが、103件(約3.2万トークン)で $0.001 もかからない
+(料金 $0.02 / 100万トークン。公式ドキュメントで 2026-09-29 に確認)。
 
     ./.venv/bin/python -m scripts.gen_job_vectors
 """
