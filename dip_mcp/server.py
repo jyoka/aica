@@ -27,8 +27,16 @@ state = State()
 
 UserId = Annotated[str, Field(description="LINE のユーザーID")]
 JobType = Annotated[str | None, Field(description=(
-    f"職種。次の中から1つをそのまま選ぶ: {' / '.join(logic.JOB_TYPES)}。"
+    "職種。雇用区分ごとの一覧から1つをそのまま選ぶ。"
+    f"アルバイト・パート: {' / '.join(logic.JOB_TYPES)}。正社員: {' / '.join(logic.FULLTIME_JOB_TYPES)}。"
+    "employment_type を渡したときは、その区分の一覧から選ぶ。"
     "ユーザーの言葉(例: 飲食・カフェ)が複数に当たるなら、1つずつ検索する。一覧に無い値はエラーになる"))]
+EmploymentType = Annotated[str | None, Field(description=(
+    f"求人の雇用区分: {' / '.join(logic.EMPLOYMENT_TYPES)}。get_user_conversation_summary の search_track"
+    "(今の雇用区分)をそのまま渡す。search_track が未定なら指定しない(両方の区分から探す)"))]
+MinAnnualSalary = Annotated[int | None, Field(description=(
+    "希望年収の下限(万円。例: 年収500万円以上なら 500)。本人が言った額のまま。正社員の求人(年収・月給)だけが対象で、"
+    "求人の年収の幅の上限(月給は12か月分)がこの額に届くものを出す。時給の求人は出なくなる"))]
 Area = Annotated[str | None, Field(description=(
     f"エリアか駅名。地名は次の中から選ぶ: {' / '.join(logic.AREAS)}(駅名も可。例: 中野駅)。"
     f"「{'」「'.join(logic.AREA_GROUPS)}」のような広い言い方は、そのまま渡すとその範囲の地名に広げて検索される。"
@@ -62,19 +70,28 @@ def recommend_jobs(
     area: Area = None,
     time_band: Annotated[str | None, Field(description="早朝 / 日中 / 夕方 / 夜 / 深夜")] = None,
     job_type: JobType = None,
-    min_wage: Annotated[int | None, Field(description="時給の下限(円)")] = None,
+    min_wage: Annotated[int | None, Field(description="時給の下限(円)。時給の求人(アルバイト・パート)だけが対象")] = None,
+    employment_type: EmploymentType = None,
+    min_annual_salary: MinAnnualSalary = None,
     keywords: Annotated[str | None, Field(description=(
         "その他の希望を本人の言葉のまま(例: 日払い 未経験OK、まかない付き、人と話さず黙々と)。"
         "語の一致に加えて意味の近さでも探すので、求人の文言に言い換えて寄せない。複数の希望は空白区切り。"
-        "エリア・時間帯・職種・時給は keywords に入れず、それぞれの引数で渡す"))] = None,
+        "エリア・時間帯・職種・時給・年収・雇用区分は keywords に入れず、それぞれの引数で渡す"))] = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(すでに見せたもの)")] = None,
     posted_within_days: Annotated[int | None, Field(description="この日数以内に掲載された新着だけにする")] = None,
 ) -> dict:
     """条件に合う求人を最大3件、事実に基づく理由つきで返す。応募済みの求人は出さない。total は条件に合う総数。
+    アルバイト・パートと正社員の求人を同じ形で扱う。雇用区分は employment_type で絞る(summary の search_track を渡す)。
+    区分が未定なら employment_type を指定せず、両方の区分から出してよい(各求人の employment_type で見分けられる)。
+    正社員の希望年収は min_annual_salary(万円)、アルバイト・パートの希望時給は min_wage(円)で絞る。
+    時間帯(time_band)はアルバイト・パートの条件で、指定すると正社員の求人は出ない。
+    給与は各求人の pay(kind が 時給 / 月給 / 年収、金額は円)と pay_text(表示用)。正社員の求人には
+    働き方(work_style: リモート・フレックス・残業の目安)と休日(holidays: 年間休日・土日祝休みか)も付く。
     各求人の match_score は本人の傾向との合い具合(内訳 score_breakdown)。高い順に並ぶ。
     keywords は意味検索(embedding)で言い換えも拾い、意味が近い求人ほど上に来る(内訳の keywords)。"""
     return logic.recommend(state, line_user_id, area, time_band, job_type, min_wage, keywords, exclude_ids,
-                           posted_within_days=posted_within_days)
+                           posted_within_days=posted_within_days, employment_type=employment_type,
+                           min_annual_salary=min_annual_salary)
 
 
 @mcp.tool()
@@ -82,9 +99,11 @@ def relax_conditions(
     line_user_id: UserId,
     area: Area = None, time_band: str | None = None, job_type: JobType = None,
     min_wage: int | None = None, keywords: str | None = None,
+    employment_type: EmploymentType = None, min_annual_salary: MinAnnualSalary = None,
 ) -> dict:
-    """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。"""
-    return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords)
+    """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。"""
+    return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
+                       employment_type=employment_type, min_annual_salary=min_annual_salary)
 
 
 @mcp.tool()
@@ -93,7 +112,8 @@ def answer_job_question(
     job_id: Annotated[str | None, Field(description="特定の求人についての質問なら job_id")] = None,
 ) -> dict:
     """質問に答える材料を出典つきで返す。求人についての質問なら job_id を必ず渡す(その求人の FAQ・求人の説明を優先して探す)。
-    hits の source は 案件の FAQ / 求人の説明 / 全体の FAQ。job_id を渡したときは job(求人の説明・時給・勤務時間・待遇)も
+    hits の source は 案件の FAQ / 求人の説明 / 全体の FAQ。job_id を渡したときは job(求人の説明・給与 pay・勤務時間・待遇、
+    正社員なら必須・歓迎の経験・働き方・休日・試用期間)も
     答えの材料にする(hits は言葉の重なりで探すので、仕事内容のような質問では外れることがある)。どちらにも無ければ推測で答えない。"""
     return logic.answer_material(question, job_id)
 

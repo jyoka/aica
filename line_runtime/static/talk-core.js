@@ -75,14 +75,38 @@ function createTalk(o) {
   }
 
   // ---------- 求人カード(LINE の Flex Message のカルーセル風) ----------
+  // 給与を雇用区分に合わせて出す: 時給(アルバイト・パート)は「時給 1,350円」、月給・年収(正社員)は「年収 450万〜650万円」。
+  // 金額は dip の pay(円)から作る。v1 の会話の記録(hourly_wage だけのカード)も時給として描く
+  const man = (n) => `${Number(n) / 10000}万`;
+  function payParts(j) {
+    const p = j.pay || { kind: "時給", min: j.hourly_wage, max: null };
+    const range = p.max && p.max !== p.min;
+    if (p.kind === "時給") return [p.kind, `${yen(p.min)}` + (range ? `〜${yen(p.max)}` : "") + "円"];
+    return [p.kind, man(p.min) + (range ? `〜${man(p.max)}` : "") + "円"];
+  }
+  // 正社員の求人のタグ(働き方・休日)。アルバイト・パートは勤務時間・週の日数
+  function fulltimeTags(j) {
+    const t = [], w = j.work_style, h = j.holidays;
+    if (w && w.remote !== "不可") t.push(w.remote === "可" ? "リモート可" : "一部リモート");
+    if (w?.flex) t.push("フレックス");
+    if (w) t.push(`残業 月${w.overtime_hours}時間ほど`);
+    if (h) t.push(`年間休日${h.annual_days}日` + (h.weekends_holidays ? "(土日祝)" : ""));
+    return t;
+  }
   // saved: 「保存した求人」の一覧に出すカード(保存ボタンは出さず、トークで聞くだけ)
   function jobCard(j, saved = false) {
     const c = el("div", "jc"), inner = el("div", "in");
-    inner.append(el("div", "meta", `${j.job_type} · ${j.area}` + (j.saved_at ? ` · ${j.saved_at}に保存` : "")),
-                 el("div", "ttl", j.title), el("div", "emp", j.employer));
-    const w = el("div", "wage"); w.append(el("small", null, "時給"), el("b", null, `${yen(j.hourly_wage)}円`)); inner.appendChild(w);
+    const fulltime = j.employment_type === "正社員";
+    const meta = el("div", "meta");
+    if (fulltime) meta.appendChild(el("span", "kind", "正社員"));
+    meta.appendChild(document.createTextNode(`${j.job_type} · ${j.area}` + (j.saved_at ? ` · ${j.saved_at}に保存` : "")));
+    inner.append(meta, el("div", "ttl", j.title), el("div", "emp", j.employer));
+    const [kind, amount] = payParts(j);
+    const w = el("div", kind === "時給" ? "wage" : "wage long"); w.append(el("small", null, kind), el("b", null, amount)); inner.appendChild(w);
     const tags = el("div", "tags");
-    for (const t of [j.shift, `週${j.days_min}日〜`, `${j.station.replace(/駅$/, "")}駅 徒歩${j.walk_min}分`]) tags.appendChild(el("span", "tag", t));
+    const station = `${j.station.replace(/駅$/, "")}駅 徒歩${j.walk_min}分`;
+    const basics = fulltime ? [...fulltimeTags(j), station] : [j.shift, j.days_min ? `週${j.days_min}日〜` : null, station];
+    for (const t of basics.filter(Boolean)) tags.appendChild(el("span", "tag", t));
     for (const p of (j.perks || []).slice(0, 3)) tags.appendChild(el("span", "tag perk", p));  // アピールポイント(待遇)
     inner.appendChild(tags);
     if (j.reasons?.length) { const why = el("div", "why"); why.append(el("span", null, "おすすめ"), document.createTextNode(j.reasons.join(" / "))); inner.appendChild(why); }

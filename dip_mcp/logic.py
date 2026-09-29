@@ -16,16 +16,20 @@ from collections import Counter
 
 from dip_mcp import embedding
 from dip_mcp.data import (
+    EMPLOYMENT_TYPES,
     FIXTURES,
     PII_FIELDS,
     PII_VALUE,
     BaitoJob,
+    Pay,
     State,
+    annual_pay_max,
     load_job_faq,
     load_jobs,
     load_listings,
     now,
     parse_ts,
+    pay_text,
 )
 from resume_intake.extract import scrub_pii
 from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
@@ -172,17 +176,39 @@ def form_exit(state: State, line_user_id: str) -> dict | None:
 
 # ----------------------------- 推薦 -----------------------------
 
-# 求人の職種は決まった12種類。job_type はこの中の1つと完全に一致させる(部分一致はしない)
+# 求人の職種は雇用区分ごとに決まった一覧(ADR-0002)。job_type はその中の1つと完全に一致させる(部分一致はしない)。
+# アルバイト・パートは12種類
 JOB_TYPES = ("アパレル販売", "イベントスタッフ", "オフィス事務", "カフェ", "コンビニ", "コールセンター", "スーパー・販売",
              "倉庫・軽作業", "塾講師・家庭教師", "配送・デリバリー", "飲食キッチン", "飲食ホール")
+# 正社員は10種類。アルバイト・パートの職種と同じ名前を使わない(職種の名前だけで区分が決まるように)
+FULLTIME_JOB_TYPES = ("営業", "企画・PM", "エンジニア", "事務・管理", "販売・サービス", "製造・技術", "医療・介護", "教育",
+                      "クリエイティブ", "物流")
+JOB_TYPES_BY_EMPLOYMENT = {"アルバイト・パート": JOB_TYPES, "正社員": FULLTIME_JOB_TYPES}
 
 
-def _job_type_error(job_type) -> dict | None:
-    """一覧に無い職種なら、0件で返さずエラーと一覧を返す(エージェントが指定し直せるように)。"""
-    if not job_type or job_type in JOB_TYPES:
+def _employment_type(employment_type) -> str | None:
+    """求人を絞る雇用区分。未定(「未定」・指定なし)なら None(両方の区分から出す)。"""
+    return None if not employment_type or employment_type == "未定" else employment_type
+
+
+def _employment_type_error(employment_type) -> dict | None:
+    if employment_type is None or employment_type in EMPLOYMENT_TYPES:
         return None
-    return {"error": f"職種「{job_type}」は一覧にありません。job_types の中から選び、複数に当たるなら1つずつ検索し直してください",
-            "job_types": list(JOB_TYPES)}
+    return {"error": f"employment_type「{employment_type}」は使えません。{' / '.join(EMPLOYMENT_TYPES)} のどちらかを渡すか、"
+                     "区分が未定なら指定しない(両方の区分から探す)",
+            "employment_types": list(EMPLOYMENT_TYPES)}
+
+
+def _job_type_error(job_type, employment_type=None) -> dict | None:
+    """一覧に無い職種なら、0件で返さずエラーと一覧を返す(エージェントが指定し直せるように)。
+    雇用区分を指定したときは、その区分の一覧の中の完全一致だけを許す。"""
+    by_type = ({employment_type: JOB_TYPES_BY_EMPLOYMENT[employment_type]} if employment_type
+               else JOB_TYPES_BY_EMPLOYMENT)
+    if not job_type or any(job_type in types for types in by_type.values()):
+        return None
+    where = f"{employment_type}の" if employment_type else ""
+    return {"error": f"職種「{job_type}」は{where}一覧にありません。job_types の中から選び、複数に当たるなら1つずつ検索し直してください",
+            "job_types": {k: list(v) for k, v in by_type.items()}}
 
 
 # 求人のエリアは決まった11の地名(東京8・神奈川2・埼玉1)。area はこの中の地名か、求人の最寄り駅名と一致させる
@@ -218,14 +244,23 @@ def _area_set(area) -> set[str] | None:
     return {area.removesuffix("駅")}
 
 
-def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage) -> bool:
+def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage,
+           employment_type=None, min_annual_salary=None) -> bool:
+    if employment_type and job.employment_type != employment_type:
+        return False
     if areas and job.area not in areas and job.station.removesuffix("駅") not in areas:
         return False
-    if time_band and time_band not in job.time_bands:
+    if time_band and time_band not in job.time_bands:  # 正社員の求人は time_bands が空なので、時間帯を指定すると出ない
         return False
     if job_type and job_type != job.job_type:
         return False
-    return not (min_wage and job.hourly_wage < min_wage)
+    if min_wage and (job.pay.kind != "時給" or job.pay.min < min_wage):  # 時給の下限は時給の求人だけに効く
+        return False
+    if min_annual_salary:  # 年収の下限(万円)は、年収・月給の求人の上限の見込みと比べる(時給の求人は出ない)
+        top = annual_pay_max(job.pay)
+        if top is None or top < min_annual_salary * 10000:
+            return False
+    return True
 
 
 def _keyword_hit(job: BaitoJob, keywords: str) -> bool:
@@ -272,17 +307,48 @@ def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[st
         reasons.append(f"{job.area}エリア")
     if job_type and job_type == job.job_type and not reasons[:1]:
         reasons.append(f"希望の{job.job_type}")
+    reasons += _fulltime_reasons(job)
     good = [p for p in job.perks if p in ("未経験OK", "日払い", "シフト自由", "短時間OK")]
     if good:
         reasons.append(good[0])
-    return reasons[:2] or [f"時給{job.hourly_wage:,}円"]
+    return reasons[:2] or [pay_text(job.pay)]
+
+
+def _fulltime_reasons(job: BaitoJob) -> list[str]:
+    """正社員の求人の働き方・休日のうち、理由に挙げられる事実(アルバイト・パートの求人では空)。"""
+    out = []
+    if job.work_style and job.work_style.remote != "不可":
+        out.append("リモート可" if job.work_style.remote == "可" else "一部リモート可")
+    if job.holidays and job.holidays.weekends_holidays:
+        out.append(f"土日祝休み(年間休日{job.holidays.annual_days}日)")
+    if job.work_style and job.work_style.overtime_hours <= 10:
+        out.append(f"残業は月{job.work_style.overtime_hours}時間ほど")
+    return out
 
 
 def job_card(job: BaitoJob, reasons: list[str]) -> dict:
-    """LINE の求人カードに出す形。dip が求人を返すときは、どのツールでもこの形を使う(LINE 側はこれだけを描画する)。"""
-    return {"job_id": job.job_id, "title": job.title, "employer": job.employer, "job_type": job.job_type,
-            "area": job.area, "station": job.station, "walk_min": job.walk_min, "hourly_wage": job.hourly_wage,
+    """LINE の求人カードに出す形。dip が求人を返すときは、どのツールでもこの形を使う(LINE 側はこれだけを描画する)。
+    給与は pay({kind: 時給|月給|年収, min, max}、円)と、その表示の pay_text(年収450万〜650万円 など)。days_min はアルバイト・パートだけ(正社員は None)。
+    働き方・休日は正社員の求人だけに付く。"""
+    card = {"job_id": job.job_id, "title": job.title, "employer": job.employer,
+            "employment_type": job.employment_type, "job_type": job.job_type,
+            "area": job.area, "station": job.station, "walk_min": job.walk_min,
+            "pay": job.pay.model_dump(), "pay_text": pay_text(job.pay),
             "shift": job.shift, "days_min": job.days_min, "perks": job.perks, "reasons": reasons}
+    if job.work_style:
+        card["work_style"] = job.work_style.model_dump()
+    if job.holidays:
+        card["holidays"] = job.holidays.model_dump()
+    return card
+
+
+def _wage_score(pay: Pay) -> float:
+    """給与の高さの点数(並べ替え用)。時給は2,000円、年収・月給は年収800万円(の見込みの真ん中)を1点にそろえる
+    (区分が未定で両方を並べるときに、どちらかの区分だけが上に偏らないように)。"""
+    if pay.kind == "時給":
+        return round(pay.min / 2000, 2)
+    per_year = 12 if pay.kind == "月給" else 1
+    return round((pay.min + (pay.max or pay.min)) / 2 * per_year / 8_000_000, 2)
 
 
 def match_breakdown(job: BaitoJob, tend: dict) -> dict[str, float]:
@@ -294,14 +360,17 @@ def match_breakdown(job: BaitoJob, tend: dict) -> dict[str, float]:
         "time_band": 1.0 if set(job.time_bands) & set(tend["time_band"]) else 0.0,
         "area": 1.0 if job.area in tend["area"] else 0.0,
         "station": round(max(0, 10 - job.walk_min) / 10, 2),  # 駅から近いほど高い(徒歩10分以上は0)
-        "wage": round(job.hourly_wage / 2000, 2),
+        "wage": _wage_score(job.pay),
     }
 
 
 def recommend(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
               keywords=None, exclude_ids: list[str] | None = None, limit: int = MAX_JOBS,
-              posted_within_days: int | None = None) -> dict:
-    if err := _job_type_error(job_type):
+              posted_within_days: int | None = None, employment_type=None, min_annual_salary=None) -> dict:
+    """employment_type(アルバイト・パート / 正社員)で区分を絞る。未定(指定なし・「未定」)なら両方の区分から出す。
+    min_annual_salary は希望年収の下限(万円)。年収・月給の求人だけが対象になる。"""
+    employment_type = _employment_type(employment_type)
+    if err := _employment_type_error(employment_type) or _job_type_error(job_type, employment_type):
         return err
     jobs = load_jobs()  # 傾向と理由(過去の応募との比較)は全体の求人から数える
     if err := _area_error(area, jobs):
@@ -316,7 +385,8 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     applied = {a["job_id"] for a in user.get("applications", [])}
     exclude = set(exclude_ids or []) | applied  # 応募済みの求人は出さない
     tend = preferences(user, jobs) if user.get("dip_id") else {"job_type": [], "area": [], "time_band": []}
-    cands = [j for j in pool.values() if j.job_id not in exclude and _match(j, areas, time_band, job_type, min_wage)]
+    cands = [j for j in pool.values() if j.job_id not in exclude
+             and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary)]
     sims = None
     if keywords:
         cands, sims = _keyword_filter(cands, keywords)
@@ -333,16 +403,19 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
 
 
 def relax(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
-          keywords=None) -> dict:
-    """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。"""
-    if err := _job_type_error(job_type) or _area_error(area, load_jobs()):
+          keywords=None, employment_type=None, min_annual_salary=None) -> dict:
+    """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。"""
+    employment_type = _employment_type(employment_type)
+    if err := (_employment_type_error(employment_type) or _job_type_error(job_type, employment_type)
+               or _area_error(area, load_jobs())):
         return err
-    cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage, "keywords": keywords}
-    base = recommend(state, line_user_id, **cond)["total"]
+    cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage,
+            "min_annual_salary": min_annual_salary, "keywords": keywords}
+    base = recommend(state, line_user_id, **cond, employment_type=employment_type)["total"]
     options = []
     for k, v in cond.items():
         if v:
-            n = recommend(state, line_user_id, **{**cond, k: None})["total"]
+            n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type)["total"]
             if n > base:
                 options.append({"remove": k, "current": v, "total_after": n})
     options.sort(key=lambda o: o["total_after"], reverse=True)
@@ -378,6 +451,27 @@ def _sentences(text: str) -> list[str]:
 MIN_OVERLAP = 0.25  # 質問の組の4分の1以上が重なったものだけを当たりにする
 
 
+def _job_facts(job: BaitoJob) -> list[str]:
+    """求人の項目を、答えの材料になる短い文にする(求人の説明)。正社員の項目は、ある求人だけ。"""
+    days = f"(週{job.days_min}日〜)" if job.days_min else ""
+    facts = [f"勤務時間: {job.shift}{days}", f"待遇: {'・'.join(job.perks) or 'なし'}",
+             f"{pay_text(job.pay)}、{job.station.removesuffix('駅')}駅から徒歩{job.walk_min}分"]
+    if job.required_experience:
+        facts.append(f"必須の経験・資格: {'・'.join(job.required_experience)}")
+    if job.preferred_experience:
+        facts.append(f"歓迎の経験・資格: {'・'.join(job.preferred_experience)}")
+    if w := job.work_style:
+        facts.append(f"働き方: リモートワーク{w.remote}、フレックス{'あり' if w.flex else 'なし'}、"
+                     f"残業は月{w.overtime_hours}時間ほど")
+    if h := job.holidays:
+        facts.append(f"休日: 年間休日{h.annual_days}日、"
+                     + ("土日祝休み" if h.weekends_holidays else "シフト制など(土日祝が休みとは限らない)"))
+    if t := job.employment_terms:
+        facts.append(f"試用期間: {t.probation_months}か月" + (f"({t.notes})" if t.notes else "")
+                     if t.probation_months else "試用期間: なし")
+    return facts
+
+
 def answer_material(question: str, job_id: str | None = None) -> dict:
     """質問に答える材料を、出典つきで返す(回答文の生成は LINE 側 LLM が行う = RAG の Retrieval 部分)。
     job_id があれば、その求人の Q&A → 求人の説明(仕事内容・大変なところ・待遇・シフト)→ 全体の FAQ の順に探す。
@@ -394,9 +488,7 @@ def answer_material(question: str, job_id: str | None = None) -> dict:
         if job:
             for f in load_job_faq().get(job_id, []):
                 hits.append({"source": "案件の FAQ", "q": f["q"], "a": f["a"], "score": score(f["q"] + f["a"])})
-            facts = _sentences(job.description) + _sentences(job.drawback) + [
-                f"勤務時間: {job.shift}(週{job.days_min}日〜)", f"待遇: {'・'.join(job.perks) or 'なし'}",
-                f"時給{job.hourly_wage}円、{job.station.removesuffix('駅')}駅から徒歩{job.walk_min}分"]
+            facts = _sentences(job.description) + _sentences(job.drawback) + _job_facts(job)
             for t in facts:
                 hits.append({"source": "求人の説明", "a": t, "score": score(t)})
             out["job"] = job.model_dump()
@@ -632,7 +724,7 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
         if job is None:
             continue
         reasons = [str(r) for r in (j.get("reasons") or []) if str(r).strip()]
-        cards.append(job_card(job, reasons or [f"時給{job.hourly_wage:,}円"]))
+        cards.append(job_card(job, reasons or [pay_text(job.pay)]))
     rec = {"at": now().isoformat(), "cards": cards, "draft_markdown": str(draft_markdown or ""),
            "files": [str(f) for f in (files or [])], "delivered": False}
     result = {}

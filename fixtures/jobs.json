@@ -3,11 +3,16 @@
     "job_id": "b0101",
     "title": "居酒屋ホールスタッフ｜夕方～夜勤務",
     "employer": "炭火酒房 とりの音",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食ホール",
     "area": "新宿",
     "station": "新宿三丁目",
     "walk_min": 4,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜",
@@ -30,11 +35,16 @@
     "job_id": "b0102",
     "title": "カフェレストランのフロアスタッフ（ランチ帯）",
     "employer": "カフェ・ミズナラ 吉祥寺本町店",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食ホール",
     "area": "吉祥寺",
     "station": "吉祥寺",
     "walk_min": 6,
-    "hourly_wage": 1180,
+    "pay": {
+      "kind": "時給",
+      "min": 1180,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -54,11 +64,16 @@
     "job_id": "b0103",
     "title": "創作和食ダイニング ホール｜土日メイン歓迎",
     "employer": "和ダイニング 月見坂",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食ホール",
     "area": "横浜",
     "station": "横浜",
     "walk_min": 8,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -79,11 +94,16 @@
     "job_id": "b0104",
     "title": "朝から働く定食屋ホール｜開店準備スタッフ",
     "employer": "めし処 あかつき食堂",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食ホール",
     "area": "川崎",
     "station": "川崎",
     "walk_min": 3,
-    "hourly_wage": 1220,
+    "pay": {
+      "kind": "時給",
+      "min": 1220,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -104,11 +124,16 @@
     "job_id": "b0105",
     "title": "深夜バル ホールスタッフ｜高時給・日払いOK",
     "employer": "バル アルデンテ横丁",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食ホール",
     "area": "渋谷",
     "station": "渋谷",
     "walk_min": 7,
-    "hourly_wage": 1700,
+    "pay": {
+      "kind": "時給",
+      "min": 1700,
+      "max": null
+    },
     "time_bands": [
       "夜",
       "深夜"
@@ -130,11 +155,16 @@
     "job_id": "b0201",
     "title": "居酒屋のキッチンスタッフ(調理補助)",
     "employer": "炭火酒場 とりよし堂",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食キッチン",
     "area": "新宿",
     "station": "新宿三丁目駅",
     "walk_min": 4,
-    "hourly_wage": 1380,
+    "pay": {
+      "kind": "時給",
+      "min": 1380,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜",
@@ -157,11 +187,16 @@
     "job_id": "b0202",
     "title": "ベーカリーカフェの early morning 厨房スタッフ",
     "employer": "パンと珈琲 ミナモトベーカリー",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食キッチン",
     "area": "吉祥寺",
     "station": "吉祥寺駅",
     "walk_min": 7,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -182,11 +217,16 @@
     "job_id": "b0203",
     "title": "ラーメン店の調理スタッフ",
     "employer": "麺屋 くろがね亭",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食キッチン",
     "area": "川崎",
     "station": "川崎駅",
     "walk_min": 3,
-    "hourly_wage": 1450,
+    "pay": {
+      "kind": "時給",
+      "min": 1450,
+      "max": null
+    },
     "time_bands": [
       "夜",
       "深夜"
@@ -207,11 +247,16 @@
     "job_id": "b0204",
     "title": "社員食堂のキッチン補助",
     "employer": "株式会社ハレノヒフードサービス",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食キッチン",
     "area": "品川",
     "station": "品川駅",
     "walk_min": 9,
-    "hourly_wage": 1200,
+    "pay": {
+      "kind": "時給",
+      "min": 1200,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -231,11 +276,16 @@
     "job_id": "b0205",
     "title": "イタリアンバルのキッチンスタッフ",
     "employer": "トラットリア・ヴェントーゾ横浜",
+    "employment_type": "アルバイト・パート",
     "job_type": "飲食キッチン",
     "area": "横浜",
     "station": "関内駅",
     "walk_min": 6,
-    "hourly_wage": 1550,
+    "pay": {
+      "kind": "時給",
+      "min": 1550,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -255,11 +305,16 @@
     "job_id": "b0301",
     "title": "カフェスタッフ(ホール・ドリンク)",
     "employer": "カフェ・ルミエール吉祥寺店",
+    "employment_type": "アルバイト・パート",
     "job_type": "カフェ",
     "area": "吉祥寺",
     "station": "吉祥寺駅",
     "walk_min": 4,
-    "hourly_wage": 1180,
+    "pay": {
+      "kind": "時給",
+      "min": 1180,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -281,11 +336,16 @@
     "job_id": "b0302",
     "title": "早朝オープンスタッフ/カフェ",
     "employer": "モーニングベル珈琲 品川インターシティ前店",
+    "employment_type": "アルバイト・パート",
     "job_type": "カフェ",
     "area": "品川",
     "station": "品川駅",
     "walk_min": 6,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -305,11 +365,16 @@
     "job_id": "b0303",
     "title": "夜カフェ&バータイムスタッフ",
     "employer": "ナイトブリュー渋谷",
+    "employment_type": "アルバイト・パート",
     "job_type": "カフェ",
     "area": "渋谷",
     "station": "渋谷駅",
     "walk_min": 8,
-    "hourly_wage": 1500,
+    "pay": {
+      "kind": "時給",
+      "min": 1500,
+      "max": null
+    },
     "time_bands": [
       "夜",
       "深夜"
@@ -330,11 +395,16 @@
     "job_id": "b0304",
     "title": "カフェホールスタッフ(週2日〜)",
     "employer": "珈琲屋こもれび 中野北口店",
+    "employment_type": "アルバイト・パート",
     "job_type": "カフェ",
     "area": "中野",
     "station": "中野駅",
     "walk_min": 3,
-    "hourly_wage": 1120,
+    "pay": {
+      "kind": "時給",
+      "min": 1120,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -356,11 +426,16 @@
     "job_id": "b0305",
     "title": "カフェ店長候補/バリスタ",
     "employer": "アトリエ・カンパネラ 大宮スタンド",
+    "employment_type": "アルバイト・パート",
     "job_type": "カフェ",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 5,
-    "hourly_wage": 1600,
+    "pay": {
+      "kind": "時給",
+      "min": 1600,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方",
@@ -380,11 +455,16 @@
     "job_id": "b0401",
     "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
     "employer": "ハミングマート中野南口店",
+    "employment_type": "アルバイト・パート",
     "job_type": "コンビニ",
     "area": "中野",
     "station": "中野",
     "walk_min": 3,
-    "hourly_wage": 1750,
+    "pay": {
+      "kind": "時給",
+      "min": 1750,
+      "max": null
+    },
     "time_bands": [
       "夜",
       "深夜"
@@ -405,11 +485,16 @@
     "job_id": "b0402",
     "title": "オフィス街の朝コンビニ｜レジ中心・短時間OK",
     "employer": "シティストアはまかぜ品川港南店",
+    "employment_type": "アルバイト・パート",
     "job_type": "コンビニ",
     "area": "品川",
     "station": "品川",
     "walk_min": 6,
-    "hourly_wage": 1300,
+    "pay": {
+      "kind": "時給",
+      "min": 1300,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -429,11 +514,16 @@
     "job_id": "b0403",
     "title": "夕方〜夜のコンビニスタッフ｜学生さん多数",
     "employer": "ベリーベルストア高円寺北口店",
+    "employment_type": "アルバイト・パート",
     "job_type": "コンビニ",
     "area": "高円寺",
     "station": "高円寺",
     "walk_min": 2,
-    "hourly_wage": 1200,
+    "pay": {
+      "kind": "時給",
+      "min": 1200,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -454,11 +544,16 @@
     "job_id": "b0404",
     "title": "日中のコンビニ｜発注も覚えられる長期歓迎",
     "employer": "まちかどマート大宮氷川通り店",
+    "employment_type": "アルバイト・パート",
     "job_type": "コンビニ",
     "area": "大宮",
     "station": "大宮",
     "walk_min": 9,
-    "hourly_wage": 1150,
+    "pay": {
+      "kind": "時給",
+      "min": 1150,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -477,11 +572,16 @@
     "job_id": "b0405",
     "title": "駅前大型コンビニ｜たばこ・宅配便カウンター担当",
     "employer": "クオリマート横浜西口五番街店",
+    "employment_type": "アルバイト・パート",
     "job_type": "コンビニ",
     "area": "横浜",
     "station": "横浜",
     "walk_min": 4,
-    "hourly_wage": 1400,
+    "pay": {
+      "kind": "時給",
+      "min": 1400,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方",
@@ -503,11 +603,16 @@
     "job_id": "b0501",
     "title": "食品スーパーのレジ・品出しスタッフ",
     "employer": "フレッシュマート青葉台",
+    "employment_type": "アルバイト・パート",
     "job_type": "スーパー・販売",
     "area": "中野",
     "station": "中野",
     "walk_min": 6,
-    "hourly_wage": 1180,
+    "pay": {
+      "kind": "時給",
+      "min": 1180,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -528,11 +633,16 @@
     "job_id": "b0502",
     "title": "深夜スーパーの品出し・在庫補充",
     "employer": "24hマーケット ソレイユ川崎店",
+    "employment_type": "アルバイト・パート",
     "job_type": "スーパー・販売",
     "area": "川崎",
     "station": "川崎",
     "walk_min": 4,
-    "hourly_wage": 1650,
+    "pay": {
+      "kind": "時給",
+      "min": 1650,
+      "max": null
+    },
     "time_bands": [
       "深夜",
       "早朝"
@@ -553,11 +663,16 @@
     "job_id": "b0503",
     "title": "デパ地下和菓子売場の販売スタッフ",
     "employer": "御菓子司 花あかり 横浜店",
+    "employment_type": "アルバイト・パート",
     "job_type": "スーパー・販売",
     "area": "横浜",
     "station": "横浜",
     "walk_min": 3,
-    "hourly_wage": 1400,
+    "pay": {
+      "kind": "時給",
+      "min": 1400,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -577,11 +692,16 @@
     "job_id": "b0504",
     "title": "精肉コーナーのパック詰め・加工補助",
     "employer": "スーパーひだまり食品館 大宮北店",
+    "employment_type": "アルバイト・パート",
     "job_type": "スーパー・販売",
     "area": "大宮",
     "station": "大宮",
     "walk_min": 9,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -601,11 +721,16 @@
     "job_id": "b0505",
     "title": "輸入食品セレクトショップの接客販売",
     "employer": "パントリーノルド 吉祥寺",
+    "employment_type": "アルバイト・パート",
     "job_type": "スーパー・販売",
     "area": "吉祥寺",
     "station": "吉祥寺",
     "walk_min": 5,
-    "hourly_wage": 1320,
+    "pay": {
+      "kind": "時給",
+      "min": 1320,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -626,11 +751,16 @@
     "job_id": "b0601",
     "title": "レディースアパレル 店頭販売スタッフ",
     "employer": "ルミエ・トロワ 渋谷店",
+    "employment_type": "アルバイト・パート",
     "job_type": "アパレル販売",
     "area": "渋谷",
     "station": "渋谷駅",
     "walk_min": 5,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -651,11 +781,16 @@
     "job_id": "b0602",
     "title": "メンズセレクトショップ 販売スタッフ(夕方〜)",
     "employer": "アトリエ・カルボン 新宿南口店",
+    "employment_type": "アルバイト・パート",
     "job_type": "アパレル販売",
     "area": "新宿",
     "station": "新宿駅",
     "walk_min": 3,
-    "hourly_wage": 1450,
+    "pay": {
+      "kind": "時給",
+      "min": 1450,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -676,11 +811,16 @@
     "job_id": "b0603",
     "title": "アウトドアウェア 接客・品出しスタッフ",
     "employer": "ノースフィヨルド 横浜ベイサイド店",
+    "employment_type": "アルバイト・パート",
     "job_type": "アパレル販売",
     "area": "横浜",
     "station": "横浜駅",
     "walk_min": 8,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -700,11 +840,16 @@
     "job_id": "b0604",
     "title": "古着・ヴィンテージ店 店頭スタッフ",
     "employer": "サーカスジャンク高円寺",
+    "employment_type": "アルバイト・パート",
     "job_type": "アパレル販売",
     "area": "高円寺",
     "station": "高円寺駅",
     "walk_min": 4,
-    "hourly_wage": 1150,
+    "pay": {
+      "kind": "時給",
+      "min": 1150,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -725,11 +870,16 @@
     "job_id": "b0605",
     "title": "百貨店内 婦人服ブランド 販売スタッフ(経験者優遇)",
     "employer": "メゾン・シエルブルー 大宮店",
+    "employment_type": "アルバイト・パート",
     "job_type": "アパレル販売",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 2,
-    "hourly_wage": 1600,
+    "pay": {
+      "kind": "時給",
+      "min": 1600,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -748,11 +898,16 @@
     "job_id": "b0701",
     "title": "通販商品のピッキング・梱包スタッフ",
     "employer": "株式会社ミナトロジ・サービス",
+    "employment_type": "アルバイト・パート",
     "job_type": "倉庫・軽作業",
     "area": "品川",
     "station": "大井町",
     "walk_min": 12,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -773,11 +928,16 @@
     "job_id": "b0702",
     "title": "深夜の仕分け・検品スタッフ(短期歓迎)",
     "employer": "サンライトカーゴ流通センター",
+    "employment_type": "アルバイト・パート",
     "job_type": "倉庫・軽作業",
     "area": "川崎",
     "station": "川崎",
     "walk_min": 18,
-    "hourly_wage": 1750,
+    "pay": {
+      "kind": "時給",
+      "min": 1750,
+      "max": null
+    },
     "time_bands": [
       "深夜"
     ],
@@ -797,11 +957,16 @@
     "job_id": "b0703",
     "title": "アパレル倉庫の値札付け・検品",
     "employer": "ルミエ物流サポート株式会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "倉庫・軽作業",
     "area": "大宮",
     "station": "大宮",
     "walk_min": 15,
-    "hourly_wage": 1200,
+    "pay": {
+      "kind": "時給",
+      "min": 1200,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -822,11 +987,16 @@
     "job_id": "b0704",
     "title": "飲料・食品の入荷仕分けスタッフ",
     "employer": "北関東フレッシュ配送センター",
+    "employment_type": "アルバイト・パート",
     "job_type": "倉庫・軽作業",
     "area": "上野",
     "station": "鶯谷",
     "walk_min": 9,
-    "hourly_wage": 1500,
+    "pay": {
+      "kind": "時給",
+      "min": 1500,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -846,11 +1016,16 @@
     "job_id": "b0705",
     "title": "イベント資材の搬入・搬出補助",
     "employer": "コトノハ・ステージワークス",
+    "employment_type": "アルバイト・パート",
     "job_type": "倉庫・軽作業",
     "area": "横浜",
     "station": "新高島",
     "walk_min": 6,
-    "hourly_wage": 1650,
+    "pay": {
+      "kind": "時給",
+      "min": 1650,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -872,11 +1047,16 @@
     "job_id": "b0801",
     "title": "フードデリバリー配達スタッフ(電動自転車貸出あり)",
     "employer": "クイックバイト便 渋谷ステーション",
+    "employment_type": "アルバイト・パート",
     "job_type": "配送・デリバリー",
     "area": "渋谷",
     "station": "渋谷駅",
     "walk_min": 7,
-    "hourly_wage": 1400,
+    "pay": {
+      "kind": "時給",
+      "min": 1400,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -898,11 +1078,16 @@
     "job_id": "b0802",
     "title": "軽自動車での日用品ルート配送ドライバー",
     "employer": "大宮ロジスティクス友愛",
+    "employment_type": "アルバイト・パート",
     "job_type": "配送・デリバリー",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 14,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -921,11 +1106,16 @@
     "job_id": "b0803",
     "title": "深夜のコンビニ向け仕分け&配送アシスタント",
     "employer": "株式会社ナイトリレー川崎",
+    "employment_type": "アルバイト・パート",
     "job_type": "配送・デリバリー",
     "area": "川崎",
     "station": "川崎駅",
     "walk_min": 18,
-    "hourly_wage": 1750,
+    "pay": {
+      "kind": "時給",
+      "min": 1750,
+      "max": null
+    },
     "time_bands": [
       "深夜"
     ],
@@ -944,11 +1134,16 @@
     "job_id": "b0804",
     "title": "お弁当のオフィス宅配スタッフ(昼だけ短時間)",
     "employer": "まんぷく亭デリバリー吉祥寺",
+    "employment_type": "アルバイト・パート",
     "job_type": "配送・デリバリー",
     "area": "吉祥寺",
     "station": "吉祥寺駅",
     "walk_min": 5,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -969,11 +1164,16 @@
     "job_id": "b0805",
     "title": "家具・家電の2名配送&設置スタッフ",
     "employer": "ヨコハマ運び屋工房",
+    "employment_type": "アルバイト・パート",
     "job_type": "配送・デリバリー",
     "area": "横浜",
     "station": "新横浜駅",
     "walk_min": 11,
-    "hourly_wage": 1600,
+    "pay": {
+      "kind": "時給",
+      "min": 1600,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -992,11 +1192,16 @@
     "job_id": "b0901",
     "title": "通販商品の受注受付コールセンター(受信のみ)",
     "employer": "株式会社アオゾラコミュニケーションズ",
+    "employment_type": "アルバイト・パート",
     "job_type": "コールセンター",
     "area": "新宿",
     "station": "西新宿",
     "walk_min": 5,
-    "hourly_wage": 1600,
+    "pay": {
+      "kind": "時給",
+      "min": 1600,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1017,11 +1222,16 @@
     "job_id": "b0902",
     "title": "スマホ料金プランの問い合わせ窓口スタッフ",
     "employer": "ミライトーク・サポート株式会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "コールセンター",
     "area": "横浜",
     "station": "横浜",
     "walk_min": 8,
-    "hourly_wage": 1750,
+    "pay": {
+      "kind": "時給",
+      "min": 1750,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1040,11 +1250,16 @@
     "job_id": "b0903",
     "title": "深夜帯の緊急駆けつけ受付オペレーター",
     "employer": "株式会社ナイトゲート警備サービス",
+    "employment_type": "アルバイト・パート",
     "job_type": "コールセンター",
     "area": "川崎",
     "station": "川崎",
     "walk_min": 6,
-    "hourly_wage": 2100,
+    "pay": {
+      "kind": "時給",
+      "min": 2100,
+      "max": null
+    },
     "time_bands": [
       "夜",
       "深夜"
@@ -1063,11 +1278,16 @@
     "job_id": "b0904",
     "title": "法人向けアポイント獲得スタッフ(発信)",
     "employer": "株式会社コトブキセールスパートナーズ",
+    "employment_type": "アルバイト・パート",
     "job_type": "コールセンター",
     "area": "大宮",
     "station": "大宮",
     "walk_min": 4,
-    "hourly_wage": 1500,
+    "pay": {
+      "kind": "時給",
+      "min": 1500,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -1087,11 +1307,16 @@
     "job_id": "b0905",
     "title": "イベントチケットの予約受付オペレーター(夕方〜夜)",
     "employer": "合同会社ハレノヒチケットセンター",
+    "employment_type": "アルバイト・パート",
     "job_type": "コールセンター",
     "area": "池袋",
     "station": "池袋",
     "walk_min": 3,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -1112,11 +1337,16 @@
     "job_id": "b1001",
     "title": "【集団指導】中学生向け数学・英語の塾講師",
     "employer": "個別指導塾 まなびの森ゼミナール",
+    "employment_type": "アルバイト・パート",
     "job_type": "塾講師・家庭教師",
     "area": "中野",
     "station": "中野駅",
     "walk_min": 4,
-    "hourly_wage": 1800,
+    "pay": {
+      "kind": "時給",
+      "min": 1800,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -1136,11 +1366,16 @@
     "job_id": "b1002",
     "title": "小学生向け個別指導スタッフ(1対2)",
     "employer": "ステップアップ学院 池袋西口校",
+    "employment_type": "アルバイト・パート",
     "job_type": "塾講師・家庭教師",
     "area": "池袋",
     "station": "池袋駅",
     "walk_min": 6,
-    "hourly_wage": 1500,
+    "pay": {
+      "kind": "時給",
+      "min": 1500,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -1161,11 +1396,16 @@
     "job_id": "b1003",
     "title": "高校生向け英語・現代文講師(大学受験対応)",
     "employer": "翠明進学ゼミ 横浜本校",
+    "employment_type": "アルバイト・パート",
     "job_type": "塾講師・家庭教師",
     "area": "横浜",
     "station": "横浜駅",
     "walk_min": 8,
-    "hourly_wage": 2400,
+    "pay": {
+      "kind": "時給",
+      "min": 2400,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -1184,11 +1424,16 @@
     "job_id": "b1004",
     "title": "訪問型の家庭教師(小中学生・1件ずつ選べる)",
     "employer": "家庭教師センター あおば学びサポート",
+    "employment_type": "アルバイト・パート",
     "job_type": "塾講師・家庭教師",
     "area": "吉祥寺",
     "station": "吉祥寺駅",
     "walk_min": 3,
-    "hourly_wage": 2100,
+    "pay": {
+      "kind": "時給",
+      "min": 2100,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方",
@@ -1211,11 +1456,16 @@
     "job_id": "b1005",
     "title": "自習室チューター兼 質問対応スタッフ",
     "employer": "学習ラボ クオリア大宮",
+    "employment_type": "アルバイト・パート",
     "job_type": "塾講師・家庭教師",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 10,
-    "hourly_wage": 1250,
+    "pay": {
+      "kind": "時給",
+      "min": 1250,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1235,11 +1485,16 @@
     "job_id": "b1101",
     "title": "ホール系イベントの受付・案内スタッフ",
     "employer": "株式会社ミナトリンク",
+    "employment_type": "アルバイト・パート",
     "job_type": "イベントスタッフ",
     "area": "横浜",
     "station": "みなとみらい駅",
     "walk_min": 5,
-    "hourly_wage": 1350,
+    "pay": {
+      "kind": "時給",
+      "min": 1350,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1260,11 +1515,16 @@
     "job_id": "b1102",
     "title": "音楽ライブの会場設営・撤去スタッフ",
     "employer": "サウンドウェイブ企画合同会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "イベントスタッフ",
     "area": "渋谷",
     "station": "渋谷駅",
     "walk_min": 8,
-    "hourly_wage": 1500,
+    "pay": {
+      "kind": "時給",
+      "min": 1500,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜",
@@ -1286,11 +1546,16 @@
     "job_id": "b1103",
     "title": "スポーツ大会の運営サポート(週末中心)",
     "employer": "アリーナサポート大宮株式会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "イベントスタッフ",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 12,
-    "hourly_wage": 1200,
+    "pay": {
+      "kind": "時給",
+      "min": 1200,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"
@@ -1311,11 +1576,16 @@
     "job_id": "b1104",
     "title": "商業施設の販促イベント・サンプリングスタッフ",
     "employer": "プロモ・キツネ屋株式会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "イベントスタッフ",
     "area": "池袋",
     "station": "池袋駅",
     "walk_min": 3,
-    "hourly_wage": 1400,
+    "pay": {
+      "kind": "時給",
+      "min": 1400,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1337,11 +1607,16 @@
     "job_id": "b1105",
     "title": "大型フェスの警備・観客誘導リーダー候補",
     "employer": "株式会社カワサキフィールドワークス",
+    "employment_type": "アルバイト・パート",
     "job_type": "イベントスタッフ",
     "area": "川崎",
     "station": "川崎駅",
     "walk_min": 10,
-    "hourly_wage": 1800,
+    "pay": {
+      "kind": "時給",
+      "min": 1800,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方",
@@ -1362,11 +1637,16 @@
     "job_id": "b1201",
     "title": "未経験歓迎のかんたんデータ入力・書類整理",
     "employer": "株式会社コトノハ商会",
+    "employment_type": "アルバイト・パート",
     "job_type": "オフィス事務",
     "area": "新宿",
     "station": "新宿三丁目駅",
     "walk_min": 4,
-    "hourly_wage": 1400,
+    "pay": {
+      "kind": "時給",
+      "min": 1400,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -1386,11 +1666,16 @@
     "job_id": "b1202",
     "title": "IT企業のバックオフィスアシスタント(週3〜)",
     "employer": "合同会社ブルーポート・テック",
+    "employment_type": "アルバイト・パート",
     "job_type": "オフィス事務",
     "area": "渋谷",
     "station": "渋谷駅",
     "walk_min": 7,
-    "hourly_wage": 1650,
+    "pay": {
+      "kind": "時給",
+      "min": 1650,
+      "max": null
+    },
     "time_bands": [
       "日中",
       "夕方"
@@ -1410,11 +1695,16 @@
     "job_id": "b1203",
     "title": "医療機器メーカーの受発注サポート事務",
     "employer": "サンリッジメディカル株式会社",
+    "employment_type": "アルバイト・パート",
     "job_type": "オフィス事務",
     "area": "品川",
     "station": "品川駅",
     "walk_min": 9,
-    "hourly_wage": 1550,
+    "pay": {
+      "kind": "時給",
+      "min": 1550,
+      "max": null
+    },
     "time_bands": [
       "日中"
     ],
@@ -1432,11 +1722,16 @@
     "job_id": "b1204",
     "title": "会計事務所の夕方〜夜の入力スタッフ",
     "employer": "みなも会計パートナーズ",
+    "employment_type": "アルバイト・パート",
     "job_type": "オフィス事務",
     "area": "大宮",
     "station": "大宮駅",
     "walk_min": 5,
-    "hourly_wage": 1300,
+    "pay": {
+      "kind": "時給",
+      "min": 1300,
+      "max": null
+    },
     "time_bands": [
       "夕方",
       "夜"
@@ -1457,11 +1752,16 @@
     "job_id": "b1205",
     "title": "物流会社の事務アシスタント(横浜オフィス)",
     "employer": "株式会社ハマベ・ロジスティクス",
+    "employment_type": "アルバイト・パート",
     "job_type": "オフィス事務",
     "area": "横浜",
     "station": "横浜駅",
     "walk_min": 11,
-    "hourly_wage": 1450,
+    "pay": {
+      "kind": "時給",
+      "min": 1450,
+      "max": null
+    },
     "time_bands": [
       "早朝",
       "日中"

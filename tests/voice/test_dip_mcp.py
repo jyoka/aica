@@ -34,7 +34,8 @@ def test_recommend_jobs_over_mcp_with_script_wishes():
 
     ok, bad = asyncio.run(run())
     assert "jobs" in ok and 1 <= len(ok["jobs"]) <= 3
-    assert all(j["job_type"] == "カフェ" and j["hourly_wage"] >= 1100 for j in ok["jobs"])
+    assert all(j["job_type"] == "カフェ" and j["pay"]["min"] >= 1100 for j in ok["jobs"])
+    assert all(j["employment_type"] == "アルバイト・パート" for j in ok["jobs"])  # 音声はアルバイト・パートだけを探す
     # 一覧に無い職種は dip 側でエラーになる(PR #25)
     assert "error" in bad
 

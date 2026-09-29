@@ -63,7 +63,8 @@ ACTION_LABEL = {"resume_upload": "ファイルを選ぶ(履歴書)", "voice_cons
 def _format_agent(r: dict) -> str:
     parts = list(r["bubbles"])
     for c in r["cards"]:
-        parts.append(f"[求人カード] {c['title']} / 時給{c['hourly_wage']}円 / {c['shift']} / 理由: {'・'.join(c.get('reasons', []))}")
+        parts.append(f"[求人カード] {c['title']} / {c.get('employment_type', '')} / {c['pay_text']} / {c['shift']} / "
+                     f"理由: {'・'.join(c.get('reasons', []))}")
     for b in r["buttons"]:
         parts.append(f"[ボタン] {b['label']}")
     for a in r.get("actions", []):

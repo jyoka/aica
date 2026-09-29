@@ -113,7 +113,7 @@ function showJobs(jobs, total) {
   for (const j of jobs) {
     const d = document.createElement("div");
     d.className = "job";
-    const meta = [j.job_type, j.area, j.station ? j.station.replace(/駅$/, "") + "駅" : "", "時給" + j.hourly_wage + "円",
+    const meta = [j.job_type, j.area, j.station ? j.station.replace(/駅$/, "") + "駅" : "", j.pay_text,
                   j.shift].filter(Boolean).join(" / ");
     d.innerHTML = "<h3></h3><div class='meta'></div><div class='reasons'></div>";
     d.querySelector("h3").textContent = (j.title || "") + "(" + (j.employer || "") + ")";

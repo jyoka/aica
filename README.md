@@ -34,7 +34,7 @@ dip_mcp  ── dip 側(baitoru-mcp のシミュレーション)
       Resource: baitoru://faq
       Prompt:   baitoru_assistant(entry=A|visit|revisit|D)  会話の骨格・対話ルール・入口ごとの最初の1問
       Logic:    push_trigger  プッシュしてよいか(未連携・直近の接触・根拠の事実)と、話しかける根拠を決める
-      データ:   fixtures/(架空の求人63件・求人ベクトル・掲載日・シナリオ用ユーザー5人・FAQ)、会話で変わる状態は data/state.json
+      データ:   fixtures/(架空の求人103件〔アルバイト・パート63件、正社員40件〕・求人ベクトル・掲載日・シナリオ用ユーザー5人・FAQ)、会話で変わる状態は data/state.json
 ```
 
 dip 側のツールは LLM を使わない(速く・決定的に・事実だけを返す)。文面を作るのは LINE 側の LLM だけ。
@@ -158,7 +158,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python -m line_runtime.server   # 本番のトーク http://127.0.0.1:8030/ ・開発者画面 http://127.0.0.1:8030/dev
 ./.venv/bin/python -m pytest -q             # dip 側のオフラインテスト(MCP 往復を含む、LLM 不要)
 ./.venv/bin/python -m evals.run             # シナリオ評価(模擬ユーザー × 6シナリオ、実 API を使うので費用がかかる)
-./.venv/bin/python -m scripts.gen_jobs      # 架空求人を作り直す(fixtures/jobs.json。後で gen_job_vectors も回す)
+./.venv/bin/python -m scripts.gen_jobs      # 架空のアルバイト求人を作り直す(fixtures/jobs.json。正社員の fulltime_jobs.json は手書き。後で gen_job_vectors も回す)
 ./.venv/bin/python -m scripts.gen_job_vectors  # 求人ベクトルを作り直す(fixtures/job_vectors.json。求人データを変えたら)
 ```
 
@@ -187,7 +187,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - 左: ① シナリオを選ぶ(1通目の出どころ = 挨拶(初回訪問・再訪)/ dip のプッシュ でまとめた一覧。押すとその1通目から始まる)→
   ② dip から見た状態(状況・応募・保存・本人の希望・会話の結果)→ ③ やり直す(このシナリオを最初から)。
   シナリオは `POST /api/scenarios/{id}/start` で始める(そのユーザーの dip の状態を初期に戻す)。
-- 中央: LINE のトークルーム。求人は Flex Message 風のカード(時給・勤務時間・駅・おすすめの理由、「詳しく見る」「保存」)で出る。
+- 中央: LINE のトークルーム。求人は Flex Message 風のカード(アルバイト・パートは時給・勤務時間、正社員は年収か月給の幅・働き方・休日、駅・おすすめの理由、「詳しく見る」「保存」)で出る。
   LIFF のボタンを押すと dip の応募フォーム画面(モック)が開き、送信すると応募済みになる。
 - 右: システムの構成図と、このターンの処理の流れ。LINE 側 AI の LLM の呼び出し(時間・トークン・キャッシュから読めた分・呼んだツール)、
   dip のツールの呼び出し(引数・結果の要約)、プッシュの判定を順に出し、構成図の動いている部分を光らせる。

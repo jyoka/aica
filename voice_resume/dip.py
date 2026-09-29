@@ -22,6 +22,10 @@ from voice_resume import config
 
 logger = logging.getLogger("voice-resume.dip")
 
+# 音声の相談はアルバイト・パートの求人だけを探す(職種の一覧も jobs.JOB_TYPES = アルバイト・パートの12種類)。
+# 正社員の音声の相談(playbook・職務経歴書の下書き)は aica v2 の G で足す。
+EMPLOYMENT_TYPE = "アルバイト・パート"
+
 # relax_conditions は dip 側で user_id が必須。ユーザーが分からないときは固定の
 # 匿名IDを渡す(dip 側は未知のIDを「新規ユーザー」として読み取るだけで、記録は書かない)。
 ANON_USER_ID = "voice-resume"
@@ -50,7 +54,7 @@ class DipMCP:
         """条件に合う求人(最大3件)。返り値は dip の {"total", "jobs"} か {"error", ...}。"""
         if self._session is None:
             raise RuntimeError("DipMCP.start() が呼ばれていません")
-        result = await self._session.call_tool("recommend_jobs", args)
+        result = await self._session.call_tool("recommend_jobs", {"employment_type": EMPLOYMENT_TYPE, **args})
         return _tool_result_dict(result)
 
     async def relax_conditions(self, **args) -> dict:
@@ -58,7 +62,7 @@ class DipMCP:
         if self._session is None:
             raise RuntimeError("DipMCP.start() が呼ばれていません")
         result = await self._session.call_tool(
-            "relax_conditions", {"line_user_id": ANON_USER_ID, **args}
+            "relax_conditions", {"line_user_id": ANON_USER_ID, "employment_type": EMPLOYMENT_TYPE, **args}
         )
         return _tool_result_dict(result)
 

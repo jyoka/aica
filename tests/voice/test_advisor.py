@@ -19,13 +19,13 @@ from voice_resume.wages import (
 
 JOBS = [
     {"job_id": "b0305", "title": "カフェ店長候補/バリスタ", "employer": "A", "job_type": "カフェ",
-     "area": "大宮", "station": "大宮駅", "walk_min": 3, "hourly_wage": 1600,
+     "area": "大宮", "station": "大宮駅", "walk_min": 3, "pay": {"kind": "時給", "min": 1600, "max": None}, "pay_text": "時給1600円",
      "shift": "10:00-22:00", "days_min": 4, "perks": [], "reasons": ["時給1600円"]},
     {"job_id": "b0304", "title": "カフェホールスタッフ", "employer": "B", "job_type": "カフェ",
-     "area": "中野", "station": "中野駅", "walk_min": 4, "hourly_wage": 1120,
+     "area": "中野", "station": "中野駅", "walk_min": 4, "pay": {"kind": "時給", "min": 1120, "max": None}, "pay_text": "時給1120円",
      "shift": "10:00-20:00", "days_min": 2, "perks": [], "reasons": ["週2日から"]},
     {"job_id": "b0301", "title": "カフェスタッフ", "employer": "C", "job_type": "カフェ",
-     "area": "吉祥寺", "station": "吉祥寺駅", "walk_min": 2, "hourly_wage": 1180,
+     "area": "吉祥寺", "station": "吉祥寺駅", "walk_min": 2, "pay": {"kind": "時給", "min": 1180, "max": None}, "pay_text": "時給1180円",
      "shift": "8:00-20:00", "days_min": 3, "perks": [], "reasons": ["駅から近い"]},
 ]
 

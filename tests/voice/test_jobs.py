@@ -123,7 +123,7 @@ def test_spoken_job_line_is_short_single_sentence():
     job = {
         "job_id": "b0304", "title": "カフェホールスタッフ(週2日〜)", "employer": "喫茶モデラート",
         "job_type": "カフェ", "area": "中野", "station": "中野駅", "walk_min": 4,
-        "hourly_wage": 1120, "shift": "10:00-20:00", "days_min": 2,
+        "pay": {"kind": "時給", "min": 1120, "max": None}, "pay_text": "時給1120円", "shift": "10:00-20:00", "days_min": 2,
         "perks": ["まかない"], "reasons": ["週2日から入れます"],
     }
     line = spoken_job_line(job)

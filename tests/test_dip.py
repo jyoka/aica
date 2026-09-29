@@ -79,7 +79,12 @@ def test_relax_suggests_which_condition_to_drop(state):
 
 
 def test_job_types_list_matches_the_job_data():
-    assert set(logic.JOB_TYPES) == {j.job_type for j in logic.load_jobs().values()}
+    # 職種の一覧は雇用区分ごと。区分ごとに、求人の職種と一覧が完全に一致する(PR #25 以来の決まりを区分ごとに)
+    jobs = logic.load_jobs().values()
+    for employment_type, types in logic.JOB_TYPES_BY_EMPLOYMENT.items():
+        assert set(types) == {j.job_type for j in jobs if j.employment_type == employment_type}
+    assert logic.JOB_TYPES_BY_EMPLOYMENT["アルバイト・パート"] == logic.JOB_TYPES
+    assert not set(logic.JOB_TYPES) & set(logic.FULLTIME_JOB_TYPES)  # 同じ名前の職種を区分をまたいで使わない
 
 
 @pytest.mark.parametrize("job_type", ["飲食・カフェ", "飲食", "カフェ店員"])
@@ -88,7 +93,8 @@ def test_recommend_and_relax_return_the_job_type_list_for_unknown_job_type(state
     for r in (logic.recommend(state, "sim-new", area="渋谷", job_type=job_type),
               logic.relax(state, "sim-new", area="渋谷", job_type=job_type)):
         assert "jobs" not in r and "total_now" not in r  # 0件として返さない
-        assert job_type in r["error"] and r["job_types"] == list(logic.JOB_TYPES)
+        assert job_type in r["error"]
+        assert r["job_types"] == {"アルバイト・パート": list(logic.JOB_TYPES), "正社員": list(logic.FULLTIME_JOB_TYPES)}
 
 
 def test_areas_list_matches_the_job_data():
@@ -229,7 +235,7 @@ def test_common_hiragana_words_alone_do_not_match():
 def test_a_reworded_question_about_a_job_points_to_the_jobs_own_data():
     # LLM が「時給」を長い文に言い換えると検索は当たらない。それでも求人の項目(時給1550円)で答えさせる
     r = logic.answer_material("イタリアンバルのキッチンスタッフの時給はいくらですか", "b0205")
-    assert r["hits"] == [] and r["job"]["hourly_wage"] == 1550 and "job(" in r["note"]
+    assert r["hits"] == [] and r["job"]["pay"]["min"] == 1550 and "job(" in r["note"]
     assert "job(" not in logic.answer_material("ペットを連れて行けますか?")["note"]  # 求人の指定が無ければ従来どおり
 
 

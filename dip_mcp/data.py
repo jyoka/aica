@@ -1,4 +1,4 @@
-"""dip 側のデータ(シミュレーション)。求人・ユーザー状態・会話結果の保存。
+"""dip 側のデータ(シミュレーション)。求人(アルバイト・パートと正社員)・ユーザー状態・会話結果の保存。
 
 本番では dipAIAG / バイトル API が持つもの。ここでは fixtures の架空データと、
 会話で変わる状態(会話結果・保存・フォームの続き・応募)を JSON ファイルで持つ。
@@ -15,6 +15,7 @@ import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -35,21 +36,84 @@ PII_VALUE = re.compile(
 )
 
 
+# 雇用区分(ADR-0002)。求人には「未定」は付かない(未定は求職者の側の状態)
+EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
+PAY_KINDS = ("時給", "月給", "年収")
+
+
+class Pay(BaseModel):
+    """給与。金額はすべて円(年収500万円なら 5000000)。幅が無い(時給1,350円など)なら max は None。"""
+    kind: Literal["時給", "月給", "年収"]
+    min: int
+    max: int | None = None
+
+
+class WorkStyle(BaseModel):
+    """働き方(正社員の求人だけ)。"""
+    remote: Literal["可", "一部可", "不可"] = Field(description="リモートワーク(可 = 原則在宅、一部可 = 週に何日か)")
+    flex: bool = Field(description="フレックスタイム制か")
+    overtime_hours: int = Field(description="残業の目安(月の平均時間)")
+
+
+class Holidays(BaseModel):
+    """休日(正社員の求人だけ)。"""
+    annual_days: int = Field(description="年間休日(日)")
+    weekends_holidays: bool = Field(description="土日祝が休みか(false はシフト制・平日休みなど)")
+
+
+class EmploymentTerms(BaseModel):
+    """雇用の条件(正社員の求人だけ)。"""
+    probation_months: int = Field(0, description="試用期間(か月。無ければ 0)")
+    notes: str = Field("", description="試用期間中の条件の違いなど")
+
+
 class BaitoJob(BaseModel):
+    """求人1件。アルバイト・パートと正社員で同じ形(ADR-0002)。
+
+    time_bands・days_min はアルバイト・パートの項目で、正社員の求人では空(time_bands=[]、days_min=None)。
+    required_experience〜employment_terms は正社員の求人だけの任意項目(アルバイト・パートでは空)。
+    """
     job_id: str
     title: str
     employer: str
+    employment_type: Literal["アルバイト・パート", "正社員"]
     job_type: str
     area: str
     station: str
     walk_min: int
-    hourly_wage: int
-    time_bands: list[str] = Field(description="早朝 / 日中 / 夕方 / 夜 / 深夜")
+    pay: Pay
+    time_bands: list[str] = Field(default_factory=list, description="早朝 / 日中 / 夕方 / 夜 / 深夜")
     shift: str
-    days_min: int
+    days_min: int | None = None
     perks: list[str] = Field(default_factory=list)
     description: str
     drawback: str
+    required_experience: list[str] = Field(default_factory=list, description="必須の経験・資格")
+    preferred_experience: list[str] = Field(default_factory=list, description="歓迎の経験・資格")
+    work_style: WorkStyle | None = None
+    holidays: Holidays | None = None
+    employment_terms: EmploymentTerms | None = None
+
+
+def man(yen: int) -> str:
+    """円を「万」の単位の文字にする(4500000 → 450、4550000 → 455)。"""
+    return f"{yen / 10000:g}"
+
+
+def pay_text(pay: Pay) -> str:
+    """給与の表示(時給1350円 / 月給24万〜30万円 / 年収450万〜650万円)。求人の文・理由・資料で共通にする。
+    時給は円のまま(今までの「時給1350円」と同じ文)、月給・年収は万円で書く。"""
+    if pay.kind == "時給":
+        return f"時給{pay.min}円" + (f"〜{pay.max}円" if pay.max and pay.max != pay.min else "")
+    if pay.max and pay.max != pay.min:
+        return f"{pay.kind}{man(pay.min)}万〜{man(pay.max)}万円"
+    return f"{pay.kind}{man(pay.min)}万円"
+
+
+def annual_pay_max(pay: Pay) -> int | None:
+    """年収の上限の見込み(円)。年収はそのまま、月給は12か月分(賞与を含めない控えめな見込み)。時給は None。"""
+    top = pay.max or pay.min
+    return {"年収": top, "月給": top * 12}.get(pay.kind)
 
 
 def now() -> datetime:
@@ -62,7 +126,7 @@ def parse_ts(s: str) -> datetime:
 
 def load_jobs() -> dict[str, BaitoJob]:
     jobs = []
-    for name in ("anchor_jobs.json", "jobs.json"):
+    for name in ("anchor_jobs.json", "jobs.json", "fulltime_jobs.json"):
         p = FIXTURES / name
         if p.is_file():
             jobs += [BaitoJob(**d) for d in json.loads(p.read_text(encoding="utf-8"))]
