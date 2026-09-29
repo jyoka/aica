@@ -31,7 +31,10 @@ def test_scenario_list_has_titles_and_no_user_first_start():
     ids = [sc["id"] for sc in SCENARIOS]
     assert len(ids) == len(set(ids))
     assert set(ids) == {"F-follow-new", "B-exit", "pii", "Q-job-question", "R-revisit", "R-revisit-browsing",  # 新規ユーザー系
-                        "C-consult-propose", "C-consult-only", "C-consult-switch"}  # 相談モード
+                        "C-consult-propose", "C-consult-only", "C-consult-switch",  # 相談モード
+                        # aica v2 の E: 区分つきの再訪と、雇用区分・相談の深さを見るペルソナ
+                        "R-revisit-track", "T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent",
+                        "T-switch-to-fulltime"}
     for sc in SCENARIOS:
         assert sc["title"] and sc["desc"] and sc["event"] in EVENTS
         assert sc["event"] != "message"  # ユーザーのメッセージ待ちから始まるものは無い

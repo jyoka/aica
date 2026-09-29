@@ -267,7 +267,13 @@ FINE = [  # (保存した項目, 保存した値, 後のターンの問い): 確
     ("concerns", "未経験で通用するか", "不安なことは未経験で通用するか、でよいですか?"),
     ("avoids", "飛び込み営業", "避けたいことは飛び込み営業、で合っていますか?"),
     ("strengths", "新規開拓", "強みは新規開拓、でよいですか?"),
-    ("min_annual_salary", "年収500万円以上", "希望年収は年収500万円以上でよいですか?"),
+    ("min_annual_salary", "年収500万円以上", "希望年収は500万円以上のままでよいですか?"),
+    ("min_annual_salary", "年収500万円以上", "年収の下限は500万円のままでよいですか?"),
+    # 保存した強みを使う問い・出した求人の中から選んでもらう問いは、聞き直しではない
+    ("strengths", "新規開拓", "強みを活かせる求人を探しますか?"),
+    ("wants", "企画に挑戦したい", "この中にやってみたいお仕事はありますか?"),
+    ("avoids", "飛び込み営業", "この中で苦手な作業はありますか?"),
+    ("avoids", "飛び込み営業", "ご紹介した求人に、やりたくない仕事は入っていますか?"),
     ("work_style", "リモート中心", "働き方はリモート中心でよいですか?"),
     ("start_timing", "3か月以内", "転職の時期は3か月以内で合っていますか?"),
     # 特定の求人・面接についての問いと、白紙でない「なぜ」は聞き直しではない
@@ -327,3 +333,43 @@ def test_asking_in_the_same_turn_as_saving_is_not_a_reask():
     """保存したターンの問い(答えを受けて次の項目へ)は数えない。前のターンに保存した項目だけを見る。"""
     turns = [_t(["どうしますか?"]), _t(["なぜ今お仕事を探しているのですか?"], {"purpose": "経験を活かしたい"})]
     assert reask_violations(turns, [None, "経験を活かしたい"]) == []
+
+
+@pytest.mark.parametrize(("key", "value", "ask"), [
+    ("strengths", "新規開拓", "ご自身の強みを教えていただけますか?"),
+    ("strengths", "新規開拓", "強みはどんなところですか?"),
+    ("min_annual_salary", "年収500万円以上", "年収の下限はいくらですか?"),
+    ("min_annual_salary", "年収500万円以上", "年収の下限は600万円でよいですか?"),  # 保存した値と違う額を示すのは確認ではない
+    ("wants", "企画に挑戦したい", "やってみたいお仕事はありますか?"),  # 出した求人を指さない問いは聞き直しのまま
+    ("avoids", "飛び込み営業", "苦手な作業はありますか?"),
+])
+def test_narrowed_reask_patterns_still_catch_blank_questions(key, value, ask):
+    """過検知を直した後も、白紙で聞き直す問いは違反のまま(負例)。"""
+    turns = [_t(["どうしますか?"]), _t(["承知しました。"], {key: value}), _t([ask])]
+    v = reask_violations(turns, [None, "はい", "はい"])
+    assert any(f"「{key}」を聞き直した" in x for x in v), (ask, v)
+
+
+def test_concerns_are_exempt_only_right_after_a_proposal():
+    """提案したターンとその後2ターンだけ、不安の問いを提案への問いとみなす。1通目で求人を出す再訪でも、
+    会話の後半で保存済みの不安を白紙で聞き直せば違反。"""
+    ask = "働くうえで不安なことはありますか?"
+    seeded = {"concerns": "未経験で通用するか不安"}
+    near = [_proposal(["おかえりなさい。3件あります。"]), _t(["はい。"]), _t([ask])]
+    assert reask_violations(near, [None, "はい", "はい"], seeded) == []
+    far = [_proposal(["おかえりなさい。3件あります。"]), _t(["はい。"]), _t(["はい。"]), _t(["はい。"]), _t([ask])]
+    v = reask_violations(far, [None, "はい", "はい", "はい", "はい"], seeded)
+    assert any("T5" in x and "「concerns」を聞き直した" in x for x in v), v
+
+
+@pytest.mark.parametrize("ask", ["勤務地を広げて探しますか?", "エリアを広げてみますか?", "時間帯を変えて探してみますか?"])
+def test_offering_to_widen_a_saved_condition_is_not_a_reask(ask):
+    """0件のときに条件を広げる案内は、保存した条件を前提にした次の問い(実 API の基準の計測で見つかった過検知)。"""
+    turns = [_t(["どうしますか?"]), _t(["承知しました。"], {"area": "渋谷・品川", "time_band": "日中"}), _t([ask])]
+    assert reask_violations(turns, [None, "渋谷か品川で日中", "求人を見る"]) == [], ask
+
+
+@pytest.mark.parametrize("ask", ["勤務地はどこですか?", "どのエリアで働きたいですか?"])
+def test_blank_area_questions_are_still_reasks(ask):
+    turns = [_t(["どうしますか?"]), _t(["承知しました。"], {"area": "渋谷・品川"}), _t([ask])]
+    assert any("「area」を聞き直した" in x for x in reask_violations(turns, [None, "渋谷か品川", "はい"])), ask

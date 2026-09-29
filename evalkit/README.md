@@ -5,7 +5,7 @@ line-sim の評価結果を集計・比較するための小さな道具。標�
 
 ```bash
 python3 evalkit/aggregate.py summary RESULT.json        # ケースごと・全体の集計(95% 区間つき)
-python3 evalkit/aggregate.py diff BEFORE.json AFTER.json # 変更前後の差。ノイズ幅を超えたものだけ改善/悪化と判定
+python3 evalkit/aggregate.py diff BEFORE.json AFTER.json # 変更前後の差。ノイズ幅を超えたものだけ改善/悪化、内なら「差なし」
 python3 -m unittest discover -s evalkit                  # テスト
 ```
 
