@@ -47,6 +47,8 @@ _STAGE_PLAN = """\
    職種を入れず、職種なしで検索する(絞りたければ本人に聞く)。
    2で聞いた経験は experience に、3で確かめた「できること」は skills に、4で聞いた資格・免許は
    certifications に、本人の言葉のまま入れる(検索には使わず、プロフィールとして残る)。言っていなければ空のまま。
+   会話の中で本人が目的・強み・やりたいこと・避けたいこと・不安を自分から話していたら、それぞれ purpose /
+   strengths / wants / avoids / concerns に本人の言葉のまま入れる(このために新しい質問はしない)。
    見つからないとき(0件)は、下の「求人が0件だったとき」に従う。
    1件ずつ短く(職種・場所・時給・一言)読み上げる。求人は画面にも表示される。
    見つからないなどで条件を変えて探し直すことになったら、本人の了承を得て、その了承の
@@ -137,7 +139,12 @@ PREFERENCE_LABELS = {
     "area": "エリア・駅", "time_band": "時間帯", "job_type": "職種",
     "min_wage": "時給の下限(円)", "experience": "経験(未経験など)", "days_per_week": "週の日数",
     "skills": "できること", "certifications": "資格・免許",
+    "purpose": "目的", "strengths": "強み", "wants": "やりたいこと", "avoids": "避けたいこと",
+    "concerns": "不安", "min_annual_salary": "希望年収の下限", "work_style": "働き方",
+    "start_timing": "働き始める時期",
 }
+# 相談で分かった本人のこと(希望の条件ではない)。挨拶で「前回の希望」として確かめる対象にはせず、指示で踏まえる
+PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")
 
 
 def _stated_value(v) -> str:
@@ -147,27 +154,60 @@ def _stated_value(v) -> str:
     return str(v)
 
 
-def stated_preferences_note(stated: dict | None) -> str:
-    """前に本人が話した希望(dip の要約の stated_preferences)を、指示への追記にする。
-
-    LINE 側のプロンプトと同じ決まり: 確認形で1回だけ使い、同じことを聞き直さない。
-    希望が無ければ空文字(追記しない)。
-    """
-    items = [
+def _stated_lines(stated: dict | None, profile: bool) -> list[str]:
+    return [
         f"- {PREFERENCE_LABELS.get(k, k)}: {_stated_value(v)}"
         for k, v in (stated or {}).items()
-        if _stated_value(v)
+        if _stated_value(v) and (k in PROFILE_KEYS) == profile
     ]
-    if not items:
+
+
+def stated_preferences_note(stated: dict | None) -> str:
+    """前に本人が話した希望と、相談で分かった本人のこと(dip の要約の stated_preferences)を、指示への追記にする。
+
+    LINE 側のプロンプトと同じ決まり: 確認形で1回だけ使い、同じことを聞き直さない。
+    どちらも無ければ空文字(追記しない)。
+    """
+    note = ""
+    items = _stated_lines(stated, profile=False)
+    if items:
+        note += (
+            "\n## 前に本人が話した希望(dip に保存済み)\n"
+            + "\n".join(items)
+            + "\n"
+            "- これは前の会話(LINE や音声)で本人が話した希望。確認形で1回だけ触れ"
+            "(例:「前回は◯◯とのことでしたが、今回も同じですか?」)、同じことを聞き直さない。\n"
+            "- 「同じ」と言われた項目は、そのまま検索条件に使う(改めて聞かない)。"
+            "変わったと言われたら、言い直された内容だけを使う。\n"
+        )
+    profile = _stated_lines(stated, profile=True)
+    if profile:
+        note += (
+            "\n## 前の相談で本人が話したこと(dip に保存済み)\n"
+            + "\n".join(profile)
+            + "\n"
+            "- これは前の会話(LINE や音声)で本人が自分の言葉で話したこと。同じことを聞き直さず、"
+            "話を進める材料にする(例: 目的に合う求人かを考える、不安に触れるときは本人の言葉で)。"
+            "こちらの解釈を足したり、性格の見立てにしたりしない。\n"
+        )
+    return note
+
+
+# 指示に入れる相談のまとめの上限(dip の record_conversation_outcome と同じ 200字)
+CONSULTATION_SUMMARY_MAX_CHARS = 200
+
+
+def consultation_summary_note(summary: dict | None) -> str:
+    """前の会話の相談のまとめ(dip の要約の consultation_summary)を、指示への追記にする。無ければ空文字。"""
+    text = str((summary or {}).get("text") or "").strip()[:CONSULTATION_SUMMARY_MAX_CHARS]
+    if not text:
         return ""
+    when = str((summary or {}).get("recorded") or "")
     return (
-        "\n## 前に本人が話した希望(dip に保存済み)\n"
-        + "\n".join(items)
-        + "\n"
-        "- これは前の会話(LINE や音声)で本人が話した希望。確認形で1回だけ触れ"
-        "(例:「前回は◯◯とのことでしたが、今回も同じですか?」)、同じことを聞き直さない。\n"
-        "- 「同じ」と言われた項目は、そのまま検索条件に使う(改めて聞かない)。"
-        "変わったと言われたら、言い直された内容だけを使う。\n"
+        f"\n## 前の会話の相談のまとめ({when + '、' if when else ''}LINE か音声で記録)\n"
+        f"{text}\n"
+        "- 本人の発言に基づく事実と、次に確かめること。書いてある事実は聞き直さず、"
+        "「次に確かめること」があればそこから続ける。まとめに無いことを前回の話として持ち出さない。\n"
     )
 
 
@@ -332,7 +372,7 @@ def greeting_instructions(stated: dict | None = None, resume: dict | None = None
     items = [
         f"{PREFERENCE_LABELS.get(k, k)}は{_stated_value(v)}"
         for k, v in (stated or {}).items()
-        if _stated_value(v)
+        if _stated_value(v) and k not in PROFILE_KEYS  # 目的・不安などは希望の確認にしない(指示で踏まえる)
     ]
     if items:
         return base + (

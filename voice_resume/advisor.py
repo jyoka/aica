@@ -31,6 +31,7 @@ from voice_resume.jobs import (
 from voice_resume.outputs import history_transcript, write_outputs
 from voice_resume.prompts import (
     ADVISOR_INSTRUCTIONS,
+    consultation_summary_note,
     stated_preferences_note,
     uploaded_resume_note,
 )
@@ -48,10 +49,12 @@ class ResumeAdvisor(Agent):
         self, *, dip=None, draft_client_factory=None, research_client_factory=None, room=None,
         wage_reference: WageReference | None = None, user_id: str | None = None,
         stated_preferences: dict | None = None, uploaded_resume: dict | None = None, talk_poster=None,
+        consultation_summary: dict | None = None,
     ) -> None:
-        # LINE から入った相談なら、前に本人が話した希望と、トークでアップロードした履歴書の要点を
-        # 指示に足す(確認形で使い・聞き直さない)
+        # LINE から入った相談なら、前に本人が話した希望・相談で分かったこと、前の会話の相談のまとめ、
+        # トークでアップロードした履歴書の要点を指示に足す(確認形で使い・聞き直さない)
         super().__init__(instructions=ADVISOR_INSTRUCTIONS + stated_preferences_note(stated_preferences)
+                         + consultation_summary_note(consultation_summary)
                          + uploaded_resume_note(uploaded_resume))
         self._dip = dip  # DipMCP(またはテスト用スタブ)。None なら求人提案は不可の旨を返す
         self._draft_client_factory = draft_client_factory  # () -> AsyncOpenAI 互換
@@ -86,6 +89,11 @@ class ResumeAdvisor(Agent):
         experience: str | None = None,
         skills: str | None = None,
         certifications: str | None = None,
+        purpose: str | None = None,
+        strengths: str | None = None,
+        wants: str | None = None,
+        avoids: str | None = None,
+        concerns: str | None = None,
         other_wishes: str | None = None,
         relax: list[str] | None = None,
         search_only: bool = False,
@@ -123,6 +131,13 @@ class ResumeAdvisor(Agent):
                 経験(これまで何をしてきたか)そのものや、こちらが候補として挙げたことは入れない
             certifications: 持っている資格・免許を本人の言葉のまま(例: 普通自動車免許)。
                 検索条件には使わず、プロフィールとして記録する。「なし」と言われたら入れない
+            purpose: 目的(なぜ今バイトを探すのか。例: 生活費の足しに、経験を活かしたい)。
+                本人が話したときだけ、本人の言葉のまま短く。以下の4つも同じで、検索条件には使わず、
+                プロフィールとして記録する(次の LINE の会話に引き継がれる)。こちらからの解釈は入れない
+            strengths: 強み。本人が自分の強み・評価されたこととして話したこと
+            wants: やりたいこと・やってみたいこと
+            avoids: 避けたいこと・やりたくないこと
+            concerns: 働くうえでの不安・気になっていること
             other_wishes: その他の希望を本人の言葉で短く(例: 家から近い店がいい)。
                 検索の経緯(条件を外した・ゆるめた等)は書かない
             relax: 検索のためにゆるめる(外す)条件の名前。area / time_band / job_type / min_wage。
@@ -143,6 +158,11 @@ class ResumeAdvisor(Agent):
                 "experience": experience,
                 "skills": skills,
                 "certifications": certifications,
+                "purpose": purpose,
+                "strengths": strengths,
+                "wants": wants,
+                "avoids": avoids,
+                "concerns": concerns,
                 "other_wishes": other_wishes,
             }.items()
             if v is not None
@@ -313,11 +333,13 @@ class ResumeAdvisor(Agent):
         finally:
             await self._publish({"type": "status", "done": True, "label": label})
 
-    # dip の save_user_preferences が受け付ける全項目(dip_mcp/logic.py の PREFERENCE_KEYS と
-    # 同期。テストで確認)。面談では experience も聞く(flow.py の面談ステージ)。
+    # dip の save_user_preferences が受け付ける項目(dip_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)。
+    # 面談では experience も聞く(flow.py の面談ステージ)。正社員の条件(FULLTIME_PREFERENCE_KEYS)は、
+    # 音声がアルバイトの面談だけのあいだは受け取らない(音声の playbook で足す)。
     # other_wishes は dip の項目に無いので保存しない
     _DIP_PREF_KEYS = ("area", "time_band", "job_type", "min_wage", "experience",
-                      "days_per_week", "skills", "certifications")
+                      "days_per_week", "skills", "certifications",
+                      "purpose", "strengths", "wants", "avoids", "concerns")
 
     def _with_user(self, args: dict) -> dict:
         """ユーザーが分かるときは dip の呼び出しに付ける(本人の傾向が効く)。dip の引数名は line_user_id。"""

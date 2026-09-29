@@ -37,8 +37,9 @@ Area = Annotated[str | None, Field(description=(
 
 @mcp.tool()
 def get_user_conversation_summary(line_user_id: UserId) -> dict:
-    """ユーザーの状況要約(今の雇用区分・直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望・
-    アップロードした履歴書の読み取り結果)を返す。会話の最初と、本人が履歴書をアップロードした後に呼ぶ。
+    """ユーザーの状況要約(今の雇用区分・直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望と
+    相談で分かったこと(stated_preferences)・前の会話の相談のまとめ(consultation_summary)・
+    アップロードした履歴書の読み取り結果)を返す。チャットと音声は同じ要約を読む。会話の最初と、本人が履歴書をアップロードした後に呼ぶ。
     要約は仮説であり、生の行動ログは含まない。"""
     return logic.conversation_summary(state, line_user_id)
 
@@ -124,15 +125,24 @@ def save_job(line_user_id: UserId, job_id: str) -> dict:
 def save_user_preferences(
     line_user_id: UserId,
     preferences: Annotated[dict[str, str | int], Field(
-        description="本人が話した希望を本人の言葉のまま。項目: area(エリア・駅)/ time_band(時間帯)/ job_type(職種)/ "
+        description="本人が話した希望と、相談で分かった本人のことを、本人の言葉のまま短い文で(1項目100字以内)。"
+                    "条件: area(エリア・駅)/ time_band(時間帯)/ job_type(職種)/ "
                     "min_wage(時給の下限の数字)/ experience(経験)/ days_per_week(週の日数)/ "
-                    "skills(できること)/ certifications(資格・免許)。例: {\"time_band\": \"夜\", \"area\": \"新宿\"}。"
+                    "skills(できること)/ certifications(資格・免許)。"
+                    "区分に共通: purpose(目的。なぜ今探すのか。例: 経験を活かしたい、生活費の足しに)/ "
+                    "strengths(強み。本人が自分で言った得意・評価されたこと)/ wants(やりたいこと)/ "
+                    "avoids(避けたいこと)/ concerns(不安・気になっていること)。"
+                    "正社員を探すとき: min_annual_salary(希望年収の下限。例: 年収500万円)/ "
+                    "work_style(働き方。例: リモート中心、残業少なめ)/ start_timing(働き始める時期。例: 3か月以内)。"
+                    "例: {\"time_band\": \"夜\", \"area\": \"新宿\"}、{\"purpose\": \"経験を活かしたい\"}。"
                     "experience はこれまで何をしてきたか(職歴・未経験など)、skills は本人が「できる」と言った作業、"
-                    "certifications は持っている資格・免許。同じ発言を複数の項目に重複して入れない")],
+                    "certifications は持っている資格・免許、strengths は本人が強みとして話したこと。"
+                    "同じ発言を複数の項目に重複して入れない。こちらの解釈・評価・言い換えは入れない")],
 ) -> dict:
-    """本人が会話で話した希望を保存する。次の会話では get_user_conversation_summary の stated_preferences に入る。
-    本人が言っていないこと(推測・行動履歴からの補完)や、氏名・住所・連絡先は保存しない
-    (電話番号・メールアドレス・住所らしい値はツールでも弾く)。"""
+    """本人が会話で話した希望と、相談で分かった本人のこと(目的・強み・やりたいこと・避けたいこと・不安、
+    正社員の条件)を保存する。チャットと音声で共有され、次の会話では get_user_conversation_summary の
+    stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
+    保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
     return logic.save_preferences(state, line_user_id, preferences)
 
 
@@ -162,9 +172,18 @@ def record_conversation_outcome(
         "選択肢を選んで話を続けている・聞きたいことがまだ言葉になっていない・終わりの挨拶のときは使わない"))],
     reason: Annotated[str, Field(description="その結果になった理由(ユーザーの言葉を短く)。wait のときは、ユーザーが断った言葉をそのまま")],
     confidence: Annotated[float, Field(description="確からしさ 0〜1")],
+    summary: Annotated[str | None, Field(description=(
+        "相談のまとめ(200字以内)。次の会話(チャットでも音声でも)が続きから始めるための記録。"
+        "書くのは、本人の発言に基づく事実(目的・希望・経験・不安など)と、次に確かめることだけ。"
+        "こちらの解釈・評価・推測・性格の見立て、本人が言っていない希望、氏名・連絡先は書かない。"
+        "例: 経験を活かせる仕事を探している。法人営業を5年。残業の少なさを気にしている。"
+        "次に確かめること: 希望の勤務地と、正社員かアルバイトか"))] = None,
 ) -> dict:
-    """会話の結果を記録する。ユーザーが断っていないのに wait を記録してはいけない。"""
-    return logic.record_outcome(state, line_user_id, outcome, reason, confidence)
+    """会話の結果を記録する。ユーザーが断っていないのに wait を記録してはいけない。
+    相談で話を聞いたときは、summary に相談のまとめ(200字以内。本人の発言に基づく事実と次に確かめることだけ)を残す。
+    まとめは get_user_conversation_summary の consultation_summary に出て、チャットと音声で引き継がれる。
+    200字を超えると記録されない(短く書き直して呼び直す)。"""
+    return logic.record_outcome(state, line_user_id, outcome, reason, confidence, summary)
 
 
 @mcp.resource("baitoru://faq", mime_type="application/json")

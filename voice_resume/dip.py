@@ -63,7 +63,8 @@ class DipMCP:
         return _tool_result_dict(result)
 
     async def get_user_conversation_summary(self, user_id: str) -> dict:
-        """ユーザーの状況要約。前に本人が話した希望は stated_preferences、アップロードした履歴書は uploaded_resume に入っている。"""
+        """ユーザーの状況要約(チャットと同じもの)。前に本人が話した希望と相談で分かったことは stated_preferences、
+        前の会話の相談のまとめは consultation_summary、アップロードした履歴書は uploaded_resume に入っている。"""
         result = await self._call("get_user_conversation_summary", {"line_user_id": user_id})
         return _tool_result_dict(result)
 

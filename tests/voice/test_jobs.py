@@ -57,8 +57,10 @@ def test_preference_labels_match_line_sim_preference_keys():
 
 def test_dip_pref_keys_cover_all_line_sim_preference_keys():
     """保存方向も dip 側と同期している: save_user_preferences に渡す項目(_DIP_PREF_KEYS)が
-    dip の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。"""
-    keys = tuple(ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS")))
+    dip の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。
+    正社員の条件(FULLTIME_PREFERENCE_KEYS)だけは、音声がアルバイトの面談のあいだは受け取らない。"""
+    fulltime = set(ast.literal_eval(_line_sim_assign("FULLTIME_PREFERENCE_KEYS")))
+    keys = tuple(k for k in ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS")) if k not in fulltime)
     assert ResumeAdvisor._DIP_PREF_KEYS == keys
     # 面談で聞く項目は propose_jobs の引数としても受け取れる(受け取れないと保存に乗らない)
     import inspect
