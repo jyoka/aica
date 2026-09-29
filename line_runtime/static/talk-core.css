@@ -25,3 +25,29 @@ form button.plus:disabled { color: #b8c0cc; background: #f1f3f6; }
 /* 求人カードの雇用区分(正社員だけ印を付ける)と、月給・年収の幅(時給より長いので少し小さく) */
 .jc .meta .kind { display: inline-block; font-weight: 700; color: #1d4f91; background: #e6effb; border-radius: 4px; padding: 1px 5px; margin-right: 5px; }
 .jc .wage.long b { font-size: 18px; }
+/* 音声相談の通話中のシート(トークの上に重ね、画面下から出す。タブはまたがない) */
+.voice-sheet { position: fixed; inset: 0; z-index: 50; background: #0f172a8c; display: flex; align-items: flex-end; justify-content: center; }
+.voice-sheet[hidden] { display: none; }
+.vs-panel { width: 100%; max-width: 480px; max-height: 92dvh; display: flex; flex-direction: column; gap: 12px; background: #fff;
+            border-radius: 18px 18px 0 0; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 24px #0003; }
+.vs-head { display: flex; align-items: center; } .vs-head b { flex: 1; font-size: 15px; }
+.vs-close { border: 0; background: var(--soft); color: var(--sub); width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+.vs-note { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--sub); }
+/* 状態の丸(接続中・聞いている・話している・考え中)。色と動きで今の状態を見せる */
+.vs-orb { align-self: center; width: 96px; height: 96px; border-radius: 50%; background: var(--soft); display: flex; align-items: center;
+          justify-content: center; gap: 6px; transition: background .2s; }
+.vs-orb i { width: 9px; height: 9px; border-radius: 50%; background: #b7bec9; }
+.voice-sheet[data-state="listening"] .vs-orb { background: var(--ok-soft); } .voice-sheet[data-state="listening"] .vs-orb i { background: var(--ok); }
+.voice-sheet[data-state="me"] .vs-orb { background: var(--ok); } .voice-sheet[data-state="me"] .vs-orb i { background: #fff; animation: vs-pulse .8s infinite; }
+.voice-sheet[data-state="speaking"] .vs-orb { background: #dfe8fb; } .voice-sheet[data-state="speaking"] .vs-orb i { background: var(--chip); animation: vs-pulse .8s infinite; }
+.voice-sheet[data-state="thinking"] .vs-orb i, .voice-sheet[data-state="connecting"] .vs-orb i, .voice-sheet[data-state="mic"] .vs-orb i { animation: blink 1.2s infinite; }
+.vs-orb i:nth-child(2) { animation-delay: .2s !important; } .vs-orb i:nth-child(3) { animation-delay: .4s !important; }
+.voice-sheet[data-state="error"] .vs-orb, .voice-sheet[data-state="off"] .vs-orb { background: #fdecec; }
+@keyframes vs-pulse { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.6) } }
+.vs-status { text-align: center; font-size: 14px; font-weight: 700; min-height: 1.5em; }
+.vs-caps { max-height: 150px; overflow-y: auto; font-size: 12.5px; line-height: 1.55; color: var(--sub); display: flex; flex-direction: column; gap: 3px; }
+.vs-caps:empty { display: none; }
+.vs-caps .cap.user { color: var(--ok-dark); }
+.vs-end { border: 0; border-radius: 999px; padding: 12px; font-size: 15px; font-weight: 700; background: #e5484d; color: #fff; cursor: pointer; }
+.vs-end:disabled { background: #e6e9ef; color: #9aa3b2; cursor: default; }
+.vs-end[hidden] { display: none; }

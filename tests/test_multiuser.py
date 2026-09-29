@@ -64,7 +64,8 @@ def test_two_browsers_get_scoped_scenario_users_and_cannot_touch_each_other(tmp_
         assert a.get(f"/api/dip/{rb['user']}").status_code == 403
         assert a.post("/api/event", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
         assert a.post("/api/event/stream", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
-        assert a.post(f"/api/voice/{rb['user']}/pull").status_code == 403
+        assert a.post(f"/api/voice/{rb['user']}/start").status_code == 403
+        assert a.post(f"/api/voice/{rb['user']}/wait", params={"since": 0, "timeout": 0}).status_code == 403
         assert a.get("/liff/apply", params={"user": rb["user"], "job": "a003"}).status_code == 403
         # 相手のトークへ音声相談の結果を差し込むこともできない
         assert a.post("/api/voice/result", json={"user_id": rb["user"], "draft_markdown": "偽の下書き"}).status_code == 403

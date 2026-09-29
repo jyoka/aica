@@ -38,7 +38,8 @@ def prewarm(proc: agents.JobProcess) -> None:
 def participant_user_id(participant) -> str | None:
     """参加者の metadata(JSON の {"user_id": ...})からユーザーID(匿名ユーザーID のスコープ)を読む。
 
-    トークの「音声で相談」から入ると server.py がトークンに載せる。単体ページから入ると無い(None)。
+    トークの音声相談のシートから入ると、line_runtime が接続トークンに載せる(voice_resume/livekit_token.py)。
+    metadata の無い参加者は None(dip に何も書かない相談になる)。
     """
     try:
         meta = json.loads(participant.metadata or "{}")

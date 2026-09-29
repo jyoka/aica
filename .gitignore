@@ -6,7 +6,9 @@ __pycache__/
 # 会話チェックポイントと dip 側のシミュレーション状態・音声相談の下書き(直下の data/ だけ。voice_resume/data/ は参考データなので入れる)
 /data/
 # 音声 E2E の出力(本人の音声 .wav・文字起こしが書かれ得る。commit 済みの証跡 png は追跡されたまま)
-/voice_resume/results/
+/voice_resume/results/*
+# 音声相談のシートの画面証跡(task 92。LiveKit を代役にした画面だけで、音声・個人の話は含まない)
+!/voice_resume/results/talk-voice-sheet-*.png
 .pytest_cache/
 .ruff_cache/
 .DS_Store

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from dip_mcp import logic
 from dip_mcp.data import State
 from evals.scenarios import load_scenarios, prepare
@@ -95,26 +97,27 @@ def test_next_text_conversation_reads_the_voice_wishes_instead_of_asking_again(t
     assert "同じことを聞き直さない" in (Path(logic.__file__).parent / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
 
 
-def test_voice_page_token_carries_the_user_to_the_worker(monkeypatch):
-    """会話ページ(?user=)→ /api/token がユーザーIDを参加者の metadata に載せ、ワーカーがそれを読む。"""
+def test_voice_token_carries_the_user_to_the_worker(monkeypatch):
+    """接続トークン(トークの POST /api/voice/{user}/start が発行する)がユーザーIDを参加者の metadata に載せ、
+    ワーカーがそれを読む。"""
     import jwt
-    from fastapi.testclient import TestClient
 
-    from voice_resume import server
     from voice_resume.agent import participant_user_id
+    from voice_resume.livekit_token import LiveKitNotConfigured, issue_token
 
     for k, v in {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
                  "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}.items():
         monkeypatch.setenv(k, v)
-    with TestClient(server.app) as c:
-        r = c.post("/api/token", json={"user_id": U1}).json()
-        guest = c.post("/api/token", json={}).json()
+    r = issue_token(U1)
     claims = jwt.decode(r["token"], options={"verify_signature": False})
-    assert r["user_id"] == U1 and claims["sub"] == U1
+    assert r["url"] == "wss://example.livekit.cloud" and claims["sub"] == U1
+    assert claims["video"]["room"] == r["room"] and r["room"].startswith(config.LIVEKIT_ROOM_PREFIX)
     assert participant_user_id(type("P", (), {"metadata": claims["metadata"]})()) == U1
-    # 会話ページ自身も ?user= を user_id という名前で送る(名前がずれると黙って guest 扱いになる)
-    html = (config.ROOT / "voice_resume" / "static" / "index.html").read_text(encoding="utf-8")
-    assert "JSON.stringify({ user_id: userId })" in html
-    # 単体で開いたとき(ユーザー不明)は metadata なし = dip に何も書かない相談になる
-    assert guest["user_id"] is None
+    # 部屋は毎回新しく作る
+    assert issue_token(U1)["room"] != r["room"]
+    # metadata の無い参加者(ユーザー不明)は dip に何も書かない相談になる
     assert participant_user_id(type("P", (), {"metadata": ""})()) is None
+    # キーが無ければ発行しない
+    monkeypatch.delenv("LIVEKIT_API_SECRET")
+    with pytest.raises(LiveKitNotConfigured):
+        issue_token(U1)

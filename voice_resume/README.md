@@ -5,7 +5,9 @@
 > venv と `.env` は line_runtime と共通。旧リポジトリの `results/`(評価・E2E の記録)は持ってきていない。
 > 文中の `results/*.md` の記録は旧リポジトリの `voice-resume/results/` を見る。
 > aica での記録は `voice_resume/results/`(`talk-voice-20260927-*.png` はトーク →「音声で相談」→ 結果がトークに戻るまでの画面証跡。
-> 音声ワーカーの代わりに面談の終わり(`propose_jobs` → `finalize_interview`)を実コードで通し、LiveKit・STT・TTS・下書きの LLM は使っていない)。
+> 音声ワーカーの代わりに面談の終わり(`propose_jobs` → `finalize_interview`)を実コードで通し、LiveKit・STT・TTS・下書きの LLM は使っていない。
+> このときはまだ別タブの会話ページだった。`talk-voice-sheet-20260929-*.png` は task 92 の、同じ画面のシートで話して結果がトークに続くまでの証跡。
+> LiveKit のブラウザ用ライブラリを代役にし、音声ワーカーの代わりに `POST /api/voice/result` へ結果を送った)。
 
 キャリアアドバイザーと日本語の音声で話しながら、バイト探しの希望条件と経験を5分ほどで聞き取り、
 最後に条件に合う求人を最大3件提案する。会話が終わると履歴書の下書き(構造化 JSON + Markdown)と
@@ -26,10 +28,15 @@
                                                         ├ dip: 同じリポジトリの dip_mcp(stdio。同じ venv の python で起動)
                                                         │      recommend_jobs / relax_conditions +
                                                         │      トークから入った相談なら summary の読み取り・希望の保存・結果の記録
-                                                        └ 終了時: 下書き+希望+求人ID を data/voice-resume/ へ、画面にも表示。
-                                                           トークから入った相談ならトーク(line_runtime)にも結果を返す
-voice_resume/server.py(FastAPI)= 会話ページの配信と LiveKit 接続トークンの発行
+                                                        └ 終了時: 下書き+希望+求人ID を data/voice-resume/ へ。
+                                                           トーク(line_runtime)に結果(話した希望・求人・下書き)を返す
+トーク(line_runtime.server)= 会話の画面(トークの上に重ねる通話中のシート。line_runtime/static/talk-core.js)の配信と、
+                              LiveKit 接続トークンの発行(POST /api/voice/{user}/start。発行そのものは voice_resume/livekit_token.py)
 ```
+
+task 92 で、別ポートの会話ページ(旧 `voice_resume/server.py` と `static/index.html`、既定 :8090)をやめ、
+トークと同じ画面のシートにまとめた(単一コンテナでの公開に合わせ、line_runtime の配下で配る)。
+音声相談はトークから始めるものだけになり、ユーザー不明の単体ページは無い。
 
 - 下書きの JSON の形: `voice_resume/schema.py`(旧リポジトリの `docs/design/resume-draft-schema.md` と同じ。履歴書アップロード機能と共通なので変えない)
 - `data/voice-resume/job-proposal-*.json` の形(タスク 35 で「本人の希望」と「検索に使った条件」を分けた):
@@ -68,10 +75,10 @@ voice_resume/server.py(FastAPI)= 会話ページの配信と LiveKit 接続ト�
   ゆるめた・外した条件は検索の経緯(`search_attempts`)に残し、本人の希望としては書かない。
 - 氏名・住所・電話番号・メール・生年月日は聞かない・保存しない(drafter の PII スクラブつき)。
   基本情報の欄は常に空欄で出力し、本人が記入する。
-- dip への書き込みは、トークの「音声で相談」から入った相談(ユーザーID が分かるとき)だけ。
+- dip への書き込みは、ユーザーID が分かる相談(トークから始めた相談)だけ。
   保存するのは本人が言った希望だけで、検索のためにゆるめた条件・推測した職種は保存しない。
   会話結果の記録もコードが propose / consult だけを書く(wait は本人が断ったときだけの記録なので、音声側からは記録しない)。
-  単体ページから入った相談(ユーザー不明)は、タスク 31 の決まりのまま読み取りだけで何も書かない。
+  ユーザー不明の参加者(metadata なし)は、タスク 31 の決まりのまま読み取りだけで何も書かない。
 - 出来上がった下書きは本人が確認・修正してから使う(画面と Markdown にその旨を明記)。
 
 ## セットアップ & 実行
@@ -88,23 +95,26 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 # 初回のみ: Silero VAD / turn detector のモデルをダウンロード
 ./.venv/bin/python -m voice_resume.agent download-files
 
-# 1) ワーカー起動(LiveKit Cloud に接続して待受)
-./.venv/bin/python -m voice_resume.agent dev
+# 1) トーク(line_runtime。音声相談のシートと接続トークンの発行もここ)
+./.venv/bin/python -m line_runtime.server                  # http://127.0.0.1:8030
 
-# 2) 別タブで会話ページを起動
-./.venv/bin/uvicorn voice_resume.server:app --port 8090
+# 2) ワーカー起動(LiveKit Cloud に接続して待受)
+./.venv/bin/python -m voice_resume.agent dev
 ```
 
-→ ブラウザで <http://127.0.0.1:8090> を開く
-→「面談をはじめる」→ マイク許可(イヤホン推奨)→ アドバイザーが日本語で話しかけてくる
-→ 会話の最後に求人の提案が画面と音声で出る
-→ 会話が締まる(または「面談を終える」ボタン)と、下書きが画面に出て `data/voice-resume/` に保存される。
+→ ブラウザで <http://127.0.0.1:8030> を開く → 入力欄の「+」→「音声で相談する」(または AI が差し出す [話して伝える])
+→ トークの上に通話中のシートが開く → マイク許可(イヤホン推奨)→ アドバイザーが日本語で話しかけてくる
+(シートには 接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています と、求人検索などの「何をしているか」が出る)
+→ 会話の最後に求人の提案が音声で出る
+→ 会話が締まる(または「面談を終える」ボタン)と、下書きが `data/voice-resume/` に保存され、シートが閉じて
+  同じトークに「音声で話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が AI の返信として続く。
 
 ## トークから入る(line_runtime との統合・匿名ユーザーID)
 
-トーク画面(line_runtime)右上「🎤 音声で相談」から開くと、URL に `?user=<ユーザーID>` が付き、
-LiveKit の participant metadata(`{"user_id": ...}`)でワーカーまで届く。ユーザーID は、そのブラウザの
-匿名ユーザーID でスコープしたシナリオユーザー(例 `w-0123456789abcdef:sim-new`。リポジトリ直下 README の
+トーク画面(line_runtime)の [話して伝える] /「+」→「音声で相談する」でシートを開くと、トークのユーザーID が
+接続トークン(`POST /api/voice/{user}/start`。Cookie の匿名IDのユーザーにだけ発行し、他人のユーザーID・Cookie なしは 403)の
+LiveKit participant metadata(`{"user_id": ...}`)でワーカーまで届く。ユーザーID は、本番の画面ならそのブラウザの匿名ユーザーID
+(`w-0123456789abcdef`)、開発者画面ならそれでスコープしたシナリオユーザー(例 `w-0123456789abcdef:sim-new`。リポジトリ直下 README の
 「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)をこの ID に置き換えた。このとき:
 
 - 会話の前に dip の要約(`get_user_conversation_summary`)を読み、前に話した希望
@@ -123,9 +133,10 @@ LiveKit の participant metadata(`{"user_id": ...}`)でワーカーまで届く�
   dip の MCP ツールの引数名は `line_user_id` のまま(line_runtime と共通の dip の契約)で、値に匿名ユーザーID のスコープを渡す。
 - 本人が話した希望は `save_user_preferences` で本人の言葉のまま保存する(経験・できること・資格を
   含む dip の8項目 = 相談プロファイル。同じユーザーの次のテキスト会話の要約に出る)。
-- 終わると `record_conversation_outcome`(propose / consult)を記録し、提案した求人と下書きを
-  トークの `POST /api/voice/result`(`{"user_id", "jobs", "draft_markdown", "files"}`)へ送る。
-  トークに求人カードと「履歴書の下書きを見る」が届く。
+- 終わると `record_conversation_outcome`(propose / consult)を記録し、話した希望・提案した求人・下書きを
+  トークの `POST /api/voice/result`(`{"user_id", "jobs", "draft_markdown", "files", "preferences", "room"}`)へ送る。
+  line_runtime が今の会話に AI の返信(話した内容のまとめ・求人カード・「職務経歴書の下書きを見る」)として続け、
+  開いているシートが `POST /api/voice/{user}/wait` で受け取って閉じる(常時の問い合わせはしない)。
 
 起動手順と画面の流れはリポジトリ直下の README の「音声相談(voice-resume との連携)」を参照。
 トーク側の URL は `VOICE_RESUME_TALK_URL`(既定 `http://127.0.0.1:8030`)で変えられる。
@@ -171,7 +182,7 @@ dip の MCP 結合テストと匿名ユーザーID のスコープのテスト�
 ./.venv/bin/python scripts/voice/e2e_audio_session.py
 ```
 
-LiveKit の WebRTC 転送とターン判定だけはこの経路では通らないので、上のブラウザ手順で確かめる。
+LiveKit の WebRTC 転送とターン判定だけはこの経路では通らないので、上のブラウザ手順(トークのシート)で確かめる。
 
 ## 費用の目安(1会話 = 5分)
 

@@ -279,7 +279,6 @@
   const talk = createTalk({
     log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
     send: (text) => send(text), fire: (event) => fire(event), afterTurn: () => refreshState(),
-    notice: { voice: "[音声相談] ", voiceResult: "[音声相談] " },
   });
   const { el, sys, me, botCol, disableChips, renderReply } = talk, yen = talk.yen;
   // ターンの途中は、送信・「+」・シナリオの切り替えを止める

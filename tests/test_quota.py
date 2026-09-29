@@ -109,19 +109,22 @@ def test_over_the_limit_gets_a_polite_notice_without_calling_the_llm_and_recover
     assert q.used(user) == 1
 
 
-def test_voice_page_counts_against_the_daily_quota(tmp_path, monkeypatch):
-    """「音声で相談」も実 API を使うので1ターン扱い: 上限に達したら音声ページへ送らずに案内だけ返す。"""
+def test_voice_start_counts_against_the_daily_quota(tmp_path, monkeypatch):
+    """音声相談を始める(接続トークンの発行)も実 API を使うので1ターン扱い: 上限に達したら発行せずに案内だけ返す。"""
     server, model = _server(tmp_path, monkeypatch, "1")
+    for k, v in {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
+                 "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}.items():
+        monkeypatch.setenv(k, v)
     from fastapi.testclient import TestClient
 
     with TestClient(server.app) as client:
         client.get("/api/me")
         user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
-        r = client.get("/liff/voice", params={"user": user}, follow_redirects=False)
-        assert r.status_code == 307  # 1回目は音声ページへ(1ターン消費)
+        r = client.post(f"/api/voice/{user}/start")
+        assert r.status_code == 200 and r.json()["token"]  # 1回目は発行(1ターン消費)
         assert server.app.state.quota.used(user) == 1
-        r = client.get("/liff/voice", params={"user": user}, follow_redirects=False)
-        assert r.status_code == 429 and LIMIT_MESSAGE in r.text
+        r = client.post(f"/api/voice/{user}/start")
+        assert r.status_code == 429 and r.json()["detail"] == LIMIT_MESSAGE
         # テキストの会話も同じ枠なので、もう使えない
         assert client.post("/api/event", json={"user_id": user, "event": "message", "text": "hi"}).json()["limited"]
         assert model.calls == 0

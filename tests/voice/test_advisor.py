@@ -493,15 +493,14 @@ def test_wage_average_from_reference_does_not_flash_the_working_status():
     assert _statuses(room)[-1] == {"type": "status", "done": True, "label": "🌐 平均時給を調べています…"}
 
 
-def test_voice_screen_shows_and_clears_the_working_status():
-    """音声の画面(index.html)が status を受けて表示を出し、done・切断で消す。"""
+def test_voice_sheet_shows_and_clears_the_working_status():
+    """トークの音声相談のシート(line_runtime/static/talk-core.js)が status を受けて表示を出し、done で消す。"""
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parents[2] / "voice_resume" / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'msg.type === "status"' in html
-    assert "showWorking(msg.done ? null : msg.label)" in html
-    assert 'room.on("disconnected", () => { showWorking(null);' in html  # 接続断でも残さない
-    assert "setTimeout(() => showWorking(null), 60000)" in html  # 「終わり」が届かなくても残さない
+    js = (Path(__file__).resolve().parents[2] / "line_runtime" / "static" / "talk-core.js").read_text(encoding="utf-8")
+    assert 'msg.type === "status"' in js
+    assert "v.working = msg.done ? null : msg.label" in js
+    assert 'topic !== "voice-resume"' in js  # advisor の DATA_TOPIC と同じ
 
 
 # ----------------------------- LINE のトークから入った相談(task 40 の統合) -----------------------------
@@ -605,8 +604,10 @@ def test_finalize_records_propose_and_returns_the_result_to_the_talk(tmp_path, m
     assert payload["user_id"] == "sim-new"
     assert [j["job_id"] for j in payload["jobs"]] == ["b0305", "b0304", "b0301"]
     assert payload["draft_markdown"].startswith("#")
+    # 話した希望も戻す(トークに出す「話した内容のまとめ」)。検索のためにゆるめた条件ではなく本人の希望
+    assert payload["preferences"] == {"job_type": "カフェ", "min_wage": 1100}
     assert advisor.delivered_to_talk is True
-    assert "LINE のトーク" in reply
+    assert "トークに送りました" in reply
 
 
 def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):

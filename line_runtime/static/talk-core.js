@@ -1,6 +1,6 @@
 // トークルームの共通部品。本番のトーク画面(/ の talk.html)と開発者画面(/dev の dev.html)の両方が使う。
 // 吹き出し・求人カード・返信の描画(renderReply)・ストリームの読み取り・待ちの表示・入力欄の「+」メニュー・
-// 履歴書のアップロード・音声相談の入口をここに1回だけ書き、どちらの画面でも同じ描画にする。
+// 履歴書のアップロード・音声相談のシートをここに1回だけ書き、どちらの画面でも同じ描画にする。
 // 画面ごとに違うこと(今のユーザー・忙しさ・ターンの始め方・案内の文言)は createTalk の引数で受け取る。
 //
 //   const talk = createTalk({
@@ -9,7 +9,6 @@
 //     send(text), fire(event),  // 本人の発言を送る / イベントで1ターン進める(履歴書のアップロードの後に使う)
 //     showTalk,                 // (任意)トークの表示に切り替える(本番の下のナビ)
 //     getThread, onStale,       // (任意)表示中の会話の番号 / 別のタブで会話が替わっていたとき(本番だけ)
-//     notice,                   // (任意)案内の吹き出しの頭に付ける文字(/dev は「[音声相談] 」など)
 //     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は dip の状態を読み直す)
 //   });
 function createTalk(o) {
@@ -18,7 +17,6 @@ function createTalk(o) {
   const now = () => new Date().toTimeString().slice(0, 5);
   const scroll = () => { log.scrollTop = log.scrollHeight; };
   const yen = (n) => Number(n).toLocaleString("ja-JP");
-  const notice = (kind, text) => (o.notice?.[kind] || "") + text;
 
   // ---------- 吹き出し ----------
   function sys(text) { log.appendChild(el("div", "sys", text)); scroll(); }
@@ -196,7 +194,8 @@ function createTalk(o) {
     } catch (err) {
       fail(col, "履歴書を読み取れませんでした: " + err.message);
     } finally { o.setBusy(false); o.afterTurn?.(); }
-    if (d && !d.empty) await o.fire("resume_upload");  // 読み取れたら、AI が確認を踏まえて次の1問を返す
+    // AI が確認を踏まえて次の1問を返す(読み取れなかったときは、その前提で1問)
+    if (d) await o.fire("resume_upload");
   }
   // 読み取り結果の確認(吹き出しの中身=要点だけ・80字以内はサーバーが組み立てる。line_runtime/resume_confirm.py)。
   // 選択肢は付けない(続きは AI の返信)。全文は「読み取り結果を見る」
@@ -206,36 +205,170 @@ function createTalk(o) {
   }
 
   // ---------- 音声相談(voice-resume との連携) ----------
-  // LIFF のように別タブで開く(同じ画面で開く作りは次の task)。相談が終わると voice-resume が
-  // /api/voice/result に結果(dip の求人・下書き)を送り、pollVoice が受け取ってトークに描く。
-  function openVoice() {
-    const user = o.getUser();
-    if (!user) return;
-    window.open("/liff/voice?user=" + encodeURIComponent(user), "_blank", "noopener");
-    sys(notice("voice", "別タブで音声アドバイザーが開きます。話すと約5分で履歴書の下書きができ、結果はこのトークに届きます。"));
+  // トークの上に重ねる通話中のシートで開く(タブはまたがない)。POST /api/voice/{user}/start で LiveKit の
+  // 接続トークンを受け取り(本人の Cookie のユーザーだけ。会話数を1つ使う)、マイクを許可して音声ワーカーと話す。
+  // 面談が終わると、ワーカーが /api/voice/result に結果を送り、サーバーが今の会話に AI の返信として続ける。
+  // シートは開いている間だけ /api/voice/{user}/wait で待ち、届いたら閉じて同じ返信をトークに描く
+  // (システム通知のラベルは出さない。再読み込みしても履歴に残る)。
+  const LIVEKIT_CLIENT = "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js";
+  const sheet = el("div", "voice-sheet"); sheet.id = "voice-sheet"; sheet.hidden = true;
+  sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "音声相談");
+  const panel = el("div", "vs-panel"), vHead = el("div", "vs-head");
+  const vClose = el("button", "vs-close", "×"); vClose.type = "button"; vClose.id = "voice-close"; vClose.setAttribute("aria-label", "閉じる");
+  vHead.append(el("b", null, "🎤 音声で相談"), vClose);
+  const vOrb = el("div", "vs-orb"); vOrb.append(el("i"), el("i"), el("i"));
+  const vStatus = el("div", "vs-status"); vStatus.id = "voice-status"; vStatus.setAttribute("aria-live", "polite");
+  const vCaps = el("div", "vs-caps"); vCaps.id = "voice-captions";
+  const vEnd = el("button", "vs-end", "面談を終える"); vEnd.type = "button"; vEnd.id = "voice-end";
+  panel.append(vHead, el("p", "vs-note", "アドバイザーと話しながら、希望と経験を5分ほどで伺います。氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。"),
+               vOrb, vStatus, vCaps, vEnd);
+  sheet.appendChild(panel); document.body.appendChild(sheet);
+
+  let voice = null;  // 開いている間の通話: { user, since, roomName, room, agent, me, working, ended, stalled, done, abort }
+  const END_WAIT_MS = 120000;  // 「面談を終える」からまとめが届くまでの待ちの上限(過ぎたら、閉じてよいと案内する)
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function vSet(state, text) { sheet.dataset.state = state; vStatus.textContent = text; }
+  // 音声ワーカー(LiveKit Agents)が参加者の属性 lk.agent.state で知らせる状態
+  const AGENT_STATE = {
+    initializing: ["connecting", "アドバイザーが準備しています…"], listening: ["listening", "お話しください(聞いています)"],
+    thinking: ["thinking", "考えています…"], speaking: ["speaking", "アドバイザーが話しています"],
+  };
+  function vRefresh(v) {
+    if (voice !== v || !v.room) return;
+    let [state, text] = AGENT_STATE[v.agent] || ["connecting", "接続しました。まもなくアドバイザーが話しかけます。"];
+    if (v.me) [state, text] = ["me", "あなたが話しています"];
+    if (v.working) [state, text] = ["thinking", v.working];  // 求人検索・調べものの間
+    if (v.ended) text = "面談の内容をまとめています。そのままお待ちください…";
+    if (v.stalled) [state, text] = ["off", STALLED];
+    if (v.done) text = "まとめをトークに送りました。";
+    vSet(state, text);
   }
-  async function pollVoice() {
+  function caption(id, isUser, text) {
+    let c = vCaps.querySelector(`[data-seg="${CSS.escape(id)}"]`);
+    if (!c) { c = el("div", "cap " + (isUser ? "user" : "agent")); c.dataset.seg = id; vCaps.appendChild(c); }
+    c.textContent = (isUser ? "あなた: " : "アドバイザー: ") + text;
+    vCaps.scrollTop = vCaps.scrollHeight;
+  }
+  let lkLoading = null;
+  function loadLiveKit() {  // 音声を使うときだけ読み込む
+    if (window.LivekitClient) return Promise.resolve();
+    return lkLoading ||= new Promise((ok, ng) => {
+      const s = document.createElement("script"); s.src = LIVEKIT_CLIENT; s.onload = ok;
+      s.onerror = () => { lkLoading = null; s.remove(); ng(new Error("音声の部品を読み込めませんでした。通信を確かめて、もう一度お試しください。")); };
+      document.head.appendChild(s);
+    });
+  }
+
+  const STALLED = "まとめが届きませんでした。× で閉じてトークに戻れます(あとで届いたら、開き直したトークに出ます)。";
+
+  async function openVoice() {
     const user = o.getUser();
-    if (!user || o.isBusy()) return;  // ターンの途中には差し込まない(次の周回で受け取る)
-    let results;
+    if (!user || o.isBusy() || voice) return;
+    o.showTalk?.();
+    const v = voice = { user, since: null, roomName: null, room: null, agent: null, me: false, working: null,
+                        ended: false, stalled: false, done: false, abort: new AbortController() };
+    let room = null;
+    vCaps.replaceChildren(); vEnd.hidden = false; vEnd.disabled = true;
+    sheet.hidden = false; vSet("connecting", "接続の準備をしています…");
     try {
-      const res = await fetch(`/api/voice/${encodeURIComponent(user)}/pull`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (!res.ok) return;
-      results = (await res.json()).results;
-    } catch (e) { return; }  // 再起動中など。次の周回でまた試す
-    for (const r of results || []) {
-      sys(notice("voiceResult", "音声相談の結果が届きました"));
-      renderReply({
-        bubbles: ["音声の相談でお話しした内容です。ご提案した求人と、履歴書の下書きをご確認ください。"],
-        cards: r.cards || [],
-        buttons: r.draft_markdown ? [{ label: "履歴書の下書きを見る", url: `/liff/voice/draft?user=${encodeURIComponent(user)}&rid=${r.id}` }] : [],
-        quick_replies: [],
-      }, botCol());
+      const res = await fetch(`/api/voice/${encodeURIComponent(user)}/start`, { method: "POST" });
+      if (!res.ok) { let m = "音声相談を始められませんでした。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
+      const t = await res.json();
+      if (voice !== v) return;  // 準備の間に閉じた
+      v.since = t.since; v.roomName = t.room; waitResult(v);
+      await loadLiveKit();
+      if (voice !== v) return;
+      room = new LivekitClient.Room();
+      room.on("trackSubscribed", (track) => { if (track.kind === "audio") { const a = track.attach(); a.hidden = true; sheet.appendChild(a); } });
+      const agentState = (p) => { const s = p?.attributes?.["lk.agent.state"]; if (s && p !== room.localParticipant) { v.agent = s; vRefresh(v); } };
+      room.on("participantConnected", agentState);
+      room.on("participantAttributesChanged", (_changed, p) => agentState(p));
+      room.on("activeSpeakersChanged", (speakers) => { v.me = speakers.includes(room.localParticipant); vRefresh(v); });
+      room.on("dataReceived", (payload, _p, _k, topic) => {
+        if (topic !== "voice-resume") return;
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload));
+          if (msg.type === "status") v.working = msg.done ? null : msg.label;
+          if (msg.type === "draft") v.ended = true;  // 下書きができた: まもなく結果がトークに届く
+          vRefresh(v);
+        } catch (_) { /* 画面の補助なので無視 */ }
+      });
+      room.registerTextStreamHandler?.("lk.transcription", async (reader, participant) => {
+        const isUser = participant.identity === room.localParticipant.identity;
+        const id = reader.info.attributes?.["lk.segment_id"] || reader.info.id;
+        let text = "";
+        for await (const chunk of reader) { text += chunk; caption(id, isUser, text); }
+      });
+      room.on("disconnected", () => {
+        if (voice !== v || v.done) return;
+        v.room = null; vEnd.disabled = true;
+        vSet("off", v.stalled ? STALLED : v.ended ? "面談の内容をまとめています。そのままお待ちください…" : "通話が切れました。閉じて、もう一度お試しください。");
+      });
+      vSet("mic", "マイクの利用を許可してください…");
+      await room.connect(t.url, t.token);
+      v.room = room;
+      if (voice !== v) { room.disconnect(); return; }
+      // エコー(スピーカーの音をマイクが拾う)対策: echoCancellation を明示的に有効にする
+      await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+      vEnd.disabled = false; vRefresh(v);
+    } catch (e) {
+      room?.disconnect();  // マイクが使えないまま、アドバイザーだけが話し始めないように
+      if (voice !== v) return;
+      v.room = null;
+      const denied = e?.name === "NotAllowedError";
+      vEnd.hidden = true;
+      vSet("error", denied ? "マイクを使えませんでした。ブラウザでマイクを許可してから、もう一度お試しください。" : e.message);
     }
-    if ((results || []).length) o.afterTurn?.();
   }
-  setInterval(pollVoice, 4000);
+  // 「面談を終える」: ワーカーが下書きを保存して締める(結果はトークに届く)
+  vEnd.onclick = async () => {
+    const v = voice;
+    if (!v?.room || v.ended) return;
+    vEnd.disabled = true; v.ended = true; vRefresh(v);
+    // まとめが届かない(会話が短すぎた・下書きに失敗した・送れなかった)ときに、待たせたままにしない
+    setTimeout(() => { if (voice === v && !v.done) { v.stalled = true; vSet("off", STALLED); } }, END_WAIT_MS);
+    try {
+      await v.room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: "end" })), { reliable: true, topic: "voice-resume" });
+    } catch (e) { console.error(e); }
+  };
+  function closeVoice() {
+    const v = voice;
+    if (!v) return;
+    voice = null;
+    v.abort.abort();  // 待っている問い合わせもやめる(閉じた後に届いた結果は、会話に入っているので再読み込みで出る)
+    v.room?.disconnect();
+    sheet.hidden = true; sheet.querySelectorAll("audio").forEach(a => a.remove());
+    scroll();
+  }
+  vClose.onclick = () => closeVoice();
+
+  // シートが開いている間だけ、この面談(部屋)の結果が届くのを待つ(サーバーが最長 25 秒待って返すのを繰り返す)
+  async function waitResult(v) {
+    while (voice === v) {
+      let d;
+      try {
+        const q = `since=${v.since}&room=${encodeURIComponent(v.roomName)}`;
+        const res = await fetch(`/api/voice/${encodeURIComponent(v.user)}/wait?${q}`, { method: "POST", signal: v.abort.signal });
+        if (!res.ok) throw new Error(res.status + "");
+        d = await res.json();
+      } catch (e) {
+        if (voice !== v) return;
+        await sleep(3000); continue;  // 再起動中など。開いている間はまた待つ
+      }
+      if (voice !== v) return;
+      v.since = d.next;
+      if (d.results.length) { await finishVoice(v, d.results); return; }
+    }
+  }
+  // 結果が届いた: 同じトークに AI の返信として描き、アドバイザーの締めの言葉を待って(最長10秒)シートを閉じる
+  async function finishVoice(v, results) {
+    for (const r of results) { disableChips(); renderReply(r, botCol()); }
+    o.afterTurn?.();
+    v.done = true; vEnd.disabled = true; vRefresh(v);
+    for (let t = 0; t < 10000 && voice === v && v.room && ["thinking", "speaking"].includes(v.agent); t += 250) await sleep(250);
+    if (voice === v) closeVoice();
+  }
 
   return { el, now, scroll, yen, sys, me, meFile, botCol, typingCol, disableChips, fail, setWait, onStep, readStream,
-           jobCard, renderReply, resumeConfirm, pickResume, openVoice, setEnabled };
+           jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled };
 }
