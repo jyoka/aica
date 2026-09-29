@@ -269,13 +269,20 @@ def _keyword_hit(job: BaitoJob, keywords: str) -> bool:
     return any(k in text for k in keywords.split())
 
 
-# keywords の意味検索(embedding)の選び方。類似度の絶対値は問い合わせによって大きく揺れる
-# (fixtures の求人で実測: 「まかない付き」の最大 0.32、「深夜にがっつり稼ぎたい」の最大 0.60)ので、
-# その問い合わせでの最高値からの相対で選び、床(SIM_FLOOR)で無関係な問い合わせの空振りを許す
-SIM_FLOOR = 0.30      # これ未満は意味が近いとみなさない(無関係な語ならヒットなしにする)
-SIM_RELATIVE = 0.8    # 最高値の8割以上を「意味が近い」とする
+# keywords の意味検索(embedding)の選び方。値は検索評価セットの上位3件の再現率で選んだ(task 105、evals/search_eval.py)。
+# 類似度の絶対値は問い合わせによって大きく揺れ(評価セットの最高値で 0.23〜0.57)、関係の無い問い合わせ
+# (「宇宙飛行士になりたい」など)でも 0.2〜0.27 まで上がるので、絶対値の下限では当たり外れを分けられない。
+# そこで、その問い合わせでの最高値からの相対で選び、下限(SIM_FLOOR)は低めにする。ただし最高値が低い問い合わせでは
+# 下限の方が効く: 正社員の「体を動かしたい」は最高 0.228 で 0.7 倍が 0.16 なので、0.20 の下限が介護職員(0.191)・
+# ルート営業(0.192)を落とし、2件しか出ない。0.18 なら評価セット全体で 0.753 → 0.763 だが、0.17 で UI/UX デザイナーが
+# 入るなど1件の類似度の差で入れ替わる(正社員の求人はどれも 0.18〜0.23 で、体を使う仕事とそうでない仕事を
+# embedding が分けられていない)ので、0.20 のままにした(比較は evals/search_eval.py の SELECTIONS)
+SIM_FLOOR = 0.20      # これ未満は意味が近いとみなさない(0.30 だとアルバイト・パートの「体を動かしたい」の正解 0.23 まで落ちた)
+SIM_RELATIVE = 0.7    # 最高値の7割以上を「意味が近い」とする
 SIM_TOP = 10          # 意味の近さで拾う上限件数(total が水増しにならないように)
-SIM_WEIGHT = 6        # score_breakdown の keywords = SIM_WEIGHT × 類似度(意味が近いほど上に来る)
+# score_breakdown の keywords = SIM_WEIGHT × 類似度。上位の求人どうしの類似度の差は 0.05 ほどなので、重みが小さい(6)と
+# 駅からの近さ(0〜1点)・給与(0.3〜1.2点)の差に埋もれ、意味の近い求人が上位3件に入らなかった
+SIM_WEIGHT = 24
 
 
 def _keyword_filter(cands: list[BaitoJob], keywords: str) -> tuple[list[BaitoJob], dict[str, float] | None]:
@@ -351,13 +358,15 @@ def _wage_score(pay: Pay) -> float:
     return round((pay.min + (pay.max or pay.min)) / 2 * per_year / 8_000_000, 2)
 
 
-def match_breakdown(job: BaitoJob, tend: dict) -> dict[str, float]:
+def match_breakdown(job: BaitoJob, tend: dict, mixed: bool = False) -> dict[str, float]:
     """求人と本人の傾向の合い具合(job_match_score の内訳)。LLM を使わず決定的に計算する。
-    条件(エリア・時間帯など)に合うかは recommend の絞り込みで見るので、ここは並べ替えのための点数。"""
+    条件(エリア・時間帯など)に合うかは recommend の絞り込みで見るので、ここは並べ替えのための点数。
+    mixed は両方の雇用区分の求人を混ぜて並べるとき(区分が未定で、候補に両方が残ったとき)。正社員の求人には時間帯が無く time_band の点が必ず0になって
+    アルバイト・パートだけが上に偏るので、時間帯の傾向は点にしない(どの求人も0)。"""
     type_rank = tend["job_type"].index(job.job_type) if job.job_type in tend["job_type"] else None
     return {
         "job_type": 2.0 if type_rank == 0 else 1.0 if type_rank == 1 else 0.0,  # 傾向の1番目の職種 2点、2番目 1点
-        "time_band": 1.0 if set(job.time_bands) & set(tend["time_band"]) else 0.0,
+        "time_band": 1.0 if not mixed and set(job.time_bands) & set(tend["time_band"]) else 0.0,
         "area": 1.0 if job.area in tend["area"] else 0.0,
         "station": round(max(0, 10 - job.walk_min) / 10, 2),  # 駅から近いほど高い(徒歩10分以上は0)
         "wage": _wage_score(job.pay),
@@ -391,8 +400,9 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     if keywords:
         cands, sims = _keyword_filter(cands, keywords)
     hits = []
+    mixed = len({j.employment_type for j in cands}) > 1
     for j in cands:
-        b = match_breakdown(j, tend)
+        b = match_breakdown(j, tend, mixed=mixed)
         if sims is not None:
             b["keywords"] = round(SIM_WEIGHT * sims.get(j.job_id, 0.0), 2)
         hits.append((round(sum(b.values()), 2), b, j))
