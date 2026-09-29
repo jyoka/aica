@@ -150,7 +150,9 @@ def test_stream_endpoint_reports_a_denied_push_without_calling_the_llm(tmp_path,
     server.state = State(tmp_path / "state.json")
     server.state.reset()
     with TestClient(server.app) as client:
-        r = client.post("/api/event/stream", json={"user_id": "sim-new", "event": "form_exit"})
+        client.get("/dev")
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]  # dip ID 未連携の新規
+        r = client.post("/api/event/stream", json={"user_id": user, "event": "form_exit"})
         evs = [json.loads(line) for line in r.text.splitlines()]
     assert [e["kind"] for e in evs] == ["start", "gate", "reply"]
     assert evs[1]["allowed"] is False and "未連携" in evs[1]["reason"]
@@ -178,7 +180,9 @@ def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tm
 
     with TestClient(server.app) as client:
         client.app.state.rt = FailingRuntime()
-        r = client.post("/api/event/stream", json={"user_id": "sim-new", "event": "message", "text": "渋谷で"})
+        client.get("/")
+        uid = client.get("/api/me").json()["user_id"]
+        r = client.post("/api/event/stream", json={"user_id": uid, "event": "message", "text": "渋谷で"})
         evs = [json.loads(line) for line in r.text.splitlines()]
     assert [e["kind"] for e in evs] == ["start", "llm", "tool_start", "error"]
     assert "MCP が落ちた" in evs[-1]["message"]

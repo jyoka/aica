@@ -228,7 +228,7 @@
     const box = $("saved");
     if (!current) { box.innerHTML = '<p class="note">読み込み中です。</p>'; return; }
     try {
-      const jobs = (await (await fetch(`/api/saved/${encodeURIComponent(current)}`)).json()).jobs;
+      const jobs = (await (await fetch("/api/saved")).json()).jobs;
       box.innerHTML = "";
       if (!jobs.length) { box.appendChild(el("p", "note", "保存した求人はまだありません。トークで気になる求人の「保存」を押すと、ここに並びます。")); return; }
       jobs.forEach(j => box.appendChild(talk.jobCard(j, true)));
@@ -237,7 +237,7 @@
 
   // ---------- 今の会話の履歴を描き直す(再読み込み・別のタブで会話が替わったとき。LLM は呼ばない) ----------
   async function restore() {
-    const res = await fetch(`/api/talk/history/${encodeURIComponent(current)}`);
+    const res = await fetch("/api/talk/history");
     if (!res.ok) throw new Error(res.status + " " + await res.text());
     const h = await res.json();
     log.innerHTML = ""; thread = h.thread;
@@ -257,7 +257,7 @@
     if (!res.ok) { let m = "うまくいきませんでした。もう一度お試しください。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
     return res.json();
   }
-  const profileUrl = (path = "") => `/api/profile/${encodeURIComponent(current)}${path}`;
+  const profileUrl = (path = "") => `/api/profile${path}`;  // 本人は Cookie で決まる(URL にユーザーIDは載せない)
   const EMPTY = "まだありません";
 
   async function loadProfile() {

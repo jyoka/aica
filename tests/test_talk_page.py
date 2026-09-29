@@ -20,6 +20,9 @@ from dip_mcp.data import State
 from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, greet
 
+INTERNAL_KEY = "offline-test-internal-key"
+WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}
+
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
@@ -31,6 +34,7 @@ def app(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # 会話数の数(quota.json)・会話を本物の data/ に書かない
     monkeypatch.setattr(server, "state", State(tmp_path / "state.json"))
+    monkeypatch.setenv(server.INTERNAL_KEY_ENV, INTERNAL_KEY)  # 音声ワーカー(サーバー間の経路)の共有鍵
     server.state.reset()
 
     def set_model(model):
@@ -48,11 +52,13 @@ def app(tmp_path, monkeypatch):
 
 
 def open_talk(client) -> tuple[dict, dict]:
-    """画面を開いたときと同じ: /api/talk/open → 続きなら /api/talk/history、新しい会話ならそのイベントで
-    /api/event/stream(画面が表示する会話の番号 thread つき)。(open の結果, 履歴 または 最後の返信)"""
+    """画面を開いたときと同じ: GET /(初めてならここで匿名IDの Cookie が発行される)→ /api/talk/open →
+    続きなら /api/talk/history、新しい会話ならそのイベントで /api/event/stream(画面が表示する会話の番号 thread つき)。
+    (open の結果, 履歴 または 最後の返信)"""
+    client.get("/")
     opened = client.post("/api/talk/open").json()
     if opened["event"] is None:
-        r = client.get(f"/api/talk/history/{opened['user']}")
+        r = client.get("/api/talk/history")
         assert r.status_code == 200
         return opened, r.json()
     evs = stream(client, opened["user"], opened["event"], opened["thread"])
@@ -124,16 +130,16 @@ def test_production_user_cannot_read_or_talk_as_another_user(app):
 
     with TestClient(app.app) as a:
         b = TestClient(app.app)
+        a.get("/"), b.get("/")
         ua = a.post("/api/talk/open").json()["user"]
         ub = b.post("/api/talk/open").json()["user"]
         assert ua != ub
-        assert a.get(f"/api/saved/{ua}").status_code == 200
-        assert a.get(f"/api/saved/{ub}").status_code == 403
-        assert a.get(f"/api/dip/{ub}").status_code == 403
+        assert a.get("/api/saved").status_code == 200  # 保存した求人は Cookie の本人の分だけ(ユーザーIDを受け取らない)
+        assert a.post("/api/dip", json={"user_id": ub}).status_code == 403
         assert a.post("/api/event/stream", json={"user_id": ub, "event": "revisit"}).status_code == 403
         assert a.post("/api/event", json={"user_id": ub, "event": "message", "text": "hi"}).status_code == 403
-        assert a.post(f"/api/voice/{ub}/start").status_code == 403
-        assert a.post(f"/api/voice/{ub}/wait", params={"since": 0, "timeout": 0}).status_code == 403
+        assert a.post("/api/voice/start", json={"user_id": ub}).status_code == 403
+        assert a.post("/api/voice/wait", json={"user_id": ub, "since": 0, "timeout": 0}).status_code == 403
         # open は自分の Cookie のユーザーしか開けない(ユーザーIDを受け取らない)
         assert a.post("/api/talk/open", json={"user": ub}).json()["user"] == ua
 
@@ -220,7 +226,7 @@ def test_opening_after_30_minutes_starts_a_new_conversation_with_the_revisit_gre
         reopened, again = open_talk(client)
         assert reopened == {"user": uid, "event": "revisit", "thread": 1}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
-        hist = client.get(f"/api/talk/history/{uid}").json()  # 描き直すのは新しい会話だけ
+        hist = client.get("/api/talk/history").json()  # 描き直すのは新しい会話だけ
         assert hist["thread"] == 2 and len(hist["turns"]) == 1
     assert model.script == []
 
@@ -248,7 +254,7 @@ def test_a_message_from_an_old_tab_is_not_mixed_into_the_new_conversation(app):
         assert r.json() == {"stale": True, "thread": 2}
         assert client.app.state.quota.used(uid) == used and model.script == []
 
-        hist = client.get(f"/api/talk/history/{uid}").json()
+        hist = client.get("/api/talk/history").json()
         assert hist["thread"] == 2
         assert [t["user"] for t in hist["turns"]] == [None]  # 会話2は挨拶だけ。古いタブの発言は入っていない
         assert all("古いタブ" not in str(t) for t in hist["turns"])
@@ -314,6 +320,7 @@ def test_a_failed_first_greeting_leaves_the_next_open_as_a_first_visit(app, monk
     model = Greeter(script=[broken, greet])
     app.set_model(model)
     with TestClient(app.app) as client:
+        client.get("/")
         opened = client.post("/api/talk/open").json()
         uid = opened["user"]
         assert opened["event"] == "visit"
@@ -331,6 +338,7 @@ def test_a_failed_first_greeting_leaves_the_next_open_as_a_first_visit(app, monk
     monkeypatch.setenv("LINE_SIM_DAILY_TURN_LIMIT", "1")
     app.set_model(Greeter(script=[]))
     with TestClient(app.app) as client:
+        client.get("/")
         opened = client.post("/api/talk/open").json()
         uid = opened["user"]
         assert client.app.state.quota.take(uid)  # 今日の枠を使い切っている
@@ -347,6 +355,7 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
     model = Greeter(script=[greet] * 3)  # 初回訪問 + 再訪(要約を読む → 挨拶)
     app.set_model(model)
     with TestClient(app.app) as client:
+        client.get("/")
         opened = client.post("/api/talk/open").json()
         uid = opened["user"]
         assert opened["event"] == "visit"
@@ -372,25 +381,25 @@ def test_a_user_message_that_looks_like_an_event_is_still_redrawn(app):
         opened, _ = open_talk(client)
         uid = opened["user"]
         stream(client, uid, "message", 1, "[イベント: テスト] と書いてみた")
-        hist = client.get(f"/api/talk/history/{uid}").json()
+        hist = client.get("/api/talk/history").json()
         assert [t["user"] for t in hist["turns"]] == [None, "[イベント: テスト] と書いてみた"]
     assert model.script == []
 
 
 def test_history_is_readable_only_by_the_owner_cookie(app):
-    """履歴の API は本人の匿名ID(Cookie)でしか読めない: 他人のユーザーID・シナリオ用ユーザー・Cookie なしは 403。"""
+    """履歴の API は本人の匿名ID(Cookie)の会話だけを返す(URL にユーザーIDは無い)。Cookie なし・不正な Cookie は 401。"""
     from fastapi.testclient import TestClient
 
+    model = Greeter(script=[greet])
+    app.set_model(model)
     with TestClient(app.app) as a:
         b = TestClient(app.app)
-        ua = a.post("/api/talk/open").json()["user"]
-        ub = b.post("/api/talk/open").json()["user"]
-        assert a.get(f"/api/talk/history/{ua}").json() == {"thread": 0, "turns": []}
-        assert a.get(f"/api/talk/history/{ub}").status_code == 403
-        assert b.get(f"/api/talk/history/{ua}").status_code == 403
-        assert a.get(f"/api/talk/history/{ua}:sim-new").status_code == 403
-        nobody = TestClient(app.app)
-        assert nobody.get(f"/api/talk/history/{ua}").status_code == 403
+        open_talk(a)
+        b.get("/")
+        assert len(a.get("/api/talk/history").json()["turns"]) == 1
+        assert b.get("/api/talk/history").json() == {"thread": 0, "turns": []}  # 別のブラウザには a の会話は見えない
+        assert TestClient(app.app).get("/api/talk/history").status_code == 401
+        assert TestClient(app.app, cookies={app.ANON_COOKIE: "x"}).get("/api/talk/history").status_code == 401
 
 
 def test_dev_scenarios_do_not_record_talk_opens_or_check_threads(app):
@@ -416,7 +425,7 @@ def test_dev_scenarios_do_not_record_talk_opens_or_check_threads(app):
 
 
 def test_saved_jobs_place_shows_what_this_user_saved_in_the_talk(app):
-    """トークで保存した求人が「保存した求人」(/api/saved/{自分})に出る。他のユーザーの一覧には出ない。"""
+    """トークで保存した求人が「保存した求人」(/api/saved。Cookie の本人)に出る。他のユーザーの一覧には出ない。"""
     from fastapi.testclient import TestClient
 
     holder: dict = {}
@@ -429,13 +438,13 @@ def test_saved_jobs_place_shows_what_this_user_saved_in_the_talk(app):
     with TestClient(app.app) as client:
         opened, _ = open_talk(client)
         holder["uid"] = uid = opened["user"]
-        assert client.get(f"/api/saved/{uid}").json() == {"jobs": []}
+        assert client.get("/api/saved").json() == {"jobs": []}
         r = client.post("/api/event/stream", json={"user_id": uid, "event": "message", "text": "a003 を保存して"})
         assert json.loads(r.text.splitlines()[-1])["bubbles"] == ["保存しました。"]
-        jobs = client.get(f"/api/saved/{uid}").json()["jobs"]
+        jobs = client.get("/api/saved").json()["jobs"]
         other = TestClient(app.app)
-        other_uid = other.post("/api/talk/open").json()["user"]
-        assert other.get(f"/api/saved/{other_uid}").json() == {"jobs": []}
+        other.get("/")
+        assert other.get("/api/saved").json() == {"jobs": []}
     assert [j["job_id"] for j in jobs] == ["a003"]
     assert {"title", "employer", "pay", "pay_text", "shift", "station", "walk_min", "saved_at"} <= jobs[0].keys()
     assert model.script == []
@@ -453,11 +462,11 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
     assert root.status_code == dev.status_code == 200
     page = root.text
     # dip の状態・構成図・トレース・シナリオ一覧は出さない(呼びもしない)
-    for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/dip/", "restart"):
+    for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/dip", "restart"):
         assert dev_only not in page, dev_only
     # 開いたら dip に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場(プロフィールは task 95)
-    assert "/api/talk/open" in page and "/api/talk/history/" in page
-    for place in ("トーク", "保存した求人", "プロフィール", "/api/saved/", "/api/profile/"):
+    assert "/api/talk/open" in page and "/api/talk/history" in page
+    for place in ("トーク", "保存した求人", "プロフィール", "/api/saved", "/api/profile"):
         assert place in page, place
     # ヘッダーに履歴書・音声のボタンは無い(入力欄の「+」と、AI が差し出す操作から入る。task 91)
     header = re.search(r"<header>.*?</header>", page, re.DOTALL).group(0)
@@ -471,5 +480,5 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
         assert client.get("/static/talk-core.css").status_code == 200
         assert client.get("/static/talk.html").status_code == 404  # 共通部品以外は出さない
     # /dev は今までの3列(シナリオの起動・状態・構成図と処理の流れ)
-    for part in ('id="scenarios"', 'id="state"', 'id="trace"', "/api/scenarios/", "/api/dip/"):
+    for part in ('id="scenarios"', 'id="state"', 'id="trace"', "/api/scenarios/", "/api/dip"):
         assert part in dev.text, part

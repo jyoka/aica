@@ -48,7 +48,14 @@ def app(tmp_path, monkeypatch):
 
 
 def _upload(client, user, name=FILENAME, data=b"%PDF-1.4 dummy"):
-    return client.post(f"/api/resume/{user}/upload", files={"file": (name, data, "application/octet-stream")})
+    return client.post("/api/resume/upload", data={"user_id": user},  # ユーザーIDは URL に載せない
+                       files={"file": (name, data, "application/octet-stream")})
+
+
+def _open(client) -> str:
+    """画面を開いたブラウザ(匿名IDの Cookie あり)。その匿名ID。"""
+    client.get("/")
+    return client.get("/api/me").json()["user_id"]
 
 
 # ----------------------------- アップロード → 確認 -----------------------------
@@ -58,13 +65,14 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
     from fastapi.testclient import TestClient
 
     with TestClient(app.app) as client:
-        client.get("/api/me")
+        _open(client)
         user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
         r = _upload(client, user)
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["empty"] is False
-        assert body["view_url"] == f"/liff/resume?user={user}"
+        # 読み取り結果の画面の URL にユーザーIDは無い(本人は Cookie から決まる。シナリオユーザーは名前だけ)
+        assert body["view_url"] == "/liff/resume?rid=0&scenario_user=sim-new"
         # スタブに PDF がそのまま渡っている(ファイルはディスクに置かずバイト列で読む)
         part = app.stub.calls[0]["input"][0]["content"][0]
         assert part["type"] == "input_file" and part["file_data"].startswith("data:application/pdf;base64,")
@@ -78,7 +86,7 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
         assert "コンビニみほん駅前店" in page.text and "みほん県立第一高等学校" in page.text
         assert not any(p in page.text for p in PII)
         # 左の「dip から見た状態」にも出る
-        assert client.get(f"/api/dip/{user}").json()["summary"]["uploaded_resume"]["uploaded"] == "9/23"
+        assert client.post("/api/dip", json={"user_id": user}).json()["summary"]["uploaded_resume"]["uploaded"] == "9/23"
         # 費用台帳にアップロード分の行が付く(誰の利用か分かる)
         rows = [json.loads(x) for x in (tmp_path / "costs.jsonl").read_text(encoding="utf-8").splitlines()]
         assert rows[-1]["event"] == "resume_upload" and rows[-1]["user_id"] == user and rows[-1]["cost_usd"] > 0
@@ -92,16 +100,18 @@ def test_upload_rejects_unsupported_files_and_other_users(app):
     from fastapi.testclient import TestClient
 
     with TestClient(app.app) as a:
-        a.get("/api/me")  # 画面を開いたブラウザ(Cookie あり)
+        _open(a)  # 画面を開いたブラウザ(Cookie あり)
         mine = a.post("/api/scenarios/F-follow-new/start").json()["user"]
         assert _upload(a, mine, name="resume.docx").status_code == 400
         assert _upload(a, mine, data=b"").status_code == 400
         b = TestClient(app.app)  # 別のブラウザ
-        b.get("/api/me")
+        _open(b)
         other = b.post("/api/scenarios/F-follow-new/start").json()["user"]
         assert _upload(a, other).status_code == 403  # 他人のトークに履歴書を差し込めない
-        assert a.get("/liff/resume", params={"user": other}).status_code == 403
-        assert a.get("/liff/resume", params={"user": mine}).status_code == 404  # まだアップロードしていない
+        assert _upload(TestClient(app.app), other).status_code == 401  # Cookie なしも
+        # 読み取り結果の画面は Cookie の本人の分だけ(URL で他人を名乗っても、自分の分を探すだけ)
+        assert a.get("/liff/resume", params={"rid": 0, "user": other}).status_code == 404  # まだアップロードしていない
+        assert a.get("/liff/resume", params={"rid": 0, "scenario_user": "sim-new"}).status_code == 404
     assert app.stub.calls == []  # どれも読み取り(API)まで行かない
 
 
@@ -111,7 +121,7 @@ def test_upload_counts_against_the_daily_quota(app, monkeypatch):
 
     monkeypatch.setenv("LINE_SIM_DAILY_TURN_LIMIT", "1")
     with TestClient(app.app) as client:
-        client.get("/api/me")
+        _open(client)
         user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
         assert _upload(client, user).status_code == 200  # 1回目は読み取れて、ターンを1つ使う
         assert app.app.state.quota.used(user) == 1
@@ -126,13 +136,14 @@ def test_unreadable_upload_is_marked_empty_and_keeps_the_earlier_result(app, mon
     from fastapi.testclient import TestClient
 
     with TestClient(app.app) as client:
-        assert _upload(client, "sim-new").json()["empty"] is False
+        uid = _open(client)
+        assert _upload(client, uid).json()["empty"] is False
         monkeypatch.setattr(app, "resume_client",
                             lambda: StubClient(ResumeDraft(unconfirmed=["画像が不鮮明で読み取れなかった"])))
-        r = _upload(client, "sim-new", name="scan.jpg", data=b"\xff\xd8 dummy")
+        r = _upload(client, uid, name="scan.jpg", data=b"\xff\xd8 dummy")
         assert r.status_code == 200 and r.json()["empty"] is True and r.json()["view_url"] is None
         assert r.json()["result"]["resume"]["unconfirmed"] == ["画像が不鮮明で読み取れなかった"]
-        kept = logic.resume_upload(app.state, "sim-new")["resume"]
+        kept = logic.resume_upload(app.state, uid)["resume"]
         assert kept["work_history"][0]["organization"] == "コンビニみほん駅前店"
 
 
@@ -270,7 +281,7 @@ def test_upload_response_carries_short_bubbles_and_the_full_view_is_unchanged(ap
     long = ResumeDraft.model_validate(_long_resume(unconfirmed=["職歴2社目の在籍期間の終わり", "資格の取得年"]))
     monkeypatch.setattr(app, "resume_client", lambda: StubClient(long))
     with TestClient(app.app) as client:
-        body = _upload(client, "sim-new").json()
+        body = _upload(client, _open(client)).json()
         assert len(body["bubbles"]) <= 3 and all(len(b) <= 80 for b in body["bubbles"])
         assert "読み取れなかった点: 職歴2社目の在籍期間の終わり" in body["bubbles"][-1]
         assert not any(p in json.dumps(body["bubbles"], ensure_ascii=False) for p in PII)

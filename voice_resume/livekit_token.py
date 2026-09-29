@@ -1,4 +1,4 @@
-"""LiveKit の接続トークンの発行。トーク(line_runtime.server の POST /api/voice/{user}/start)が使う。
+"""LiveKit の接続トークンの発行。トーク(line_runtime.server の POST /api/voice/start)が使う。
 
 音声そのものは ブラウザ ⇔ LiveKit Cloud ⇔ ワーカー(voice_resume.agent)が運ぶ。
 API キー(LIVEKIT_API_KEY/SECRET)はサーバー側に置き、ブラウザには部屋ごとの接続トークンだけを渡す。
@@ -10,8 +10,13 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import timedelta
 
 from voice_resume import config
+
+# 接続トークンの有効期限。部屋に入るのに使うだけなので数分(既定の6時間だと、同じトークンで入り直して
+# 会話数を使わずに音声セッションを重ねられる)。入った後の再接続は LiveKit がトークンを更新する
+TOKEN_TTL = timedelta(minutes=5)
 
 
 class LiveKitNotConfigured(RuntimeError):
@@ -41,6 +46,7 @@ def issue_token(user_id: str) -> dict:
         .with_name("本人")
         .with_metadata(json.dumps({"user_id": user_id}))
         .with_grants(api.VideoGrants(room_join=True, room=room))
+        .with_ttl(TOKEN_TTL)
         .to_jwt()
     )
     return {"url": os.environ["LIVEKIT_URL"], "token": token, "room": room}

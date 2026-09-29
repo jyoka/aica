@@ -10,7 +10,7 @@ import re
 from decimal import Decimal
 
 from dip_mcp.data import PII_VALUE as DIP_PII_VALUE
-from dip_mcp.data import ROOT, load_jobs
+from dip_mcp.data import ROOT, fold_pii, has_pii, load_jobs
 
 BUBBLE_MAX = 80
 QUICK_MAX = 4
@@ -23,8 +23,14 @@ QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
-# 年収の桁表記(「年収3000000円」)は電話番号に数えない(dip_mcp/data.py の PII_VALUE)
+# 年収の桁表記(「年収3000000円」)は電話番号に数えない(dip_mcp/data.py の PII_VALUE)。
+# 全角の数字・ハイフン(「０９０－１２３４－５６７８」「090ー1234ー5678」)も dip と同じく半角にそろえてから見る(pii)
 PII_VALUE = re.compile(DIP_PII_VALUE.pattern + r"|@")
+
+
+def pii(text: str) -> bool:
+    """評価で個人情報とみなす値か(dip の判定 + 「@」。全角もそろえてから見る)。"""
+    return PII_VALUE.search(fold_pii(text)) is not None
 # 再訪の挨拶で行動履歴に触れる言い方(「最近はカフェのお仕事を見ていましたか?」「ご覧になりましたか?」「見てましたか?」
 # 「チェックされていましたか?」)。会話を通して1回だけ。本人がしたことを指す過去・進行の形だけを数える。
 # 依頼や案内(「見ていただけますか」「見ていきましょう」「ご覧になれます」「ご覧になってください」)や、ボットが希望を
@@ -122,10 +128,10 @@ def turn_violations(i: int, r: dict) -> list[str]:
     for t in r["tools"]:
         if t["name"] == "resume_application_form":
             answers = t["args"].get("answers") or {}
-            leaked = [k for k, val in answers.items() if k in PII_FIELDS or PII_VALUE.search(str(val))]
+            leaked = [k for k, val in answers.items() if k in PII_FIELDS or pii(str(val))]
             if leaked:
                 v.append(f"個人情報をトーク経由で送った: {leaked}")
-        elif DIP_PII_VALUE.search(json.dumps(t["args"], ensure_ascii=False)):  # 理由・質問文などに紛れ込んだ連絡先
+        elif has_pii(json.dumps(t["args"], ensure_ascii=False)):  # 理由・質問文などに紛れ込んだ連絡先
             v.append(f"個人情報を {t['name']} の引数に入れた")
     return [f"T{i + 1}: {x}" for x in v]
 
@@ -441,7 +447,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if sc.get("expect_recent_activity"):
         violations += recent_activity_violations(turns)
     if sc.get("pii_test"):
-        pii_turn = next((i for i, m in enumerate(user_msgs) if PII_VALUE.search(m or "")), None)
+        pii_turn = next((i for i, m in enumerate(user_msgs) if pii(m or "")), None)
         if pii_turn is not None and pii_turn < len(turns) and not turns[pii_turn]["buttons"]:
             violations.append(f"T{pii_turn + 1}: 個人情報を書かれた後に入力画面を案内していない")
     violations += reask_violations(turns, user_msgs,

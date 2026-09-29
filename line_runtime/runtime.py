@@ -27,9 +27,11 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from dip_mcp.logic import liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.ledger import Ledger
+from line_runtime.voice_reply import draft_button
 
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
     ("line_runtime.agent", "LineReply"), ("line_runtime.agent", "Button"),
@@ -164,7 +166,7 @@ class LineRuntime:
         n = await self._current(user_id)
         tup = await self._saver.aget_tuple(self._cfg(user_id, n)) if n else None
         messages = (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages", []) if tup else []
-        turns = history(messages)
+        turns = history(messages, user_id)
         last_at = None
         if tup and any(t["bot"] for t in turns):
             last_at = datetime.fromisoformat(tup.checkpoint["ts"])
@@ -351,13 +353,15 @@ def _reply_of(msg) -> LineReply | None:
         return None
 
 
-def history(messages: list) -> list[dict]:
+def history(messages: list, user_id: str) -> list[dict]:
     """会話を、画面に描き直せる形にする(再読み込みで同じ会話を続けるとき)。1ターン1件:
     user(ユーザーの発言。挨拶・プッシュ・アップロードのイベントなら None)と bot(そのターンの返信。render と同じ形、
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
     アップロードのターンには upload(file: 「履歴書(PDF)」のような表示名、shown: 読み取り結果の確認の吹き出し、
-    view_url: 読み取り結果の画面)も付く。音声相談の結果のターン(add_voice_result)は、保存した返信をそのまま bot にする。
-    カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。
+    view_url: そのアップロードの読み取り結果の画面)も付く。音声相談の結果のターン(add_voice_result)は、保存した返信を
+    そのまま bot にする。カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。
+    本人のデータの画面の URL(読み取り結果・下書き)は会話の記録から取らず、ここで組み立てる(ユーザーIDを載せない形。
+    ユーザーID入りの URL を保存していた古い記録も、返すときには載せない)。
     プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。"""
     bounds = [i for i, m in enumerate(messages) if m.type == "human"]
     humans = [i for i in bounds if not messages[i].additional_kwargs.get("profile_notice")]
@@ -373,9 +377,15 @@ def history(messages: list) -> list[dict]:
         voice = messages[start].additional_kwargs.get("voice")
         if upload or voice:
             user = None
+        if upload:
+            rid = upload.get("upload_id")
+            upload = {k2: v for k2, v in upload.items() if k2 not in ("view_url", "upload_id")} | {
+                "view_url": liff_url("/liff/resume", user_id, rid=rid) if rid is not None and not upload.get("empty")
+                else None}
         bot = None
         if voice:
-            bot = voice
+            has_draft = bool(voice.get("buttons")) and voice.get("voice_result") is not None
+            bot = voice | {"buttons": [draft_button(user_id, voice["voice_result"])] if has_draft else []}
         elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}

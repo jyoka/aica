@@ -13,23 +13,26 @@ import copy
 import json
 import re
 from collections import Counter
+from urllib.parse import urlencode
 
 from dip_mcp import embedding
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
     PII_FIELDS,
-    PII_VALUE,
     BaitoJob,
     Pay,
     State,
     annual_pay_max,
+    fold_pii,
+    has_pii,
     load_job_faq,
     load_jobs,
     load_listings,
     now,
     parse_ts,
     pay_text,
+    redact_pii,
 )
 from resume_intake.extract import scrub_pii
 from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
@@ -37,6 +40,15 @@ from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
 HISTORY_DAYS = 90
 MAX_JOBS = 3
 LIFF_BASE = "/liff/apply"
+
+
+def liff_url(path: str, line_user_id: str, **params) -> str:
+    """dip の画面(LIFF)の URL。ユーザーIDは載せない(画面は Cookie の匿名IDから本人を決める。URL はブラウザの
+    履歴・アクセスログ・Referer に残るため)。開発者画面のシナリオユーザー「匿名ID:シナリオユーザー」なら、
+    匿名IDを除いたシナリオユーザー(fixtures の名前。秘密ではない)だけを scenario_user に載せる。"""
+    scenario_user = line_user_id.partition(":")[2]
+    query = {k: v for k, v in params.items() if v is not None} | ({"scenario_user": scenario_user} if scenario_user else {})
+    return f"{path}?{urlencode(query)}" if query else path
 
 
 def _md(ts: str) -> str:
@@ -522,7 +534,7 @@ def application_status(state: State, line_user_id: str, job_id: str | None = Non
 def resume_form(state: State, line_user_id: str, job_id: str, answers: dict[str, str]) -> dict:
     """トークで受け取れる項目(個人情報以外)だけを反映し、残りは LIFF 画面の URL を返す。
     個人情報の項目に加え、どの項目でも値に電話番号・メールアドレスが含まれていれば受け取らない。"""
-    rejected = [k for k, v in answers.items() if k in PII_FIELDS or PII_VALUE.search(str(v))]
+    rejected = [k for k, v in answers.items() if k in PII_FIELDS or has_pii(str(v))]
     result = {}
 
     def apply(u):
@@ -542,7 +554,7 @@ def resume_form(state: State, line_user_id: str, job_id: str, answers: dict[str,
            "rejected_pii": rejected,
            "note": "個人情報はトークで受け取らない。LIFF 画面の URL をボタンで案内する。" if rejected else ""}
     if result["remaining"]:
-        out["liff_url"] = f"{LIFF_BASE}?user={line_user_id}&job={job_id}"
+        out["liff_url"] = liff_url(LIFF_BASE, line_user_id, job=job_id)
     return out
 
 
@@ -613,6 +625,27 @@ ADDRESS_LIKE = re.compile(
     r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
     r"|丁目|番地"
 )
+_WORD_SEP = set("、。,.!?！？「」()（）")
+
+
+def address_spans(text: str) -> list[tuple[int, int]]:
+    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所を含む、区切り(空白・句読点・括弧)までの語
+    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
+    時間がかかるので、当たった所から区切りまで広げる。"""
+    def sep(ch: str) -> bool:
+        return ch.isspace() or ch in _WORD_SEP
+
+    spans: list[tuple[int, int]] = []
+    for m in ADDRESS_LIKE.finditer(text):
+        start, end = m.span()
+        if spans and start < spans[-1][1]:  # 前の語に含まれている
+            continue
+        while start > 0 and not sep(text[start - 1]):
+            start -= 1
+        while end < len(text) and not sep(text[end]):
+            end += 1
+        spans.append((start, end))
+    return spans
 
 
 def _preference_error(key: str, value) -> str | None:
@@ -620,7 +653,7 @@ def _preference_error(key: str, value) -> str | None:
     if key not in PREFERENCE_KEYS:
         return "unknown_key"
     v = str(value)
-    if PII_VALUE.search(v) or ADDRESS_LIKE.search(v):
+    if has_pii(v) or ADDRESS_LIKE.search(fold_pii(v)):
         return "personal_info"
     if len(v.strip()) > PREFERENCE_VALUE_MAX:
         return "too_long"
@@ -680,7 +713,7 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
     undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
-    evidence = PII_VALUE.sub("[個人情報を削除]", str(evidence or "").strip())[:EVIDENCE_MAX]
+    evidence = redact_pii(str(evidence or "").strip())[:EVIDENCE_MAX]
     if not evidence:
         return {"error": "evidence に、切り替えの根拠になった本人の発言をそのまま入れてください"
                          "(履歴書の内容や推測だけでは切り替えない)。"}
@@ -773,6 +806,9 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
 
 def save_resume_upload(state: State, line_user_id: str, result: dict, file: str = "") -> dict:
     """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
+    id はそのユーザーのアップロードの通し番号(トークの「読み取り結果を見る」が、どのアップロードの結果かを指す)。
+    番号は resume_upload_seq から振る: プロフィール画面で読み取り結果を消しても番号は戻らないので、
+    消す前のターンのリンクが、あとのアップロードを開くことはない。
 
     ファイル本体・ファイル名(氏名が入りがち)は保存しない。file はトークに出す表示名(「履歴書(PDF)」のような
     種類だけ)。personal は何が来ても空欄で保存し、
@@ -784,6 +820,12 @@ def save_resume_upload(state: State, line_user_id: str, result: dict, file: str 
            "file": file, "personal": {k: "" for k in PERSONAL_KEYS}, "resume": resume}
 
     def apply(u):
+        prev = u.get("resume_upload")
+        seq = u.get("resume_upload_seq")
+        if seq is None:  # 連番を持つ前の記録: 今ある結果の次から
+            seq = prev.get("id", 0) + 1 if prev else 0
+        rec["id"] = seq
+        u["resume_upload_seq"] = seq + 1
         u["resume_upload"] = rec
 
     state.update(line_user_id, apply)
@@ -840,11 +882,13 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
     if len(summary) > CONSULTATION_SUMMARY_MAX:
         return {"error": f"summary(相談のまとめ)が{len(summary)}字です。{CONSULTATION_SUMMARY_MAX}字以内に書き直して、"
                          "もう一度呼んでください(本人の発言に基づく事実と、次に確かめることだけ)。何も記録していません。"}
-    reason = PII_VALUE.sub("[個人情報を削除]", reason)  # 理由の文にユーザーの連絡先が紛れ込んでも保存しない
+    # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、区切りまでの語ごと消す)。
+    # 氏名はコードでは見分けられないので消せない: ツールの説明で書かないよう指示し(dip_mcp/server.py)、評価で見る
+    reason = redact_pii(reason, extra=address_spans)
     rec = {"at": now().isoformat(), "outcome": outcome, "reason": reason,
            "confidence": max(0.0, min(1.0, confidence))}
     if summary:
-        rec["summary"] = PII_VALUE.sub("[個人情報を削除]", summary)
+        rec["summary"] = redact_pii(summary, extra=address_spans)
     state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
     return {"recorded": rec}
 
