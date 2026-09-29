@@ -132,7 +132,8 @@ def test_production_user_cannot_read_or_talk_as_another_user(app):
         assert a.get(f"/api/dip/{ub}").status_code == 403
         assert a.post("/api/event/stream", json={"user_id": ub, "event": "revisit"}).status_code == 403
         assert a.post("/api/event", json={"user_id": ub, "event": "message", "text": "hi"}).status_code == 403
-        assert a.post(f"/api/voice/{ub}/pull").status_code == 403
+        assert a.post(f"/api/voice/{ub}/start").status_code == 403
+        assert a.post(f"/api/voice/{ub}/wait", params={"since": 0, "timeout": 0}).status_code == 403
         # open は自分の Cookie のユーザーしか開けない(ユーザーIDを受け取らない)
         assert a.post("/api/talk/open", json={"user": ub}).json()["user"] == ua
 

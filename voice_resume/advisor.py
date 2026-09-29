@@ -212,7 +212,7 @@ class ResumeAdvisor(Agent):
                 return await self._zero_hit_reply(args)
         lines = [f"{i}件目: {spoken_job_line(job)}" for i, job in enumerate(jobs, 1)]
         return (
-            f"求人が{len(jobs)}件見つかりました(画面にも表示済み)。"
+            f"求人が{len(jobs)}件見つかりました(面談が終わるとトークにも出ます)。"
             "1件ずつ短く読み上げてください:\n" + "\n".join(lines)
         )
 
@@ -307,12 +307,12 @@ class ResumeAdvisor(Agent):
         await self._deliver_to_talk()
         if self.delivered_to_talk:
             self._finalize_reply = (
-                "下書きと求人の提案を保存し、画面に表示しました。同じ内容を LINE のトークにも"
-                "送りました。内容は本人が確認・修正する旨を伝え、お礼を述べて締めてください。"
+                "下書きと求人の提案を保存し、トークに送りました(話し終えると通話の画面が閉じ、トークに続きが出ます)。"
+                "内容は本人が確認・修正する旨を伝え、お礼を述べて短く締めてください。"
             )
         else:
             self._finalize_reply = (
-                "下書きと求人の提案を保存し、画面に表示しました。"
+                "下書きと求人の提案を保存しました。"
                 "内容は本人が確認・修正する旨を伝え、お礼を述べて締めてください。"
             )
         return self._finalize_reply
@@ -394,6 +394,10 @@ class ResumeAdvisor(Agent):
             "jobs": self.proposed_jobs,  # dip の recommend_jobs が返したカードの形のまま
             "draft_markdown": self.finalized["markdown"],
             "files": self.finalized["files"],
+            # 本人が話した希望(トークに出す「話した内容のまとめ」。dip へ保存したのと同じ項目だけ)
+            "preferences": {k: self.preferences[k] for k in self._DIP_PREF_KEYS if k in self.preferences},
+            # この面談の部屋(トークのシートは、自分の部屋の結果だけを受け取る)
+            "room": getattr(self._room, "name", None) or None,
         }
         poster = self._talk_poster or _post_json
         try:

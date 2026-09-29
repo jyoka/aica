@@ -14,8 +14,6 @@ MODEL = os.environ.get("LINE_SIM_MODEL", {"openai": "gpt-6-sol", "anthropic": "c
 EFFORT = os.environ.get("LINE_SIM_EFFORT", "low")
 # dip 側 MCP サーバー。既定は子プロセス(stdio)で起動。DIP_MCP_URL を与えると HTTP で接続する。
 DIP_MCP_URL = os.environ.get("DIP_MCP_URL")
-# 音声アドバイザー(voice-resume)の会話ページ。トークの「音声で相談」から LIFF のように開く
-VOICE_RESUME_URL = os.environ.get("VOICE_RESUME_URL", "http://127.0.0.1:8090")
 DATA_DIR = Path(os.environ.get("LINE_SIM_DATA_DIR", ROOT / "data"))
 
 

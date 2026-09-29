@@ -711,11 +711,16 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 
 
 def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None,
-                        draft_markdown: str, files: list[str] | None = None) -> dict:
-    """音声アドバイザー(voice-resume)の結果を預かる。トークが取りに来る(pull)まで未受け取りとして持つ。
+                        draft_markdown: str, files: list[str] | None = None,
+                        preferences: dict | None = None, room: str | None = None) -> dict:
+    """音声アドバイザー(voice-resume)の結果を預かる。トークの音声相談のシートが待っていれば、そこへ届く
+    (voice_results_since)。
 
     求人カードは dip の求人データから作り直す(job_id が dip に無いものは捨てる)。
     トークに出る求人が dip の返した事実だけになる、という LINE 側の決まりを守るため。
+    preferences は音声で本人が話した希望(トークに出す「話した内容のまとめ」に使う)。保存と同じ決まりで、
+    決まった項目だけ・個人情報らしい値と長すぎる値は捨てる。
+    room は面談の LiveKit の部屋(トークのシートが自分の面談の結果だけを受け取るため。不明なら None)。
     """
     all_jobs = load_jobs()
     cards = []
@@ -725,8 +730,10 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
             continue
         reasons = [str(r) for r in (j.get("reasons") or []) if str(r).strip()]
         cards.append(job_card(job, reasons or [pay_text(job.pay)]))
+    prefs = {k: str(v).strip() for k, v in (preferences or {}).items()
+             if str(v).strip() and _preference_error(k, v) is None}
     rec = {"at": now().isoformat(), "cards": cards, "draft_markdown": str(draft_markdown or ""),
-           "files": [str(f) for f in (files or [])], "delivered": False}
+           "files": [str(f) for f in (files or [])], "preferences": prefs, "room": room or None}
     result = {}
 
     def apply(u):
@@ -741,18 +748,16 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
                                 if str(j.get("job_id", "")) not in all_jobs]}
 
 
-def pull_voice_results(state: State, line_user_id: str) -> list[dict]:
-    """未受け取りの音声相談の結果を返し、受け取り済みにする(トークの画面が呼ぶ)。"""
-    pulled: list[dict] = []
+def voice_results_since(state: State, line_user_id: str, since: int, room: str | None = None) -> list[dict]:
+    """id が since 以上の音声相談の結果(音声相談のシートを開いた後に届いたもの)。
+    room を渡したら、その部屋の結果(と部屋の分からない結果)だけ。前に閉じたシートの面談の結果は含めない。"""
+    return [copy.deepcopy(r) for r in state.user(line_user_id).get("voice_results", [])
+            if r.get("id", -1) >= since and (room is None or r.get("room") in (None, room))]
 
-    def apply(u):
-        for r in u.get("voice_results", []):
-            if not r.get("delivered"):
-                r["delivered"] = True
-                pulled.append(copy.deepcopy(r))
 
-    state.update(line_user_id, apply)
-    return pulled
+def voice_result_count(state: State, line_user_id: str) -> int:
+    """これまでに届いた音声相談の結果の数(次に届く結果の id)。"""
+    return len(state.user(line_user_id).get("voice_results", []))
 
 
 def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None:

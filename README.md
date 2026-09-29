@@ -125,7 +125,8 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
   費用台帳は、すべてこのユーザーIDでスコープされる。
 - Cookie を持つブラウザは自分のユーザーしか扱えない(他人のユーザーIDでの `/api/event` や `/api/dip` は 403)。
   Cookie の無い呼び出し(テスト・評価・voice-resume のバックエンド)は従来どおり `user_id` を信頼するので、
-  これはアクセス制御ではなく取り違え(混線)の防止。
+  これはアクセス制御ではなく取り違え(混線)の防止。ただし音声相談の接続トークンの発行(`POST /api/voice/{user}/start`)と
+  結果の待ち(`POST /api/voice/{user}/wait`)は、実 API の費用につながるので Cookie の無い呼び出しも断る(403)。
 - 費用台帳: LLM の呼び出し1回ごとに `data/costs.jsonl` へ1行
   (時刻・`user_id`・イベント・モデル・トークン・`cost_usd`)。料金表は `line_runtime/ledger.py` が正で、評価の計測(`evals/meter.py`)も同じ表を使う。
 
@@ -217,6 +218,8 @@ AI が差し出す [ファイルを選ぶ] か、入力欄の「+」→「履歴
   文字列に混ざった電話番号・メール・郵便番号は読み取り直後(`scrub_pii`)と dip への保存時の2回、機械的に除く。
   ファイル名(氏名が入りがち)も保存せず、トークにも出さない。
 - 読めないファイル(白紙・別書類・不鮮明)は「読み取れなかった」と理由を返すだけで保存しない(前に読み取れた結果を上書きしない)。
+  その場合も本人の1ターンとして resume_upload のイベントで会話を続け、AI が読み取れなかった前提で1問返す
+  (会話数は読めたときと同じく2つ。再読み込みしても、ファイルの吹き出し → 案内 → 1問 のまま残る)。
 - 開発者画面でシナリオを始め直すとそのユーザーの dip の状態が初期に戻るので、アップロードした結果も消える(本番の画面には初期に戻す操作は無い)。
 - 読み取り1回ごとに費用台帳へ `event: resume_upload` の行が付く。
 
@@ -233,9 +236,13 @@ CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリ
 
 ## 音声相談(voice-resume との連携)
 
-AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))に
-LIFF のように入れる(旧リポジトリの task 40 を task 62 で移植)。
-音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・履歴書の下書きは、
+AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))と話せる
+(旧リポジトリの task 40 を task 62 で移植。task 92 で別タブをやめ、トークと同じ画面のシートで開くようにした)。
+音声はトークの上に重ねる通話中のシート(画面下から出る)で話し、タブはまたがない。シートにはマイクの許可・
+接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています の状態と「面談を終える」がある。
+面談が終わるとシートが閉じ、同じトークに AI の返信として「音声で話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が続く
+(システム通知のラベルは出さない。会話に入るので再読み込みしても残り、次のテキストの会話はその続きになる)。
+音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・下書きは、
 同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
 
 ユーザーの対応付けは匿名ユーザーID(上の「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、
@@ -244,22 +251,31 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 音声構成は旧リポジトリと同じ(LiveKit Cloud + Deepgram nova-3 + OpenAI gpt-6-sol + Cartesia sonic-3.5)。
 
 ```
-トーク [話して伝える] / 「+」→「音声で相談する」→ GET /liff/voice?user=<ユーザーID>(Cookie の匿名IDのユーザーでなければ 403)
-   → voice-resume の会話ページ(?user= つき)→ /api/token が LiveKit の participant metadata に user_id を載せる
-   → 音声ワーカーが会話の前に get_user_conversation_summary を読む(前に話した希望 stated_preferences と、
-     トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
+トーク [話して伝える] / 「+」→「音声で相談する」→ 同じ画面に通話中のシートが開く
+   → POST /api/voice/{user}/start(line_runtime。Cookie の匿名IDのユーザーでなければ 403、Cookie なしも 403。
+     会話数を1つ使い、上限なら 429)が LiveKit の接続トークンを発行し、participant metadata に user_id を載せる
+     (発行は voice_resume/livekit_token.py。LIVEKIT_* が無ければ会話数を使わずに 503)
+   → ブラウザ ⇔ LiveKit Cloud ⇔ 音声ワーカー。ワーカーは会話の前に get_user_conversation_summary を読む
+     (前に話した希望 stated_preferences と、トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
    → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
-   → 終わり: 結果を propose / consult で記録し、POST /api/voice/result で求人と下書きをこちらへ返す
-   → トークが POST /api/voice/{user}/pull で受け取り、求人カード(dip の求人データから作り直す)と
-     「履歴書の下書きを見る」(GET /liff/voice/draft)を描く
+   → 終わり(締めの挨拶か「面談を終える」): 結果を propose / consult で記録し、POST /api/voice/result で
+     話した希望・求人・下書きをこちらへ返す → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)
+   → シートは開いている間だけ POST /api/voice/{user}/wait(この面談の部屋の結果を最長25秒待って返すのを繰り返す)で待ち、
+     届いたら閉じて同じ返信(まとめ・求人カード・「職務経歴書の下書きを見る」= GET /liff/voice/draft)をトークに描く
+     (「面談を終える」から2分たっても届かなければ、× で閉じてよいと案内する。あとで届いた結果は会話に入り、開き直すと出る)
 ```
 
 - 求人カードは、送られてきた `job_id` を dip の求人データと照合してコードで作り直す。dip に無い求人はトークに出ない
   (LINE 側の「dip が返した求人だけをカードにする」決まりと同じ)。
+- 「話した内容のまとめ」は、音声で本人が話した希望(dip に保存したのと同じ項目。個人情報らしい値は捨てる)から
+  コードで作る(`line_runtime/voice_reply.py`。吹き出しは80字以内)。
+- 会話数: 音声相談を始めるとき(接続トークンの発行)に1つ使う。結果をトークに続けるときは使わない。
 - 会話結果の記録はコードが propose(求人を提案できた)/ consult(提案なし)だけを書く。
   wait は音声側からは記録しない(断っていない人を wait と記録しない決まり)。
+- 画面の証跡: `voice_resume/results/talk-voice-sheet-20260929-*.png`(LiveKit のライブラリを代役にして、
+  結果の受け取りからトークへの描画までを通したもの。実際の音声は使っていない)。
 
-動かし方(3プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`):
+動かし方(2プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`。会話ページは line_runtime が配る):
 
 ```bash
 # リポジトリ直下の .env に(下の表の「音声相談」の必須の5つ + OPENAI_API_KEY)
@@ -268,20 +284,19 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 #   DEEPGRAM_API_KEY=...  CARTESIA_API_KEY=...  OPENAI_API_KEY=...
 ./.venv/bin/python -m voice_resume.agent download-files     # 初回のみ(VAD / turn detector のモデル)
 
-# 1) トーク(line_runtime)
+# 1) トーク(line_runtime。音声相談のシートと接続トークンの発行もここ)
 ./.venv/bin/python -m line_runtime.server                  # http://127.0.0.1:8030
 # 2) voice-resume のワーカー(LiveKit Cloud に接続して待受)
 ./.venv/bin/python -m voice_resume.agent dev
-# 3) voice-resume の会話ページ
-./.venv/bin/uvicorn voice_resume.server:app --port 8090
 ```
 
 オフラインテスト(実 API なし。台本(文字起こし)駆動の会話の流れ・検索引数・下書き、dip の MCP 結合、匿名ユーザーID のスコープ)は
 `./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
 (費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
 
-→ <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 入力欄の「+」→「音声で相談する」→ 別タブで面談(マイク許可)
-→ 面談が終わる(締めの挨拶か「面談を終える」)と、数秒でトークに求人カードと下書きのリンクが届く。
+→ <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 入力欄の「+」→「音声で相談する」
+→ 同じ画面のシートで面談(マイク許可。イヤホン推奨)
+→ 面談が終わる(締めの挨拶か「面談を終える」)と、シートが閉じて同じトークにまとめ・求人カード・下書きのリンクが続く。
 開発者画面では、左の「dip から見た状態」の「本人の希望」「会話の結果」にも反映される。
 
 dip の MCP サーバーを別プロセスで動かす場合:
@@ -300,14 +315,13 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `DIP_STATE_PATH` | `data/state.json` | dip 側のシミュレーション状態 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シミュレーション上の現在時刻 |
 | `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りに使う OpenAI モデル(アップロードは常に OpenAI。`OPENAI_API_KEY` が要る) |
-| `VOICE_RESUME_URL` | `http://127.0.0.1:8090` | 音声アドバイザーの会話ページ(「音声で相談」の飛び先) |
 
 音声相談(voice_resume)で使うもの。キーはリポジトリ直下の `.env` に置く(`voice_resume/config.py` が読む。トークだけ試すなら不要):
 
 | 環境変数 | 既定 | 用途 |
 |---|---|---|
-| `LIVEKIT_URL` | なし(必須) | LiveKit Cloud のプロジェクト URL(`wss://….livekit.cloud`)。会話ページのサーバーとワーカーの両方が使う |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。会話ページのサーバーが部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
+| `LIVEKIT_URL` | なし(必須) | LiveKit Cloud のプロジェクト URL(`wss://….livekit.cloud`)。トーク(line_runtime)とワーカーの両方が使う |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。トーク(line_runtime)が部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
 | `OPENAI_API_KEY` | なし(必須) | 会話の LLM・履歴書の下書き・会話中の調べもの(gpt-6-sol)。トーク側と共通 |

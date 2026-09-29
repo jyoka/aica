@@ -19,6 +19,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -29,12 +30,7 @@ from html import escape
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
-    RedirectResponse,
-    StreamingResponse,
-)
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from dip_mcp import logic
@@ -44,6 +40,7 @@ from line_runtime import config
 from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
 from line_runtime.resume_confirm import resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
+from line_runtime.voice_reply import voice_reply
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
 
@@ -102,6 +99,8 @@ class EventIn(BaseModel):
 async def lifespan(app: FastAPI):
     config.load_env()
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json")
+    app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
+    app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     async with LineRuntime() as rt:
         app.state.rt = rt
         yield
@@ -294,17 +293,26 @@ async def _stale(body: EventIn) -> int | None:
 
 
 def _record_open(body: EventIn, reply: dict | None) -> None:
-    """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。"""
-    if body.thread is not None and EVENTS[body.event][1] == "greet" and reply and not reply.get("stale"):
+    """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。
+    読み取れなかったアップロードに続くターンが返ったら、その事実は使い終わり(次のアップロードのターンに持ち越さない)。"""
+    if not reply or reply.get("stale"):
+        return
+    if body.thread is not None and EVENTS[body.event][1] == "greet":
         logic.record_talk_open(state, body.user_id)
+    if EVENTS[body.event][1] == "upload":
+        app.state.unread_uploads.pop(body.user_id, None)
 
 
 def _upload_facts(body: EventIn) -> dict | None:
     """履歴書のアップロードのターンに渡す事実: ファイルの表示名・トークに出した確認の吹き出し・読み取り結果の画面。
     どれも dip に保存した読み取り結果から作る(画面からは受け取らない。ファイル名はどこにも無い)。
+    直前のアップロードが読み取れなかった(empty)ときは、そのとき出した案内と empty を渡す(dip には保存していない)。
     読み取り結果が無ければ、会話数を使う前に断る。"""
     if EVENTS[body.event][1] != "upload":
         return None
+    unread = app.state.unread_uploads.get(body.user_id)
+    if unread is not None:  # 直前のアップロードは読み取れなかった: その前提で AI が1問返す
+        return unread
     rec = logic.resume_upload(state, body.user_id)
     if rec is None:
         raise HTTPException(400, "アップロードした履歴書がありません")
@@ -333,53 +341,103 @@ async def dip_view(user_id: str, request: Request):
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
+# トークの「話して伝える」/「+」→「音声で相談する」は、同じ画面の上に重ねるシート(talk-core.js)で開く。
+# シートは POST /api/voice/{user}/start で LiveKit の接続トークンを受け取り、ブラウザ ⇔ LiveKit Cloud ⇔
+# 音声ワーカー(voice_resume.agent)で話す。面談が終わるとワーカーが POST /api/voice/result に結果を送り、
+# ここがそれを今の会話に AI の返信として続ける。シートは開いている間だけ POST /api/voice/{user}/wait で待ち、
+# 届いたら閉じて同じ返信をトークに描く(常時の問い合わせはしない)。
+
+VOICE_WAIT_MAX = 30.0  # 1回の待ちの上限(秒)。シートはこれを繰り返す
+
+
+def _require_browser_own(request: Request, user_id: str) -> None:
+    """音声相談のシートからの呼び出しは、Cookie の匿名ユーザーID のユーザー(匿名ID そのもの、または
+    「匿名ID:シナリオユーザー」)だけ。Cookie の無い呼び出しも断る(接続トークンは実 API の費用につながる)。"""
+    anon = _anon(request)
+    if anon is None:
+        raise HTTPException(403, "このブラウザのユーザーIDではありません")
+    _require_own(request, user_id)
+
 
 class VoiceResultIn(BaseModel):
     """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。
-    user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID のスコープ「匿名ID:シナリオユーザー」)。"""
+    user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID、または「匿名ID:シナリオユーザー」)。
+    preferences は音声で本人が話した希望(トークに出す「話した内容のまとめ」に使う)。"""
     user_id: str
     jobs: list[dict] = []
     draft_markdown: str = ""
     files: list[str] = []
+    preferences: dict = {}
+    room: str | None = None  # 面談の LiveKit の部屋(シートは自分の部屋の結果だけを受け取る)
+
+
+def _voice_ready(user_id: str) -> asyncio.Condition:
+    """そのユーザーの音声相談の結果が届いたことを、待っているシートへ知らせる。"""
+    return app.state.voice_ready.setdefault(user_id, asyncio.Condition())
+
+
+@app.post("/api/voice/{user_id}/start")
+async def voice_start(user_id: str, request: Request):
+    """音声相談のシートを開いた: LiveKit の部屋に入る接続トークンを発行する(本人のブラウザにだけ)。
+    音声セッションも実 API を使うので、会話数を1ターン使う(上限なら発行せず 429)。
+    since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。"""
+    _require_browser_own(request, user_id)
+    from voice_resume.livekit_token import configured, issue_token
+
+    if not configured():  # 会話数を使う前に断る
+        raise HTTPException(503, "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)")
+    if not app.state.quota.take(user_id):
+        raise HTTPException(429, LIMIT_MESSAGE)
+    return issue_token(user_id) | {"since": logic.voice_result_count(state, user_id)}
+
+
+@app.post("/api/voice/{user_id}/wait")
+async def voice_wait(user_id: str, request: Request, since: int, room: str | None = None, timeout: float = 25.0):
+    """音声相談のシートが開いている間だけ呼ぶ: since 番以降に届いた、この部屋(room。/start が返す)の結果を
+    最大 timeout 秒待って返す(届かなければ空)。results は今の会話に続けた返信と同じ形(画面は renderReply で描く)。
+    next は次に待つときの since(この部屋でない結果も読み飛ばす。そちらは会話に入っているので再読み込みで出る)。"""
+    _require_browser_own(request, user_id)
+    timeout = min(max(timeout, 0.0), VOICE_WAIT_MAX)
+    cond = _voice_ready(user_id)
+    async with cond:
+        try:
+            await asyncio.wait_for(
+                cond.wait_for(lambda: bool(logic.voice_results_since(state, user_id, since, room))), timeout)
+        except TimeoutError:
+            pass
+    results = logic.voice_results_since(state, user_id, since, room)
+    return {"results": [voice_reply(user_id, r) for r in results],
+            "next": max([since] + [r["id"] + 1 for r in logic.voice_results_since(state, user_id, since)])}
 
 
 @app.post("/api/voice/result")
 async def voice_result_in(body: VoiceResultIn, request: Request):
-    """音声アドバイザーの結果(提案した求人・履歴書の下書き)を預かる。トークが pull で受け取る。
-    呼ぶのは voice-resume のバックエンド(Cookie なし)。Cookie を持つブラウザが他人のトークへ
+    """音声アドバイザーの結果(話した希望・提案した求人・職務経歴書の下書き)を預かり、今の会話に AI の返信として
+    続ける(再読み込みしても残る)。待っているシートがあれば知らせる。
+    呼ぶのは voice-resume のワーカー(Cookie なし)。Cookie を持つブラウザが他人のトークへ
     結果を差し込めないよう、ここも所有チェックを通す。"""
     _require_own(request, body.user_id)
-    return logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files)
-
-
-@app.post("/api/voice/{user_id}/pull")
-async def voice_pull(user_id: str, request: Request):
-    """未受け取りの音声相談の結果を返し、受け取り済みにする(トークの画面が定期的に呼ぶ)。"""
-    _require_own(request, user_id)
-    return {"results": logic.pull_voice_results(state, user_id)}
-
-
-@app.get("/liff/voice")
-async def liff_voice(user: str, request: Request):
-    """トークの「音声で相談」ボタンの飛び先。voice-resume の会話ページへユーザーIDつきで送る。
-    音声セッションも実 API を使うので、会話数上限を1ターン消費してから通す。"""
-    _require_own(request, user)
-    if not app.state.quota.take(user):  # 上限を超えたら音声ページへ送らずに案内だけ返す
-        return HTMLResponse(_page("音声相談", f"<p>{LIMIT_MESSAGE}</p>"), status_code=429)
-    return RedirectResponse(f"{config.VOICE_RESUME_URL}/?user={user}")
+    out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
+                                    body.room)
+    rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
+    out["talk"] = await app.state.rt.add_voice_result(body.user_id, voice_reply(body.user_id, rec))
+    cond = _voice_ready(body.user_id)
+    async with cond:
+        cond.notify_all()
+    return out
 
 
 @app.get("/liff/voice/draft", response_class=HTMLResponse)
 async def liff_voice_draft(user: str, rid: int, request: Request):
-    """音声相談で作った履歴書の下書きを表示する(トークの結果メッセージのリンク先)。"""
+    """音声相談で作った職務経歴書の下書きを表示する(トークの「職務経歴書の下書きを見る」のリンク先)。"""
     _require_own(request, user)
     r = logic.voice_result(state, user, rid)
     if r is None or not r.get("draft_markdown"):
-        return HTMLResponse(_page("履歴書の下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+        return HTMLResponse(_page("職務経歴書の下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
     body = ("<p>音声の相談から作った下書きです。内容は必ずご自身で確認・修正してください。</p>"
             f"<pre style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px'>"
             f"{escape(r['draft_markdown'])}</pre>")
-    return _page("履歴書の下書き", body)
+    return _page("職務経歴書の下書き", body)
 
 
 # ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
@@ -428,8 +486,11 @@ async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFi
     result = finalize(draft)
     empty = draft.model_dump(exclude={"unconfirmed"}) == type(draft)().model_dump(exclude={"unconfirmed"})
     if empty:  # 読めなかったファイルで、前に読み取れた結果を上書きしない
-        return {"result": result, "empty": True, "view_url": None, "file": label,
-                "bubbles": resume_bubbles(result["resume"], empty=True)}
+        bubbles = resume_bubbles(result["resume"], empty=True)
+        # 画面は続けて resume_upload のイベントで会話を進める(AI が読み取れなかった前提で1問返す)
+        app.state.unread_uploads[user_id] = {"file": label, "shown": bubbles, "view_url": None, "empty": True}
+        return {"result": result, "empty": True, "view_url": None, "file": label, "bubbles": bubbles}
+    app.state.unread_uploads.pop(user_id, None)
     rec = logic.save_resume_upload(state, user_id, result, file=label)
     # トークに出す確認は要点だけ(80字以内の吹き出し)。全文は view_url の「読み取り結果を見る」で見せる。
     # 画面は続けて resume_upload のイベントで会話を進める(AI が確認を踏まえて次の1問を返す)

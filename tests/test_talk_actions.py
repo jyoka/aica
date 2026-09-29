@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+from dip_mcp import logic
 from evals.checks import turn_violations
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
@@ -42,6 +43,7 @@ class Advisor(ScriptedModel):
     履歴書・音声を差し出し、アップロードのイベントでは要約を読み直して次の1問を返す。"""
 
     seen: list = []  # noqa: RUF012  モデルに渡った本人側の入力(ファイル名が混ざっていないかを見る)
+    contexts: list = []  # noqa: RUF012  モデルに渡った会話(音声相談の結果が文脈に入っているかを見る)
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         return ChatResult(generations=[ChatGeneration(message=self.respond(messages))])
@@ -51,6 +53,11 @@ class Advisor(ScriptedModel):
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         self.seen.append(human)
+        self.contexts.append(list(messages))
+        if human.startswith("[イベント: 本人が") and "読み取れた項目がありませんでした" in human:
+            return reply(["読み取れなかったので、これまでのお仕事を1つ教えてください。"], quick_replies=["飲食", "販売", "今はいい"])
+        if human.startswith("[イベント: 本人が音声相談を終えた]"):
+            raise AssertionError("音声相談の結果のターンでは LLM を呼ばない")
         if human.startswith("[イベント: 本人が"):
             if not any(m.type == "tool" for m in turn):
                 return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
@@ -68,6 +75,7 @@ class Advisor(ScriptedModel):
 def advised(app, monkeypatch):  # noqa: F811
     model = Advisor()
     model.seen = []
+    model.contexts = []
     app.set_model(model)
     stub = StubClient(clean_draft(), usage=SimpleNamespace(input_tokens=1000, output_tokens=500))
     monkeypatch.setattr(app, "resume_client", lambda: stub)
@@ -121,7 +129,7 @@ def test_the_screens_turn_actions_into_file_picking_and_the_voice_entry():
     core = (static / "talk-core.js").read_text(encoding="utf-8")
     assert 'resume_upload: { label: "📄 ファイルを選ぶ", run: () => pickResume() }' in core
     assert 'voice_consult: { label: "🎤 話して伝える(音声・約5分)", run: () => openVoice() }' in core
-    assert "fileInput.click()" in core and '"/liff/voice?user="' in core
+    assert "fileInput.click()" in core and "/api/voice/${encodeURIComponent(user)}/start" in core
     assert "履歴書・職務経歴書を送る" in core and "音声で相談する" in core and "約5分で" in core  # 「+」メニュー
     for page in ("talk.html", "dev.html", "talk-core.js"):
         text = (static / page).read_text(encoding="utf-8")
@@ -175,6 +183,37 @@ def test_an_upload_turn_needs_an_uploaded_resume_and_spends_no_turn_otherwise(ad
                                                     "thread": greeting["thread"]})
         assert r.status_code == 400
         assert client.app.state.quota.used(opened["user"]) == used
+
+
+def test_an_unreadable_upload_still_continues_the_talk_with_one_question(advised, monkeypatch):
+    """読めなかったファイル(empty)でも、本人の1ターンとして会話を続ける: AI が読み取れなかった前提で1問返し、
+    選択肢が付く。再読み込みしても、ファイルの吹き出し → 案内 → 1問 のまま残る(task 92 の追記)。"""
+    from fastapi.testclient import TestClient
+
+    from resume_intake.schema import ResumeDraft
+    from tests.test_resume_intake import StubClient
+
+    monkeypatch.setattr(advised, "resume_client", lambda: StubClient(ResumeDraft(unconfirmed=["画像が不鮮明"])))
+    with TestClient(advised.app) as client:
+        opened, greeting = open_talk(client)
+        uid, thread = opened["user"], greeting["thread"]
+        used = client.app.state.quota.used(uid)
+        up = _upload(client, uid, name="scan.jpg")
+        assert up.status_code == 200 and up.json()["empty"] is True and up.json()["file"] == "履歴書(画像)"
+        r = stream(client, uid, "resume_upload", thread)[-1]
+        assert r["kind"] == "reply" and r["bubbles"] == ["読み取れなかったので、これまでのお仕事を1つ教えてください。"]
+        assert r["quick_replies"] == ["飲食", "販売", "今はいい"]
+        assert client.app.state.quota.used(uid) == used + 2  # 読めたときと同じ(アップロード1 + 続くターン1)
+        event = advised.model.seen[-1]
+        assert event.startswith("[イベント: 本人が履歴書(画像)をアップロード] 読み取れた項目がありませんでした")
+        assert json.dumps(up.json()["bubbles"], ensure_ascii=False) in event
+        turn = client.get(f"/api/talk/history/{uid}").json()["turns"][-1]
+        assert turn["upload"] == {"file": "履歴書(画像)", "shown": up.json()["bubbles"], "view_url": None, "empty": True}
+        assert turn["bot"]["bubbles"] == r["bubbles"]
+        assert logic.resume_upload(advised.state, uid) is None  # 読めなかったものは dip に保存しない
+        # 「読み取れなかった」の事実は使い終わり: アップロードなしの resume_upload は、読み取り結果が無いので断る
+        assert client.post("/api/event/stream", json={"user_id": uid, "event": "resume_upload",
+                                                       "thread": thread}).status_code == 400
 
 
 def test_upload_and_the_following_turn_both_count_against_the_daily_quota(advised, monkeypatch):
@@ -233,19 +272,56 @@ def browser():
         b.close()
 
 
-def _voice_opens(context) -> list[str]:
-    """音声の入口(/liff/voice)が開かれた URL を集める(voice-resume は動かさない)。"""
-    opened: list[str] = []
+# LiveKit のブラウザ用ライブラリ(CDN)の代役。部屋への接続・マイク・データ送信をまねるだけで、音声は流さない
+FAKE_LIVEKIT = """
+window.__lk = { rooms: [], sent: [], connected: null, mic: false, disconnected: 0 };
+window.LivekitClient = { Room: class {
+  constructor() {
+    this.h = {};
+    this.localParticipant = { identity: "me",
+      setMicrophoneEnabled: async (on, opts) => { window.__lk.mic = on && opts.echoCancellation === true; },
+      publishData: async (data, opts) => { window.__lk.sent.push([JSON.parse(new TextDecoder().decode(data)), opts.topic]); } };
+    window.__lk.rooms.push(this);
+  }
+  on(ev, fn) { this.h[ev] = fn; return this; }
+  registerTextStreamHandler() {}
+  async connect(url, token) { window.__lk.connected = { url, token }; }
+  disconnect() { window.__lk.disconnected += 1; }
+} };
+"""
+LIVEKIT_ENV = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
+               "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
 
-    def handle(route):
-        opened.append(route.request.url)
-        route.fulfill(status=200, content_type="text/html", body="<p>voice</p>")
 
-    context.route(re.compile(r".*/liff/voice\?user=.*"), handle)
-    return opened
+@pytest.fixture
+def livekit(monkeypatch):
+    for k, v in LIVEKIT_ENV.items():
+        monkeypatch.setenv(k, v)
 
 
-def _talk_through_actions(page, context, voice: list[str]) -> None:
+def _fake_livekit(context) -> list[str]:
+    """LiveKit のライブラリを代役に差し替え、画面が出したリクエストの URL を集める(別タブが開かないことも見る)。"""
+    requests: list[str] = []
+    context.on("request", lambda req: requests.append(req.url))
+    context.route(re.compile(r"https://cdn\.jsdelivr\.net/npm/livekit-client.*"),
+                  lambda route: route.fulfill(status=200, content_type="application/javascript", body=FAKE_LIVEKIT))
+    return requests
+
+
+def _open_and_close_the_voice_sheet(page, context, open_it) -> None:
+    """音声相談を開くと同じ画面の中のシートが開き(別タブは開かない)、閉じるとトークに戻る。"""
+    sheet = page.locator("#voice-sheet")
+    assert sheet.is_hidden()
+    open_it()
+    sheet.wait_for(state="visible")
+    page.wait_for_function("window.__lk && window.__lk.mic === true && !document.getElementById('voice-end').disabled")
+    assert len(context.pages) == 1  # 別タブは開かない
+    page.locator("#voice-close").click()
+    sheet.wait_for(state="hidden")
+    assert page.evaluate("window.__lk.disconnected") >= 1
+
+
+def _talk_through_actions(page, context) -> None:
     """「まず相談する」→ AI が差し出す [ファイルを選ぶ] [話して伝える] を押して進む(/ と /dev で同じ)。"""
     page.locator("#log .chips button", has_text="まず相談する").click()
     pick = page.locator("#log .chips button.action", has_text="ファイルを選ぶ")
@@ -253,12 +329,9 @@ def _talk_through_actions(page, context, voice: list[str]) -> None:
     pick.wait_for()
     assert talk.count() == 1 and page.locator("#log .chips button", has_text="文字で話す").count() == 1
 
-    notices = page.locator(".sys", has_text="話すと約5分で履歴書の下書きができ")
-    before = notices.count()
-    with context.expect_page() as popup:
-        talk.click()
-    popup.value.wait_for_load_state()
-    assert len(voice) == 1 and notices.count() == before + 1
+    before = page.locator("#log .sys").count()
+    _open_and_close_the_voice_sheet(page, context, talk.click)
+    assert page.locator("#log .sys").count() == before  # 通知の吹き出しは出さない
 
     with page.expect_file_chooser() as chooser:
         pick.click()
@@ -271,9 +344,9 @@ def _talk_through_actions(page, context, voice: list[str]) -> None:
     assert FILENAME not in page.content() and "佐藤" not in page.content()
 
 
-def test_talk_screen_actions_and_plus_menu_in_the_browser(served, browser):
+def test_talk_screen_actions_and_plus_menu_in_the_browser(served, browser, livekit):
     context = browser.new_context()
-    voice = _voice_opens(context)
+    _fake_livekit(context)
     page = context.new_page()
     page.goto(served + "/")
     page.locator("#log .chips button", has_text="まず相談する").wait_for()
@@ -287,12 +360,9 @@ def test_talk_screen_actions_and_plus_menu_in_the_browser(served, browser):
         page.locator("#menu-resume").click()
     assert page.locator("#plus-menu").is_hidden()
     page.locator("#plus").click()
-    with context.expect_page():
-        page.locator("#menu-voice").click()
-    assert len(voice) == 1
-    voice.clear()
+    _open_and_close_the_voice_sheet(page, context, page.locator("#menu-voice").click)
 
-    _talk_through_actions(page, context, voice)
+    _talk_through_actions(page, context)
 
     # 再読み込みしても、ファイルの吹き出し → 確認 → 次の1問 のまま描き直す
     page.reload()
@@ -302,17 +372,129 @@ def test_talk_screen_actions_and_plus_menu_in_the_browser(served, browser):
     context.close()
 
 
-def test_dev_screen_draws_the_same_actions_in_the_browser(served, browser):
+def test_dev_screen_draws_the_same_actions_in_the_browser(served, browser, livekit):
     context = browser.new_context(viewport={"width": 1400, "height": 900})
-    voice = _voice_opens(context)
+    _fake_livekit(context)
     page = context.new_page()
     page.goto(served + "/dev")
     page.locator('#scenarios .act[data-id="C-consult-propose"]').click()
     page.locator("#log .chips button", has_text="まず相談する").wait_for()
-    _talk_through_actions(page, context, voice)
+    _talk_through_actions(page, context)
     page.locator("#trace", has_text="ユーザーが履歴書をアップロード").wait_for()
     assert page.locator("#state", has_text="読み取り済み").count() == 1
     context.close()
+
+
+def _post_json(url: str, payload: dict) -> dict:
+    """音声ワーカーの代わりに結果を送る(Cookie なし。ワーカーと同じ呼び方)。"""
+    import urllib.request
+
+    req = urllib.request.Request(url, json.dumps(payload).encode(), {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as res:
+        return json.loads(res.read())
+
+
+def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, browser, livekit, advised):
+    """音声相談はトークの上のシートで開き、面談が終わるとシートが閉じて、同じトークに AI の返信として
+    「話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が続く(実際の音声は使わない。
+    音声ワーカーの代わりに /api/voice/result へ結果を送る)。常時の問い合わせはせず、待つのはシートを開いている間だけ。"""
+    from dip_mcp.data import load_jobs
+
+    context = browser.new_context()
+    requests = _fake_livekit(context)
+    page = context.new_page()
+    page.goto(served + "/")
+    page.locator("#log .chips button", has_text="まず相談する").wait_for()
+    page.locator("#log .chips button", has_text="まず相談する").click()
+    talk = page.locator("#log .chips button.action", has_text="話して伝える(音声・約5分)")
+    talk.wait_for()
+    uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
+    used = advised.app.state.quota.used(uid)
+    page.wait_for_timeout(1500)
+    assert not any("/api/voice/" in u for u in requests)  # シートを開くまでは何も問い合わせない
+
+    talk.click()
+    page.locator("#voice-sheet").wait_for(state="visible")
+    # マイクはエコーキャンセルつき。つながったら「面談を終える」が押せる
+    page.wait_for_function("window.__lk && window.__lk.mic === true && !document.getElementById('voice-end').disabled")
+    assert advised.app.state.quota.used(uid) == used + 1  # 音声相談は会話数を1つ使う(今と同じ)
+    connected = page.evaluate("window.__lk.connected")
+    assert connected["url"] == LIVEKIT_ENV["LIVEKIT_URL"] and connected["token"]
+    assert any(f"/api/voice/{uid}/wait" in u for u in requests)
+    status = page.locator("#voice-status")
+    assert "アドバイザー" in status.inner_text()
+
+    # 「面談を終える」→ ワーカーへ end を送り、まとめを待つ
+    page.locator("#voice-end").click()
+    page.wait_for_function("window.__lk.sent.length === 1")
+    assert page.evaluate("window.__lk.sent") == [[{"type": "end"}, "voice-resume"]]
+    assert "まとめています" in status.inner_text()
+
+    # 別の面談(前に閉じたシートの部屋)の結果では、このシートは閉じない
+    _post_json(served + "/api/voice/result", {"user_id": uid, "draft_markdown": "", "room": "voice-resume-other"})
+    page.wait_for_timeout(1000)
+    assert page.locator("#voice-sheet").is_visible()
+    assert page.get_by_text("音声でお話しした内容をまとめました。").count() == 0
+
+    # 音声ワーカーの代わりに結果を送る → シートが閉じ、同じトークに AI の返信が続く
+    ids = sorted(load_jobs())[:2]
+    room = next(u for u in requests if "/wait?" in u).split("room=")[1]  # /start が発行した部屋(ワーカーはこの名前で送る)
+    out = _post_json(served + "/api/voice/result", {
+        "user_id": uid, "room": room, "jobs": [{"job_id": i, "reasons": ["夕方の勤務"]} for i in ids],
+        "draft_markdown": "# 職務経歴書の下書き\n\n- カフェで1年勤務\n",
+        "preferences": {"job_type": "カフェ", "time_band": "夕方", "min_wage": 1200}})
+    assert out["talk"] is True
+    page.locator("#voice-sheet").wait_for(state="hidden")
+    last = page.locator("#log .row.bot").last
+    last.get_by_text("音声でお話しした内容をまとめました。").wait_for()
+    assert "職種: カフェ" in last.inner_text() and "時給: 1,200円以上" in last.inner_text()
+    assert page.locator("#log .cards").last.locator(".jc").count() == 2
+    draft = page.locator("#log .liff a", has_text="職務経歴書の下書きを見る")
+    assert draft.count() == 1 and f"/liff/voice/draft?user={uid}&rid=1" in draft.get_attribute("href")
+    log = page.locator("#log").inner_text()
+    assert "[音声相談]" not in log and "音声相談の結果が届きました" not in log
+    assert page.locator("#log .chips button", has_text="ほかの求人も見たい").is_enabled()
+    assert len(context.pages) == 1  # 別タブは開いていない
+    assert advised.app.state.quota.used(uid) == used + 1  # 結果をトークに続けるのに会話数は使わない
+
+    # シートを閉じたら問い合わせは止まる。常時の pull は無い
+    waits = sum("/wait" in u for u in requests)
+    page.wait_for_timeout(1500)
+    assert sum("/wait" in u for u in requests) == waits
+    assert not any("/pull" in u for u in requests)
+
+    # 返信は会話に入っているので、再読み込みしても残り、次のテキストの会話もその続きになる
+    page.reload()
+    page.get_by_text("音声でお話しした内容をまとめました。").wait_for()
+    assert page.locator("#log .liff a", has_text="職務経歴書の下書きを見る").count() == 1
+    page.locator("#log .chips button", has_text="ほかの求人も見たい").click()
+    page.get_by_text("承知しました。これまでのお仕事を教えてください。").wait_for()
+    context.close()
+
+
+def test_voice_result_is_saved_in_the_conversation_without_calling_the_llm(advised):
+    """結果は今の会話に AI の返信として入る(LLM は呼ばない)。履歴では本人側の発言は無く、返信だけ。"""
+    from fastapi.testclient import TestClient
+
+    from line_runtime.runtime import VOICE_EVENT
+
+    with TestClient(advised.app) as client:
+        opened, greeting = open_talk(client)
+        uid = opened["user"]
+        stream(client, uid, "message", greeting["thread"], "まず相談する")
+        seen = len(advised.model.seen)
+        out = client.post("/api/voice/result", json={"user_id": uid, "jobs": [], "draft_markdown": "",
+                                                      "preferences": {"area": "渋谷"}}).json()
+        assert out["talk"] is True and len(advised.model.seen) == seen
+        turns = client.get(f"/api/talk/history/{uid}").json()["turns"]
+        assert turns[-1]["user"] is None and turns[-1].get("upload") is None
+        assert turns[-1]["bot"]["bubbles"][0] == "音声でお話しした内容をまとめました。\nエリア: 渋谷"
+        assert turns[-1]["bot"]["buttons"] == [] and turns[-1]["bot"]["cards"] == []
+        # 次のターンは同じ会話の続き(LLM には音声相談を終えたことが伝わる)
+        r = stream(client, uid, "message", greeting["thread"], "条件を変えて探す")[-1]
+        assert r["kind"] == "reply"
+        msgs = advised.model.contexts[-1]
+        assert any(m.type == "human" and m.content.startswith(VOICE_EVENT) for m in msgs)
 
 
 def test_an_upload_from_an_old_tab_is_not_read_and_spends_no_turn(advised):

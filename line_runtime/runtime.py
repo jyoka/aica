@@ -20,7 +20,7 @@ from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import Self
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.prompts import load_mcp_prompt
 from langchain_mcp_adapters.tools import load_mcp_tools
@@ -63,12 +63,28 @@ def event_input(event: str, text: str | None, facts: dict | None) -> str:
     if kind == "upload":
         if not facts:
             raise ValueError(f"{event} には読み取り結果の facts が必要です")
+        if facts.get("empty"):
+            return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取れた項目がありませんでした(dip には保存して"
+                    f"いません)。トークには次の案内を出しました: {json.dumps(facts['shown'], ensure_ascii=False)} "
+                    "この案内は繰り返さず、読み取れなかった前提で、経歴か希望を1問だけ聞いて会話を続けてください。")
         return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取り結果は dip に保存済みで、トークには次の確認を"
                 f"出しました: {json.dumps(facts['shown'], ensure_ascii=False)} "
                 "この確認は繰り返さず、読み取り結果を見て会話を続けてください。")
     if facts is None:
         raise ValueError(f"{event} は dip が許可したプッシュなので facts が必要です")
     return f"[イベント: dip からのプッシュ依頼 {event}] 根拠の事実: {json.dumps(facts, ensure_ascii=False)} {FIRST_MESSAGE}"
+
+
+# 音声相談の結果をトークに続けたターンの、本人側の記録(LLM は呼ばない。次のターンから LLM が読む文脈になる)
+VOICE_EVENT = ("[イベント: 本人が音声相談を終えた] 音声で聞いた希望・経験は dip に保存済み(要約の stated_preferences)。"
+               "トークには次の返信を出しました。同じことを聞き直さず、続きから会話してください。")
+
+
+def voice_event(reply: dict) -> str:
+    """音声相談の結果のターンの本人側の記録。トークに出した求人(ID と名前)も書き、次のターンで本人が
+    カードの「詳しく見る」を押したときに、どの求人の話かを LLM が分かるようにする。"""
+    jobs = [{"job_id": c["job_id"], "title": c["title"]} for c in reply.get("cards", [])]
+    return VOICE_EVENT + (f" 提案した求人: {json.dumps(jobs, ensure_ascii=False)}" if jobs else "")
 
 
 def dip_connection() -> dict:
@@ -155,6 +171,20 @@ class LineRuntime:
         first = next((m.content for m in messages if m.type == "human"), None)
         greeted = first in {event_input(e, None, None) for e in GREETINGS} and turns[0]["bot"] is not None
         return {"thread": n, "last_at": last_at, "turns": turns, "greeted": greeted}
+
+    async def add_voice_result(self, user_id: str, reply: dict) -> bool:
+        """音声相談の結果を、今の会話に AI の返信として続ける(LLM は呼ばない)。画面に描き直せるよう、返信は
+        そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。"""
+        async with self._locks[user_id]:
+            n = await self._current(user_id)
+            if not n:
+                return False
+            shown = LineReply(bubbles=reply["bubbles"], quick_replies=reply["quick_replies"],
+                              job_ids=[c["job_id"] for c in reply["cards"]])
+            human = HumanMessage(voice_event(reply), additional_kwargs={"voice": reply})
+            await self.agent.aupdate_state(self._cfg(user_id, n),
+                                           {"messages": [human, AIMessage(shown.model_dump_json())]}, as_node="model")
+            return True
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
                      talk_thread: int | None = None) -> dict:
@@ -314,7 +344,7 @@ def history(messages: list) -> list[dict]:
     user(ユーザーの発言。挨拶・プッシュ・アップロードのイベントなら None)と bot(そのターンの返信。render と同じ形、
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
     アップロードのターンには upload(file: 「履歴書(PDF)」のような表示名、shown: 読み取り結果の確認の吹き出し、
-    view_url: 読み取り結果の画面)も付く。
+    view_url: 読み取り結果の画面)も付く。音声相談の結果のターン(add_voice_result)は、保存した返信をそのまま bot にする。
     カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
     humans = [i for i, m in enumerate(messages) if m.type == "human"]
     turns = []
@@ -326,10 +356,13 @@ def history(messages: list) -> list[dict]:
         # 会話を始めたイベント(挨拶・プッシュ)は最初の1件だけ。途中で本人が同じ書き出しで書いても発言として出す
         user = None if k == 0 and isinstance(content, str) and content.startswith("[イベント:") else content
         upload = messages[start].additional_kwargs.get("upload")
-        if upload:
+        voice = messages[start].additional_kwargs.get("voice")
+        if upload or voice:
             user = None
         bot = None
-        if reply is not None:
+        if voice:
+            bot = voice
+        elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}
         turns.append({"user": user, "bot": bot} | ({"upload": upload} if upload else {}))
@@ -341,8 +374,10 @@ def render(state: dict) -> dict:
     reply: LineReply = state.get("structured_response") or LineReply(bubbles=["(返信を生成できませんでした)"])
     msgs = state["messages"]
     last_human = max(i for i, m in enumerate(msgs) if m.type == "human")
-    # カードにできるのは dip のツールが返した求人だけ。モデルが作った求人は出さない。
+    # カードにできるのは dip のツールが返した求人(と、音声相談の結果として dip の求人データから作り直したカード)だけ。
+    # モデルが作った求人は出さない。
     sources = [_tool_payload(m) for m in msgs if m.type == "tool"]
+    sources += [m.additional_kwargs["voice"]["cards"] for m in msgs if m.type == "human" and "voice" in m.additional_kwargs]
     jobs: dict[str, dict] = {}
     for c in (c for src in sources for c in _cards_in(src)):
         jobs.setdefault(c["job_id"], c)  # 最初に返ったもの(たいてい recommend_jobs の、条件に沿った理由つき)を使う

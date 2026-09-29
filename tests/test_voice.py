@@ -1,6 +1,8 @@
-"""音声相談(voice-resume)との連携のテスト。LLM は使わない(task 40)。
+"""音声相談(voice-resume)との連携のテスト。LLM は使わない(task 40 / task 92)。
 
-voice-resume が面談の結果を /api/voice/result に送り、トークが pull で受け取って描く。
+音声相談はトークの上のシートで開く: シートが POST /api/voice/{user}/start で接続トークンを受け取り(本人の
+Cookie のユーザーだけ。会話数を1つ使う)、開いている間だけ POST /api/voice/{user}/wait で結果を待つ。
+voice-resume が面談の結果を /api/voice/result に送ると、今の会話に AI の返信として続く(再読み込みでも残る)。
 トークに出る求人は dip の求人データから作り直す(dip に無い求人はトークに出さない)。
 """
 
@@ -46,14 +48,16 @@ def test_record_voice_result_rebuilds_cards_from_dip_jobs_only(state):
     assert cards[0]["reasons"] == ["夕方の勤務"]
 
 
-def test_pull_voice_results_returns_undelivered_once(state):
+def test_voice_results_since_returns_what_came_after_the_sheet_opened(state):
     jobs, _ = _voice_jobs()
     logic.record_voice_result(state, "sim-new", jobs, DRAFT)
-    pulled = logic.pull_voice_results(state, "sim-new")
-    assert len(pulled) == 1 and pulled[0]["draft_markdown"] == DRAFT
-    assert logic.pull_voice_results(state, "sim-new") == []  # 2回目は空(受け取り済み)
-    # 受け取り済みでも、下書きの表示ページからは id で読める
-    assert logic.voice_result(state, "sim-new", pulled[0]["id"])["draft_markdown"] == DRAFT
+    since = logic.voice_result_count(state, "sim-new")  # シートを開いた時点
+    assert since == 1 and logic.voice_results_since(state, "sim-new", since) == []
+    logic.record_voice_result(state, "sim-new", [], DRAFT + "2")
+    (got,) = logic.voice_results_since(state, "sim-new", since)
+    assert got["id"] == 1 and got["draft_markdown"] == DRAFT + "2"
+    # 下書きの表示ページからは id で読める
+    assert logic.voice_result(state, "sim-new", 0)["draft_markdown"] == DRAFT
     assert logic.voice_result(state, "sim-new", 99) is None
 
 
@@ -61,8 +65,16 @@ def test_record_voice_result_without_jobs_keeps_the_draft(state):
     """0件のまま終わった相談でも、下書きだけはトークへ戻せる。"""
     r = logic.record_voice_result(state, "sim-new", [], DRAFT)
     assert r["cards"] == 0
-    pulled = logic.pull_voice_results(state, "sim-new")
-    assert pulled[0]["cards"] == [] and pulled[0]["draft_markdown"] == DRAFT
+    (got,) = logic.voice_results_since(state, "sim-new", 0)
+    assert got["cards"] == [] and got["draft_markdown"] == DRAFT
+
+
+def test_record_voice_result_keeps_only_safe_preferences(state):
+    """まとめに使う希望は、保存と同じ決まり: 決まった項目だけ・個人情報らしい値は捨てる。"""
+    logic.record_voice_result(state, "sim-new", [], DRAFT, preferences={
+        "job_type": "カフェ", "min_wage": 1200, "area": "みほん町3-5", "phone": "090-1234-5678", "skills": " "})
+    (got,) = logic.voice_results_since(state, "sim-new", 0)
+    assert got["preferences"] == {"job_type": "カフェ", "min_wage": "1200"}
 
 
 # ----------------------------- server(入口とAPI) -----------------------------
@@ -84,25 +96,122 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def test_voice_entry_redirects_to_the_voice_page_with_the_user(client):
-    """トークの「音声で相談」→ /liff/voice が voice-resume の会話ページへユーザーIDつきで送る。"""
-    r = client.get("/liff/voice", params={"user": "sim-new"}, follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers["location"].endswith("/?user=sim-new")
+LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
+           "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
+
+
+@pytest.fixture
+def livekit(monkeypatch):
+    for k, v in LIVEKIT.items():
+        monkeypatch.setenv(k, v)
+
+
+def test_voice_start_issues_a_token_only_for_the_browsers_own_user(client, livekit):
+    """接続トークンは line_runtime が、Cookie の匿名ユーザーID のユーザーにだけ発行する(他人・Cookie なしは 403)。"""
+    import jwt
+    from fastapi.testclient import TestClient
+
+    from voice_resume.agent import participant_user_id
+
+    uid = client.get("/api/me").json()["user_id"]
+    scoped = client.post("/api/scenarios/F-follow-new/start").json()["user"]  # /dev のシナリオユーザー
+    for user in (uid, scoped):
+        r = client.post(f"/api/voice/{user}/start")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["url"] == LIVEKIT["LIVEKIT_URL"] and body["since"] == 0
+        claims = jwt.decode(body["token"], options={"verify_signature": False})
+        assert claims["sub"] == user and participant_user_id(type("P", (), {"metadata": claims["metadata"]})()) == user
+
+    other = TestClient(client.app)  # 別のブラウザ
+    ub = other.get("/api/me").json()["user_id"]
+    assert client.post(f"/api/voice/{ub}/start").status_code == 403
+    assert client.post(f"/api/voice/{ub}:sim-new/start").status_code == 403
+    assert client.post(f"/api/voice/{ub}/wait", params={"since": 0, "timeout": 0}).status_code == 403
+    nc = TestClient(client.app)  # Cookie の無い呼び出しにも発行しない(実 API の費用につながる)
+    assert nc.post(f"/api/voice/{uid}/start").status_code == 403
+    assert nc.post("/api/voice/sim-new/start").status_code == 403
+
+
+def test_voice_start_without_livekit_keys_spends_no_turn(client, monkeypatch):
+    for k in LIVEKIT:
+        monkeypatch.delenv(k, raising=False)
+    uid = client.get("/api/me").json()["user_id"]
+    r = client.post(f"/api/voice/{uid}/start")
+    assert r.status_code == 503 and "LIVEKIT_URL" in r.json()["detail"]
+    assert client.app.state.quota.used(uid) == 0
+
+
+def test_the_old_voice_tab_and_polling_are_gone(client):
+    """別タブの会話ページへの入口(/liff/voice)と、常時の問い合わせ(/pull)は無い。"""
+    from line_runtime import config
+
+    uid = client.get("/api/me").json()["user_id"]
+    assert client.get("/liff/voice", params={"user": uid}, follow_redirects=False).status_code == 404
+    assert client.post(f"/api/voice/{uid}/pull").status_code in (404, 405)
+    core = (config.ROOT / "line_runtime" / "static" / "talk-core.js").read_text(encoding="utf-8")
+    assert "setInterval" not in core and "/pull" not in core and "window.open" not in core
+    assert "[音声相談]" not in core
+    assert "[音声相談]" not in (config.ROOT / "line_runtime" / "static" / "dev.html").read_text(encoding="utf-8")
+
+
+def test_voice_cards_stay_usable_in_later_turns():
+    """音声相談の結果のカードは、次のターンの返信でも(dip のツールを呼び直さずに)カードとして出せる。
+    LLM には求人のID と名前が伝わる。"""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from line_runtime.agent import LineReply
+    from line_runtime.runtime import render, voice_event
+    from line_runtime.voice_reply import voice_reply
+
+    jobs, ids = _voice_jobs()
+    cards = [logic.job_card(load_jobs()[i], ["夕方の勤務"]) for i in ids]
+    reply = voice_reply("u", {"id": 0, "cards": cards, "draft_markdown": "", "preferences": {}})
+    event = voice_event(reply)
+    assert ids[0] in event and jobs[0]["title"] in event
+    msgs = [HumanMessage(event, additional_kwargs={"voice": reply}), AIMessage("{}"), HumanMessage("1件目を詳しく")]
+    r = render({"messages": msgs, "structured_response": LineReply(bubbles=["こちらです。"], job_ids=[ids[0], "zzz999"])})
+    assert [c["job_id"] for c in r["cards"]] == [ids[0]] and r["unknown_job_ids"] == ["zzz999"]
+
+
+def test_wait_returns_only_the_result_of_its_own_room(client):
+    """シートは自分の面談(部屋)の結果だけを受け取る。前に閉じたシートの面談の結果は読み飛ばす(会話には入っている)。"""
+    uid = client.get("/api/me").json()["user_id"]
+    client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-old"})
+    got = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "room": "voice-resume-new", "timeout": 0.2}).json()
+    assert got == {"results": [], "next": 1}
+    client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-new"})
+    got = client.post(f"/api/voice/{uid}/wait", params={"since": 1, "room": "voice-resume-new", "timeout": 0}).json()
+    assert [r["voice_result"] for r in got["results"]] == [1] and got["next"] == 2
+
+
+def test_wait_returns_nothing_until_a_result_arrives(client):
+    uid = client.get("/api/me").json()["user_id"]
+    r = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "timeout": 0.2})
+    assert r.status_code == 200 and r.json() == {"results": [], "next": 0}
 
 
 def test_voice_result_round_trip_over_the_api(client):
-    """voice-resume が結果を送る → トークが pull で1回だけ受け取る → 下書きページが開ける。"""
+    """voice-resume が結果を送る → シートの wait が受け取る(開いた後に届いた分だけ)→ 下書きページが開ける。"""
     jobs, ids = _voice_jobs()
+    uid = client.get("/api/me").json()["user_id"]
     r = client.post("/api/voice/result", json={
-        "user_id": "sim-new", "jobs": jobs, "draft_markdown": DRAFT, "files": ["out/resume.md"],
+        "user_id": uid, "jobs": jobs, "draft_markdown": DRAFT, "files": ["out/resume.md"],
+        "preferences": {"job_type": "カフェ", "time_band": "夕方"},
     })
     assert r.status_code == 200 and r.json()["cards"] == 2
+    assert r.json()["talk"] is False  # まだ会話が無いユーザー: トークには続けない(dip には預かる)
 
-    pulled = client.post("/api/voice/sim-new/pull").json()["results"]
-    assert [c["job_id"] for c in pulled[0]["cards"]] == ids
-    assert client.post("/api/voice/sim-new/pull").json()["results"] == []
+    got = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "timeout": 0}).json()
+    assert got["next"] == 1
+    (reply,) = got["results"]
+    assert [c["job_id"] for c in reply["cards"]] == ids
+    assert reply["bubbles"][0] == "音声でお話しした内容をまとめました。\n職種: カフェ\n時間帯: 夕方"
+    assert reply["buttons"] == [{"label": "職務経歴書の下書きを見る", "url": f"/liff/voice/draft?user={uid}&rid=0"}]
+    assert all(len(b) <= 80 for b in reply["bubbles"]) and not any("[音声相談]" in b for b in reply["bubbles"])
+    # 受け取った後(next から)は、次の結果が届くまで空
+    assert client.post(f"/api/voice/{uid}/wait", params={"since": 1, "timeout": 0}).json()["results"] == []
 
-    page = client.get("/liff/voice/draft", params={"user": "sim-new", "rid": pulled[0]["id"]})
+    page = client.get("/liff/voice/draft", params={"user": uid, "rid": 0})
     assert page.status_code == 200 and "カフェで1年勤務" in page.text
-    assert client.get("/liff/voice/draft", params={"user": "sim-new", "rid": 9}).status_code == 404
+    assert client.get("/liff/voice/draft", params={"user": uid, "rid": 9}).status_code == 404
