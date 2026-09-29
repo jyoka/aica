@@ -212,7 +212,7 @@ class ResumeAdvisor(Agent):
                 return await self._zero_hit_reply(args)
         lines = [f"{i}件目: {spoken_job_line(job)}" for i, job in enumerate(jobs, 1)]
         return (
-            f"求人が{len(jobs)}件見つかりました(画面にも表示済み)。"
+            f"求人が{len(jobs)}件見つかりました(面談が終わるとトークにも出ます)。"
             "1件ずつ短く読み上げてください:\n" + "\n".join(lines)
         )
 
