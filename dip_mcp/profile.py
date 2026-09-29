@@ -19,7 +19,7 @@ import copy
 import json
 
 from dip_mcp import logic
-from dip_mcp.data import PII_VALUE, State, now
+from dip_mcp.data import State, fold_pii, has_pii, now
 
 # 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
 SECTIONS = (
@@ -118,7 +118,7 @@ def edit_summary(state: State, line_user_id: str, text: str) -> dict:
     text = str(text or "").strip()
     if not text:
         return {"error": "empty", "message": ERRORS["empty"]}
-    if PII_VALUE.search(text) or logic.ADDRESS_LIKE.search(text):
+    if has_pii(text) or logic.ADDRESS_LIKE.search(fold_pii(text)):
         return {"error": "personal_info", "message": ERRORS["personal_info"]}
     if len(text) > logic.CONSULTATION_SUMMARY_MAX:
         return {"error": "too_long", "message": f"{logic.CONSULTATION_SUMMARY_MAX}字以内で入力してください。"}

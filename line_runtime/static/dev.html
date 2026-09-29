@@ -386,7 +386,7 @@
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(res.status + " " + await res.text()); return res.json();
   }
-  const dip = async (uid) => (await fetch("/api/dip/" + encodeURIComponent(uid))).json();
+  const dip = (uid) => post("/api/dip", { user_id: uid });
   function segBadge(seg) { const [t, k] = SEGMENT[seg] || [seg, ""]; return el("span", `badge ${k}`, t); }
 
   function renderScenarios() {

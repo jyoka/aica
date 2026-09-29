@@ -7,7 +7,7 @@ aica が本人について覚えていること(雇用区分・目的・希望�
     消した項目を前提にしない
 (3) 履歴書の読み取り結果と音声の下書きを丸ごと消せる。消した後はチャットの要約にも音声の指示にも出ない
 (4) 「すべて消す」で長期メモリと会話が消え、次に開くと初回訪問として始まる(会話数の上限の数は消さない)
-(5) 他人のユーザーIDでの閲覧・変更は 403(Cookie の無い呼び出しも断る)
+(5) パスにユーザーIDは無く、Cookie の本人の分だけ。他人の匿名IDを名乗っても届かず、Cookie なし・不正は 401
 (6) 手で直すときも、電話番号・メール・住所らしい値は弾く
 追記(UX 刷新 3/3 のレビューから): 通話中の × は確認を出す / 閉じた後に届いた結果は次のターンの前に描く(ブラウザ)
 """
@@ -29,6 +29,7 @@ from tests.test_resume_intake import StubClient
 from tests.test_resume_upload import FILENAME, clean_draft
 from tests.test_talk_actions import browser, livekit  # noqa: F401  フィクスチャ
 from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
+    WORKER,
     app,
     open_talk,
     stream,
@@ -115,7 +116,7 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
     with _client(remembered) as client:
         opened, greeting = open_talk(client)
         uid = opened["user"]
-        p = client.get(f"/api/profile/{uid}").json()
+        p = client.get("/api/profile").json()
         assert [s["title"] for s in p["sections"]] == ["目的", "希望", "経歴"]
         items = _items(p)
         # 区分が未定なら正社員の条件(年収・働き方・時期)は出さない。ほかは空でも出す(画面が「まだありません」)
@@ -130,13 +131,14 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         logic.save_preferences(remembered.state, uid, {"purpose": "転職", "area": "渋谷", "skills": "Excel",
                                                        "min_annual_salary": "500万円以上"})
         logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "転職で渋谷を希望。次に確かめること: 職種")
-        assert client.post(f"/api/resume/{uid}/upload", params={"thread": greeting["thread"]},
+        assert client.post("/api/resume/upload", params={"thread": greeting["thread"]}, data={"user_id": uid},
                            files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 200
-        client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 職務経歴書\n- 営業5年"})
+        assert client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 職務経歴書\n- 営業5年"},
+                           headers=WORKER).status_code == 200
         job = min(logic.load_jobs())
         logic.save_job(remembered.state, uid, job)
         logic.submit_application(remembered.state, uid, sorted(logic.load_jobs())[1])
-        p = client.get(f"/api/profile/{uid}").json()
+        p = client.get("/api/profile").json()
         items = _items(p)
         assert items["purpose"] == "転職" and items["area"] == "渋谷" and items["skills"] == "Excel"
         assert items["min_annual_salary"] == "500万円以上" and "work_style" in items  # 正社員なら条件も出す
@@ -144,10 +146,10 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         assert p["track"]["history"][0] == {"when": "9/23", "from": "未定", "track": "正社員",
                                                  "evidence": "転職を考えています", "undo": False}
         assert p["consultation_summary"]["text"].startswith("転職で渋谷")
-        assert p["resume"]["view_url"] == f"/liff/resume?user={uid}" and p["resume"]["highlights"]
+        assert p["resume"]["view_url"] == "/liff/resume?rid=0" and p["resume"]["highlights"]
         assert FILENAME not in json.dumps(p, ensure_ascii=False)  # ファイル名は出さない(保存もしていない)
         assert [d["id"] for d in p["voice_drafts"]] == [0]
-        assert p["voice_drafts"][0]["view_url"] == f"/liff/voice/draft?user={uid}&rid=0"
+        assert p["voice_drafts"][0]["view_url"] == "/liff/voice/draft?rid=0"
         assert [j["job_id"] for j in p["saved_jobs"]] == [job]
         assert len(p["applications"]) == 1 and p["applications"][0]["title"]
 
@@ -167,8 +169,8 @@ def test_edits_reach_the_ai_before_the_next_reply(remembered):
         before = stream(client, uid, "message", th, "探して")[-1]
         assert before["bubbles"] == ["エリアは新宿で探しますね。", "目的は「生活費の足しに」ですね。"]
 
-        assert client.put(f"/api/profile/{uid}/items/area", json={"value": "渋谷"}).status_code == 200
-        p = client.delete(f"/api/profile/{uid}/items/purpose").json()
+        assert client.put("/api/profile/items/area", json={"value": "渋谷"}).status_code == 200
+        p = client.delete("/api/profile/items/purpose").json()
         assert _items(p)["area"] == "渋谷" and _items(p)["purpose"] is None
         # 要約はすぐ変わる(次の会話・音声が読む)
         stated = logic.conversation_summary(remembered.state, uid)["stated_preferences"]
@@ -186,7 +188,7 @@ def test_edits_reach_the_ai_before_the_next_reply(remembered):
         stream(client, uid, "message", th, "ありがとう")
         assert sum(m.content.startswith(NOTICE) for m in remembered.model.contexts[-1] if m.type == "human") == 1
         assert remembered.state.user(uid).get("profile_changes") == []
-        turns = client.get(f"/api/talk/history/{uid}").json()["turns"]
+        turns = client.get("/api/talk/history").json()["turns"]
         assert [t["user"] for t in turns] == [None, "探して", "探して", "ありがとう"]
         assert turns[1]["bot"]["bubbles"] == before["bubbles"]  # 知らせの前のターンの返信も欠けない
         assert all(NOTICE not in json.dumps(t, ensure_ascii=False) for t in turns)
@@ -202,8 +204,8 @@ def test_a_new_conversation_reads_the_edited_profile_without_a_notice(remembered
     with _client(remembered) as client:
         opened, first = open_talk(client)
         uid = opened["user"]
-        client.put(f"/api/profile/{uid}/items/area", json={"value": "池袋"})
-        client.put(f"/api/profile/{uid}/track", json={"track": "アルバイト・パート"})
+        client.put("/api/profile/items/area", json={"value": "池袋"})
+        client.put("/api/profile/track", json={"track": "アルバイト・パート"})
         remembered.later(31)
         _, greeting = open_talk(client)
         assert greeting["thread"] == first["thread"] + 1
@@ -224,22 +226,22 @@ def test_track_and_consultation_summary_can_be_edited_and_deleted(remembered):
         logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "転職を考えている")
         logic.record_outcome(remembered.state, uid, "consult", "相談のみ", 0.8, "前のまとめ: 渋谷で転職")
 
-        p = client.put(f"/api/profile/{uid}/items/consultation_summary", json={"value": "副業を探している"}).json()
+        p = client.put("/api/profile/items/consultation_summary", json={"value": "副業を探している"}).json()
         assert p["consultation_summary"]["text"] == "副業を探している"
-        assert client.put(f"/api/profile/{uid}/items/consultation_summary",
+        assert client.put("/api/profile/items/consultation_summary",
                           json={"value": "あ" * 201}).status_code == 400
         # 消すと、前のまとめが繰り上がって出ることもない
-        p = client.delete(f"/api/profile/{uid}/items/consultation_summary").json()
+        p = client.delete("/api/profile/items/consultation_summary").json()
         assert p["consultation_summary"] is None
         assert logic.conversation_summary(remembered.state, uid)["consultation_summary"] is None
         assert len(remembered.state.user(uid)["outcomes"]) == 2  # 会話の結果の記録は残す
 
-        assert client.put(f"/api/profile/{uid}/track", json={"track": "社長"}).status_code == 400
-        p = client.delete(f"/api/profile/{uid}/track").json()
+        assert client.put("/api/profile/track", json={"track": "社長"}).status_code == 400
+        p = client.delete("/api/profile/track").json()
         assert p["track"] == {"current": "未定", "choices": ["アルバイト・パート", "正社員", "未定"], "history": []}
         assert logic.conversation_summary(remembered.state, uid)["search_track"] == "未定"
-        assert client.put(f"/api/profile/{uid}/items/nickname", json={"value": "x"}).status_code == 400
-        assert client.put(f"/api/profile/{uid}/items/area", json={"value": "  "}).status_code == 400
+        assert client.put("/api/profile/items/nickname", json={"value": "x"}).status_code == 400
+        assert client.put("/api/profile/items/area", json={"value": "  "}).status_code == 400
 
 
 # ----------------------------- (3) 履歴書と音声の下書きを丸ごと消す -----------------------------
@@ -252,15 +254,15 @@ def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered,
     with _client(remembered) as client:
         opened, greeting = open_talk(client)
         uid, th = opened["user"], greeting["thread"]
-        assert client.post(f"/api/resume/{uid}/upload", params={"thread": th},
+        assert client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
                            files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 200
         stream(client, uid, "resume_upload", th)
         assert "履歴書の経歴も踏まえます。" in stream(client, uid, "message", th, "探して")[-1]["bubbles"]
 
-        p = client.delete(f"/api/profile/{uid}/resume").json()
+        p = client.delete("/api/profile/resume").json()
         assert p["resume"] is None
         assert logic.conversation_summary(remembered.state, uid)["uploaded_resume"] is None
-        assert client.get(f"/liff/resume?user={uid}").status_code == 404
+        assert client.get("/liff/resume?rid=0").status_code == 404
         # チャット: 次の返信の前に「消した」と伝わり、履歴書を前提にしない
         r = stream(client, uid, "message", th, "探して")[-1]
         assert "履歴書の経歴も踏まえます。" not in r["bubbles"]
@@ -296,14 +298,14 @@ def test_deleted_voice_draft_is_gone_with_its_files(remembered, tmp_path):
         opened, greeting = open_talk(client)
         uid = opened["user"]
         client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 下書き\n- 営業5年",
-                                                "files": [str(f) for f in files] + [str(outside)]})
-        assert client.get(f"/liff/voice/draft?user={uid}&rid=0").status_code == 200
+                                                "files": [str(f) for f in files] + [str(outside)]}, headers=WORKER)
+        assert client.get("/liff/voice/draft?rid=0").status_code == 200
 
-        p = client.delete(f"/api/profile/{uid}/voice/0").json()
+        p = client.delete("/api/profile/voice/0").json()
         assert p["voice_drafts"] == []
-        assert client.get(f"/liff/voice/draft?user={uid}&rid=0").status_code == 404
+        assert client.get("/liff/voice/draft?rid=0").status_code == 404
         assert not any(f.exists() for f in files) and outside.exists()  # 音声の出力先の外は消さない
-        assert client.delete(f"/api/profile/{uid}/voice/0").status_code == 404
+        assert client.delete("/api/profile/voice/0").status_code == 404
         r = stream(client, uid, "message", greeting["thread"], "探して")[-1]
         assert r["kind"] == "reply"
         assert "音声相談の下書きを消した" in remembered.model.contexts[-1][-2].content
@@ -325,10 +327,10 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
         assert again["entry"] == "revisit"  # 覚えているので再訪
         used = client.app.state.quota.used(uid)
 
-        assert client.post(f"/api/profile/{uid}/forget").json() == {"forgotten": True}
-        p = client.get(f"/api/profile/{uid}").json()
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}
+        p = client.get("/api/profile").json()
         assert all(v is None for v in _items(p).values()) and p["saved_jobs"] == []
-        assert client.get(f"/api/talk/history/{uid}").json() == {"thread": 0, "turns": []}  # 会話も消える
+        assert client.get("/api/talk/history").json() == {"thread": 0, "turns": []}  # 会話も消える
         # 30分以内に開き直しても、前の会話を続けず初回訪問として始まる
         remembered.later(0)
         opened, first = open_talk(client)
@@ -337,53 +339,74 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
         assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
 
 
-# ----------------------------- (5) 他人のユーザーID は 403 -----------------------------
+# ----------------------------- (5) 本人の Cookie のユーザーだけ -----------------------------
+
+
+def _cookie_user(client) -> str:
+    """画面を開いたときと同じく GET / で匿名IDの Cookie を受け取る(API は発行しない)。"""
+    client.get("/")
+    return client.cookies["aica_uid"]
+
+
+PROFILE_CALLS = [("get", ""), ("put", "/items/area"), ("delete", "/items/area"), ("put", "/track"),
+                 ("delete", "/track"), ("delete", "/resume"), ("delete", "/voice/0"), ("delete", "/saved/x"),
+                 ("post", "/forget")]
 
 
 def test_another_users_profile_can_be_neither_read_nor_changed(remembered):
+    """パスにユーザーIDは無く、Cookie の本人の分だけを読む・変える。他人の匿名IDを本文やクエリで名乗っても届かない。"""
     with _client(remembered) as a:
         b = _client(remembered)
-        ua = a.post("/api/talk/open").json()["user"]
-        ub = b.post("/api/talk/open").json()["user"]
+        ua, ub = _cookie_user(a), _cookie_user(b)
+        assert ua != ub
         logic.save_preferences(remembered.state, ub, {"area": "渋谷"})
-        assert a.get(f"/api/profile/{ua}").status_code == 200
-        calls = [("get", ""), ("put", "/items/area"), ("delete", "/items/area"), ("put", "/track"),
-                 ("delete", "/track"), ("delete", "/resume"), ("delete", "/voice/0"), ("delete", "/saved/x"),
-                 ("post", "/forget")]
-        for method, path in calls:
+        logic.save_job(remembered.state, ub, min(logic.load_jobs()))
+        assert _items(a.get("/api/profile", params={"user_id": ub}).json())["area"] is None  # 他人の分は見えない
+        for method, path in PROFILE_CALLS:
+            body = {"json": {"value": "新宿", "track": "正社員", "user_id": ub}} if method == "put" else {}
+            assert getattr(a, method)(f"/api/profile{path}", params={"user_id": ub}, **body).status_code in (200, 404), \
+                (method, path)
+        after = remembered.state.user(ub)
+        assert logic.stated_preferences(after)["area"]["value"] == "渋谷" and after.get("saves")  # 変わっていない
+        # 旧来の「パスにユーザーID」の形は無い
+        assert a.get(f"/api/profile/{ub}").status_code == 404
+
+
+@pytest.mark.parametrize("cookies", [{}, {"aica_uid": "x"}, {"aica_uid": "w-XYZ"}], ids=["no-cookie", "malformed", "not-hex"])
+def test_profile_routes_need_a_well_formed_cookie(remembered, cookies):
+    from fastapi.testclient import TestClient
+
+    with _client(remembered):
+        nc = TestClient(remembered.app, cookies=cookies)
+        for method, path in PROFILE_CALLS:
             body = {"json": {"value": "新宿", "track": "正社員"}} if method == "put" else {}
-            assert getattr(a, method)(f"/api/profile/{ub}{path}", **body).status_code == 403, (method, path)
-            # Cookie の無い呼び出しも断る
-            anon = _client(remembered)
-            assert getattr(anon, method)(f"/api/profile/{ub}{path}", **body).status_code == 403, (method, path)
-        assert logic.stated_preferences(remembered.state.user(ub))["area"]["value"] == "渋谷"  # 変わっていない
-        # 「匿名ID:シナリオユーザー」(/dev)のプロフィールも、本番の画面からは扱わない
-        assert a.get(f"/api/profile/{ua}:sim-new").status_code == 403
+            assert getattr(nc, method)(f"/api/profile{path}", **body).status_code == 401, (method, path)
 
 
 # ----------------------------- (6) 個人情報らしい値は、手で直すときも弾く -----------------------------
 
 
 @pytest.mark.parametrize("value", ["090-1234-5678", "連絡は09012345678", "misaki@example.com",
-                                   "新宿区西新宿2-8-1", "西新宿三丁目", "1-2-3 に住んでいます"])
+                                   "新宿区西新宿2-8-1", "西新宿三丁目", "1-2-3 に住んでいます",
+                                   "０９０－１２３４－５６７８", "090ー1234ー5678", "西新宿２－８－１"])
 def test_personal_info_is_rejected_when_editing_by_hand(remembered, value):
     with _client(remembered) as client:
-        uid = client.post("/api/talk/open").json()["user"]
+        uid = _cookie_user(client)
         for key in ("area", "experience", "consultation_summary"):
-            r = client.put(f"/api/profile/{uid}/items/{key}", json={"value": value})
+            r = client.put(f"/api/profile/items/{key}", json={"value": value})
             assert r.status_code == 400 and "個人情報" in r.json()["detail"], (key, value)
-        p = client.get(f"/api/profile/{uid}").json()
+        p = client.get("/api/profile").json()
         assert all(v is None for v in _items(p).values()) and p["consultation_summary"] is None
         assert remembered.state.user(uid).get("profile_changes") in (None, [])
 
 
 def test_values_that_only_look_like_numbers_are_kept_when_editing_by_hand(remembered):
     with _client(remembered) as client:
-        uid = client.post("/api/talk/open").json()["user"]
+        _cookie_user(client)
         for key, value in (("min_annual_salary", "年収400-500万円"), ("start_timing", "3-6か月以内"),
                            ("area", "新宿区")):
-            assert client.put(f"/api/profile/{uid}/items/{key}", json={"value": value}).status_code == 200, value
-        assert client.put(f"/api/profile/{uid}/items/wants", json={"value": "あ" * 101}).status_code == 400
+            assert client.put(f"/api/profile/items/{key}", json={"value": value}).status_code == 200, value
+        assert client.put("/api/profile/items/wants", json={"value": "あ" * 101}).status_code == 400
 
 
 # ----------------------------- ブラウザ(Playwright と Chromium があるときだけ) -----------------------------
@@ -471,7 +494,7 @@ def test_voice_sheet_asks_before_closing_mid_call_and_a_late_result_is_drawn_bef
     page.locator("#voice-sheet").wait_for(state="hidden")
 
     # 閉じた後に結果が届く(会話には入るが、この画面はもう待っていない)
-    room = next(u for u in requests if "/wait?" in u).split("room=")[1]
+    room = json.loads(next(u for u in requests if "/api/voice/wait" in u).split(" ", 1)[1])["room"]
     _post_json(served_profile + "/api/voice/result", {"user_id": uid, "room": room, "draft_markdown": "# 下書き",
                                                       "preferences": {"area": "中野"}})
     page.wait_for_timeout(500)

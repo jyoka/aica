@@ -1,8 +1,8 @@
 """音声相談(voice-resume)との連携のテスト。LLM は使わない(task 40 / task 92)。
 
-音声相談はトークの上のシートで開く: シートが POST /api/voice/{user}/start で接続トークンを受け取り(本人の
-Cookie のユーザーだけ。会話数を1つ使う)、開いている間だけ POST /api/voice/{user}/wait で結果を待つ。
-voice-resume が面談の結果を /api/voice/result に送ると、今の会話に AI の返信として続く(再読み込みでも残る)。
+音声相談はトークの上のシートで開く: シートが POST /api/voice/start で接続トークンを受け取り(本人の
+Cookie のユーザーだけ。会話数を1つ使う)、開いている間だけ POST /api/voice/wait で結果を待つ(ユーザーIDは本文)。
+voice-resume が面談の結果を /api/voice/result に共有鍵つきで送ると、今の会話に AI の返信として続く(再読み込みでも残る)。
 トークに出る求人は dip の求人データから作り直す(dip に無い求人はトークに出さない)。
 """
 
@@ -91,9 +91,22 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "state", State(tmp_path / "state.json"))
+    monkeypatch.setenv(server.INTERNAL_KEY_ENV, INTERNAL_KEY)
     server.state.reset()
     with TestClient(server.app) as c:
+        c.get("/")  # 画面を開いた(匿名IDの Cookie が発行される)
         yield c
+
+
+INTERNAL_KEY = "offline-test-internal-key"
+WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}  # 音声ワーカー(サーバー間の経路)の共有鍵
+
+
+def post_result(client, body: dict):
+    """音声ワーカーと同じく、共有鍵を付けて結果を送る(Cookie は使わない)。"""
+    from fastapi.testclient import TestClient
+
+    return TestClient(client.app).post("/api/voice/result", json=body, headers=WORKER)
 
 
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
@@ -107,7 +120,8 @@ def livekit(monkeypatch):
 
 
 def test_voice_start_issues_a_token_only_for_the_browsers_own_user(client, livekit):
-    """接続トークンは line_runtime が、Cookie の匿名ユーザーID のユーザーにだけ発行する(他人・Cookie なしは 403)。"""
+    """接続トークンは line_runtime が、Cookie の匿名ユーザーID のユーザーにだけ発行する(他人は 403、Cookie なしは 401)。
+    有効期限は数分(同じトークンで入り直して、会話数を使わずに音声セッションを重ねられないように)。"""
     import jwt
     from fastapi.testclient import TestClient
 
@@ -116,28 +130,30 @@ def test_voice_start_issues_a_token_only_for_the_browsers_own_user(client, livek
     uid = client.get("/api/me").json()["user_id"]
     scoped = client.post("/api/scenarios/F-follow-new/start").json()["user"]  # /dev のシナリオユーザー
     for user in (uid, scoped):
-        r = client.post(f"/api/voice/{user}/start")
+        r = client.post("/api/voice/start", json={"user_id": user})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["url"] == LIVEKIT["LIVEKIT_URL"] and body["since"] == 0
         claims = jwt.decode(body["token"], options={"verify_signature": False})
         assert claims["sub"] == user and participant_user_id(type("P", (), {"metadata": claims["metadata"]})()) == user
+        assert 0 < claims["exp"] - claims["nbf"] <= 10 * 60  # 既定の6時間ではなく数分
 
     other = TestClient(client.app)  # 別のブラウザ
+    other.get("/")
     ub = other.get("/api/me").json()["user_id"]
-    assert client.post(f"/api/voice/{ub}/start").status_code == 403
-    assert client.post(f"/api/voice/{ub}:sim-new/start").status_code == 403
-    assert client.post(f"/api/voice/{ub}/wait", params={"since": 0, "timeout": 0}).status_code == 403
+    assert client.post("/api/voice/start", json={"user_id": ub}).status_code == 403
+    assert client.post("/api/voice/start", json={"user_id": f"{ub}:sim-new"}).status_code == 403
+    assert client.post("/api/voice/wait", json={"user_id": ub, "since": 0, "timeout": 0}).status_code == 403
     nc = TestClient(client.app)  # Cookie の無い呼び出しにも発行しない(実 API の費用につながる)
-    assert nc.post(f"/api/voice/{uid}/start").status_code == 403
-    assert nc.post("/api/voice/sim-new/start").status_code == 403
+    assert nc.post("/api/voice/start", json={"user_id": uid}).status_code == 401
+    assert nc.post("/api/voice/start", json={"user_id": "sim-new"}).status_code == 401
 
 
 def test_voice_start_without_livekit_keys_spends_no_turn(client, monkeypatch):
     for k in LIVEKIT:
         monkeypatch.delenv(k, raising=False)
     uid = client.get("/api/me").json()["user_id"]
-    r = client.post(f"/api/voice/{uid}/start")
+    r = client.post("/api/voice/start", json={"user_id": uid})
     assert r.status_code == 503 and "LIVEKIT_URL" in r.json()["detail"]
     assert client.app.state.quota.used(uid) == 0
 
@@ -149,6 +165,7 @@ def test_the_old_voice_tab_and_polling_are_gone(client):
     uid = client.get("/api/me").json()["user_id"]
     assert client.get("/liff/voice", params={"user": uid}, follow_redirects=False).status_code == 404
     assert client.post(f"/api/voice/{uid}/pull").status_code in (404, 405)
+    assert client.post(f"/api/voice/{uid}/start").status_code in (404, 405)  # URL にユーザーIDを載せる入口も無い
     core = (config.ROOT / "line_runtime" / "static" / "talk-core.js").read_text(encoding="utf-8")
     assert "setInterval" not in core and "/pull" not in core and "window.open" not in core
     assert "[音声相談]" not in core
@@ -177,41 +194,48 @@ def test_voice_cards_stay_usable_in_later_turns():
 def test_wait_returns_only_the_result_of_its_own_room(client):
     """シートは自分の面談(部屋)の結果だけを受け取る。前に閉じたシートの面談の結果は読み飛ばす(会話には入っている)。"""
     uid = client.get("/api/me").json()["user_id"]
-    client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-old"})
-    got = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "room": "voice-resume-new", "timeout": 0.2}).json()
+    post_result(client, {"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-old"})
+    got = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "room": "voice-resume-new", "timeout": 0.2}).json()
     assert got == {"results": [], "next": 1}
-    client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-new"})
-    got = client.post(f"/api/voice/{uid}/wait", params={"since": 1, "room": "voice-resume-new", "timeout": 0}).json()
+    post_result(client, {"user_id": uid, "draft_markdown": DRAFT, "room": "voice-resume-new"})
+    got = client.post("/api/voice/wait", json={"user_id": uid, "since": 1, "room": "voice-resume-new", "timeout": 0}).json()
     assert [r["voice_result"] for r in got["results"]] == [1] and got["next"] == 2
 
 
 def test_wait_returns_nothing_until_a_result_arrives(client):
     uid = client.get("/api/me").json()["user_id"]
-    r = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "timeout": 0.2})
+    r = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "timeout": 0.2})
     assert r.status_code == 200 and r.json() == {"results": [], "next": 0}
 
 
 def test_voice_result_round_trip_over_the_api(client):
     """voice-resume が結果を送る → シートの wait が受け取る(開いた後に届いた分だけ)→ 下書きページが開ける。"""
+    from fastapi.testclient import TestClient
+
     jobs, ids = _voice_jobs()
     uid = client.get("/api/me").json()["user_id"]
-    r = client.post("/api/voice/result", json={
+    r = post_result(client, {
         "user_id": uid, "jobs": jobs, "draft_markdown": DRAFT, "files": ["out/resume.md"],
         "preferences": {"job_type": "カフェ", "time_band": "夕方"},
     })
     assert r.status_code == 200 and r.json()["cards"] == 2
     assert r.json()["talk"] is False  # まだ会話が無いユーザー: トークには続けない(dip には預かる)
 
-    got = client.post(f"/api/voice/{uid}/wait", params={"since": 0, "timeout": 0}).json()
+    got = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "timeout": 0}).json()
     assert got["next"] == 1
     (reply,) = got["results"]
     assert [c["job_id"] for c in reply["cards"]] == ids
     assert reply["bubbles"][0] == "音声でお話しした内容をまとめました。\n職種: カフェ\n時間帯: 夕方"
-    assert reply["buttons"] == [{"label": "職務経歴書の下書きを見る", "url": f"/liff/voice/draft?user={uid}&rid=0"}]
+    assert reply["buttons"] == [{"label": "職務経歴書の下書きを見る", "url": "/liff/voice/draft?rid=0"}]  # ユーザーIDは無い
     assert all(len(b) <= 80 for b in reply["bubbles"]) and not any("[音声相談]" in b for b in reply["bubbles"])
     # 受け取った後(next から)は、次の結果が届くまで空
-    assert client.post(f"/api/voice/{uid}/wait", params={"since": 1, "timeout": 0}).json()["results"] == []
+    assert client.post("/api/voice/wait", json={"user_id": uid, "since": 1, "timeout": 0}).json()["results"] == []
 
-    page = client.get("/liff/voice/draft", params={"user": uid, "rid": 0})
+    page = client.get("/liff/voice/draft", params={"rid": 0})  # 本人は Cookie から決まる
     assert page.status_code == 200 and "カフェで1年勤務" in page.text
-    assert client.get("/liff/voice/draft", params={"user": uid, "rid": 9}).status_code == 404
+    assert client.get("/liff/voice/draft", params={"rid": 9}).status_code == 404
+    other = TestClient(client.app)
+    other.get("/")
+    assert other.get("/liff/voice/draft", params={"rid": 0}).status_code == 404  # 別のブラウザには見えない
+    assert other.get("/liff/voice/draft", params={"rid": 0, "user": uid}).status_code == 404  # URL で名乗っても同じ
+    assert TestClient(client.app).get("/liff/voice/draft", params={"rid": 0}).status_code == 401

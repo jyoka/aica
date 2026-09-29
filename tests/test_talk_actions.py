@@ -28,6 +28,7 @@ from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
 from tests.test_resume_upload import FILENAME, PII, clean_draft
 from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
+    WORKER,
     app,
     open_talk,
     stream,
@@ -84,8 +85,9 @@ def advised(app, monkeypatch):  # noqa: F811
     del app.model
 
 
-def _upload(client, user, name=FILENAME):
-    return client.post(f"/api/resume/{user}/upload", files={"file": (name, b"%PDF-1.4 dummy", "application/octet-stream")})
+def _upload(client, user, name=FILENAME, thread=None):
+    return client.post("/api/resume/upload", data={"user_id": user}, params={"thread": thread} if thread is not None else {},
+                       files={"file": (name, b"%PDF-1.4 dummy", "application/octet-stream")})
 
 
 # ----------------------------- AI が差し出す操作(返信の actions) -----------------------------
@@ -109,7 +111,7 @@ def test_ai_offers_resume_and_voice_as_actions_on_the_talk_and_dev_screens(advis
         assert dev["actions"] == ACTIONS
 
         # 描き直しでも操作は残る(選べるのは最後の返信だけ、は画面の側)
-        hist = client.get(f"/api/talk/history/{opened['user']}").json()
+        hist = client.get("/api/talk/history").json()
         assert hist["turns"][-1]["bot"]["actions"] == ACTIONS
 
 
@@ -129,7 +131,8 @@ def test_the_screens_turn_actions_into_file_picking_and_the_voice_entry():
     core = (static / "talk-core.js").read_text(encoding="utf-8")
     assert 'resume_upload: { label: "📄 ファイルを選ぶ", run: () => pickResume() }' in core
     assert 'voice_consult: { label: "🎤 話して伝える(音声・約5分)", run: () => openVoice() }' in core
-    assert "fileInput.click()" in core and "/api/voice/${encodeURIComponent(user)}/start" in core
+    assert "fileInput.click()" in core and '"/api/voice/start"' in core
+    assert "encodeURIComponent(user)" not in core  # ユーザーIDは URL に載せない(本文で送る)
     assert "履歴書・職務経歴書を送る" in core and "音声で相談する" in core and "約5分で" in core  # 「+」メニュー
     for page in ("talk.html", "dev.html", "talk-core.js"):
         text = (static / page).read_text(encoding="utf-8")
@@ -162,13 +165,15 @@ def test_upload_is_the_users_turn_and_the_ai_continues_with_the_next_question(ad
         assert json.dumps(up.json()["bubbles"], ensure_ascii=False) in event and "この確認は繰り返さず" in event
 
         # 描き直すと、本人側はファイルの吹き出し、AI 側は確認 → 次の1問
-        turn = client.get(f"/api/talk/history/{uid}").json()["turns"][-1]
+        turn = client.get("/api/talk/history").json()["turns"][-1]
         assert turn["user"] is None
-        assert turn["upload"] == {"file": "履歴書(PDF)", "shown": up.json()["bubbles"], "view_url": f"/liff/resume?user={uid}"}
+        # 読み取り結果の画面の URL は、そのアップロードを指す(ユーザーIDは載せない)
+        assert turn["upload"] == {"file": "履歴書(PDF)", "shown": up.json()["bubbles"], "view_url": "/liff/resume?rid=0"}
+        assert up.json()["view_url"] == "/liff/resume?rid=0"
         assert turn["bot"]["bubbles"] == r["bubbles"]
         # ファイル名(氏名が入りがち)はトーク・履歴・dip の状態のどこにも出ない
         for text in (up.text, json.dumps(evs, ensure_ascii=False), json.dumps(turn, ensure_ascii=False),
-                     client.get(f"/api/dip/{uid}").text, (tmp_path / "state.json").read_text(encoding="utf-8")):
+                     client.post("/api/dip", json={"user_id": uid}).text, (tmp_path / "state.json").read_text(encoding="utf-8")):
             assert FILENAME not in text and "佐藤" not in text
             assert not any(p in text for p in PII)
 
@@ -207,7 +212,7 @@ def test_an_unreadable_upload_still_continues_the_talk_with_one_question(advised
         event = advised.model.seen[-1]
         assert event.startswith("[イベント: 本人が履歴書(画像)をアップロード] 読み取れた項目がありませんでした")
         assert json.dumps(up.json()["bubbles"], ensure_ascii=False) in event
-        turn = client.get(f"/api/talk/history/{uid}").json()["turns"][-1]
+        turn = client.get("/api/talk/history").json()["turns"][-1]
         assert turn["upload"] == {"file": "履歴書(画像)", "shown": up.json()["bubbles"], "view_url": None, "empty": True}
         assert turn["bot"]["bubbles"] == r["bubbles"]
         assert logic.resume_upload(advised.state, uid) is None  # 読めなかったものは dip に保存しない
@@ -300,9 +305,10 @@ def livekit(monkeypatch):
 
 
 def _fake_livekit(context) -> list[str]:
-    """LiveKit のライブラリを代役に差し替え、画面が出したリクエストの URL を集める(別タブが開かないことも見る)。"""
+    """LiveKit のライブラリを代役に差し替え、画面が出したリクエストの URL と本文(「URL 本文」の1行)を集める
+    (別タブが開かないことも見る)。"""
     requests: list[str] = []
-    context.on("request", lambda req: requests.append(req.url))
+    context.on("request", lambda req: requests.append(f"{req.url} {req.post_data or ''}"))
     context.route(re.compile(r"https://cdn\.jsdelivr\.net/npm/livekit-client.*"),
                   lambda route: route.fulfill(status=200, content_type="application/javascript", body=FAKE_LIVEKIT))
     return requests
@@ -392,10 +398,10 @@ def test_dev_screen_draws_the_same_actions_in_the_browser(served, browser, livek
 
 
 def _post_json(url: str, payload: dict) -> dict:
-    """音声ワーカーの代わりに結果を送る(Cookie なし。ワーカーと同じ呼び方)。"""
+    """音声ワーカーの代わりに結果を送る(Cookie なし・共有鍵あり。ワーカーと同じ呼び方)。"""
     import urllib.request
 
-    req = urllib.request.Request(url, json.dumps(payload).encode(), {"Content-Type": "application/json"})
+    req = urllib.request.Request(url, json.dumps(payload).encode(), {"Content-Type": "application/json"} | WORKER)
     with urllib.request.urlopen(req, timeout=10) as res:
         return json.loads(res.read())
 
@@ -426,7 +432,9 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
     assert advised.app.state.quota.used(uid) == used + 1  # 音声相談は会話数を1つ使う(今と同じ)
     connected = page.evaluate("window.__lk.connected")
     assert connected["url"] == LIVEKIT_ENV["LIVEKIT_URL"] and connected["token"]
-    assert any(f"/api/voice/{uid}/wait" in u for u in requests)
+    waits = [u for u in requests if "/api/voice/wait " in u]
+    assert waits and json.loads(waits[0].split(" ", 1)[1])["user_id"] == uid  # ユーザーIDは本文で送る
+    assert not any(uid in u.split(" ", 1)[0] for u in requests)  # どの URL にもユーザーIDは無い
     status = page.locator("#voice-status")
     assert "アドバイザー" in status.inner_text()
 
@@ -444,7 +452,7 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
 
     # 音声ワーカーの代わりに結果を送る → シートが閉じ、同じトークに AI の返信が続く
     ids = sorted(load_jobs())[:2]
-    room = next(u for u in requests if "/wait?" in u).split("room=")[1]  # /start が発行した部屋(ワーカーはこの名前で送る)
+    room = json.loads(waits[0].split(" ", 1)[1])["room"]  # /start が発行した部屋(ワーカーはこの名前で送る)
     out = _post_json(served + "/api/voice/result", {
         "user_id": uid, "room": room, "jobs": [{"job_id": i, "reasons": ["夕方の勤務"]} for i in ids],
         "draft_markdown": "# 職務経歴書の下書き\n\n- カフェで1年勤務\n",
@@ -456,7 +464,7 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
     assert "職種: カフェ" in last.inner_text() and "時給: 1,200円以上" in last.inner_text()
     assert page.locator("#log .cards").last.locator(".jc").count() == 2
     draft = page.locator("#log .liff a", has_text="職務経歴書の下書きを見る")
-    assert draft.count() == 1 and f"/liff/voice/draft?user={uid}&rid=1" in draft.get_attribute("href")
+    assert draft.count() == 1 and draft.get_attribute("href").endswith("/liff/voice/draft?rid=1")  # ユーザーIDは無い
     log = page.locator("#log").inner_text()
     assert "[音声相談]" not in log and "音声相談の結果が届きました" not in log
     assert page.locator("#log .chips button", has_text="ほかの求人も見たい").is_enabled()
@@ -489,10 +497,10 @@ def test_voice_result_is_saved_in_the_conversation_without_calling_the_llm(advis
         uid = opened["user"]
         stream(client, uid, "message", greeting["thread"], "まず相談する")
         seen = len(advised.model.seen)
-        out = client.post("/api/voice/result", json={"user_id": uid, "jobs": [], "draft_markdown": "",
-                                                      "preferences": {"area": "渋谷"}}).json()
+        out = client.post("/api/voice/result", headers=WORKER, json={"user_id": uid, "jobs": [], "draft_markdown": "",
+                                                                      "preferences": {"area": "渋谷"}}).json()
         assert out["talk"] is True and len(advised.model.seen) == seen
-        turns = client.get(f"/api/talk/history/{uid}").json()["turns"]
+        turns = client.get("/api/talk/history").json()["turns"]
         assert turns[-1]["user"] is None and turns[-1].get("upload") is None
         assert turns[-1]["bot"]["bubbles"][0] == "音声でお話しした内容をまとめました。\nエリア: 渋谷"
         assert turns[-1]["bot"]["buttons"] == [] and turns[-1]["bot"]["cards"] == []
@@ -515,10 +523,8 @@ def test_an_upload_from_an_old_tab_is_not_read_and_spends_no_turn(advised):
         uid = old["user"]
         assert new_greeting["thread"] == old_greeting["thread"] + 1
         used = client.app.state.quota.used(uid)
-        r = client.post(f"/api/resume/{uid}/upload", params={"thread": old_greeting["thread"]},
-                        files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/octet-stream")})
+        r = _upload(client, uid, thread=old_greeting["thread"])
         assert r.status_code == 409
         assert client.app.state.quota.used(uid) == used
-        ok = client.post(f"/api/resume/{uid}/upload", params={"thread": new_greeting["thread"]},
-                         files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/octet-stream")})
+        ok = _upload(client, uid, thread=new_greeting["thread"])
         assert ok.status_code == 200

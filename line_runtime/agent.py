@@ -14,7 +14,7 @@ from langchain.agents.structured_output import ProviderStrategy
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -76,6 +76,25 @@ class ScenarioMiddleware(AgentMiddleware):
         return await handler(request.override(system_message=SystemMessage(text)))
 
 
+class PinUserMiddleware(AgentMiddleware):
+    """dip のツールの line_user_id を、この会話のユーザー(state の line_user_id)に固定する。
+    LLM が別のユーザーIDを渡しても(プロンプトインジェクションなど)、他人の状態を読み書きさせない。
+    line_user_id を引数に持つツールだけが対象。会話のユーザーが分からなければ、ツールを呼ばずにエラーを返す。"""
+
+    state_schema = LineState
+
+    async def awrap_tool_call(self, request, handler):
+        tool = request.tool
+        if tool is None or "line_user_id" not in (tool.args or {}):
+            return await handler(request)
+        uid = (request.state or {}).get("line_user_id")
+        if not uid:
+            return ToolMessage(content='{"error": "この会話のユーザーが分かりません"}',
+                               tool_call_id=request.tool_call["id"], name=request.tool_call["name"], status="error")
+        call = request.tool_call | {"args": {**(request.tool_call.get("args") or {}), "line_user_id": uid}}
+        return await handler(request.override(tool_call=call))
+
+
 def build_model(model: str | None = None, effort: str | None = None) -> BaseChatModel:
     if config.PROVIDER == "openai":
         # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動
@@ -90,7 +109,9 @@ def build_agent(tools, scenarios: dict[str, str], model=None, checkpointer=None)
         model or build_model(),
         tools,
         # シナリオを差し込んでから(外側)、キャッシュ指定を付ける(内側)。OpenAI のモデルには何もしない。
-        middleware=[ScenarioMiddleware(scenarios), AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore")],
+        # ツールの line_user_id は会話のユーザーに固定する(LLM の渡す値は信じない)
+        middleware=[ScenarioMiddleware(scenarios), AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+                    PinUserMiddleware()],
         response_format=ProviderStrategy(LineReply),
         state_schema=LineState,
         checkpointer=checkpointer,

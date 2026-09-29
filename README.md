@@ -115,18 +115,30 @@ LINE 側は判断せず、受け取った事実を1文目で伝えてから1問�
 
 ## マルチユーザー(匿名ユーザーID)
 
-複数の知人が同時に使っても混線しないよう、初回アクセス(`GET /`・`GET /dev`・`POST /api/talk/open`・`GET /api/me`)で
-ブラウザごとに匿名ユーザーID `w-<16桁hex>` を発行し、Cookie(`aica_uid`)で保持する。認証・招待制はない(URL を知っている知人だけが使う前提)。
+複数の知人が同時に使っても混線しないよう、画面を開いたとき(`GET /`・`GET /dev`)だけ
+ブラウザごとに匿名ユーザーID `w-<16桁hex>` を発行し、Cookie(`aica_uid`。HttpOnly・SameSite=Lax)で保持する。
+API は ID を発行しない。認証・招待制はない(URL を知っている知人だけが使う前提)。
 
 - 本番のトーク画面(`/`)では、匿名ID そのもの(`w-…`)がユーザーID。fixtures のシナリオ用ユーザーは使わず、空の状態から始まる。
   状態を初期に戻す操作は無い。
 - 開発者画面(`/dev`)でシナリオを始めると、そのブラウザ専用のユーザー `匿名ID:シナリオユーザー`(例 `w-…:sim-new`)を作り、
   fixtures の初期状態を写して使う。会話履歴(LangGraph のチェックポイント)・長期メモリと行動履歴(dip の状態)・
   費用台帳は、すべてこのユーザーIDでスコープされる。
-- Cookie を持つブラウザは自分のユーザーしか扱えない(他人のユーザーIDでの `/api/event` や `/api/dip` は 403)。
-  Cookie の無い呼び出し(テスト・評価・voice-resume のバックエンド)は従来どおり `user_id` を信頼するので、
-  これはアクセス制御ではなく取り違え(混線)の防止。ただし音声相談の接続トークンの発行(`POST /api/voice/{user}/start`)と
-  結果の待ち(`POST /api/voice/{user}/wait`)は、実 API の費用につながるので Cookie の無い呼び出しも断る(403)。
+- ユーザーの分離の守り(task 99):
+  - ブラウザから呼ぶ経路はすべて、正しい形式の Cookie が必須(無い・形式が不正なら 401)。扱えるのは Cookie の匿名IDの
+    ユーザー(匿名ID そのもの、または `匿名ID:シナリオユーザー`)だけで、他人のユーザーIDを本文に入れても 403。
+    匿名IDを知られても、Cookie なしでは読めない・話せない・音声の結果を取れない・会話数の上限を迂回できない。
+  - 本人のデータを指す URL にユーザーIDを載せない(ブラウザの履歴・アクセスログ・Referer に残るため)。API はユーザーIDを
+    本文で受け取り(`/api/talk/history` と `/api/saved` は Cookie の本人だけ)、dip の画面(`/liff/resume`・`/liff/voice/draft`・
+    `/liff/apply`)は Cookie から本人を決める。開発者画面のシナリオユーザーなら、URL にはシナリオユーザーの名前
+    (`scenario_user=sim-exit`。fixtures の名前で秘密ではない)だけを付ける。
+  - 状態ファイルに書かれるユーザーは、Cookie を持つ本人が話したとき(と、開発者画面でシナリオを始めたとき)だけ。
+    Cookie 無しの `POST /api/talk/open` は 401 で、何も書かない。
+  - サーバー間の経路(音声ワーカー → `POST /api/voice/result`)は Cookie ではなく共有鍵 `AICA_INTERNAL_KEY`
+    (`Authorization: Bearer <鍵>`)で守る。鍵が無い・違う・サーバーに鍵が設定されていなければ 401。
+  - dip のツールの `line_user_id` は、LINE 側ランタイムが会話のユーザーに固定する(`line_runtime/agent.py` の
+    `PinUserMiddleware`)。LLM が別のユーザーIDを渡しても、他人の状態を読み書きしない。
+  - 評価(`evals/`)は HTTP を通さず `LineRuntime` を直接呼ぶので、Cookie は要らない。
 - 費用台帳: LLM の呼び出し1回ごとに `data/costs.jsonl` へ1行
   (時刻・`user_id`・イベント・モデル・トークン・`cost_usd`)。料金表は `line_runtime/ledger.py` が正で、評価の計測(`evals/meter.py`)も同じ表を使う。
 
@@ -167,19 +179,20 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 **本番のトーク画面 <http://127.0.0.1:8030/>**(求職者が使う。スマホ前提の1画面)
 - シナリオは選ばない。開くと `POST /api/talk/open` がこのブラウザの匿名ユーザー(匿名ID そのもの)について決める:
-  - 最後のやりとりから30分以内(再読み込み・タブの開き直し): 今の会話を続ける。画面は `GET /api/talk/history/{user_id}`
-    (本人の Cookie でしか読めない)で吹き出し・求人カード・選択肢を描き直す。LLM は呼ばず、会話数も使わない。
+  - 最後のやりとりから30分以内(再読み込み・タブの開き直し): 今の会話を続ける。画面は `GET /api/talk/history`
+    (Cookie の本人の会話)で吹き出し・求人カード・選択肢を描き直す。LLM は呼ばず、会話数も使わない。
   - それ以外: dip の状態(前にトークを開いて挨拶が返った記録 `talk_opens`)から初回訪問(`visit`)か再訪(`revisit`)かを決め、
     画面はそのイベントで `POST /api/event/stream` を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。
     開いた記録は挨拶が返ったときに残す(挨拶が失敗・上限で返らなければ、次も初回訪問。挨拶は保存されたのに返す途中で接続が切れたときは、次に開いたとき保存された挨拶から記録を補う)。
   - 画面は表示している会話の番号(`thread`)を発言に付けて送る。別のタブで新しい会話が始まった後に古いタブから送ると、
     発言は新しい会話に入らず(LLM も会話数も使わない)、古いタブに「別の画面で新しい会話が始まりました」と出して最新の会話を描き直す。
-- 下のナビは3つ: トーク / 保存した求人(`GET /api/saved/{user_id}`。保存した求人をカードで一覧)/ プロフィール(下)。
+- 下のナビは3つ: トーク / 保存した求人(`GET /api/saved`。保存した求人をカードで一覧)/ プロフィール(下)。
 - わたしのプロフィール(task 95。中身は `dip_mcp/profile.py`): aica が覚えていること(雇用区分と切り替えの記録・目的・希望・経歴・
   相談のまとめ・履歴書の読み取り結果・音声相談の下書き・保存した求人・応募した求人)を本人が見て、直して、消せる。空の項目は「まだありません」。
-  - `GET /api/profile/{user_id}` / `PUT・DELETE /api/profile/{user_id}/items/{key}`(stated_preferences の項目か `consultation_summary`)/
+  - `GET /api/profile` / `PUT・DELETE /api/profile/items/{key}`(stated_preferences の項目か `consultation_summary`)/
     `PUT・DELETE .../track` / `DELETE .../resume` / `DELETE .../voice/{result_id}`(書き出したファイルも消す)/ `DELETE .../saved/{job_id}` /
-    `POST .../forget`(すべて消す)。どれも本人の匿名ID(Cookie)でしか使えない(他人のユーザーID・Cookie なしは 403)。
+    `POST .../forget`(すべて消す)。パスにユーザーIDは無く、Cookie の本人の分だけを読む・変える(Cookie なし・不正は 401)。
+    履歴書・下書きの「見る」リンクも `/liff/resume?rid=…` / `/liff/voice/draft?rid=…`(ユーザーIDを載せない)。
   - 手で直す値にも保存と同じ決まり(決まった項目だけ・電話番号・メール・住所らしい値と長すぎる値は 400)。
   - 直す・消すと dip の状態がすぐ変わる(次に読む要約に出る)。会話の途中なら、変えたことを次の本人のターンの直前に
     「[お知らせ: 本人がプロフィール画面で…]」として AI へ渡す(画面の履歴には出ない。dip の Prompt に扱いの決まり)。
@@ -213,9 +226,10 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 AI が差し出す [ファイルを選ぶ] か、入力欄の「+」→「履歴書・職務経歴書を送る」→ ファイルを選ぶ
    → 本人側にファイルの吹き出し「履歴書(PDF)」(ファイル名は出さない)、AI 側は「入力中」
-   → POST /api/resume/{user_id}/upload(multipart、10MB まで。会話数を1つ使う)
+   → POST /api/resume/upload(multipart、user_id は本文。10MB まで。会話数を1つ使う)
    → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
-   → AI 側に読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume。全文)を出す
+   → AI 側に読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume?rid=<そのアップロードの番号>。全文。あとで別の履歴書をアップロードしたら、
+     古いリンクは新しい結果を開かずに置き換わったことを伝える)を出す
    → 画面が POST /api/event/stream を event=resume_upload で呼ぶ(本人の1ターン。会話数を1つ使う)。LINE 側 AI には
      「[イベント: 本人が履歴書(PDF)をアップロード]」と画面に出した確認が渡り、get_user_conversation_summary を呼び直して
      uploaded_resume を見て、確認を繰り返さずに次の1問を返す
@@ -262,15 +276,15 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 
 ```
 トーク [話して伝える] / 「+」→「音声で相談する」→ 同じ画面に通話中のシートが開く
-   → POST /api/voice/{user}/start(line_runtime。Cookie の匿名IDのユーザーでなければ 403、Cookie なしも 403。
-     会話数を1つ使い、上限なら 429)が LiveKit の接続トークンを発行し、participant metadata に user_id を載せる
+   → POST /api/voice/start(line_runtime。user_id は本文。Cookie の匿名IDのユーザーでなければ 403、Cookie なしは 401。
+     会話数を1つ使い、上限なら 429)が LiveKit の接続トークン(有効期限5分)を発行し、participant metadata に user_id を載せる
      (発行は voice_resume/livekit_token.py。LIVEKIT_* が無ければ会話数を使わずに 503)
    → ブラウザ ⇔ LiveKit Cloud ⇔ 音声ワーカー。ワーカーは会話の前に get_user_conversation_summary を読む
      (前に話した希望 stated_preferences と、トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
    → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
-   → 終わり(締めの挨拶か「面談を終える」): 結果を propose / consult で記録し、POST /api/voice/result で
-     話した希望・求人・下書きをこちらへ返す → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)
-   → シートは開いている間だけ POST /api/voice/{user}/wait(この面談の部屋の結果を最長25秒待って返すのを繰り返す)で待ち、
+   → 終わり(締めの挨拶か「面談を終える」): 結果を propose / consult で記録し、POST /api/voice/result(共有鍵
+     AICA_INTERNAL_KEY つき。下書きは2万字まで)で話した希望・求人・下書きをこちらへ返す → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)
+   → シートは開いている間だけ POST /api/voice/wait(この面談の部屋の結果を最長25秒待って返すのを繰り返す)で待ち、
      届いたら閉じて同じ返信(まとめ・求人カード・「職務経歴書の下書きを見る」= GET /liff/voice/draft)をトークに描く
      (「面談を終える」から2分たっても届かなければ、× で閉じてよいと案内する。あとで届いた結果は会話に入り、開き直すと出る)
 ```
@@ -288,10 +302,11 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 動かし方(2プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`。会話ページは line_runtime が配る):
 
 ```bash
-# リポジトリ直下の .env に(下の表の「音声相談」の必須の5つ + OPENAI_API_KEY)
+# リポジトリ直下の .env に(下の表の「音声相談」の必須の6つ + OPENAI_API_KEY)
 #   LIVEKIT_URL=wss://<project>.livekit.cloud
 #   LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...
 #   DEEPGRAM_API_KEY=...  CARTESIA_API_KEY=...  OPENAI_API_KEY=...
+#   AICA_INTERNAL_KEY=...(ワーカー → トークの結果の送信の共有鍵。任意の長いランダム文字列)
 ./.venv/bin/python -m voice_resume.agent download-files     # 初回のみ(VAD / turn detector のモデル)
 
 # 1) トーク(line_runtime。音声相談のシートと接続トークンの発行もここ)
@@ -335,6 +350,7 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
 | `OPENAI_API_KEY` | なし(必須) | 会話の LLM・履歴書の下書き・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
+| `AICA_INTERNAL_KEY` | なし(必須) | サーバー間の経路の共有鍵。音声ワーカーが結果をトークへ送る `POST /api/voice/result` に付け、line_runtime が照合する(両方に同じ値。無ければ結果は 401 で届かない)。例: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 面談の結果(求人・下書き)を返すトーク(line_runtime)の URL |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 面談ごとの下書き・文字起こし・求人提案の保存先 |
 | `VOICE_RESUME_*`(モデル・ボイス・ターン判定) | `voice_resume/config.py` | STT / LLM / TTS のモデル、ボイスと速さ、ターン判定の待ち時間 |

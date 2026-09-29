@@ -78,6 +78,7 @@ def test_over_the_limit_gets_a_polite_notice_without_calling_the_llm_and_recover
     with TestClient(server.app) as client:
         clock = Clock(datetime(2026, 9, 27, 23, 50, tzinfo=JST))
         server.app.state.quota.clock = clock
+        client.get("/dev")
         user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
         assert client.post("/api/event", json={"user_id": user, "event": "visit"}).json()["bubbles"] == ["はい、どうぞ。"]
         assert _stream(client, user, "message", "渋谷で")[-1]["bubbles"] == ["はい、どうぞ。"]
@@ -93,11 +94,19 @@ def test_over_the_limit_gets_a_polite_notice_without_calling_the_llm_and_recover
         assert client.post("/api/event", json={"user_id": user, "event": "form_exit"}).json()["sent"] is False
         assert model.calls == 2 and len(server.app.state.rt.ledger.rows) == rows
         # 同じブラウザのシナリオユーザーを替えても、上限は人(匿名ID)単位で共有
-        assert client.post("/api/event", json={"user_id": f"{user}:x", "event": "message", "text": "hi"}).json()["limited"]
-        # 別の人は使える
-        assert client.post("/api/event", json={"user_id": "other", "event": "message", "text": "hi"}).json()["bubbles"] == [
+        anon = client.get("/api/me").json()["user_id"]
+        assert client.post("/api/event", json={"user_id": f"{anon}:sim-exit", "event": "message", "text": "hi"}).json()["limited"]
+        assert client.post("/api/event", json={"user_id": f"{anon}:made-up", "event": "message", "text": "hi"}).status_code == 403
+        # 別の人(別のブラウザ。ターンを進めるので lifespan と同じクライアントの Cookie を替える)は使える
+        mine = dict(client.cookies)
+        client.cookies.clear()
+        client.get("/")
+        uid = client.get("/api/me").json()["user_id"]
+        assert client.post("/api/event", json={"user_id": uid, "event": "message", "text": "hi"}).json()["bubbles"] == [
             "はい、どうぞ。"]
         assert model.calls == 3
+        client.cookies.clear()
+        client.cookies.update(mine)
 
         # 日付(日本時間)が変わると再び使える
         clock.now += timedelta(minutes=15)
@@ -118,12 +127,12 @@ def test_voice_start_counts_against_the_daily_quota(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     with TestClient(server.app) as client:
-        client.get("/api/me")
+        client.get("/dev")
         user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
-        r = client.post(f"/api/voice/{user}/start")
+        r = client.post("/api/voice/start", json={"user_id": user})
         assert r.status_code == 200 and r.json()["token"]  # 1回目は発行(1ターン消費)
         assert server.app.state.quota.used(user) == 1
-        r = client.post(f"/api/voice/{user}/start")
+        r = client.post("/api/voice/start", json={"user_id": user})
         assert r.status_code == 429 and r.json()["detail"] == LIMIT_MESSAGE
         # テキストの会話も同じ枠なので、もう使えない
         assert client.post("/api/event", json={"user_id": user, "event": "message", "text": "hi"}).json()["limited"]
@@ -149,8 +158,10 @@ def test_empty_message_is_rejected_before_counting(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     with TestClient(server.app) as client:
-        assert client.post("/api/event", json={"user_id": "u", "event": "message", "text": " "}).status_code == 400
-        assert client.post("/api/event", json={"user_id": "u", "event": "message", "text": "hi"}).json()["bubbles"] == [
+        client.get("/")
+        u = client.get("/api/me").json()["user_id"]
+        assert client.post("/api/event", json={"user_id": u, "event": "message", "text": " "}).status_code == 400
+        assert client.post("/api/event", json={"user_id": u, "event": "message", "text": "hi"}).json()["bubbles"] == [
             "はい、どうぞ。"]
         assert model.calls == 1
 

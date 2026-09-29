@@ -167,7 +167,7 @@ function createTalk(o) {
 
   // ---------- 履歴書のアップロード(resume-intake) ----------
   // アップロードそのものが本人の1ターン: 本人側にファイルの吹き出し(「履歴書(PDF)」。ファイル名は出さない)→
-  // AI 側の「入力中」の間に /api/resume/{user}/upload で読み取り(dip の状態に保存。会話数を1つ使う)→
+  // AI 側の「入力中」の間に /api/resume/upload で読み取り(dip の状態に保存。会話数を1つ使う)→
   // 読み取り結果の確認(要点だけ)を AI 側に出す → resume_upload のイベントで会話を続け、AI が次の1問を返す。
   // 定型文を本人の発言として送ることはしない。氏名・連絡先は保存されないので、トークにも出さない。
   const fileInput = el("input"); fileInput.type = "file"; fileInput.id = "resume-file"; fileInput.hidden = true;
@@ -187,9 +187,9 @@ function createTalk(o) {
     const col = typingCol();
     let d = null;
     try {
-      const fd = new FormData(); fd.append("file", f);
+      const fd = new FormData(); fd.append("file", f); fd.append("user_id", user);  // ユーザーIDは URL に載せない
       const q = o.getThread?.() != null ? `?thread=${o.getThread()}` : "";  // 本番: 表示中の会話(替わっていたら読み取らない)
-      const res = await fetch(`/api/resume/${encodeURIComponent(user)}/upload${q}`, { method: "POST", body: fd });
+      const res = await fetch(`/api/resume/upload${q}`, { method: "POST", body: fd });
       if (res.status === 409) { col.parentElement.remove(); await o.onStale?.(); return; }
       if (!res.ok) { let m = res.status + ""; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
       d = await res.json();
@@ -208,10 +208,10 @@ function createTalk(o) {
   }
 
   // ---------- 音声相談(voice-resume との連携) ----------
-  // トークの上に重ねる通話中のシートで開く(タブはまたがない)。POST /api/voice/{user}/start で LiveKit の
+  // トークの上に重ねる通話中のシートで開く(タブはまたがない)。POST /api/voice/start で LiveKit の
   // 接続トークンを受け取り(本人の Cookie のユーザーだけ。会話数を1つ使う)、マイクを許可して音声ワーカーと話す。
   // 面談が終わると、ワーカーが /api/voice/result に結果を送り、サーバーが今の会話に AI の返信として続ける。
-  // シートは開いている間だけ /api/voice/{user}/wait で待ち、届いたら閉じて同じ返信をトークに描く
+  // シートは開いている間だけ /api/voice/wait で待ち、届いたら閉じて同じ返信をトークに描く
   // (システム通知のラベルは出さない。再読み込みしても履歴に残る)。
   const LIVEKIT_CLIENT = "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js";
   const sheet = el("div", "voice-sheet"); sheet.id = "voice-sheet"; sheet.hidden = true;
@@ -282,7 +282,8 @@ function createTalk(o) {
     vCaps.replaceChildren(); vEnd.hidden = false; vEnd.disabled = true; vConfirm.hidden = true;
     sheet.hidden = false; vSet("connecting", "接続の準備をしています…");
     try {
-      const res = await fetch(`/api/voice/${encodeURIComponent(user)}/start`, { method: "POST" });
+      const res = await fetch("/api/voice/start", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ user_id: user }) });
       if (!res.ok) { let m = "音声相談を始められませんでした。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
       const t = await res.json();
       if (voice !== v) return;  // 準備の間に閉じた
@@ -363,8 +364,9 @@ function createTalk(o) {
     while (voice === v) {
       let d;
       try {
-        const q = `since=${v.since}&room=${encodeURIComponent(v.roomName)}`;
-        const res = await fetch(`/api/voice/${encodeURIComponent(v.user)}/wait?${q}`, { method: "POST", signal: v.abort.signal });
+        const res = await fetch("/api/voice/wait", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ user_id: v.user, since: v.since, room: v.roomName }),
+                                                      signal: v.abort.signal });
         if (!res.ok) throw new Error(res.status + "");
         d = await res.json();
       } catch (e) {

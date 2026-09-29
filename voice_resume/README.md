@@ -31,7 +31,7 @@
                                                         └ 終了時: 下書き+希望+求人ID を data/voice-resume/ へ。
                                                            トーク(line_runtime)に結果(話した希望・求人・下書き)を返す
 トーク(line_runtime.server)= 会話の画面(トークの上に重ねる通話中のシート。line_runtime/static/talk-core.js)の配信と、
-                              LiveKit 接続トークンの発行(POST /api/voice/{user}/start。発行そのものは voice_resume/livekit_token.py)
+                              LiveKit 接続トークンの発行(POST /api/voice/start。発行そのものは voice_resume/livekit_token.py)
 ```
 
 task 92 で、別ポートの会話ページ(旧 `voice_resume/server.py` と `static/index.html`、既定 :8090)をやめ、
@@ -112,7 +112,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ## トークから入る(line_runtime との統合・匿名ユーザーID)
 
 トーク画面(line_runtime)の [話して伝える] /「+」→「音声で相談する」でシートを開くと、トークのユーザーID が
-接続トークン(`POST /api/voice/{user}/start`。Cookie の匿名IDのユーザーにだけ発行し、他人のユーザーID・Cookie なしは 403)の
+接続トークン(`POST /api/voice/start`。Cookie の匿名IDのユーザーにだけ発行し、他人のユーザーIDは 403・Cookie なしは 401。有効期限5分)の
 LiveKit participant metadata(`{"user_id": ...}`)でワーカーまで届く。ユーザーID は、本番の画面ならそのブラウザの匿名ユーザーID
 (`w-0123456789abcdef`)、開発者画面ならそれでスコープしたシナリオユーザー(例 `w-0123456789abcdef:sim-new`。リポジトリ直下 README の
 「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)をこの ID に置き換えた。このとき:
@@ -135,8 +135,9 @@ LiveKit participant metadata(`{"user_id": ...}`)でワーカーまで届く。�
   含む dip の8項目 = 相談プロファイル。同じユーザーの次のテキスト会話の要約に出る)。
 - 終わると `record_conversation_outcome`(propose / consult)を記録し、話した希望・提案した求人・下書きを
   トークの `POST /api/voice/result`(`{"user_id", "jobs", "draft_markdown", "files", "preferences", "room"}`)へ送る。
+  サーバー間の経路なので、共有鍵を `Authorization: Bearer <AICA_INTERNAL_KEY>` で付ける(line_runtime と同じ値。無いと 401)。
   line_runtime が今の会話に AI の返信(話した内容のまとめ・求人カード・「職務経歴書の下書きを見る」)として続け、
-  開いているシートが `POST /api/voice/{user}/wait` で受け取って閉じる(常時の問い合わせはしない)。
+  開いているシートが `POST /api/voice/wait` で受け取って閉じる(常時の問い合わせはしない)。
 
 起動手順と画面の流れはリポジトリ直下の README の「音声相談(voice-resume との連携)」を参照。
 トーク側の URL は `VOICE_RESUME_TALK_URL`(既定 `http://127.0.0.1:8030`)で変えられる。

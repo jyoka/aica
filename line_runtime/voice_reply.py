@@ -11,9 +11,7 @@ LLM は使わない(音声相談を始めたときに会話数を1つ使って�
 
 from __future__ import annotations
 
-from urllib.parse import quote
-
-from dip_mcp.logic import PREFERENCE_KEYS
+from dip_mcp.logic import PREFERENCE_KEYS, liff_url
 from line_runtime.resume_confirm import _clip
 
 MAX_CHARS = 80
@@ -47,6 +45,11 @@ def summary_bubble(preferences: dict) -> str:
     return NO_ITEMS if text == INTRO else text
 
 
+def draft_button(user_id: str, result_id: int) -> dict:
+    """「職務経歴書の下書きを見る」のボタン。URL にユーザーIDは載せない(下書きの画面は Cookie で本人を決める)。"""
+    return {"label": DRAFT_LABEL, "url": liff_url("/liff/voice/draft", user_id, rid=result_id)}
+
+
 def voice_reply(user_id: str, rec: dict) -> dict:
     """音声相談の結果1件(dip に預けた形)から、トークに続ける返信(render と同じ形)を作る。"""
     cards = rec.get("cards") or []
@@ -60,6 +63,6 @@ def voice_reply(user_id: str, rec: dict) -> dict:
     buttons = []
     if rec.get("draft_markdown"):
         bubbles.append("職務経歴書の下書きもできました。内容はご自身で確認・修正してください。")
-        buttons = [{"label": DRAFT_LABEL, "url": f"/liff/voice/draft?user={quote(user_id, safe='')}&rid={rec['id']}"}]
+        buttons = [draft_button(user_id, rec["id"])]
     return {"entry": None, "bubbles": bubbles, "quick_replies": quick, "cards": cards, "unknown_job_ids": [],
             "buttons": buttons, "actions": [], "voice_result": rec["id"]}

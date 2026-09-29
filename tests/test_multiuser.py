@@ -45,7 +45,10 @@ def test_first_access_issues_an_id_and_the_same_browser_reuses_it(tmp_path, monk
         assert re.fullmatch(r"w-[0-9a-f]{16}", uid)
         assert uid == r.cookies[server.ANON_COOKIE]
         assert client.get("/api/me").json()["user_id"] == uid  # 再アクセスでも同じ ID
+        assert client.get("/").cookies.get(server.ANON_COOKIE) is None  # 持っていれば発行し直さない
         client.cookies.clear()  # 別のブラウザ相当
+        assert client.get("/api/me").status_code == 401  # API は ID を発行しない(発行は画面を開いたときだけ)
+        client.get("/")
         assert client.get("/api/me").json()["user_id"] != uid
 
 
@@ -55,24 +58,20 @@ def test_two_browsers_get_scoped_scenario_users_and_cannot_touch_each_other(tmp_
 
     with TestClient(server.app) as a:
         b = TestClient(server.app)  # 別ブラウザ(Cookie を共有しない。lifespan は a のものを使う)
+        a.get("/dev"), b.get("/dev")
         ua, ub = a.get("/api/me").json()["user_id"], b.get("/api/me").json()["user_id"]
         ra = a.post("/api/scenarios/F-follow-new/start").json()
         rb = b.post("/api/scenarios/F-follow-new/start").json()
         assert ra["user"] == f"{ua}:sim-new" and rb["user"] == f"{ub}:sim-new"  # 同じシナリオでも別ユーザー
         # 自分のユーザーは見られる。相手のユーザーとしては話せない・覗けない
-        assert a.get(f"/api/dip/{ra['user']}").status_code == 200
-        assert a.get(f"/api/dip/{rb['user']}").status_code == 403
+        assert a.post("/api/dip", json={"user_id": ra["user"]}).status_code == 200
+        assert a.post("/api/dip", json={"user_id": rb["user"]}).status_code == 403
         assert a.post("/api/event", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
         assert a.post("/api/event/stream", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
-        assert a.post(f"/api/voice/{rb['user']}/start").status_code == 403
-        assert a.post(f"/api/voice/{rb['user']}/wait", params={"since": 0, "timeout": 0}).status_code == 403
-        assert a.get("/liff/apply", params={"user": rb["user"], "job": "a003"}).status_code == 403
-        # 相手のトークへ音声相談の結果を差し込むこともできない
-        assert a.post("/api/voice/result", json={"user_id": rb["user"], "draft_markdown": "偽の下書き"}).status_code == 403
-        # Cookie の無い呼び出し(評価・テスト)は従来どおり user_id を信頼する
-        nc = TestClient(server.app)
-        assert nc.post("/api/scenarios/F-follow-new/start").json()["user"] == "sim-new"
-        assert nc.get("/api/dip/sim-new").status_code == 200
+        assert a.post("/api/voice/start", json={"user_id": rb["user"]}).status_code == 403
+        assert a.post("/api/voice/wait", json={"user_id": rb["user"], "since": 0, "timeout": 0}).status_code == 403
+        # 相手のトークへ音声相談の結果を差し込むこともできない(サーバー間の経路は共有鍵が要る)
+        assert a.post("/api/voice/result", json={"user_id": rb["user"], "draft_markdown": "偽の下書き"}).status_code == 401
 
 
 def test_reset_user_can_seed_a_browser_user_from_a_scenario_template(tmp_path):

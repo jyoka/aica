@@ -80,13 +80,18 @@ def test_start_endpoint_resets_the_user(tmp_path, monkeypatch):
     with TestClient(server.app) as client:
         listed = client.get("/api/scenarios").json()
         assert [s["id"] for s in listed] == [sc["id"] for sc in SCENARIOS]
+        assert client.post("/api/scenarios/R-revisit/start").status_code == 401  # Cookie なしでは始められない
+        client.get("/dev")
+        anon = client.get("/api/me").json()["user_id"]
         r = client.post("/api/scenarios/R-revisit/start").json()
-        assert r == {"user": "sim-new", "event": "revisit"}
-        assert logic.stated_preferences(server.state.user("sim-new"))  # 再訪の種(前に話した希望)が入る
+        assert r == {"user": f"{anon}:sim-new", "event": "revisit"}  # このブラウザ専用のシナリオユーザー
+        assert logic.stated_preferences(server.state.user(r["user"]))  # 再訪の種(前に話した希望)が入る
         # 一度プッシュした後でも、始め直せばまたプッシュできる
-        assert logic.push_trigger(server.state, "sim-exit", "form_exit")["allowed"]
+        exit_user = f"{anon}:sim-exit"
         client.post("/api/scenarios/B-exit/start")
-        assert logic.push_trigger(server.state, "sim-exit", "form_exit")["allowed"]
+        assert logic.push_trigger(server.state, exit_user, "form_exit")["allowed"]
+        client.post("/api/scenarios/B-exit/start")
+        assert logic.push_trigger(server.state, exit_user, "form_exit")["allowed"]
         assert client.post("/api/scenarios/nope/start").status_code == 404
 
 
@@ -151,18 +156,22 @@ def test_scenarios_after_a_server_restart_start_a_fresh_conversation(tmp_path, m
     monkeypatch.setattr(server, "LineRuntime", lambda: runtime.LineRuntime(model=model))
 
     def start_visit(client):
-        client.post("/api/scenarios/F-follow-new/start")
-        return client.post("/api/event", json={"user_id": "sim-new", "event": "visit"}).json()
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        client.post("/api/event", json={"user_id": user, "event": "visit"}).json()
+        return user
 
+    browser = {}  # 再起動をまたいで同じブラウザ(Cookie)
     with TestClient(server.app) as client:
+        client.get("/dev")
+        browser = dict(client.cookies)
         start_visit(client)
         start_visit(client)
-    with TestClient(server.app) as client:  # 再起動
-        start_visit(client)
+    with TestClient(server.app, cookies=browser) as client:  # 再起動
+        user = start_visit(client)
         rt = server.app.state.rt
 
         async def history():
-            cfg = rt._cfg("sim-new", await rt._current("sim-new"))
+            cfg = rt._cfg(user, await rt._current(user))
             return [m.type for m in (await rt.agent.aget_state(cfg)).values["messages"]]
 
         assert client.portal.call(history) == ["human", "ai"]  # 前のシナリオの会話が混ざっていない

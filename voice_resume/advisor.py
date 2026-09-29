@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
 
@@ -505,11 +506,13 @@ def _default_client():
 
 
 async def _post_json(url: str, payload: dict) -> None:
-    """line_runtime へ JSON を POST する(結果をトークへ戻す)。aiohttp は livekit-agents の依存。"""
+    """line_runtime へ JSON を POST する(結果をトークへ戻す)。aiohttp は livekit-agents の依存。
+    サーバー間の経路なので、共有鍵(環境変数 AICA_INTERNAL_KEY。line_runtime と同じ値)を付ける。"""
     import aiohttp
 
+    headers = {"Authorization": f"Bearer {os.environ.get('AICA_INTERNAL_KEY', '')}"}
     async with (
         aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
-        session.post(url, json=payload) as resp,
+        session.post(url, json=payload, headers=headers) as resp,
     ):
         resp.raise_for_status()

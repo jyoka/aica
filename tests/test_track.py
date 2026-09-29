@@ -288,7 +288,7 @@ def test_another_browser_cannot_switch_someone_elses_track(tmp_path, monkeypatch
 
     with TestClient(server.app) as a:
         b = TestClient(server.app)  # 別ブラウザ(Cookie を共有しない)
-        a.get("/api/me"), b.get("/api/me")  # 画面を開いたときと同じく、ブラウザごとの匿名ユーザーIDの Cookie を持つ
+        a.get("/dev"), b.get("/dev")  # 画面を開いたときと同じく、ブラウザごとの匿名ユーザーIDの Cookie を持つ
         ua = a.post("/api/scenarios/F-follow-new/start").json()["user"]
         ub = b.post("/api/scenarios/F-follow-new/start").json()["user"]
         assert ua != ub
@@ -302,7 +302,7 @@ def test_another_browser_cannot_switch_someone_elses_track(tmp_path, monkeypatch
         for path in ("/api/event", "/api/event/stream"):
             denied = b.post(path, json={"user_id": ua, "event": "message", "text": "やっぱりバイトで"})
             assert denied.status_code == 403
-        assert b.get(f"/api/dip/{ua}").status_code == 403  # 区分を覗くこともできない
+        assert b.post("/api/dip", json={"user_id": ua}).status_code == 403  # 区分を覗くこともできない
         assert model.script == []
 
     assert summary(tmp_path, ua)["search_track"] == "正社員"
