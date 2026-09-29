@@ -317,6 +317,12 @@ def _open_and_close_the_voice_sheet(page, context, open_it) -> None:
     page.wait_for_function("window.__lk && window.__lk.mic === true && !document.getElementById('voice-end').disabled")
     assert len(context.pages) == 1  # 別タブは開かない
     page.locator("#voice-close").click()
+    # 通話中は確認を出す(誤って押して面談が切れないように)。「面談を続ける」なら閉じない
+    page.locator("#voice-confirm").wait_for(state="visible")
+    page.locator("#voice-keep").click()
+    assert sheet.is_visible() and page.locator("#voice-confirm").is_hidden()
+    page.locator("#voice-close").click()
+    page.locator("#voice-quit").click()
     sheet.wait_for(state="hidden")
     assert page.evaluate("window.__lk.disconnected") >= 1
 

@@ -186,18 +186,25 @@ class LineRuntime:
                                            {"messages": [human, AIMessage(shown.model_dump_json())]}, as_node="model")
             return True
 
+    async def forget(self, user_id: str) -> None:
+        """そのユーザーの会話(チェックポイント)をすべて消す(プロフィールの「すべて消す」)。次の会話は1番から。
+        呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
+        for n in range(1, await self._current(user_id) + 1):
+            await self._saver.adelete_thread(f"{user_id}:{n}")
+        self._threads[user_id] = 0
+
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
-                     talk_thread: int | None = None) -> dict:
+                     talk_thread: int | None = None, notice: str | None = None) -> dict:
         """1ターン進めて、返信(render の結果)を返す。途中経過が要らない呼び出し元(評価・API)向け。
         会話が替わっていて送らなかったとき(talk_thread を参照)は {"stale": True, "thread": 今の会話番号}。"""
         reply = None
-        async for ev in self.handle_stream(user_id, event, text, facts, talk_thread):
+        async for ev in self.handle_stream(user_id, event, text, facts, talk_thread, notice):
             if ev["kind"] in ("reply", "stale"):
                 reply = {k: v for k, v in ev.items() if k != "kind"} | ({"stale": True} if ev["kind"] == "stale" else {})
         return reply
 
     async def handle_stream(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
-                            talk_thread: int | None = None):
+                            talk_thread: int | None = None, notice: str | None = None):
         """handle と同じ1ターンを、途中経過を順に出しながら進める(シミュレーター画面のリアルタイム表示用)。
         出すもの: llm(LLM の呼び出し1回: 時間・トークン・キャッシュ・呼んだツール)/ tool_start(ツールの実行が始まる:
         名前と引数。画面が「何をしているか」を出すために使う)/ tools(ツールの実行が終わった: 時間・引数・結果の要約)/
@@ -206,12 +213,15 @@ class LineRuntime:
         これと違う(別のタブで新しい会話が始まった)ときは、発言を会話に入れず LLM も呼ばずに stale(今の会話番号)を
         出して終わる。None でなければ、LLM を呼ぶ前に thread(このターンの会話番号)を出す(挨拶が途中で失敗しても、
         画面は新しい会話の番号を知って、次の発言を stale にしない)。
+        notice: 本人がプロフィール画面で覚えていることを変えたときの知らせ(dip_mcp.profile.notice)。会話の続きの
+        ターンなら、本人の入力の直前に置く(画面の履歴には出さない)。新しい会話を始めるターンでは使わない
+        (最初に要約を読むので要らない)。
         ターン自体は裏の処理として最後まで進める。画面との接続が途中で切れて受け取りをやめても、ツールを呼んだのに
         結果が無い状態で会話が保存されることはない(そうなると次のターンが API に拒否される)。"""
         if event not in EVENTS:
             raise ValueError(f"unknown event: {event}")
         queue: asyncio.Queue = asyncio.Queue()
-        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts, talk_thread))
+        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts, talk_thread, notice))
         self._running.add(task)
         task.add_done_callback(self._running.discard)
         while True:
@@ -222,7 +232,7 @@ class LineRuntime:
         await task  # ターンの中で起きた例外はここで呼び出し元に伝わる
 
     async def _turn(self, queue: asyncio.Queue, user_id: str, event: str, text: str | None, facts: dict | None,
-                    talk_thread: int | None) -> None:
+                    talk_thread: int | None, notice: str | None = None) -> None:
         try:
             entry = EVENTS[event][0]
             content = event_input(event, text, facts)
@@ -242,6 +252,8 @@ class LineRuntime:
                 # (ファイル名は受け取らないので残らない)
                 human = HumanMessage(content, additional_kwargs={"upload": facts} if EVENTS[event][1] == "upload" else {})
                 payload = {"messages": [human]}
+                if notice and not first and event not in STARTS_NEW_CONVERSATION:
+                    payload = {"messages": [HumanMessage(notice, additional_kwargs={"profile_notice": True}), human]}
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
                 args: dict[str, dict] = {}
@@ -345,11 +357,13 @@ def history(messages: list) -> list[dict]:
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
     アップロードのターンには upload(file: 「履歴書(PDF)」のような表示名、shown: 読み取り結果の確認の吹き出し、
     view_url: 読み取り結果の画面)も付く。音声相談の結果のターン(add_voice_result)は、保存した返信をそのまま bot にする。
-    カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。"""
-    humans = [i for i, m in enumerate(messages) if m.type == "human"]
+    カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。
+    プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。"""
+    bounds = [i for i, m in enumerate(messages) if m.type == "human"]
+    humans = [i for i in bounds if not messages[i].additional_kwargs.get("profile_notice")]
     turns = []
     for k, start in enumerate(humans):
-        end = humans[k + 1] if k + 1 < len(humans) else len(messages)
+        end = next((b for b in bounds if b > start), len(messages))
         last = messages[end - 1]
         reply = _reply_of(last) if last.type == "ai" and not last.tool_calls else None
         content = messages[start].content

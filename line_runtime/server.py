@@ -27,17 +27,19 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from html import escape
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from dip_mcp import logic
+from dip_mcp import logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
 from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
+from line_runtime.resume_confirm import INTRO as RESUME_INTRO
 from line_runtime.resume_confirm import resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
 from line_runtime.voice_reply import voice_reply
@@ -229,13 +231,15 @@ async def event(body: EventIn, request: Request):
         return {"stale": True, "thread": stale}
     if not quota.take(body.user_id):
         return limit_reply(entry)
+    changes, notice = _profile_notice(body)
     try:
-        r = await app.state.rt.handle(body.user_id, body.event, body.text, facts, talk_thread=body.thread)
+        r = await app.state.rt.handle(body.user_id, body.event, body.text, facts, talk_thread=body.thread,
+                                      notice=notice)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     if r and r.get("stale"):  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す
         quota.refund(body.user_id)
-    _record_open(body, r)
+    _record_open(body, r, changes)
     return r
 
 
@@ -271,10 +275,12 @@ async def event_stream(body: EventIn, request: Request):
         if not quota.take(body.user_id):  # 上限を超えたら LLM を呼ばずに案内だけ返す
             yield _line({"kind": "reply", **limit_reply(entry)})
             return
+        changes, notice = _profile_notice(body)
         try:
-            async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts, talk_thread=body.thread):
+            async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts, talk_thread=body.thread,
+                                                       notice=notice):
                 if ev["kind"] == "reply":
-                    _record_open(body, ev)
+                    _record_open(body, ev, changes)
                 elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: 会話数を返す
                     quota.refund(body.user_id)
                 yield _line(ev)
@@ -292,11 +298,22 @@ async def _stale(body: EventIn) -> int | None:
     return n if n != body.thread else None
 
 
-def _record_open(body: EventIn, reply: dict | None) -> None:
+def _profile_notice(body: EventIn) -> tuple[int, str | None]:
+    """プロフィール画面で変えたことのうち、まだ AI に渡していないもの: (件数, 知らせの文)。
+    新しい会話を始めるイベント(挨拶・プッシュ)では渡さない(最初に要約を読み直すので、返ったら渡し終えた扱い)。"""
+    changes = profile.pending_changes(state, body.user_id)
+    if not changes or EVENTS[body.event][1] not in ("user", "upload"):
+        return len(changes), None
+    return len(changes), profile.notice(state, body.user_id, changes)
+
+
+def _record_open(body: EventIn, reply: dict | None, changes: int = 0) -> None:
     """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。
-    読み取れなかったアップロードに続くターンが返ったら、その事実は使い終わり(次のアップロードのターンに持ち越さない)。"""
+    読み取れなかったアップロードに続くターンが返ったら、その事実は使い終わり(次のアップロードのターンに持ち越さない)。
+    返信が返ったら、そのターンで渡したプロフィールの変更の知らせ(changes 件)も渡し終えた。"""
     if not reply or reply.get("stale"):
         return
+    profile.take_changes(state, body.user_id, changes)
     if body.thread is not None and EVENTS[body.event][1] == "greet":
         logic.record_talk_open(state, body.user_id)
     if EVENTS[body.event][1] == "upload":
@@ -338,6 +355,132 @@ async def dip_view(user_id: str, request: Request):
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": u.get("saves", []), "applications": u.get("applications", []),
             "last_contact": (u.get("contacts") or [None])[-1]}
+
+
+# ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
+# 本番のトーク画面の下のナビ「プロフィール」。読むのも変えるのも、本人の匿名ID(Cookie)のユーザーだけ
+# (Cookie の無い呼び出しも断る)。中身は dip_mcp.profile。変えたことは次の本人のターンの前に AI へ渡す(_profile_notice)。
+
+
+class ProfileEditIn(BaseModel):
+    value: str
+
+
+def _profile_owner(request: Request, user_id: str) -> None:
+    if _anon(request) is None or _anon(request) != user_id:
+        raise HTTPException(403, "このブラウザのユーザーIDではありません")
+
+
+def _profile_view(user_id: str) -> dict:
+    """画面に出す形。履歴書は要点(トークの確認と同じ作り)と「読み取り結果を見る」、下書きは表示ページの URL を足す。"""
+    v = profile.view(state, user_id)
+    rec = v.pop("resume")
+    v["resume"] = None if rec is None else {
+        "uploaded": logic._md(rec["uploaded_at"]),
+        "file": rec.get("file") or "", "view_url": f"/liff/resume?user={user_id}",
+        "highlights": [x for b in resume_bubbles(rec["resume"]) for x in b.removeprefix(RESUME_INTRO).split("\n") if x]}
+    for d in v["voice_drafts"]:
+        d["view_url"] = f"/liff/voice/draft?user={user_id}&rid={d['id']}"
+    return v
+
+
+def _checked(result: dict) -> dict:
+    """直せなかった(個人情報らしい値・長すぎる値・知らない項目)ら 400 で理由を返す。"""
+    if "error" in result:
+        raise HTTPException(404 if result["error"] == "not_found" else 400, result.get("message") or result["error"])
+    return result
+
+
+def _remove_voice_files(files: list[str]) -> None:
+    """音声相談で書き出した下書きのファイルを消す。音声の出力先(voice_resume.config.OUT_DIR)の中のものだけ。"""
+    from voice_resume import config as voice_config
+
+    root = voice_config.OUT_DIR.resolve()
+    for f in files:
+        p = Path(f).resolve()
+        if p.is_relative_to(root) and p.is_file():
+            p.unlink()
+
+
+@app.get("/api/profile/{user_id}")
+async def profile_get(user_id: str, request: Request):
+    _profile_owner(request, user_id)
+    return _profile_view(user_id)
+
+
+@app.put("/api/profile/{user_id}/items/{key}")
+async def profile_edit(user_id: str, key: str, body: ProfileEditIn, request: Request):
+    """項目を本人の言葉で直す。key は stated_preferences の項目か consultation_summary。"""
+    _profile_owner(request, user_id)
+    if key == "consultation_summary":
+        _checked(profile.edit_summary(state, user_id, body.value))
+    else:
+        _checked(profile.edit_item(state, user_id, key, body.value))
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/{user_id}/items/{key}")
+async def profile_delete(user_id: str, key: str, request: Request):
+    _profile_owner(request, user_id)
+    if key == "consultation_summary":
+        profile.delete_summary(state, user_id)
+    else:
+        _checked(profile.delete_item(state, user_id, key))
+    return _profile_view(user_id)
+
+
+class TrackIn(BaseModel):
+    track: str
+
+
+@app.put("/api/profile/{user_id}/track")
+async def profile_track(user_id: str, body: TrackIn, request: Request):
+    _profile_owner(request, user_id)
+    _checked(profile.set_track(state, user_id, body.track))
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/{user_id}/track")
+async def profile_track_delete(user_id: str, request: Request):
+    _profile_owner(request, user_id)
+    profile.delete_track(state, user_id)
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/{user_id}/resume")
+async def profile_resume_delete(user_id: str, request: Request):
+    _profile_owner(request, user_id)
+    profile.delete_resume(state, user_id)
+    app.state.unread_uploads.pop(user_id, None)
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/{user_id}/voice/{result_id}")
+async def profile_voice_delete(user_id: str, result_id: int, request: Request):
+    _profile_owner(request, user_id)
+    _remove_voice_files(_checked(profile.delete_voice_draft(state, user_id, result_id))["files"])
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/{user_id}/saved/{job_id}")
+async def profile_unsave(user_id: str, job_id: str, request: Request):
+    _profile_owner(request, user_id)
+    profile.unsave_job(state, user_id, job_id)
+    return _profile_view(user_id)
+
+
+@app.post("/api/profile/{user_id}/forget")
+async def profile_forget(user_id: str, request: Request):
+    """すべて消す: dip の状態(長期メモリ・保存・応募・トークを開いた記録)と会話(チェックポイント)を消す。
+    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。"""
+    _profile_owner(request, user_id)
+    rt = app.state.rt
+    async with rt.user_lock(user_id):  # 進行中のターンが終わってから消す
+        out = profile.forget_all(state, user_id)
+        await rt.forget(user_id)
+    app.state.unread_uploads.pop(user_id, None)
+    _remove_voice_files(out["files"])
+    return {"forgotten": True}
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
