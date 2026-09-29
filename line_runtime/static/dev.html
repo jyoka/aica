@@ -70,9 +70,6 @@
   header { background: var(--head); color: #fff; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
   header .name { font-weight: 700; flex: none; white-space: nowrap; }
   header small { opacity: .7; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #voice, #resume { border: 1px solid #ffffff55; background: #ffffff14; color: #fff; border-radius: 8px;
-           padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-  #voice:hover, #resume:hover { background: #ffffff2b; } #voice:disabled, #resume:disabled { opacity: .45; cursor: default; }
   #log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
   #log > * { flex-shrink: 0; }  /* 一覧があふれても中身を縮めない(縮むと求人カードが途中で切れていた) */
   .sys { align-self: center; font-size: 11px; color: #fff; background: #0003; border-radius: 10px; padding: 3px 10px; margin: 4px 0; text-align: center; max-width: 92%; }
@@ -162,6 +159,7 @@
   .totals small { display: block; font-size: 10px; color: var(--sub); } .totals b { font-size: 14px; font-variant-numeric: tabular-nums; }
   .empty { color: var(--faint); font-size: 12px; padding: 6px 0; }
 </style>
+<link rel="stylesheet" href="/static/talk-core.css">
 </head>
 <body>
 <div class="wrap">
@@ -191,10 +189,7 @@
 
   <!-- 中央: LINE のトークルーム -->
   <div class="phone">
-    <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small>
-      <button type="button" id="resume" title="履歴書(PDF / JPEG / PNG)を読み取って、相談に使う">📄 履歴書</button>
-      <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>
-      <button type="button" id="voice" title="音声アドバイザーと話す(LIFF のように別タブで開く)">🎤 音声で相談</button></header>
+    <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small></header>
     <div id="log"></div>
     <form id="f"><input id="t" autocomplete="off" placeholder="メッセージを入力"><button id="send">送信</button></form>
   </div>
@@ -259,6 +254,7 @@
     </div>
   </section>
 </div>
+<script src="/static/talk-core.js"></script>
 <script>
   const TOOLS = ["get_user_conversation_summary", "get_user_recent_applications", "get_user_form_exit", "recommend_jobs",
                  "relax_conditions", "answer_job_question", "get_application_status", "resume_application_form", "save_job",
@@ -267,6 +263,7 @@
                     unlinked: ["未連携", ""], active: ["利用中", "ok"] };
   const PUSH_LABEL = { form_exit: "応募フォームの途中離脱" };
   const EVENT_LABEL = { visit: "初回訪問", revisit: "再訪(トークを開き直した)" };
+  const USER_EVENT_LABEL = { message: "ユーザーのメッセージ", resume_upload: "ユーザーが履歴書をアップロード" };
   const OUTCOME = { propose: "提案", consult: "相談", support: "支援", wait: "待つ" };
   const PREF = { area: "エリア", time_band: "時間帯", job_type: "職種", min_wage: "時給の下限", experience: "経験", days_per_week: "週の日数",
                  skills: "できること", certifications: "資格・免許" };
@@ -278,64 +275,17 @@
   const groupOf = (event) => EVENT_LABEL[event] ? "greet" : "push";
   let scenarios = [], scenario = null, current = null, busy = false, t0 = 0, sums = null;
 
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const now = () => new Date().toTimeString().slice(0, 5);
-  const scroll = () => { log.scrollTop = log.scrollHeight; };
-  const yen = (n) => Number(n).toLocaleString("ja-JP");
-
-  // ---------- トークルーム ----------
-  function sys(text) { log.appendChild(el("div", "sys", text)); scroll(); }
-  function me(text) { const r = el("div", "row me"); r.append(el("span", "time", now()), el("div", "bubble", text)); log.appendChild(r); scroll(); }
-  function botCol() {
-    const r = el("div", "row bot"), c = el("div", "col");
-    r.append(el("div", "avatar", "B"), c); c.appendChild(el("span", "who", "バイトル"));
-    log.appendChild(r); scroll(); return c;
-  }
-  function disableChips() { log.querySelectorAll(".chips button").forEach(b => b.disabled = true); }
-
-  // 時間のかかるツールの待ち時間に出す一言(tool_start で出し、tools / reply / error で消す)。
-  // 一覧に無いツールは速いので、通常の「…」のまま
-  const WAIT_LABEL = {
-    recommend_jobs: (args) => (args?.exclude_ids?.length ? "🔍 ほかの求人を探しています…" : "🔍 ぴったりの求人を探しています…"),
-    relax_conditions: () => "🔍 条件を見直して探しています…",
-  };
-  function setWait(col, label) {
-    const typing = col.querySelector(".typing");
-    if (!typing) return;
-    typing.querySelector(".wait")?.remove();
-    if (label) { typing.prepend(el("span", "wait", label)); scroll(); }
-  }
-
-  function jobCard(j) {
-    const c = el("div", "jc"), inner = el("div", "in");
-    inner.append(el("div", "meta", `${j.job_type} · ${j.area}`), el("div", "ttl", j.title), el("div", "emp", j.employer));
-    const w = el("div", "wage"); w.append(el("small", null, "時給"), el("b", null, `${yen(j.hourly_wage)}円`)); inner.appendChild(w);
-    const tags = el("div", "tags");
-    for (const t of [j.shift, `週${j.days_min}日〜`, `${j.station.replace(/駅$/, "")}駅 徒歩${j.walk_min}分`]) tags.appendChild(el("span", "tag", t));
-    for (const p of (j.perks || []).slice(0, 3)) tags.appendChild(el("span", "tag perk", p));  // アピールポイント(待遇)
-    inner.appendChild(tags);
-    if (j.reasons?.length) { const why = el("div", "why"); why.append(el("span", null, "おすすめ"), document.createTextNode(j.reasons.join(" / "))); inner.appendChild(why); }
-    const btns = el("div", "btns");
-    const more = el("button", "go", "詳しく見る"); more.type = "button"; more.onclick = () => send(`「${j.title}」について詳しく教えて`);
-    const keep = el("button", "keep", "保存"); keep.type = "button"; keep.onclick = () => send(`「${j.title}」(${j.job_id})を保存して`);
-    btns.append(more, keep); c.append(inner, btns); return c;
-  }
-
-  function renderReply(r, col) {
-    col.querySelector(".typing")?.remove();
-    for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
-    if (r.bubbles.length) col.appendChild(el("span", "time", now()));
-    if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
-    for (const b of r.buttons) {
-      const w = el("div", "liff"), a = el("a", null, b.label);
-      a.href = b.url; a.target = "_blank"; a.rel = "noopener"; w.appendChild(a); log.appendChild(w);
-    }
-    if (r.quick_replies.length) {
-      const box = el("div", "chips");
-      for (const q of r.quick_replies) { const b = el("button", null, q); b.type = "button"; b.onclick = () => send(q); box.appendChild(b); }
-      log.appendChild(box);
-    }
-    scroll();
+  // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は本番の / と共通(talk-core.js)
+  const talk = createTalk({
+    log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
+    send: (text) => send(text), fire: (event) => fire(event), afterTurn: () => refreshState(),
+    notice: { voice: "[音声相談] ", voiceResult: "[音声相談] " },
+  });
+  const { el, sys, me, botCol, disableChips, renderReply } = talk, yen = talk.yen;
+  // ターンの途中は、送信・「+」・シナリオの切り替えを止める
+  function setBusy(on) {
+    busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current);
+    document.querySelectorAll(".act, #restart").forEach(b => b.disabled = on);
   }
 
   // ---------- 右: 構成図の点灯と処理の流れ ----------
@@ -373,7 +323,7 @@
       const push = ev.event_kind === "push";
       $("n-llm-d").textContent = ev.model;
       light(push ? ["n-event"] : ["n-user"], {}); if (!push) $("l-user").classList.add("on");
-      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : "ユーザーのメッセージ",
+      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : USER_EVENT_LABEL[ev.event] || ev.event,
                `入口のシナリオ <code>${esc(ev.entry)}</code> ・ LINE 側 AI <code>${esc(ev.model)}</code>`, 0);
       if (!push) light(["n-llm"], { thinking: true });
     } else if (ev.kind === "gate") {
@@ -388,10 +338,9 @@
       traceRow("llm", "LINE 側 AI(LLM)", `${tok}<br>${next}`, ev.ms);
       if (ev.tool_calls.length) { light(["n-llm", "n-dip"], { tools: ev.tool_calls }); $("l-mcp").classList.add("on"); }
     } else if (ev.kind === "tool_start") {
-      const slow = ev.calls.find(c => WAIT_LABEL[c.name]);
-      if (slow) setWait(col, WAIT_LABEL[slow.name](slow.args));
+      talk.onStep(ev, col);  // 待ちの表示を出す
     } else if (ev.kind === "tools") {
-      setWait(col, null);  // ツールが終わったら「何をしているか」を消す(続きは通常の「…」)
+      talk.onStep(ev, col);  // 待ちの表示を消す(続きは通常の「…」)
       for (const c of ev.calls) traceRow("tool", `dip のツール: ${c.name}`, `${esc(brief(c.args)) || "引数なし"}<br>→ ${esc(c.summary)}`, ev.ms);
       light(["n-dip", "n-state"], { tools: ev.calls.map(c => c.name) }); $("l-state").classList.add("on");
       setTimeout(() => { if (busy) light(["n-llm"], { thinking: true }); }, 350);  // 返信が先に届いていたら戻さない
@@ -400,35 +349,31 @@
       else {
         renderReply(ev, col);
         traceRow("reply", "LINE の返信", `吹き出し ${ev.bubbles.length}・求人カード ${ev.cards.length}・選択肢 ${ev.quick_replies.length}` +
+                 (ev.actions?.length ? `・操作 ${ev.actions.map(a => `<code>${esc(a)}</code>`).join(" ")}` : "") +
                  (ev.unknown_job_ids.length ? `・<b>どのツールも返していない求人ID ${esc(ev.unknown_job_ids.join(", "))}</b>` : ""), null);
         light(["n-user"]); $("l-user").classList.add("on");
       }
       renderTotals();
     } else if (ev.kind === "error") {
-      col.querySelector(".typing")?.remove(); col.appendChild(el("div", "bubble", "エラー: " + ev.message));
+      talk.fail(col, "エラー: " + ev.message);
       traceRow("err", "エラー", esc(ev.message), null); light([]);
     }
   }
 
   async function fire(event, text) {
     if (busy) return;
-    busy = true; sendBtn.disabled = true; disableChips(); document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
-    const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
+    setBusy(true); disableChips();
+    const col = talk.typingCol();
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
                                                       body: JSON.stringify({ user_id: current, event, text }) });
       if (!res.ok) throw new Error(res.status + " " + await res.text());
-      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
-      for (;;) {
-        const { value, done } = await reader.read(); if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i; while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (line.trim()) onEvent(JSON.parse(line), col); }
-      }
+      await talk.readStream(res, (ev) => onEvent(ev, col));
     } catch (e) {
-      typing.remove(); col.appendChild(el("div", "bubble", "エラー: " + e.message));
+      talk.fail(col, "エラー: " + e.message);
       traceRow("err", "エラー(接続)", esc(e.message), null); light([]);
     }
-    finally { busy = false; sendBtn.disabled = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); refreshState(); }
+    finally { setBusy(false); refreshState(); }
   }
 
   function send(text) {
@@ -480,12 +425,12 @@
     if (busy) return;  // 返信を待っている間に切り替えると、前のシナリオへの返信が新しいトークに出てしまう
     const sc = scenarios.find(x => x.id === id);
     if (narrow()) setTab("talk");  // 狭い画面では、始めたトークを見せる
-    busy = true; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
+    setBusy(true);
     let r;
     try { r = await post(`/api/scenarios/${encodeURIComponent(id)}/start`, {}); }
     catch (e) { sys(`シナリオを始められない: ${e.message}`); return; }
-    finally { busy = false; document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); }
-    scenario = sc; current = r.user; $("voice").disabled = false; $("resume").disabled = false;
+    finally { setBusy(false); }
+    scenario = sc; current = r.user; setBusy(false);
     document.querySelectorAll("#scenarios .act").forEach(b => b.classList.toggle("armed", b.dataset.id === id));
     log.innerHTML = ""; $("trace").innerHTML = '<div class="empty">会話を始めると、ここに処理が順に出ます。</div>';
     $("totals").innerHTML = ""; light([]);
@@ -497,69 +442,6 @@
 
   $("restart").onclick = () => { if (scenario) startScenario(scenario.id); };
   $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
-
-  // ---------- 音声相談(voice-resume との連携) ----------
-  // トークの「音声で相談」から LIFF のように別タブで開く。相談が終わると voice-resume が
-  // /api/voice/result に結果(dip の求人・下書き)を送り、ここが pull で受け取ってトークに描く。
-  $("voice").onclick = () => {
-    if (!current) return;
-    window.open("/liff/voice?user=" + encodeURIComponent(current), "_blank", "noopener");
-    sys("[音声相談] 別タブで音声アドバイザーが開きます。相談が終わると、結果がこのトークに届きます。");
-  };
-  async function pollVoice() {
-    if (!current || busy) return;  // ターンの途中には差し込まない(次の周回で受け取る)
-    let results;
-    try { results = (await post(`/api/voice/${encodeURIComponent(current)}/pull`, {})).results; }
-    catch (e) { return; }  // line-sim 再起動中など。次の周回でまた試す
-    for (const r of results || []) {
-      sys("[音声相談の結果が届きました]");
-      const col = botCol();
-      renderReply({
-        bubbles: ["音声の相談でお話しした内容です。ご提案した求人と、履歴書の下書きをご確認ください。"],
-        cards: r.cards || [],
-        buttons: r.draft_markdown ? [{ label: "履歴書の下書きを見る", url: `/liff/voice/draft?user=${encodeURIComponent(current)}&rid=${r.id}` }] : [],
-        quick_replies: [],
-      }, col);
-    }
-    if ((results || []).length) refreshState();  // 保存された希望・会話の結果を左の状態にも反映
-  }
-  setInterval(pollVoice, 4000);
-
-  // ---------- 履歴書のアップロード(resume-intake) ----------
-  // ファイルを選ぶ → /api/resume/{user}/upload で読み取り(dip の状態に保存)→ 結果の確認をトークに出す。
-  // 「この内容で相談する」を押すと、同じユーザーの会話が読み取り結果(summary の uploaded_resume)を参照して続く。
-  // 氏名・連絡先は保存されないので、トークにも出さない(ファイル名も出さない。氏名が入りがちなため)。
-  $("resume").onclick = () => { if (current && !busy) $("resume-file").click(); };
-  $("resume-file").onchange = async (e) => {
-    const f = e.target.files[0]; e.target.value = "";
-    if (!f || !current || busy) return;
-    busy = true; sendBtn.disabled = true; disableChips(); $("resume").disabled = true;
-    document.querySelectorAll(".act, #restart").forEach(b => b.disabled = true);
-    sys("[履歴書] アップロードしたファイルを読み取っています…");
-    const col = botCol(); const typing = el("div", "bubble typing"); typing.append(el("i"), el("i"), el("i")); col.appendChild(typing); scroll();
-    try {
-      const fd = new FormData(); fd.append("file", f);
-      const res = await fetch(`/api/resume/${encodeURIComponent(current)}/upload`, { method: "POST", body: fd });
-      if (!res.ok) { let m = res.status + ""; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
-      renderResume(await res.json(), col);
-    } catch (err) {
-      typing.remove(); col.appendChild(el("div", "bubble", "履歴書を読み取れませんでした: " + err.message));
-    } finally {
-      busy = false; sendBtn.disabled = false; $("resume").disabled = false;
-      document.querySelectorAll(".act, #restart").forEach(b => b.disabled = false); refreshState();
-    }
-  };
-  function renderResume(d, col) {
-    // 吹き出しの中身(要点だけ・80字以内)はサーバーが組み立てる(line_runtime/resume_confirm.py)
-    const bubbles = d.bubbles;
-    renderReply({ bubbles: bubbles.slice(0, 3), cards: [], quick_replies: [],
-                  buttons: d.empty ? [] : [{ label: "読み取り結果を見る", url: d.view_url }] }, col);
-    if (!d.empty) {
-      const box = el("div", "chips"), b = el("button", null, "この内容で相談する"); b.type = "button";
-      b.onclick = () => send("履歴書をアップロードしました。この内容をふまえて相談させてください。");
-      box.appendChild(b); log.appendChild(box); scroll();
-    }
-  }
 
   // ---------- 画面の幅に合わせたタブ ----------
   const narrow = () => matchMedia("(max-width: 759px)").matches;
@@ -578,9 +460,7 @@
   for (const t of TOOLS) { const c = el("span", "tchip", t); c.dataset.tool = t; $("tools").appendChild(c); }
 
   (async () => {
-    sendBtn.disabled = true;  // シナリオを選ぶまでは送れない(会話の相手が決まっていない)
-    $("voice").disabled = true;  // 音声相談も、相手(ユーザー)が決まってから
-    $("resume").disabled = true;  // 履歴書のアップロードも同じ
+    setBusy(false);  // シナリオを選ぶまでは送れない・「+」(履歴書・音声)も使えない(会話の相手が決まっていない)
     scenarios = await (await fetch("/api/scenarios")).json();
     renderScenarios();
     sys("シナリオを選ぶと、AI 側の1通目から会話が始まります");

@@ -126,6 +126,17 @@ async def dev(request: Request):
     return resp
 
 
+SHARED_STATIC = {"talk-core.js", "talk-core.css"}  # / と /dev が共通に使うトークの部品
+
+
+@app.get("/static/{name}")
+async def shared_static(name: str):
+    """トークルームの共通部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)。"""
+    if name not in SHARED_STATIC:
+        raise HTTPException(404)
+    return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/me")
 async def me(request: Request, response: Response):
     """このブラウザの匿名ユーザーID(無ければ発行)。"""
@@ -204,7 +215,7 @@ async def event(body: EventIn, request: Request):
     _require_text(body)
     entry, kind = EVENTS[body.event]
     quota = app.state.quota
-    facts = None
+    facts = _upload_facts(body)
     if kind == "push":
         # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
         if not quota.available(body.user_id):
@@ -237,11 +248,12 @@ async def event_stream(body: EventIn, request: Request):
     if body.event not in EVENTS:
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
     _require_text(body)
+    upload = _upload_facts(body)
 
     async def lines():
         entry, kind = EVENTS[body.event]
         yield _line({"kind": "start", "event": body.event, "entry": entry, "event_kind": kind, "model": config.MODEL})
-        facts = None
+        facts = upload
         quota = app.state.quota
         if kind == "push":
             if not quota.available(body.user_id):
@@ -275,7 +287,7 @@ async def event_stream(body: EventIn, request: Request):
 
 async def _stale(body: EventIn) -> int | None:
     """本番のトーク画面からの発言で、今の会話が画面の会話と違えば今の会話番号(違わなければ None)。"""
-    if body.thread is None or EVENTS[body.event][1] != "user":
+    if body.thread is None or EVENTS[body.event][1] not in ("user", "upload"):
         return None
     n = await app.state.rt.current_thread(body.user_id)
     return n if n != body.thread else None
@@ -285,6 +297,19 @@ def _record_open(body: EventIn, reply: dict | None) -> None:
     """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。"""
     if body.thread is not None and EVENTS[body.event][1] == "greet" and reply and not reply.get("stale"):
         logic.record_talk_open(state, body.user_id)
+
+
+def _upload_facts(body: EventIn) -> dict | None:
+    """履歴書のアップロードのターンに渡す事実: ファイルの表示名・トークに出した確認の吹き出し・読み取り結果の画面。
+    どれも dip に保存した読み取り結果から作る(画面からは受け取らない。ファイル名はどこにも無い)。
+    読み取り結果が無ければ、会話数を使う前に断る。"""
+    if EVENTS[body.event][1] != "upload":
+        return None
+    rec = logic.resume_upload(state, body.user_id)
+    if rec is None:
+        raise HTTPException(400, "アップロードした履歴書がありません")
+    return {"file": rec.get("file") or RESUME_LABEL["application/pdf"], "shown": resume_bubbles(rec["resume"]),
+            "view_url": f"/liff/resume?user={body.user_id}"}
 
 
 def _require_text(body: EventIn) -> None:
@@ -360,6 +385,10 @@ async def liff_voice_draft(user: str, rid: int, request: Request):
 # ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
 
 
+# トークに出すファイルの表示名(ファイル名は氏名が入りがちなので出さない。種類だけ)
+RESUME_LABEL = {"application/pdf": "履歴書(PDF)", "image/jpeg": "履歴書(画像)", "image/png": "履歴書(画像)"}
+
+
 def resume_client():
     """履歴書の読み取りに使う OpenAI のクライアント(テストでは固定応答のスタブに差し替える)。"""
     from openai import AsyncOpenAI
@@ -368,14 +397,17 @@ def resume_client():
 
 
 @app.post("/api/resume/{user_id}/upload")
-async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFile, File()]):
+async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFile, File()], thread: int | None = None):
     """トークからアップロードされた履歴書(PDF / JPEG / PNG)を読み取り、そのユーザーの dip の状態に保存する。
     ファイルはディスクに置かず、ファイル名も保存しない。personal は常に空欄、文字列中の電話・メール・郵便番号は除く。
-    保存した結果は get_user_conversation_summary の uploaded_resume として、同じユーザーの会話から参照される。"""
+    保存した結果は get_user_conversation_summary の uploaded_resume として、同じユーザーの会話から参照される。
+    アップロードは本人の1ターン: 画面は本人側に「履歴書(PDF)」の吹き出しを出し、ここが返す確認を AI 側に出してから、
+    /api/event/stream の resume_upload で会話を続ける(定型文を本人の発言として送らない)。
+    thread: 本番のトーク画面が表示している会話の番号。別のタブで会話が替わっていたら、読み取らず会話数も使わずに 409。"""
     _require_own(request, user_id)
     name = file.filename or ""
     try:
-        media_type(name)
+        label = RESUME_LABEL[media_type(name)]
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     data = await file.read(resume_config.MAX_UPLOAD_BYTES + 1)
@@ -383,6 +415,8 @@ async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFi
         raise HTTPException(400, "ファイルが空です")
     if len(data) > resume_config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
+    if thread is not None and await app.state.rt.current_thread(user_id) != thread:
+        raise HTTPException(409, "別の画面で新しい会話が始まっています")
     if not app.state.quota.take(user_id):  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
         raise HTTPException(429, LIMIT_MESSAGE)
     try:
@@ -394,11 +428,12 @@ async def resume_upload(user_id: str, request: Request, file: Annotated[UploadFi
     result = finalize(draft)
     empty = draft.model_dump(exclude={"unconfirmed"}) == type(draft)().model_dump(exclude={"unconfirmed"})
     if empty:  # 読めなかったファイルで、前に読み取れた結果を上書きしない
-        return {"result": result, "empty": True, "view_url": None,
+        return {"result": result, "empty": True, "view_url": None, "file": label,
                 "bubbles": resume_bubbles(result["resume"], empty=True)}
-    rec = logic.save_resume_upload(state, user_id, result)
-    # トークに出す確認は要点だけ(80字以内の吹き出し)。全文は view_url の「読み取り結果を見る」で見せる
-    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}",
+    rec = logic.save_resume_upload(state, user_id, result, file=label)
+    # トークに出す確認は要点だけ(80字以内の吹き出し)。全文は view_url の「読み取り結果を見る」で見せる。
+    # 画面は続けて resume_upload のイベントで会話を進める(AI が確認を踏まえて次の1問を返す)
+    return {"result": rec, "empty": False, "view_url": f"/liff/resume?user={user_id}", "file": label,
             "bubbles": resume_bubbles(rec["resume"])}
 
 

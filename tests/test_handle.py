@@ -31,9 +31,10 @@ def call(name: str, args: dict, id_: str = "t1") -> AIMessage:
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": id_, "type": "tool_call"}])
 
 
-def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",)) -> AIMessage:
+def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actions=()) -> AIMessage:
     return AIMessage(content=json.dumps({"bubbles": bubbles, "quick_replies": list(quick_replies),
-                                         "job_ids": list(job_ids), "buttons": []}, ensure_ascii=False))
+                                         "job_ids": list(job_ids), "buttons": [], "actions": list(actions)},
+                                        ensure_ascii=False))
 
 
 def run(model, steps, tmp_path):
@@ -119,10 +120,16 @@ def test_handle_stream_reports_llm_and_tool_steps_before_the_reply(tmp_path):
 
 
 def test_talk_screen_handles_tool_start_and_has_per_tool_wait_labels():
-    """トーク画面が tool_start を受けて「何をしているか」を出し、tools で消す(ツールごとの一言がある)。"""
+    """トーク画面が tool_start を受けて「何をしているか」を出し、tools で消す(ツールごとの一言がある)。
+    待ちの表示は / と /dev の共通部品(talk-core.js)にあり、どちらの画面も途中経過をそこに渡す。"""
     from line_runtime import config
 
-    html = (config.ROOT / "line_runtime" / "static" / "talk.html").read_text(encoding="utf-8")
+    static = config.ROOT / "line_runtime" / "static"
+    html = (static / "talk-core.js").read_text(encoding="utf-8")
+    for page in ("talk.html", "dev.html"):
+        text = (static / page).read_text(encoding="utf-8")
+        assert '<script src="/static/talk-core.js">' in text and "talk.onStep(ev, col)" in text, page
+        assert "WAIT_LABEL" not in text, page  # 画面ごとに書き直さない
     assert 'ev.kind === "tool_start"' in html
     assert "ぴったりの求人を探しています" in html  # recommend_jobs
     assert "ほかの求人を探しています" in html  # recommend_jobs + exclude_ids(次の候補)

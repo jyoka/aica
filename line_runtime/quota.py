@@ -99,4 +99,4 @@ class DailyQuota:
 def limit_reply(entry: str | None) -> dict:
     """上限を超えたときの返信(render と同じ形。LLM は呼ばない)。"""
     return {"entry": entry, "bubbles": [LIMIT_MESSAGE], "quick_replies": [], "cards": [], "unknown_job_ids": [],
-            "buttons": [], "tools": [], "limited": True}
+            "buttons": [], "actions": [], "tools": [], "limited": True}

@@ -674,16 +674,17 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
 # ----------------------------- アップロードした履歴書(resume-intake の読み取り結果) -----------------------------
 
 
-def save_resume_upload(state: State, line_user_id: str, result: dict) -> dict:
+def save_resume_upload(state: State, line_user_id: str, result: dict, file: str = "") -> dict:
     """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
 
-    ファイル本体・ファイル名(氏名が入りがち)は保存しない。personal は何が来ても空欄で保存し、
+    ファイル本体・ファイル名(氏名が入りがち)は保存しない。file はトークに出す表示名(「履歴書(PDF)」のような
+    種類だけ)。personal は何が来ても空欄で保存し、
     resume の文字列からは電話番号・メール・郵便番号をもう一度落とす(読み取り側の防御に重ねる)。
     """
     resume = ResumeDraft.model_validate(scrub_pii(result.get("resume") or {})).model_dump()
     rec = {"format_version": str(result.get("format_version", "")), "source": "upload",
            "created_at": str(result.get("created_at", "")), "uploaded_at": now().isoformat(),
-           "personal": {k: "" for k in PERSONAL_KEYS}, "resume": resume}
+           "file": file, "personal": {k: "" for k in PERSONAL_KEYS}, "resume": resume}
 
     def apply(u):
         u["resume_upload"] = rec
