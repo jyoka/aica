@@ -25,6 +25,10 @@
 
   header { background: var(--head); color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
   header .name { font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 今の雇用区分(表示だけ。確かめる・直すのはプロフィール) */
+  header .track { flex: none; border-radius: 999px; background: #ffffff26; color: #fff; font-size: 11.5px; font-weight: 700; padding: 4px 10px; }
+  header .track[hidden] { display: none; }
+  header .track[data-track="未定"] { background: transparent; color: #c5cddb; font-weight: 400; }
 
   /* ---------- トーク ---------- */
   #log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -115,7 +119,7 @@
 </head>
 <body>
 <div class="app">
-  <header><span class="name">バイトル</span></header>
+  <header><span class="name">バイトル</span><span class="track" id="track" hidden></span></header>
   <main>
     <section class="view" id="v-talk">
       <div id="log"></div>
@@ -146,9 +150,18 @@
     log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
     send: (text) => send(text), fire: (event) => fire(event), showTalk: () => showView("talk"),
     getThread: () => thread, onStale: () => redrawLatest(), beforeTurn: () => showVoiceResult(),
+    onTrack: (t) => setTrack(t),
   });
   const { el, sys, me, botCol, disableChips, renderReply } = talk;
   function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
+
+  // ヘッダーの今の雇用区分(dip の記録。開いたとき・返信・切り替えの取り消し・プロフィールで変えたときに直す)
+  const TRACK_HEADER = { "正社員": "正社員で相談中", "アルバイト・パート": "アルバイト・パートで相談中", "未定": "区分は未定" };
+  function setTrack(t) {
+    const b = $("track");
+    if (!t || !TRACK_HEADER[t]) return;
+    b.textContent = TRACK_HEADER[t]; b.dataset.track = t; b.hidden = false;
+  }
 
   function onEvent(ev, col) {
     talk.onStep(ev, col);  // 待ちの表示(tool_start / tools)
@@ -158,7 +171,7 @@
       thread = ev.thread;  // 挨拶で新しい会話が始まったら、その番号に替わる
     } else if (ev.kind === "reply") {
       if (ev.sent === false) col.parentElement.remove();  // 本番の画面はプッシュを起こさないので、ここには来ない
-      else renderReply(ev, col);
+      else { renderReply(ev, col); setTrack(ev.search_track); }
     } else if (ev.kind === "error") {
       talk.fail(col, "うまく返信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(ev.message);
@@ -240,7 +253,7 @@
     const res = await fetch("/api/talk/history");
     if (!res.ok) throw new Error(res.status + " " + await res.text());
     const h = await res.json();
-    log.innerHTML = ""; thread = h.thread;
+    log.innerHTML = ""; thread = h.thread; setTrack(h.search_track);
     for (const t of h.turns) {
       if (t.user != null) me(t.user, "");
       if (t.upload) { talk.meFile(t.upload.file, ""); talk.resumeConfirm(t.upload, botCol(), ""); }  // 履歴書を送ったターン
@@ -306,12 +319,15 @@
     box.replaceChildren(el("h2", null, "わたしのプロフィール"),
       el("p", "note", "aica があなたについて覚えていることです。直したり消したりすると、次の返信から反映されます。"));
 
-    // 雇用区分と、いつ・どの発言で切り替わったか
+    // 雇用区分と、いつ・どの発言で切り替わったか。取り消し(トークの表示のボタンや会話で、直前の切り替えを元に戻した)は
+    // 記録に残る。「記録ごと消す」は記録をすべて消して未定に戻すもので、取り消しとは別
+    setTrack(p.track.current);
     const tc = card("雇用区分"), tr = el("div", "prow"); tr.dataset.key = "track";
     tr.append(el("div", "pv", p.track.current === "未定" ? "未定(まだ決まっていません)" : p.track.current));
     if (p.track.history.length) {
       for (const h of p.track.history) {
-        tr.appendChild(el("div", "pnote", `${h.when} 「${h.evidence}」で ${h.from} → ${h.track}${h.undo ? "(取り消し)" : ""}`));
+        const why = h.evidence.startsWith("(") ? h.evidence : `「${h.evidence}」で`;
+        tr.appendChild(el("div", "pnote", h.undo ? `${h.when} 取り消し: ${h.from} → ${h.track} ${why}` : `${h.when} ${why} ${h.from} → ${h.track}`));
       }
     } else tr.appendChild(el("div", "pnote", "切り替えの記録は" + EMPTY));
     const tb = el("div", "pbtns");
@@ -320,7 +336,11 @@
       for (const c of p.track.choices.filter(c => c !== p.track.current)) b.appendChild(btn(c, "ok", () => change("PUT", "/track", { track: c })));
       b.appendChild(btn("やめる", null, () => { b.remove(); tb.hidden = false; })); tr.appendChild(b);
     }));
-    if (p.track.history.length) tb.appendChild(btn("消す", "del", () => change("DELETE", "/track")));
+    if (p.track.history.length) {
+      tb.appendChild(btn("記録ごと消す", "del", () => confirmIn(tr,
+        "区分と切り替えの記録をすべて消して、未定に戻します(直前の切り替えだけを元に戻すときは、トークの表示のボタンを使います)。",
+        "記録ごと消す", () => change("DELETE", "/track"))));
+    }
     tr.appendChild(tb); tc.appendChild(tr); box.appendChild(tc);
 
     // 目的・希望・経歴(本人が話したこと)
@@ -389,7 +409,7 @@
   async function forgetAll() {
     try { await api("POST", profileUrl("/forget")); }
     catch (e) { alert(e.message); return; }
-    log.innerHTML = ""; thread = null;
+    log.innerHTML = ""; thread = null; setTrack("未定");
     showView("talk"); start();  // 開き直す: dip は初回訪問として挨拶から始める
   }
 
@@ -398,7 +418,7 @@
     setBusy(true);
     let opened;
     try {
-      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread;
+      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread; setTrack(opened.search_track);
       if (opened.event == null) await restore();
     } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
     setBusy(false);

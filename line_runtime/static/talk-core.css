@@ -58,3 +58,11 @@ form button.plus:disabled { color: #b8c0cc; background: #f1f3f6; }
 .vs-confirm-btns { display: flex; gap: 8px; }
 .vs-confirm-btns button { flex: 1; border: 0; border-radius: 999px; padding: 9px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
 .vs-confirm-btns .keep { background: var(--ok); color: #fff; } .vs-confirm-btns .quit { background: var(--soft); color: #c0392b; }
+/* 雇用区分の切り替えの表示(AI の返信の前)。ボタンで元の区分に戻す */
+.track-switch { align-self: center; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px;
+                max-width: 92%; margin: 4px 0; padding: 5px 6px 5px 12px; border-radius: 16px; background: #ffffffe6; color: var(--text);
+                font-size: 12.5px; box-shadow: 0 1px 2px #0000001a; }
+.track-switch button { border: 1px solid var(--chip-line); background: #fff; color: var(--chip); border-radius: 12px; padding: 3px 10px;
+                       font-size: 12px; font-weight: 700; cursor: pointer; }
+.track-switch button:disabled { color: #9aa7bd; cursor: default; }
+.track-switch .done { color: var(--sub); font-size: 11.5px; padding-right: 6px; }

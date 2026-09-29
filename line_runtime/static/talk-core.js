@@ -11,6 +11,7 @@
 //     getThread, onStale,       // (任意)表示中の会話の番号 / 別のタブで会話が替わっていたとき(本番だけ)
 //     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は dip の状態を読み直す)
 //     beforeTurn,               // (任意)本人のターン(発言・アップロード)の前に呼ぶ(本番: 閉じたシートの結果を描き直す)
+//     onTrack(track),           // (任意)切り替えの表示のボタンで雇用区分を戻したとき(本番: ヘッダーの区分を直す)
 //   });
 function createTalk(o) {
   const log = o.log;
@@ -126,6 +127,7 @@ function createTalk(o) {
   };
   function renderReply(r, col, time = now()) {
     col.querySelector(".typing")?.remove();
+    if (r.track_switch) trackSwitch(r.track_switch, col.parentElement);
     for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
     if (r.bubbles.length && time) col.appendChild(el("span", "time", time));
     if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
@@ -142,6 +144,42 @@ function createTalk(o) {
       for (const q of r.quick_replies) { const b = el("button", null, q); b.type = "button"; b.onclick = () => o.send(q); box.appendChild(b); }
       log.appendChild(box);
     }
+    scroll();
+  }
+
+  // ---------- 雇用区分の切り替えの表示(AI の返信の前に出す。元は dip の記録で、返信文からは推測しない) ----------
+  // 例: 「正社員の相談に切り替えました [アルバイトで探す]」。ボタンで元の区分に戻す(dip に取り消しとして記録。
+  // LLM は呼ばない。AI には次のターンの前に伝わる)。status(サーバーが dip の記録から足す): undoable = 取り消せる /
+  // undone = 取り消した / past・gone = 後に別の切り替えがある・記録が消された(ボタンを出さない)
+  const TRACK_BUTTON = { "アルバイト・パート": "アルバイトで探す", "正社員": "正社員で探す", "未定": "区分を決めずに探す" };
+  const switchedText = (sw) => sw.track === "未定" ? (sw.undo ? "区分を決めない相談に戻しました" : "区分を決めずに相談します")
+    : `${sw.track}の相談に${sw.undo ? "戻しました" : "切り替えました"}`;
+  function trackSwitch(sw, row) {
+    log.querySelectorAll(".track-switch button").forEach(b => b.remove());  // 取り消せるのは直前の切り替えだけ
+    const box = el("div", "track-switch"); box.dataset.status = sw.status || "";
+    box.appendChild(el("span", null, switchedText(sw)));
+    if (sw.status === "undone") box.appendChild(el("span", "done", `取り消して、${sw.from}に戻しました`));
+    else if (!sw.undo && (sw.status === "undoable" || sw.status == null)) {
+      const b = el("button", null, TRACK_BUTTON[sw.from] || "元に戻す"); b.type = "button";
+      b.onclick = () => undoSwitch(sw, box, b);
+      box.appendChild(b);
+    }
+    row.before(box);
+  }
+  async function undoSwitch(sw, box, b) {
+    const user = o.getUser();
+    if (!user || o.isBusy()) return;
+    b.disabled = true; o.setBusy(true);  // 取り消しが dip に届く前に次の発言を送らない(AI への知らせが間に合うように)
+    try {
+      const res = await fetch("/api/talk/track/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: user, id: sw.id }) });
+      let d = null; try { d = await res.json(); } catch (_) {}
+      if (!res.ok) { b.remove(); box.appendChild(el("span", "done", d?.detail || "取り消せませんでした。")); return; }
+      b.remove(); box.dataset.status = "undone";
+      box.appendChild(el("span", "done", `取り消して、${d.search_track}に戻しました`));
+      o.onTrack?.(d.search_track); o.afterTurn?.();
+    } catch (e) { b.disabled = false; console.error(e); }
+    finally { o.setBusy(false); }
     scroll();
   }
 
@@ -235,7 +273,9 @@ function createTalk(o) {
 
   let voice = null;  // 開いている間の通話: { user, since, roomName, room, agent, me, working, ended, stalled, done, abort }
   // 結果が届く前にシートを閉じた面談の、次に待つ結果の番号(届いた結果は会話に入るので、次のターンの前に描き直す)
-  let voicePendingSince = null;
+  // 閉じてから END_WAIT_MS を過ぎたら待ちをやめる(ワーカーが結果を送らないまま終わった面談で、ターンのたびに
+  // 履歴を描き直し続けない。あとで届いた結果は会話に入っているので、開き直せば出る)
+  let voicePendingSince = null, voicePendingAt = 0;
   const END_WAIT_MS = 120000;  // 「面談を終える」からまとめが届くまでの待ちの上限(過ぎたら、閉じてよいと案内する)
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   function vSet(state, text) { sheet.dataset.state = state; vStatus.textContent = text; }
@@ -347,7 +387,10 @@ function createTalk(o) {
     const v = voice;
     if (!v) return;
     voice = null; vConfirm.hidden = true;
-    if (!v.done && v.since != null && voicePendingSince == null) voicePendingSince = v.since;
+    if (!v.done && v.since != null) {  // 待ちの時間は最後に閉じたときから数える
+      if (voicePendingSince == null) voicePendingSince = v.since;
+      voicePendingAt = Date.now();
+    }
     v.abort.abort();  // 待っている問い合わせもやめる(閉じた後に届いた結果は、会話に入っているので再読み込みで出る)
     v.room?.disconnect();
     sheet.hidden = true; sheet.querySelectorAll("audio").forEach(a => a.remove());
@@ -388,7 +431,10 @@ function createTalk(o) {
   }
 
   // 閉じたシートの面談の結果が、まだ画面に出ていないかもしれない(出ていなければ次に待つ結果の番号、無ければ null)
-  const voicePending = () => voicePendingSince;
+  function voicePending() {
+    if (voicePendingSince != null && Date.now() - voicePendingAt > END_WAIT_MS) voicePendingSince = null;
+    return voicePendingSince;
+  }
   // 描き直した履歴に、その結果(voice_result がその番号以上の返信)が入っていたら待つのをやめる
   function voiceShown(turns) {
     if (voicePendingSince != null && turns.some(t => t.bot && t.bot.voice_result >= voicePendingSince)) voicePendingSince = null;

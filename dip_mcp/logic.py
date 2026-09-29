@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import secrets
 from collections import Counter
 from urllib.parse import urlencode
 
@@ -732,7 +733,9 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
         elif track == current:
             result.update({"track": current, "changed": False})
             return
-        rec = {"at": now().isoformat(), "from": current, "track": track, "evidence": evidence, "undo": undo}
+        # id はトークの切り替えの表示がどの記録かを指す(記録ごと消した・すべて消した後の記録と取り違えないよう、番号ではなく乱数)
+        rec = {"id": secrets.token_hex(6), "at": now().isoformat(), "from": current, "track": track, "evidence": evidence,
+               "undo": undo}
         u["track_history"] = [*history, rec]
         result.update({"track": track, "changed": True, "recorded": rec})
 

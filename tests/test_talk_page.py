@@ -91,14 +91,14 @@ def test_first_open_greets_as_a_first_visit_and_reopening_greets_as_a_revisit(ap
         assert app.ANON_COOKIE not in client.cookies
         opened, first = open_talk(client)
         uid = client.cookies[app.ANON_COOKIE]
-        assert opened == {"user": uid, "event": "visit", "thread": 0}
+        assert opened == {"user": uid, "event": "visit", "thread": 0, "search_track": "未定"}
         assert first["entry"] == "visit" and first["tools"] == [] and first["thread"] == 1
         assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
 
         # Cookie あり(同じブラウザで30分を過ぎて開き直す): 同じユーザーの再訪。要約を読んでから挨拶する
         app.later(31)
         opened, again = open_talk(client)
-        assert opened == {"user": uid, "event": "revisit", "thread": 1}
+        assert opened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["entry"] == "revisit" and [t["name"] for t in again["tools"]] == ["get_user_conversation_summary"]
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
 
@@ -195,7 +195,7 @@ def test_reloading_mid_conversation_redraws_the_same_conversation_without_the_ll
 
         app.later(29)  # 最後のやりとりから30分以内に開き直す(再読み込み)
         reopened, hist = open_talk(client)
-        assert reopened == {"user": uid, "event": None, "thread": 1}
+        assert reopened == {"user": uid, "event": None, "thread": 1, "search_track": "未定"}
         assert client.app.state.quota.used(uid) == used and model.script == [remembers]  # LLM も会話数も使わない
         assert hist["thread"] == 1
         greeting, search = hist["turns"]
@@ -224,7 +224,7 @@ def test_opening_after_30_minutes_starts_a_new_conversation_with_the_revisit_gre
         stream(client, uid, "message", 1, "こんにちは")
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1}
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
         hist = client.get("/api/talk/history").json()  # 描き直すのは新しい会話だけ
         assert hist["thread"] == 2 and len(hist["turns"]) == 1
@@ -366,7 +366,7 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
 
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1}
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
@@ -397,7 +397,7 @@ def test_history_is_readable_only_by_the_owner_cookie(app):
         open_talk(a)
         b.get("/")
         assert len(a.get("/api/talk/history").json()["turns"]) == 1
-        assert b.get("/api/talk/history").json() == {"thread": 0, "turns": []}  # 別のブラウザには a の会話は見えない
+        assert b.get("/api/talk/history").json() == {"thread": 0, "turns": [], "search_track": "未定"}  # 別のブラウザには a の会話は見えない
         assert TestClient(app.app).get("/api/talk/history").status_code == 401
         assert TestClient(app.app, cookies={app.ANON_COOKIE: "x"}).get("/api/talk/history").status_code == 401
 

@@ -52,6 +52,7 @@ def _routes(uid: str) -> list[tuple[str, str, dict]]:
         ("POST", "/api/scenarios/F-follow-new/start", {}),
         ("POST", "/api/event", {"json": {"user_id": uid, "event": "message", "text": "hi"}}),
         ("POST", "/api/event/stream", {"json": {"user_id": uid, "event": "message", "text": "hi"}}),
+        ("POST", "/api/talk/track/undo", {"json": {"user_id": uid, "id": "x"}}),
         ("POST", "/api/voice/start", {"json": {"user_id": uid}}),
         ("POST", "/api/voice/wait", {"json": {"user_id": uid, "since": 0, "timeout": 0}}),
         ("POST", "/api/resume/upload", upload),
@@ -120,7 +121,7 @@ def test_another_users_id_in_the_body_or_url_reads_and_speaks_nothing(app, monke
             r = me.get(path)
             assert r.status_code == 404 and "被害者" not in r.text, path
         assert me.get("/api/saved").json() == {"jobs": []}
-        assert me.get("/api/talk/history").json() == {"thread": 0, "turns": []}
+        assert me.get("/api/talk/history").json() == {"thread": 0, "turns": [], "search_track": "未定"}
         # 入力途中の応募が無ければ、確定もしない(状態ファイルにも書かない)
         assert me.post("/liff/apply", data={"job": "a002", "scenario_user": "sim-exit"}).status_code == 404
         assert me.post("/liff/apply", data={"job": "X" * 10000}).status_code == 404

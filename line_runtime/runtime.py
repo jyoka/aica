@@ -215,7 +215,7 @@ class LineRuntime:
         これと違う(別のタブで新しい会話が始まった)ときは、発言を会話に入れず LLM も呼ばずに stale(今の会話番号)を
         出して終わる。None でなければ、LLM を呼ぶ前に thread(このターンの会話番号)を出す(挨拶が途中で失敗しても、
         画面は新しい会話の番号を知って、次の発言を stale にしない)。
-        notice: 本人がプロフィール画面で覚えていることを変えたときの知らせ(dip_mcp.profile.notice)。会話の続きの
+        notice: 本人が画面(プロフィール画面・トークの切り替えの表示のボタン)で覚えていることを変えたときの知らせ(dip_mcp.profile.notice)。会話の続きの
         ターンなら、本人の入力の直前に置く(画面の履歴には出さない)。新しい会話を始めるターンでは使わない
         (最初に要約を読むので要らない)。
         ターン自体は裏の処理として最後まで進める。画面との接続が途中で切れて受け取りをやめても、ツールを呼んだのに
@@ -393,6 +393,17 @@ def history(messages: list, user_id: str) -> list[dict]:
     return turns
 
 
+def track_switch(turn_tools: list[dict]) -> dict | None:
+    """そのターンで雇用区分が切り替わったなら、dip が記録した切り替え(set_search_track の recorded の、id・元の区分・
+    今の区分・取り消しか)。画面はこれで AI の返信の前に切り替えの表示を出す。返信文からは推測しない。
+    1ターンに何度か切り替えたら、最後のもの(表示のボタンが取り消せるのは直前の切り替えだけなので)。切り替わらなければ None。"""
+    recs = [t["result"]["recorded"] for t in turn_tools if t["name"] == "set_search_track"
+            and isinstance(t["result"], dict) and t["result"].get("changed") and "id" in (t["result"].get("recorded") or {})]
+    if not recs:
+        return None
+    return {k: recs[-1][k] for k in ("id", "from", "track", "undo")}
+
+
 def render(state: dict) -> dict:
     """構造化返信を、チャネル(Web の LINE 風 UI / 将来の LINE Messaging API)が描画できる形にする。"""
     reply: LineReply = state.get("structured_response") or LineReply(bubbles=["(返信を生成できませんでした)"])
@@ -410,6 +421,7 @@ def render(state: dict) -> dict:
                   for m in msgs[last_human:] if m.type == "tool"]
     return {
         "entry": state.get("entry"),
+        "track_switch": track_switch(turn_tools),
         "bubbles": reply.bubbles,
         "quick_replies": reply.quick_replies,
         "cards": [jobs[j] for j in reply.job_ids if j in jobs],
