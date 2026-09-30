@@ -24,6 +24,11 @@ def load_scenarios() -> list[dict]:
     return json.loads(SCENARIOS.read_text(encoding="utf-8"))
 
 
+def measures_depth(case: str) -> bool:
+    """相談の深さ(ジャッジの4項目)を数えるシナリオか(相談・ペルソナのシナリオ。scenarios.json の measure_depth)。"""
+    return any(sc["id"] == case and sc.get("measure_depth") for sc in load_scenarios())
+
+
 def load_resume(name: str) -> dict:
     """ペルソナの架空の履歴書(読み取り結果の形。resume_intake.schema.envelope と同じ)。"""
     return json.loads((PERSONAS / f"{name}.json").read_text(encoding="utf-8"))

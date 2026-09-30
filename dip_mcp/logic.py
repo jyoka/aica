@@ -21,6 +21,7 @@ from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
     PII_FIELDS,
+    ROOT,
     BaitoJob,
     Pay,
     State,
@@ -751,6 +752,38 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 
     state.update(line_user_id, apply)
     return result
+
+
+# ----------------------------- 相談の playbook(ADR-0001) -----------------------------
+# 雇用区分とチャネルごとの、相談の進め方の指針(明らかにすること・掘り下げ方)。次に何を聞くかは決めない。
+# 区分ごとの playbook に、区分に共通の決まり(common_{channel}.md)を足して返す。
+
+PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
+CHANNELS = ("chat", "voice")
+PLAYBOOK_FILES = {"アルバイト・パート": "parttime", "正社員": "fulltime", "未定": "undecided"}
+# 区分ごとの会話の決まり(1ターンの質問の数・吹き出しの字数・ユーザーの何回目の返信までに分岐するか)。
+# playbook の「会話の決まり」と Prompt のトーンに同じ値を書き、評価の形式判定(evals/checks.py の FORMAT_RULES)もこれを使う。
+# 正社員は経歴や本人の言葉を受け止めてから聞くので、吹き出しを 120 字、分岐を6回目の返信までに緩める。
+# 相談の途中はどの区分も分岐の期限を適用しない
+CONVERSATION_RULES = {
+    "アルバイト・パート": {"questions_max": 1, "bubble_max": 80, "branch_by": 3},
+    "正社員": {"questions_max": 1, "bubble_max": 120, "branch_by": 6},
+    "未定": {"questions_max": 1, "bubble_max": 80, "branch_by": 3},
+}
+
+
+def counseling_playbook(track: str, channel: str = "chat") -> dict:
+    """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
+    if track not in TRACKS:
+        return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
+    if channel not in CHANNELS:
+        return {"error": f"channel は {' / '.join(CHANNELS)} のいずれか"}
+    path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}.md"
+    if not path.is_file():
+        return {"error": f"{channel} の playbook はまだありません"}
+    common = PLAYBOOKS / f"common_{channel}.md"
+    text = path.read_text(encoding="utf-8") + ("\n" + common.read_text(encoding="utf-8") if common.is_file() else "")
+    return {"track": track, "channel": channel, "rules": dict(CONVERSATION_RULES[track]), "playbook": text}
 
 
 # ----------------------------- 音声相談の結果(トークへ戻す) -----------------------------

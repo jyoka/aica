@@ -65,7 +65,7 @@ def test_judge_items_come_out_with_verdict_and_evidence():
     r = shape(judgement(), TRANSCRIPT)
     assert set(r["depth"]) == set(DEPTH_ITEMS)
     assert r["depth"]["asked_purpose"] == {"verdict": "満たした", "evidence": "なぜ今、転職を考えているのですか?",
-                                           "quoted": True}
+                                           "quoted": True, "purpose_evidence": True}
     assert r["depth"]["dug_deeper"]["verdict"] == "満たさない" and r["depth"]["dug_deeper"]["quoted"]
     assert depth_metrics(r) == {"depth_purpose": True, "depth_dig": False, "depth_options": None, "depth_reasons": None}
     assert depth_metrics(None) == dict.fromkeys(DEPTH_ITEMS.values())
@@ -126,18 +126,21 @@ def test_rejudge_replaces_only_the_judge_on_the_saved_baseline(tmp_path, monkeyp
     code, doc, md = _rejudge(src, tmp_path, monkeypatch, client, ledger)
     assert code == 0 and doc["stopped"] is None
     assert json.loads(src.read_text()) == before  # 元の結果は書き換えない
-    assert len(client.judge_calls) == len(before["runs"]) == 26
+    # 1つの会話を2回判定してまとめる(ジャッジの揺れを抑える)
+    assert len(client.judge_calls) == 2 * len(before["runs"]) == 52 and doc["config"]["judge_samples"] == 2
     assert {c["model"] for c in client.judge_calls} == {JUDGE_MODEL[config.PROVIDER]}
     assert doc["rejudge"] == {"from": BASELINE.name, "judge_model": JUDGE_MODEL[config.PROVIDER]}
     # 履歴書のあるペルソナにはジャッジへ履歴書を渡す(run_scenario と同じ)
     career = next(i for i, r in enumerate(before["runs"]) if r["case"] == "T-career-fulltime")
-    assert "履歴書の読み取り結果" in client.judge_calls[career]["log"]
+    assert "履歴書の読み取り結果" in client.judge_calls[2 * career]["log"]
     for old, new in zip(before["runs"], doc["runs"], strict=True):
         assert new["detail"]["transcript"] == old["detail"]["transcript"]
         assert new["detail"]["violations"] == old["detail"]["violations"]
         assert new["detail"]["judge_before"] == old["detail"]["judge"]
         assert new["detail"]["judge"]["comment"] == "目的は聞いたが掘り下げていない。"
-        assert new["metrics"]["depth_dig"] is False and new["metrics"]["design_fit"] == 4
+        assert new["metrics"]["design_fit"] == 4
+        # 深さは相談・ペルソナのシナリオだけで数える(B-exit・pii などは None)
+        assert new["metrics"]["depth_dig"] is (False if SCENARIOS[new["case"]].get("measure_depth") else None)
         assert new["metrics"]["violations"] == old["metrics"]["violations"]
     # 台帳には1回ごとに1行(元の case と rep で)
     rows = budget.rows(ledger)
@@ -154,12 +157,13 @@ def test_rejudge_diff_lists_only_the_runs_that_changed():
     from evals.run import rejudge_diff, rejudged_run
 
     old = shape(judgement(), TRANSCRIPT)
-    same = {"case": "A", "rep": 0, "status": "ok", "metrics": {}, "detail": {"judge": old}}
-    changed = {"case": "B", "rep": 1, "status": "ok", "metrics": {}, "detail": {"judge": old}}
+    same = {"case": "C-consult-only", "rep": 0, "status": "ok", "metrics": {}, "detail": {"judge": old}}
+    changed = {"case": "T-career-fulltime", "rep": 1, "status": "ok", "metrics": {}, "detail": {"judge": old}}
     new = old | {"design_fit": 5, "depth": old["depth"] | {"dug_deeper": {"verdict": "満たした", "evidence": "",
                                                                           "quoted": False}}}
     doc = {"runs": [rejudged_run(same, old), rejudged_run(changed, new), {"case": "C", "rep": 0, "status": "error"}]}
-    assert rejudge_diff(doc) == ["- **B#2** 目的かやりたいことを掘り下げたか: 満たさない → 満たした、design_fit: 4 → 5"]
+    assert rejudge_diff(doc) == [
+        "- **T-career-fulltime#2** 目的かやりたいことを掘り下げたか: 満たさない → 満たした、design_fit: 4 → 5"]
     assert rejudged_run(changed, new)["metrics"] == {"depth_purpose": True, "depth_dig": True, "depth_options": None,
                                                     "depth_reasons": None, "tone": 5, "design_fit": 5}
     assert rejudge_diff({"runs": [rejudged_run(same, old)]}) == ["- なし"]
@@ -200,6 +204,8 @@ class CareerAgent(BaseChatModel):
                         quick_replies=["考えたい", "今はいい"])
         elif "転職" in text and not after:
             msg = call("set_search_track", {"line_user_id": uid, "track": "正社員", "evidence": text})
+        elif "転職" in text and not any(m.type == "tool" and m.name == "get_counseling_playbook" for m in after):
+            msg = call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb")
         else:
             msg = reply(["正社員のお仕事で考えますね。なぜ今、転職を考えているのですか?"], quick_replies=["今はいい"])
         return ChatResult(generations=[ChatGeneration(message=msg)])
@@ -415,3 +421,64 @@ def test_main_refuses_to_start_when_over_the_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(run.llm, "client", lambda: pytest.fail("API のクライアントを作ってはいけない"))
     with pytest.raises(budget.BudgetExceeded):
         asyncio.run(run.main(None, False, 1, 8, ledger))
+
+
+# ----------------------------- F: 目的の根拠の確かめ・2回判定・深さを数えるシナリオ -----------------------------
+
+
+def test_purpose_evidence_must_ask_or_take_up_the_purpose():
+    from evals.judge import purpose_evidence
+
+    log = [{"who": "agent", "text": "こんにちは。何をしますか?"},
+           {"who": "user", "text": "転職を考えていて、正社員の仕事を相談したい"},
+           {"who": "agent", "text": "正社員のお仕事で考えますね。これまでどんなお仕事をされましたか?"},
+           {"who": "user", "text": "新しいプロダクトを最初から企画する経験を積みたいです"},
+           {"who": "agent", "text": "新しいプロダクトを最初から企画したいのですね。そう感じたのはどんな場面でしたか?"}]
+    # 判定し直しで T-career-fulltime#2 が根拠にした、区分の切り替えの一言は目的の根拠ではない
+    assert purpose_evidence("正社員のお仕事で考えますね。", log) is False
+    assert purpose_evidence("これまでどんなお仕事をされましたか?", log) is False
+    assert purpose_evidence("", log) is False
+    # 目的を聞く問い、本人が話した目的を受け止めた発言は根拠になる(負例: 正しい根拠を違反にしない)
+    assert purpose_evidence("新しいプロダクトを最初から企画したいのですね。", log) is True
+    assert purpose_evidence("なぜ今、転職を考えているのですか?", log) is True
+    assert purpose_evidence("今回お仕事を探そうと思ったきっかけは何ですか?", log) is True
+    # 受け止めの言い方でも、本人がそれより前に言っていないことなら根拠にならない
+    assert purpose_evidence("収入を増やしたいのですね。", log + [{"who": "agent", "text": "収入を増やしたいのですね。"}]) is False
+
+
+def test_purpose_met_on_an_unrelated_quote_counts_as_not_met():
+    r = shape(judgement(evidence="正社員のお仕事で考えますね。"), TRANSCRIPT)
+    assert r["depth"]["asked_purpose"]["verdict"] == "満たした"  # ジャッジの判定は残す(人が照合する材料)
+    assert r["depth"]["asked_purpose"]["purpose_evidence"] is False
+    assert depth_metrics(r)["depth_purpose"] is False  # 指標では満たさない
+
+
+def test_two_judgements_are_merged_strictly_and_scores_are_averaged():
+    from evals.judge import merge
+
+    a = shape(judgement(), TRANSCRIPT)
+    b = shape(judgement(), TRANSCRIPT)
+    b["depth"]["asked_purpose"] = {"verdict": "満たさない", "evidence": "", "quoted": False, "purpose_evidence": False}
+    b["depth"]["options_personal"] = {"verdict": "満たした", "evidence": "x", "quoted": False}
+    b["tone"], b["design_fit"] = 4, 3
+    m = merge([a, b])
+    assert m["depth"]["asked_purpose"]["verdict"] == "満たさない"  # 1回でも満たさないなら満たさない
+    assert m["depth"]["dug_deeper"]["verdict"] == "満たさない"  # 両方同じ
+    assert m["depth"]["options_personal"]["verdict"] == "満たした"  # 該当なしは数えず、残りが満たした
+    assert m["depth"]["reasons_linked"]["verdict"] == "該当なし"
+    assert (m["tone"], m["design_fit"]) == (4.5, 3.5)
+    assert m["split"] == ["asked_purpose", "options_personal"] and len(m["samples"]) == 2
+    assert merge([a]) == a
+
+
+def test_depth_is_counted_only_on_consult_and_persona_scenarios():
+    from evals.run import depth_of
+
+    j = shape(judgement(), TRANSCRIPT)
+    assert depth_of("T-career-fulltime", j)["depth_purpose"] is True
+    assert depth_of("C-consult-propose", j)["depth_dig"] is False
+    for case in ("B-exit", "pii", "F-follow-new", "R-revisit", "Q-job-question"):
+        assert set(depth_of(case, j).values()) == {None}, case
+    measured = {sc["id"] for sc in SCENARIOS.values() if sc.get("measure_depth")}
+    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime", "T-side-job",
+                        "T-student-first", "T-blank-parent", "T-switch-to-fulltime"}

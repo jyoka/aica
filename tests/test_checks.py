@@ -427,3 +427,95 @@ def test_short_fulltime_job_type_names_inside_other_words_are_not_a_list():
     listed = turn(["おかえりなさい。最近はカフェや物流のお仕事を見ていましたか?"])
     listed["quick_replies"] = ["今はいい"]
     assert any("羅列" in v for v in _checks("R-revisit-browsing", [listed]))
+
+
+# ----------------------------- aica v2 の F: E のレビューからの後続指摘(評価器の偽陽性・見逃し) -----------------------------
+
+
+def test_stated_monthly_pay_converted_to_annual_is_not_a_fabrication():
+    # 本人が言った月給を年収に換算するのは計算(「月給30万以上」→「年収だと360万円」)
+    turns = [turn(["月給30万円以上ですね。年収だと360万円以上で探します。"])]
+    assert fact_violations(turns, ["月給30万以上がいい"], None) == []
+    # 換算でない年収は作り話のまま。本人が年収で言った額を12倍しても根拠にならない
+    assert any("400万円" in v for v in fact_violations([turn(["年収だと400万円以上ですね。"])], ["月給30万以上"], None))
+    assert any("360万円" in v for v in fact_violations([turn(["年収360万円ですね。"])], ["年収30万以上"], None))
+
+
+def test_purpose_kind_needs_a_cue_in_what_was_said():
+    # 「とにかく稼ぎたい」からは「経験を活かしたい」「スキル活用」を作れない(種類の名前にも本人の手がかりが要る)
+    for purpose in ("経験を活かしたい", "スキル活用"):
+        v = preference_violations([_saved({"purpose": purpose})], ["とにかく稼ぎたい"])
+        assert v == [f"T1: 本人が言っていない希望を保存した: purpose={purpose}"], purpose
+    # 手がかりがあれば、種類の名前でまとめてよい
+    assert preference_violations([_saved({"purpose": "生活費"})], ["とにかく稼ぎたい"]) == []
+    assert preference_violations([_saved({"purpose": "スキル活用"})], ["PMの経験を活かしたい"]) == []
+    assert preference_violations([_saved({"purpose": "学業と両立"})], ["授業の後に働きたい"]) == []
+
+
+def test_ordinary_summaries_in_free_text_are_not_fabrications():
+    # 接尾語(業・職・勤務)と、よくある言い換え(ぶり → ブランク、子ども → 子育て、やってきた → 経験)
+    cases = [("wants", "接客業", "接客の仕事がしたい"),
+             ("wants", "企画職", "企画をやりたい"),
+             ("avoids", "深夜勤務", "深夜は避けたい"),
+             ("concerns", "ブランクがあること", "10年ぶりに働くので不安"),
+             ("concerns", "子育てとの両立", "子どもが小学校に上がったので、その間に働きたい"),
+             ("strengths", "法人営業の経験", "法人営業を4年やってきました")]
+    for key, value, said in cases:
+        assert preference_violations([_saved({key: value})], [said]) == [], value
+
+
+def test_suffixes_and_paraphrases_do_not_let_unsaid_words_through():
+    # 語幹が発言に無ければ、接尾語を外しても作り話(「人間関係」は「関係」を外しても「人間」が無い)
+    assert preference_violations([_saved({"concerns": "人間関係"})], ["未経験でついていけるか不安"])
+    assert preference_violations([_saved({"wants": "事務職"})], ["接客がしたい"])
+    assert preference_violations([_saved({"concerns": "ブランクがあること"})], ["未経験で不安"])
+    assert preference_violations([_saved({"strengths": "法人営業の経験"})], ["法人営業に興味があります"])
+
+
+def _reask(bubble, saved, said):
+    from evals.checks import reask_violations
+
+    turns = [{"bubbles": ["はい"], "cards": [], "quick_replies": [],
+              "tools": [{"name": "save_user_preferences", "args": {"preferences": saved}}]},
+             {"bubbles": [bubble], "cards": [], "quick_replies": [], "tools": []}]
+    return reask_violations(turns, [None, said])
+
+
+def test_narrowing_after_a_rejected_job_is_not_a_reask():
+    # 本人が見送った理由を受けて絞り込む問いは、時間帯の聞き直しではない(T-side-job#1 の T6)
+    said = "本業に響く深夜は避けたいので、この求人は見送ります。"
+    assert _reask("この求人は見送るのですね。深夜を避けるなら、何時ごろまでの勤務がよいですか？",
+                  {"time_band": "平日の夜か土日"}, said) == []
+    # 本人がそのターンに言っていない語での「なら」や、避ける語の無い「なら」は、白紙の聞き直しのまま
+    assert _reask("深夜を避けるなら、何時ごろまでの勤務がよいですか?", {"time_band": "夜"}, "この求人は見送ります")
+    assert _reask("それなら、どの時間帯がよいですか?", {"time_band": "夜"}, "深夜はちょっと")
+
+
+def test_where_are_you_stuck_is_not_an_area_reask():
+    # 「どのあたり」は場所の文脈のときだけ場所を聞く問い
+    for q in ("どのあたりで悩んでいますか?", "どのあたりがネックですか?", "どのあたりに興味がありますか?",
+              "どのあたりが良いと思いましたか?", "どのあたりで迷っていますか?", "どのあたりが気になっていますか?"):
+        assert _reask(q, {"area": "渋谷"}, "考えます") == [], q
+    for q in ("どのあたりで働きたいですか?", "どのあたりで探しますか?", "どのあたりをご希望ですか?",
+              "どの辺りが通いやすいですか?", "どのエリアで探しますか?"):
+        assert _reask(q, {"area": "渋谷"}, "考えます"), q
+
+
+def test_job_type_saved_as_the_list_name_of_what_was_said_is_not_a_fabrication():
+    # 「販売の仕事で店長を目指したい」→ job_type は正社員の一覧の名前「販売・サービス」(T-switch-to-fulltime の調整1回目)
+    assert preference_violations([_saved({"job_type": "販売・サービス"})], ["販売の仕事で店長を目指したい"]) == []
+    # 一覧のどの部分も言っていなければ作り話のまま。一覧に無い値は語ごとに照合する
+    assert preference_violations([_saved({"job_type": "営業"})], ["販売の仕事で店長を目指したい"])
+    assert preference_violations([_saved({"job_type": "販売と事務"})], ["販売の仕事"])
+
+
+def test_confirming_a_saved_value_by_its_word_and_digging_into_wants_are_not_reasks():
+    # 調整2回目の T-switch-to-fulltime で出た偽陽性
+    assert _reask("お店の運営に興味があり、年収350万円以上をご希望ですね。勤務地は、先ほどの渋谷周辺で探しますか？",
+                  {"area": "渋谷あたり"}, "お店の運営に興味があります") == []
+    assert _reask("店長を目指したいとのことですが、店長としてどんな仕事をしてみたいですか？",
+                  {"job_type": "販売・サービス"}, "月ごとに収入が変わるときです") == []
+    # 白紙の問い・別の値は聞き直しのまま
+    assert _reask("勤務地はどこがいいですか?", {"area": "渋谷あたり"}, "はい")
+    assert _reask("勤務地は新宿で探しますか?", {"area": "渋谷あたり"}, "はい")
+    assert _reask("どんな仕事を探していますか?", {"job_type": "販売・サービス"}, "はい")
