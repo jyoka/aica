@@ -58,7 +58,7 @@ class DiffTest(unittest.TestCase):
         before = doc([run("a", r, **{"pass": r != 0}) for r in range(3)])
         after = doc([run("a", r, **{"pass": r not in (0, 1)}) for r in range(3)])
         d = diff(before, after)
-        self.assertEqual(d["rows"][0]["verdict"], "-")
+        self.assertEqual(d["rows"][0]["verdict"], "差なし")
         self.assertEqual([(w["case"], w["metric"]) for w in d["worse_cases"]], [("a", "pass")])
 
     def test_overall_compares_only_shared_cases(self):
@@ -68,7 +68,7 @@ class DiffTest(unittest.TestCase):
         d = diff(before, after)
         rows = {r["metric"]: r for r in d["rows"]}
         self.assertEqual(rows["pass"]["delta"], 0)  # hard が抜けただけで改善に見えない
-        self.assertEqual(rows["cost"]["verdict"], "-")
+        self.assertEqual(rows["cost"]["verdict"], "差なし")
         self.assertEqual(d["only_before"], ["hard"])
         self.assertIn("前だけにあるケース", diff_md(before, after))
 

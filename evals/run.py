@@ -2,16 +2,25 @@
 
 各シナリオはそのユーザーの dip の状態を初期に戻してから走る(評価全体で独立した一時ファイル)。
 シナリオの一覧は画面と共通(scenarios.json)。どれも AI 側の1通目(挨拶・プッシュ)から始まる(evals/scenarios.py)。
-計測するのはランタイム側の LLM 呼び出しだけ(模擬ユーザーとジャッジは除外)。
+指標の cost_usd・llm_calls はランタイム側の LLM 呼び出しだけ(模擬ユーザーとジャッジは除く)。
 
 各シナリオを --repeat 回(既定1)くり返し、集計と比較は evalkit(リポジトリ直下の evalkit/)に任せる。
 結果は1回ごとに書き出す(途中で止めても、そこまでの結果は残る)。実 API を使うので費用がかかる。
 
-    ./.venv/bin/python -m evals.run [--only B-exit] [--judge] [--repeat 3]
+    ./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 8]
 
-事実性(作り話)は evals/checks.py がコードで判定する。LLM ジャッジは既定でオフで、トーンや設計の
-主観的な部分を見たいときだけ --judge で回す(gpt-6-sol / Opus 5 を呼ぶので費用がかかる)。
+費用(PRD aica-v2-fulltime の予算 $5):
+- エージェントは本番のモデル(line_runtime.config.MODEL)。模擬ユーザーとジャッジは安いモデル(SIM_MODEL・JUDGE_MODEL)。
+- 1会話のエージェントのターンは --max-turns(既定8)まで。シナリオの max_turns が小さければそちら。
+- 実行ごとに費用台帳(evals/budget.jsonl、エージェント・模擬ユーザー・ジャッジの合計)の累計を出し、
+  シナリオを始める前に累計が $4 に達していたら止める(evals/budget.py)。
+
+事実性(作り話)と雇用区分の切り替え(set_search_track)は evals/checks.py がコードで判定する。
+--judge は相談の深さ(目的・掘り下げ・選択肢・提案理由を根拠の発言つき)とトーンを LLM ジャッジで見る(evals/judge.py)。
     python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.json
+
+ジャッジの指示(evals/judge.py)を直したときは、保存済みの会話をジャッジだけで判定し直せる(費用はジャッジの分だけ):
+    ./.venv/bin/python -m evals.run --rejudge evals/baseline/sim-20260929-100418.json
 """
 
 from __future__ import annotations
@@ -33,28 +42,22 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "evalkit"))
 from aggregate import summary_md  # isort: skip
 
+from evals import budget
 from line_runtime import config, llm
 
-SIM_MODEL = {"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5"}
-JUDGE_MODEL = {"openai": "gpt-6-sol", "anthropic": "claude-opus-5"}
-MAX_TURNS = 6
+# 模擬ユーザーとジャッジは安いモデル。OpenAI の料金表(https://developers.openai.com/api/docs/pricing、2026-09-29 確認)
+# で gpt-6-luna は入力 $0.10 / 出力 $0.50(1M トークン)で、本番の gpt-6-sol($2.00 / $10.00)の 1/20。
+# 構造化出力と Responses API に対応している。Anthropic の場合は Haiku 4.5
+SIM_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
+JUDGE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
+MAX_TURNS = 8  # 1会話のエージェントのターンの上限(費用の上限)
 
-SIM_SYSTEM = """あなたは LINE でアルバイト探しのアシスタントと話しているユーザーです。次の設定だけを根拠に、短い話し言葉(1文)で返します。
+SIM_SYSTEM = """あなたは LINE で仕事探し(アルバイト・パートから正社員まで)のアシスタントと話しているユーザーです。次の設定だけを根拠に、短い話し言葉(1〜2文)で返します。
 - 選択肢(クイックリプライ)が合っていれば、その文言をそのまま使う。
 - 設定にないことを聞かれたら「特にない」「わからない」など正直に答える。
 - 会話を終える台詞を言ったら end を true にする。アシスタントが会話を終えた(もう質問していない)ときも end を true にしてよい。
 あなたの設定:
 {persona}"""
-
-JUDGE_SYSTEM = """あなたは LINE の AI アシスタントの会話品質を審査します。会話ログと、アシスタントが使った事業者ツールの結果を見て採点します。
-各項目 1〜5 の整数。JSON のみを出力(前置き禁止)。
-{
-  "factuality": <ツール結果にない行動履歴・求人情報・事実を語っていないか。1件でも作り話があれば3以下>,
-  "fabrications": ["<作り話の具体例。無ければ空>"],
-  "tone": <敬体・短文・絵文字なし・押しつけがましくないか>,
-  "design_fit": <先に理解し1問だけ聞き、3ターン以内に 提案/相談/支援/待つ のどれかに進み、拒否を即尊重する、という設計の狙いどおりか。相談モード〔まず相談する・何から始めればいいか分からない〕では、3ターンを超えても1問ずつのヒアリングを続けてよく、「求人を見せて」で即提案に切り替えるのが狙い>,
-  "comment": "<1〜2文>"
-}"""
 
 
 ACTION_LABEL = {"resume_upload": "ファイルを選ぶ(履歴書)", "voice_consult": "話して伝える(音声・約5分)"}
@@ -75,7 +78,7 @@ def _format_agent(r: dict) -> str:
 
 
 class SimTurn(BaseModel):
-    text: str = Field(description="ユーザーとして送る返信(1文)")
+    text: str = Field(description="ユーザーとして送る返信(1〜2文)")
     end: bool = Field(description="この返信で会話を終えるなら true")
 
 
@@ -91,17 +94,6 @@ async def sim_reply(client, persona: str, transcript: list[dict]) -> dict:
     return {"text": "", "end": True}
 
 
-async def judge(client, transcript: list[dict], turns: list[dict], facts: dict | None = None) -> dict:
-    log = "\n".join(f"{'アシスタント' if t['who'] == 'agent' else 'ユーザー'}: {t['text']}" for t in transcript)
-    tools = [{"name": t["name"], "result": t["result"]} for r in turns for t in r["tools"]]
-    user = f"## 会話ログ\n{log}\n\n## 事業者ツールの結果\n{json.dumps(tools, ensure_ascii=False)[:12000]}"
-    if facts:  # プッシュの根拠の事実も事業者が渡した情報(これが無いと、本物の事実を作り話と判定してしまう)
-        user += f"\n\n## 事業者がプッシュで渡した情報\n{json.dumps(facts, ensure_ascii=False)}"
-    text = await llm.text(client, model=JUDGE_MODEL[config.PROVIDER], max_tokens=3000, effort="low",
-                          system=JUDGE_SYSTEM, messages=[{"role": "user", "content": user}])
-    return json.loads(text[text.index("{"):text.rindex("}") + 1])
-
-
 def _usage(meter, marks: list[tuple[int, int]]) -> dict:
     """1会話のエージェント側の呼び出しの集計(コスト・呼び出し回数・キャッシュのヒット率)。"""
     from evals.meter import Meter
@@ -112,102 +104,150 @@ def _usage(meter, marks: list[tuple[int, int]]) -> dict:
     return {"cost_usd": u["cost_usd"], "llm_calls": u["llm_calls"], "cache_hit_rate": u["cache_hit_rate"]}
 
 
-async def run_scenario(rt, client, meter, sc: dict, use_judge: bool) -> dict:
+def _wants_upload(sc: dict, r: dict, n_turns: int) -> bool:
+    """履歴書を持つペルソナ(upload_resume)がアップロードするか: AI が履歴書の操作ボタンを出したら、そのとき。
+    upload_by_turn のターンまでに出なければ、そこでアップロードする(アップロード後の1問を必ず見るため)。"""
+    return "resume_upload" in (r.get("actions") or []) or n_turns >= sc.get("upload_by_turn", 10 ** 6)
+
+
+async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: int = MAX_TURNS) -> dict:
     from dip_mcp import logic
     from dip_mcp.data import State
     from evals.checks import conversation_checks
-    from evals.scenarios import prepare
+    from evals.judge import judge
+    from evals.scenarios import load_resume, prepare, upload_resume
     from line_runtime.runtime import EVENTS
 
     prepare(State(), sc)  # 新しい会話は最初のイベント(visit・revisit・プッシュ)が始める
-    facts = push_facts = None
+    push_facts = None
     if EVENTS[sc["event"]][1] == "push":  # 本番と同じく、プッシュしてよいかは dip が決める
         gate = logic.push_trigger(State(), sc["user"], sc["event"])
         if not gate["allowed"]:
             raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
-        facts = push_facts = gate["facts"]
+        push_facts = gate["facts"]
+    cap = min(sc.get("max_turns", max_turns), max_turns)
     transcript, turns, user_msgs, seconds, marks = [], [], [], [], []
-    given = push_facts  # dip がこの会話の前に渡した情報(事実性の照合の根拠)
-    event, text = sc["event"], None
-    for _ in range(sc.get("max_turns", MAX_TURNS)):  # 相談モードはヒアリングの分だけ長くなる
-        if text is not None:
-            transcript.append({"who": "user", "text": text})
-        user_msgs.append(text)
+    upload = None
+
+    async def agent_turn(event: str, text: str | None, facts: dict | None = None) -> None:
         k = meter.mark()
         t0 = time.perf_counter()
         r = await rt.handle(sc["user"], event, text, facts)
-        facts = None
         seconds.append(time.perf_counter() - t0)
         marks.append((k, meter.mark()))  # このターンのエージェント側の呼び出し(模擬ユーザーはこの後に呼ぶ)
         turns.append(r)
         transcript.append({"who": "agent", "text": _format_agent(r)})
-        script = sc.get("script") or []
+
+    user_msgs.append(None)  # 1通目は AI 側から(本人の発言なし)
+    await agent_turn(sc["event"], None, push_facts)
+    script = sc.get("script") or []
+    while len(turns) < cap:
+        if sc.get("upload_resume") and upload is None and _wants_upload(sc, turns[-1], len(turns)):
+            facts = upload_resume(State(), sc)  # 本番の /api/resume/.../upload と同じく dip に保存してから
+            upload = {"turn": len(turns), "shown": facts["shown"]}
+            transcript.append({"who": "user", "text": f"[{facts['file']}をアップロード]"})
+            user_msgs.append(None)
+            await agent_turn("resume_upload", None, facts)
+            continue
         step = len(turns) - 1
         if step < len(script):  # 台本があるシナリオは、その返信を使う(確認したい操作を確実に起こすため)
             nxt = {"text": script[step], "end": step == len(script) - 1}
         else:
             nxt = await sim_reply(client, sc["persona"], transcript)
-        event, text = "message", (nxt.get("text") or "").strip()
+        text = (nxt.get("text") or "").strip()
         if not text:  # 模擬ユーザーが何も返さなかった = 会話を離れた
             break
+        transcript.append({"who": "user", "text": text})
+        user_msgs.append(text)
+        await agent_turn("message", text)
         if nxt.get("end"):
-            transcript.append({"who": "user", "text": text})
-            user_msgs.append(text)
-            k = meter.mark()
-            t0 = time.perf_counter()
-            r = await rt.handle(sc["user"], event, text)
-            seconds.append(time.perf_counter() - t0)
-            marks.append((k, meter.mark()))  # このターンのエージェント側の呼び出し(模擬ユーザーはこの後に呼ぶ)
-            turns.append(r)
-            transcript.append({"who": "agent", "text": _format_agent(r)})
             break
     result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts,
-              **conversation_checks(sc, turns, user_msgs, given),
+              **conversation_checks(sc, turns, user_msgs, push_facts, upload),
+              "upload_turn": upload["turn"] + 1 if upload else None,
               "latency_p50": round(statistics.median(seconds), 1), "latency_max": round(max(seconds), 1),
               **_usage(meter, marks), "transcript": transcript,
-              "tools": [[t["name"] for t in r["tools"]] for r in turns]}
+              "tools": [[t["name"] for t in r["tools"]] for r in turns],
+              # 評価器を直したあとでオフラインで再判定するための生の材料(ツールの args と result を含む。recheck)
+              "turn_log": turns, "user_msgs": user_msgs, "upload": upload}
     if use_judge:
-        result["judge"] = await judge(client, transcript, turns, given)
+        resume = sc.get("upload_resume") or sc.get("seed_resume")
+        result["judge"] = await judge(client, JUDGE_MODEL[config.PROVIDER], transcript,
+                                      load_resume(resume)["resume"] if resume else None)
     return result
 
 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
-              "fabrications": "down", "cache_hit_rate": "up", "llm_calls": "down",
+              "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
-              "factuality": "up", "tone": "up", "design_fit": "up"}
+              "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
+              "tone": "up", "design_fit": "up"}
 
 
 def to_run(r: dict, rep: int) -> dict:
     """run_scenario の結果を evalkit の1行に。"""
+    from evals.judge import depth_metrics
+
     if "error" in r:
         return {"case": r["id"], "rep": rep, "status": "error", "error": r["error"]}
     j = r.get("judge") or {}
-    metrics = {k: r[k] for k in ("branch_within_3", "outcome_recorded", "outcome_as_expected")}
+    metrics = {k: r[k] for k in ("branch_within_3", "outcome_recorded", "outcome_as_expected", "track_ok")}
     metrics |= {"violations": len(r["violations"]), "fabrications": len(r["fabrications"]), "turns": r["turns"],
+                "action_offers": len(r["action_offers"]),
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
-                **{k: j.get(k) for k in ("factuality", "tone", "design_fit")}}
+                **depth_metrics(j), **{k: j.get(k) for k in ("tone", "design_fit")}}
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}
 
 
+STOPPED_NOTE = {True: "(上限に達したので途中で止めた)", "budget": "(上限に達したので途中で止めた)",
+                "interrupted": "(実行を途中で止めた)"}
+
+
 def report(doc: dict) -> str:
+    from evals.judge import DEPTH_LABELS
+
     runs = [r for r in doc["runs"] if r["status"] == "ok"]
     tag = lambda r: f"{r['case']}#{r['rep'] + 1}"
+    c = doc["config"]
+    judge_model = f"`{c.get('judge_model')}`" if c["judge"] else "なし"
     lines = [
         f"# LINE AI アシスタント シミュレーション評価({datetime.now():%Y-%m-%d %H:%M})",
         "",
-        f"- LINE 側モデル: `{doc['config']['model']}`、ジャッジ: {'あり' if doc['config']['judge'] else 'なし'}",
+        (f"- LINE 側モデル: `{c['model']}`、模擬ユーザー: `{c.get('sim_model')}`、ジャッジ: {judge_model}、"
+         f"ターン上限: {c.get('max_turns')}"),
+        (f"- この実行の費用({'ジャッジだけ' if doc.get('rejudge') else 'エージェント・模擬ユーザー・ジャッジ'}): "
+         f"${doc.get('spent_usd', 0):.4f}"
+         f"、費用台帳の累計: ${doc.get('ledger_total_usd', 0):.4f}"
+         + STOPPED_NOTE.get(doc.get("stopped"), "")),
         summary_md(doc),
         "## ルール違反",
         "",
     ]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"]["violations"]] or ["- なし"]
-    lines += ["", "## ジャッジの所見", ""]
+    lines += ["", "## 雇用区分の切り替え(set_search_track)", ""]
+    for r in runs:
+        for t in r["detail"].get("track_checks") or []:
+            lines.append(f"- **{tag(r)}** 期待「{t['track']}」(T{t['due']}まで): {t['status']}"
+                         + (f"(T{t['called_turn']} で「{t['called_track']}」)" if t["called_turn"] else ""))
+    lines += ["", "## 履歴書・音声の提案(actions)が出たターン", ""]
+    lines += [f"- **{tag(r)}** " + ", ".join(f"T{a['turn']}: {'/'.join(a['actions'])}" for a in offers)
+              + (f"(アップロード T{r['detail']['upload_turn']})" if r["detail"].get("upload_turn") else "")
+              for r in runs if (offers := r["detail"].get("action_offers"))] or ["- なし"]
+    lines += ["", "## ジャッジの所見(相談の深さ)", ""]
     for r in runs:
         j = r["detail"].get("judge")
-        if j:
-            fab = f" 作り話: {' / '.join(j['fabrications'])}" if j.get("fabrications") else ""
-            lines.append(f"- **{tag(r)}**: {j.get('comment', '')}{fab}")
+        if not j:
+            continue
+        lines.append(f"- **{tag(r)}**: {j.get('comment', '')}(tone {j.get('tone')} / design_fit {j.get('design_fit')})")
+        for k, label in DEPTH_LABELS.items():
+            d = j["depth"][k]
+            quoted = "" if d["quoted"] or not d["evidence"] else "(根拠が会話ログに無い)"
+            lines.append(f"  - {label}: {d['verdict']} 「{d['evidence']}」{quoted}")
+    if doc.get("rejudge"):
+        lines += ["", f"## 元の判定({doc['rejudge']['from']})との差(相談の深さと design_fit)", "",
+                  "会話は元の結果のまま、ジャッジだけを今の evals/judge.py で判定し直した。上の費用はジャッジの分だけ。", ""]
+        lines += rejudge_diff(doc)
     lines += ["", "## 会話ログ", ""]
     for r in runs:
         d = r["detail"]
@@ -220,42 +260,199 @@ def report(doc: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def main(only: str | None, use_judge: bool, repeat: int) -> None:
+def recheck(detail: dict, sc: dict | None = None) -> dict:
+    """保存した結果の detail(turn_log・user_msgs・upload)から、今の evals/checks.py で機械判定をやり直す(実 API を使わない)。
+    detail に turn_log が無い結果(2026-09-29 の基準など、保存を始める前のもの)は再判定できない。"""
+    from evals.checks import conversation_checks
+    from evals.scenarios import load_scenarios
+
+    if "turn_log" not in detail:
+        raise ValueError(f"{detail.get('id')}: turn_log が保存されていない結果は再判定できない")
+    sc = sc or next(x for x in load_scenarios() if x["id"] == detail["id"])
+    return conversation_checks(sc, detail["turn_log"], detail["user_msgs"], detail.get("push_facts"), detail.get("upload"))
+
+
+def _resume_of(case: str, scenarios: list[dict]) -> dict | None:
+    """ジャッジに渡す本人の履歴書(run_scenario と同じく upload_resume か seed_resume)。"""
+    from evals.scenarios import load_resume
+
+    sc = next((x for x in scenarios if x["id"] == case), {})
+    name = sc.get("upload_resume") or sc.get("seed_resume")
+    return load_resume(name)["resume"] if name else None
+
+
+def rejudged_run(r: dict, new_judge: dict) -> dict:
+    """保存した1回の結果を、新しいジャッジの判定に差し替える(元の判定は detail.judge_before に残す)。"""
+    from evals.judge import depth_metrics
+
+    detail = r["detail"] | {"judge": new_judge, "judge_before": r["detail"].get("judge")}
+    metrics = r["metrics"] | depth_metrics(new_judge) | {k: new_judge.get(k) for k in ("tone", "design_fit")}
+    return r | {"metrics": metrics, "detail": detail}
+
+
+def rejudge_diff(doc: dict) -> list[str]:
+    """判定し直した結果の、元の判定との差(深さの4項目と design_fit)の Markdown。変わった回だけ出す。"""
+    from evals.judge import DEPTH_LABELS
+
+    lines = []
+    for r in doc["runs"]:
+        before, after = (r.get("detail") or {}).get("judge_before"), (r.get("detail") or {}).get("judge")
+        if r["status"] != "ok" or not before or not after:
+            continue
+        changes = [f"{label}: {before['depth'][k]['verdict']} → {after['depth'][k]['verdict']}"
+                   for k, label in DEPTH_LABELS.items() if before["depth"][k]["verdict"] != after["depth"][k]["verdict"]]
+        if before.get("design_fit") != after.get("design_fit"):
+            changes.append(f"design_fit: {before.get('design_fit')} → {after.get('design_fit')}")
+        if changes:
+            lines.append(f"- **{r['case']}#{r['rep'] + 1}** " + "、".join(changes))
+    return lines or ["- なし"]
+
+
+async def rejudge(src: Path, ledger: Path = budget.LEDGER) -> int:
+    """保存済みの結果の会話(各 run の transcript)を、今の evals/judge.py のジャッジだけで判定し直す。
+    エージェントと模擬ユーザーは呼ばない(実 API はジャッジの安いモデルだけ)。費用は1回ごとに台帳に載せ、
+    $4 の停止も同じ。結果は evals/results/<元の名前>-rejudge-<日時>.{json,md} に別ファイルで書く。"""
+    from evals.judge import judge
+    from evals.meter import Meter
+    from evals.scenarios import load_scenarios
+
+    doc = json.loads(Path(src).read_text(encoding="utf-8"))
+    print(budget.line(ledger), flush=True)
+    budget.check(ledger)
+    meter = Meter().install()
+    client = llm.client()
+    model = JUDGE_MODEL[config.PROVIDER]
+    scenarios = load_scenarios()
+    out = HERE / "results" / f"{Path(src).stem}-rejudge-{datetime.now():%Y%m%d-%H%M%S}"
+    new = doc | {"runs": list(doc["runs"]), "spent_usd": 0.0, "stopped": None,
+                 "config": doc["config"] | {"judge": True, "judge_model": model},
+                 "rejudge": {"from": Path(src).name, "judge_model": model}}
+    out.parent.mkdir(exist_ok=True)
+
+    def spent() -> float:
+        return meter.summary()["cost_usd"]
+
+    def save() -> None:
+        new["spent_usd"] = spent()
+        new["ledger_total_usd"] = budget.spent(ledger)
+        out.with_suffix(".json").write_text(json.dumps(new, ensure_ascii=False, indent=2, default=str))
+        out.with_suffix(".md").write_text(report(new))
+
+    async def run_one(sc: dict, rep: int) -> None:
+        r = new["runs"][sc["index"]]
+        try:
+            j = await judge(client, model, r["detail"]["transcript"], _resume_of(r["case"], scenarios))
+        except Exception as e:  # noqa: BLE001  1件の失敗で全体を止めない(その回は元の判定のまま)
+            print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
+            r["detail"]["rejudge_error"] = f"{type(e).__name__}: {e}"
+            return
+        new["runs"][sc["index"]] = rejudged_run(r, j)
+
+    cases = [({"id": r["case"], "index": i}, r["rep"]) for i, r in enumerate(doc["runs"]) if r["status"] == "ok"]
+    try:
+        stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
+                                  after=save)
+    except BaseException:
+        new["stopped"] = "interrupted"
+        save()
+        raise
+    new["stopped"] = "budget" if stopped else None
+    save()
+    print(f"この実行 ${new['spent_usd']:.4f} / {budget.line(ledger)}")
+    print(f"-> {out}.md")
+    return 2 if stopped else 0
+
+
+def select(scenarios: list[dict], only: str | None) -> list[dict]:
+    """--only(カンマ区切りのシナリオID)で絞る。知らない ID は、費用を使う前にエラーにする。"""
+    if not only:
+        return scenarios
+    ids = [x.strip() for x in only.split(",") if x.strip()]
+    unknown = [x for x in ids if x not in {sc["id"] for sc in scenarios}]
+    if unknown:
+        raise SystemExit(f"--only に知らないシナリオ: {unknown}(ある ID: {[sc['id'] for sc in scenarios]})")
+    return [sc for sc in scenarios if sc["id"] in ids]
+
+
+async def run_cases(cases: list[tuple[dict, int]], run_one, spent, ledger: Path, run_name: str, log=print,
+                    after=None) -> bool:
+    """(シナリオ, 回) を順に回す。各シナリオを始める前に費用台帳の累計を見て、上限に達していたら止める(True を返す)。
+    spent() はこのプロセスがここまでに払った額(エージェント・模擬ユーザー・ジャッジの合計)で、その回の前後の差を台帳に載せる。
+    run_one が失敗しても、途中で止められても(Ctrl-C の KeyboardInterrupt・CancelledError)、払った分は finally で載せてから
+    例外をそのまま上げる。after() は台帳に載せたあとに毎回呼ぶ(結果の保存)。"""
+    for sc, rep in cases:
+        try:
+            total = budget.check(ledger)
+        except budget.BudgetExceeded as e:
+            log(f"!! {e}")
+            return True
+        log(f"== {sc['id']} #{rep + 1}(累計 ${total:.4f})")
+        before, done = spent(), False
+        try:
+            await run_one(sc, rep)
+            done = True
+        finally:
+            cost = spent() - before
+            budget.record(ledger, run_name, cost, case=sc["id"], rep=rep, **({} if done else {"interrupted": True}))
+            log(f"   この回 ${cost:.4f}{'' if done else '(途中で止めた)'} / {budget.line(ledger)}")
+        if after:
+            after()
+    return False
+
+
+async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, ledger: Path = budget.LEDGER) -> int:
     from evals.meter import Meter
     from evals.scenarios import load_scenarios
     from line_runtime.runtime import LineRuntime
 
+    scenarios = select(load_scenarios(), only)
+    print(budget.line(ledger), flush=True)
+    budget.check(ledger)  # 上限に達していたら、ランタイムを起動する前に止める
     meter = Meter().install()
     client = llm.client()
-    scenarios = load_scenarios()
     runs = []
-    doc = {"harness": "line-sim", "config": {"provider": config.PROVIDER, "model": config.MODEL, "judge": use_judge},
-           "directions": DIRECTIONS, "runs": runs}
     out = HERE / "results" / f"sim-{datetime.now():%Y%m%d-%H%M%S}"
+    doc = {"harness": "line-sim",
+           "config": {"provider": config.PROVIDER, "model": config.MODEL, "sim_model": SIM_MODEL[config.PROVIDER],
+                      "judge": use_judge, "judge_model": JUDGE_MODEL[config.PROVIDER] if use_judge else None,
+                      "max_turns": max_turns, "repeat": repeat},
+           "directions": DIRECTIONS, "runs": runs, "spent_usd": 0.0, "stopped": None}
     out.parent.mkdir(exist_ok=True)
 
+    def spent() -> float:  # このプロセスの全呼び出し(エージェント・模擬ユーザー・ジャッジ)の合計
+        return meter.summary()["cost_usd"]
+
     def save() -> None:  # 1回ごとに上書き保存(止めても払った分の結果が残る)
-        out.with_suffix(".json").write_text(json.dumps(doc, ensure_ascii=False, indent=2))
+        doc["spent_usd"] = spent()
+        doc["ledger_total_usd"] = budget.spent(ledger)
+        out.with_suffix(".json").write_text(json.dumps(doc, ensure_ascii=False, indent=2, default=str))
         out.with_suffix(".md").write_text(report(doc))
 
     async with LineRuntime(in_memory=True) as rt:
-        for rep in range(repeat):
-            for sc in scenarios:
-                if only and sc["id"] != only:
-                    continue
-                print(f"== {sc['id']} #{rep + 1}/{repeat}", flush=True)
-                try:
-                    r = await run_scenario(rt, client, meter, sc, use_judge)
-                except Exception as e:  # noqa: BLE001  1件の失敗で評価全体を止めない
-                    print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
-                    r = {"id": sc["id"], "error": f"{type(e).__name__}: {e}"}
-                else:
-                    print(json.dumps({x: r[x] for x in ("turns", "branch_turn", "outcomes", "outcome_as_expected",
-                                                          "violations", "latency_p50", "cost_usd")},
-                                     ensure_ascii=False), flush=True)
-                runs.append(to_run(r, rep))
-                save()
+        async def run_one(sc: dict, rep: int) -> None:
+            try:
+                r = await run_scenario(rt, client, meter, sc, use_judge, max_turns)
+            except Exception as e:  # noqa: BLE001  1件の失敗で評価全体を止めない
+                print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
+                r = {"id": sc["id"], "error": f"{type(e).__name__}: {e}"}
+            else:
+                print(json.dumps({x: r[x] for x in ("turns", "branch_turn", "outcomes", "track_ok", "violations",
+                                                      "latency_p50", "cost_usd")}, ensure_ascii=False), flush=True)
+            runs.append(to_run(r, rep))
+
+        cases = [(sc, rep) for rep in range(repeat) for sc in scenarios]
+        try:
+            stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
+                                      after=save)
+        except BaseException:  # Ctrl-C など。台帳には run_cases が載せたので、結果にも止めたことを書いて上げ直す
+            doc["stopped"] = "interrupted"
+            save()
+            raise
+    doc["stopped"] = "budget" if stopped else None
+    save()
+    print(f"この実行 ${doc['spent_usd']:.4f} / {budget.line(ledger)}")
     print(f"-> {out}.md")
+    return 2 if stopped else 0
 
 
 if __name__ == "__main__":
@@ -265,8 +462,17 @@ if __name__ == "__main__":
     # dip の状態は評価ごとの一時ファイルに(開発中の data/state.json を汚さない)。MCP 子プロセスにも継承される。
     os.environ["DIP_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only")
-    ap.add_argument("--judge", action="store_true", help="LLM ジャッジも回す(gpt-6-sol / Opus 5、費用がかかる)")
+    ap.add_argument("--only", help="回すシナリオの ID(カンマ区切り)")
+    ap.add_argument("--judge", action="store_true", help="相談の深さの LLM ジャッジも回す(安いモデル)")
     ap.add_argument("--repeat", type=int, default=1, help="各シナリオの実行回数(ばらつきを見るときだけ増やす)")
+    ap.add_argument("--max-turns", type=int, default=MAX_TURNS, help="1会話のエージェントのターンの上限")
+    ap.add_argument("--rejudge", type=Path, metavar="RESULT_JSON",
+                    help="保存済みの結果の会話を、ジャッジだけで判定し直す(エージェントと模擬ユーザーは呼ばない)")
     args = ap.parse_args()
-    asyncio.run(main(args.only, args.judge, args.repeat))
+    try:
+        if args.rejudge:
+            sys.exit(asyncio.run(rejudge(args.rejudge)))
+        sys.exit(asyncio.run(main(args.only, args.judge, args.repeat, args.max_turns)))
+    except budget.BudgetExceeded as e:
+        print(f"!! {e}")
+        sys.exit(2)

@@ -15,6 +15,15 @@ from dip_mcp.data import ROOT, fold_pii, has_pii, load_jobs
 BUBBLE_MAX = 80
 QUICK_MAX = 4
 JOBS_MAX = 3
+# 形式の決まり(1ターンの質問の数・吹き出しの字数・何ターン目までに分岐するか)を雇用区分ごとに持つ。
+# そのターンの返信を書いたときの区分(set_search_track で切り替えたターンは切り替えた後の区分)の値で判定する。
+# 正社員の値(じっくり話せるよう緩める)は F(チャットの playbook)で決める。それまではどの区分も v1 のまま
+FORMAT_RULES = {
+    "アルバイト・パート": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
+    "正社員": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
+    "未定": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
+}
+DEFAULT_TRACK = "未定"
 ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いらない|大丈夫|特にない|あとで")
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
 # この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
@@ -59,7 +68,9 @@ CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|い�
 # 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
     "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
-    "area": re.compile(r"(どの|どこの?)(エリア|駅|辺り?|あたり|地域)|どこで働|エリアは|勤務地"),
+    # 「どのあたりで迷っていますか?」「どのあたりが気になっていますか?」は迷い・不安の中身を聞く問いで、場所ではない
+    "area": re.compile(r"(どの|どこの?)(エリア|駅|地域)|(どの|どこの?)(辺り?|あたり)(?!り?(で|が|に|を)(迷|気に|不安|心配|引っかか))"
+                       r"|どこで働|エリアは|勤務地"),
     "time_band": re.compile(r"(どの|何の)時間帯|時間帯(は|が)|何時(から|ごろ|頃|まで)"),
     "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
     "days_per_week": re.compile(r"週(に)?(何|いく)日"),
@@ -68,7 +79,9 @@ REASK = {
     "purpose": re.compile(r"(なぜ|どうして|何のために)(今|いま)?、?(お?仕事|バイト|アルバイト)?を?(探|転職|働き)"
                           r"|(お?仕事|バイト|アルバイト|転職)(探し)?の(目的|理由)|探(す|している|そうと思った)(目的|理由)"
                           r"|目的(は|を|って)"),
-    "strengths": re.compile(r"強み(は|を|って|として)"),
+    # 本人に強みを言ってもらう問いだけ(「(ご自身の)強みを活かせる求人を探しますか?」は強みを使った次の問い)
+    "strengths": re.compile(r"強み(は|って|として)(何|なん|どこ|どんな|どういう|どの)|強みを(教えて|聞かせて|挙げ|ひとつ|一つ)"
+                            r"|(どんな|どのような)強み|(ご自身の|あなたの)強み(?!を(活か|生か))"),
     "wants": re.compile(r"(やりたい|やってみたい|挑戦したい|してみたい)(こと|お?仕事)|興味(の|が)ある(こと|お?仕事)"),
     "avoids": re.compile(r"(避けたい|やりたくない|したくない|苦手な)(こと|お?仕事|作業)"),
     "concerns": re.compile(r"(不安|心配)(な|に思う|に感じる)?(こと|点)|(不安|心配)(は|が)(あり|ござい)"
@@ -85,11 +98,23 @@ REASK = {
 # (playbook の決まり: 目的とやりたいことは1回は掘り下げる)。掘り下げ・追加を求める問いは聞き直しに数えない
 PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")
 # 提案した求人や特定の条件・面接・応募について聞く問い(「この求人について不安な点はありますか?」
-# 「シフトについて気になることはありますか?」)は、保存した不安の聞き直しではない
-REASK_TARGETED = {"concerns": re.compile(
-    r"(この|こちら|その|あの|ご紹介した|ご提案した|お送りした|お見せした)"
-    r"|(シフト|時給|給与|給料|勤務地|勤務時間|仕事内容|待遇|通勤|休み)(について|で|に|は|の)"
-    r"|求人|面接|応募|職場")}
+# 「シフトについて気になることはありますか?」)は、保存した不安の聞き直しではない。
+# やりたいこと・避けたいことも、出した求人や候補の中から選んでもらう問い(「この中にやってみたいお仕事はありますか?」
+# 「この中で苦手な作業はありますか?」)は聞き直しではない
+_SHOWN = r"(この|こちら|その|あの)(中|うち|求人|\d+件|お仕事|仕事)|ご紹介した|ご提案した|お送りした|お見せした|求人"
+REASK_TARGETED = {
+    "concerns": re.compile(
+        r"(この|こちら|その|あの|ご紹介した|ご提案した|お送りした|お見せした)"
+        r"|(シフト|時給|給与|給料|勤務地|勤務時間|仕事内容|待遇|通勤|休み)(について|で|に|は|の)"
+        r"|求人|面接|応募|職場"),
+    "wants": re.compile(_SHOWN),
+    "avoids": re.compile(_SHOWN),
+}
+# 条件を広げる・変える提案(「勤務地を広げて探しますか?」「エリアを変えてみますか?」)は、保存した条件を前提にした
+# 次の問いで、白紙の聞き直しではない(0件のときの relax_conditions の案内)
+WIDEN = re.compile(r"広げ|広く|変え|加え|追加|ゆるめ|緩め|外し")
+# 求人を提案したターンと、その後この数のターンまでは、不安(concerns)の問いを提案への問いとみなす
+PROPOSAL_FOLLOW_TURNS = 2
 PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|たとえば|どんな場面|どういう(こと|意味|点|ところ)"
                                r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに")
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
@@ -106,17 +131,19 @@ def _questions(bubbles: list[str]) -> int:
     return sum(b.count("?") + b.count("\uff1f") for b in bubbles)  # 半角 / 全角の疑問符
 
 
-def turn_violations(i: int, r: dict) -> list[str]:
+def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
+    """1ターンの形式の判定。質問の数と吹き出しの字数は、そのターンの雇用区分(track)の決まり(FORMAT_RULES)で見る。"""
+    rules = FORMAT_RULES.get(track, FORMAT_RULES[DEFAULT_TRACK])
     v = []
-    if _questions(r["bubbles"]) > 1:
-        v.append(f"質問が{_questions(r['bubbles'])}個(1ターン1問)")
+    if _questions(r["bubbles"]) > rules["questions_max"]:
+        v.append(f"質問が{_questions(r['bubbles'])}個(1ターン{rules['questions_max']}問まで)")
     if len(r["quick_replies"]) > QUICK_MAX:
         v.append(f"選択肢が{len(r['quick_replies'])}個(最大4)")
     if _questions(r["bubbles"]) and r["quick_replies"] and not any(ESCAPE.search(q) for q in r["quick_replies"]):
         v.append(f"質問の選択肢に逃げ道(今はいい/それ以外)がない: {r['quick_replies']}")
     for b in r["bubbles"]:
-        if len(b) > BUBBLE_MAX:
-            v.append(f"吹き出しが{len(b)}字(80字以内)")
+        if len(b) > rules["bubble_max"]:
+            v.append(f"吹き出しが{len(b)}字({rules['bubble_max']}字以内)")
     if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、文字で答えたい人の選択肢が無い
         v.append(f"操作ボタン({'/'.join(r['actions'])})に「文字で話す」などの選択肢が無い")
     if len(r["cards"]) > JOBS_MAX:
@@ -156,9 +183,24 @@ RANGE_YEN = re.compile(r"(\d[\d,]*)\s*[〜~～-]\s*\d[\d,]*\s*円")  # 「1,200�
 # 万の単位の金額(正社員の年収・月給。「年収450万〜650万円」「月給28万円」「年収600万以上」)。
 # 小数も1つの金額として読む(「月給27.5万円」は 27.5。「1.5万」の「5万」だけを拾わない)。
 # 「450〜650万円」の下限側は RANGE_MAN で拾う
-MAN = re.compile(r"(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s*万")
+# 「1万5千円」は 1.5万として読む(「1万」だけを拾わない)
+MAN = re.compile(r"(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s*万(?:\s*(\d)千)?")
 RANGE_MAN = re.compile(r"(?<![\d.,])(\d[\d,]*(?:\.\d+)?)\s*[〜~～-]\s*\d[\d,]*(?:\.\d+)?\s*万")
 PAY_KINDS = ("時給", "月給", "年収")
+# 金額の直前(同じ句の中)にある給与の種類。「月給800万円」を年収の800万で通さないために、種類ごとに照合する
+PAY_LABEL = re.compile(r"時給|月給|月収|年収")
+# 一般知識の金額: 扶養・社会保険の「壁」(年収103万・106万・123万・130万・150万・160万)。この話の文の中でだけ認める
+FUYO_CONTEXT = re.compile(r"扶養|の壁|社会保険")
+FUYO_MAN = {103, 106, 123, 130, 150, 160}
+# 本人の働き方から計算した月・週の収入の目安(「月に約7万円」「月1万5千円くらい」)は dip の事実の主張ではない。
+# 目安の言い方(約・くらい・なら など)がある文だけ。求人の給与・手当の話(「月給」「交通費は月1万5千円まで」
+# 「月28万円の求人」)は目安に数えない
+ESTIMATE_HEAD = re.compile(r"(月|週)に?(約|およそ|だいたい|大体)?$")
+ESTIMATE_WORDS = re.compile(r"約|およそ|だいたい|大体|くらい|ぐらい|ほど|程度|前後|目安|なら|だと")
+PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人")
+_KANJI_DIGIT = {c: i for i, c in enumerate("〇一二三四五六七八九")}
+_KANJI_UNIT = {"十": 10, "百": 100, "千": 1000}
+KANJI_NUM = re.compile(r"[〇一二三四五六七八九十百千]+")
 _DIP_PROMPTS = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "dip_mcp" / "prompts").iterdir())
                        if p.suffix in (".md", ".json"))
 
@@ -170,6 +212,58 @@ def _int(x: str) -> int:
 def _man(x: str) -> Decimal:
     """万の単位の金額(「27.5」「1,000」)を数として読む。27.5 と 275000 円 / 10000 を同じ値として比べるため。"""
     return Decimal(x.replace(",", ""))
+
+
+def _kanji_int(k: str) -> int:
+    total, cur = 0, 0
+    for c in k:
+        if c in _KANJI_DIGIT:
+            cur = cur * 10 + _KANJI_DIGIT[c]
+        else:
+            total += (cur or 1) * _KANJI_UNIT[c]
+            cur = 0
+    return total + cur
+
+
+def _arabic(text: str) -> str:
+    """本人が漢数字で言った金額・数(「六百万」「三十五万」「千二百円」)を算用数字にする。
+    「一緒」「一つ」「十分」のような語は変えない(万・円が続くか、十・百・千を含む2文字以上だけ)。"""
+    def repl(m: re.Match) -> str:
+        k, rest = m.group(0), text[m.end():m.end() + 1]
+        if rest in ("万", "円") or (len(k) >= 2 and any(u in k for u in _KANJI_UNIT)):
+            return str(_kanji_int(k))
+        return k
+    return KANJI_NUM.sub(repl, text)
+
+
+def _man_claims(text: str) -> list[tuple[Decimal, int]]:
+    """万の単位の金額と、その位置。"""
+    out = [(_man(m.group(1)) + (Decimal(m.group(2)) / 10 if m.group(2) else 0), m.start()) for m in MAN.finditer(text)]
+    return out + [(_man(m.group(1)), m.start()) for m in RANGE_MAN.finditer(text)]
+
+
+def _sentence_at(text: str, pos: int) -> str:
+    start = max(text.rfind(c, 0, pos) for c in "。\n!?！？") + 1
+    ends = [e for e in (text.find(c, pos) for c in "。\n!?！？") if e >= 0]
+    return text[start:min(ends) if ends else len(text)]
+
+
+def _pay_kind(text: str, pos: int) -> str | None:
+    """金額の直前(12字以内、読点・句点をまたがない)にある給与の種類(月収は月給として扱う)。"""
+    head = text[max(0, pos - 12):pos]
+    hits = list(PAY_LABEL.finditer(head))
+    if not hits or re.search(r"[、。\n]", head[hits[-1].end():]):
+        return None
+    return "月給" if hits[-1].group(0) == "月収" else hits[-1].group(0)
+
+
+def _not_a_claim(text: str, pos: int, value: Decimal) -> bool:
+    """扶養の「壁」の一般知識と、月・週の収入の計算の目安は、dip の事実の主張として照合しない。"""
+    sentence = _sentence_at(text, pos)
+    if FUYO_CONTEXT.search(sentence) and value in FUYO_MAN:
+        return True
+    return (bool(ESTIMATE_HEAD.search(text[max(0, pos - 6):pos])) and bool(ESTIMATE_WORDS.search(sentence))
+            and not PAY_FACT_WORDS.search(sentence))
 
 
 def _numbers(text: str) -> set[int]:
@@ -197,12 +291,13 @@ def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool 
         texts.append(value)
 
 
-def _pay_amounts(value, out: set[int]) -> None:
-    """dip のデータの中の給与(pay = {kind: 時給|月給|年収, min, max}、円)の金額を集める。
+def _pay_amounts(value, out: dict[str, set[int]]) -> None:
+    """dip のデータの中の給与(pay = {kind: 時給|月給|年収, min, max}、円)の金額を、給与の種類ごとに集める。
     min / max はどこにでもある名前なので、pay の形の辞書の中だけを見る。"""
     if isinstance(value, dict):
-        if value.get("kind") in PAY_KINDS:
-            out.update(int(v) for k in ("min", "max") if isinstance(v := value.get(k), int) and not isinstance(v, bool))
+        if (kind := value.get("kind")) in PAY_KINDS:
+            out.setdefault(kind, set()).update(
+                int(v) for k in ("min", "max") if isinstance(v := value.get(k), int) and not isinstance(v, bool))
         for v in value.values():
             _pay_amounts(v, out)
     elif isinstance(value, list):
@@ -225,7 +320,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     dip の Prompt(ルール)は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
     架空の求人名そのものは文字列では見分けにくいので、求人一覧に実在する求人をこの会話で受け取らずに出したものを捕まえる。"""
     data = [t["result"] for r in turns for t in r["tools"]] + [facts]
-    said = "\n".join(m or "" for m in user_msgs)
+    said = _arabic("\n".join(m or "" for m in user_msgs))
     said_nums = _numbers(said)  # 本人が言った数字(「1200以上」など単位なし)は、どの単位でも根拠にする
     known = {}
     for label, (keys, rx) in UNITS.items():
@@ -238,14 +333,20 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
         if label == "円":
             nums |= {_int(x) for x in RANGE_YEN.findall(text)}
         known[label] = nums
-    pay: set[int] = set()
-    _pay_amounts(data, pay)
+    pay_by_kind: dict[str, set[int]] = {}
+    _pay_amounts(data, pay_by_kind)
+    pay = set().union(*pay_by_kind.values())
     known["円"] |= pay
     texts: list[str] = []
     _walk(data, set(), set(), texts)
     man_text = "\n".join(texts) + _DIP_PROMPTS
-    known_man = ({Decimal(y) / 10000 for y in pay} | {Decimal(n) for n in said_nums}
-                 | {_man(x) for rx in (MAN, RANGE_MAN) for x in rx.findall(man_text + said)})
+    # 種類を問わない根拠: 本人の発言と、dip の文章・Prompt に書かれた万の金額
+    known_man = {Decimal(n) for n in said_nums} | {v for v, _ in _man_claims(man_text + "\n" + said)}
+    # 給与の種類ごとの根拠(dip の pay)。月給から年収への換算(12か月分)は計算なので年収の根拠にする
+    monthly = {Decimal(y) / 10000 for y in pay_by_kind.get("月給", ())}
+    by_kind = {k: {Decimal(y) / 10000 for y in v} for k, v in pay_by_kind.items()}
+    by_kind["年収"] = by_kind.get("年収", set()) | {m * 12 for m in monthly}
+    any_kind = {Decimal(y) / 10000 for y in pay} | by_kind["年収"]
     source = "\n".join(texts) + json.dumps(data, ensure_ascii=False) + said
     known_dates = _dates(source)
     names = _job_names()
@@ -260,9 +361,14 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
                 if n not in known[label]:
                     shown = f"徒歩{n}分" if label == "徒歩分" else f"{n}{label}"
                     out.append(f"T{i + 1}: dip の情報にない「{shown}」")
-        for n in dict.fromkeys(_man(x) for rx in (MAN, RANGE_MAN) for x in rx.findall(text)):
-            if n not in known_man:
-                out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
+        bad = []
+        for n, pos in _man_claims(text):
+            kind = _pay_kind(text, pos)
+            allowed = known_man | (by_kind.get(kind, set()) if kind else any_kind)
+            if n not in allowed and not _not_a_claim(text, pos, n):
+                bad.append(n)
+        for n in dict.fromkeys(bad):
+            out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
         for m, d in sorted(_dates(text) - known_dates):
             out.append(f"T{i + 1}: dip の情報にない日付「{m}/{d}」")
         for n in sorted(n for n in names if n in text and n not in source):
@@ -270,10 +376,13 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     return out
 
 
-# 本人の言葉を短い文で保存する項目(aica v2 の D)。語の完全一致ではなく、内容語の大半が発言にあるかで見る
+# 本人の言葉を短い文で保存する項目(aica v2 の D)。文の完全一致ではなく、内容語がすべて発言にあるかで見る
 FREE_TEXT_KEYS = PROFILE_KEYS + ("work_style", "start_timing")
 # 保存する文を整えるときに足されやすい、中身の無い語(「人と話す仕事」の「仕事」)
 _FILLER_WORDS = {"仕事", "こと", "職場", "環境", "希望"}
+# 目的(purpose)は、本人の話を目的の種類の名前でまとめてよい(PRD の目的の例: 副業・スキル活用・生活費・転職・
+# 経験・学業との両立)。「空いた時間にバイトを」を「副業」と保存するのは作り話ではない
+PURPOSE_LABELS = {"副業", "スキル", "活用", "生活費", "転職", "経験", "学業", "両立", "収入"}
 
 
 def _content_words(text: str) -> list[str]:
@@ -282,10 +391,32 @@ def _content_words(text: str) -> list[str]:
     return [w for w in runs if len(w) >= 2] or [c for w in runs for c in w if re.match(r"[一-龥]", c)]
 
 
-def _free_text_ok(v: str, said: str) -> bool:
-    """助詞や言い回しの違い(「未経験でもついていけるかが不安です」→「未経験でついていけるか」)は作り話ではない。"""
+def _said_word(w: str, said: str) -> bool:
+    """語が発言にあるか。漢字の複合語は、発言にある2文字以上の語に切り分けられればよい
+    (発言「接客の経験を活かしたい」→ 保存値「接客経験を活かしたい」の「接客経験」は「接客」+「経験」)。"""
+    if w in said:
+        return True
+    if not re.fullmatch(r"[一-龥々]+", w):
+        return False
+    ok = [True] + [False] * len(w)  # ok[i]: w[:i] を発言の語に切り分けられる
+    for i in range(2, len(w) + 1):
+        ok[i] = any(ok[j] and w[j:i] in said for j in range(i - 1))
+    return ok[-1]
+
+
+def _free_text_ok(v: str, said: str, key: str = "") -> bool:
+    """助詞や言い回しの違い(「未経験でもついていけるかが不安です」→「未経験でついていけるか」)は作り話ではない。
+    発言に無い内容語が1つでもあれば作り話(「未経験で人間関係が不安」の「人間関係」)。
+    内容語が残らない値(「仕事」「やりがいのある職場」)は、区切った語ごとに照合する。"""
     words = _content_words(v)
-    return not words or sum(w in said for w in words) * 2 > len(words)
+    if not words:
+        return all(w in said for w in _split_words(v))
+    return all(_said_word(w, said) or (key == "purpose" and w in PURPOSE_LABELS) for w in words)
+
+
+def _split_words(v: str) -> list[str]:
+    """「渋谷と原宿」のような並びを語に区切る。"""
+    return [w for w in re.split(r"[とや・、,/\s]+|または|および", v) if w]
 
 
 def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
@@ -294,7 +425,7 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
     「渋谷と原宿」のような並びを区切って語ごとに照合する。"""
     prior = [str(p["value"]) for r in turns for t in r["tools"] if t["name"] == "get_user_conversation_summary"
              and isinstance(t["result"], dict) for p in (t["result"].get("stated_preferences") or {}).values()]
-    said = "\n".join([m or "" for m in user_msgs] + prior)
+    said = _arabic("\n".join([m or "" for m in user_msgs] + prior))
     said_nums = _numbers(said)
     out = []
     for i, r in enumerate(turns):
@@ -304,13 +435,12 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
             for k, v in (t["args"].get("preferences") or {}).items():
                 v = str(v)
                 nums = _numbers(v)
-                words = [w for w in re.split(r"[とや・、,/\s]+|または|および", v) if w]
                 if nums:
                     ok = nums <= said_nums
                 elif k in FREE_TEXT_KEYS:
-                    ok = _free_text_ok(v, said)
+                    ok = _free_text_ok(v, said, k)
                 else:
-                    ok = all(w in said for w in words)
+                    ok = all(w in said for w in _split_words(v))
                 if not ok:
                     out.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
     return out
@@ -334,18 +464,22 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
     疑問詞の無い確認の問いで、項目を指す語の後ろに既知の値(保存した値か、そのターンの本人の発言にある語)があれば、
     聞き直しではない。値が前にあるだけ(「接客のお仕事で、勤務地の希望はありますか?」)は、前の答えを添えた次の問い
     (「原宿も入れて」→「エリアは渋谷と原宿でよいですか?」)。値を変えて保存し直した項目は、そのターンは聞いてよい
-    (同じ値の保存し直しは数えない)。求人を提案したターン(recommend_jobs・カード)以降は、不安(concerns)の問いを
-    提案への問いとみなして数えない。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
+    (同じ値の保存し直しは数えない)。値が数を含むとき(「年収500万円以上」)は、問いの後ろに同じ数があれば確認とみなす
+    (「年収の下限は500万円のままでよいですか?」)。求人を提案したターン(recommend_jobs・カード)とその後
+    PROPOSAL_FOLLOW_TURNS ターンは、不安(concerns)の問いを提案への問いとみなして数えない(それより後は数える。
+    1通目で求人を出す再訪でも、会話全体が免除にはならない)。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
     (「それはなぜですか?」「具体的にはどんな場面ですか?」「他に不安なことはありますか?」)は聞き直しではない。"""
     saved = {k: 0 for k in seeded or {}}
     known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
-    proposed = False
+    proposed_at = None
     for i, r in enumerate(turns):
         said = {w for w in re.findall(r"[一-龥ァ-ヴー]{2,}", (user_msgs[i] if i < len(user_msgs) else None) or "")
                 if w not in _KEY_WORDS}
-        # 求人を提案した後に迷っている点を聞くのは、提案への問い(「3件ご紹介しました。気になる点はありますか?」)
-        proposed = proposed or bool(r["cards"]) or any(t["name"] == "recommend_jobs" for t in r["tools"])
+        # 求人を提案した直後に迷っている点を聞くのは、提案への問い(「3件ご紹介しました。気になる点はありますか?」)
+        if r["cards"] or any(t["name"] == "recommend_jobs" for t in r["tools"]):
+            proposed_at = i
+        proposed = proposed_at is not None and i - proposed_at <= PROPOSAL_FOLLOW_TURNS
         for t in r["tools"]:
             if t["name"] == "save_user_preferences":
                 for k, v in (t["args"].get("preferences") or {}).items():
@@ -362,9 +496,15 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
                 m = REASK[k].search(q) if at < i and k in REASK else None
                 if m and k in PROFILE_KEYS and PROFILE_FOLLOW_UP.search(q):
                     continue
-                if m and k in REASK_TARGETED and (proposed or REASK_TARGETED[k].search(q)):
+                if m and k in REASK_TARGETED and ((proposed and k == "concerns") or REASK_TARGETED[k].search(q)):
                     continue
-                if m and not (not WH_WORD.search(q) and any(w in q[m.start():] for w in [*known.get(k, []), *said])):
+                if m and k not in PROFILE_KEYS and not WH_WORD.search(q) and WIDEN.search(q[m.end():]):
+                    continue
+                tail = q[m.start():] if m else ""
+                values = known.get(k, [])
+                confirm = any(w in tail for w in [*values, *said]) or bool(
+                    _numbers(tail) & {n for v in values for n in _numbers(v)})
+                if m and not (not WH_WORD.search(q) and confirm):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
     return out
 
@@ -383,9 +523,11 @@ def recent_activity_violations(turns: list[dict]) -> list[str]:
         len(RECENT_ACTIVITY.findall(b)) for r in turns[1:] for b in r["bubbles"])
     if mentions > 1:
         out.append(f"最近の行動に{mentions}回触れた(1回だけ)")
+    # 職種名は、前後に漢字が続かないものだけ数える(「営業時間」「研修・教育制度」の「営業」「教育」は職種の羅列ではない)
     job_types = {j.job_type for j in load_jobs().values()}
+    named = [t for t in job_types if re.search(f"(?<![一-龥]){re.escape(t)}(?![一-龥])", first)]
     listed = [n for n in sorted(_job_names()) if n in first] + re.findall(r"\d+\s*件", first)
-    if turns[0]["cards"] or listed or sum(t in first for t in job_types) > 1:
+    if turns[0]["cards"] or listed or len(named) > 1:
         out.append(f"T1: 閲覧した求人を羅列した: {listed or [c['job_id'] for c in turns[0]['cards']] or first}")
     return out
 
@@ -421,14 +563,148 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
     return out
 
 
-def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts: dict | None = None) -> dict:
-    """会話全体の判定(KPI と シナリオ固有の期待)。"""
+# ----------------------------- 雇用区分の切り替え(set_search_track の呼び出しで判定) -----------------------------
+
+# 挨拶で区分に触れたとみなす言い方(区分つきの再訪)
+TRACK_WORDS = {"アルバイト・パート": re.compile(r"アルバイト|バイト|パート"), "正社員": re.compile(r"正社員")}
+
+
+def track_switches(turns: list[dict]) -> list[tuple[int, str]]:
+    """実際に区分が切り替わった set_search_track の呼び出し (ターンの添字, 切り替えた先の区分)。
+    エラーになった呼び出しと、今と同じ区分で記録されなかった呼び出し(changed が false)は数えない。"""
+    out = []
+    for i, r in enumerate(turns):
+        for t in r["tools"]:
+            res = t.get("result")
+            if t["name"] == "set_search_track" and isinstance(res, dict) and res.get("changed") and res.get("track"):
+                out.append((i, res["track"]))
+    return out
+
+
+def tracks_by_turn(turns: list[dict], start: str | None = None) -> list[str]:
+    """各ターンの返信を書いたときの雇用区分(そのターンで切り替えたなら切り替えた後)。"""
+    current = start or DEFAULT_TRACK
+    switched = dict(track_switches(turns))  # 同じターンに2回呼んだら最後の区分
+    out = []
+    for i in range(len(turns)):
+        current = switched.get(i, current)
+        out.append(current)
+    return out
+
+
+def track_expectations(sc: dict, turns: list[dict], user_msgs: list[str | None]) -> list[dict]:
+    """シナリオの expect_tracks(期待する切り替えの並び)と、実際の set_search_track の呼び出しを突き合わせる。
+    期待1つは {"track": 区分, "turn": 何ターン目まで(1始まり)} か {"track": 区分, "on_said": 本人の発言の正規表現}。
+    on_said は、前の期待の発言より後で、その正規表現に当たった最初の本人の発言に答えるターンが期限になる
+    (強い合図で期限より前に切り替えるのは正しい)。結果の status:
+    ok(期限までに期待の区分へ)/ missing(切り替えなし)/ wrong_track(次の切り替えが違う区分)/
+    late(期待の区分だが期限より後)/ no_trigger(模擬ユーザーが期待の発言をしなかった。エージェントの判定には数えない)。
+    期待の後に、別の区分への切り替えがあれば unexpected(expect_tracks が空なら、どの切り替えも unexpected)。"""
+    expects = sc.get("expect_tracks")
+    if expects is None:
+        return []
+    switches = track_switches(turns)
+    out = []
+    k = 0  # 次に見る切り替え
+    said_from = 0  # on_said を探し始める本人の発言
+    last_track = sc.get("seed_track") or DEFAULT_TRACK
+    for n, e in enumerate(expects):
+        due = None
+        if "turn" in e:
+            due = e["turn"] - 1
+        else:
+            hit = next((i for i in range(said_from, min(len(user_msgs), len(turns)))
+                        if user_msgs[i] and re.search(e["on_said"], user_msgs[i])), None)
+            if hit is not None:
+                due, said_from = hit, hit + 1
+        row = {"track": e["track"], "due": None if due is None else due + 1, "status": None,
+               "called_turn": None, "called_track": None}
+        if due is None:
+            row["status"] = "no_trigger"
+            out.append(row)
+            continue
+        later = {x["track"] for x in expects[n + 1:]}
+        # 次の切り替えがこの期待の期限より後で、後の期待の区分なら、この期待の分は飛ばされた(missing)
+        if k < len(switches) and (switches[k][1] == e["track"] or switches[k][1] not in later or switches[k][0] <= due):
+            at, track = switches[k]
+            row |= {"called_turn": at + 1, "called_track": track}
+            row["status"] = "ok" if track == e["track"] and at <= due else "late" if track == e["track"] else "wrong_track"
+            k += 1
+        else:  # 切り替えが無いか、次の切り替えは後の期待の区分(この期待の分が飛ばされた)
+            row["status"] = "missing"
+        last_track = e["track"]
+        out.append(row)
+    for at, track in switches[k:]:
+        if track != last_track:
+            out.append({"track": last_track, "due": None, "status": "unexpected", "called_turn": at + 1,
+                        "called_track": track})
+    return out
+
+
+TRACK_STATUS = {"missing": "期待した「{track}」への切り替え(T{due}まで)が無い",
+                "wrong_track": "T{called_turn}: 「{track}」を期待したのに「{called_track}」へ切り替えた",
+                "late": "T{called_turn}: 「{track}」への切り替えが遅い(T{due}まで)",
+                "unexpected": "T{called_turn}: 期待していない「{called_track}」への切り替え"}
+
+
+def track_violations(rows: list[dict]) -> list[str]:
+    return [TRACK_STATUS[r["status"]].format(**r) for r in rows if r["status"] in TRACK_STATUS]
+
+
+def greeting_track_violations(sc: dict, turns: list[dict]) -> list[str]:
+    """区分つきの再訪(sc["expect_track_in_greeting"]): 挨拶の1問に、記録された区分を入れる(聞き直さない)。
+    行動履歴もあれば、区分と行動履歴を1つの確認形の問いにまとめる(1問であることは turn_violations が見る)。"""
+    if not turns or not sc.get("seed_track"):
+        return []
+    first = "\n".join(turns[0]["bubbles"])
+    word = TRACK_WORDS.get(sc["seed_track"])
+    out = []
+    if word and not word.search(first):
+        out.append(f"T1: 再訪の挨拶で、記録された区分({sc['seed_track']})に触れていない")
+    if re.search(r"どちら|どっち", _question_part(first)) and all(w.search(first) for w in TRACK_WORDS.values()):
+        out.append("T1: 記録された区分を聞き直した")
+    return out
+
+
+def upload_violations(turns: list[dict], upload: dict | None) -> list[str]:
+    """履歴書のアップロード(本人の1ターン)への返信: 質問は1つだけで、画面が出した確認をくり返さない。
+    履歴書の内容だけで雇用区分を切り替えない(このターンは本人が何も話していない)。"""
+    if not upload or upload["turn"] >= len(turns):
+        return []
+    i = upload["turn"]
+    r = turns[i]
+    out = []
+    if _questions(r["bubbles"]) != 1:
+        out.append(f"T{i + 1}: アップロードの後の返信が1問になっていない(質問{_questions(r['bubbles'])}個)")
+    shown = {b.strip() for b in upload.get("shown") or [] if b.strip()}
+    if any(b.strip() in shown for b in r["bubbles"]):
+        out.append(f"T{i + 1}: 画面が出した読み取り結果の確認をくり返した")
+    if any(t["name"] == "set_search_track" for t in r["tools"]):
+        out.append(f"T{i + 1}: 履歴書の内容だけで雇用区分を切り替えた")
+    return out
+
+
+def action_offers(turns: list[dict]) -> list[dict]:
+    """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
+    return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
+
+
+def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts: dict | None = None,
+                        upload: dict | None = None) -> dict:
+    """会話全体の判定(KPI と シナリオ固有の期待)。
+    upload は会話の途中の履歴書のアップロード({"turn": そのターンの添字, "shown": 画面が出した確認の吹き出し})。"""
     tools_by_turn = [[t["name"] for t in r["tools"]] for r in turns]
+    tracks = tracks_by_turn(turns, sc.get("seed_track"))
     outcomes = [t["args"].get("outcome") for r in turns for t in r["tools"] if t["name"] == "record_conversation_outcome"]
     branch_turn = next((i + 1 for i, names in enumerate(tools_by_turn)
                         if set(names) & BRANCH_TOOLS or "record_conversation_outcome" in names), None)
     first = turns[0] if turns else None
-    violations = [v for i, r in enumerate(turns) for v in turn_violations(i, r)]
+    violations = [v for i, r in enumerate(turns) for v in turn_violations(i, r, tracks[i])]
+    track_rows = track_expectations(sc, turns, user_msgs)
+    violations += track_violations(track_rows)
+    if sc.get("expect_track_in_greeting"):
+        violations += greeting_track_violations(sc, turns)
+    violations += upload_violations(turns, upload)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")
@@ -457,11 +733,24 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
+    # 分岐の期限は、期限のターン(v1 は3ターン目)の区分の決まり。指標の名前は前の結果と比べられるよう変えない
+    branch_by = FORMAT_RULES.get(tracks[min(2, len(tracks) - 1)] if tracks else DEFAULT_TRACK,
+                                 FORMAT_RULES[DEFAULT_TRACK])["branch_by"]
+    judged = [r for r in track_rows if r["status"] != "no_trigger"]
+    if sc.get("expect_tracks") is None or (sc["expect_tracks"] and not judged):
+        track_ok = None  # 期待が無いか、模擬ユーザーが期待の発言をしなかった
+    else:
+        track_ok = all(r["status"] == "ok" for r in judged)
     return {
         "turns": len(turns),
         "branch_turn": branch_turn,
         # 相談モードのシナリオは「3ターン以内に分岐」を緩める(ヒアリングが終わるか本人が切り上げるまで続けてよい)ので測らない
-        "branch_within_3": None if sc.get("consult_mode") else branch_turn is not None and branch_turn <= 3,
+        "branch_within_3": None if sc.get("consult_mode") else branch_turn is not None and branch_turn <= branch_by,
+        "tracks": tracks,
+        "track_checks": track_rows,
+        # 期待した切り替えがすべて期限までに期待の区分で起き、余計な切り替えが無い(期待の無いシナリオは None)
+        "track_ok": track_ok,
+        "action_offers": action_offers(turns),
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": bool(set(outcomes) & set(sc["expect_outcome"])),

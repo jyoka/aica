@@ -12,3 +12,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+# 評価の実行結果(会話ログつき)。基準などを残すものは evals/baseline/ にコピーして入れる
+/evals/results/

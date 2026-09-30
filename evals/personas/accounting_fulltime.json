@@ -1,0 +1,22 @@
+{
+ "format_version": "1.0",
+ "source": "upload",
+ "created_at": "2026-09-15T20:00:00+09:00",
+ "resume": {
+  "job_summary": "メーカーの経理を正社員で7年。月次・年次の決算と、経費精算の仕組みの見直しを担当している。",
+  "self_pr": "締めの作業を手順書にまとめ、決算の作業日数を減らした。",
+  "education": [
+   {"period": "2013年4月〜2017年3月", "school": "みほん大学 経済学部", "status": "卒業"}
+  ],
+  "work_history": [
+   {"period": "2017年4月〜現在", "organization": "みほん工業株式会社", "employment_type": "正社員",
+    "role": "経理", "duties": ["月次・年次決算", "経費精算の確認"],
+    "achievements": ["決算の作業日数を2日短くした"]}
+  ],
+  "other_experience": [],
+  "skills": ["経理", "Excel"],
+  "certifications": [{"name": "日商簿記2級", "acquired": "2018年"}],
+  "preferences": {"desired_work": [], "conditions": [], "notes": []},
+  "unconfirmed": []
+ }
+}

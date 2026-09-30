@@ -320,3 +320,110 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
                     "最近はカフェやアパレル販売を見ていましたか?"):
         listed = [dict(ok[0], bubbles=[listing]), ok[1]]
         assert any("羅列" in v for v in _checks("R-revisit-browsing", listed)), listing
+
+
+# ----------------------------- aica v2 の E: 自由記述の作り話の判定(D の再レビューの指摘) -----------------------------
+
+
+def _saved(prefs):
+    t = turn(["承知しました。"], [("save_user_preferences", {"saved": list(prefs)})])
+    t["tools"][0]["args"] = {"preferences": prefs}
+    return t
+
+
+def test_one_unsaid_content_word_in_free_text_is_a_fabrication():
+    # 多数決では通っていた: 発言に無い「人間関係」が1語だけ混ざる
+    v = preference_violations([_saved({"concerns": "未経験で人間関係が不安"})], ["未経験でついていけるかが不安です"])
+    assert v == ["T1: 本人が言っていない希望を保存した: concerns=未経験で人間関係が不安"]
+
+
+def test_free_text_rewordings_are_not_fabrications():
+    said = ["接客の経験を活かしたい", "未経験でもついていけるかが不安です", "人と話すのが好きです"]
+    ok = {"purpose": "接客経験を活かしたい", "concerns": "未経験でついていけるか", "wants": "人と話すこと"}
+    assert preference_violations([_saved(ok)], said) == []
+
+
+def test_purpose_may_be_named_by_its_kind():
+    # 目的は種類の名前でまとめてよい(「空いた時間にバイトを」→「副業」)。種類でない語は作り話のまま
+    said = ["本業の後の空いた時間でバイトをしたい", "少し収入を増やしたい"]
+    assert preference_violations([_saved({"purpose": "副業で収入を増やしたい"})], said) == []
+    v = preference_violations([_saved({"purpose": "副業でキャリアを広げたい"})], said)
+    assert v == ["T1: 本人が言っていない希望を保存した: purpose=副業でキャリアを広げたい"]
+
+
+def test_values_without_content_words_are_checked_word_by_word():
+    # 「仕事」「やりがいのある職場」は内容語が残らないので、今までは必ず通っていた
+    assert preference_violations([_saved({"wants": "やりがいのある職場"})], ["とにかく稼ぎたい"])
+    assert preference_violations([_saved({"wants": "仕事"})], ["とにかく稼ぎたい"])
+    assert preference_violations([_saved({"wants": "やりがいのある職場"})], ["やりがいのある職場がいい"]) == []
+
+
+def test_kanji_compound_that_is_not_split_in_what_was_said_is_still_a_fabrication():
+    # 切り分けた語がどちらも発言に無ければ、作り話のまま
+    assert preference_violations([_saved({"purpose": "接客経験を活かしたい"})], ["事務の仕事を活かしたい"])
+
+
+# ----------------------------- aica v2 の E: 金額の照合(A のレビューの指摘) -----------------------------
+
+MONTHLY = ("recommend_jobs", {"jobs": [{"job_id": "f0104", "employment_type": "正社員",
+                                        "pay": {"kind": "月給", "min": 260000, "max": 350000}}]})
+
+
+def test_monthly_to_annual_conversion_of_dip_pay_is_allowed():
+    turns = [turn(["月給35万円なので、12か月で年収420万円ほどです。"], [MONTHLY])]
+    assert fact_violations(turns, ["年収にするとどのくらい?"], None) == []
+
+
+def test_annual_amount_that_is_not_a_conversion_is_still_a_violation():
+    v = fact_violations([turn(["月給35万円なので、年収500万円ほどです。"], [MONTHLY])], ["年収は?"], None)
+    assert any("500万円" in x for x in v)
+
+
+def test_pay_is_matched_by_its_kind():
+    # 年収800万の求人があっても「月給800万円」は作り話。年収の額を月給として言い換えない
+    annual = ("recommend_jobs", {"jobs": [{"job_id": "f0201", "pay": {"kind": "年収", "min": 8000000, "max": None}}]})
+    assert fact_violations([turn(["年収800万円の求人です。"], [annual])], ["正社員で"], None) == []
+    v = fact_violations([turn(["月給800万円の求人です。"], [annual])], ["正社員で"], None)
+    assert any("800万円" in x for x in v)
+    v = fact_violations([turn(["年収26万円からです。"], [MONTHLY])], ["正社員で"], None)
+    assert any("26万円" in x for x in v)
+
+
+def test_general_knowledge_and_estimates_are_not_dip_claims():
+    turns = [turn(["扶養内(年収103万円以下)で探しますね。"], [SUMMARY]),
+             turn(["週3日・1日5時間なら月に約7万円です。"]),
+             turn(["月1万5千円くらいのお小遣いになります。"])]
+    assert fact_violations(turns, ["扶養内で働きたい"], None) == []
+
+
+def test_fabricated_pay_facts_near_those_phrases_are_still_violations():
+    turns = [turn(["交通費は月1万5千円まで支給です。"], [SUMMARY]),
+             turn(["年収約800万円の求人があります。"]),
+             turn(["扶養内で、年収200万円の求人です。"]),
+             turn(["月28万円の求人があります。", "月に約30万円の求人です。", "月20万円です。"])]
+    v = fact_violations(turns, ["扶養内で働きたい"], None)
+    assert any("T4" in x and "「28万円」" in x for x in v) and any("T4" in x and "「30万円」" in x for x in v)
+    assert any("T4" in x and "「20万円」" in x for x in v)
+    assert any("T1" in x and "1.5万円" in x for x in v)
+    assert any("T2" in x and "800万円" in x for x in v)
+    assert any("T3" in x and "200万円" in x for x in v)
+
+
+def test_amount_said_in_kanji_numerals_can_be_repeated():
+    assert fact_violations([turn(["年収600万円以上で探しますね。"], [SUMMARY])], ["年収は六百万以上がいい"], None) == []
+    assert fact_violations([turn(["月給35万円以上ですね。"], [SUMMARY])], ["月給は三十五万くらい"], None) == []
+    v = fact_violations([turn(["年収700万円以上で探しますね。"], [SUMMARY])], ["年収は六百万以上がいい"], None)
+    assert any("700万円" in x for x in v)
+    # 漢数字を含む普通の語(一緒・一つ)は数として読まない
+    v = fact_violations([turn(["1件あります。"], [SUMMARY])], ["一緒に一つ探して"], None)
+    assert any("1件" in x for x in v)
+
+
+def test_short_fulltime_job_type_names_inside_other_words_are_not_a_list():
+    # 正社員の職種名(営業・教育・物流)は短く、「営業時間」「研修・教育制度」の中にも出る。それは職種の羅列ではない
+    fine = turn(["おかえりなさい。最近は営業時間が短めのカフェのお仕事を見ていましたか?"])
+    fine["quick_replies"] = ["今はいい"]
+    assert not any("羅列" in v for v in _checks("R-revisit-browsing", [fine]))
+    listed = turn(["おかえりなさい。最近はカフェや物流のお仕事を見ていましたか?"])
+    listed["quick_replies"] = ["今はいい"]
+    assert any("羅列" in v for v in _checks("R-revisit-browsing", [listed]))

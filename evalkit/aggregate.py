@@ -17,7 +17,7 @@
 - 値が None の指標(例: 推薦が出なかった回の「推薦までの秒数」)はその回を除いて平均する。
 - 区間は 95%。割合は Wilson 区間、数値は平均 ± 1.96 * 標準誤差。
 - diff は両方にあるケースだけで比べる(片方にしかないケースで平均が動かないように)。
-  |差| が 1.96 * sqrt(seA^2 + seB^2) を超えたものだけ「ノイズ超え」とする。
+  |差| が 1.96 * sqrt(seA^2 + seB^2) を超えたものだけ改善・悪化とし、超えないものは「差なし」とする。
   どちらかが1回しか実行していない、またはノイズ幅が 0 のときは「判定不可」。
 
     python3 evalkit/aggregate.py summary FILE
@@ -144,7 +144,8 @@ def diff(a: dict, b: dict) -> dict:
         if sign and (min(x["n"], y["n"]) < 2 or noise == 0):
             verdict = "判定不可"  # ばらつきが測れていないので、どんな差でも判定しない
         else:
-            verdict = "-" if abs(delta) <= noise or sign == 0 else ("改善" if delta * sign > 0 else "悪化")
+            # 差がノイズ幅の内なら「差なし」(回数が少ないとばらつきの判断は弱いので、はっきりした差だけを改善・悪化にする)
+            verdict = "-" if sign == 0 else "差なし" if abs(delta) <= noise else ("改善" if delta * sign > 0 else "悪化")
         rows.append({"metric": m, "rate": sb["rate"][m], "before": x, "after": y, "delta": delta,
                      "noise": noise, "verdict": verdict})
     worse = []
@@ -167,7 +168,7 @@ def diff_md(a: dict, b: dict, name_a: str = "前", name_b: str = "後") -> str:
         f"- 前: `{json.dumps(a.get('config', {}), ensure_ascii=False)}`({ca} ケース × {ra} 回、実行エラー {d['errors'][0]})",
         f"- 後: `{json.dumps(b.get('config', {}), ensure_ascii=False)}`({cb} ケース × {rb} 回、実行エラー {d['errors'][1]})",
         (
-            "- 判定は |差| が 95% のノイズ幅を超えたときだけ。「-」は差がノイズ内か、良い向きが決まっていない指標。"
+            "- 判定は |差| が 95% のノイズ幅を超えたときだけ。「差なし」は差がノイズ内、「-」は良い向きが決まっていない指標。"
             "「判定不可」は1回しか実行していないなど、ばらつきが測れていない指標。"
         ),
         "- 全体の数字は、両方にあるケースだけで計算している。",

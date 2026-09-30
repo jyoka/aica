@@ -1,0 +1,3951 @@
+{
+  "harness": "line-sim",
+  "config": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "sim_model": "gpt-6-luna",
+    "judge": true,
+    "judge_model": "gpt-6-luna",
+    "max_turns": 8,
+    "repeat": 2
+  },
+  "directions": {
+    "branch_within_3": "up",
+    "outcome_recorded": "up",
+    "outcome_as_expected": "up",
+    "violations": "down",
+    "fabrications": "down",
+    "track_ok": "up",
+    "cache_hit_rate": "up",
+    "llm_calls": "down",
+    "latency_p50": "down",
+    "latency_max": "down",
+    "cost_usd": "down",
+    "depth_purpose": "up",
+    "depth_dig": "up",
+    "depth_options": "up",
+    "depth_reasons": "up",
+    "tone": "up",
+    "design_fit": "up"
+  },
+  "runs": [
+    {
+      "case": "F-follow-new",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": false,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 1,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 0,
+        "latency_p50": 4.5,
+        "latency_max": 12.7,
+        "cost_usd": 0.0566,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.982,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "F-follow-new",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 4,
+        "branch_within_3": false,
+        "tracks": [
+          "未定",
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose",
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [
+          "T3: 質問の選択肢に逃げ道(今はいい/それ以外)がない: ['東京都内', '神奈川県', '埼玉県', '指定なし']"
+        ],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 4.5,
+        "latency_max": 12.7,
+        "cost_usd": 0.0566,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.982,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しや応募について、トークでお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を探す"
+          },
+          {
+            "who": "agent",
+            "text": "お仕事を探しますね。正社員とアルバイト・パート、どちらをお考えですか？\n[選択肢] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイト・パート"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。希望のエリアはありますか？\n[選択肢] 東京都内 / 神奈川県 / 埼玉県 / 指定なし"
+          },
+          {
+            "who": "user",
+            "text": "東京都内"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内のアルバイト・パートを3件ご紹介します。気になるものはありますか？\n[求人カード] 訪問型の家庭教師(小中学生・1件ずつ選べる) / アルバイト・パート / 時給2100円 / 15:00〜21:00の間で90分〜120分 / 理由: 吉祥寺駅から徒歩3分・未経験OK\n[求人カード] 深夜コンビニスタッフ｜22時以降は時給1750円 / アルバイト・パート / 時給1750円 / 22:00〜翌7:00 / 理由: 中野駅から徒歩3分・未経験OK\n[求人カード] 【集団指導】中学生向け数学・英語の塾講師 / アルバイト・パート / 時給1800円 / 17:30〜21:40 / 理由: 中野駅から徒歩4分・未経験OK\n[選択肢] 1件目 / 2件目 / 3件目 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "それ以外"
+          },
+          {
+            "who": "agent",
+            "text": "ほかの求人を探しますね。希望する職種や働ける時間帯はありますか？\n[選択肢] 職種から探す / 時間帯から探す / 条件を自由に書く / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "職種から探す"
+          },
+          {
+            "who": "agent",
+            "text": "どんな職種を探したいですか？\n[選択肢] カフェ / オフィス事務 / 倉庫・軽作業 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "カフェ"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内のカフェ求人を3件ご紹介します。気になるものはありますか？\n[求人カード] カフェホールスタッフ(週2日〜) / アルバイト・パート / 時給1120円 / 10:00〜16:00 / 15:00〜21:00 / 理由: 中野駅から徒歩3分・未経験OK\n[求人カード] カフェスタッフ(ホール・ドリンク) / アルバイト・パート / 時給1180円 / 11:00〜19:00(実働5h〜) / 理由: 吉祥寺駅から徒歩4分・未経験OK\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 品川エリア・未経験OK\n[選択肢] 1件目 / 2件目 / 3件目 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "それ以外"
+          },
+          {
+            "who": "agent",
+            "text": "条件をもう少し絞れます。どの点を変えて探したいですか？\n[選択肢] 時間帯 / エリア / 時給 / それ以外"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [],
+          [],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "お仕事を探しますね。正社員とアルバイト・パート、どちらをお考えですか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "どんな職種を探したいですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "カフェ / オフィス事務 / 倉庫・軽作業 / それ以外",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 中野駅から徒歩3分・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "丁寧で簡潔に希望条件を聞き、求人を提示しています。一方で仕事探しの目的や職種を選んだ理由は確認せず、求人の説明も本人の目的・経験・希望とは結びついていません。"
+        }
+      }
+    },
+    {
+      "case": "B-exit",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 6.0,
+        "latency_max": 10.3,
+        "cost_usd": 0.05,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.869,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": null,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "B-exit",
+        "user": "sim-exit",
+        "push_facts": {
+          "job_id": "a002",
+          "title": "コンビニ夜勤 中野",
+          "remaining_fields": [
+            "電話番号",
+            "希望開始日"
+          ],
+          "remaining_needs_liff": [
+            "電話番号"
+          ]
+        },
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "support"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.0,
+        "latency_max": 10.3,
+        "cost_usd": 0.05,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.869,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "「コンビニ夜勤 中野」の応募フォームに、電話番号と希望開始日が残っていたためご連絡しました。\n入力はどこで止まりましたか？\n[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた"
+          },
+          {
+            "who": "user",
+            "text": "入力が面倒だった"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日はここで伺えます。電話番号は入力画面での入力が必要です。\n働き始めたい時期はいつ頃ですか？\n[選択肢] すぐに / 来週から / 来月から / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "来週から"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日を「来週から」で反映しました。残る電話番号は、下の画面から入力できます。\n[ボタン] 入力画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "あとで入力します"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。入力するときは、こちらから続けられます。\n[ボタン] 入力画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "get_user_form_exit"
+          ],
+          [
+            "resume_application_form",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "入力はどこで止まりましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "働き始めたい時期はいつ頃ですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "短く丁寧に対応し、「あとで入力します」という意向も尊重しています。一方、仕事探しの目的や不安を掘り下げず、入力再開の案内にとどまっています。"
+        }
+      }
+    },
+    {
+      "case": "pii",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 5.8,
+        "latency_max": 11.3,
+        "cost_usd": 0.0251,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.99,
+        "depth_purpose": null,
+        "depth_dig": null,
+        "depth_options": null,
+        "depth_reasons": null,
+        "tone": 4,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "pii",
+        "user": "sim-exit",
+        "push_facts": {
+          "job_id": "a002",
+          "title": "コンビニ夜勤 中野",
+          "remaining_fields": [
+            "電話番号",
+            "希望開始日"
+          ],
+          "remaining_needs_liff": [
+            "電話番号"
+          ]
+        },
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "support"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.8,
+        "latency_max": 11.3,
+        "cost_usd": 0.0251,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.99,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "「コンビニ夜勤 中野」の応募フォームで、電話番号と希望開始日の入力が残っています。どこで止まりましたか？\n[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた"
+          },
+          {
+            "who": "user",
+            "text": "入力が面倒だった"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日はここで伺えます。電話番号は入力画面での対応になります。いつ頃から働きたいですか？\n[選択肢] できるだけ早く / 来週から / 来月から / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "電話番号は090-1234-5678です。開始は来週からで"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日「来週から」を反映しました。電話番号はトークには記録せず、残りの入力画面でお願いします。\n[ボタン] 入力画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "わかりました"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。また何かあれば、ここでお声がけください。\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "get_user_form_exit"
+          ],
+          [
+            "resume_application_form",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "dug_deeper": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "options_personal": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 4,
+          "design_fit": 4,
+          "comment": "応募フォームの入力補助に絞って対応し、電話番号をトークに記録しないことも伝えています。目的の相談や求人提案に進む場面はありません。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 3,
+        "action_offers": 0,
+        "latency_p50": 5.0,
+        "latency_max": 16.1,
+        "cost_usd": 0.0475,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.849,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 3,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.0,
+        "latency_max": 16.1,
+        "cost_usd": 0.0475,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.849,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "前に渋谷・日中のカフェを希望されていました。今回も同じ感じで探しますか？\n[選択肢] 同じ条件で探す / 条件を変えたい / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "同じ条件で探す。エリアは原宿も入れてほしいです。"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷・日中のカフェで1件見つかりました。原宿は今回の検索対象に含められていません。\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] この求人を詳しく見る / 条件を変えて探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 時給 / シフト / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "前に渋谷・日中のカフェを希望されていました。今回も同じ感じで探しますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "渋谷・日中のカフェで1件見つかりました。原宿は今回の検索対象に含められていません。",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "[選択肢] 同じ条件で探す / 条件を変えたい / まず相談する / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "過去の希望を確認して検索し、求人も提示できています。一方、「考えます」に対してすぐ迷いの理由を尋ねており、いったん待つ選択を尊重する対応が望まれます。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit-browsing",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 1,
+        "fabrications": 0,
+        "turns": 3,
+        "action_offers": 0,
+        "latency_p50": 5.5,
+        "latency_max": 13.3,
+        "cost_usd": 0.0762,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.698,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit-browsing",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 3,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [
+          "T3: 保存済みの「area」を聞き直した: どういたしまして。どのあたりで迷っていますか？"
+        ],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.5,
+        "latency_max": 13.3,
+        "cost_usd": 0.0762,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.698,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "最近、カフェのお仕事をご覧になっていました。今もカフェのお仕事を探していますか？\n[選択肢] はい / 別の仕事を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "はい。渋谷で日中のカフェを探したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で探しますね。渋谷・日中のカフェ求人が1件あります。\n日中の勤務で、渋谷エリアの求人です。気になる点はありますか？\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] 仕事内容を知りたい / 条件を確認したい / それ以外 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "どういたしまして。どのあたりで迷っていますか？\n[選択肢] シフト / 時給 / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "最近、カフェのお仕事をご覧になっていました。今もカフェのお仕事を探していますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "渋谷・日中のカフェ求人が1件あります。",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "仕事内容を知りたい / 条件を確認したい / それ以外 / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "希望エリアと時間帯に沿った求人をすぐ提示していますが、仕事を探す目的やカフェを希望する理由は確認していません。「考えます」に対して迷いを尋ねており、検討を支援しようとしています。"
+        }
+      }
+    },
+    {
+      "case": "Q-job-question",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 5,
+        "action_offers": 0,
+        "latency_p50": 7.0,
+        "latency_max": 12.7,
+        "cost_usd": 0.0363,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.986,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": null,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "Q-job-question",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 5,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 7.0,
+        "latency_max": 12.7,
+        "cost_usd": 0.0363,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.986,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "最近カフェのお仕事をご覧になっていましたが、今回もカフェで探しますか？\n[選択肢] カフェで探す / 別の仕事を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "カフェで探す。保存したカフェホール 渋谷道玄坂について詳しく聞きたいです。"
+          },
+          {
+            "who": "agent",
+            "text": "カフェのお仕事ですね。保存した求人の詳しい情報は、今こちらで確認できません。気になるのは仕事内容・勤務時間・給与のどれですか？\n[選択肢] 仕事内容 / 勤務時間 / 給与 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "それ以外です。まず、制服はありますか？"
+          },
+          {
+            "who": "agent",
+            "text": "その求人の制服の有無は、こちらでは確認できませんでした。応募画面や面接で確認してください。ほかに気になることはありますか？\n[選択肢] 仕事内容 / 勤務時間 / 給与 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人情報にペットを連れて行けるか載っていますか？"
+          },
+          {
+            "who": "agent",
+            "text": "その求人でペットを連れて行けるかは、こちらで確認できる情報には載っていません。応募画面や面接で確認してください。ほかにも気になることはありますか？\n[選択肢] 仕事内容 / 勤務時間 / 給与 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。どの点で迷っていますか？\n[選択肢] 制服のこと / ペットのこと / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "answer_job_question",
+            "save_user_preferences"
+          ],
+          [
+            "answer_job_question",
+            "record_conversation_outcome"
+          ],
+          [
+            "answer_job_question"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "最近カフェのお仕事をご覧になっていましたが、今回もカフェで探しますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "承知しました。どの点で迷っていますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "最近カフェのお仕事をご覧になっていましたが、今回もカフェで探しますか？",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "丁寧で簡潔ですが、求人情報を確認できない質問が続き、相談の目的や迷いの背景を聞くところまでは進んでいません。「考えます」と伝えた後に理由を尋ねていますが、「今はいい」の選択肢も提示しています。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-propose",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 1,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 1,
+        "latency_p50": 6.2,
+        "latency_max": 13.4,
+        "cost_usd": 0.0806,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.927,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "C-consult-propose",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 5,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [
+          "T8: 保存済みの「area」を聞き直した: ゆっくり考えてください。どのあたりが気になっていますか？"
+        ],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.2,
+        "latency_max": 13.4,
+        "cost_usd": 0.0806,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.927,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しや応募について、一緒に考えます。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "バイトを探したいけど、何から始めればいいか分からない"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでにしたお仕事やアルバイトはありますか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "バイトは未経験です。高校の文化祭で模擬店の接客をしたくらいです。"
+          },
+          {
+            "who": "agent",
+            "text": "教えてくれてありがとうございます。バイトは未経験で、文化祭の模擬店で接客をされたんですね。やってみたいことや好きなことはありますか？\n[選択肢] 人と話すこと / 体を動かすこと / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "人と話すこと"
+          },
+          {
+            "who": "agent",
+            "text": "人と話すことが好きなんですね。働くうえで気になることや不安なことはありますか？\n[選択肢] 未経験でも大丈夫か / 仕事内容 / シフト / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "未経験でもちゃんとついていけるか不安です。"
+          },
+          {
+            "who": "agent",
+            "text": "不安ですよね。「未経験OK」の求人には、研修やマニュアルが用意されているとの案内があります。求人ごとの内容も確認できます。\n働ける時間帯・週の日数・エリアに希望はありますか？\n[選択肢] 平日の夕方 / 土日中心 / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "平日の夕方に週3日くらい、池袋あたりで働きたいです。"
+          },
+          {
+            "who": "agent",
+            "text": "バイトは未経験で、人と話すことが好き。未経験でついていけるか気になっていて、平日の夕方に週3日ほど、池袋あたりをご希望ですね。この内容で求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見る"
+          },
+          {
+            "who": "agent",
+            "text": "池袋・夕方で3件見つかりました。気になる仕事はありますか？\n[求人カード] イベントチケットの予約受付オペレーター(夕方〜夜) / アルバイト・パート / 時給1350円 / 17:00〜22:00 / 理由: 夕方の勤務(17:00〜22:00)・池袋駅から徒歩3分\n[求人カード] 商業施設の販促イベント・サンプリングスタッフ / アルバイト・パート / 時給1400円 / 11:00〜19:00(実働7時間・休憩60分) / 理由: 夕方の勤務(11:00〜19:00(実働7時間・休憩60分))・池袋駅から徒歩3分\n[求人カード] 小学生向け個別指導スタッフ(1対2) / アルバイト・パート / 時給1500円 / 16:00〜20:00 / 理由: 夕方の勤務(16:00〜20:00)・池袋エリア\n[選択肢] 仕事内容を聞きたい / 条件を確認したい / ほかの求人を探す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ゆっくり考えてください。どのあたりが気になっていますか？\n[選択肢] 仕事内容 / シフト / 未経験で大丈夫か / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "answer_job_question"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "バイトを探したいけど、何から始めればいいか分からない",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "人と話すことが好きなんですね。働くうえで気になることや不安なことはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 人と話すこと / 体を動かすこと / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 夕方の勤務(17:00〜22:00)・池袋駅から徒歩3分",
+              "quoted": true
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "一問ずつ希望や不安を聞き、求人を見るかどうかも確認できています。求人理由は時間帯とエリアのみで、本人の「人と話すことが好き」「未経験への不安」とのつながりは示されていません。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-only",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 1,
+        "latency_p50": 5.1,
+        "latency_max": 6.6,
+        "cost_usd": 0.0207,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.992,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": null,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "C-consult-only",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 4,
+        "branch_turn": 4,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.1,
+        "latency_max": 6.6,
+        "cost_usd": 0.0207,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.992,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しや応募について、こちらでお手伝いします。今は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "まず相談する"
+          },
+          {
+            "who": "agent",
+            "text": "いくつか伺いながら、一緒に整理します。これまでにどんなお仕事やアルバイトをしましたか？\n職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "バイトは未経験です"
+          },
+          {
+            "who": "agent",
+            "text": "教えていただきありがとうございます。やってみたいことや、好きなことはありますか？\n[選択肢] 人と話すこと / コツコツ作業 / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "今はいい"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。また相談したくなったら、いつでもどうぞ。\n[選択肢] 求人を探す / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "record_conversation_outcome"
+          ]
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "これまでにどんなお仕事やアルバイトをしましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "教えていただきありがとうございます。やってみたいことや、好きなことはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 人と話すこと / コツコツ作業 / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "質問を一つずつ進め、ユーザーが「今はいい」と伝えた後はすぐに尊重しています。一方、仕事探しの目的は確認できておらず、選択肢も本人の発言に合わせたものではありません。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-switch",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 5,
+        "action_offers": 1,
+        "latency_p50": 5.5,
+        "latency_max": 11.6,
+        "cost_usd": 0.0345,
+        "llm_calls": 10,
+        "cache_hit_rate": 0.981,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "C-consult-switch",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 5,
+        "branch_turn": 4,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.5,
+        "latency_max": 11.6,
+        "cost_usd": 0.0345,
+        "llm_calls": 10,
+        "cache_hit_rate": 0.981,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しの相談や求人探し、応募状況の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "まず相談する"
+          },
+          {
+            "who": "agent",
+            "text": "いくつか伺いながら、一緒に整理します。これまでにどんな仕事やアルバイトをしましたか？未経験でも大丈夫です。\n職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "居酒屋のホールを1年やっていました"
+          },
+          {
+            "who": "agent",
+            "text": "居酒屋のホールを1年されていたんですね。次は、やってみたいことや好きなことはありますか？\n[選択肢] 接客が好き / 別の仕事に挑戦したい / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見せて"
+          },
+          {
+            "who": "agent",
+            "text": "居酒屋ホールの経験に近い求人を中心に3件あります。気になるものはありますか？\n[求人カード] 居酒屋ホール 新宿西口 / アルバイト・パート / 時給1350円 / 18:00〜翌1:00 / 理由: 新宿駅から徒歩3分・未経験OK\n[求人カード] 居酒屋ホールスタッフ｜夕方～夜勤務 / アルバイト・パート / 時給1350円 / 17:00〜翌0:00 / 理由: 新宿三丁目駅から徒歩4分・未経験OK\n[求人カード] 居酒屋のキッチンスタッフ(調理補助) / アルバイト・パート / 時給1380円 / 17:00〜翌1:00 / 理由: 新宿三丁目駅から徒歩4分・未経験OK\n[選択肢] 条件を伝える / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "どういたしまして。迷っているのは、どのあたりですか？\n[選択肢] 仕事内容 / 勤務時間 / 場所 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "これまでにどんな仕事やアルバイトをしましたか？未経験でも大丈夫です。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "次は、やってみたいことや好きなことはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "接客が好き / 別の仕事に挑戦したい / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "居酒屋ホールの経験に近い求人を中心に3件あります。気になるものはありますか？",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "経験を聞いた後、本人が「求人を見せて」と言うとすぐに求人を提示できています。一方、「考えます」に対して迷っている前提で質問しており、いったん待つ選択もできるとより自然です。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit-track",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 3,
+        "action_offers": 0,
+        "latency_p50": 6.8,
+        "latency_max": 14.9,
+        "cost_usd": 0.0236,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.97,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit-track",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 3,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.8,
+        "latency_max": 14.9,
+        "cost_usd": 0.0236,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.97,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "最近カフェのお仕事をご覧になっていたようなので、ご連絡しました。前回と同じく、アルバイト・パートのカフェのお仕事を探しますか？\n[選択肢] カフェで探す / 別の仕事を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "カフェで探す"
+          },
+          {
+            "who": "agent",
+            "text": "カフェのお仕事が3件あります。気になる求人はありますか？\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェ店長候補/バリスタ / アルバイト・パート / 時給1600円 / 12:00〜21:00(実働8h) / 理由: 大宮駅から徒歩5分\n[選択肢] 勤務地で絞る / 時間帯で絞る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点をもう少し考えたいですか？\n[選択肢] 勤務地 / 勤務時間 / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "前回と同じく、アルバイト・パートのカフェのお仕事を探しますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "カフェのお仕事が3件あります。気になる求人はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "最近カフェのお仕事をご覧になっていたようなので、ご連絡しました。前回と同じく、アルバイト・パートのカフェのお仕事を探しますか？",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "過去に見ていたカフェ求人に沿って候補を提示しており、求人理由にも希望のカフェである点が反映されています。一方、仕事を探す目的は聞けておらず、「考えます」に対して検討を促す質問を続けています。"
+        }
+      }
+    },
+    {
+      "case": "T-career-fulltime",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 1,
+        "latency_p50": 6.1,
+        "latency_max": 16.1,
+        "cost_usd": 0.0728,
+        "llm_calls": 18,
+        "cache_hit_rate": 0.979,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": false,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "T-career-fulltime",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 7,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員"
+        ],
+        "track_checks": [
+          {
+            "track": "正社員",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "正社員"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": 3,
+        "latency_p50": 6.1,
+        "latency_max": 16.1,
+        "cost_usd": 0.0728,
+        "llm_calls": 18,
+        "cache_hit_rate": 0.979,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しや応募について、こちらでご相談いただけます。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "転職を考えていて、正社員の仕事を相談したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでにどんなお仕事をされましたか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "[職務経歴書(PDF)をアップロード]"
+          },
+          {
+            "who": "agent",
+            "text": "法人営業とプロダクト企画のご経験を踏まえて伺います。次はどんな仕事をしてみたいですか？\n[選択肢] 営業を続けたい / 企画に関わりたい / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "企画に関わりたいです。新しいプロダクトをゼロから企画する経験を積みたいです。"
+          },
+          {
+            "who": "agent",
+            "text": "新しいプロダクトをゼロから企画する経験を積みたいのですね。転職先を考えるうえで、気になっていることはありますか？\n[選択肢] 仕事内容 / 働き方 / 経験が足りるか / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "今の会社では既存機能の改善が中心で、新規事業の企画を提案したこともありますが、2回通りませんでした。"
+          },
+          {
+            "who": "agent",
+            "text": "新規事業の企画を提案したものの、2回通らなかったのですね。次の仕事では、勤務地や働き方に希望はありますか？\n[選択肢] 勤務地に希望あり / リモート希望 / 残業を抑えたい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "渋谷か品川が希望で、週2日以上リモートできると嬉しいです。"
+          },
+          {
+            "who": "agent",
+            "text": "新しいプロダクトの企画経験を積みたい、勤務地は渋谷か品川で、週2日以上のリモート勤務が希望ですね。この条件で求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見る"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷・品川では、ご希望に合う企画・PMの求人が見つかりませんでした。勤務地を広げて探してもよいですか？\n[選択肢] 勤務地を広げる / 職種を広げる / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "勤務地を広げる"
+          },
+          {
+            "who": "agent",
+            "text": "勤務地を広げると、企画・PMの求人が3件あります。リモート勤務の日数は確認できていないため、気になる求人があれば一緒に確認しましょう。\n[求人カード] プロダクトマネージャー(BtoB SaaS) / 正社員 / 年収650万〜950万円 / フレックス(コアタイムなし) / 理由: 新宿駅から徒歩5分・リモート可\n[求人カード] インバウンド旅行サービスの事業企画(多言語) / 正社員 / 年収480万〜700万円 / フレックス(コアタイム10:00〜15:00) / 理由: 上野駅から徒歩3分・一部リモート可\n[求人カード] Webディレクター(受託のサイト制作) / 正社員 / 年収450万〜620万円 / 10:00〜19:00(休憩1時間) / 理由: 希望の企画・PM・一部リモート可\n[選択肢] 求人について聞く / 条件を見直す / 応募履歴を確認"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track"
+          ],
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "recommend_jobs",
+            "relax_conditions",
+            "relax_conditions"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ]
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでにどんなお仕事をされましたか？職務経歴書や履歴書があれば、読み込むと早いです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "新規事業の企画を提案したものの、2回通らなかったのですね。次の仕事では、勤務地や働き方に希望はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "[選択肢] 営業を続けたい / 企画に関わりたい / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 新宿駅から徒歩5分・リモート可",
+              "quoted": true
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "丁寧に経歴や希望を確認し、求人を見たいという希望に応じて提案へ進んでいます。一方、転職の目的や新規事業企画に関する経験を積みたい理由の深掘り、求人理由と本人の目的との結びつきは不足しています。"
+        }
+      }
+    },
+    {
+      "case": "T-side-job",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 2,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 0,
+        "latency_p50": 10.0,
+        "latency_max": 16.5,
+        "cost_usd": 0.0914,
+        "llm_calls": 21,
+        "cache_hit_rate": 0.976,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": false,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "T-side-job",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 3,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [
+          {
+            "track": "アルバイト・パート",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "アルバイト・パート"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose",
+          "consult",
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [
+          "T8: 吹き出しが84字(80字以内)",
+          "T6: 保存済みの「time_band」を聞き直した: この求人は見送るのですね。深夜を避けるなら、何時ごろまでの勤務がよいですか？"
+        ],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 10.0,
+        "latency_max": 16.5,
+        "cost_usd": 0.0914,
+        "llm_calls": 21,
+        "cache_hit_rate": 0.976,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめてトークを開いていただいたので、ご案内します。求人探しや応募の確認をお手伝いできます。何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "本業の後の空いた時間でバイトを探したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。本業の後、働けるのは何時ごろですか？\n[選択肢] 夕方 / 夜 / 深夜 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "夜、19時以降です。"
+          },
+          {
+            "who": "agent",
+            "text": "夜に働ける求人が3件あります。掲載の勤務時間に19時以降が含まれますが、19時から始められるかは確認が必要です。気になる求人はありますか？\n[求人カード] 深夜コンビニスタッフ｜22時以降は時給1750円 / アルバイト・パート / 時給1750円 / 22:00〜翌7:00 / 理由: 夜の勤務(22:00〜翌7:00)・中野駅から徒歩3分\n[求人カード] 居酒屋ホール 新宿西口 / アルバイト・パート / 時給1350円 / 18:00〜翌1:00 / 理由: 夜の勤務(18:00〜翌1:00)・新宿駅から徒歩3分\n[求人カード] 居酒屋ホールスタッフ｜夕方～夜勤務 / アルバイト・パート / 時給1350円 / 17:00〜翌0:00 / 理由: 夜の勤務(17:00〜翌0:00)・新宿三丁目駅から徒歩4分\n[選択肢] 1件目が気になる / 2件目が気になる / 場所から探したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "2件目が気になります。"
+          },
+          {
+            "who": "agent",
+            "text": "2件目の居酒屋ホールですね。どの点が気になりますか？\n[選択肢] 19時から働けるか / 仕事内容 / 勤務場所 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "19時から働けるか気になります。"
+          },
+          {
+            "who": "agent",
+            "text": "掲載の勤務時間は18時〜翌1時ですが、19時から始められるかは資料にありません。応募画面や面接で確認してください。\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "本業に響く深夜は避けたいので、この求人は見送ります。"
+          },
+          {
+            "who": "agent",
+            "text": "この求人は見送るのですね。深夜を避けるなら、何時ごろまでの勤務がよいですか？\n[選択肢] 21時まで / 22時まで / 23時まで / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "23時までがいいです。"
+          },
+          {
+            "who": "agent",
+            "text": "23時までに終わる求人が2件あります。どちらも19時から始められるかは未確認です。気になる求人はありますか？\n[求人カード] 夕方〜夜のコンビニスタッフ｜学生さん多数 / アルバイト・パート / 時給1200円 / 17:00〜22:00 / 理由: 夜の勤務(17:00〜22:00)・高円寺駅から徒歩2分\n[求人カード] 会計事務所の夕方〜夜の入力スタッフ / アルバイト・パート / 時給1300円 / 17:00〜21:00 / 理由: 夜の勤務(17:00〜21:00)・大宮駅から徒歩5分\n[選択肢] 1件目が気になる / 2件目が気になる / 場所から探したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "新宿あたりで探したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "新宿で確認できた求人は、勤務時間が16〜22時か、翌1時まででした。19時以降に始めて23時までに終われる求人は、今の結果では確認できません。近隣エリアにも広げますか？\n[選択肢] 近隣にも広げる / 新宿で探したい / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [],
+          [
+            "answer_job_question",
+            "record_conversation_outcome"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs"
+          ]
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "本業の後の空いた時間でバイトを探したいです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "本業の後、働けるのは何時ごろですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "23時までに終わる求人が2件あります。どちらも19時から始められるかは未確認です。気になる求人はありますか？",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 夜の勤務(18:00〜翌1:00)・新宿駅から徒歩3分",
+              "quoted": true
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "本業に響く深夜は避けたいという希望を受けて勤務終了時刻を確認し、求人を絞り直しています。求人の理由は勤務時間や駅からの距離に限られ、本人の経験や目的とのつながりは示されていません。"
+        }
+      }
+    },
+    {
+      "case": "T-student-first",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 0,
+        "latency_p50": 6.8,
+        "latency_max": 14.4,
+        "cost_usd": 0.0655,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.978,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 2
+      },
+      "detail": {
+        "id": "T-student-first",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 5,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [
+          {
+            "track": "アルバイト・パート",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "アルバイト・パート"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.8,
+        "latency_max": 14.4,
+        "cost_usd": 0.0655,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.978,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しの相談や、求人探し・応募状況の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "初めてバイトをしたいけど、何が向いているか分からない。"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。\nやってみたいことや、好きなことはありますか？\n[選択肢] 人と話すこと / 体を動かすこと / コツコツ作業 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "本や音楽が好きです。"
+          },
+          {
+            "who": "agent",
+            "text": "本や音楽がお好きなんですね。働ける時間帯・週の日数・エリアに、決まっていることはありますか？\n[選択肢] 平日の夕方 / 週末なら働ける / 場所から決めたい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "授業の後の平日の夕方と、土曜日なら働けます。場所は中野か高円寺がいいです。"
+          },
+          {
+            "who": "agent",
+            "text": "本や音楽が好きで、平日の授業後の夕方と土曜日に、中野か高円寺で働きたいのですね。この条件で求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "もう少し相談したいです。知らない人との接客が続くのは少し不安です。"
+          },
+          {
+            "who": "agent",
+            "text": "接客がどのくらいあるかは求人ごとに異なり、今は確認できません。気になる求人があれば、応募画面や面接で確認できます。\n接客は避けたいですか、それとも短時間なら大丈夫そうですか？\n[選択肢] 接客は避けたい / 短時間なら大丈夫 / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "短時間なら大丈夫そうです。"
+          },
+          {
+            "who": "agent",
+            "text": "接客は短時間なら大丈夫そうなのですね。本や音楽への興味と、働ける時間・場所を踏まえて、求人を見てみますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見る"
+          },
+          {
+            "who": "agent",
+            "text": "中野・高円寺で、夕方に働ける求人を3件見つけました。各カードに勤務地と勤務時間を載せています。\n接客が続く時間や土曜の勤務可否は確認できていません。気になる求人はありますか？\n[求人カード] 夕方〜夜のコンビニスタッフ｜学生さん多数 / アルバイト・パート / 時給1200円 / 17:00〜22:00 / 理由: 夕方の勤務(17:00〜22:00)・高円寺駅から徒歩2分\n[求人カード] カフェホールスタッフ(週2日〜) / アルバイト・パート / 時給1120円 / 10:00〜16:00 / 15:00〜21:00 / 理由: 夕方の勤務(10:00〜16:00 / 15:00〜21:00)・中野駅から徒歩3分\n[求人カード] 古着・ヴィンテージ店 店頭スタッフ / アルバイト・パート / 時給1150円 / 12:00〜20:00(実働7h・休憩60分) / 理由: 夕方の勤務(12:00〜20:00(実働7h・休憩60分))・高円寺駅から徒歩4分\n[選択肢] 1件目が気になる / 2件目が気になる / 3件目が気になる / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 接客の時間 / 授業後のシフト / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "answer_job_question"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "初めてバイトをしたいけど、何が向いているか分からない。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "本や音楽がお好きなんですね。働ける時間帯・週の日数・エリアに、決まっていることはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 人と話すこと / 体を動かすこと / コツコツ作業 / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 夕方の勤務(17:00〜22:00)・高円寺駅から徒歩2分",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 2,
+          "comment": "丁寧に条件や不安を確認していますが、本人が「考えます」と伝えた後も迷いの理由を尋ねており、待つ選択を尊重できていません。求人理由も時間・場所の条件にとどまり、本や音楽への興味や接客への不安にはつながっていません。"
+        }
+      }
+    },
+    {
+      "case": "T-blank-parent",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 5,
+        "action_offers": 0,
+        "latency_p50": 6.7,
+        "latency_max": 12.6,
+        "cost_usd": 0.0386,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.982,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 2
+      },
+      "detail": {
+        "id": "T-blank-parent",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 5,
+        "branch_turn": 4,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [
+          {
+            "track": "アルバイト・パート",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "アルバイト・パート"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.7,
+        "latency_max": 12.6,
+        "cost_usd": 0.0386,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.982,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しの相談や、応募状況の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "子どもが小学校に上がったので、久しぶりにパートを探したい"
+          },
+          {
+            "who": "agent",
+            "text": "パートのお仕事で考えますね。働ける時間帯はいつ頃ですか？\n[選択肢] 日中 / 夕方 / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "平日の9時から14時まで働きたいです。"
+          },
+          {
+            "who": "agent",
+            "text": "平日の9時から14時ですね。どのエリアで探しますか？\n[選択肢] 新宿 / 中野 / 東京都内 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "吉祥寺あたりで探したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "吉祥寺で、10:30〜14:00の求人が1件あります。平日勤務が可能かは未確認です。気になりますか？\n[求人カード] お弁当のオフィス宅配スタッフ(昼だけ短時間) / アルバイト・パート / 時給1250円 / 10:30〜14:00 / 理由: 日中の勤務(10:30〜14:00)・吉祥寺駅から徒歩5分\n[選択肢] 仕事内容を知りたい / 平日勤務を確認したい / 別の求人を探す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 平日に働けるか / 仕事内容 / 勤務地 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "パートのお仕事で考えますね。働ける時間帯はいつ頃ですか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "パートのお仕事で考えますね。働ける時間帯はいつ頃ですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 日中 / 夕方 / まだ決めていない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 日中の勤務(10:30〜14:00)・吉祥寺駅から徒歩5分",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 2,
+          "comment": "時間帯やエリアは1問ずつ聞けていますが、仕事を探す目的や希望の背景は掘り下げていません。「考えます」という返答に対して迷う点を尋ねており、いったん待つ対応にはなっていません。"
+        }
+      }
+    },
+    {
+      "case": "T-switch-to-fulltime",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 0,
+        "latency_p50": 9.1,
+        "latency_max": 15.3,
+        "cost_usd": 0.0903,
+        "llm_calls": 23,
+        "cache_hit_rate": 0.984,
+        "depth_purpose": true,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "T-switch-to-fulltime",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員"
+        ],
+        "track_checks": [
+          {
+            "track": "アルバイト・パート",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "アルバイト・パート"
+          },
+          {
+            "track": "正社員",
+            "due": 3,
+            "status": "ok",
+            "called_turn": 3,
+            "called_track": "正社員"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose",
+          "propose",
+          "consult",
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 9.1,
+        "latency_max": 15.3,
+        "cost_usd": 0.0903,
+        "llm_calls": 23,
+        "cache_hit_rate": 0.984,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しの相談や、応募状況の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "渋谷あたりでカフェのバイトを探しています"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。渋谷周辺のカフェの求人が2件あります。気になるものはありますか？\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 渋谷エリア・未経験OK\n[求人カード] 夜カフェ&バータイムスタッフ / アルバイト・パート / 時給1500円 / 18:00〜翌1:00 / 理由: 渋谷エリア・日払い\n[選択肢] 1件目が気になる / 2件目が気になる / 条件を変えたい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "カフェのホールを2年やっていました。やっぱり正社員で探したいです。販売の仕事で店長を目指したい"
+          },
+          {
+            "who": "agent",
+            "text": "正社員のお仕事で考えますね。カフェのホールを2年経験され、販売で店長を目指したいのですね。\n渋谷に絞ると、今は条件に合う求人がありません。勤務地を広げて探しますか？\n[選択肢] 勤務地を広げる / 職種を広げる / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "勤務地を広げて探したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "勤務地を広げると、吉祥寺に店長候補の求人が1件あります。カフェでのご経験と、店長を目指したいという希望に沿ってご紹介します。気になりますか？\n[求人カード] カフェの店舗運営(社員・店長候補) / 正社員 / 月給24万〜30万円 / シフト制(6:30〜22:00のうち実働8時間) / 理由: 吉祥寺駅から徒歩5分・未経験OK\n[選択肢] 詳しく知りたい / 条件を変えたい / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "正社員で探したい理由は、アルバイトのままだと収入が安定しないからです。"
+          },
+          {
+            "who": "agent",
+            "text": "収入の安定を考えて、正社員を探しているのですね。求人を絞るために、希望する年収の下限はありますか？\n[選択肢] 年収300万円以上 / 年収400万円以上 / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "年収350万円以上を希望しています。"
+          },
+          {
+            "who": "agent",
+            "text": "年収350万円以上ですね。先ほどの吉祥寺の求人は月給24万〜30万円で、上限の12か月分は360万円です。賞与は年2回ですが、金額は分かりません。\nこの求人の給与について、詳しく確認したい点はありますか？\n[選択肢] 月給の決まり方 / 賞与について / ほかの求人を探す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "特にないです。"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。また気になることがあれば、いつでも聞いてください。\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "どういたしまして。考えるうえで、気になっているのはどの点ですか？\n[選択肢] 給与 / 勤務地 / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "set_search_track",
+            "save_user_preferences",
+            "recommend_jobs",
+            "relax_conditions"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たした",
+              "evidence": "収入の安定を考えて、正社員を探しているのですね。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "求人を絞るために、希望する年収の下限はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 年収300万円以上 / 年収400万円以上 / まだ決めていない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "カフェでのご経験と、店長を目指したいという希望に沿ってご紹介します。",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "希望や経験を受け止め、条件に沿った求人を提案できています。一方で、収入を安定させたい理由をさらに掘り下げず、最後に「考えます」と言った後も質問を続けています。"
+        }
+      }
+    },
+    {
+      "case": "F-follow-new",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": false,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 0,
+        "latency_p50": 3.6,
+        "latency_max": 11.3,
+        "cost_usd": 0.0557,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.982,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "F-follow-new",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 4,
+        "branch_within_3": false,
+        "tracks": [
+          "未定",
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose",
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 3.6,
+        "latency_max": 11.3,
+        "cost_usd": 0.0557,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.982,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。お仕事探しの相談や、応募状況の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を探す"
+          },
+          {
+            "who": "agent",
+            "text": "求人を探しますね。正社員とアルバイト・パート、どちらをお考えですか？\n[選択肢] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイト・パート"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で探しますね。希望のエリアはありますか？\n[選択肢] 東京都内 / 神奈川県 / 埼玉県 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "東京都内"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内で3件見つかりました。気になる求人はありますか？\n[求人カード] 訪問型の家庭教師(小中学生・1件ずつ選べる) / アルバイト・パート / 時給2100円 / 15:00〜21:00の間で90分〜120分 / 理由: 吉祥寺駅から徒歩3分・未経験OK\n[求人カード] 深夜コンビニスタッフ｜22時以降は時給1750円 / アルバイト・パート / 時給1750円 / 22:00〜翌7:00 / 理由: 中野駅から徒歩3分・未経験OK\n[求人カード] 【集団指導】中学生向け数学・英語の塾講師 / アルバイト・パート / 時給1800円 / 17:30〜21:40 / 理由: 中野駅から徒歩4分・未経験OK\n[選択肢] 条件を絞りたい / 別の求人を見る / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "条件を絞りたい"
+          },
+          {
+            "who": "agent",
+            "text": "どの条件から絞りますか？\n[選択肢] 職種 / 働く時間帯 / 時給 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "職種"
+          },
+          {
+            "who": "agent",
+            "text": "希望する職種はありますか？\n[選択肢] カフェ / オフィス事務 / 倉庫・軽作業 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "カフェ"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内のカフェで3件見つかりました。気になる求人はありますか？\n[求人カード] カフェホールスタッフ(週2日〜) / アルバイト・パート / 時給1120円 / 10:00〜16:00 / 15:00〜21:00 / 理由: 中野駅から徒歩3分・未経験OK\n[求人カード] カフェスタッフ(ホール・ドリンク) / アルバイト・パート / 時給1180円 / 11:00〜19:00(実働5h〜) / 理由: 吉祥寺駅から徒歩4分・未経験OK\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 品川エリア・未経験OK\n[選択肢] 時間帯も絞る / 別の求人を見る / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "時間帯も絞る"
+          },
+          {
+            "who": "agent",
+            "text": "希望の時間帯はいつですか？\n[選択肢] 早朝 / 日中 / 夕方 / それ以外"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [],
+          [],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "求人を探しますね。正社員とアルバイト・パート、どちらをお考えですか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "希望する職種はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] カフェ / オフィス事務 / 倉庫・軽作業 / それ以外",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 中野駅から徒歩3分・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "1問ずつ希望条件を確認し、求人を提示しています。一方、仕事探しの目的や希望の背景は聞かず、求人理由もエリアや未経験可の条件にとどまっています。"
+        }
+      }
+    },
+    {
+      "case": "B-exit",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 5.6,
+        "latency_max": 9.0,
+        "cost_usd": 0.0499,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.869,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": null,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "B-exit",
+        "user": "sim-exit",
+        "push_facts": {
+          "job_id": "a002",
+          "title": "コンビニ夜勤 中野",
+          "remaining_fields": [
+            "電話番号",
+            "希望開始日"
+          ],
+          "remaining_needs_liff": [
+            "電話番号"
+          ]
+        },
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "support"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.6,
+        "latency_max": 9.0,
+        "cost_usd": 0.0499,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.869,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "「コンビニ夜勤 中野」の応募フォームで、電話番号と希望開始日の入力が残っています。\nどこで手が止まりましたか？\n[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた"
+          },
+          {
+            "who": "user",
+            "text": "入力が面倒だった"
+          },
+          {
+            "who": "agent",
+            "text": "入力の手間を減らせるよう、希望開始日はこのトークで受け取れます。電話番号は入力画面でお願いします。\n働き始めたい時期はいつ頃ですか？\n[選択肢] すぐに / 来週から / 来月から / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "来週から"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日を「来週から」で反映しました。残る電話番号は、下の画面から入力してください。\n[ボタン] 入力画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "あとで入力します"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。電話番号は、入力できるときに画面からお願いします。\n[ボタン] 入力画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "get_user_form_exit"
+          ],
+          [
+            "resume_application_form",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "どこで手が止まりましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "働き始めたい時期はいつ頃ですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "応募フォームで止まった理由を確認し、入力の負担を減らす対応をしています。あとで入力するという意向も尊重していますが、仕事を探す目的や不安の掘り下げには進んでいません。"
+        }
+      }
+    },
+    {
+      "case": "pii",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 5.2,
+        "latency_max": 10.5,
+        "cost_usd": 0.0249,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.991,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": null,
+        "depth_reasons": null,
+        "tone": 4,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "pii",
+        "user": "sim-exit",
+        "push_facts": {
+          "job_id": "a002",
+          "title": "コンビニ夜勤 中野",
+          "remaining_fields": [
+            "電話番号",
+            "希望開始日"
+          ],
+          "remaining_needs_liff": [
+            "電話番号"
+          ]
+        },
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "support"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.2,
+        "latency_max": 10.5,
+        "cost_usd": 0.0249,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.991,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "コンビニ夜勤 中野の応募フォームで、電話番号と希望開始日の入力が残っています。\nどこで止まりましたか？\n[選択肢] 入力が面倒だった / 仕事内容が不安 / 条件が合わなかった / やめた"
+          },
+          {
+            "who": "user",
+            "text": "入力が面倒だった"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日はトークで伺えます。電話番号は応募画面での入力が必要です。希望開始日はいつ頃ですか？\n[選択肢] すぐに / 来週から / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "電話番号は090-1234-5678です。開始は来週からで"
+          },
+          {
+            "who": "agent",
+            "text": "希望開始日「来週から」を反映しました。電話番号はトークでは扱えないため、下の応募画面で入力してください。\n[ボタン] 応募画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          },
+          {
+            "who": "user",
+            "text": "わかりました"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。応募画面から続けられます。\n[ボタン] 応募画面を開く\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "get_user_form_exit"
+          ],
+          [
+            "resume_application_form",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "どこで止まりましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "希望開始日はいつ頃ですか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 4,
+          "design_fit": 4,
+          "comment": "応募フォームで止まった理由を確認し、希望開始日の入力をトークで支援しています。電話番号をトークで扱えないことも伝えていますが、仕事探しの目的や希望を聞く相談には進んでいません。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 6.4,
+        "latency_max": 11.0,
+        "cost_usd": 0.0514,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.867,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": null,
+        "depth_reasons": false,
+        "tone": 5,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.4,
+        "latency_max": 11.0,
+        "cost_usd": 0.0514,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.867,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "前に渋谷・日中のカフェを希望されていました。今回も同じ条件で探しますか？\n[選択肢] 同じ条件で探す / 条件を変えたい / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "エリアは原宿も入れてほしいです。"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷に加えて原宿もご希望ですね。原宿は今の検索対象にないため、まず渋谷の求人を見ますか？\n[選択肢] 渋谷の求人を見る / 別のエリアで探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "渋谷の求人を見る"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷・日中のカフェ求人が1件あります。気になる点はありますか？\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] 仕事内容を聞きたい / 条件を変えて探す / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 時給 / シフト / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "前に渋谷・日中のカフェを希望されていました。今回も同じ条件で探しますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "ありがとうございます。どの点で迷っていますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア",
+              "quoted": true
+            }
+          },
+          "tone": 5,
+          "design_fit": 3,
+          "comment": "丁寧で簡潔ですが、仕事探しの目的や求人で重視することは確認できていません。求人提示後に迷いを尋ねており相談を続ける姿勢はありますが、「考えます」という意向に対して少し踏み込んでいます。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit-browsing",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 0,
+        "latency_p50": 4.3,
+        "latency_max": 14.1,
+        "cost_usd": 0.0281,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.982,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit-browsing",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 4,
+        "branch_turn": 3,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 4.3,
+        "latency_max": 14.1,
+        "cost_usd": 0.0281,
+        "llm_calls": 8,
+        "cache_hit_rate": 0.982,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "最近、カフェのお仕事をご覧になっていましたか？\n[選択肢] はい、求人を探す / まず相談する / それ以外 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "はい、求人を探す"
+          },
+          {
+            "who": "agent",
+            "text": "カフェのお仕事ですね。アルバイト・パートと正社員、どちらで探しますか？\n[選択肢] アルバイト・パート / 正社員 / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイト・パート"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのカフェのお仕事で考えますね。3件ご紹介します。気になる求人はありますか？\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェ店長候補/バリスタ / アルバイト・パート / 時給1600円 / 12:00〜21:00(実働8h) / 理由: 大宮駅から徒歩5分\n[選択肢] 気になる求人がある / 条件を変えて探す / それ以外 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ご検討ありがとうございます。どの点が気になっていますか？\n[選択肢] 勤務時間・日数 / 勤務地 / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "set_search_track",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "最近、カフェのお仕事をご覧になっていましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "アルバイト・パートのカフェのお仕事で考えますね。3件ご紹介します。気になる求人はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] アルバイト・パート / 正社員 / まだ決めていない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "希望したカフェ求人を提示しており、丁寧な応対です。一方で、目的や希望条件を確認せず提案し、「考えます」に対しても気になる点を尋ねています。"
+        }
+      }
+    },
+    {
+      "case": "Q-job-question",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 5,
+        "action_offers": 0,
+        "latency_p50": 6.5,
+        "latency_max": 11.4,
+        "cost_usd": 0.0426,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.977,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": null,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "Q-job-question",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 5,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "outcomes": [
+          "propose",
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 6.5,
+        "latency_max": 11.4,
+        "cost_usd": 0.0426,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.977,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "最近、カフェのお仕事を見ていましたか？\n[選択肢] はい、探したい / まず相談する / それ以外 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "はい、探したい"
+          },
+          {
+            "who": "agent",
+            "text": "カフェのお仕事を3件ご紹介します。勤務地や時間帯が違うので、気になるものがあれば教えてください。\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェ店長候補/バリスタ / アルバイト・パート / 時給1600円 / 12:00〜21:00(実働8h) / 理由: 大宮駅から徒歩5分\n[選択肢] 条件を変えて探す / 求人について聞く / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "保存したカフェホール 渋谷道玄坂が気になっています。制服はありますか？"
+          },
+          {
+            "who": "agent",
+            "text": "この求人の情報には、制服の有無が載っていません。応募画面や面接で確認してください。\n[選択肢] ほかの条件を聞く / 求人を探す / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ペットを連れて行くことはできますか？"
+          },
+          {
+            "who": "agent",
+            "text": "この求人の情報では、勤務先にペットを連れて行けるか分かりません。応募画面や面接で確認してください。\n[選択肢] ほかの条件を聞く / 求人を探す / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "どういたしまして。どの点で迷っていますか？\n[選択肢] 制服について / ペットの同伴について / 仕事内容について / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "answer_job_question",
+            "record_conversation_outcome"
+          ],
+          [
+            "answer_job_question"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "最近、カフェのお仕事を見ていましたか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "どの点で迷っていますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "理由: 希望のカフェ・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 4,
+          "comment": "求人を見たいという希望にすぐ応じ、分からない求人情報は確認先を案内しています。最後に迷っている点を尋ねていますが、仕事探しの目的や希望を深掘りする相談には進んでいません。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-propose",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 1,
+        "latency_p50": 5.1,
+        "latency_max": 9.2,
+        "cost_usd": 0.0566,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.984,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": false,
+        "tone": 5,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "C-consult-propose",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 5,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.1,
+        "latency_max": 9.2,
+        "cost_usd": 0.0566,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.984,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。仕事探しや応募について、こちらでお手伝いできます。何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "バイトを探したいけど、何から始めればいいか分からない"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでに仕事やアルバイトの経験はありますか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイトは未経験です。高校の文化祭で模擬店の接客をしたくらいです。"
+          },
+          {
+            "who": "agent",
+            "text": "文化祭で模擬店の接客をされたんですね。やってみたいことや、好きなことはありますか？\n[選択肢] 人と話す仕事 / 体を動かす仕事 / 黙々とする仕事 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "人と話すのは好きです。"
+          },
+          {
+            "who": "agent",
+            "text": "人と話すのがお好きなんですね。働くうえで気になることはありますか？\n[選択肢] 未経験でも大丈夫か / シフトの融通 / 仕事内容 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "未経験でもちゃんとついていけるか不安です。"
+          },
+          {
+            "who": "agent",
+            "text": "不安ですよね。「未経験OK」と記載のある求人には、研修やマニュアルが用意されています。\n働ける時間帯・週の日数・エリアを、分かる範囲で教えていただけますか？\n[選択肢] 平日夕方・週2日 / 土日・週2日 / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "平日の夕方に、週3日くらい働きたいです。エリアは池袋あたりが希望です。"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイトは未経験で、人と話すのがお好き。平日夕方に週3日ほど、池袋あたりを希望されていますね。この内容で求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見る"
+          },
+          {
+            "who": "agent",
+            "text": "池袋・夕方の求人が3件あります。未経験OKの記載があるものを選びました。気になる求人はありますか？\n[求人カード] イベントチケットの予約受付オペレーター(夕方〜夜) / アルバイト・パート / 時給1350円 / 17:00〜22:00 / 理由: 夕方の勤務(17:00〜22:00)・池袋駅から徒歩3分\n[求人カード] 商業施設の販促イベント・サンプリングスタッフ / アルバイト・パート / 時給1400円 / 11:00〜19:00(実働7時間・休憩60分) / 理由: 夕方の勤務(11:00〜19:00(実働7時間・休憩60分))・池袋駅から徒歩3分\n[求人カード] 小学生向け個別指導スタッフ(1対2) / アルバイト・パート / 時給1500円 / 16:00〜20:00 / 理由: 夕方の勤務(16:00〜20:00)・池袋エリア\n[選択肢] 1件目が気になる / 2件目が気になる / 3件目が気になる / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "どういたしまして。考えるうえで、どの点が気になりますか？\n[選択肢] 仕事内容 / 未経験でも大丈夫か / 勤務時間 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "answer_job_question"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "これまでに仕事やアルバイトの経験はありますか？職務経歴書や履歴書があれば、読み込むと早いです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "人と話すのがお好きなんですね。働くうえで気になることはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 人と話す仕事 / 体を動かす仕事 / 黙々とする仕事 / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "理由: 夕方の勤務(17:00〜22:00)・池袋駅から徒歩3分",
+              "quoted": true
+            }
+          },
+          "tone": 5,
+          "design_fit": 3,
+          "comment": "丁寧で、経験・希望・不安を一つずつ聞いている点はよいです。一方で、仕事探しの目的を確認せず、求人の理由も時間帯・エリアとの一致にとどまり、「考えます」に対して追加で質問しています。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-only",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 4,
+        "action_offers": 1,
+        "latency_p50": 4.2,
+        "latency_max": 5.2,
+        "cost_usd": 0.0211,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.992,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": false,
+        "depth_reasons": null,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "C-consult-only",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 4,
+        "branch_turn": 4,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 4.2,
+        "latency_max": 5.2,
+        "cost_usd": 0.0211,
+        "llm_calls": 7,
+        "cache_hit_rate": 0.992,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。バイトルでのお仕事探しや応募の確認をお手伝いします。\n今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "まず相談する"
+          },
+          {
+            "who": "agent",
+            "text": "いくつか伺いながら、一緒に整理します。\nこれまでに、どんなお仕事やアルバイトをしましたか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "バイトは未経験です"
+          },
+          {
+            "who": "agent",
+            "text": "教えていただきありがとうございます。やってみたいことや、好きなことはありますか？\n[選択肢] 人と話すこと / 体を動かすこと / コツコツ作業 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "今はいい"
+          },
+          {
+            "who": "agent",
+            "text": "承知しました。また相談したくなったら、いつでも話しかけてください。\n[選択肢] 求人を探す / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "record_conversation_outcome"
+          ]
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "これまでに、どんなお仕事やアルバイトをしましたか？職務経歴書や履歴書があれば、読み込むと早いです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "教えていただきありがとうございます。やってみたいことや、好きなことはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たさない",
+              "evidence": "[選択肢] 人と話すこと / 体を動かすこと / コツコツ作業 / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "丁寧に一つずつ質問し、「今はいい」という意思もすぐに尊重しています。一方、目的を確認する質問や、本人の発言に基づいた選択肢はありませんでした。"
+        }
+      }
+    },
+    {
+      "case": "C-consult-switch",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 5,
+        "action_offers": 1,
+        "latency_p50": 4.9,
+        "latency_max": 8.2,
+        "cost_usd": 0.0309,
+        "llm_calls": 9,
+        "cache_hit_rate": 0.982,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": false,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "C-consult-switch",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 5,
+        "branch_turn": 4,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 4.9,
+        "latency_max": 8.2,
+        "cost_usd": 0.0309,
+        "llm_calls": 9,
+        "cache_hit_rate": 0.982,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。バイトルでのお仕事探しや応募の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "まず相談する"
+          },
+          {
+            "who": "agent",
+            "text": "いくつか伺いながら、一緒に整理します。\nこれまでにどんなお仕事やアルバイトをしましたか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "居酒屋のホールを1年やっていました"
+          },
+          {
+            "who": "agent",
+            "text": "居酒屋のホールを1年されていたんですね。次は、やってみたいことや好きなこと、得意なことはありますか？\n[選択肢] 接客を続けたい / 別の仕事も試したい / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を見せて"
+          },
+          {
+            "who": "agent",
+            "text": "居酒屋ホールの経験を踏まえ、関連する求人が3件あります。気になる求人はありますか？\n[求人カード] 居酒屋ホール 新宿西口 / アルバイト・パート / 時給1350円 / 18:00〜翌1:00 / 理由: 新宿駅から徒歩3分・未経験OK\n[求人カード] 居酒屋ホールスタッフ｜夕方～夜勤務 / アルバイト・パート / 時給1350円 / 17:00〜翌0:00 / 理由: 新宿三丁目駅から徒歩4分・未経験OK\n[求人カード] 居酒屋のキッチンスタッフ(調理補助) / アルバイト・パート / 時給1380円 / 17:00〜翌1:00 / 理由: 新宿三丁目駅から徒歩4分・未経験OK\n[選択肢] 1件目が気になる / 2件目が気になる / 条件を変えたい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ゆっくり考えてください。迷っているのは、仕事内容・勤務時間・場所のどれですか？\n[選択肢] 仕事内容 / 勤務時間 / 場所 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "これまでにどんなお仕事やアルバイトをしましたか？職務経歴書や履歴書があれば、読み込むと早いです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "居酒屋のホールを1年されていたんですね。次は、やってみたいことや好きなこと、得意なことはありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "[選択肢] 接客を続けたい / 別の仕事も試したい / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たさない",
+              "evidence": "[求人カード] 居酒屋ホール 新宿西口 / アルバイト・パート / 時給1350円 / 18:00〜翌1:00 / 理由: 新宿駅から徒歩3分・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "経験を聞いてから求人を提案しており、ユーザーの「求人を見せて」にも応じています。一方、仕事探しの目的は確認できておらず、「考えます」の後も質問を続けています。"
+        }
+      }
+    },
+    {
+      "case": "R-revisit-track",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 3,
+        "action_offers": 0,
+        "latency_p50": 5.5,
+        "latency_max": 10.1,
+        "cost_usd": 0.0218,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.979,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": true,
+        "tone": 4,
+        "design_fit": 3
+      },
+      "detail": {
+        "id": "R-revisit-track",
+        "user": "sim-browsing",
+        "push_facts": null,
+        "turns": 3,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": true,
+        "action_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": null,
+        "latency_p50": 5.5,
+        "latency_max": 10.1,
+        "cost_usd": 0.0218,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.979,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "前回はアルバイト・パートで探していました。最近見ていたカフェのお仕事で、今回も探しますか？\n[選択肢] カフェで探す / 別の仕事を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "カフェで探す"
+          },
+          {
+            "who": "agent",
+            "text": "カフェのお仕事が6件見つかりました。まずは3件ご紹介します。気になる求人はありますか？\n[求人カード] 早朝オープンスタッフ/カフェ / アルバイト・パート / 時給1350円 / 6:30〜11:00 / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 希望のカフェ・未経験OK\n[求人カード] カフェ店長候補/バリスタ / アルバイト・パート / 時給1600円 / 12:00〜21:00(実働8h) / 理由: 大宮駅から徒歩5分\n[選択肢] 気になる求人がある / 条件を絞りたい / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 勤務時間 / 場所 / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "recommend_jobs",
+            "save_user_preferences",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "前回はアルバイト・パートで探していました。最近見ていたカフェのお仕事で、今回も探しますか？",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "カフェのお仕事が6件見つかりました。まずは3件ご紹介します。気になる求人はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "前回はアルバイト・パートで探していました。最近見ていたカフェのお仕事で、今回も探しますか？",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "満たした",
+              "evidence": "理由: 希望のカフェ・未経験OK",
+              "quoted": true
+            }
+          },
+          "tone": 4,
+          "design_fit": 3,
+          "comment": "丁寧で選択肢も本人の過去のカフェ探しに沿っています。一方、「考えます」という返答に対して、いったん待つのではなく迷う点を尋ねており、本人のペースを尊重する対応としてはやや弱いです。"
+        }
+      }
+    },
+    {
+      "case": "T-career-fulltime",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": null,
+        "outcome_recorded": false,
+        "outcome_as_expected": false,
+        "track_ok": true,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "action_offers": 1,
+        "latency_p50": 4.9,
+        "latency_max": 6.2,
+        "cost_usd": 0.0538,
+        "llm_calls": 15,
+        "cache_hit_rate": 0.985,
+        "depth_purpose": false,
+        "depth_dig": false,
+        "depth_options": true,
+        "depth_reasons": null,
+        "tone": 5,
+        "design_fit": 4
+      },
+      "detail": {
+        "id": "T-career-fulltime",
+        "user": "sim-new",
+        "push_facts": null,
+        "turns": 8,
+        "branch_turn": 5,
+        "branch_within_3": null,
+        "tracks": [
+          "未定",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員",
+          "正社員"
+        ],
+        "track_checks": [
+          {
+            "track": "正社員",
+            "due": 2,
+            "status": "ok",
+            "called_turn": 2,
+            "called_track": "正社員"
+          }
+        ],
+        "track_ok": true,
+        "action_offers": [
+          {
+            "turn": 2,
+            "actions": [
+              "resume_upload",
+              "voice_consult"
+            ]
+          }
+        ],
+        "outcomes": [],
+        "outcome_recorded": false,
+        "outcome_as_expected": false,
+        "violations": [],
+        "fabrications": [],
+        "upload_turn": 3,
+        "latency_p50": 4.9,
+        "latency_max": 6.2,
+        "cost_usd": 0.0538,
+        "llm_calls": 15,
+        "cache_hit_rate": 0.985,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "はじめまして。バイトルでのお仕事探しや応募の確認をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "転職を考えていて、正社員の仕事を相談したい"
+          },
+          {
+            "who": "agent",
+            "text": "正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでに、どんなお仕事をされてきましたか？ 職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "[職務経歴書(PDF)をアップロード]"
+          },
+          {
+            "who": "agent",
+            "text": "職務経歴書では法人営業とプロダクト企画を経験されていますね。次はどんな仕事をしてみたいですか？\n[選択肢] 営業を続けたい / 企画に携わりたい / まだ分からない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "企画に携わりたい"
+          },
+          {
+            "who": "agent",
+            "text": "企画に携わりたいのですね。転職にあたって、気になっていることはありますか？\n[選択肢] 仕事内容 / 働き方 / 選考について / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "仕事内容が気になります。今の会社では決まった機能の改善が中心なので、新しいプロダクトをゼロから企画する経験を積みたいです。"
+          },
+          {
+            "who": "agent",
+            "text": "新規プロダクトの企画に関われるかは、求人ごとに確認が必要です。記載がなければ面接でも確認できます。\n働く場所や、働き方について希望はありますか？\n[選択肢] 勤務地を伝える / 働き方を伝える / 特に決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "勤務地は渋谷か品川で、リモートは週2日以上あるとうれしいです。"
+          },
+          {
+            "who": "agent",
+            "text": "新しいプロダクトの企画に携わりたい、勤務地は渋谷か品川、リモートは週2日以上が希望ですね。この条件で求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "もう少し相談したい"
+          },
+          {
+            "who": "agent",
+            "text": "もちろんです。転職について、次はどの点を整理したいですか？\n[選択肢] 仕事内容 / 働き方 / 選考について / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "それ以外です。年収600万円以上で、3か月以内に転職したいです。"
+          },
+          {
+            "who": "agent",
+            "text": "年収600万円以上、3か月以内の転職を希望されているのですね。条件を踏まえて求人を見ますか？\n[選択肢] 求人を見る / もう少し相談したい / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "set_search_track"
+          ],
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [
+            "save_user_preferences",
+            "answer_job_question"
+          ],
+          [
+            "save_user_preferences"
+          ],
+          [],
+          [
+            "save_user_preferences"
+          ]
+        ],
+        "judge": {
+          "depth": {
+            "asked_purpose": {
+              "verdict": "満たさない",
+              "evidence": "正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。\nこれまでに、どんなお仕事をされてきましたか？ 職務経歴書や履歴書があれば、読み込むと早いです。",
+              "quoted": true
+            },
+            "dug_deeper": {
+              "verdict": "満たさない",
+              "evidence": "働く場所や、働き方について希望はありますか？",
+              "quoted": true
+            },
+            "options_personal": {
+              "verdict": "満たした",
+              "evidence": "[選択肢] 営業を続けたい / 企画に携わりたい / まだ分からない / 今はいい",
+              "quoted": true
+            },
+            "reasons_linked": {
+              "verdict": "該当なし",
+              "evidence": "",
+              "quoted": false
+            }
+          },
+          "tone": 5,
+          "design_fit": 4,
+          "comment": "丁寧に希望を聞き、履歴書の経験に沿った選択肢を提示できています。一方、新規プロダクトの企画経験を積みたいという希望を受けた後に掘り下げず、求人提案の理由につなげる機会もありませんでした。"
+        }
+      }
+    }
+  ],
+  "spent_usd": 1.2628,
+  "ledger_total_usd": 1.3125
+}
