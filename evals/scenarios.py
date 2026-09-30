@@ -36,7 +36,8 @@ def upload_resume(state: State, sc: dict, user: str | None = None) -> dict:
 
     user = user or sc["user"]
     rec = logic.save_resume_upload(state, user, load_resume(sc["upload_resume"]), file=RESUME_FILE)
-    return {"file": rec["file"], "shown": resume_bubbles(rec["resume"]), "view_url": f"/liff/resume?user={user}"}
+    # 画面の URL はランタイムが upload_id から作る(URL に user_id を入れない)。id は main 側の save_resume_upload が振る
+    return {"file": rec["file"], "shown": resume_bubbles(rec["resume"]), "upload_id": rec.get("id")}
 
 
 def prepare(state: State, sc: dict, user: str | None = None) -> None:

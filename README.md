@@ -385,6 +385,10 @@ LLM ジャッジは既定でオフ(`--judge` で有効)。結果は1回ごとに
 - 結果の `detail` にはターンごとの生の返信(`turn_log`。dip のツールの args と result を含む)・本人の発言・アップロードを残すので、
   評価器(`evals/checks.py`)を直したあとは `evals.run.recheck(detail)` で実 API を使わずに機械判定をやり直せる
   (`evals/baseline/` の 2026-09-29 の結果は保存を始める前のもので、再判定できない)。
+- ジャッジの指示(`evals/judge.py`)を直したあとは `./.venv/bin/python -m evals.run --rejudge 結果.json` で、保存済みの会話を
+  ジャッジだけで判定し直す(エージェントと模擬ユーザーは呼ばない。費用はジャッジの分だけ台帳に載り、$4 の停止も同じ)。
+  結果は `evals/results/<元の名前>-rejudge-<日時>.{json,md}` に別ファイルで書き、md に元の判定との差(深さの4項目と design_fit)を出す。
+  2026-09-30 に基準の会話をジャッジの指示の直し(「考えます」のあとの1問・自分から話した目的)のあとで判定し直した結果も `evals/baseline/` にある。
 実行エラーになった回は失敗として数えず、件数を別に出す。
 
 結果は `evals/results/sim-*.md`(集計 + 会話ログ)と `sim-*.json`(evalkit 形式)。変更の前後を比べるには:

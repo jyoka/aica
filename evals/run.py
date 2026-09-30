@@ -18,6 +18,9 @@
 事実性(作り話)と雇用区分の切り替え(set_search_track)は evals/checks.py がコードで判定する。
 --judge は相談の深さ(目的・掘り下げ・選択肢・提案理由を根拠の発言つき)とトーンを LLM ジャッジで見る(evals/judge.py)。
     python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.json
+
+ジャッジの指示(evals/judge.py)を直したときは、保存済みの会話をジャッジだけで判定し直せる(費用はジャッジの分だけ):
+    ./.venv/bin/python -m evals.run --rejudge evals/baseline/sim-20260929-100418.json
 """
 
 from __future__ import annotations
@@ -213,7 +216,8 @@ def report(doc: dict) -> str:
         "",
         (f"- LINE 側モデル: `{c['model']}`、模擬ユーザー: `{c.get('sim_model')}`、ジャッジ: {judge_model}、"
          f"ターン上限: {c.get('max_turns')}"),
-        (f"- この実行の費用(エージェント・模擬ユーザー・ジャッジ): ${doc.get('spent_usd', 0):.4f}"
+        (f"- この実行の費用({'ジャッジだけ' if doc.get('rejudge') else 'エージェント・模擬ユーザー・ジャッジ'}): "
+         f"${doc.get('spent_usd', 0):.4f}"
          f"、費用台帳の累計: ${doc.get('ledger_total_usd', 0):.4f}"
          + STOPPED_NOTE.get(doc.get("stopped"), "")),
         summary_md(doc),
@@ -240,6 +244,10 @@ def report(doc: dict) -> str:
             d = j["depth"][k]
             quoted = "" if d["quoted"] or not d["evidence"] else "(根拠が会話ログに無い)"
             lines.append(f"  - {label}: {d['verdict']} 「{d['evidence']}」{quoted}")
+    if doc.get("rejudge"):
+        lines += ["", f"## 元の判定({doc['rejudge']['from']})との差(相談の深さと design_fit)", "",
+                  "会話は元の結果のまま、ジャッジだけを今の evals/judge.py で判定し直した。上の費用はジャッジの分だけ。", ""]
+        lines += rejudge_diff(doc)
     lines += ["", "## 会話ログ", ""]
     for r in runs:
         d = r["detail"]
@@ -262,6 +270,97 @@ def recheck(detail: dict, sc: dict | None = None) -> dict:
         raise ValueError(f"{detail.get('id')}: turn_log が保存されていない結果は再判定できない")
     sc = sc or next(x for x in load_scenarios() if x["id"] == detail["id"])
     return conversation_checks(sc, detail["turn_log"], detail["user_msgs"], detail.get("push_facts"), detail.get("upload"))
+
+
+def _resume_of(case: str, scenarios: list[dict]) -> dict | None:
+    """ジャッジに渡す本人の履歴書(run_scenario と同じく upload_resume か seed_resume)。"""
+    from evals.scenarios import load_resume
+
+    sc = next((x for x in scenarios if x["id"] == case), {})
+    name = sc.get("upload_resume") or sc.get("seed_resume")
+    return load_resume(name)["resume"] if name else None
+
+
+def rejudged_run(r: dict, new_judge: dict) -> dict:
+    """保存した1回の結果を、新しいジャッジの判定に差し替える(元の判定は detail.judge_before に残す)。"""
+    from evals.judge import depth_metrics
+
+    detail = r["detail"] | {"judge": new_judge, "judge_before": r["detail"].get("judge")}
+    metrics = r["metrics"] | depth_metrics(new_judge) | {k: new_judge.get(k) for k in ("tone", "design_fit")}
+    return r | {"metrics": metrics, "detail": detail}
+
+
+def rejudge_diff(doc: dict) -> list[str]:
+    """判定し直した結果の、元の判定との差(深さの4項目と design_fit)の Markdown。変わった回だけ出す。"""
+    from evals.judge import DEPTH_LABELS
+
+    lines = []
+    for r in doc["runs"]:
+        before, after = (r.get("detail") or {}).get("judge_before"), (r.get("detail") or {}).get("judge")
+        if r["status"] != "ok" or not before or not after:
+            continue
+        changes = [f"{label}: {before['depth'][k]['verdict']} → {after['depth'][k]['verdict']}"
+                   for k, label in DEPTH_LABELS.items() if before["depth"][k]["verdict"] != after["depth"][k]["verdict"]]
+        if before.get("design_fit") != after.get("design_fit"):
+            changes.append(f"design_fit: {before.get('design_fit')} → {after.get('design_fit')}")
+        if changes:
+            lines.append(f"- **{r['case']}#{r['rep'] + 1}** " + "、".join(changes))
+    return lines or ["- なし"]
+
+
+async def rejudge(src: Path, ledger: Path = budget.LEDGER) -> int:
+    """保存済みの結果の会話(各 run の transcript)を、今の evals/judge.py のジャッジだけで判定し直す。
+    エージェントと模擬ユーザーは呼ばない(実 API はジャッジの安いモデルだけ)。費用は1回ごとに台帳に載せ、
+    $4 の停止も同じ。結果は evals/results/<元の名前>-rejudge-<日時>.{json,md} に別ファイルで書く。"""
+    from evals.judge import judge
+    from evals.meter import Meter
+    from evals.scenarios import load_scenarios
+
+    doc = json.loads(Path(src).read_text(encoding="utf-8"))
+    print(budget.line(ledger), flush=True)
+    budget.check(ledger)
+    meter = Meter().install()
+    client = llm.client()
+    model = JUDGE_MODEL[config.PROVIDER]
+    scenarios = load_scenarios()
+    out = HERE / "results" / f"{Path(src).stem}-rejudge-{datetime.now():%Y%m%d-%H%M%S}"
+    new = doc | {"runs": list(doc["runs"]), "spent_usd": 0.0, "stopped": None,
+                 "config": doc["config"] | {"judge": True, "judge_model": model},
+                 "rejudge": {"from": Path(src).name, "judge_model": model}}
+    out.parent.mkdir(exist_ok=True)
+
+    def spent() -> float:
+        return meter.summary()["cost_usd"]
+
+    def save() -> None:
+        new["spent_usd"] = spent()
+        new["ledger_total_usd"] = budget.spent(ledger)
+        out.with_suffix(".json").write_text(json.dumps(new, ensure_ascii=False, indent=2, default=str))
+        out.with_suffix(".md").write_text(report(new))
+
+    async def run_one(sc: dict, rep: int) -> None:
+        r = new["runs"][sc["index"]]
+        try:
+            j = await judge(client, model, r["detail"]["transcript"], _resume_of(r["case"], scenarios))
+        except Exception as e:  # noqa: BLE001  1件の失敗で全体を止めない(その回は元の判定のまま)
+            print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
+            r["detail"]["rejudge_error"] = f"{type(e).__name__}: {e}"
+            return
+        new["runs"][sc["index"]] = rejudged_run(r, j)
+
+    cases = [({"id": r["case"], "index": i}, r["rep"]) for i, r in enumerate(doc["runs"]) if r["status"] == "ok"]
+    try:
+        stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
+                                  after=save)
+    except BaseException:
+        new["stopped"] = "interrupted"
+        save()
+        raise
+    new["stopped"] = "budget" if stopped else None
+    save()
+    print(f"この実行 ${new['spent_usd']:.4f} / {budget.line(ledger)}")
+    print(f"-> {out}.md")
+    return 2 if stopped else 0
 
 
 def select(scenarios: list[dict], only: str | None) -> list[dict]:
@@ -367,8 +466,12 @@ if __name__ == "__main__":
     ap.add_argument("--judge", action="store_true", help="相談の深さの LLM ジャッジも回す(安いモデル)")
     ap.add_argument("--repeat", type=int, default=1, help="各シナリオの実行回数(ばらつきを見るときだけ増やす)")
     ap.add_argument("--max-turns", type=int, default=MAX_TURNS, help="1会話のエージェントのターンの上限")
+    ap.add_argument("--rejudge", type=Path, metavar="RESULT_JSON",
+                    help="保存済みの結果の会話を、ジャッジだけで判定し直す(エージェントと模擬ユーザーは呼ばない)")
     args = ap.parse_args()
     try:
+        if args.rejudge:
+            sys.exit(asyncio.run(rejudge(args.rejudge)))
         sys.exit(asyncio.run(main(args.only, args.judge, args.repeat, args.max_turns)))
     except budget.BudgetExceeded as e:
         print(f"!! {e}")

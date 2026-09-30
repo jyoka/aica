@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,9 +17,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from evals import budget
-from evals.judge import DEPTH_ITEMS, DepthItem, Judgement, depth_metrics, shape
-from evals.run import SimTurn, run_cases, select
+from evals.judge import DEPTH_ITEMS, SYSTEM, DepthItem, Judgement, depth_metrics, shape
+from evals.run import JUDGE_MODEL, SimTurn, run_cases, select
 from evals.scenarios import load_scenarios
+from line_runtime import config
 from tests.test_handle import call, reply
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
@@ -73,6 +75,104 @@ def test_evidence_that_is_not_in_the_conversation_is_marked():
     # ジャッジが発言を作ったら quoted=False(人が照合するときの手がかり)
     r = shape(judgement(evidence="どんな働き方を希望していますか?"), TRANSCRIPT)
     assert r["depth"]["asked_purpose"]["quoted"] is False
+
+
+def _rule(name: str) -> str:
+    """ジャッジの指示のうち、その項目の1行。"""
+    return next(x for x in SYSTEM.splitlines() if x.startswith(f"- {name}"))
+
+
+def test_judge_prompt_accepts_one_question_after_i_will_think_about_it():
+    # 「考えます」のあとに迷いの点を1問聞くのは Prompt(baitoru_assistant.md の対話ルール)どおり。待つのは「今はいい」の後
+    rule = _rule("design_fit")
+    assert "「考えます」「迷っている」" in rule and "断りではない" in rule
+    assert "どこで迷っているかを1問だけ聞くのは正しい" in rule and "減点しない" in rule
+    assert "待つ(wait)のは「今はいい」が選ばれた後" in rule
+
+
+def test_judge_prompt_counts_a_purpose_the_user_told_and_the_assistant_took_up():
+    # 本人が自分から目的を話し、アシスタントが受け止めたら満たす。根拠は受け止めた発言(無関係な前の発言ではない)
+    rule = _rule("asked_purpose")
+    assert "本人が自分から目的を話し、アシスタントがそれを受け止めて確かめた場合" in rule and "も満たす" in rule
+    assert "evidence には、目的を受け止めたアシスタントの発言を引用する" in rule
+    assert "目的と関係のない前の発言を引かない" in rule
+
+
+# ----------------------------- ジャッジだけで判定し直す(--rejudge) -----------------------------
+
+BASELINE = Path(__file__).resolve().parent.parent / "evals" / "baseline" / "sim-20260929-100418.json"
+
+
+def _rejudge(src, tmp_path, monkeypatch, client, ledger):
+    from evals import run
+
+    monkeypatch.setattr(run, "HERE", tmp_path)
+    monkeypatch.setattr(run.llm, "client", lambda: client)
+    monkeypatch.setattr("evals.meter.Meter.install", lambda self: self)
+    # エージェントと模擬ユーザーは呼ばない
+    monkeypatch.setattr(run, "run_scenario", lambda *a, **k: pytest.fail("エージェントを動かしてはいけない"))
+    monkeypatch.setattr(run, "sim_reply", lambda *a, **k: pytest.fail("模擬ユーザーを呼んではいけない"))
+    code = asyncio.run(run.rejudge(src, ledger))
+    out = next((tmp_path / "results").glob("*-rejudge-*.json"))
+    return code, json.loads(out.read_text()), out.with_suffix(".md").read_text()
+
+
+def test_rejudge_replaces_only_the_judge_on_the_saved_baseline(tmp_path, monkeypatch):
+    # 保存済みの基準(26 回)の会話を、ジャッジだけで判定し直す。会話・機械判定はそのまま、元の判定は judge_before に残る
+    src = tmp_path / BASELINE.name
+    src.write_text(BASELINE.read_text())
+    before = json.loads(src.read_text())
+    client, ledger = FakeClient(), tmp_path / "budget.jsonl"
+    code, doc, md = _rejudge(src, tmp_path, monkeypatch, client, ledger)
+    assert code == 0 and doc["stopped"] is None
+    assert json.loads(src.read_text()) == before  # 元の結果は書き換えない
+    assert len(client.judge_calls) == len(before["runs"]) == 26
+    assert {c["model"] for c in client.judge_calls} == {JUDGE_MODEL[config.PROVIDER]}
+    assert doc["rejudge"] == {"from": BASELINE.name, "judge_model": JUDGE_MODEL[config.PROVIDER]}
+    # 履歴書のあるペルソナにはジャッジへ履歴書を渡す(run_scenario と同じ)
+    career = next(i for i, r in enumerate(before["runs"]) if r["case"] == "T-career-fulltime")
+    assert "履歴書の読み取り結果" in client.judge_calls[career]["log"]
+    for old, new in zip(before["runs"], doc["runs"], strict=True):
+        assert new["detail"]["transcript"] == old["detail"]["transcript"]
+        assert new["detail"]["violations"] == old["detail"]["violations"]
+        assert new["detail"]["judge_before"] == old["detail"]["judge"]
+        assert new["detail"]["judge"]["comment"] == "目的は聞いたが掘り下げていない。"
+        assert new["metrics"]["depth_dig"] is False and new["metrics"]["design_fit"] == 4
+        assert new["metrics"]["violations"] == old["metrics"]["violations"]
+    # 台帳には1回ごとに1行(元の case と rep で)
+    rows = budget.rows(ledger)
+    assert [(r["case"], r["rep"]) for r in rows] == [(r["case"], r["rep"]) for r in before["runs"]]
+    assert all(r["run"].startswith("sim-20260929-100418-rejudge-") for r in rows)
+    # md に元の判定との差が出る(T-career-fulltime#1 の asked_purpose は 満たさない → 満たした)
+    assert "## 元の判定(sim-20260929-100418.json)との差" in md
+    section = md.split("との差(相談の深さと design_fit)")[1].split("## 会話ログ")[0]
+    line = next(x for x in section.splitlines() if x.startswith("- **T-career-fulltime#1**"))
+    assert "目的を聞いたか: 満たさない → 満たした" in line
+
+
+def test_rejudge_diff_lists_only_the_runs_that_changed():
+    from evals.run import rejudge_diff, rejudged_run
+
+    old = shape(judgement(), TRANSCRIPT)
+    same = {"case": "A", "rep": 0, "status": "ok", "metrics": {}, "detail": {"judge": old}}
+    changed = {"case": "B", "rep": 1, "status": "ok", "metrics": {}, "detail": {"judge": old}}
+    new = old | {"design_fit": 5, "depth": old["depth"] | {"dug_deeper": {"verdict": "満たした", "evidence": "",
+                                                                          "quoted": False}}}
+    doc = {"runs": [rejudged_run(same, old), rejudged_run(changed, new), {"case": "C", "rep": 0, "status": "error"}]}
+    assert rejudge_diff(doc) == ["- **B#2** 目的かやりたいことを掘り下げたか: 満たさない → 満たした、design_fit: 4 → 5"]
+    assert rejudged_run(changed, new)["metrics"] == {"depth_purpose": True, "depth_dig": True, "depth_options": None,
+                                                    "depth_reasons": None, "tone": 5, "design_fit": 5}
+    assert rejudge_diff({"runs": [rejudged_run(same, old)]}) == ["- なし"]
+
+
+def test_rejudge_refuses_to_start_when_over_the_limit(tmp_path, monkeypatch):
+    from evals import run
+
+    ledger = tmp_path / "budget.jsonl"
+    budget.record(ledger, "earlier", 4.0)
+    monkeypatch.setattr(run.llm, "client", lambda: pytest.fail("API のクライアントを作ってはいけない"))
+    with pytest.raises(budget.BudgetExceeded):
+        asyncio.run(run.rejudge(BASELINE, ledger))
 
 
 # ----------------------------- 履歴書を持つペルソナの会話を最後まで -----------------------------
