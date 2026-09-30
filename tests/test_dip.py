@@ -66,6 +66,18 @@ def test_recommend_returns_match_score_and_breakdown_in_rank_order(state):
     assert b["job_type"] == 2.0  # 本人の傾向の1番目の職種(飲食ホール)
 
 
+def test_recommend_mixing_both_employment_types_does_not_score_time_band(state):
+    """区分が未定で両方の区分を並べるときは、時間帯の傾向を点にしない(正社員の求人には時間帯が無く、必ず0点で下に偏る)。"""
+    mixed = logic.recommend(state, "sim-yoru", limit=3)
+    assert mixed["total"] > 0 and all(j["score_breakdown"]["time_band"] == 0.0 for j in mixed["jobs"])
+    # 負例: アルバイト・パートだけを並べるときは、今までどおり時間帯の傾向を点にする
+    ap = logic.recommend(state, "sim-yoru", employment_type="アルバイト・パート")
+    assert ap["jobs"][0]["score_breakdown"]["time_band"] == 1.0
+    # 負例: 区分が未定でも、職種で絞って候補がアルバイト・パートだけなら点にする
+    one = logic.recommend(state, "sim-yoru", job_type="飲食ホール")
+    assert one["jobs"][0]["score_breakdown"]["time_band"] == 1.0
+
+
 def test_recommend_excludes_applied_and_excluded_jobs(state):
     ids = lambda **kw: [j["job_id"] for j in logic.recommend(state, "sim-applied", **kw)["jobs"]]
     assert "a001" not in ids(area="新宿", job_type="飲食ホール")  # 応募済み

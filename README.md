@@ -42,6 +42,9 @@ dip 側のツールは LLM を使わない(速く・決定的に・事実だけ�
 文章は作らず、求人側のベクトルは `scripts/gen_job_vectors.py` で前もって作って `fixtures/job_vectors.json` に保存するので、
 検索時の外部 API 呼び出しは問い合わせ文の embedding 1回だけ(同じ問い合わせはプロセス内で使い回す)。
 API が使えないときは従来の部分一致に戻る(検索は止めない)。
+モデル・次元・求人の文面・選び方の値は、正解つきの検索評価セット(`evals/search_eval_set.json`、33本)の上位3件の再現率で選ぶ。
+`./.venv/bin/python -m evals.search_eval` がオフラインで測る(記録した問い合わせのベクトル `fixtures/search_query_vectors.json` を使う)。
+既知の限界: 正社員の求人は「体を動かしたい」「人と話さず黙々と」のような働き方の言い換えを embedding で分けられない(類似度がどれも近い。`tests/test_search_eval.py` の xfail)。
 求人カードは、dip のツールが返した求人だけをコードで描画する。
 モデルが選ぶのは出す求人の ID だけで、ツールが返していない ID はカードにならない。
 推薦の各求人には、本人の傾向との合い具合 `match_score`(内訳 `score_breakdown`)が付く(LLM を使わずに計算)。

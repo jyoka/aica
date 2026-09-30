@@ -16,34 +16,27 @@ from collections.abc import Iterable
 from functools import lru_cache
 from hashlib import sha1
 
-from dip_mcp.data import FIXTURES, BaitoJob, pay_text
+from dip_mcp.data import FIXTURES, BaitoJob
 
 VECTORS_PATH = FIXTURES / "job_vectors.json"
-# text-embedding-3 系は dimensions で次元を縮められる(公式ドキュメントで 2026-09-26 に確認)。
-# 求人100件ほどなら 512 次元で十分に見分けられ、ファイルも小さい(約500KB)。
-MODEL = "text-embedding-3-small"
-DIMENSIONS = 512
+# モデル・次元・求人の文面は、正解つきの検索評価セット(evals/search_eval_set.json)の上位3件の再現率で選んだ
+# (task 105。text-embedding-3-small・512 次元・給与や待遇まで入れた文面の 0.55 → 0.75。比較は evals/search_eval.py compare)。
+# 3072 次元は評価セットで1件ほどしか差が無く、保存するファイルが3倍になるので 1024 に縮める
+# (text-embedding-3 系は dimensions で次元を縮められる。公式ドキュメントで 2026-09-29 に確認)。
+MODEL = "text-embedding-3-large"
+DIMENSIONS = 1024
 TIMEOUT_S = 5.0  # 検索を待たせない。超えたら部分一致に戻す
 
 
 def job_text(job: BaitoJob) -> str:
     """求人1件をベクトルにする文。作る側(gen_job_vectors)と使う側(古さの照合)で共通にする。
-    アルバイト・パートの文は、給与を pay に移す前(時給{hourly_wage}円)と同じ文のまま(ベクトルを変えないため)。
-    正社員の文は、時間帯・週の日数の代わりに、必須・歓迎の経験と働き方・休日を入れる。"""
-    place = f"{job.area}({job.station.removesuffix('駅')}駅 徒歩{job.walk_min}分)"
-    perks = f"待遇: {'・'.join(job.perks) or 'なし'}"
-    tail = f"{job.description}\n注意点: {job.drawback}"
-    if job.employment_type != "正社員":
-        return (f"{job.title}\n{job.employer} / {job.job_type} / {place}\n"
-                f"{pay_text(job.pay)} / {'・'.join(job.time_bands)} {job.shift} / 週{job.days_min}日〜\n{perks}\n{tail}")
-    lines = [job.title, f"{job.employer} / 正社員 / {job.job_type} / {place}", f"{pay_text(job.pay)} / {job.shift}"]
+    仕事の中身(職名・区分と職種・必須と歓迎の経験・仕事内容・注意点)だけを入れる。給与・場所・会社名・待遇・働き方は
+    入れない(それらは recommend の条件で絞る事実で、入れると「体を動かしたい」のような言い換えの近さが薄まる。
+    評価セットで比べて、入れない方が再現率が高かった)。注意点は「立ちっぱなし」「重い荷物」など仕事の様子を表すので残す。"""
+    lines = [job.title, f"{job.employment_type} / {job.job_type}"]
     if job.required_experience or job.preferred_experience:
         lines.append(f"必須: {'・'.join(job.required_experience) or 'なし'} / 歓迎: {'・'.join(job.preferred_experience) or 'なし'}")
-    if job.work_style and job.holidays:
-        w, h = job.work_style, job.holidays
-        lines.append(f"リモート{w.remote}・フレックス{'あり' if w.flex else 'なし'}・残業月{w.overtime_hours}時間 / "
-                     f"年間休日{h.annual_days}日{'・土日祝休み' if h.weekends_holidays else ''}")
-    return "\n".join([*lines, perks, tail])
+    return "\n".join([*lines, job.description, f"注意点: {job.drawback}"])
 
 
 def job_hash(job: BaitoJob) -> str:
