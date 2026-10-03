@@ -1,6 +1,6 @@
 """マルチユーザー分離(task 58): ブラウザごとの匿名ユーザーID。
 
-初回アクセスでIDを発行して Cookie で保持し、会話履歴・長期メモリ・行動履歴・費用台帳をそのIDでスコープする。
+初回アクセスでIDを発行して Cookie で保持し、会話履歴・プロフィール・行動履歴・費用台帳をそのIDでスコープする。
 2ユーザーが並行して会話しても混線しないこと、他人のユーザーを覗けないことを、実 LLM なしで確かめる。
 """
 
@@ -83,7 +83,7 @@ def test_reset_user_can_seed_a_browser_user_from_a_scenario_template(tmp_path):
     assert state.user("sim-browsing")["line_user_id"] == "sim-browsing"  # 元のシナリオユーザーはそのまま
 
 
-# ----------------------------- 並行会話の分離(会話・長期メモリ・提案・費用台帳) -----------------------------
+# ----------------------------- 並行会話の分離(会話・プロフィール・提案・費用台帳) -----------------------------
 
 
 class RoutedModel(BaseChatModel):
@@ -143,7 +143,7 @@ def test_two_users_talk_in_parallel_without_mixing(tmp_path):
     assert [c["job_id"] for c in r2["cards"]] == ikebukuro
     # 会話履歴が混線しない: 各ユーザーの会話には本人の発言しかない
     assert h1 == ["渋谷で日中に働きたい"] and h2 == ["池袋で夜に働きたい"]
-    # 長期メモリが混線しない: U1 が話した希望は U1 の要約だけに入る
+    # プロフィールが混線しない: U1 が話した希望は U1 の要約だけに入る
     assert logic.conversation_summary(state, U1)["stated_preferences"]["area"]["value"] == "渋谷"
     assert logic.conversation_summary(state, U2)["stated_preferences"] == {}
     # 費用台帳: すべての行に user_id が付き、2ユーザー分が区別できる

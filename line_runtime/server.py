@@ -12,7 +12,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 
 マルチユーザー: 画面を開いたとき(GET / と GET /dev)にブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する
 (認証・招待制はしない)。本番の / は匿名ID そのものをユーザーIDにする。/dev のシナリオはブラウザ専用のユーザー
-「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても会話・長期メモリ・行動履歴・費用台帳が混線しない。
+「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても会話・プロフィール・行動履歴・費用台帳が混線しない。
 
 ユーザーの分離の守り(task 99):
 - ブラウザから呼ぶ経路は、正しい形式の Cookie が必須(無い・不正なら 401)。扱えるのは Cookie の匿名IDのユーザーだけ
@@ -605,15 +605,17 @@ async def profile_unsave(job_id: str, request: Request):
 
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
-    """すべて消す: dip の状態(長期メモリ・保存・応募・トークを開いた記録)と会話(チェックポイント)を消す。
-    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。"""
-    user_id = _owner(request)
+    """すべて消す: dip の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
+    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。
+    同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。"""
+    anon = _owner(request)
     rt = app.state.rt
-    async with rt.user_lock(user_id):  # 進行中のターンが終わってから消す
-        out = profile.forget_all(state, user_id)
-        await rt.forget(user_id)
-    app.state.unread_uploads.pop(user_id, None)
-    _remove_voice_files(out["files"])
+    for user_id in [anon, *(f"{anon}:{s}" for s in sorted(_scenario_users()))]:
+        async with rt.user_lock(user_id):  # 進行中のターンが終わってから消す
+            out = profile.forget_all(state, user_id)
+            await rt.forget(user_id)
+        app.state.unread_uploads.pop(user_id, None)
+        _remove_voice_files(out["files"])
     return {"forgotten": True}
 
 

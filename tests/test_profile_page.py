@@ -7,7 +7,8 @@ aica が本人について覚えていること(雇用区分・目的・希望�
     消した項目を前提にしない
 (3) 履歴書の読み取り結果と音声の下書きを丸ごと消せる。消した後はチャットの要約にも音声の指示にも出ない。
     履歴書を消すと今の会話は閉じ、次は新しい会話から始まる(task 115。古いタブは stale、会話数は余計に使わない)
-(4) 「すべて消す」で長期メモリと会話が消え、次に開くと初回訪問として始まる(会話数の上限の数は消さない)
+(4) 「すべて消す」でプロフィール(保存・応募を含む)と会話が消え、次に開くと初回訪問として始まる
+    (会話数の上限の数は消さない)。/dev のシナリオ利用者の記録も消える。画面の説明と確認に、消えるものと消えないものが出る
 (5) パスにユーザーIDは無く、Cookie の本人の分だけ。他人の匿名IDを名乗っても届かず、Cookie なし・不正は 401
 (6) 手で直すときも、電話番号・メール・住所らしい値は弾く
 追記(UX 刷新 3/3 のレビューから): 通話中の × は確認を出す / 閉じた後に届いた結果は次のターンの前に描く(ブラウザ)
@@ -464,6 +465,7 @@ def test_deleting_the_resume_in_the_browser_starts_a_new_conversation(remembered
     row = page.locator('#profile .prow[data-key="resume"]')
     row.locator("button.del").click()
     row.locator(".pconfirm", has_text="今の会話は終わり、次は新しい会話から始まります").wait_for()
+    row.locator(".pconfirm", has_text="これまでの会話の記録も消えます。").wait_for()
     row.locator(".pconfirm", has_text="経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。").wait_for()
     row.locator(".pconfirm button.danger").click()
     row.locator(".pv.empty").wait_for()
@@ -536,6 +538,42 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
         assert opened["event"] == "visit" and first["entry"] == "visit" and first["thread"] == 1
         assert client.app.state.quota.used(uid) == used + 1  # 会話数の上限の数は消さない(挨拶の1回分だけ増える)
         assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
+
+
+def test_forget_all_also_clears_the_dev_scenario_users_of_this_browser(remembered):
+    """/dev のシナリオ利用者(「匿名ID:シナリオユーザー」)も同じ Cookie の本人の記録なので、「すべて消す」で /dev に
+    見えていた記録(dip の状態・会話)も消える。別のブラウザのシナリオ利用者の記録は、名乗っても消せない。"""
+    with _client(remembered) as a:
+        b = _client(remembered)
+        a.get("/dev"), b.get("/dev")
+        rt = a.app.state.rt
+        mine = a.post("/api/scenarios/R-revisit-browsing/start").json()
+        theirs = b.post("/api/scenarios/R-revisit-browsing/start").json()
+        stream(a, mine["user"], mine["event"], None)
+        stream(a, mine["user"], "message", None, "探して")
+        # 別のブラウザの会話(b はこのアプリの lifespan の外なので、同じランタイムで直接進める)
+        a.portal.call(rt.handle, theirs["user"], theirs["event"])
+        a.portal.call(rt.handle, theirs["user"], "message", "探して")
+        for r in (mine, theirs):
+            logic.save_preferences(remembered.state, r["user"], {"area": "新宿"})
+            logic.save_job(remembered.state, r["user"], "a003")
+            logic.submit_application(remembered.state, r["user"], "a003")
+        seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
+        assert seen["summary"]["stated_preferences"] and seen["saves"] and seen["applications"]
+        assert remembered.state.user(mine["user"])["views"] and a.portal.call(rt.current_thread, mine["user"]) == 1
+
+        assert a.post("/api/profile/forget", params={"user_id": theirs["user"]},
+                      json={"user_id": theirs["user"]}).json() == {"forgotten": True}
+        seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
+        assert seen["summary"]["stated_preferences"] == {} and seen["summary"]["linked"] is False
+        assert seen["saves"] == seen["applications"] == seen["outcomes"] == [] and seen["last_contact"] is None
+        assert not remembered.state.user(mine["user"]).get("views")
+        assert a.portal.call(rt.current_thread, mine["user"]) == 0  # 会話も消える
+        # 別のブラウザのシナリオ利用者はそのまま
+        kept = b.post("/api/dip", json={"user_id": theirs["user"]}).json()
+        assert kept["summary"]["stated_preferences"] and kept["saves"] and kept["applications"]
+        assert a.portal.call(rt.current_thread, theirs["user"]) == 1
+        assert a.post("/api/dip", json={"user_id": theirs["user"]}).status_code == 403
 
 
 # ----------------------------- (5) 本人の Cookie のユーザーだけ -----------------------------
@@ -652,12 +690,17 @@ def test_profile_screen_in_the_browser(remembered, browser, served_profile):  # 
     page.get_by_text("エリアは渋谷で探しますね。").wait_for()
     assert "生活費" not in page.locator("#log .row.bot").last.inner_text()
 
-    # すべて消す: 確認の1段を挟み、やめれば何も消えない
+    # すべて消す: 説明と確認に、応募を含めて消えるものと、消えないもの(その日の利用回数)が出る。
+    # 確認の1段を挟み、やめれば何も消えない
     page.locator("#nav button[data-view=profile]").click()
     forget = prof.locator('.prow[data-key="forget"]')
     forget.wait_for()
+    what = "aica が覚えていること・保存した求人・応募・これまでの会話"
+    assert prof.locator(".pcard.danger .pnote").inner_text() == \
+        f"{what}をすべて消します。その日の利用回数は消えません。次に開くと、はじめての訪問として始まります。"
     forget.locator("button.del").click()
-    forget.locator(".pconfirm", has_text="元に戻せません").wait_for()
+    assert forget.locator(".pconfirm span").inner_text() == \
+        f"本当にすべて消しますか?{what}が消え、元に戻せません。その日の利用回数は消えません。"
     forget.locator(".pconfirm button", has_text="やめる").click()
     assert logic.stated_preferences(remembered.state.user(uid))
     forget.locator("button.del").click()
