@@ -51,6 +51,7 @@ EVENTS = {
 STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("greet", "push")}
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
+GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話の入口(会話の state の entry)
 
 
 def event_input(event: str, text: str | None, facts: dict | None) -> str:
@@ -162,16 +163,23 @@ class LineRuntime:
     async def conversation(self, user_id: str) -> dict:
         """今の会話: 番号・最後に保存した時刻(最後のやりとり)・画面に描き直す履歴・挨拶が返ったか。LLM は呼ばない。
         返信が1つも無い会話(挨拶が失敗したなど)は、時刻を None にする(続ける相手がいない)。
-        greeted: トークを開いた挨拶で始まり、その返信が保存されている(画面に届いたかは問わない)。"""
+        greeted: トークを開いた挨拶で始まり、その返信が保存されている(画面に届いたかは問わない)。挨拶で始まったかは
+        会話を始めたときの入口(state の entry)で決める(挨拶の文言を変えても、前の文言の挨拶を見分けられる)。
+        entry の無い古い記録だけ、最初の入力を今の挨拶文と比べる。"""
         n = await self._current(user_id)
         tup = await self._saver.aget_tuple(self._cfg(user_id, n)) if n else None
-        messages = (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages", []) if tup else []
+        values = (await self.agent.aget_state(self._cfg(user_id, n))).values if tup else {}
+        messages = values.get("messages", [])
         turns = history(messages, user_id)
         last_at = None
         if tup and any(t["bot"] for t in turns):
             last_at = datetime.fromisoformat(tup.checkpoint["ts"])
-        first = next((m.content for m in messages if m.type == "human"), None)
-        greeted = first in {event_input(e, None, None) for e in GREETINGS} and turns[0]["bot"] is not None
+        if values.get("entry") is not None:
+            opened = values["entry"] in GREET_ENTRIES
+        else:  # entry を残す前の古い記録
+            first = next((m.content for m in messages if m.type == "human"), None)
+            opened = first in {event_input(e, None, None) for e in GREETINGS}
+        greeted = opened and bool(turns) and turns[0]["bot"] is not None
         return {"thread": n, "last_at": last_at, "turns": turns, "greeted": greeted}
 
     async def add_voice_result(self, user_id: str, reply: dict) -> bool:
