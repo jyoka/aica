@@ -576,8 +576,14 @@ async def profile_track_delete(request: Request):
 
 @app.delete("/api/profile/resume")
 async def profile_resume_delete(request: Request):
+    """履歴書の読み取り結果を消し、今の会話を閉じる(会話に残るアップロードの要点・要約の結果を、画面にも AI にも
+    もう出さない)。次にトークを開くと、30分以内でも新しい会話(挨拶)から始まる。古い会話を開いたままのタブの発言は
+    stale になる。LLM は呼ばず、会話数も使わない。消すものが無ければ会話は閉じない。"""
     user_id = _profile_writer(request)
-    profile.delete_resume(state, user_id)
+    rt = app.state.rt
+    async with rt.user_lock(user_id):  # 進行中のターンが終わってから消して閉じる
+        if profile.delete_resume(state, user_id)["found"]:
+            await rt.close_conversation(user_id)
     app.state.unread_uploads.pop(user_id, None)
     return _profile_view(user_id)
 

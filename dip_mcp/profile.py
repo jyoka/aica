@@ -10,6 +10,7 @@
   保存しない)を効かせる
 - 「すべて消す」は、そのユーザーの dip の状態をまるごと消す(次に開くと初回訪問)。会話そのもの(LINE 側の
   チェックポイント)を消すのは LINE 側の仕事(line_runtime.server)
+- 履歴書を消すと、LINE 側は今の会話を閉じる(会話に残るアップロードの要点を読めなくする。次は新しい会話から)
 LLM は使わない。
 """
 
@@ -213,13 +214,18 @@ UNDO_ERRORS = {
 
 
 def delete_resume(state: State, line_user_id: str) -> dict:
-    """アップロードした履歴書の読み取り結果を丸ごと消す(チャットの要約にも音声の指示にも出なくなる)。"""
+    """アップロードした履歴書の読み取り結果を丸ごと消す(チャットの要約にも音声の指示にも出なくなる)。
+    found: 消すものがあったか(あったら呼び出し元は今の会話を閉じる。会話に残る要点も読めなくするため)。"""
+    found = False
+
     def apply(u):
+        nonlocal found
         if u.pop("resume_upload", None) is not None:
+            found = True
             _note(u, "消した", RESUME_LABEL)
 
     state.update(line_user_id, apply)
-    return {"deleted": "resume"}
+    return {"deleted": "resume", "found": found}
 
 
 def delete_voice_draft(state: State, line_user_id: str, result_id: int) -> dict:

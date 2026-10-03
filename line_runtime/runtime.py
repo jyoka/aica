@@ -184,9 +184,26 @@ class LineRuntime:
             shown = LineReply(bubbles=reply["bubbles"], quick_replies=reply["quick_replies"],
                               job_ids=[c["job_id"] for c in reply["cards"]])
             human = HumanMessage(voice_event(reply), additional_kwargs={"voice": reply})
-            await self.agent.aupdate_state(self._cfg(user_id, n),
-                                           {"messages": [human, AIMessage(shown.model_dump_json())]}, as_node="model")
+            update = {"messages": [human, AIMessage(shown.model_dump_json())]}
+            if not (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages"):
+                update |= {"entry": "A", "line_user_id": user_id}  # 閉じた後の空の会話: 結果のターンから始まる
+            await self.agent.aupdate_state(self._cfg(user_id, n), update, as_node="model")
             return True
+
+    async def close_conversation(self, user_id: str) -> None:
+        """今の会話を閉じる(プロフィールで履歴書を消したとき)。その会話のチェックポイントを消して空の会話に置き換え、
+        さらに空の会話を1つ進めて今の会話にする。前の会話の履歴(アップロードの要点・要約のツール結果)は描き直せず、
+        次の会話の文脈にも入らない。番号は戻さず進めるので、古い会話を開いたままのタブの発言は stale になる。
+        空の会話は挨拶が返っていない会話と同じ扱い(続けずに新しい会話から始まる)。LLM は呼ばない。
+        呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
+        n = await self._current(user_id)
+        if not n:
+            return
+        await self._saver.adelete_thread(f"{user_id}:{n}")
+        # 空のチェックポイントで番号を埋める(再起動後も _current が番号を数え直せるように。数え方は1番から連続)
+        for k in (n, n + 1):
+            await self.agent.aupdate_state(self._cfg(user_id, k), {"messages": []}, as_node="model")
+        self._threads[user_id] = n + 1
 
     async def forget(self, user_id: str) -> None:
         """そのユーザーの会話(チェックポイント)をすべて消す(プロフィールの「すべて消す」)。次の会話は1番から。

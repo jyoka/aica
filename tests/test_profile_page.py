@@ -5,7 +5,8 @@ aica が本人について覚えていること(雇用区分・目的・希望�
 (1) 画面の API に全項目が出る(空の項目も)。画面では空の項目が「まだありません」になる(ブラウザ)
 (2) 直す・消すと、次の返信の前に AI へ伝わる(会話の途中なら知らせ、要約もすぐ変わる)。AI は直した値で話し、
     消した項目を前提にしない
-(3) 履歴書の読み取り結果と音声の下書きを丸ごと消せる。消した後はチャットの要約にも音声の指示にも出ない
+(3) 履歴書の読み取り結果と音声の下書きを丸ごと消せる。消した後はチャットの要約にも音声の指示にも出ない。
+    履歴書を消すと今の会話は閉じ、次は新しい会話から始まる(task 115。古いタブは stale、会話数は余計に使わない)
 (4) 「すべて消す」で長期メモリと会話が消え、次に開くと初回訪問として始まる(会話数の上限の数は消さない)
 (5) パスにユーザーIDは無く、Cookie の本人の分だけ。他人の匿名IDを名乗っても届かず、Cookie なし・不正は 401
 (6) 手で直すときも、電話番号・メール・住所らしい値は弾く
@@ -263,13 +264,13 @@ def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered,
         assert p["resume"] is None
         assert logic.conversation_summary(remembered.state, uid)["uploaded_resume"] is None
         assert client.get("/liff/resume?rid=0").status_code == 404
-        # チャット: 次の返信の前に「消した」と伝わり、履歴書を前提にしない
-        r = stream(client, uid, "message", th, "探して")[-1]
+        # チャット: 今の会話は閉じ、新しい会話は消した後の要約を読むので、履歴書を前提にしない
+        _, again = open_talk(client)
+        r = stream(client, uid, "message", again["thread"], "探して")[-1]
         assert "履歴書の経歴も踏まえます。" not in r["bubbles"]
-        assert "履歴書の読み取り結果を消した" in remembered.model.contexts[-1][-2].content
         # アップロードのターンも、消した後は読み取り結果が無いので始められない
         assert client.post("/api/event/stream", json={"user_id": uid, "event": "resume_upload",
-                                                      "thread": th}).status_code == 400
+                                                      "thread": again["thread"]}).status_code == 400
 
     # 音声: 同じ要約を読むので、面談の指示にも入らない(本物の dip MCP)
     async def start():
@@ -290,15 +291,146 @@ def test_a_link_from_before_the_resume_was_deleted_does_not_open_the_next_upload
     with _client(remembered) as client:
         opened, greeting = open_talk(client)
         uid, th = opened["user"], greeting["thread"]
-        up = lambda: client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
-                                 files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).json()["view_url"]
-        first = up()
+        up = lambda th: client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
+                                    files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).json()["view_url"]
+        first = up(th)
         assert client.delete("/api/profile/resume").json()["resume"] is None
-        second = up()
+        second = up(open_talk(client)[1]["thread"])  # 消すと今の会話は閉じるので、新しい会話でアップロードする
         assert first != second
         old = client.get(first)
         assert old.status_code == 404 and "置き換わりました" in old.text and "コンビニみほん駅前店" not in old.text
         assert "コンビニみほん駅前店" in client.get(second).text
+
+
+RESUME_TEXT = "コンビニみほん駅前店"  # 読み取り結果の要点(アップロードの確認の吹き出し・要約のツール結果に出る)
+
+
+def _talk_with_resume(client) -> tuple[str, int]:
+    """トークを開き、履歴書をアップロードして、その要点で1往復話した会話: (匿名ID, 会話の番号)。"""
+    opened, greeting = open_talk(client)
+    uid, th = opened["user"], greeting["thread"]
+    assert client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
+                       files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 200
+    stream(client, uid, "resume_upload", th)
+    assert "履歴書の経歴も踏まえます。" in stream(client, uid, "message", th, "探して")[-1]["bubbles"]
+    return uid, th
+
+
+def test_deleting_the_resume_closes_the_conversation_and_the_next_one_starts_new(remembered):
+    """履歴書を消すと今の会話は閉じる。30分以内に開き直しても前の会話を描き直さず、新しい会話(再訪の挨拶)から始まる。
+    前の会話に残っていた要点(アップロードの確認・要約のツール結果)は、画面にも新しい会話の LLM への入力にも出ない。"""
+    with _client(remembered) as client:
+        uid, th = _talk_with_resume(client)
+        rt = client.app.state.rt
+        assert RESUME_TEXT in json.dumps(client.get("/api/talk/history").json(), ensure_ascii=False)
+
+        client.delete("/api/profile/resume")
+        # 閉じた会話は描き直せない(履歴も、チェックポイントの中身も無い)
+        h = client.get("/api/talk/history").json()
+        assert h["thread"] == th + 1 and h["turns"] == []
+        closed = asyncio.run(rt.agent.aget_state(rt._cfg(uid, th))).values
+        assert closed.get("messages") == []
+
+        remembered.later(0)  # 30分以内の再読み込み
+        opened, greeting = open_talk(client)
+        assert opened["event"] == "revisit" and greeting["entry"] == "revisit"
+        assert greeting["thread"] > th
+        assert greeting["bubbles"] == ["こんにちは。お仕事探しをお手伝いします。何をしますか?"]
+        h = client.get("/api/talk/history").json()
+        assert [t["user"] for t in h["turns"]] == [None] and "upload" not in h["turns"][0]
+        assert RESUME_TEXT not in json.dumps(h, ensure_ascii=False)
+        # 新しい会話の LLM への入力に、消した履歴書の要点が入らない
+        r = stream(client, uid, "message", greeting["thread"], "探して")[-1]
+        assert "履歴書の経歴も踏まえます。" not in r["bubbles"]
+        ctx = remembered.model.contexts[-1]
+        assert ctx[1].content.startswith("[イベント: 再訪")  # 新しい会話の最初から(前の会話を引き継がない)
+        assert not any(RESUME_TEXT in json.dumps(m.content, ensure_ascii=False) for m in ctx)
+        assert not any(m.type == "human" and m.content.startswith(NOTICE) for m in ctx)
+
+        # 再起動しても(会話の番号をチェックポイントから数え直しても)、閉じた会話には戻らない
+        rt._threads.pop(uid)
+        assert asyncio.run(rt.current_thread(uid)) == greeting["thread"]
+
+
+def test_an_old_tab_is_told_stale_after_the_resume_is_deleted_without_using_the_quota(remembered):
+    """別のタブで古い会話を開いたまま: 履歴書を消した後の発言・アップロードは、既存の古いタブの案内(stale)になる。
+    消すことも stale も会話数を使わない。新しい会話は挨拶の1回分だけ(迂回もできない: 数は消さない)。"""
+    with _client(remembered) as client:
+        uid, th = _talk_with_resume(client)
+        quota = client.app.state.quota
+        used = quota.used(uid)
+
+        client.delete("/api/profile/resume")
+        assert quota.used(uid) == used
+        evs = stream(client, uid, "message", th, "まだ続けたい")
+        assert evs[-1] == {"kind": "stale", "thread": th + 1}
+        r = client.post("/api/event", json={"user_id": uid, "event": "message", "text": "まだ", "thread": th}).json()
+        assert r == {"stale": True, "thread": th + 1}
+        assert client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
+                           files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")}).status_code == 409
+        assert quota.used(uid) == used
+        assert client.get("/api/talk/history").json()["turns"] == []  # 古いタブの発言は会話に入らない
+
+        _, greeting = open_talk(client)
+        assert quota.used(uid) == used + 1 and greeting["thread"] == th + 2
+        # 消すものが無ければ、会話は閉じない(開き直しは前の会話を続ける)
+        client.delete("/api/profile/resume")
+        opened, h = open_talk(client)
+        assert opened["event"] is None and h["thread"] == greeting["thread"] and len(h["turns"]) == 1
+        assert quota.used(uid) == used + 1
+
+
+def test_a_voice_result_after_the_resume_is_deleted_starts_the_next_conversation(remembered):
+    """閉じた後に音声相談の結果が届いたら、空の新しい会話の最初のターンになり、続けて話せる(ツールに渡す会話のユーザーが分かる)。"""
+    with _client(remembered) as client:
+        uid, th = _talk_with_resume(client)
+        client.delete("/api/profile/resume")
+        out = client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 下書き",
+                                                     "preferences": {"area": "中野"}}, headers=WORKER).json()
+        assert out["talk"] is True
+        opened, h = open_talk(client)
+        assert opened["event"] is None and h["thread"] == th + 1 and len(h["turns"]) == 1
+        assert RESUME_TEXT not in json.dumps(h, ensure_ascii=False)
+        stream(client, uid, "message", th + 1, "要約を読んで")
+        summary = next(_tool_payload(m) for m in reversed(remembered.model.contexts[-1]) if m.type == "tool")
+        assert "error" not in summary and summary["uploaded_resume"] is None  # 会話のユーザーで要約を読めた
+
+
+def test_deleting_the_resume_in_the_browser_starts_a_new_conversation(remembered, browser, served_profile):  # noqa: F811
+    """プロフィール画面で履歴書を消す確認に「今の会話は終わり」と出る。消してトークに戻ると、前の会話の吹き出しは
+    描かず、新しい会話(再訪の挨拶)から始まる。再読み込みしても前の会話には戻らない。"""
+    from resume_intake.extract import finalize
+
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    page.goto(served_profile + "/")
+    page.get_by_text("こんにちは。お仕事探しをお手伝いします。何をしますか?").wait_for()
+    uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
+    page.locator("#t").fill("探して")
+    page.locator("#send").click()
+    page.get_by_text("エリアはどこにしますか?").wait_for()
+    logic.save_resume_upload(remembered.state, uid, finalize(clean_draft()), file="履歴書(PDF)")
+
+    page.locator("#nav button[data-view=profile]").click()
+    row = page.locator('#profile .prow[data-key="resume"]')
+    row.locator("button.del").click()
+    row.locator(".pconfirm", has_text="今の会話は終わり、次は新しい会話から始まります").wait_for()
+    row.locator(".pconfirm button.danger").click()
+    row.locator(".pv.empty").wait_for()
+    assert logic.resume_upload(remembered.state, uid) is None
+
+    page.locator("#nav button[data-view=talk]").click()
+    page.locator("#log .row.bot", has_text="こんにちは。").wait_for()
+    assert page.locator("#log .row.me").count() == 0  # 前の会話は描かない
+    assert page.get_by_text("エリアはどこにしますか?").count() == 0
+    page.reload()
+    page.locator("#log .row.bot", has_text="こんにちは。").wait_for()
+    assert page.locator("#log .row.me").count() == 0
+    # 新しい会話で話せる(stale にならない)
+    page.locator("#t").fill("探して")
+    page.locator("#send").click()
+    page.get_by_text("エリアはどこにしますか?").wait_for()
+    context.close()
 
 
 def test_deleted_voice_draft_is_gone_with_its_files(remembered, tmp_path):
