@@ -1,9 +1,9 @@
 """希望条件 → recommend_jobs の引数づくりと、求人の読み上げ文。
 
-職種は dip 側(`dip_mcp/logic.py` の JOB_TYPES)と
+職種は dip 側(`dip_mcp/logic.py` の JOB_TYPES / FULLTIME_JOB_TYPES)と
 完全一致させる(PR #25: 一覧に無い値はエラーになる)。ここにコピーを持ち、
 テストで dip 側とずれていないことを確かめる(dip_mcp のコードには依存しない)。
-エリアの一覧(AREAS)と広い言い方(AREA_PHRASES)も同じやり方で持つ(task 33)。
+エリアの一覧(AREAS)と広い言い方(AREA_PHRASES)、雇用区分(TRACKS)も同じやり方で持つ(task 33・aica v2 の G)。
 """
 
 from __future__ import annotations
@@ -13,6 +13,41 @@ JOB_TYPES = (
     "アパレル販売", "イベントスタッフ", "オフィス事務", "カフェ", "コンビニ", "コールセンター",
     "スーパー・販売", "倉庫・軽作業", "塾講師・家庭教師", "配送・デリバリー", "飲食キッチン", "飲食ホール",
 )
+
+# dip_mcp/logic.py の FULLTIME_JOB_TYPES と同じ正社員の10種類(テストで同期を確認)
+FULLTIME_JOB_TYPES = (
+    "営業", "企画・PM", "エンジニア", "事務・管理", "販売・サービス", "製造・技術", "医療・介護", "教育",
+    "クリエイティブ", "物流",
+)
+
+# 雇用区分(dip_mcp/logic.py の TRACKS と同期)。求人の区分は未定を除く2つ
+TRACKS = ("アルバイト・パート", "正社員", "未定")
+DEFAULT_TRACK = "未定"
+EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
+# 区分ごとの条件(dip_mcp/logic.py の FULLTIME_PREFERENCE_KEYS と同期)。区分が決まっていれば、もう一方の区分の条件は
+# 聞かない・保存しない・検索に入れない。未定のあいだはどちらもありうるので落とさない(聞くのは区分が決まってから。playbook)
+PARTTIME_ONLY_KEYS = ("time_band", "min_wage", "days_per_week")
+FULLTIME_ONLY_KEYS = ("min_annual_salary", "work_style", "start_timing")
+
+
+def job_types_for(track: str | None) -> tuple[str, ...]:
+    """その雇用区分で選べる職種(未定なら両方の一覧)。"""
+    return {"アルバイト・パート": JOB_TYPES, "正社員": FULLTIME_JOB_TYPES}.get(track or "", JOB_TYPES + FULLTIME_JOB_TYPES)
+
+
+def off_track_keys(track: str | None) -> tuple[str, ...]:
+    """その雇用区分では使わない条件の項目(未定なら無し)。"""
+    return {"正社員": PARTTIME_ONLY_KEYS, "アルバイト・パート": FULLTIME_ONLY_KEYS}.get(track or "", ())
+
+
+def on_track(key: str, value, track: str | None) -> bool:
+    """その雇用区分の相談で使ってよい項目・値か。もう一方の区分の条件と、もう一方の区分にしか無い職種は使わない。"""
+    if key in off_track_keys(track):
+        return False
+    if key == "job_type" and track in EMPLOYMENT_TYPES:
+        return str(value) in job_types_for(track) or str(value) not in job_types_for(None)
+    return True
+
 
 # dip_mcp/logic.py の AREAS と同じ11の地名(テストで同期を確認)
 AREAS = ("新宿", "渋谷", "池袋", "品川", "上野", "中野", "高円寺", "吉祥寺", "横浜", "川崎", "大宮")
@@ -25,11 +60,12 @@ MAX_PROPOSALS = 3
 
 # 検索のためにゆるめられる(外せる)条件と、読み上げ用の呼び名。
 # dip の relax_conditions の options[].remove と同じ名前を使う。
-RELAXABLE = ("area", "time_band", "job_type", "min_wage")
+RELAXABLE = ("area", "time_band", "job_type", "min_wage", "min_annual_salary")
 CONDITION_LABELS = {
     "area": "エリア", "time_band": "時間帯", "job_type": "職種",
-    "min_wage": "時給の下限", "keywords": "その他の希望",
+    "min_wage": "時給の下限", "min_annual_salary": "希望年収の下限", "keywords": "その他の希望",
 }
+CONDITION_UNITS = {"min_wage": "円", "min_annual_salary": "万円"}
 
 
 def build_recommend_args(
@@ -38,17 +74,23 @@ def build_recommend_args(
     area: str | None = None,
     time_band: str | None = None,
     min_wage: int | None = None,
+    min_annual_salary: int | None = None,
+    track: str | None = None,
 ) -> dict:
     """会話で聞いた希望から recommend_jobs の引数を作る。
 
-    job_type / time_band は決まった一覧との完全一致だけを許す(合わなければ ValueError)。
+    job_type / time_band は決まった一覧との完全一致だけを許す(合わなければ ValueError)。職種の一覧は
+    今の雇用区分(track)のもの(未定なら両方)。区分が決まっていれば employment_type に入れる(未定なら入れず、
+    両方の区分から探す)。
     area はここでは一覧チェックをしない(駅名も許され、駅名の一覧は dip 側だけが持つ。
     一覧に無い値は dip 側がエラーと一覧を返す)。
     指定の無い条件は引数に入れない(dip 側で絞り込みされない)。
     """
-    if job_type is not None and job_type not in JOB_TYPES:
+    types = job_types_for(track)
+    if job_type is not None and job_type not in types:
+        where = f"{track}の" if track in EMPLOYMENT_TYPES else ""
         raise ValueError(
-            f"職種「{job_type}」は一覧にありません。次から選ぶ: {' / '.join(JOB_TYPES)}"
+            f"職種「{job_type}」は{where}一覧にありません。次から選ぶ: {' / '.join(types)}"
         )
     if time_band is not None and time_band not in TIME_BANDS:
         raise ValueError(
@@ -58,7 +100,13 @@ def build_recommend_args(
         min_wage = int(min_wage)
         if min_wage <= 0:
             raise ValueError("min_wage は正の整数(円)にする")
-    args = {"job_type": job_type, "area": area, "time_band": time_band, "min_wage": min_wage}
+    if min_annual_salary is not None:
+        min_annual_salary = int(min_annual_salary)
+        if min_annual_salary <= 0:
+            raise ValueError("min_annual_salary は正の整数(万円)にする")
+    args = {"job_type": job_type, "area": area, "time_band": time_band, "min_wage": min_wage,
+            "min_annual_salary": min_annual_salary,
+            "employment_type": track if track in EMPLOYMENT_TYPES else None}
     return {k: v for k, v in args.items() if v is not None}
 
 
@@ -87,7 +135,7 @@ def relax_option_line(option: dict) -> str:
     key = str(option.get("remove", ""))
     label = CONDITION_LABELS.get(key, key)
     current = option.get("current")
-    unit = "円" if key == "min_wage" else ""
+    unit = CONDITION_UNITS.get(key, "")
     shown = f"({current}{unit})" if current not in (None, "") else ""
     return f"- {label}{shown}を外すと{option.get('total_after', 0)}件(relax: {key})"
 

@@ -23,19 +23,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # isort: skip
 
 from openai import AsyncOpenAI
 
+from dip_mcp.logic import counseling_playbook
 from voice_resume import config
 from voice_resume.flow import count_experience_probes, find_leading_questions
-from voice_resume.prompts import ADVISOR_INSTRUCTIONS
+from voice_resume.prompts import advisor_instructions, greeting_instructions
 
 RESULTS = config.RESULTS_DIR
 MAX_ASSISTANT_TURNS = 12
 
-# 本番(agent.GREETING)と同じ入りの指示。agent.py は livekit を import するのでここに写す
-GREETING = (
-    "まず一言で挨拶し、バイト探しの希望と経験を5分ほどで聞くこと、"
-    "終わると求人の提案と履歴書の下書きが出ることを短く伝えてください。"
-    "そのあと最初の質問として、どんなバイトを探しているか(職種)を聞いてください。"
-)
+# 本番と同じ指示: アルバイト・パートの面談(区分の音声版の playbook つき)と、その最初の発話への指示
+TRACK = "アルバイト・パート"
+ADVISOR_INSTRUCTIONS = advisor_instructions(TRACK, counseling_playbook(TRACK, "voice")["playbook"])
+GREETING = greeting_instructions(track=TRACK)
 
 # gpt-6-sol 入出力の単価(USD/1M tokens)。scripts/e2e_audio_session.py と同じ
 PRICE_IN, PRICE_OUT = 2.00, 10.00

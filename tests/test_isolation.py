@@ -254,7 +254,8 @@ def test_history_builds_page_urls_and_drops_the_old_user_id_urls():
     assert uid not in json.dumps(turns)
     assert turns[0]["upload"]["view_url"] is None  # 古い記録: どのアップロードか分からないので開かせない
     assert turns[1]["upload"] == {"file": "履歴書(PDF)", "shown": ["y"], "view_url": "/liff/resume?rid=2"}
-    assert turns[2]["bot"]["buttons"] == [{"label": "職務経歴書の下書きを見る", "url": "/liff/voice/draft?rid=4"}]
+    # document_kind の無い古い返信は履歴書(その頃の下書きの形)。ボタンの呼び方もそろえる
+    assert turns[2]["bot"]["buttons"] == [{"label": "履歴書の下書きを見る", "url": "/liff/voice/draft?rid=4"}]
 
 
 def test_an_old_upload_link_does_not_open_a_newer_resume(app, monkeypatch):  # noqa: F811

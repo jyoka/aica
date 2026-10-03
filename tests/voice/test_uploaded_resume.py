@@ -62,8 +62,8 @@ def test_voice_interview_starts_from_the_uploaded_resume(tmp_path, monkeypatch):
     # 個人情報(読み取り前の連絡先など)は指示にも挨拶にも入らない
     assert not any(p in advisor.instructions + greeting for p in PII)
 
-    # 履歴書を出していない別ユーザーは従来どおり(希望も履歴書も無い指示・挨拶)
-    assert other.instructions == ResumeAdvisor().instructions
+    # 履歴書を出していない別ユーザーは従来どおり(希望も履歴書も無い指示・挨拶。区分は未定の音声版の playbook)
+    assert other.instructions == ResumeAdvisor(playbook=logic.counseling_playbook("未定", "voice")["playbook"]).instructions
     assert other_greeting == greeting_instructions()
 
 
@@ -97,7 +97,7 @@ def test_resume_and_stated_preferences_together(tmp_path):
     advisor = ResumeAdvisor(stated_preferences=stated, uploaded_resume=resume)
     assert "カフェ" in advisor.instructions and "コンビニみほん駅前店" in advisor.instructions
     assert "会話で話した希望を優先" in advisor.instructions
-    greeting = greeting_instructions(stated, resume)
+    greeting = greeting_instructions(stated, resume, "アルバイト・パート")
     assert "職種はカフェ" in greeting and "コンビニみほん駅前店" in greeting
     assert "近い仕事で探すか" not in greeting  # 最初の1問は希望の確認だけ(2問にしない)
 
@@ -156,7 +156,7 @@ def test_greeting_touches_the_most_recent_job():
 
 def test_education_only_resume_is_still_used():
     """学歴しかない履歴書(学生・バイト経験なし)でも、在学中の学歴が指示に入り、挨拶で履歴書に触れる。"""
-    summary = {"stated_preferences": {}, "uploaded_resume": {"uploaded": "9/23", "education": [
+    summary = {"stated_preferences": {}, "search_track": "アルバイト・パート", "uploaded_resume": {"uploaded": "9/23", "education": [
         {"school": "みほん中学校", "status": "卒業", "period": "2021年3月"},
         {"school": "みほん高等学校", "status": "在学中", "period": "2021年4月〜"},
     ]}}

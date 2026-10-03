@@ -1,10 +1,11 @@
 """dip 側 MCP サーバー(このリポジトリの dip_mcp = baitoru-mcp のシミュレーション)への薄いクライアント。
 
 `python -m dip_mcp.server`(stdio)を子プロセスとして起動し、MCP でつなぐ。
-読み取りは `recommend_jobs` / `relax_conditions` / `get_user_conversation_summary`。
+読み取りは `recommend_jobs` / `relax_conditions` / `get_user_conversation_summary` /
+`get_counseling_playbook`(雇用区分ごとの音声版の playbook)。
 トークから入った相談(ユーザーID が分かるとき)だけ、書き込みも使う:
-本人が話した希望の保存(`save_user_preferences`)と会話結果の記録
-(`record_conversation_outcome`)。単体で動かすとき(ユーザー不明)は
+雇用区分の切り替え(`set_search_track`)、本人が話した希望の保存(`save_user_preferences`)と
+会話結果・相談のまとめの記録(`record_conversation_outcome`)。単体で動かすとき(ユーザー不明)は
 タスク 31 の決まりのまま読み取りだけで、dip の状態は書き換えない。
 """
 
@@ -21,10 +22,6 @@ from mcp.client.stdio import stdio_client
 from voice_resume import config
 
 logger = logging.getLogger("voice-resume.dip")
-
-# 音声の相談はアルバイト・パートの求人だけを探す(職種の一覧も jobs.JOB_TYPES = アルバイト・パートの12種類)。
-# 正社員の音声の相談(playbook・職務経歴書の下書き)は aica v2 の G で足す。
-EMPLOYMENT_TYPE = "アルバイト・パート"
 
 # relax_conditions は dip 側で user_id が必須。ユーザーが分からないときは固定の
 # 匿名IDを渡す(dip 側は未知のIDを「新規ユーザー」として読み取るだけで、記録は書かない)。
@@ -51,18 +48,25 @@ class DipMCP:
         logger.info("dip MCP サーバーに接続: %s", " ".join(command))
 
     async def recommend_jobs(self, **args) -> dict:
-        """条件に合う求人(最大3件)。返り値は dip の {"total", "jobs"} か {"error", ...}。"""
-        if self._session is None:
-            raise RuntimeError("DipMCP.start() が呼ばれていません")
-        result = await self._session.call_tool("recommend_jobs", {"employment_type": EMPLOYMENT_TYPE, **args})
+        """条件に合う求人(最大3件)。返り値は dip の {"total", "jobs"} か {"error", ...}。
+        雇用区分は args の employment_type(今の区分。未定なら渡さず、両方の区分から探す)。"""
+        result = await self._call("recommend_jobs", args)
         return _tool_result_dict(result)
 
     async def relax_conditions(self, **args) -> dict:
         """条件を1つずつ外すと何件になるか。返り値は dip の {"total_now", "options"}(読み取りだけ)。"""
-        if self._session is None:
-            raise RuntimeError("DipMCP.start() が呼ばれていません")
-        result = await self._session.call_tool(
-            "relax_conditions", {"line_user_id": ANON_USER_ID, "employment_type": EMPLOYMENT_TYPE, **args}
+        result = await self._call("relax_conditions", {"line_user_id": ANON_USER_ID, **args})
+        return _tool_result_dict(result)
+
+    async def get_counseling_playbook(self, track: str, channel: str = "voice") -> dict:
+        """雇用区分の相談の playbook(音声版)。返り値は dip の {"track", "channel", "rules", "playbook"} か {"error"}。"""
+        result = await self._call("get_counseling_playbook", {"track": track, "channel": channel})
+        return _tool_result_dict(result)
+
+    async def set_search_track(self, user_id: str, track: str, evidence: str) -> dict:
+        """本人の発話を根拠に雇用区分を切り替えて、dip に記録する(evidence は本人の発言そのまま)。"""
+        result = await self._call(
+            "set_search_track", {"line_user_id": user_id, "track": track, "evidence": evidence}
         )
         return _tool_result_dict(result)
 
@@ -80,15 +84,15 @@ class DipMCP:
         return _tool_result_dict(result)
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
     ) -> dict:
-        """会話の結果を記録する。voice-resume からは propose / consult だけを記録する
+        """会話の結果と相談のまとめ(summary。200字以内)を記録する。voice-resume からは propose / consult だけを記録する
         (wait は本人が断ったときだけ。断っていない人を wait と記録しない決まりを守る)。"""
         if outcome not in ("propose", "consult"):
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
         result = await self._call("record_conversation_outcome", {
             "line_user_id": user_id, "outcome": outcome, "reason": reason,
-            "confidence": confidence,
+            "confidence": confidence, **({"summary": summary} if summary else {}),
         })
         return _tool_result_dict(result)
 

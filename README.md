@@ -317,10 +317,14 @@ AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+
 (旧リポジトリの task 40 を task 62 で移植。task 92 で別タブをやめ、トークと同じ画面のシートで開くようにした)。
 音声はトークの上に重ねる通話中のシート(画面下から出る)で話し、タブはまたがない。シートにはマイクの許可・
 接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています の状態と「面談を終える」がある。
-面談が終わるとシートが閉じ、同じトークに AI の返信として「音声で話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が続く
+面談が終わるとシートが閉じ、同じトークに AI の返信として「音声で話した内容のまとめ」「求人カード」「履歴書の下書きを見る」
+(雇用区分が正社員の面談なら「職務経歴書の下書きを見る」)が続く
 (システム通知のラベルは出さない。会話に入るので再読み込みしても残り、次のテキストの会話はその続きになる)。
-音声で聞いた希望・経験・できること・資格(dip の相談プロファイル8項目)・提案した求人・下書きは、
-同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
+音声もチャットと同じ雇用区分・playbook・保存の仕組みを使う(aica v2 の G): 音声アドバイザーは今の区分の音声版の playbook
+(`dip_mcp/playbooks/{区分}_voice.md`)で話し、本人の発話から `set_search_track` で区分を切り替え(未定なら最初に1問で確かめる)、
+話した希望と本人のこと(目的・強み・正社員の条件など)を `save_user_preferences` で、相談のまとめを `record_conversation_outcome` で残す。
+提案した求人・下書きと合わせて、同じユーザーの dip の状態(長期メモリ)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
+書類の呼び方は区分にそろえる(アルバイト・パート = 履歴書、正社員 = 職務経歴書。区分が未定のあいだは「+」メニューとアドバイザーが「履歴書など」と言う)。
 
 ユーザーの対応付けは匿名ユーザーID(上の「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、
 トークで使っているユーザー(本番の画面は匿名ID `w-…`、開発者画面は `匿名ID:シナリオユーザー`(例 `w-…:sim-new`))をそのまま音声側へ渡し、
@@ -332,13 +336,17 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
    → POST /api/voice/start(line_runtime。user_id は本文。Cookie の匿名IDのユーザーでなければ 403、Cookie なしは 401。
      会話数を1つ使い、上限なら 429)が LiveKit の接続トークン(有効期限5分)を発行し、participant metadata に user_id を載せる
      (発行は voice_resume/livekit_token.py。LIVEKIT_* が無ければ会話数を使わずに 503)
-   → ブラウザ ⇔ LiveKit Cloud ⇔ 音声ワーカー。ワーカーは会話の前に get_user_conversation_summary を読む
+   → ブラウザ ⇔ LiveKit Cloud ⇔ 音声ワーカー。ワーカーは会話の前に get_user_conversation_summary を読み、今の雇用区分
+     (search_track)の音声版の playbook を get_counseling_playbook(track, "voice") で読む
      (前に話した希望 stated_preferences と、トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
-   → 会話中: recommend_jobs をそのユーザーID で呼ぶ / 本人が言った希望を save_user_preferences で保存
-   → 終わり(締めの挨拶か「面談を終える」): 結果を propose / consult で記録し、POST /api/voice/result(共有鍵
-     AICA_INTERNAL_KEY つき。下書きは2万字まで)で話した希望・求人・下書きをこちらへ返す → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)
+   → 会話中: 区分の切り替えを set_search_track で記録して playbook を入れ替える / recommend_jobs を今の区分とそのユーザーID で呼ぶ /
+     本人が言った希望と本人のことを save_user_preferences で保存
+   → 終わり(締めの挨拶か「面談を終える」): POST /api/voice/result(共有鍵 AICA_INTERNAL_KEY つき。下書きは2万字まで)で
+     話した希望・求人・下書き(document_kind つき)をこちらへ返し、結果を propose / consult と相談のまとめで記録する
+     → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)。面談の途中で本人が「すべて消す」をしていたら、
+     その前に発行した部屋の結果は 410 で断り、ワーカーも記録しない
    → シートは開いている間だけ POST /api/voice/wait(この面談の部屋の結果を最長25秒待って返すのを繰り返す)で待ち、
-     届いたら閉じて同じ返信(まとめ・求人カード・「職務経歴書の下書きを見る」= GET /liff/voice/draft)をトークに描く
+     届いたら閉じて同じ返信(まとめ・求人カード・「履歴書の下書きを見る」か「職務経歴書の下書きを見る」= GET /liff/voice/draft)をトークに描く
      (「面談を終える」から2分たっても届かなければ、× で閉じてよいと案内する。あとで届いた結果は会話に入り、開き直すと出る)
 ```
 
@@ -402,7 +410,7 @@ DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。トーク(line_runtime)が部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
-| `OPENAI_API_KEY` | なし(必須) | 会話の LLM・履歴書の下書き・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
+| `OPENAI_API_KEY` | なし(必須) | 会話の LLM・下書き(履歴書・職務経歴書)・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
 | `AICA_INTERNAL_KEY` | なし(必須) | サーバー間の経路の共有鍵。音声ワーカーが結果をトークへ送る `POST /api/voice/result` に付け、line_runtime が照合する(両方に同じ値。無ければ結果は 401 で届かない)。例: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 面談の結果(求人・下書き)を返すトーク(line_runtime)の URL |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 面談ごとの下書き・文字起こし・求人提案の保存先 |

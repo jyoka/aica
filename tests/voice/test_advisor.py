@@ -63,13 +63,13 @@ class FakeDip:
         return {"saved": list(preferences), "rejected": []}
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
     ) -> dict:
         if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
         self.outcome_calls.append({
             "line_user_id": user_id, "outcome": outcome, "reason": reason,
-            "confidence": confidence,
+            "confidence": confidence, "summary": summary,
         })
         return {"recorded": {"outcome": outcome}}
 
@@ -271,7 +271,7 @@ def test_finalize_writes_draft_preferences_and_job_ids(tmp_path, monkeypatch):
         return next(p for p in tmp_path.iterdir() if p.name.startswith(prefix) and p.name.endswith(suffix))
 
     resume = json.loads(find("resume-draft", ".json").read_text(encoding="utf-8"))
-    assert resume["format_version"] == "1.0"
+    assert resume["format_version"] == "1.1" and resume["document_kind"] == "履歴書"  # 区分が正社員でなければ履歴書
     assert resume["source"] == "voice-interview"
     assert resume["resume"]["job_summary"] == "コンビニで1年半勤務。"
     assert all(v == "" for v in resume["personal"].values())

@@ -1,6 +1,6 @@
 """面談の終わりに out/ へ書き出す成果物。
 
-- resume-draft-<ts>.json / .md: 履歴書の下書き(形は docs/design/resume-draft-schema.md)
+- resume-draft-<ts>.json / .md: 下書き(履歴書か職務経歴書。形は docs/design/resume-draft-schema.md の format_version 1.1)
 - transcript-<ts>.json: 文字起こし
 - job-proposal-<ts>.json: 本人が言った希望(preferences)・検索に使った条件(recommend_args)・
   検索のためにゆるめた条件(relaxed)・検索の経緯(search_attempts)・提案した求人ID。
@@ -15,7 +15,7 @@ import json
 from voice_resume import config
 from voice_resume.drafter import build_draft, finalize
 from voice_resume.render import to_markdown
-from voice_resume.schema import JST
+from voice_resume.schema import DEFAULT_DOCUMENT_KIND, JST
 
 
 def history_transcript(chat_ctx) -> list[dict]:
@@ -40,13 +40,14 @@ async def write_outputs(
     search_attempts: list[dict] | None = None,
     proposed_jobs: list[dict] | None = None,
     source: str = "voice-interview",
+    document_kind: str = DEFAULT_DOCUMENT_KIND,
 ) -> dict:
-    """下書きを生成して out/ に保存し、{resume, markdown, proposal, files} を返す。
+    """下書き(document_kind の書類)を生成して out/ に保存し、{resume, markdown, proposal, files} を返す。
 
     client は AsyncOpenAI(テストではスタブ)。
     """
-    draft = await build_draft(transcript, client)
-    env = finalize(draft, source=source)
+    draft = await build_draft(transcript, client, document_kind=document_kind)
+    env = finalize(draft, source=source, document_kind=document_kind)
     markdown = to_markdown(env)
     proposal = {
         "preferences": preferences or {},

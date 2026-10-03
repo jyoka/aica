@@ -239,6 +239,11 @@ class State:
                 data["users"][line_user_id] = copy.deepcopy(u) | {"line_user_id": line_user_id}
             self._write(data)
 
+    def user_ids(self) -> list[str]:
+        """状態にいるユーザーの ID(fixtures の初期ユーザーを含む)。"""
+        with self._lock():
+            return list(self._read()["users"])
+
     def user(self, line_user_id: str) -> dict:
         """未知の LINE ユーザーは「dip ID 未連携の新規」として扱う。"""
         with self._lock():

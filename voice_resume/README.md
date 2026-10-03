@@ -1,4 +1,4 @@
-# voice-resume - 音声で棚卸しして、求人の提案と履歴書の下書きを作る
+# voice-resume - 音声で棚卸しして、求人の提案と履歴書・職務経歴書の下書きを作る
 
 > 旧リポジトリ `jyoka/aica_ra_a2a_poc`(コミット `cda42fd`)の `voice-resume/` を aica に移植したもの(task 62)。
 > パスはリポジトリ直下に合わせてある(パッケージ `voice_resume/`・テスト `tests/voice/`・スクリプト `scripts/voice/`)。
@@ -9,8 +9,9 @@
 > このときはまだ別タブの会話ページだった。`talk-voice-sheet-20260929-*.png` は task 92 の、同じ画面のシートで話して結果がトークに続くまでの証跡。
 > LiveKit のブラウザ用ライブラリを代役にし、音声ワーカーの代わりに `POST /api/voice/result` へ結果を送った)。
 
-キャリアアドバイザーと日本語の音声で話しながら、バイト探しの希望条件と経験を5分ほどで聞き取り、
-最後に条件に合う求人を最大3件提案する。会話が終わると履歴書の下書き(構造化 JSON + Markdown)と
+キャリアアドバイザーと日本語の音声で話しながら、仕事探しの希望と経験を5分ほどで聞き取り、
+最後に条件に合う求人を最大3件提案する。チャットと同じ雇用区分(アルバイト・パート / 正社員 / 未定)・playbook・保存の仕組みを使い
+(aica v2 の G)、会話が終わると下書き(アルバイト・パートと未定は履歴書、正社員は職務経歴書。構造化 JSON + Markdown)と
 希望条件・提案した求人IDが `data/voice-resume/` に出る(`VOICE_RESUME_OUT_DIR` で変更可。git には入らない)。
 
 タスク 29 の OpenAI Realtime 構成は、日本語の不自然さ・早口・ヒアリングの深掘りすぎ・
@@ -26,8 +27,9 @@
                                                         ├ TTS: Cartesia sonic-3.5(日本語ボイス・少し遅め)
                                                         ├ ターン判定: Silero VAD + 多言語 turn detector
                                                         ├ dip: 同じリポジトリの dip_mcp(stdio。同じ venv の python で起動)
-                                                        │      recommend_jobs / relax_conditions +
-                                                        │      トークから入った相談なら summary の読み取り・希望の保存・結果の記録
+                                                        │      recommend_jobs / relax_conditions / get_counseling_playbook +
+                                                        │      トークから入った相談なら summary の読み取り・区分の切り替え・
+                                                        │      希望の保存・結果と相談のまとめの記録
                                                         └ 終了時: 下書き+希望+求人ID を data/voice-resume/ へ。
                                                            トーク(line_runtime)に結果(話した希望・求人・下書き)を返す
 トーク(line_runtime.server)= 会話の画面(トークの上に重ねる通話中のシート。line_runtime/static/talk-core.js)の配信と、
@@ -38,7 +40,8 @@ task 92 で、別ポートの会話ページ(旧 `voice_resume/server.py` と `s
 トークと同じ画面のシートにまとめた(単一コンテナでの公開に合わせ、line_runtime の配下で配る)。
 音声相談はトークから始めるものだけになり、ユーザー不明の単体ページは無い。
 
-- 下書きの JSON の形: `voice_resume/schema.py`(旧リポジトリの `docs/design/resume-draft-schema.md` と同じ。履歴書アップロード機能と共通なので変えない)
+- 下書きの JSON の形: `voice_resume/schema.py`(`docs/design/resume-draft-schema.md` の format_version 1.1。履歴書アップロード機能と
+  同じ形に、任意項目 `document_kind`(履歴書 / 職務経歴書)を足したもの。読める形は `render.py` が書類の種類で見出しと並びを変える)
 - `data/voice-resume/job-proposal-*.json` の形(タスク 35 で「本人の希望」と「検索に使った条件」を分けた):
   - `preferences`: 本人が言った希望だけ。検索のために外した・ゆるめた条件では上書きされない
   - `recommend_args`: 最後の検索に使った条件(ゆるめたものを含む)
@@ -56,9 +59,26 @@ task 92 で、別ポートの会話ページ(旧 `voice_resume/server.py` と `s
 
 ## ヒアリングの方針
 
-- 全体3〜5分・質問6〜8問。1テーマの深掘りは最大1回。
-- 順番: 希望条件(職種・エリア・曜日/時間帯・週の日数・時給)→ 経験 → できること → 資格・免許
+進め方(何を明らかにするか・掘り下げ方・選択肢の作り方・保存先・下書きの書類)は、チャットと同じく dip が配る
+雇用区分ごとの playbook の音声版(`dip_mcp/playbooks/{parttime,fulltime,undecided}_voice.md` と `common_voice.md`、
+`get_counseling_playbook(track, "voice")`)にある。チャット版と同じ骨格(見出し)で、言い回しだけ短く・1問ずつにした。
+`voice_resume/prompts.py` の `advisor_instructions` は、区分によらない音声の決まり(話し方・ツールの呼び方・0件のとき・
+誠実性・雇用区分の切り替えの合図)に、今の区分の playbook を足して指示にする。dip から読めないときは最小の進め方で続ける。
+
+- 雇用区分: 面談の前に dip の要約の `search_track` を読み、その区分の playbook で始める。未定なら最初に1問で区分を確かめる
+  (前に話した希望の確認は、区分が決まってから)。本人の発話に明示や強い合図があれば `set_search_track`(根拠は本人の発言そのまま)で
+  切り替えて dip に記録し、指示の playbook をその区分のものに入れ替える(`Agent.update_instructions`。同じターンの次の応答から効く)。
+  履歴書の内容や前に話した希望だけでは切り替えない(チャットと同じ合図の決まり)。
+- アルバイト・パート(タスク 31 からの決まりのまま): 全体3〜5分・質問6〜8問。1テーマの深掘りは最大1回。
+  目安の順番: 目的 → 希望条件(職種・エリア・曜日/時間帯・週の日数・時給)→ 経験 → できること → 資格・免許
   → 要約して確認 → 求人の提案。聞いた希望がそのまま `recommend_jobs` の検索条件になる。
+- 正社員: 全体5分前後(長くても8分)。目的・転職の理由、職歴、職歴ごとの成果と数字(規模・期間・結果)、強み、
+  やりたいこと・避けたいこと、条件(職種・勤務地・希望年収の下限・働き方・時期)。成果の数字は職歴1件につき1回だけ聞き、
+  本人が言った数字だけを使う。時間帯・時給・週の日数は聞かない・保存しない・検索に入れない。
+- 区分が決まっていれば、もう一方の区分の条件(正社員の面談での時給・時間帯、アルバイトの面談での希望年収など)は
+  検索にも保存にも入れず、挨拶で「前回の希望」として確かめもしない(`jobs.on_track`)。
+- 本人が話した希望と本人のこと(目的・強み・やりたいこと・避けたいこと・不安、正社員の条件)は、その場で
+  `save_user_preferences`(チャットと同じ dip の項目)に本人の言葉のまま保存する。
 - 0件のときは `relax_conditions` で「どの条件を外すと何件になるか」を調べて具体的に伝え、
   どれをゆるめるかを本人に一度で選んでもらう(「探してもよいですか?」を繰り返さない)。
   ゆるめた条件は `relaxed` として記録し、本人の希望(preferences)は書き換えない。
@@ -107,7 +127,8 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 (シートには 接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています と、求人検索などの「何をしているか」が出る)
 → 会話の最後に求人の提案が音声で出る
 → 会話が締まる(または「面談を終える」ボタン)と、下書きが `data/voice-resume/` に保存され、シートが閉じて
-  同じトークに「音声で話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が AI の返信として続く。
+  同じトークに「音声で話した内容のまとめ」「求人カード」「履歴書の下書きを見る」(正社員の面談なら「職務経歴書の下書きを見る」)が
+  AI の返信として続く。「+」メニューの説明とアドバイザーの話し方も、今の区分の書類名にそろえる(未定なら「履歴書など」)。
 
 ## トークから入る(line_runtime との統合・匿名ユーザーID)
 
@@ -117,8 +138,10 @@ LiveKit participant metadata(`{"user_id": ...}`)でワーカーまで届く。�
 (`w-0123456789abcdef`)、開発者画面ならそれでスコープしたシナリオユーザー(例 `w-0123456789abcdef:sim-new`。リポジトリ直下 README の
 「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)をこの ID に置き換えた。このとき:
 
-- 会話の前に dip の要約(`get_user_conversation_summary`)を読み、前に話した希望
-  (`stated_preferences`)があれば確認形で1回だけ使う(同じことを聞き直さない。LINE 側と同じ決まり)。
+- 会話の前に dip の要約(`get_user_conversation_summary`)を読み、今の雇用区分(`search_track`)の音声版の playbook を
+  `get_counseling_playbook(track, "voice")` で読んで指示に入れる。前に話した希望
+  (`stated_preferences`)があれば確認形で1回だけ使う(同じことを聞き直さない。LINE 側と同じ決まり。今の区分で使わない条件は除く)。
+  前の会話の相談のまとめ(`consultation_summary`)があれば、書いてある事実は聞き直さず「次に確かめること」から続ける。
 - 同じ要約の `uploaded_resume`(トークでアップロードした履歴書の読み取り結果)があれば、その要点を
   大事な順(資格、読み取れなかった点、できることは先頭5件、学歴は在学中か最終学歴の1行、職歴は新しい順に3件まで・
   やっていたこと等は1件あたり3つまで、職務要約、履歴書の希望)にアドバイザーの指示へ入れる。
@@ -131,13 +154,18 @@ LiveKit participant metadata(`{"user_id": ...}`)でワーカーまで届く。�
   要約が読めないときや、どちらも無いときは従来どおり職種から聞く。
 - 求人検索(`recommend_jobs` / `relax_conditions`)はそのユーザーID で呼ぶ(本人の傾向・応募済み除外が効く)。
   dip の MCP ツールの引数名は `line_user_id` のまま(line_runtime と共通の dip の契約)で、値に匿名ユーザーID のスコープを渡す。
-- 本人が話した希望は `save_user_preferences` で本人の言葉のまま保存する(経験・できること・資格を
-  含む dip の8項目 = 相談プロファイル。同じユーザーの次のテキスト会話の要約に出る)。
-- 終わると `record_conversation_outcome`(propose / consult)を記録し、話した希望・提案した求人・下書きを
-  トークの `POST /api/voice/result`(`{"user_id", "jobs", "draft_markdown", "files", "preferences", "room"}`)へ送る。
+- 本人の発話で雇用区分が変わったら `set_search_track` で記録する(根拠は本人の発言そのまま。トークのヘッダー・プロフィールにも出る)。
+- 本人が話した希望と本人のことは `save_user_preferences` で本人の言葉のまま保存する(経験・できること・資格、目的・強み・
+  やりたいこと・避けたいこと・不安、正社員の条件。チャットと同じ dip の項目 = 相談プロファイル。同じユーザーの次のテキスト会話の要約に出る)。
+- 終わると、話した希望・提案した求人・下書きをトークの `POST /api/voice/result`
+  (`{"user_id", "jobs", "draft_markdown", "document_kind", "files", "preferences", "room"}`)へ送り、
+  `record_conversation_outcome`(propose / consult と、アドバイザーが `finalize_interview` の `summary` に書いた200字以内の相談のまとめ)を記録する。
   サーバー間の経路なので、共有鍵を `Authorization: Bearer <AICA_INTERNAL_KEY>` で付ける(line_runtime と同じ値。無いと 401)。
-  line_runtime が今の会話に AI の返信(話した内容のまとめ・求人カード・「職務経歴書の下書きを見る」)として続け、
-  開いているシートが `POST /api/voice/wait` で受け取って閉じる(常時の問い合わせはしない)。
+  line_runtime が今の会話に AI の返信(話した内容のまとめ・求人カード・「履歴書の下書きを見る」か「職務経歴書の下書きを見る」)として続け、
+  開いているシートが `POST /api/voice/wait` で受け取って閉じる(常時の問い合わせはしない)。下書きのページの題も同じ書類名。
+- 面談の途中で本人がプロフィール画面の「すべて消す」をしたら、その前に発行した部屋の結果は `410` で断られる。
+  ワーカーはそれを見て、会話の結果と相談のまとめも記録しない(消した後に dip の記録を作り直さない)。
+  その面談で出力先に書き出した下書き・文字起こし・求人提案のファイルも消す。
 
 起動手順と画面の流れはリポジトリ直下の README の「音声相談(voice-resume との連携)」を参照。
 トーク側の URL は `VOICE_RESUME_TALK_URL`(既定 `http://127.0.0.1:8030`)で変えられる。
@@ -170,8 +198,12 @@ Realtime 版で「音声が途切れる」問題があったため、この構�
 dip の MCP 結合テストと匿名ユーザーID のスコープのテストはローカルの stdio サーバーを起動する):
 
 ```bash
-./.venv/bin/python -m pytest tests/voice/
+./.venv/bin/python -m pytest tests/voice/ tests/test_voice_track.py
 ```
+
+`tests/test_voice_track.py` は雇用区分・playbook・保存と職務経歴書の下書き(aica v2 の G)の台本テスト。dip は本物の MCP、
+トークは本物の HTTP サーバーで、アドバイザーの LLM の代わりに台本どおりにツールを呼ぶ(区分の切り替えは LiveKit の
+AgentSession の中でも確かめる)。書類の呼び方が区分ごとにそろっていること(入口・アドバイザー・吹き出し・ボタン・ページの題・本文の見出し)も見る。
 
 ## マイク無し環境での実会話 E2E
 

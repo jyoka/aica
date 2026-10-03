@@ -12,6 +12,7 @@
 //     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は dip の状態を読み直す)
 //     beforeTurn,               // (任意)本人のターン(発言・アップロード)の前に呼ぶ(本番: 閉じたシートの結果を描き直す)
 //     onTrack(track),           // (任意)切り替えの表示のボタンで雇用区分を戻したとき(本番: ヘッダーの区分を直す)
+//     getTrack,                 // (任意)今の雇用区分(「+」メニューの音声相談の説明で、書類の呼び方を合わせる)
 //   });
 function createTalk(o) {
   const log = o.log;
@@ -185,6 +186,12 @@ function createTalk(o) {
     scroll();
   }
 
+  // ---------- 書類の呼び方(音声相談で作る下書き。voice_resume/schema.py の document_name と同じ) ----------
+  // 正社員 = 職務経歴書、アルバイト・パート = 履歴書。区分が決まっていなければ、どちらにも当てはまる言い方にする
+  const DOC_NAME = { "正社員": "職務経歴書", "アルバイト・パート": "履歴書" };
+  const docName = (track) => DOC_NAME[track] || "履歴書など";
+  const voiceMenuText = () => `話すと約5分で${docName(o.getTrack?.())}の下書きができます`;
+
   // ---------- 入力欄の左の「+」メニュー(自分から履歴書・音声を使う人のため。LINE と同じ置き場) ----------
   const plus = el("button", "plus", "+"); plus.type = "button"; plus.id = "plus"; plus.title = "履歴書・音声相談";
   plus.setAttribute("aria-label", "履歴書・音声相談のメニュー"); plus.setAttribute("aria-expanded", "false");
@@ -197,9 +204,13 @@ function createTalk(o) {
     menu.appendChild(b);
   }
   menuItem("menu-resume", "📄", "履歴書・職務経歴書を送る", "読み取って、経歴を聞き直さずに相談できます(PDF / JPEG / PNG)", () => pickResume());
-  menuItem("menu-voice", "🎤", "音声で相談する", "話すと約5分で履歴書の下書きができます", () => openVoice());
+  menuItem("menu-voice", "🎤", "音声で相談する", voiceMenuText(), () => openVoice());
   const closeMenu = () => { menu.hidden = true; plus.setAttribute("aria-expanded", "false"); };
-  plus.onclick = () => { if (!o.getUser() || o.isBusy()) return; menu.hidden = !menu.hidden; plus.setAttribute("aria-expanded", String(!menu.hidden)); };
+  plus.onclick = () => {
+    if (!o.getUser() || o.isBusy()) return;
+    menu.querySelector("#menu-voice small").textContent = voiceMenuText();  // 開くたびに今の区分の書類の名前にする
+    menu.hidden = !menu.hidden; plus.setAttribute("aria-expanded", String(!menu.hidden));
+  };
   o.form.prepend(plus); o.form.before(menu);
   document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target) && e.target !== plus) closeMenu(); });
   // ターンの途中とユーザーが決まる前は押せない(画面の setBusy から呼ぶ)
@@ -344,6 +355,7 @@ function createTalk(o) {
           const msg = JSON.parse(new TextDecoder().decode(payload));
           if (msg.type === "status") v.working = msg.done ? null : msg.label;
           if (msg.type === "draft") v.ended = true;  // 下書きができた: まもなく結果がトークに届く
+          if (msg.type === "track") o.onTrack?.(msg.track);  // 音声で雇用区分が切り替わった(本番: ヘッダーの区分を直す)
           vRefresh(v);
         } catch (_) { /* 画面の補助なので無視 */ }
       });

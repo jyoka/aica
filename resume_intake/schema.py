@@ -2,6 +2,8 @@
 
 旧リポジトリ jyoka/aica_ra_a2a_poc の task/29(PR #26)voice-resume/voice_resume/schema.py から写したもの
 (format_version 1.0)。voice-resume との共通契約なので形は変えない。変えるときはドキュメントと voice-resume 側も更新すること。
+format_version 1.1(aica v2 の G)は envelope に任意項目 document_kind(履歴書 / 職務経歴書)を足しただけで、resume の形は同じ。
+アップロードされたファイルがどちらの書類かは決めないので、ここは document_kind を書かない 1.0 のまま出す。
 personal(氏名など)はモデルには書かせず、常に空欄で envelope に足す(本人が記入する)。
 """
 

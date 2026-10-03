@@ -143,13 +143,14 @@
   const log = $("log"), input = $("t"), sendBtn = $("send");
   let current = null, busy = false;  // current: このブラウザのユーザーID(匿名ID そのもの)
   let thread = null;  // この画面が表示している会話の番号(発言のときに送り、別のタブで会話が替わっていないかを照合する)
+  let track = null;  // 今の雇用区分(setTrack が直す。「+」メニューの音声相談の説明が、書類の呼び方を合わせるのに使う)
 
   // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は /dev と共通(talk-core.js)
   const talk = createTalk({
     log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
     send: (text) => send(text), fire: (event) => fire(event), showTalk: () => showView("talk"),
     getThread: () => thread, onStale: () => redrawLatest(), beforeTurn: () => showVoiceResult(),
-    onTrack: (t) => setTrack(t),
+    onTrack: (t) => setTrack(t), getTrack: () => track,
   });
   const { el, sys, me, botCol, disableChips, renderReply } = talk;
   function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
@@ -160,6 +161,7 @@
   function setTrack(t) {
     const b = $("track");
     if (!t) return;
+    track = t;
     b.textContent = TRACK_HEADER[t] || ""; b.dataset.track = t; b.hidden = !TRACK_HEADER[t];
   }
 
@@ -367,12 +369,12 @@
     } else rr.appendChild(el("div", "pv empty", EMPTY));
     rc.appendChild(rr); box.appendChild(rc);
 
-    // 音声相談の結果(職務経歴書の下書き)
+    // 音声相談の結果(履歴書か職務経歴書の下書き。書類の名前は下書きの document_kind)
     const vc = card("音声相談の下書き");
     if (!p.voice_drafts.length) vc.appendChild(el("div", "pv empty", EMPTY));
     for (const d of p.voice_drafts) {
       const r = el("div", "prow"); r.dataset.key = `voice-${d.id}`;
-      r.appendChild(el("div", "pv", `${d.at} の音声相談から作った下書き`));
+      r.appendChild(el("div", "pv", `${d.at} の音声相談から作った${d.document_kind}の下書き`));
       const b = el("div", "pbtns"), a = el("a", null, "下書きを見る");
       a.href = d.view_url; a.target = "_blank"; a.rel = "noopener";
       b.append(a, btn("消す", "del", () => confirmIn(r, "この下書きを丸ごと消します。", "消す", () => change("DELETE", `/voice/${d.id}`))));
