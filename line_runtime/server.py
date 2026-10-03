@@ -21,7 +21,8 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 - サーバー間の経路(音声ワーカー → POST /api/voice/result)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
 
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
-丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip)。
+丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
+IPv6 は /64 にまとめて数える)。全体の匿名IDの数の上限で、IP をいくつ持っていても状態ファイルにユーザーが増え続けない。
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from line_runtime.quota import (
     ip_ids_limit,
     ip_limit,
     limit_reply,
+    total_ids_limit,
     total_limit,
 )
 from line_runtime.resume_confirm import INTRO as RESUME_INTRO
@@ -139,7 +141,8 @@ TRUST_PROXY_ENV = "AICA_TRUST_PROXY"
 
 
 def _client_ip(request: Request) -> str:
-    """会話数の IP ごとの上限を数える IP。既定は接続元(request.client.host)で、X-Forwarded-For は見ない(詐称できない)。"""
+    """会話数の IP ごとの上限を数える IP。既定は接続元(request.client.host)で、X-Forwarded-For は見ない(詐称できない)。
+    IPv6 を /64 にまとめるのは DailyQuota(quota.ip_key)。"""
     if os.environ.get(TRUST_PROXY_ENV, "").strip() == "1":
         forwarded = ",".join(request.headers.getlist("x-forwarded-for")).split(",")[-1].strip()
         if forwarded:
@@ -186,7 +189,7 @@ class EventIn(BaseModel):
 async def lifespan(app: FastAPI):
     config.load_env()
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
-                                 ip_ids=ip_ids_limit(), total_limit=total_limit())
+                                 ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     async with LineRuntime() as rt:

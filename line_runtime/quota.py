@@ -9,7 +9,10 @@ API 費用の暴走を防ぐ防波堤。数える単位は「ターン」(ユー
 2. IP ごと: ターンの合計(AICA_DAILY_TURN_LIMIT_PER_IP、既定 150)と、その日に使われた匿名IDの数
    (AICA_DAILY_NEW_IDS_PER_IP、既定 20)。Cookie を作り直して匿名IDの上限を迂回する道を閉じ、
    状態ファイルにユーザーが増え続けないようにする。ターンを使わずに状態へ書く API も admit で匿名IDの数を確かめる。
-3. 全体(AICA_DAILY_TURN_LIMIT_TOTAL、既定 1000): その日の全ユーザーのターンの合計。1日の費用の天井。
+   IPv6 は /64 にまとめて1つの IP として数える(家庭の回線でも /64 以上をもらえるので、送信元を替えて迂回できないように)。
+3. 全体: その日の全ユーザーのターンの合計(AICA_DAILY_TURN_LIMIT_TOTAL、既定 1000。1日の費用の天井)と、
+   その日に使われた匿名IDの数(AICA_DAILY_NEW_IDS_TOTAL、既定 300)。IP をいくつ持っていても、
+   状態ファイルにユーザーが増え続けないようにする(admit もこの数を確かめる)。
 
 - ユーザーは人(ブラウザ)単位: 「匿名ID:シナリオユーザー」は匿名IDにまとめる(シナリオを替えても上限は共有)。
 - 日付は日本時間で区切る。日付が変わると数え直す(翌日には回復する)。
@@ -18,6 +21,7 @@ API 費用の暴走を防ぐ防波堤。数える単位は「ターン」(ユー
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import threading
@@ -35,6 +39,8 @@ IP_IDS_ENV = "AICA_DAILY_NEW_IDS_PER_IP"
 DEFAULT_IP_IDS = 20  # 1つの IP から1日に使える匿名IDは20まで。同じ回線の数人がブラウザを替えても足りる
 TOTAL_LIMIT_ENV = "AICA_DAILY_TURN_LIMIT_TOTAL"
 DEFAULT_TOTAL_LIMIT = 1000  # 全体で1日1000ターン(本番モデルで1ターン約 $0.05 なので1日約 $50 が天井)
+TOTAL_IDS_ENV = "AICA_DAILY_NEW_IDS_TOTAL"
+DEFAULT_TOTAL_IDS = 300  # 全体で1日に使える匿名IDは300まで(1000ターンを1人3ターン強で分けられる人数。状態ファイルの増え方の天井)
 LIMIT_MESSAGE = ("たくさんご利用いただきありがとうございます。本日のご利用回数の上限に達したため、"
                  "今日はここまでとさせてください。明日になるとまたご利用いただけます。")
 IP_LIMIT_MESSAGE = ("たくさんご利用いただきありがとうございます。この回線からの本日のご利用回数の上限に達したため、"
@@ -68,6 +74,25 @@ def total_limit() -> int:
     return _env_limit(TOTAL_LIMIT_ENV, DEFAULT_TOTAL_LIMIT)
 
 
+def total_ids_limit() -> int:
+    """環境変数 AICA_DAILY_NEW_IDS_TOTAL(未設定なら 300)。0 以下なら上限なし。"""
+    return _env_limit(TOTAL_IDS_ENV, DEFAULT_TOTAL_IDS)
+
+
+def ip_key(ip: str) -> str:
+    """IP の上限を数える鍵。IPv6 は /64 のネットワーク(例 2001:db8:1:2::/64)にまとめる。IPv4 と IPv4 射影アドレス
+    (::ffff:1.2.3.4)は IPv4 の1アドレス(1.2.3.4)。IP として読めない値(テストの "testclient" など)はそのまま。"""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
 def person(user_id: str) -> str:
     """上限を数える単位。ブラウザのシナリオユーザー「匿名ID:シナリオユーザー」は匿名IDにまとめる。"""
     return user_id.split(":", 1)[0]
@@ -83,12 +108,14 @@ def _over(limit: int, n: int) -> bool:
 
 class DailyQuota:
     """当日のターン数(人ごと・IP ごと・全体)。path が None ならメモリだけ。clock は差し替えられる(テストで日付を進める)。
-    IP ごと・全体の上限は既定で無し(0)。サーバーは環境変数の値を渡す。ip を渡さない呼び出しは IP の上限を見ない。"""
+    IP ごと・全体の上限は既定で無し(0)。サーバーは環境変数の値を渡す。ip を渡さない呼び出しは IP の上限を見ない。
+    ip は ip_key でまとめて数える(IPv6 は /64)。"""
 
     def __init__(self, limit: int, path: Path | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(JST), *,
-                 ip_limit: int = 0, ip_ids: int = 0, total_limit: int = 0) -> None:
+                 ip_limit: int = 0, ip_ids: int = 0, total_limit: int = 0, total_ids: int = 0) -> None:
         self.limit, self.ip_limit, self.ip_ids, self.total_limit = limit, ip_limit, ip_ids, total_limit
+        self.total_ids = total_ids
         self.path = Path(path) if path else None
         self.clock = clock
         self._lock = threading.Lock()
@@ -109,8 +136,20 @@ class DailyQuota:
             self.path.write_text(json.dumps({"day": self._day, "counts": self._counts, "ips": self._ips},
                                             ensure_ascii=False), encoding="utf-8")
 
+    def _people(self) -> set[str]:
+        """その日に使われた匿名ID(ターンを使った人と、どこかの IP から使われた人)。ロックの中で呼ぶ。"""
+        return set(self._counts).union(*self._ips.values())
+
+    def _new_id_blocked(self, key: str) -> bool:
+        """その日に初めて使う匿名IDで、全体の匿名IDの数に空きが無い。ロックの中で呼ぶ。"""
+        if self.total_ids <= 0:
+            return False
+        people = self._people()
+        return key not in people and _over(self.total_ids, len(people))
+
     def _blocked(self, key: str, ip: str | None) -> str | None:
-        """上限に達していれば案内の文(匿名ID → IP → 全体の順に確かめる)。達していなければ None。ロックの中で呼ぶ。"""
+        """上限に達していれば案内の文(匿名ID → IP → 全体の順に確かめる)。達していなければ None。ロックの中で呼ぶ。
+        ip は ip_key でまとめた鍵。"""
         if _over(self.limit, self._counts.get(key, 0)):
             return LIMIT_MESSAGE
         if ip is not None:
@@ -119,7 +158,7 @@ class DailyQuota:
                 return IP_LIMIT_MESSAGE
             if _over(self.ip_limit, sum(ids.values())):
                 return IP_LIMIT_MESSAGE
-        if _over(self.total_limit, sum(self._counts.values())):
+        if _over(self.total_limit, sum(self._counts.values())) or self._new_id_blocked(key):
             return TOTAL_LIMIT_MESSAGE
         return None
 
@@ -131,7 +170,7 @@ class DailyQuota:
     def ip_used(self, ip: str) -> int:
         with self._lock:
             self._roll()
-            return sum(self._ips.get(ip, {}).values())
+            return sum(self._ips.get(ip_key(ip), {}).values())
 
     def total_used(self) -> int:
         with self._lock:
@@ -142,20 +181,23 @@ class DailyQuota:
         """今1ターン使えなければ、その上限の案内の文。使えるなら None(使いはしない)。"""
         with self._lock:
             self._roll()
-            return self._blocked(person(user_id), ip)
+            return self._blocked(person(user_id), None if ip is None else ip_key(ip))
 
     def admit(self, user_id: str, ip: str) -> str | None:
         """ターンを使わずに状態へ書く API(シナリオの開始・プロフィールの書き換え)の前に呼ぶ。この IP から初めて使う
-        匿名IDなら、数に空きがあるときだけ使われた匿名IDとして0ターンで加える。空きが無ければ IP の上限の案内の文
-        (呼び出し側は状態に書かない)。ターンの上限は見ない(数えもしない)。"""
+        匿名IDなら、数に空きがあるときだけ使われた匿名IDとして0ターンで加える。空きが無ければ IP の上限の案内の文、
+        その日に初めて使う匿名IDで全体の匿名IDの数に空きが無ければ全体の上限の案内の文(呼び出し側は状態に書かない)。
+        ターンの上限は見ない(数えもしない)。"""
         with self._lock:
             self._roll()
-            key = person(user_id)
+            key, ip = person(user_id), ip_key(ip)
             ids = self._ips.get(ip, {})
             if key in ids:
                 return None
             if _over(self.ip_ids, len(ids)):
                 return IP_LIMIT_MESSAGE
+            if self._new_id_blocked(key):
+                return TOTAL_LIMIT_MESSAGE
             self._ips.setdefault(ip, {})[key] = 0
             self._save()
             return None
@@ -168,7 +210,7 @@ class DailyQuota:
         その上限の案内の文を返す(呼び出し側は LLM を呼ばない)。使えたら None。"""
         with self._lock:
             self._roll()
-            key = person(user_id)
+            key, ip = person(user_id), None if ip is None else ip_key(ip)
             msg = self._blocked(key, ip)
             if msg is not None:
                 return msg
@@ -191,7 +233,7 @@ class DailyQuota:
             key = person(user_id)
             if self._counts.get(key, 0) > 0:
                 self._counts[key] -= 1
-                ids = self._ips.get(ip, {}) if ip is not None else {}
+                ids = self._ips.get(ip_key(ip), {}) if ip is not None else {}
                 if ids.get(key, 0) > 0:
                     ids[key] -= 1
                 self._save()
