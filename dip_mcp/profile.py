@@ -215,7 +215,8 @@ UNDO_ERRORS = {
 
 def delete_resume(state: State, line_user_id: str) -> dict:
     """アップロードした履歴書の読み取り結果を丸ごと消す(チャットの要約にも音声の指示にも出なくなる)。
-    found: 消すものがあったか(あったら呼び出し元は今の会話を閉じる。会話に残る要点も読めなくするため)。"""
+    found: 消すものがあったか。会話に残る要点も読めなくするため、呼び出し元はこれを呼ぶ前に今の会話を閉じる
+    (line_runtime.server の profile_resume_delete)。"""
     found = False
 
     def apply(u):

@@ -373,8 +373,8 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
 
 def stream_cut_off(client, uid: str, event: str, thread: int | None) -> list[dict]:
     """本物の切断: ASGI アプリを直接呼び、/api/event/stream が2行目を送る時点で send が OSError を出す
-    (画面を閉じた・回線が切れた)。届いた行(1行目だけ)を返す。uvicorn と同じ ASGI 2.3 で呼ぶので、切断は
-    send の例外として流れてくる。そのターンの処理(裏で進む)が終わるまで待ってから返す。"""
+    (画面を閉じた・回線が切れた)。届いた行(1行目だけ)を返す。切断は send の例外か receive の
+    http.disconnect で流れてくる。そのターンの処理(裏で進む)が終わるまで待ってから返す。"""
     import asyncio
 
     from line_runtime.server import ANON_COOKIE

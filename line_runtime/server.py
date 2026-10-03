@@ -579,12 +579,14 @@ async def profile_resume_delete(request: Request):
     """履歴書の読み取り結果を消し、今の会話を閉じる(それまでの会話の記録をすべて消すので、アップロードの要点・要約の
     結果は画面にも AI にも出ず、サーバーにも残らない)。会話で保存した内容(経験など)は消さない(プロフィールの各項目から
     消せる)。次にトークを開くと、30分以内でも新しい会話(挨拶)から始まる。古い会話を開いたままのタブの発言は
-    stale になる。LLM は呼ばず、会話数も使わない。消すものが無ければ会話は閉じない。"""
+    stale になる。LLM は呼ばず、会話数も使わない。消すものが無ければ会話は閉じない。
+    会話を閉じてから読み取り結果を消す(閉じる途中で失敗しても履歴書が残るので、もう一度押せば閉じられる)。"""
     user_id = _profile_writer(request)
     rt = app.state.rt
-    async with rt.user_lock(user_id):  # 進行中のターンが終わってから消して閉じる
-        if profile.delete_resume(state, user_id)["found"]:
+    async with rt.user_lock(user_id):  # 進行中のターンが終わってから閉じて消す
+        if state.user(user_id).get("resume_upload") is not None:
             await rt.close_conversation(user_id)
+            profile.delete_resume(state, user_id)
     app.state.unread_uploads.pop(user_id, None)
     return _profile_view(user_id)
 
@@ -606,12 +608,14 @@ async def profile_unsave(job_id: str, request: Request):
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
     """すべて消す: dip の状態(長期メモリ・保存・応募・トークを開いた記録)と会話(チェックポイント)を消す。
-    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。"""
+    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。
+    会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
+    続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
     user_id = _owner(request)
     rt = app.state.rt
     async with rt.user_lock(user_id):  # 進行中のターンが終わってから消す
-        out = profile.forget_all(state, user_id)
         await rt.forget(user_id)
+        out = profile.forget_all(state, user_id)
     app.state.unread_uploads.pop(user_id, None)
     _remove_voice_files(out["files"])
     return {"forgotten": True}

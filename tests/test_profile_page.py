@@ -329,7 +329,7 @@ def test_deleting_the_resume_closes_the_conversation_and_the_next_one_starts_new
         h = client.get("/api/talk/history").json()
         assert h["thread"] == th + 1 and h["turns"] == []
         closed = asyncio.run(rt.agent.aget_state(rt._cfg(uid, th))).values
-        assert closed.get("messages") == []
+        assert not closed.get("messages")
 
         remembered.later(0)  # 30分以内の再読み込み
         opened, greeting = open_talk(client)
@@ -373,8 +373,8 @@ def _mentions_resume(blobs: list[bytes]) -> bool:
 
 def test_deleting_the_resume_erases_the_upload_from_every_past_conversation_in_the_db(remembered):
     """履歴書を消すと、今の会話だけでなく、その人のそれまでのすべての会話のチェックポイントから、アップロードの要点
-    (確認の吹き出し・要約のツール結果)が消える(DB を直接見る)。番号は空の会話で埋めて続き、再起動後も数え直せる。
-    会話数は余計に使わない。"""
+    (確認の吹き出し・要約のツール結果)が消える(DB を直接見る)。残るのは閉じた後の空の会話だけで、番号はそこから
+    続き、再起動後も(最大の番号から)数え直せる。会話数は余計に使わない。"""
     with _client(remembered) as client:
         uid, first = _talk_with_resume(client)
         rt, quota = client.app.state.rt, client.app.state.quota
@@ -389,10 +389,10 @@ def test_deleting_the_resume_erases_the_upload_from_every_past_conversation_in_t
 
         client.delete("/api/profile/resume")
         rows = _checkpoint_rows(rt, uid)
-        assert sorted(rows) == sorted(f"{uid}:{k}" for k in range(1, second + 2))  # 空の会話で番号を埋める
+        assert sorted(rows) == [f"{uid}:{second + 1}"]  # 前の会話は消え、閉じた後の空の会話だけ
         assert not any(_mentions_resume(b) for b in rows.values())
         for k in range(1, second + 2):
-            assert asyncio.run(rt.agent.aget_state(rt._cfg(uid, k))).values.get("messages") == []
+            assert not asyncio.run(rt.agent.aget_state(rt._cfg(uid, k))).values.get("messages")
         assert quota.used(uid) == used
 
         h = client.get("/api/talk/history").json()
@@ -443,6 +443,97 @@ def test_a_voice_result_after_the_resume_is_deleted_starts_the_next_conversation
         stream(client, uid, "message", th + 1, "要約を読んで")
         summary = next(_tool_payload(m) for m in reversed(remembered.model.contexts[-1]) if m.type == "tool")
         assert "error" not in summary and summary["uploaded_resume"] is None  # 会話のユーザーで要約を読めた
+
+
+OLD_WORDS = "前の会話の合言葉はみかん"  # 閉じる前の会話にだけ出る本人の発言
+
+
+def _fail_midway(monkeypatch) -> None:
+    """会話の記録を消すトランザクションの途中で失敗させる: checkpoints の DELETE は通り、次の表で例外になる。"""
+    from line_runtime import runtime
+
+    monkeypatch.setattr(runtime, "CONVERSATION_TABLES", ("checkpoints", "no_such_table"))
+
+
+def _heal(monkeypatch) -> None:
+    from line_runtime import runtime
+
+    monkeypatch.setattr(runtime, "CONVERSATION_TABLES", ("checkpoints", "writes"))
+
+
+def test_a_close_that_fails_midway_deletes_nothing_and_the_old_conversations_do_not_come_back(remembered, monkeypatch):
+    """履歴書を消して会話を閉じる途中(前の会話の記録を消すトランザクションの途中)で失敗した: 前の会話は1つも消えず
+    (半分だけ消えて番号が戻ることはない)、履歴書も残る。再起動しても今の会話は閉じた後の空の会話で、その後に何度
+    新しい会話を始めても、前の会話の中身は文脈に戻らない。もう一度押せば閉じて、前の会話も履歴書も消える。"""
+    import sqlite3
+
+    with _client(remembered) as client:
+        uid, first = _talk_with_resume(client)
+        rt = client.app.state.rt
+        stream(client, uid, "message", first, OLD_WORDS)
+        for _ in range(2):  # 30分を過ぎて開き直す: 前の会話が3つ
+            remembered.later(31)
+            _, greeting = open_talk(client)
+            stream(client, uid, "message", greeting["thread"], OLD_WORDS)
+        last = greeting["thread"]
+        assert last == first + 2
+        before = _checkpoint_rows(rt, uid)
+
+        _fail_midway(monkeypatch)
+        with pytest.raises(sqlite3.OperationalError):
+            client.delete("/api/profile/resume")
+        _heal(monkeypatch)
+        rows = _checkpoint_rows(rt, uid)
+        assert {k: rows[k] for k in before} == before  # 何も消えていない(途中まで消えた会話は無い)
+        assert sorted(rows) == sorted([*before, f"{uid}:{last + 1}"])  # 閉じた後の空の会話は書けている
+        assert client.get("/api/profile").json()["resume"] is not None  # 履歴書も残る(もう一度押せる)
+
+        rt._threads.clear()  # 再起動: 会話の番号を DB から数え直す
+        assert asyncio.run(rt.current_thread(uid)) == last + 1
+        assert client.get("/api/talk/history").json()["turns"] == []
+        seen = []
+        for _ in range(last + 1):  # 前の会話の数より多く新しい会話を始めても、前の会話に追記しない
+            remembered.later(31)
+            _, greeting = open_talk(client)
+            stream(client, uid, "message", greeting["thread"], "探して")
+            seen.append(greeting["thread"])
+            ctx = remembered.model.contexts[-1]
+            assert ctx[1].content.startswith("[イベント: 再訪")
+            assert not any(OLD_WORDS in json.dumps(m.content, ensure_ascii=False) for m in ctx)
+        assert seen == list(range(last + 2, 2 * last + 3))
+
+        p = client.delete("/api/profile/resume").json()  # もう一度押す: 閉じて、前の会話も履歴書も消える
+        assert p["resume"] is None
+        rows = _checkpoint_rows(rt, uid)
+        assert sorted(rows) == [f"{uid}:{seen[-1] + 1}"]
+        assert not any(_mentions_resume(b) or OLD_WORDS.encode() in b for b in rows.values())
+        assert client.get("/api/talk/history").json() == {"thread": seen[-1] + 1, "turns": [], "search_track": "未定"}
+
+
+def test_a_resume_delete_that_fails_after_closing_closes_again_when_pressed_again(remembered, monkeypatch):
+    """会話を閉じた後、読み取り結果を消すところで失敗した: 履歴書は残っているので、もう一度押せば会話を閉じ直して
+    消せる(先に読み取り結果を消して、閉じる前に失敗すると、もう一度押しても消すものが無く閉じられなかった)。"""
+    from dip_mcp import profile
+
+    with _client(remembered) as client:
+        uid, th = _talk_with_resume(client)
+        rt = client.app.state.rt
+        delete_resume = profile.delete_resume
+
+        def broken(*a, **kw):
+            raise RuntimeError("dip の状態を書けない")
+
+        monkeypatch.setattr(profile, "delete_resume", broken)
+        with pytest.raises(RuntimeError):
+            client.delete("/api/profile/resume")
+        monkeypatch.setattr(profile, "delete_resume", delete_resume)
+        assert client.get("/api/profile").json()["resume"] is not None
+        assert client.get("/api/talk/history").json()["thread"] == th + 1  # 会話は閉じた
+
+        assert client.delete("/api/profile/resume").json()["resume"] is None
+        assert client.get("/api/talk/history").json() == {"thread": th + 2, "turns": [], "search_track": "未定"}
+        rows = _checkpoint_rows(rt, uid)
+        assert sorted(rows) == [f"{uid}:{th + 2}"] and not any(_mentions_resume(b) for b in rows.values())
 
 
 def test_deleting_the_resume_in_the_browser_starts_a_new_conversation(remembered, browser, served_profile):  # noqa: F811
@@ -536,6 +627,80 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
         assert opened["event"] == "visit" and first["entry"] == "visit" and first["thread"] == 1
         assert client.app.state.quota.used(uid) == used + 1  # 会話数の上限の数は消さない(挨拶の1回分だけ増える)
         assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
+
+
+def test_forget_all_that_fails_midway_deletes_no_conversation_and_can_be_pressed_again(remembered, monkeypatch):
+    """「すべて消す」が会話の記録を消すトランザクションの途中で失敗した: 会話は1つも消えず(番号も戻らない)、
+    dip の状態(希望・保存)も消えていない(消えたものが無いので、30分以内に開き直して前の会話が続いても、消したはずの
+    ものが戻ることはない)。もう一度押せば全部消えて1番から始まる。"""
+    import sqlite3
+
+    with _client(remembered) as client:
+        client.get("/")
+        uid = client.cookies[remembered.ANON_COOKIE]
+        for _ in range(2):
+            remembered.later(31)
+            _, greeting = open_talk(client)
+            stream(client, uid, "message", greeting["thread"], OLD_WORDS)
+        logic.save_preferences(remembered.state, uid, {"area": "新宿", "purpose": "生活費"})
+        logic.save_job(remembered.state, uid, min(logic.load_jobs()))
+        rt = client.app.state.rt
+        before = _checkpoint_rows(rt, uid)
+        assert sorted(before) == [f"{uid}:1", f"{uid}:2"]
+        profile_before = client.get("/api/profile").json()
+
+        _fail_midway(monkeypatch)
+        with pytest.raises(sqlite3.OperationalError):
+            client.post("/api/profile/forget")
+        _heal(monkeypatch)
+        assert _checkpoint_rows(rt, uid) == before
+        assert client.get("/api/profile").json() == profile_before  # dip の状態も消えていない
+        rt._threads.clear()  # 再起動
+        assert asyncio.run(rt.current_thread(uid)) == 2
+
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}
+        assert _checkpoint_rows(rt, uid) == {}
+        p = client.get("/api/profile").json()
+        assert all(v is None for v in _items(p).values()) and p["saved_jobs"] == []
+        assert client.get("/api/talk/history").json() == {"thread": 0, "turns": [], "search_track": "未定"}
+        rt._threads.clear()
+        opened, first = open_talk(client)
+        assert opened["event"] == "visit" and first["thread"] == 1
+
+
+def test_forget_all_that_fails_after_erasing_the_conversations_does_not_bring_them_back(remembered, monkeypatch):
+    """「すべて消す」が会話を消した後、dip の状態を消すところで失敗した: 30分以内に開き直しても前の会話は続かず
+    (描かず、文脈にも入らない)、新しい会話が1番から始まる。もう一度押せば dip の状態も消える。"""
+    from dip_mcp import profile
+
+    with _client(remembered) as client:
+        client.get("/")
+        uid = client.cookies[remembered.ANON_COOKIE]
+        _, greeting = open_talk(client)
+        stream(client, uid, "message", greeting["thread"], OLD_WORDS)
+        logic.save_preferences(remembered.state, uid, {"area": "新宿", "purpose": "生活費"})
+        rt = client.app.state.rt
+        forget_all = profile.forget_all
+
+        def broken(*a, **kw):
+            raise RuntimeError("dip の状態を書けない")
+
+        monkeypatch.setattr(profile, "forget_all", broken)
+        with pytest.raises(RuntimeError):
+            client.post("/api/profile/forget")
+        monkeypatch.setattr(profile, "forget_all", forget_all)
+        assert _checkpoint_rows(rt, uid) == {}
+
+        remembered.later(0)  # 30分以内に開き直す
+        opened, first = open_talk(client)
+        assert opened["event"] is not None and first["thread"] == 1  # 前の会話を続けず、新しい会話の挨拶から
+        stream(client, uid, "message", 1, "探して")
+        assert not any(OLD_WORDS in json.dumps(m.content, ensure_ascii=False) for m in remembered.model.contexts[-1])
+        assert OLD_WORDS not in json.dumps(client.get("/api/talk/history").json(), ensure_ascii=False)
+
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}  # もう一度押す
+        assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
+        assert _checkpoint_rows(rt, uid) == {}
 
 
 # ----------------------------- (5) 本人の Cookie のユーザーだけ -----------------------------
