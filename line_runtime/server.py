@@ -20,7 +20,8 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 - 本人のデータを指す URL にユーザーIDを載せない。API はユーザーIDを本文で受け取り、画面(LIFF)は Cookie から本人を決める。
 - サーバー間の経路(音声ワーカー → POST /api/voice/result)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
 
-会話数の上限(line_runtime.quota): 1人1日あたりのターン数に上限があり、超えたら LLM を呼ばずに丁寧に打ち切る。
+会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
+丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip)。
 """
 
 from __future__ import annotations
@@ -44,7 +45,14 @@ from dip_mcp import logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config
-from line_runtime.quota import LIMIT_MESSAGE, DailyQuota, daily_limit, limit_reply
+from line_runtime.quota import (
+    DailyQuota,
+    daily_limit,
+    ip_ids_limit,
+    ip_limit,
+    limit_reply,
+    total_limit,
+)
 from line_runtime.resume_confirm import INTRO as RESUME_INTRO
 from line_runtime.resume_confirm import resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
@@ -125,6 +133,35 @@ def _require_internal(request: Request) -> None:
         raise HTTPException(401, "サーバー間の共有鍵がありません")
 
 
+# プロキシ(Render など)の後ろに置くときだけ 1 にする。そのときだけ X-Forwarded-For の最後の値(プロキシが付けた、
+# 直前の接続元)を本人の IP として使う。それより前の値は本人が自由に書けるので見ない。
+TRUST_PROXY_ENV = "AICA_TRUST_PROXY"
+
+
+def _client_ip(request: Request) -> str:
+    """会話数の IP ごとの上限を数える IP。既定は接続元(request.client.host)で、X-Forwarded-For は見ない(詐称できない)。"""
+    if os.environ.get(TRUST_PROXY_ENV, "").strip() == "1":
+        forwarded = ",".join(request.headers.getlist("x-forwarded-for")).split(",")[-1].strip()
+        if forwarded:
+            return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _admit(request: Request, user_id: str) -> None:
+    """ターンを使わずに状態へ書く API の前に呼ぶ。この IP から使える匿名IDの数を超えるなら 429(状態に書かせない。
+    Cookie を作り直して状態ファイルにユーザーを増やし続けられないように)。"""
+    msg = app.state.quota.admit(user_id, _client_ip(request))
+    if msg is not None:
+        raise HTTPException(429, msg)
+
+
+def _profile_writer(request: Request) -> str:
+    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。"""
+    user_id = _owner(request)
+    _admit(request, user_id)
+    return user_id
+
+
 LIMIT_REASON = "本日の会話数の上限に達している"
 
 # 本番のトーク画面: 最後のやりとりからこの時間内に開き直したら(再読み込み・タブの開き直し)、今の会話を続ける
@@ -148,7 +185,8 @@ class EventIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.load_env()
-    app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json")
+    app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
+                                 ip_ids=ip_ids_limit(), total_limit=total_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     async with LineRuntime() as rt:
@@ -248,6 +286,7 @@ async def talk_track_undo(body: UndoIn, request: Request):
     会話数も使わない)。AI には次の本人のターンの前に知らせる(_profile_notice)。直前の切り替えでなければ 409。
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
+    _admit(request, body.user_id)
     async with app.state.rt.user_lock(body.user_id):
         r = profile.undo_switch(state, body.user_id, body.id)
     if "error" in r:
@@ -279,6 +318,7 @@ async def start_scenario(scenario_id: str, request: Request):
     if sc is None:
         raise HTTPException(404, f"シナリオ {scenario_id} はない")
     user = f"{anon}:{sc['user']}"
+    _admit(request, user)
     async with app.state.rt.user_lock(user):
         prepare(state, sc, user)
     return {"user": user, "event": sc["event"]}
@@ -291,11 +331,11 @@ async def event(body: EventIn, request: Request):
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
     _require_text(body)
     entry, kind = EVENTS[body.event]
-    quota = app.state.quota
+    quota, ip = app.state.quota, _client_ip(request)
     facts = _upload_facts(body)
     if kind == "push":
         # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
-        if not quota.available(body.user_id):
+        if not quota.available(body.user_id, ip):
             return {"sent": False, "reason": LIMIT_REASON}
         # ここは dip のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを dip が決める。
         gate = logic.push_trigger(state, body.user_id, body.event)
@@ -305,8 +345,9 @@ async def event(body: EventIn, request: Request):
     stale = await _stale(body)
     if stale is not None:  # 会話数を使う前に断る(runtime もターンの排他の中で同じ照合をする)
         return {"stale": True, "thread": stale}
-    if not quota.take(body.user_id):
-        return limit_reply(entry)
+    limited = quota.try_take(body.user_id, ip)
+    if limited is not None:
+        return limit_reply(entry, limited)
     changes, notice = _profile_notice(body)
     try:
         r = await app.state.rt.handle(body.user_id, body.event, body.text, facts, talk_thread=body.thread,
@@ -314,7 +355,7 @@ async def event(body: EventIn, request: Request):
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     if r and r.get("stale"):  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す
-        quota.refund(body.user_id)
+        quota.refund(body.user_id, ip)
     _record_open(body, r, changes)
     if r and not r.get("stale") and r.get("sent") is not False:
         r["search_track"] = logic.search_track(state.user(body.user_id))
@@ -330,6 +371,7 @@ async def event_stream(body: EventIn, request: Request):
         raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
     _require_text(body)
     upload = _upload_facts(body)
+    ip = _client_ip(request)
 
     async def lines():
         entry, kind = EVENTS[body.event]
@@ -337,7 +379,7 @@ async def event_stream(body: EventIn, request: Request):
         facts = upload
         quota = app.state.quota
         if kind == "push":
-            if not quota.available(body.user_id):
+            if not quota.available(body.user_id, ip):
                 yield _line({"kind": "reply", "sent": False, "reason": LIMIT_REASON})
                 return
             gate = logic.push_trigger(state, body.user_id, body.event)
@@ -350,8 +392,9 @@ async def event_stream(body: EventIn, request: Request):
         if stale is not None:  # 別のタブで新しい会話が始まっていた: 発言を混ぜず、会話数も使わない
             yield _line({"kind": "stale", "thread": stale})
             return
-        if not quota.take(body.user_id):  # 上限を超えたら LLM を呼ばずに案内だけ返す
-            yield _line({"kind": "reply", **limit_reply(entry)})
+        limited = quota.try_take(body.user_id, ip)
+        if limited is not None:  # 上限を超えたら LLM を呼ばずに案内だけ返す
+            yield _line({"kind": "reply", **limit_reply(entry, limited)})
             return
         changes, notice = _profile_notice(body)
         try:
@@ -361,7 +404,7 @@ async def event_stream(body: EventIn, request: Request):
                     _record_open(body, ev, changes)
                     _track_status(body.user_id, ev)["search_track"] = logic.search_track(state.user(body.user_id))
                 elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: 会話数を返す
-                    quota.refund(body.user_id)
+                    quota.refund(body.user_id, ip)
                 yield _line(ev)
         except Exception as e:  # noqa: BLE001  API・MCP のエラーも画面に出す(応答を返し始めた後なので HTTP のエラーにはできない)
             yield _line({"kind": "error", "message": f"{type(e).__name__}: {e}"})
@@ -492,7 +535,7 @@ async def profile_get(request: Request):
 @app.put("/api/profile/items/{key}")
 async def profile_edit(key: str, body: ProfileEditIn, request: Request):
     """項目を本人の言葉で直す。key は stated_preferences の項目か consultation_summary。"""
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     if key == "consultation_summary":
         _checked(profile.edit_summary(state, user_id, body.value))
     else:
@@ -502,7 +545,7 @@ async def profile_edit(key: str, body: ProfileEditIn, request: Request):
 
 @app.delete("/api/profile/items/{key}")
 async def profile_delete(key: str, request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     if key == "consultation_summary":
         profile.delete_summary(state, user_id)
     else:
@@ -516,21 +559,21 @@ class TrackIn(BaseModel):
 
 @app.put("/api/profile/track")
 async def profile_track(body: TrackIn, request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     _checked(profile.set_track(state, user_id, body.track))
     return _profile_view(user_id)
 
 
 @app.delete("/api/profile/track")
 async def profile_track_delete(request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     profile.delete_track(state, user_id)
     return _profile_view(user_id)
 
 
 @app.delete("/api/profile/resume")
 async def profile_resume_delete(request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     profile.delete_resume(state, user_id)
     app.state.unread_uploads.pop(user_id, None)
     return _profile_view(user_id)
@@ -538,14 +581,14 @@ async def profile_resume_delete(request: Request):
 
 @app.delete("/api/profile/voice/{result_id}")
 async def profile_voice_delete(result_id: int, request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     _remove_voice_files(_checked(profile.delete_voice_draft(state, user_id, result_id))["files"])
     return _profile_view(user_id)
 
 
 @app.delete("/api/profile/saved/{job_id}")
 async def profile_unsave(job_id: str, request: Request):
-    user_id = _owner(request)
+    user_id = _profile_writer(request)
     profile.unsave_job(state, user_id, job_id)
     return _profile_view(user_id)
 
@@ -612,8 +655,9 @@ async def voice_start(body: UserIn, request: Request):
 
     if not configured():  # 会話数を使う前に断る
         raise HTTPException(503, "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)")
-    if not app.state.quota.take(user_id):
-        raise HTTPException(429, LIMIT_MESSAGE)
+    limited = app.state.quota.try_take(user_id, _client_ip(request))
+    if limited is not None:
+        raise HTTPException(429, limited)
     return issue_token(user_id) | {"since": logic.voice_result_count(state, user_id)}
 
 
@@ -704,8 +748,9 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
         raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
     if thread is not None and await app.state.rt.current_thread(user_id) != thread:
         raise HTTPException(409, "別の画面で新しい会話が始まっています")
-    if not app.state.quota.take(user_id):  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
-        raise HTTPException(429, LIMIT_MESSAGE)
+    limited = app.state.quota.try_take(user_id, _client_ip(request))
+    if limited is not None:  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
+        raise HTTPException(429, limited)
     try:
         draft, usage = await extract_bytes(name, data, resume_client())
     except Exception as e:  # API のエラーは画面に理由を出す
@@ -815,4 +860,5 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LINE_SIM_PORT", "8030")))
+    # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LINE_SIM_PORT", "8030")), proxy_headers=False)
