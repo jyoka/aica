@@ -3,8 +3,9 @@
 
 ジャッジは安いモデル(evals/run.py の JUDGE_MODEL)。構造化出力で受け取り、根拠の発言が会話ログに本当にあるか
 (quoted)をコードで確かめる(ジャッジが発言を作っていないかを、人が照合するときの手がかりにする)。
-asked_purpose を「満たした」とした根拠が、目的を聞いた・受け止めた発言か(purpose_evidence)もコードで確かめ、
-そうでなければ指標では「満たさない」に数える(目的と関係のない「正社員のお仕事で考えますね」を根拠に満たした例があった)。
+asked_purpose を「満たした」とした根拠が、本人の発言の直後にその話を受けたアシスタントの発言か(purpose_evidence)も
+コードで確かめ、そうでなければ指標では「満たさない」に数える(目的と関係のない「正社員のお仕事で考えますね」を根拠に
+満たした例があった)。
 
 ジャッジの点数は1回ごとに揺れる(tone・design_fit は ±1 ほど)ので、1つの会話を samples 回(既定2回)判定してまとめる:
 tone・design_fit は平均、深さの項目は、どの回も「満たした」(該当なしを除く)なら満たした、1回でも「満たさない」なら
@@ -19,8 +20,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from dip_mcp.logic import AREAS
-from evals.checks import JOB_TYPE_ALIASES, PURPOSE_QUESTION
 from line_runtime import llm
 
 Verdict = Literal["満たした", "満たさない", "該当なし"]
@@ -65,19 +64,11 @@ verdict は「満たした」「満たさない」「該当なし」。evidence 
 - comment: 1〜2文。"""
 
 
-# 本人の目的を受け止めた言い方(「家計のためですね」「〜したいのですね」「〜ということですね」)
-PURPOSE_ACK = re.compile(r"ですね|ということ|とのこと")
-# 受け止めた内容が目的の言い方(「〜のため」「〜したい」「〜を考えて」「〜を目指して」)。「扶養内ですね」
-# 「残業が少ないところですね」「正社員に切り替えるということですね」のような、条件や区分の受け止めには付かない
-PURPOSE_WORDING = re.compile(r"ため|たい|たく|ほしい|欲しい|考え|目指")
-# 受け止めの根拠にしない語: 区分の切り替えの一言(「正社員のお仕事で考えますね」)の語、探す・働くこと自体の語、
-# 条件(職種・エリア・時間・日数・給与)の語。「カフェで働きたいのですね」「吉祥寺あたりですね」は目的の受け止めではない
-_NOT_PURPOSE = re.compile("|".join(map(re.escape, sorted(
-    {"正社員", "アルバイト", "バイト", "パート", "お仕事", "仕事", "求人", "探し", "探す", "働き", "働く", "働け", "働い",
-     "考え", "希望", "条件", "エリア", "あたり", "時間", "平日", "土日", "週末", "曜日", "日中", "夕方", "午前", "午後",
-     "深夜", "年収", "月給", "時給", "リモート", "シフト", "勤務", "週", *AREAS, *JOB_TYPE_ALIASES}, key=len, reverse=True)))
-    + r"|[0-9０-９〜~]+(時|日|分|万円|万|円|歳|年|か月)?")
-# 受け止めと本人の発言が共有する2文字(漢字かカタカナを1字以上含む。「お金」「貯め」のような、ひらがな混じりの語幹も見る。
+# 内容語に数えない語: 区分の切り替えの一言(Prompt の「正社員のお仕事で考えますね」)の語。どの本人の発言のあとにも言う
+# 決まり文句なので、本人の話を受けた印にならない(T-career-fulltime#2 で、本人「転職を考えていて、正社員の仕事を相談したい」
+# の直後のこの一言を、ジャッジが目的の根拠に引いた)
+_SWITCH_LINE_WORDS = re.compile(r"正社員|アルバイト|バイト|パート|お仕事|仕事|考え")
+# 内容語の2文字の単位(漢字かカタカナを1字以上含む。「お金」「貯め」のような、ひらがな混じりの語幹も見る。
 # 助詞を含む2文字「で働」「内で」は語ではないので数えない)
 _UNIT = re.compile(r"(?=([ぁ-んァ-ヴー一-龥々]{2}))")
 _KANA_KANJI = re.compile(r"[ァ-ヴ一-龥々]")
@@ -87,47 +78,25 @@ _ATTACHED = re.compile(r"\s*\[(選択肢|操作|求人カード)\]")
 JUDGE_SAMPLES = 2
 
 
-def _sentences(text: str) -> list[str]:
-    return re.split(r"(?<=[。!！?？\n])", text)
-
-
-def _asks_purpose(text: str) -> bool:
-    """アシスタントの吹き出しに、目的だけを聞く問い(PURPOSE_QUESTION)がある。問いは疑問符のある文か「教えてください」の文で、
-    後ろに付く選択肢などの表示は見ない。"""
-    return any(PURPOSE_QUESTION.search(x) for x in _sentences(_ATTACHED.split(text)[0])
-               if "?" in x or "？" in x or "教えて" in x)
-
-
-def _ack_units(evidence: str) -> set[str]:
-    """根拠のうち、目的の言い方(PURPOSE_WORDING)で受け止めた文の、条件などの語を除いた2文字の単位。"""
-    out = set()
-    for x in _sentences(evidence):
-        if PURPOSE_ACK.search(x) and PURPOSE_WORDING.search(x):
-            x = _NOT_PURPOSE.sub("|", x)
-            out |= {u for u in _UNIT.findall(x) if _KANA_KANJI.search(u) and not _PARTICLE.search(u)}
-    return out
+def _content_units(text: str) -> set[str]:
+    """内容語の2文字の単位(区分の切り替えの一言の語と、後ろに付く選択肢などの表示を除く)。"""
+    text = _SWITCH_LINE_WORDS.sub("|", _ATTACHED.split(_norm(text))[0])
+    return {u for u in _UNIT.findall(text) if _KANA_KANJI.search(u) and not _PARTICLE.search(u)}
 
 
 def purpose_evidence(evidence: str, transcript: list[dict]) -> bool:
-    """asked_purpose の根拠が、目的を聞いた・受け止めた発言か。次のどれかなら True:
-    - 根拠が目的を聞く問い(PURPOSE_QUESTION)。
-    - 根拠のアシスタントの発言より前に、目的を聞く問いがあり、本人が答えている(「どんな変化からですか?」→「家計のため」
-      →「家計のためですね。…」。根拠が受け止めの一言でも、目的は聞いている)。
-    - 根拠が目的の言い方の受け止め(PURPOSE_ACK と PURPOSE_WORDING)で、本人がそれより前に話したことと2文字の単位を
-      共有する(条件・区分の語を除く)。"""
+    """asked_purpose の根拠(ジャッジが引用した発言)が、本人の話をその場で受けたアシスタントの発言か。次をすべて満たすとき True:
+    - アシスタントの発言である
+    - 本人の発言の直後のアシスタントの発言である
+    - その直前の本人の発言と、内容語(漢字・カタカナ、またはひらがな混じりの語幹の2文字)を1つ以上共有する
+    目的を聞いたか・受け止めたかの中身はジャッジが見る。ここでは、根拠が目的と関係のない発言(区分の切り替えの一言、
+    本人の話の前の発言)でないかだけを見る。"""
     ev = _norm(evidence)
     if not ev:
         return False
-    if PURPOSE_QUESTION.search(ev):
-        return True
-    at = next((i for i, t in enumerate(transcript) if t["who"] == "agent" and ev in _norm(t["text"])), None)
-    if at is None:
-        return False
-    for i, t in enumerate(transcript[:at]):
-        if t["who"] == "agent" and _asks_purpose(t["text"]) and any(u["who"] == "user" for u in transcript[i + 1:at]):
-            return True
-    said = _norm("".join(t["text"] for t in transcript[:at] if t["who"] == "user"))
-    return any(u in said for u in _ack_units(ev))
+    units = _content_units(ev)
+    return any(t["who"] == "agent" and ev in _norm(t["text"]) and i > 0 and transcript[i - 1]["who"] == "user"
+               and units & _content_units(transcript[i - 1]["text"]) for i, t in enumerate(transcript))
 
 
 def _log(transcript: list[dict]) -> str:
@@ -155,8 +124,8 @@ async def judge(client, model: str, transcript: list[dict], resume: dict | None 
 
 
 def shape(j: Judgement, transcript: list[dict]) -> dict:
-    """ジャッジの出力を結果の形に。evidence が会話ログに一字一句あるか(quoted)と、asked_purpose の根拠が目的を
-    聞いた・受け止めた発言か(purpose_evidence)を足す。"""
+    """ジャッジの出力を結果の形に。evidence が会話ログに一字一句あるか(quoted)と、asked_purpose の根拠が本人の
+    話を受けた発言か(purpose_evidence)を足す。"""
     log = _norm(_log(transcript))
     depth = {}
     for k in DEPTH_ITEMS:
@@ -168,7 +137,7 @@ def shape(j: Judgement, transcript: list[dict]) -> dict:
 
 
 def _verdict(item: dict) -> str:
-    """指標に数える判定。asked_purpose の「満たした」は、根拠が目的の発言でなければ満たさない。"""
+    """指標に数える判定。asked_purpose の「満たした」は、根拠が本人の話を受けた発言でなければ満たさない。"""
     if item.get("verdict") == "満たした" and item.get("purpose_evidence") is False:
         return "満たさない"
     return item.get("verdict")
@@ -196,7 +165,7 @@ def merge(shaped: list[dict]) -> dict:
 
 def depth_metrics(result: dict | None) -> dict:
     """深さの項目を指標に(満たした True / 満たさない False / 該当なし・ジャッジなし None。evalkit は割合として集計する)。
-    asked_purpose の「満たした」は、根拠が目的を聞いた・受け止めた発言でなければ False。"""
+    asked_purpose の「満たした」は、根拠が本人の話を受けた発言でなければ False。"""
     depth = (result or {}).get("depth") or {}
     value = {"満たした": True, "満たさない": False}
     return {m: value.get(_verdict(depth.get(k) or {})) for k, m in DEPTH_ITEMS.items()}

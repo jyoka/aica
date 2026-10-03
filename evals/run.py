@@ -255,7 +255,7 @@ def report(doc: dict) -> str:
             d = j["depth"][k]
             quoted = "" if d["quoted"] or not d["evidence"] else "(根拠が会話ログに無い)"
             if d.get("purpose_evidence") is False and d["verdict"] == "満たした":
-                quoted += "(根拠が目的を聞いた・受け止めた発言でないので、指標では満たさない)"
+                quoted += "(根拠が本人の発言の直後にその話を受けた発言でないので、指標では満たさない)"
             if k in (j.get("split") or []):
                 quoted += f"(回ごとの判定が割れた: {' / '.join(s['depth'][k]['verdict'] for s in j['samples'])})"
             lines.append(f"  - {label}: {d['verdict']} 「{d['evidence']}」{quoted}")
