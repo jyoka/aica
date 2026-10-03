@@ -314,6 +314,8 @@ def _summary(result) -> str:
         return f"記録: {result['recorded'].get('outcome')}"
     if "saved" in result:
         return f"保存: {', '.join(map(str, result['saved'])) or 'なし'}"
+    if "playbook" in result:
+        return f"playbook: {result.get('track')}({result.get('channel')})"
     return ", ".join(list(result)[:4])
 
 

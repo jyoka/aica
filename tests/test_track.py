@@ -153,6 +153,7 @@ def test_weak_signal_asks_one_question_instead_of_switching(tmp_path):
         WELCOME,
         reply(["経験を活かしたいのですね。", CONFIRM], quick_replies=["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"]),
         switch("正社員", answer),
+        call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb"),
         reply(["正社員のお仕事で考えますね。", "これまでの経験で、特に活かしたいのはどんなことですか?"],
               quick_replies=["それ以外", "今はいい"]),
     ])
@@ -163,7 +164,7 @@ def test_weak_signal_asks_one_question_instead_of_switching(tmp_path):
     assert "弱い・混在した合図" in model.systems[-1] and CONFIRM in model.systems[-1]
     assert "set_search_track" not in tool_names(t2)  # 弱い合図のターンでは切り替えない
     assert CONFIRM in t2["bubbles"] and "".join(t2["bubbles"]).count("?") == 1  # 確認は1問だけ
-    assert tool_names(t3) == ["set_search_track"]
+    assert tool_names(t3) == ["set_search_track", "get_counseling_playbook"]  # 切り替えたターンで playbook を読み直す
     s = summary(tmp_path)  # 記録は答えのターンの1件だけで、根拠は弱い合図ではなく答え
     assert s["search_track"] == "正社員"
     assert [h["evidence"] for h in s["track_history"]] == [answer]

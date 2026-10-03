@@ -144,9 +144,11 @@ def test_format_rules_can_be_relaxed_per_track(monkeypatch):
     assert [v for v in r["violations"] if "字" in v] == ["T1: 吹き出しが104字(80字以内)"]
 
 
-def test_default_rules_are_unchanged_from_v1():
-    # 値は F で決める。それまではどの区分も v1 と同じ
-    assert {tuple(v.values()) for v in checks.FORMAT_RULES.values()} == {(1, 80, 3)}
+def test_parttime_and_undecided_rules_are_unchanged_from_v1_and_fulltime_is_relaxed():
+    # 値は F(チャットの playbook)で決めた。アルバイト・パートと未定は v1 のまま、正社員だけ緩める
+    assert checks.FORMAT_RULES[BAITO] == checks.FORMAT_RULES["未定"] == {"questions_max": 1, "bubble_max": 80,
+                                                                        "branch_by": 3}
+    assert checks.FORMAT_RULES[SEISHAIN] == {"questions_max": 1, "bubble_max": 120, "branch_by": 6}
 
 
 # ----------------------------- 区分つきの再訪の挨拶 -----------------------------

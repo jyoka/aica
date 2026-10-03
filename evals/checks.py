@@ -11,18 +11,15 @@ from decimal import Decimal
 
 from dip_mcp.data import PII_VALUE as DIP_PII_VALUE
 from dip_mcp.data import ROOT, fold_pii, has_pii, load_jobs
+from dip_mcp.logic import CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
 
-BUBBLE_MAX = 80
 QUICK_MAX = 4
 JOBS_MAX = 3
 # 形式の決まり(1ターンの質問の数・吹き出しの字数・何ターン目までに分岐するか)を雇用区分ごとに持つ。
 # そのターンの返信を書いたときの区分(set_search_track で切り替えたターンは切り替えた後の区分)の値で判定する。
-# 正社員の値(じっくり話せるよう緩める)は F(チャットの playbook)で決める。それまではどの区分も v1 のまま
-FORMAT_RULES = {
-    "アルバイト・パート": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
-    "正社員": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
-    "未定": {"questions_max": 1, "bubble_max": BUBBLE_MAX, "branch_by": 3},
-}
+# 値は dip の会話の決まり(dip_mcp.logic.CONVERSATION_RULES。playbook と Prompt に書いた値)をそのまま使う
+FORMAT_RULES = {track: dict(rules) for track, rules in CONVERSATION_RULES.items()}
+JOB_TYPE_NAMES = set(JOB_TYPES) | set(FULLTIME_JOB_TYPES)
 DEFAULT_TRACK = "未定"
 ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いらない|大丈夫|特にない|あとで")
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
@@ -68,11 +65,14 @@ CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|い�
 # 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
     "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
-    # 「どのあたりで迷っていますか?」「どのあたりが気になっていますか?」は迷い・不安の中身を聞く問いで、場所ではない
-    "area": re.compile(r"(どの|どこの?)(エリア|駅|地域)|(どの|どこの?)(辺り?|あたり)(?!り?(で|が|に|を)(迷|気に|不安|心配|引っかか))"
+    # 「どのあたり」は場所の文脈(で働く・で探す・に通う・を希望 など)のときだけ数える。「どのあたりで迷って・悩んで
+    # いますか?」「どのあたりがネック・良いと思いましたか?」「どのあたりに興味がありますか?」は迷い・中身を聞く問い
+    "area": re.compile(r"(どの|どこの?)(エリア|駅|地域)|(どの|どこの?)(辺り?|あたり)り?"
+                       r"(?=で(働|探|勤|通)|に(通|住)|を(ご?希望)|が(ご?希望|通いやす|通勤|近))"
                        r"|どこで働|エリアは|勤務地"),
     "time_band": re.compile(r"(どの|何の)時間帯|時間帯(は|が)|何時(から|ごろ|頃|まで)"),
-    "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)|職種は"),
+    # 「(店長として)どんな仕事をしてみたいですか?」はやりたいことの掘り下げで、職種の聞き直しではない
+    "job_type": re.compile(r"(どんな|どの)(お?仕事|職種)(?!を?(して|やって)みたい|がしたい)|職種は"),
     "days_per_week": re.compile(r"週(に)?(何|いく)日"),
     "min_wage": re.compile(r"時給(は|の)?(いくら|どのくらい|下限)"),
     # 相談で分かった本人のこと(aica v2 の D)。白紙で聞く問いだけを数える(掘り下げは PROFILE_FOLLOW_UP で外す)
@@ -113,6 +113,10 @@ REASK_TARGETED = {
 # 条件を広げる・変える提案(「勤務地を広げて探しますか?」「エリアを変えてみますか?」)は、保存した条件を前提にした
 # 次の問いで、白紙の聞き直しではない(0件のときの relax_conditions の案内)
 WIDEN = re.compile(r"広げ|広く|変え|加え|追加|ゆるめ|緩め|外し")
+# 本人が今言った理由を受けて絞り込む問い(求人を見送った理由「本業に響く深夜は避けたい」→「深夜を避けるなら、何時ごろまでの
+# 勤務がよいですか?」)は、白紙の聞き直しではない。問いの前半に、そのターンの本人の発言の語と、避ける・除く語と、
+# 条件の言い方(なら・だと)があるときだけ
+NARROW = re.compile(r"(避け|以外|除い|除く|外し|難し|厳し|無理|控え)[^、。?？]*(なら|のであれば|とすると|だと|場合)")
 # 求人を提案したターンと、その後この数のターンまでは、不安(concerns)の問いを提案への問いとみなす
 PROPOSAL_FOLLOW_TURNS = 2
 PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|たとえば|どんな場面|どういう(こと|意味|点|ところ)"
@@ -346,6 +350,8 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     monthly = {Decimal(y) / 10000 for y in pay_by_kind.get("月給", ())}
     by_kind = {k: {Decimal(y) / 10000 for y in v} for k, v in pay_by_kind.items()}
     by_kind["年収"] = by_kind.get("年収", set()) | {m * 12 for m in monthly}
+    # 本人が言った月給の年収への換算(「月給30万以上」→「年収だと360万円」)も計算なので、年収の根拠にする
+    by_kind["年収"] |= {v * 12 for v, pos in _man_claims(said) if _pay_kind(said, pos) == "月給"}
     any_kind = {Decimal(y) / 10000 for y in pay} | by_kind["年収"]
     source = "\n".join(texts) + json.dumps(data, ensure_ascii=False) + said
     known_dates = _dates(source)
@@ -381,8 +387,29 @@ FREE_TEXT_KEYS = PROFILE_KEYS + ("work_style", "start_timing")
 # 保存する文を整えるときに足されやすい、中身の無い語(「人と話す仕事」の「仕事」)
 _FILLER_WORDS = {"仕事", "こと", "職場", "環境", "希望"}
 # 目的(purpose)は、本人の話を目的の種類の名前でまとめてよい(PRD の目的の例: 副業・スキル活用・生活費・転職・
-# 経験・学業との両立)。「空いた時間にバイトを」を「副業」と保存するのは作り話ではない
-PURPOSE_LABELS = {"副業", "スキル", "活用", "生活費", "転職", "経験", "学業", "両立", "収入"}
+# 経験・学業との両立)。「空いた時間にバイトを」を「副業」と保存するのは作り話ではない。
+# ただし種類の名前は、本人の発言にその種類の手がかりがあるときだけ(「とにかく稼ぎたい」から「経験を活かしたい」
+# 「スキル活用」は作れない)。種類の名前 -> 本人の発言の手がかり
+_SKILL_CUE = r"スキル|経験|活か|生か|得意"
+_INCOME_CUE = r"生活|家計|稼|お金|収入|足し"
+PURPOSE_LABELS = {
+    "副業": r"副業|本業|空いた時間|掛け持ち",
+    "スキル": _SKILL_CUE, "活用": _SKILL_CUE, "経験": _SKILL_CUE + r"|やって(き|い)た|して(き|い)た|働いて(き|い)た",
+    "生活費": _INCOME_CUE, "収入": _INCOME_CUE,
+    "転職": r"転職|辞め|今の会社|今の仕事|キャリア",
+    "学業": r"学校|大学|授業|学業|学生|勉強",
+    "両立": r"両立|学校|大学|授業|子ども|子供|育児|家事|本業|合間|しながら",
+}
+# 自由記述を短い文に整えるときに付く接尾語(「接客」→「接客業」、「企画」→「企画職」、「深夜」→「深夜勤務」)
+_FREE_SUFFIXES = ("業務", "勤務", "関係", "関連", "全般", "分野", "業", "職", "系")
+# よくある言い換え: 保存した語 -> 本人の発言の言い方(「10年ぶりに」→「ブランク」、「子どもが小学校に」→「子育て」、
+# 「法人営業を4年やってきた」→「法人営業の経験」)
+FREE_PARAPHRASES = {
+    "経験": r"経験|やって(き|い)?た|して(き|い)た|働いて(き|い)た|務めて|年(間)?(やって|して|働)",
+    "子育": r"子育て|子ども|子供|育児",
+    "両立": PURPOSE_LABELS["両立"],
+    "ブランク": r"ブランク|ぶり|久しぶり|しばらく(働いて|仕事)|離れて",
+}
 
 
 def _content_words(text: str) -> list[str]:
@@ -411,7 +438,17 @@ def _free_text_ok(v: str, said: str, key: str = "") -> bool:
     words = _content_words(v)
     if not words:
         return all(w in said for w in _split_words(v))
-    return all(_said_word(w, said) or (key == "purpose" and w in PURPOSE_LABELS) for w in words)
+    return all(_said_free_word(w, said)
+               or (key == "purpose" and w in PURPOSE_LABELS and re.search(PURPOSE_LABELS[w], said)) for w in words)
+
+
+def _said_free_word(w: str, said: str) -> bool:
+    """自由記述の語が発言にあるか。接尾語(業・職・勤務など)を外した語と、よくある言い換えも認める。"""
+    if _said_word(w, said):
+        return True
+    if any(w.endswith(x) and len(w) >= len(x) + 2 and _said_word(w[:-len(x)], said) for x in _FREE_SUFFIXES):
+        return True
+    return w in FREE_PARAPHRASES and re.search(FREE_PARAPHRASES[w], said) is not None
 
 
 def _split_words(v: str) -> list[str]:
@@ -437,6 +474,10 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
                 nums = _numbers(v)
                 if nums:
                     ok = nums <= said_nums
+                elif k == "job_type" and v in JOB_TYPE_NAMES:
+                    # 職種は一覧の名前そのもの(完全一致)を渡すので、本人の言葉(「販売」)を一覧の名前(「販売・サービス」)に
+                    # 当てはめるのは作り話ではない。一覧の名前のどこか(「・」で区切った部分)が発言にあればよい
+                    ok = any(w in said for w in v.split("・"))
                 elif k in FREE_TEXT_KEYS:
                     ok = _free_text_ok(v, said, k)
                 else:
@@ -455,7 +496,7 @@ def _question_part(b: str) -> str:
 _KEY_WORDS = {"エリア", "時間帯", "時間", "職種", "勤務地", "仕事", "求人", "希望", "条件"}
 # 疑問詞。これを含む問い(「どのエリアで探しますか?」)は白紙の問いで、値を示して確かめる形ではない。
 # 「どう」は値を示して尋ねる形(「渋谷と原宿でどうですか?」)にしか付かないので含めない。「何か」「いつも」「どちらも」も疑問詞ではない
-WH_WORD = re.compile(r"どの|どこ|どんな|何(?!か)|いつ(?!も)|どれ|どちら(?!も)")
+WH_WORD = re.compile(r"(?<!ほ)どの|どこ|どんな|何(?!か)|いつ(?!も)|どれ|どちら(?!も)")  # 「先ほどの」は疑問詞ではない
 
 
 def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded: dict | None = None) -> list[str]:
@@ -500,9 +541,16 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
                     continue
                 if m and k not in PROFILE_KEYS and not WH_WORD.search(q) and WIDEN.search(q[m.end():]):
                     continue
+                head = q[:m.start()] if m else ""
+                if m and NARROW.search(head) and any(w in head for w in said):
+                    continue
                 tail = q[m.start():] if m else ""
                 values = known.get(k, [])
-                confirm = any(w in tail for w in [*values, *said]) or bool(
+                # 保存した値の語(「渋谷あたり」の「渋谷」)を示して確かめる問い(「勤務地は、先ほどの渋谷周辺で探しますか?」)も確認
+                # 数を含む値(年収など)と、問いの項目名そのもの(「年収の下限」の「年収」、「不安なこと」の「不安」)は除く
+                value_words = [w for v in values if not _numbers(v) for w in re.findall(r"[一-龥ァ-ヴー]{2,}", v)
+                               if w not in _KEY_WORDS and m and w not in m.group(0)]
+                confirm = any(w in tail for w in [*values, *said, *value_words]) or bool(
                     _numbers(tail) & {n for v in values for n in _numbers(v)})
                 if m and not (not WH_WORD.search(q) and confirm):
                     out.append(f"T{i + 1}: 保存済みの「{k}」を聞き直した: {b}")
@@ -533,17 +581,21 @@ def recent_activity_violations(turns: list[dict]) -> list[str]:
 
 
 def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> list[str]:
-    """相談モード(sc["consult_mode"])の判定。入口では求人を出さずに1問聞き、本人が切り上げる前に相談を締めない。"""
+    """相談のシナリオ(sc["consult_mode"])の判定。入口では playbook を読み、求人を出さずに1問聞き、本人が切り上げる前に
+    相談を締めない。目的を確かめる前に求人を出さない(本人が「求人を見せて」と言ったときを除く)。"""
     out = []
     first = turns[0] if turns else None
     if sc.get("expect_consult_menu") and first and not any("相談" in q for q in first["quick_replies"]):
         out.append(f"T1: 初回の選択肢に「まず相談する」が無い: {first['quick_replies']}")
+    out += purpose_violations(turns, user_msgs) + generic_option_violations(turns, user_msgs)
     entry = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m and CONSULT_SIGN.search(m)), None)
     if entry is None:
         return out
     r = turns[entry]
     if r["cards"] or any(t["name"] == "recommend_jobs" for t in r["tools"]) or not _questions(r["bubbles"]):
         out.append(f"T{entry + 1}: 相談の入口で、ヒアリングの1問から始めていない")
+    if not any(playbook_reads(turns[i]) for i in range(entry + 1)):
+        out.append(f"T{entry + 1}: 相談に入ったのに playbook(get_counseling_playbook)を読んでいない")
     for i in range(entry, len(turns)):
         m = user_msgs[i] or ""
         if i > entry and (CONSULT_CUTOFF.search(m) or asks_for_jobs(m)):
@@ -561,6 +613,112 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
              for k in (t["args"].get("preferences") or {})}
     out += [f"相談で聞いた「{k}」を保存していない" for k in sc.get("expect_saved_preferences") or [] if k not in saved]
     return out
+
+
+# ----------------------------- 相談の playbook と深さ(機械で見られるもの) -----------------------------
+
+PLAYBOOK_TOOL = "get_counseling_playbook"
+# 仕事を探し始めること・働くことそのものの語(「パートを始めよう」「転職を考えた」「正社員を目指そう」「探し始めた」)。
+# 目的を聞く言い方(PURPOSE_STARTED)の「〜と思ったのは」の前に付く形として使う
+_WORK = r"(?<![のでに])(?<!だけ)((?<!ル)バイト|パート|アルバイト|正社員|派遣|契約社員|お仕事|(?<!お)仕事)"
+_STARTING = (rf"({_WORK}(を|で|に|として)?(始め|探(?!せな|さな)|目指|働(?!け|かな|かず)|就)|転職|就職"
+             r"|(職場|会社|前職|仕事)を辞め"
+             r"|(^|(?<=[、,，。!！?？\s])|(?<=今)|(?<=今回)|(?<=なぜ)|(?<=どうして)|(?<=そもそも))"
+             r"(探し|探そ|探す|働き始|働きた(い|く)|働こ|始め|(アル)?バイトし(たい|たく|よう)|パートし(たい|たく|よう)))")
+# 働き始めたい・探そうと思った理由を聞く言い方(「働き始めたいと思ったのは、どんな変化からですか?」「収入のほかに、
+# このバイトで得たいことはありますか?」)。「カフェがいいと思ったのは」「どんな変化がありそうですか」は求人や条件への問い
+PURPOSE_STARTED = rf"{_STARTING}[^。!！?？]{{0,8}}と思ったのは|どんな変化から|得たいこと"
+# 目的を聞く問い(白紙の問いの REASK["purpose"] に、きっかけ・理由などの言い方を足す)
+PURPOSE_ASK = re.compile(REASK["purpose"].pattern + r"|きっかけ|目的|理由|なぜ|どうして|何のため|" + PURPOSE_STARTED)
+# 本人が「分からない」「まだ決めていない」と言った(職種を並べず、掘り下げに戻る場面)
+DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|決まって(い)?ない|決めて(い)?ない|思いつかない|ピンと(こ|来)ない")
+# 職種を候補として並べる文(提案・比較の言い方)。経歴を受け止める平叙文(「カフェと事務のご経験があるんですね。」)は数えない
+SUGGESTING = re.compile(r"向いて|合いそう|近そう|おすすめ|候補|考えられ|いかが|どれ|どちら")
+
+
+def playbook_reads(r: dict) -> list[str]:
+    """そのターンで読んだ playbook の区分(エラーになった呼び出しは数えない)。"""
+    return [t["args"].get("track") for t in r["tools"] if t["name"] == PLAYBOOK_TOOL
+            and not (isinstance(t.get("result"), dict) and "error" in t["result"])]
+
+
+def playbook_violations(turns: list[dict]) -> list[str]:
+    """区分が変わったターン(set_search_track で実際に切り替えた・取り消した)で、新しい区分の playbook を読み直したか。"""
+    return [f"T{i + 1}: 区分を「{track}」に切り替えたのに、同じターンで playbook を読み直していない"
+            for i, track in track_switches(turns) if track not in playbook_reads(turns[i])]
+
+
+def _job_type_aliases() -> dict[str, str]:
+    """職種の呼び方 -> 職種(一覧の名前と、「・」で区切った2文字以上の部分。「スーパー・販売」→「スーパー」「販売」)。"""
+    out = {}
+    for name in (*JOB_TYPES, *FULLTIME_JOB_TYPES):
+        for alias in (name, *name.split("・")):
+            if len(alias) >= 2:
+                out.setdefault(alias, name)
+    return out
+
+
+JOB_TYPE_ALIASES = _job_type_aliases()
+
+
+def named_job_types(text: str) -> list[str]:
+    """文の中で職種として挙げた呼び方(前後に漢字が続くもの「法人営業」「営業時間」は職種の名前ではない)。
+    長い呼び方に含まれる短い呼び方(「スーパー・販売」の中の「販売」)は数えない。"""
+    hits = [a for a in JOB_TYPE_ALIASES if re.search(f"(?<![一-龥]){re.escape(a)}(?![一-龥])", text)]
+    return [a for a in hits if not any(a != b and a in b for b in hits)]
+
+
+def dont_know_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """「分からない」には職種を並べず、掘り下げに戻る。直後の返信の選択肢か、候補を示す文・問いの文に、職種が2つ以上
+    あれば違反。本人が同じ発言で「求人を見せて」と頼んだときは除く。"""
+    out = []
+    for i, m in enumerate(user_msgs[:len(turns)]):
+        if not m or not DONT_KNOW.search(m) or asks_for_jobs(m):
+            continue
+        r = turns[i]
+        sentences = [x for b in r["bubbles"] for x in re.split(r"(?<=[。!!?？\n])", b)
+                     if "?" in x or "？" in x or SUGGESTING.search(x)]
+        named = {JOB_TYPE_ALIASES[a] for x in [*r["quick_replies"], *sentences] for a in named_job_types(x)}
+        if len(named) >= 2:
+            out.append(f"T{i + 1}: 「分からない」の後に職種を並べた(掘り下げに戻っていない): {sorted(named)}")
+    return out
+
+
+def generic_option_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """相談の選択肢に、本人の発言にも履歴書(要約の uploaded_resume)にも無い職種を2つ以上並べない(一般論の候補。
+    PM の経歴の人に「オフィス事務 / コールセンター / イベントスタッフ」)。その時点までの発言と履歴書にある職種は、
+    本人の話から作った候補として数えない。"""
+    out = []
+    for i, r in enumerate(turns):
+        known = "\n".join(m or "" for m in user_msgs[:i + 1]) + "".join(
+            json.dumps(t["result"].get("uploaded_resume"), ensure_ascii=False) for x in turns[:i + 1] for t in x["tools"]
+            if t["name"] == "get_user_conversation_summary" and isinstance(t.get("result"), dict))
+        unknown = {JOB_TYPE_ALIASES[a] for q in r["quick_replies"] for a in named_job_types(q)
+                   if not any(b in known for b, name in JOB_TYPE_ALIASES.items() if name == JOB_TYPE_ALIASES[a])}
+        if len(unknown) >= 2:
+            out.append(f"T{i + 1}: 本人の発言にも履歴書にも無い職種を選択肢に並べた(一般論の候補): {sorted(unknown)}")
+    return out
+
+
+def purpose_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """相談で、目的を確かめる前に求人を出さない。目的を聞く問い(PURPOSE_ASK)か、目的の保存(save_user_preferences の
+    purpose)が、最初に求人を出したターンまでにあればよい。本人が自分から「求人を見せて」と頼んでいたら除く
+    (こちらが「この内容で求人を見ますか?」と聞いて本人が「求人を見る」と答えたのは、除かない)。"""
+    def offered(k: int) -> bool:
+        return k > 0 and any("求人" in _question_part(b) for b in turns[k - 1]["bubbles"])
+
+    for i, r in enumerate(turns):
+        if not (r["cards"] or any(t["name"] == "recommend_jobs" for t in r["tools"])):
+            continue
+        if any(asks_for_jobs(m or "") and not offered(k) for k, m in enumerate(user_msgs[:i + 1])):
+            return []
+        for x in turns[:i + 1]:
+            if any(PURPOSE_ASK.search(_question_part(b)) for b in x["bubbles"]) or any(
+                    "purpose" in (t["args"].get("preferences") or {}) for t in x["tools"]
+                    if t["name"] == "save_user_preferences"):
+                return []
+        return [f"T{i + 1}: 目的(なぜ今探すのか)を確かめる前に求人を出した"]
+    return []
 
 
 # ----------------------------- 雇用区分の切り替え(set_search_track の呼び出しで判定) -----------------------------
@@ -705,6 +863,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if sc.get("expect_track_in_greeting"):
         violations += greeting_track_violations(sc, turns)
     violations += upload_violations(turns, upload)
+    violations += playbook_violations(turns) + dont_know_violations(turns, user_msgs)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")

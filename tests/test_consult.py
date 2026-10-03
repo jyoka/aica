@@ -1,8 +1,10 @@
-"""相談モード(何から始めればいいか分からない人向け)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""相談(playbook に沿って進める)の台本テスト。実 LLM なし、dip の MCP は本物。
 
-相談モードは別のエージェントではなく、dip の Prompt のステージ指針と入口の選択肢で動く。ここでは
-(1) dip の Prompt が LINE 側エージェントに届いていること、(2) 台本どおりに進めた会話が評価の機械判定を通ること、
-(3) 相談で話した内容が dip の長期メモリに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、を確かめる。
+相談は別のエージェントではなく、dip の Prompt(入口と「playbook を読む」指示)と、雇用区分ごとの playbook
+(get_counseling_playbook)で動く。ここでは (1) dip の Prompt が LINE 側エージェントに届いていること、
+(2) 台本どおりに進めた会話(入口で playbook を読み、区分が決まったら読み直し、目的を聞いて掘り下げる)が評価の機械判定を
+通ること、(3) 相談で話した内容が dip の長期メモリに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、
+を確かめる。区分ごとの playbook の中身と深さの台本は tests/test_playbook.py。
 """
 
 from __future__ import annotations
@@ -18,6 +20,9 @@ from tests.test_handle import ScriptedModel, call, reply
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 MENU = ["求人を探す", "まず相談する", "応募履歴を確認", "今はいい"]
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
+CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+CONFIRM_REPLIES = ["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"]
+BAITO = "アルバイト・パート"
 
 
 class ConsultModel(ScriptedModel):
@@ -45,6 +50,16 @@ def calls(*items) -> object:
     msg = call(*items[0], "c0")
     msg.tool_calls = [{"name": n, "args": a, "id": f"c{i}", "type": "tool_call"} for i, (n, a) in enumerate(items)]
     return msg
+
+
+def playbook(track: str) -> object:
+    return call("get_counseling_playbook", {"track": track, "channel": "chat"}, "pb")
+
+
+def switch_and_read(uid: str, track: str, evidence: str, *more) -> object:
+    """区分を切り替え、同じターンで新しい区分の playbook を読み直す(並行呼び出し)。more は一緒に呼ぶツール。"""
+    return calls(("set_search_track", {"line_user_id": uid, "track": track, "evidence": evidence}),
+                 ("get_counseling_playbook", {"track": track, "channel": "chat"}), *more)
 
 
 def run(model, steps, tmp_path):
@@ -79,94 +94,134 @@ def stated(tmp_path, user: str) -> dict:
     return {k: v["value"] for k, v in logic.stated_preferences(State(tmp_path / "state.json").user(user)).items()}
 
 
-# ----------------------------- dip の Prompt(相談モードの指針と入口) -----------------------------
+def tools_of(turn: dict) -> list[str]:
+    return [t["name"] for t in turn["tools"]]
 
 
-def test_consult_mode_prompt_reaches_the_agent_on_first_visit(tmp_path):
-    model = ConsultModel(script=[reply(["はじめまして。バイト探しをお手伝いします。どうしますか?"], quick_replies=MENU)])
+def playbooks_read(turn: dict) -> list[str]:
+    return [t["result"]["track"] for t in turn["tools"] if t["name"] == "get_counseling_playbook"]
+
+
+# ----------------------------- dip の Prompt(相談の入口と playbook を読む指示) -----------------------------
+
+
+def test_consult_prompt_reaches_the_agent_on_first_visit(tmp_path):
+    model = ConsultModel(script=[reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU)])
     (r,) = run(model, [("sim-new", "visit", None)], tmp_path)
     system = model.systems[0]
-    assert "## 相談モード" in system and "「まず相談する」" in system
+    # v1 の「相談モード」節は、playbook を読む指示に置き換わった
+    assert "## 相談モード" not in system and "相談モード" not in system
+    assert "## 相談(playbook に沿って進める)" in system and "「まず相談する」" in system
+    assert "get_counseling_playbook を今の区分" in system and "新しい区分で呼び直し" in system
     assert "求人を探す / まず相談する / 応募履歴を確認 / 今はいい" in system  # 初回挨拶の選択肢
-    assert "相談モード中は「ユーザーの3回目の返信までに分岐」の規則を適用しない" in system
+    assert "相談の途中(下の「相談」)はこの規則を適用しない" in system
+    # ヒアリングの順番・「分からないなら職種を2〜3挙げる」は Prompt から消えた(playbook は次に何を聞くかを決めない)
+    assert "次の順に聞く" not in system and "向いていそうな職種を2〜3つ" not in system
     assert "まず相談する" in r["quick_replies"]
 
 
-# ----------------------------- 入口 → ヒアリング → 提案(3ターンで打ち切られない) -----------------------------
+# ----------------------------- 入口 → 区分を確かめる → 目的から聞く → 提案(3ターンで打ち切られない) -----------------------------
 
 
-def test_consult_from_menu_hears_one_by_one_saves_and_proposes_without_reasking(tmp_path):
-    """「まず相談する」→ 経験・興味・不安・生活の制約を1問ずつ → まとめて提案。3ターンを超えても締めない。
+def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(tmp_path):
+    """「まず相談する」(区分は未定)→ 未定の playbook で区分を1問で確かめる → 答えで切り替えて playbook を読み直す →
+    目的を聞いて掘り下げ、興味・経験・生活の制約を1問ずつ → まとめて提案。3ターンを超えても締めない。
     相談で話したことは dip に保存され、提案の条件にそのまま使われ、次の会話の要約にも出る。"""
     uid = "sim-new"
     model = ConsultModel(script=[
-        reply(["はじめまして。バイト探しをお手伝いします。どうしますか?"], quick_replies=MENU),
-        reply(["いくつか伺いながら一緒に整理します。", "これまでにアルバイトの経験はありますか?"],
-              quick_replies=["未経験です", "飲食の経験あり", "販売の経験あり", "今はいい"]),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        playbook("未定"),
+        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        switch_and_read(uid, BAITO, "空いた時間のアルバイト"),
+        reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
+              quick_replies=["生活費の足しに", "経験を積みたい", "それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": uid, "preferences": {"purpose": "働く経験を積みたい"}}),
+        reply(["働く経験を積みたいのですね。", "例えば、どんな経験をしてみたいですか?"],
+              quick_replies=["それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": uid, "preferences": {"wants": "人と話す接客"}}),
+        reply(["人と話す接客をしてみたいのですね。", "これまでにアルバイトの経験はありますか?"],
+              quick_replies=["未経験です", "それ以外", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}}),
-        reply(["ありがとうございます。", "やってみたいことや好きなことはありますか?"],
-              quick_replies=["人と話すこと", "体を動かすこと", "黙々と作業", "今はいい"]),
-        reply(["人と話すのがお好きなのですね。", "働くうえで気になることはありますか?"],
-              quick_replies=["未経験で大丈夫か", "シフト", "特にない", "今はいい"]),
-        reply(["未経験が不安なのですね。", "働ける時間帯とエリアはどのあたりですか?"],
+        reply(["ありがとうございます。", "働ける時間帯とエリアはどのあたりですか?"],
               quick_replies=["平日の夕方", "土日の日中", "それ以外", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {
             "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}}),
-        reply(["未経験・人と話すのが好き・池袋の夕方で整理しました。", "この内容で求人を見ますか?"],
+        reply(["働く経験を積みたい・接客・池袋の夕方で整理しました。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
-        calls(("recommend_jobs", {"line_user_id": uid, "area": "池袋", "time_band": "夕方"}),
+        # keywords は意味検索で embedding の API を呼ぶので、オフラインの台本では渡さない
+        calls(("recommend_jobs", {"line_user_id": uid, "employment_type": BAITO, "area": "池袋", "time_band": "夕方"}),
               ("record_conversation_outcome", {"line_user_id": uid, "outcome": "propose",
                                                "reason": "相談のあと求人を見る", "confidence": 0.8})),
         lambda msgs: reply(["池袋・夕方の求人です。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         reply(["またいつでもご相談ください。"], quick_replies=CLOSING),
         # 次の会話(再訪): 要約を読む
         call("get_user_conversation_summary", {"line_user_id": uid}),
-        reply(["前回は池袋の夕方でしたが、今回も同じ感じで探しますか?"], quick_replies=["同じで探す", "変えたい", "今はいい"]),
+        reply(["前回はアルバイトで、池袋の夕方でしたが、今回も同じ感じで探しますか?"],
+              quick_replies=["同じで探す", "変えたい", "今はいい"]),
     ])
-    said = [None, "まず相談する", "バイトは未経験です", "人と話すのが好きです", "未経験でついていけるか不安",
-            "平日の夕方、池袋あたりで週3日", "求人を見る", "ありがとう、考えます"]
+    said = [None, "まず相談する", "空いた時間のアルバイト", "働く経験を積みたい",
+            "人と話す接客をしてみたい", "バイトは未経験です", "平日の夕方、池袋あたりで週3日", "求人を見る",
+            "ありがとう、考えます"]
     steps = [(uid, "visit", None)] + [(uid, "message", m) for m in said[1:]] + [(uid, "revisit", None)]
     *turns, again = run(model, steps, tmp_path)
 
     sc = {"expect_outcome": ["propose"], "expect_menu": True, "consult_mode": True, "expect_consult_menu": True,
-          "expect_saved_preferences": ["experience", "time_band"]}
+          "expect_saved_preferences": ["experience", "time_band", "purpose"]}
     checks = conversation_checks(sc, turns, said)
     assert checks["violations"] == []
-    assert checks["branch_turn"] == 7  # ヒアリングの間(ユーザーの返信5回)は締めずに1問ずつ聞いた
-    assert checks["branch_within_3"] is None  # 相談モードでは「3ターン以内に分岐」を測らない
-    assert all(len([b for b in r["bubbles"] if "?" in b or "?" in b]) == 1 for r in turns[:6])  # 毎ターン1問
-    assert checks["outcomes"] == ["propose"] and turns[6]["cards"]
+    # 入口で未定の playbook、区分が決まったターンで新しい区分の playbook を読み直した
+    assert playbooks_read(turns[1]) == ["未定"] and "まず区分を確かめる" in turns[1]["tools"][0]["result"]["playbook"]
+    assert playbooks_read(turns[2]) == [BAITO] and checks["tracks"][2] == BAITO
+    assert checks["branch_turn"] == 8  # 相談の間(ユーザーの返信6回)は締めずに1問ずつ聞いた
+    assert checks["branch_within_3"] is None  # 相談のシナリオでは「3ターン以内に分岐」を測らない
+    assert all(len([b for b in r["bubbles"] if "?" in b or "?" in b]) == 1 for r in turns[:7])  # 毎ターン1問
+    assert checks["outcomes"] == ["propose"] and turns[7]["cards"]
 
     # 相談で話したことが長期メモリに残り、提案の条件にそのまま使われた(言い直し・聞き直しなし)
-    assert stated(tmp_path, uid) == {"experience": "未経験", "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}
-    rec = next(t for t in turns[6]["tools"] if t["name"] == "recommend_jobs")
+    assert stated(tmp_path, uid) == {"purpose": "働く経験を積みたい", "wants": "人と話す接客", "experience": "未経験",
+                                     "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}
+    rec = next(t for t in turns[7]["tools"] if t["name"] == "recommend_jobs")
     assert (rec["args"]["area"], rec["args"]["time_band"]) == ("池袋", "夕方")
-    # 次の会話では要約の stated_preferences として返る
+    # 次の会話では要約の stated_preferences と区分として返る
     summary = again["tools"][0]["result"]
-    assert summary["stated_preferences"]["experience"]["value"] == "未経験"
+    assert summary["stated_preferences"]["purpose"]["value"] == "働く経験を積みたい"
+    assert summary["search_track"] == BAITO
 
 
-def test_consult_starts_from_a_sign_of_being_lost_and_suggests_job_types(tmp_path):
-    """迷いのサイン(「何から始めれば」)から相談に入り、「自分に合うのが分からない」には職種を理由つきで挙げる。"""
+def test_consult_from_a_sign_of_being_lost_digs_instead_of_listing_job_types(tmp_path):
+    """迷いのサイン(「何から始めれば」)から相談に入る。「自分に合うのが分からない」には職種を並べず、掘り下げに戻る
+    (v1 は経験と興味から職種を2〜3挙げていた)。"""
     uid = "sim-new"
     model = ConsultModel(script=[
-        reply(["はじめまして。バイト探しをお手伝いします。どうしますか?"], quick_replies=MENU),
-        reply(["いくつか伺いながら一緒に整理します。", "これまでにアルバイトの経験はありますか?"],
-              quick_replies=["未経験です", "飲食の経験あり", "それ以外", "今はいい"]),
-        call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "コンビニで半年"}}),
-        reply(["ありがとうございます。", "やってみたいことや好きなことはありますか?"],
-              quick_replies=["人と話すこと", "黙々と作業", "わからない", "今はいい"]),
-        reply(["コンビニの経験と、人と話すのが好きな点から、スーパー・販売やカフェ、イベントスタッフが近そうです。",
-               "どれが気になりますか?"], quick_replies=["スーパー・販売", "カフェ", "イベントスタッフ", "今はいい"]),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        switch_and_read(uid, BAITO, "バイトを探したいけど、何から始めればいいか分からない"),
+        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+               "今回、バイトを探そうと思ったのはなぜですか?"], quick_replies=["それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": uid, "preferences": {
+            "purpose": "生活費の足し", "experience": "コンビニで半年"}}),
+        reply(["生活費の足しにしたいのですね。コンビニで半年されていたんですね。",
+               "コンビニの仕事で、楽しかったのはどんな場面でしたか?"], quick_replies=["それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": uid, "preferences": {"wants": "お客さんと話すこと"}}),
+        reply(["お客さんと話すのが楽しかったのですね。", "例えば、どんな話をしたときに楽しいと感じましたか?"],
+              quick_replies=["常連さんとの世間話", "それ以外", "今はいい"]),
     ])
-    said = [None, "バイトを探したいけど、何から始めればいいか分からない", "コンビニで半年やっていました",
-            "人と話すのは好き。でも自分に合うのが分からない"]
+    said = [None, "バイトを探したいけど、何から始めればいいか分からない", "生活費の足しに。コンビニで半年やっていました",
+            "お客さんと話すのは好き。でも自分に合うのが分からない"]
     turns = run(model, [(uid, "visit", None)] + [(uid, "message", m) for m in said[1:]], tmp_path)
     checks = conversation_checks({"expect_outcome": ["consult"], "consult_mode": True}, turns, said)
     # 会話はまだ途中なので、出口の記録が無いことだけが期待と違う
     assert checks["violations"] == [] and checks["outcomes"] == []
     assert turns[1]["cards"] == [] and "?" in turns[1]["bubbles"][-1]  # 入口では求人を出さずに1問目
-    assert stated(tmp_path, uid) == {"experience": "コンビニで半年"}
+    assert playbooks_read(turns[1]) == [BAITO]
+    assert stated(tmp_path, uid) == {"purpose": "生活費の足し", "experience": "コンビニで半年", "wants": "お客さんと話すこと"}
+
+    # 同じ場面で v1 のように職種を並べると、評価の機械判定が捕まえる
+    v1 = dict(turns[3], bubbles=[("コンビニの経験と、人と話すのが好きな点から、スーパー・販売やカフェ、イベントスタッフが"
+                                  "近そうです。"), "どれが気になりますか?"],
+              quick_replies=["スーパー・販売", "カフェ", "イベントスタッフ", "今はいい"])
+    bad = conversation_checks({"expect_outcome": ["consult"], "consult_mode": True}, [*turns[:3], v1], said)["violations"]
+    assert any(x.startswith("T4: 「分からない」の後に職種を並べた") for x in bad), bad
+    assert any(x.startswith("T4: 本人の発言にも履歴書にも無い職種を選択肢に並べた") for x in bad), bad
 
 
 # ----------------------------- 出口: 相談だけで終える / 途中で提案へ切り替える(評価シナリオの台本) -----------------------------
@@ -176,12 +231,13 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
     sc = SCENARIOS["C-consult-only"]
     uid = sc["user"]
     model = ConsultModel(script=[
-        reply(["はじめまして。バイト探しをお手伝いします。どうしますか?"], quick_replies=MENU),
-        reply(["いくつか伺いながら一緒に整理します。", "これまでにアルバイトの経験はありますか?"],
-              quick_replies=["未経験です", "飲食の経験あり", "それ以外", "今はいい"]),
-        call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}}),
-        reply(["ありがとうございます。", "やってみたいことや好きなことはありますか?"],
-              quick_replies=["人と話すこと", "体を動かすこと", "黙々と作業", "今はいい"]),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        playbook("未定"),
+        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        switch_and_read(uid, BAITO, "バイトは未経験です",
+                        ("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}})),
+        reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
+              quick_replies=["それ以外", "今はいい"]),
         call("record_conversation_outcome", {"line_user_id": uid, "outcome": "consult", "reason": "相談のみ",
                                              "confidence": 0.7}),
         reply(["承知しました。またいつでもご相談ください。"], quick_replies=["求人を探す", "使い方"]),
@@ -189,19 +245,22 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
     r = run_eval_scenario(model, sc, tmp_path)
     assert r["violations"] == [] and r["outcome_as_expected"] and r["branch_within_3"] is None
     assert r["tools"][-1] == ["record_conversation_outcome"]  # 提案(recommend_jobs)なしで終えた
+    assert r["tools"][2] == ["set_search_track", "get_counseling_playbook", "save_user_preferences"]
     assert stated(tmp_path, uid) == {"experience": "未経験"}
 
 
 def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
+    """区分を確かめる問いに経験で答え、目的を聞いている途中で「求人を見せて」。その時点の内容ですぐ提案する
+    (本人が自分から頼んだので、目的を確かめる前の提案でも違反ではない)。"""
     sc = SCENARIOS["C-consult-switch"]
     uid = sc["user"]
     model = ConsultModel(script=[
-        reply(["はじめまして。バイト探しをお手伝いします。どうしますか?"], quick_replies=MENU),
-        reply(["いくつか伺いながら一緒に整理します。", "これまでにアルバイトの経験はありますか?"],
-              quick_replies=["未経験です", "飲食の経験あり", "それ以外", "今はいい"]),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        playbook("未定"),
+        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
-        reply(["ありがとうございます。", "やってみたいことや好きなことはありますか?"],
-              quick_replies=["人と話すこと", "体を動かすこと", "黙々と作業", "今はいい"]),
+        reply(["居酒屋のホールを1年されていたんですね。", "今回、お仕事を探そうと思ったきっかけは何ですか?"],
+              quick_replies=["それ以外", "今はいい"]),
         calls(("recommend_jobs", {"line_user_id": uid, "job_type": "飲食ホール"}),
               ("record_conversation_outcome", {"line_user_id": uid, "outcome": "propose",
                                                "reason": "求人を見せて", "confidence": 0.8})),
@@ -223,12 +282,13 @@ def turn(bubbles, tools=(), cards=(), quick_replies=("今はいい",)):
 
 CARD = {"job_id": "b0601", "reasons": ["池袋"]}
 SAVE_EXP = ("save_user_preferences", {"preferences": {"experience": "未経験"}})
+READ = ("get_counseling_playbook", {"track": "未定", "channel": "chat"})
 CONSULT = {"expect_outcome": ["propose", "consult"], "consult_mode": True}
 
 
 def test_checks_catch_consult_closed_before_the_user_cuts_it_off():
     turns = [turn(["どうしますか?"], quick_replies=MENU),
-             turn(["経験はありますか?"]),
+             turn(["経験はありますか?"], [READ]),
              turn(["承知しました。"], [SAVE_EXP, ("record_conversation_outcome", {"outcome": "consult"})], quick_replies=CLOSING)]
     v = conversation_checks(CONSULT, turns, [None, "まず相談する", "未経験です"])["violations"]
     assert v == ["T3: 本人が切り上げる前に相談を締めた"]
@@ -283,8 +343,72 @@ def test_restating_saved_values_in_a_summary_is_not_a_reask():
 
 
 def test_checks_catch_unsaved_consult_answers():
-    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"]),
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"], [READ]),
              turn(["好きなことはありますか?"])]
     sc = CONSULT | {"expect_saved_preferences": ["experience"]}
     v = conversation_checks(sc, turns, [None, "まず相談する", "未経験です"])["violations"]
     assert v == ["相談で聞いた「experience」を保存していない"]
+
+
+# ----------------------------- playbook を読む・目的を確かめる・一般論の選択肢(相談の機械判定) -----------------------------
+
+
+def test_checks_catch_a_consult_that_never_reads_the_playbook():
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["いくつか伺います。今回探そうと思ったきっかけは?"]),
+             turn(["生活費ですね。例えば?"], [READ])]
+    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "生活費のため"])["violations"]
+    assert v == ["T2: 相談に入ったのに playbook(get_counseling_playbook)を読んでいない"]  # 後のターンで読んでも遅い
+    turns[1]["tools"] = turns[2]["tools"]
+    assert conversation_checks(CONSULT, turns, [None, "まず相談する", "生活費のため"])["violations"] == []
+
+
+PROPOSE = [("recommend_jobs", {}), ("record_conversation_outcome", {"outcome": "propose"})]
+
+
+def test_checks_catch_jobs_proposed_before_asking_the_purpose():
+    said = [None, "まず相談する", "池袋の夕方。生活費のため", "求人を見る"]
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["時間帯とエリアはどのあたりですか?"], [READ]),
+             turn(["池袋の夕方ですね。この内容で求人を見ますか?"]),
+             turn(["池袋・夕方の求人です。"], PROPOSE, cards=[CARD], quick_replies=CLOSING)]
+    v = conversation_checks(CONSULT, turns, said)["violations"]
+    # こちらが「求人を見ますか?」と聞いて本人が「求人を見る」と答えたのは、本人から頼んだのではない
+    assert v == ["T4: 目的(なぜ今探すのか)を確かめる前に求人を出した"]
+    # 目的を聞いた・目的を保存したなら違反ではない(負例)
+    for asked in ("今回、お仕事を探そうと思ったきっかけは何ですか?", "なぜ今、バイトを探しているのですか?",
+                  "バイトを探す目的は何ですか?", "働き始めたいと思ったのは、どんな変化からですか?",
+                  "お仕事を探そうと思ったのは、どんな変化からですか？", "収入のほかに、このバイトで得たいことはありますか?"):
+        turns[1]["bubbles"] = [asked]
+        assert conversation_checks(CONSULT, turns, said)["violations"] == [], asked
+    # 求人や条件への「思ったのは」「どんな変化」は目的の問いではないので、違反のまま
+    for asked in ("カフェがいいと思ったのは、どんなところからですか?", "このお仕事を良いと思ったのは、どの点ですか?",
+                  "働く時間帯にどんな変化がありそうですか?"):
+        turns[1]["bubbles"] = [asked]
+        assert conversation_checks(CONSULT, turns, said)["violations"] == [
+            "T4: 目的(なぜ今探すのか)を確かめる前に求人を出した"], asked
+    turns[1]["bubbles"] = ["時間帯とエリアはどのあたりですか?"]
+    turns[2]["tools"] = [{"name": "save_user_preferences", "args": {"preferences": {"purpose": "生活費"}}, "result": {}}]
+    assert conversation_checks(CONSULT, turns, said)["violations"] == []
+
+
+def test_show_me_jobs_before_the_purpose_is_not_a_violation():
+    # 本人が自分から「求人を見せて」と言ったら、目的を聞く前でもすぐ出す(C-consult-switch)
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"], [READ]),
+             turn(["求人です。"], PROPOSE, cards=[CARD], quick_replies=CLOSING)]
+    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "もういいので求人を見せて"])["violations"]
+    assert v == []
+
+
+def test_job_type_options_from_what_the_person_said_are_not_generic():
+    said = [None, "まず相談する", "カフェと、スーパーで働いたことがあります"]
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"], [READ]),
+             turn(["カフェとスーパーのご経験から考えると、どちらに近いお仕事がよいですか?"],
+                  quick_replies=["カフェ", "スーパー・販売", "それ以外", "今はいい"])]
+    assert conversation_checks(CONSULT, turns, said)["violations"] == []
+    # 本人が言っていない職種を並べると一般論の候補(v1 で PM の経歴の人に事務・コールセンター・イベントを出した)
+    turns[2]["quick_replies"] = ["オフィス事務", "コールセンター", "イベントスタッフ", "今はいい"]
+    v = conversation_checks(CONSULT, turns, said)["violations"]
+    assert v == [("T3: 本人の発言にも履歴書にも無い職種を選択肢に並べた(一般論の候補): "
+                  "['イベントスタッフ', 'オフィス事務', 'コールセンター']")]
+    # 職種の名前が別の語の一部(「法人営業」「営業時間」)なら、職種を挙げたことにならない
+    turns[2]["quick_replies"] = ["法人営業の経験を活かす", "営業時間が短い職場", "それ以外", "今はいい"]
+    assert conversation_checks(CONSULT, turns, said)["violations"] == []
