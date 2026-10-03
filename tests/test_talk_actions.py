@@ -455,7 +455,7 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
     room = json.loads(waits[0].split(" ", 1)[1])["room"]  # /start が発行した部屋(ワーカーはこの名前で送る)
     out = _post_json(served + "/api/voice/result", {
         "user_id": uid, "room": room, "jobs": [{"job_id": i, "reasons": ["夕方の勤務"]} for i in ids],
-        "draft_markdown": "# 職務経歴書の下書き\n\n- カフェで1年勤務\n",
+        "draft_markdown": "# 職務経歴書の下書き\n\n- カフェで1年勤務\n", "document_kind": "職務経歴書",
         "preferences": {"job_type": "カフェ", "time_band": "夕方", "min_wage": 1200}})
     assert out["talk"] is True
     page.locator("#voice-sheet").wait_for(state="hidden")

@@ -235,7 +235,7 @@ def test_voice_argument_table_matches_dip():
 
 
 def test_voice_propose_jobs_takes_the_attribute_args():
-    """音声の相談(今はアルバイト・パートだけ)で、属性の引数を受け取って dip に渡せる。"""
+    """音声の相談(アルバイト・パートと正社員の両方)で、属性の引数を受け取って dip に渡せる。"""
     params = inspect.signature(ResumeAdvisor.propose_jobs).parameters
     assert set(logic.ATTRIBUTE_ARGS) <= set(params)
     doc = ResumeAdvisor.propose_jobs.__doc__ or ""

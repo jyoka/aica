@@ -92,7 +92,7 @@ def test_scrub_pii_keeps_normal_text():
 
 def test_finalize_envelope_has_blank_personal():
     env = finalize(_sample_draft())
-    assert env["format_version"] == "1.0"
+    assert env["format_version"] == "1.1" and env["document_kind"] == "履歴書"  # 1.1 で書類の種類を足した
     assert env["source"] == "voice-interview"
     assert env["created_at"].endswith("+09:00")  # 作成日時は日本時間
     assert set(env["personal"]) == set(PERSONAL_KEYS)

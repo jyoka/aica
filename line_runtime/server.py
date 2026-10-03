@@ -32,7 +32,7 @@ import json
 import os
 import re
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -614,12 +614,19 @@ async def profile_forget(request: Request):
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
     anon = _owner(request)
     rt = app.state.rt
-    for user_id in [anon, *(f"{anon}:{s}" for s in sorted(_scenario_users()))]:
-        async with rt.user_lock(user_id):  # 進行中のターンが終わってから消す
-            await rt.forget(user_id)
-            out = profile.forget_all(state, user_id)
-        app.state.unread_uploads.pop(user_id, None)
-        _remove_voice_files(out["files"])
+    # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
+    # どのユーザーも、進行中のターンが終わってから消す
+    users = sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
+                    *(f"{anon}:{s}" for s in _scenario_users())})
+    async with AsyncExitStack() as locks:
+        for uid in users:
+            await locks.enter_async_context(rt.user_lock(uid))
+        for uid in users:
+            await rt.forget(uid)
+        out = profile.forget_all(state, anon)
+    for uid in users:
+        app.state.unread_uploads.pop(uid, None)
+    _remove_voice_files(out["files"])
     return {"forgotten": True}
 
 
@@ -632,7 +639,7 @@ async def profile_forget(request: Request):
 # ユーザーIDは本文で受け取り、URL には載せない。
 
 VOICE_WAIT_MAX = 30.0  # 1回の待ちの上限(秒)。シートはこれを繰り返す
-DRAFT_MAX = 20_000  # 職務経歴書の下書きの長さの上限(字)。普通の下書きは数千字
+DRAFT_MAX = 20_000  # 下書き(履歴書・職務経歴書)の長さの上限(字)。普通の下書きは数千字
 
 
 class VoiceWaitIn(BaseModel):
@@ -652,6 +659,7 @@ class VoiceResultIn(BaseModel):
     files: list[str] = []
     preferences: dict = {}
     room: str | None = None  # 面談の LiveKit の部屋(シートは自分の部屋の結果だけを受け取る)
+    document_kind: str | None = None  # 下書きの書類(履歴書 / 職務経歴書)。無いときは履歴書
 
 
 def _voice_ready(user_id: str) -> asyncio.Condition:
@@ -674,7 +682,9 @@ async def voice_start(body: UserIn, request: Request):
     limited = app.state.quota.try_take(user_id, _client_ip(request))
     if limited is not None:
         raise HTTPException(429, limited)
-    return issue_token(user_id) | {"since": logic.voice_result_count(state, user_id)}
+    token = issue_token(user_id)
+    logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
+    return token | {"since": logic.voice_result_count(state, user_id)}
 
 
 @app.post("/api/voice/wait")
@@ -699,15 +709,20 @@ async def voice_wait(body: VoiceWaitIn, request: Request):
 
 @app.post("/api/voice/result")
 async def voice_result_in(body: VoiceResultIn, request: Request):
-    """音声アドバイザーの結果(話した希望・提案した求人・職務経歴書の下書き)を預かり、今の会話に AI の返信として
+    """音声アドバイザーの結果(話した希望・提案した求人・履歴書か職務経歴書の下書き)を預かり、今の会話に AI の返信として
     続ける(再読み込みしても残る)。待っているシートがあれば知らせる。
     呼ぶのは voice-resume のワーカー(サーバー間の経路)。Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る
-    (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。"""
+    (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。
+    面談の途中で本人が「すべて消す」をしていたら(その前に発行した部屋の結果)、預からずに 410 を返す
+    (消した後に dip の記録を作り直さない。ワーカーは 410 を見て、会話の結果も記録しない)。"""
     _require_internal(request)
+    if logic.voice_room_forgotten(state, body.user_id, body.room):
+        raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
-                                    body.room)
+                                    body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
-    out["talk"] = await app.state.rt.add_voice_result(body.user_id, voice_reply(body.user_id, rec))
+    track = logic.search_track(state.user(body.user_id))  # 音声で区分が切り替わっていれば、次のターンの AI に伝える
+    out["talk"] = await app.state.rt.add_voice_result(body.user_id, voice_reply(body.user_id, rec, track))
     cond = _voice_ready(body.user_id)
     async with cond:
         cond.notify_all()
@@ -716,16 +731,17 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
 
 @app.get("/liff/voice/draft", response_class=HTMLResponse)
 async def liff_voice_draft(rid: int, request: Request, scenario_user: str | None = None):
-    """音声相談で作った職務経歴書の下書きを表示する(トークの「職務経歴書の下書きを見る」のリンク先)。
-    本人は Cookie から決める(URL にユーザーIDは無い)。"""
+    """音声相談で作った下書きを表示する(トークの「履歴書の下書きを見る」「職務経歴書の下書きを見る」のリンク先)。
+    題は下書きの書類(document_kind)に合わせる。本人は Cookie から決める(URL にユーザーIDは無い)。"""
     user = _page_user(request, scenario_user)
     r = logic.voice_result(state, user, rid)
     if r is None or not r.get("draft_markdown"):
-        return HTMLResponse(_page("職務経歴書の下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
-    body = ("<p>音声の相談から作った下書きです。内容は必ずご自身で確認・修正してください。</p>"
+        return HTMLResponse(_page("下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+    kind = logic.document_kind(r)
+    body = (f"<p>音声の相談から作った{kind}の下書きです。内容は必ずご自身で確認・修正してください。</p>"
             f"<pre style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px'>"
             f"{escape(r['draft_markdown'])}</pre>")
-    return _page("職務経歴書の下書き", body)
+    return _page(f"{kind}の下書き", body)
 
 
 # ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
@@ -782,6 +798,8 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
         return {"result": result, "empty": True, "view_url": None, "file": label, "bubbles": bubbles}
     app.state.unread_uploads.pop(user_id, None)
     rec = logic.save_resume_upload(state, user_id, result, file=label)
+    # 直前にプロフィールで履歴書を消していても、その知らせは渡さない(新しい履歴書まで「使わない」と読まれないように)
+    profile.resume_uploaded(state, user_id)
     # トークに出す確認は要点だけ(80字以内の吹き出し)。全文は view_url の「読み取り結果を見る」で見せる。
     # 画面は続けて resume_upload のイベントで会話を進める(AI が確認を踏まえて次の1問を返す)
     return {"result": rec, "empty": False, "view_url": logic.liff_url("/liff/resume", user_id, rid=rec.get("id", 0)),

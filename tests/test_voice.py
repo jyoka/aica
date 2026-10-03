@@ -226,7 +226,8 @@ def test_voice_result_round_trip_over_the_api(client):
     (reply,) = got["results"]
     assert [c["job_id"] for c in reply["cards"]] == ids
     assert reply["bubbles"][0] == "音声でお話しした内容をまとめました。\n職種: カフェ\n時間帯: 夕方"
-    assert reply["buttons"] == [{"label": "職務経歴書の下書きを見る", "url": "/liff/voice/draft?rid=0"}]  # ユーザーIDは無い
+    # ユーザーIDは無い。document_kind の無い結果(format_version 1.0 の頃の下書き)は履歴書
+    assert reply["buttons"] == [{"label": "履歴書の下書きを見る", "url": "/liff/voice/draft?rid=0"}]
     assert all(len(b) <= 80 for b in reply["bubbles"]) and not any("[音声相談]" in b for b in reply["bubbles"])
     # 受け取った後(next から)は、次の結果が届くまで空
     assert client.post("/api/voice/wait", json={"user_id": uid, "since": 1, "timeout": 0}).json()["results"] == []

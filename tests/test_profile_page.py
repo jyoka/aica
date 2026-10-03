@@ -24,7 +24,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic
+from dip_mcp import logic, profile
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -941,3 +941,96 @@ def served_profile(remembered):
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     th.join(10)
+
+
+# ----------------------------- 追記(aica v2 の G): プロフィール画面・公開前の守りの PR レビューからの後続指摘 -----------------------------
+
+
+def _upload(client, uid, th):
+    r = client.post("/api/resume/upload", params={"thread": th}, data={"user_id": uid},
+                    files={"file": (FILENAME, b"%PDF-1.4 dummy", "application/pdf")})
+    assert r.status_code == 200
+    return r.json()["view_url"]
+
+
+def test_uploading_again_after_deleting_the_resume_does_not_tell_the_ai_to_avoid_it(remembered):
+    """履歴書を消した直後に別の履歴書を上げたら、アップロードのターンに「消した履歴書は使わず触れない」の知らせを渡さない
+    (新しい履歴書まで避けうる)。負例: 同じ間に直したほかの項目の知らせは、これまでどおり渡す。"""
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        _upload(client, uid, th)
+        stream(client, uid, "resume_upload", th)
+        assert client.delete("/api/profile/resume").json()["resume"] is None
+        assert profile.pending_changes(remembered.state, uid)  # 「消した」の知らせはまだ渡していない
+        # 履歴書を消すと今の会話は閉じる(task 115): 画面は新しい会話を開き直してから上げ直す
+        _, greeting = open_talk(client)
+        th = greeting["thread"]
+        assert client.put("/api/profile/items/area", json={"value": "渋谷"}).status_code == 200
+        _upload(client, uid, th)
+        stream(client, uid, "resume_upload", th)
+        notices = [m.content for m in remembered.model.contexts[-1] if m.type == "human" and m.content.startswith(NOTICE)]
+        assert notices and "エリア・駅を「渋谷」に直した" in notices[-1]
+        assert "履歴書の読み取り結果を消した" not in notices[-1] and '"uploaded_resume": "あり"' in notices[-1]
+        assert "履歴書の経歴も踏まえます。" in stream(client, uid, "message", th, "探して")[-1]["bubbles"]
+
+
+def test_unsaving_a_job_reaches_the_ai(remembered):
+    """「保存をやめる」も、次の本人のターンの前に AI へ伝わる。負例: 保存していない求人をやめても知らせは出さない。"""
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        job = min(logic.load_jobs())
+        logic.save_job(remembered.state, uid, job)
+        assert client.delete(f"/api/profile/saved/{job}").json()["saved_jobs"] == []
+        stream(client, uid, "message", th, "探して")
+        notice = remembered.model.contexts[-1][-2].content
+        assert notice.startswith(NOTICE) and f"求人「{logic.load_jobs()[job].title}」の保存を消した" in notice
+        client.delete(f"/api/profile/saved/{job}")  # もう保存していない
+        stream(client, uid, "message", th, "探して")
+        assert not remembered.model.contexts[-1][-2].content.startswith(NOTICE)
+
+
+def test_forget_all_keeps_the_link_numbers_so_an_old_link_opens_nothing(remembered):
+    """公開前の守りの PR レビューからの後続指摘(決定: 連番を持ち越す): 「すべて消す」の後も、履歴書の読み取り結果と
+    音声の下書きの番号は 0 に戻らない。同じブラウザに残った古い rid=0 のリンクは、消した後の新しい結果を開かない。"""
+    with _client(remembered) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        old_resume = _upload(client, uid, th)
+        client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 履歴書(下書き)\n- 消す前"},
+                    headers=WORKER)
+        assert old_resume.endswith("rid=0")
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}
+
+        _, greeting = open_talk(client)
+        new_resume = _upload(client, uid, greeting["thread"])
+        client.post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 履歴書(下書き)\n- 消した後"},
+                    headers=WORKER)
+        assert new_resume.endswith("rid=1") and client.get(old_resume).status_code == 404
+        assert client.get(new_resume).status_code == 200
+        assert client.get("/liff/voice/draft?rid=0").status_code == 404
+        assert "消した後" in client.get("/liff/voice/draft?rid=1").text
+        assert [d["id"] for d in client.get("/api/profile").json()["voice_drafts"]] == [1]
+        # 持ち越すのは番号だけ: 覚えていることは何も残らない
+        assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
+
+
+def test_forget_all_clears_scenario_users_found_only_in_dip(remembered):
+    """「すべて消す」で、同じブラウザの /dev のシナリオ用ユーザー(「匿名ID:シナリオユーザー」)の状態と会話も消える。
+    負例: 別のブラウザのシナリオ用ユーザーは消えない。"""
+    with _client(remembered) as client:
+        client.get("/")
+        uid = client.cookies[remembered.ANON_COOKIE]
+        scoped = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        assert scoped.startswith(f"{uid}:")
+        stream(client, scoped, "visit", None)
+        logic.save_preferences(remembered.state, scoped, {"area": "新宿"})
+        other = "w-9999999999999999:sim-new"
+        logic.save_preferences(remembered.state, other, {"area": "渋谷"})
+        assert client.portal.call(client.app.state.rt.current_thread, scoped) == 1
+
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}
+        assert logic.conversation_summary(remembered.state, scoped)["stated_preferences"] == {}
+        assert client.portal.call(client.app.state.rt.current_thread, scoped) == 0
+        assert logic.conversation_summary(remembered.state, other)["stated_preferences"]["area"]["value"] == "渋谷"

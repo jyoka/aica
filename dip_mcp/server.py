@@ -230,11 +230,12 @@ def get_counseling_playbook(
     track: Annotated[str, Field(description=(
         f"雇用区分: {' / '.join(logic.TRACKS)}。get_user_conversation_summary の search_track"
         "(set_search_track で切り替えたターンは切り替えた後の区分)をそのまま渡す"))],
-    channel: Annotated[str, Field(description=f"チャネル: {' / '.join(logic.CHANNELS)}(トークは chat)")] = "chat",
+    channel: Annotated[str, Field(description=f"チャネル: {' / '.join(logic.CHANNELS)}(トークは chat、音声相談は voice)")] = "chat",
 ) -> dict:
     """相談の進め方の指針(playbook)を返す: 明らかにすること・掘り下げ方・選択肢の作り方・保存先と、
     その区分の会話の決まり(rules: questions_max = 1回の返信の質問の数、bubble_max = 1つの吹き出しの字数、
-    branch_by = ユーザーの何回目の返信までに分岐するか)。次に何を聞くかは決めない。
+    branch_by = ユーザーの何回目の返信までに分岐するか。音声(voice)は questions_max と sentences_max = 1回の発話の文の数)。
+    次に何を聞くかは決めない。
     相談に入るときに今の区分で呼び、区分が変わったターン(切り替え・取り消し)では新しい区分で呼び直す。"""
     return logic.counseling_playbook(track, channel)
 

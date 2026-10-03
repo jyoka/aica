@@ -31,7 +31,7 @@ from dip_mcp.logic import liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.ledger import Ledger
-from line_runtime.voice_reply import draft_button
+from line_runtime.voice_reply import voice_history_reply
 
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
     ("line_runtime.agent", "LineReply"), ("line_runtime.agent", "Button"),
@@ -97,9 +97,14 @@ VOICE_EVENT = ("[イベント: 本人が音声相談を終えた] 音声で聞�
 
 def voice_event(reply: dict) -> str:
     """音声相談の結果のターンの本人側の記録。トークに出した求人(ID と名前)も書き、次のターンで本人が
-    カードの「詳しく見る」を押したときに、どの求人の話かを LLM が分かるようにする。"""
+    カードの「詳しく見る」を押したときに、どの求人の話かを LLM が分かるようにする。
+    音声で雇用区分が切り替わることもあるので、面談の後の区分も書く(違えば playbook を読み直させる)。"""
     jobs = [{"job_id": c["job_id"], "title": c["title"]} for c in reply.get("cards", [])]
-    return VOICE_EVENT + (f" 提案した求人: {json.dumps(jobs, ensure_ascii=False)}" if jobs else "")
+    track = reply.get("search_track")
+    return (VOICE_EVENT + (f" 提案した求人: {json.dumps(jobs, ensure_ascii=False)}" if jobs else "")
+            + (f" 音声相談の後の雇用区分(search_track)は「{track}」。この会話で使っていた区分と違えば、次の返信の前に"
+               f" get_counseling_playbook を「{track}」で読み直し、求人を探すときの employment_type もそれに合わせる。"
+               if track else ""))
 
 
 def dip_connection() -> dict:
@@ -445,8 +450,7 @@ def history(messages: list, user_id: str) -> list[dict]:
                 else None}
         bot = None
         if voice:
-            has_draft = bool(voice.get("buttons")) and voice.get("voice_result") is not None
-            bot = voice | {"buttons": [draft_button(user_id, voice["voice_result"])] if has_draft else []}
+            bot = voice_history_reply(user_id, voice)  # URL は今の形で組み直し、書類の呼び方は下書きにそろえる
         elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}

@@ -23,6 +23,7 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor
 from voice_resume.dip import DipMCP
+from voice_resume.jobs import DEFAULT_TRACK
 from voice_resume.prompts import greeting_instructions
 from voice_resume.stt import create_stt
 
@@ -50,27 +51,38 @@ def participant_user_id(participant) -> str | None:
 
 
 async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAdvisor, str]:
-    """面談を始める前の準備。dip の要約を読んでアドバイザーと最初の発話への指示を組み立てる。"""
-    # 会話の前に dip の要約を読み、前に話した希望・相談で分かったこと(stated_preferences)、前の会話の
-    # 相談のまとめ(consultation_summary)、トークでアップロードした履歴書(uploaded_resume)があれば確認形で使う
-    # (LINE 側のプロンプトと同じ要約・同じ決まり。同じことを聞き直さない)
+    """面談を始める前の準備。dip の要約と、今の雇用区分の playbook(音声版)を読んで、アドバイザーと最初の発話への
+    指示を組み立てる。"""
+    # 会話の前に dip の要約を読み、今の雇用区分(search_track)、前に話した希望・相談で分かったこと
+    # (stated_preferences)、前の会話の相談のまとめ(consultation_summary)、トークでアップロードした履歴書
+    # (uploaded_resume)があれば確認形で使う(LINE 側のプロンプトと同じ要約・同じ決まり。同じことを聞き直さない)
     stated: dict | None = None
     resume: dict | None = None
     consultation: dict | None = None
+    track = DEFAULT_TRACK
     if dip is not None and user_id:
         try:
             summary = await dip.get_user_conversation_summary(user_id)
             stated = summary.get("stated_preferences") or None
             resume = summary.get("uploaded_resume") or None
             consultation = summary.get("consultation_summary") or None
+            track = summary.get("search_track") or DEFAULT_TRACK
         except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
             logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", exc)
-    logger.info("面談を開始: user_id=%s 前回の希望=%s 相談のまとめ=%s 履歴書=%s", user_id or "(不明)",
-                stated or "なし", "あり" if consultation else "なし", "あり" if resume else "なし")
+    # 相談の進め方は、チャットと同じく dip が配る区分ごとの playbook(音声版)。読めなければ最小の進め方で始める
+    playbook: str | None = None
+    if dip is not None:
+        try:
+            playbook = (await dip.get_counseling_playbook(track, "voice")).get("playbook") or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("get_counseling_playbook 失敗(最小の進め方で続行): %s", exc)
+    logger.info("面談を開始: user_id=%s 区分=%s 前回の希望=%s 相談のまとめ=%s 履歴書=%s playbook=%s",
+                user_id or "(不明)", track, stated or "なし", "あり" if consultation else "なし",
+                "あり" if resume else "なし", "あり" if playbook else "なし")
 
     advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume,
-                            consultation_summary=consultation)
-    return advisor, greeting_instructions(stated, resume)
+                            consultation_summary=consultation, track=track, playbook=playbook)
+    return advisor, greeting_instructions(stated, resume, track)
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
@@ -130,7 +142,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 session.generate_reply(
                     instructions=(
                         "本人が画面の「面談を終える」を押しました。まだ保存していなければ "
-                        "finalize_interview を呼んで下書きを保存し、短くお礼を述べて締めてください。"
+                        "finalize_interview を呼んで(summary に相談のまとめを入れて)下書きを保存し、短くお礼を述べて締めてください。"
                     )
                 )
             )

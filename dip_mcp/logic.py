@@ -892,6 +892,11 @@ CONVERSATION_RULES = {
 }
 
 
+# 音声の会話の決まり(1回の発話の文の数・1回に聞くことの数)。音声は区分によらず短く、1問ずつ(aica v2 の G)。
+# 吹き出しの字数・分岐の期限はチャットの決まりなので、音声には無い
+VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for track in TRACKS}
+
+
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
     """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
     if track not in TRACKS:
@@ -903,15 +908,24 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
         return {"error": f"{channel} の playbook はまだありません"}
     common = PLAYBOOKS / f"common_{channel}.md"
     text = path.read_text(encoding="utf-8") + ("\n" + common.read_text(encoding="utf-8") if common.is_file() else "")
-    return {"track": track, "channel": channel, "rules": dict(CONVERSATION_RULES[track]), "playbook": text}
+    rules = (CONVERSATION_RULES if channel == "chat" else VOICE_CONVERSATION_RULES)[track]
+    return {"track": track, "channel": channel, "rules": dict(rules), "playbook": text}
 
 
 # ----------------------------- 音声相談の結果(トークへ戻す) -----------------------------
 
 
+# 音声の下書きの書類の種類(docs/design/resume-draft-schema.md の document_kind。voice_resume/schema.py と同期)。
+# 種類の無い結果(format_version 1.0 の頃の下書き)は履歴書
+DOCUMENT_KINDS = ("履歴書", "職務経歴書")
+DEFAULT_DOCUMENT_KIND = "履歴書"
+VOICE_ROOMS_KEPT = 20  # 覚えておく音声相談の部屋の数(「すべて消す」の前に始めた面談の結果を見分けるため)
+
+
 def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None,
                         draft_markdown: str, files: list[str] | None = None,
-                        preferences: dict | None = None, room: str | None = None) -> dict:
+                        preferences: dict | None = None, room: str | None = None,
+                        document_kind: str | None = None) -> dict:
     """音声アドバイザー(voice-resume)の結果を預かる。トークの音声相談のシートが待っていれば、そこへ届く
     (voice_results_since)。
 
@@ -920,6 +934,8 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
     preferences は音声で本人が話した希望(トークに出す「話した内容のまとめ」に使う)。保存と同じ決まりで、
     決まった項目だけ・個人情報らしい値と長すぎる値は捨てる。
     room は面談の LiveKit の部屋(トークのシートが自分の面談の結果だけを受け取るため。不明なら None)。
+    document_kind は下書きの書類の種類(履歴書 / 職務経歴書)。知らない値・無いときは履歴書。
+    id は voice_result_seq から振る(「すべて消す」の後も番号を戻さない。古いリンクが新しい下書きを開かないように)。
     """
     all_jobs = load_jobs()
     cards = []
@@ -931,13 +947,16 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
         cards.append(job_card(job, reasons or [pay_text(job.pay)]))
     prefs = {k: str(v).strip() for k, v in (preferences or {}).items()
              if str(v).strip() and _preference_error(k, v) is None}
+    kind = document_kind if document_kind in DOCUMENT_KINDS else DEFAULT_DOCUMENT_KIND
     rec = {"at": now().isoformat(), "cards": cards, "draft_markdown": str(draft_markdown or ""),
-           "files": [str(f) for f in (files or [])], "preferences": prefs, "room": room or None}
+           "files": [str(f) for f in (files or [])], "preferences": prefs, "room": room or None,
+           "document_kind": kind}
     result = {}
 
     def apply(u):
         results = u.setdefault("voice_results", [])
-        rec["id"] = len(results)
+        rec["id"] = _next_voice_id(u)
+        u["voice_result_seq"] = rec["id"] + 1
         results.append(rec)
         result["id"] = rec["id"]
 
@@ -945,6 +964,12 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
     return {"recorded": result["id"], "cards": len(cards),
             "dropped_job_ids": [str(j.get("job_id", "")) for j in (jobs or [])
                                 if str(j.get("job_id", "")) not in all_jobs]}
+
+
+def _next_voice_id(user: dict) -> int:
+    """次に届く音声相談の結果の id。連番を持つ前の記録は、今ある結果の数から。"""
+    results = user.get("voice_results", [])
+    return max(user.get("voice_result_seq", 0), max((r.get("id", -1) for r in results), default=-1) + 1)
 
 
 def voice_results_since(state: State, line_user_id: str, since: int, room: str | None = None) -> list[dict]:
@@ -955,8 +980,8 @@ def voice_results_since(state: State, line_user_id: str, since: int, room: str |
 
 
 def voice_result_count(state: State, line_user_id: str) -> int:
-    """これまでに届いた音声相談の結果の数(次に届く結果の id)。"""
-    return len(state.user(line_user_id).get("voice_results", []))
+    """次に届く音声相談の結果の id(シートを開いた時点の since)。"""
+    return _next_voice_id(state.user(line_user_id))
 
 
 def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None:
@@ -965,6 +990,23 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
         if r.get("id") == result_id:
             return r
     return None
+
+
+def document_kind(rec: dict | None) -> str:
+    """音声相談の結果(または下書きの JSON)の書類の種類。種類の無い 1.0 の頃のものは履歴書。"""
+    kind = (rec or {}).get("document_kind")
+    return kind if kind in DOCUMENT_KINDS else DEFAULT_DOCUMENT_KIND
+
+
+def record_voice_room(state: State, line_user_id: str, room: str) -> None:
+    """音声相談の部屋を発行したことを覚える(「すべて消す」の後に、その前に始めた面談の結果を受け取らないため)。"""
+    state.update(line_user_id, lambda u: u.__setitem__(
+        "voice_rooms", [*u.get("voice_rooms", []), room][-VOICE_ROOMS_KEPT:]))
+
+
+def voice_room_forgotten(state: State, line_user_id: str, room: str | None) -> bool:
+    """「すべて消す」の前に始めた面談の部屋か(その結果で dip の記録を作り直さない)。"""
+    return bool(room) and room in state.user(line_user_id).get("forgotten_voice_rooms", [])
 
 
 # ----------------------------- アップロードした履歴書(resume-intake の読み取り結果) -----------------------------

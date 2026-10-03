@@ -12,8 +12,11 @@ from voice_resume.advisor import ResumeAdvisor
 from voice_resume.jobs import (
     AREA_PHRASES,
     AREAS,
+    FULLTIME_JOB_TYPES,
+    FULLTIME_ONLY_KEYS,
     JOB_TYPES,
     TIME_BANDS,
+    TRACKS,
     build_recommend_args,
     spoken_job_line,
 )
@@ -58,16 +61,37 @@ def test_preference_labels_match_line_sim_preference_keys():
 def test_dip_pref_keys_cover_all_line_sim_preference_keys():
     """保存方向も dip 側と同期している: save_user_preferences に渡す項目(_DIP_PREF_KEYS)が
     dip の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。
-    正社員の条件(FULLTIME_PREFERENCE_KEYS)だけは、音声がアルバイトの面談のあいだは受け取らない。"""
-    fulltime = set(ast.literal_eval(_line_sim_assign("FULLTIME_PREFERENCE_KEYS")))
-    keys = tuple(k for k in ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS")) if k not in fulltime)
-    assert ResumeAdvisor._DIP_PREF_KEYS == keys
-    # 面談で聞く項目は propose_jobs の引数としても受け取れる(受け取れないと保存に乗らない)
+    正社員の条件(FULLTIME_PREFERENCE_KEYS)も、音声が正社員の面談をするので受け取る(aica v2 の G)。"""
+    assert ResumeAdvisor._DIP_PREF_KEYS == tuple(ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS")))
+    assert FULLTIME_ONLY_KEYS == tuple(ast.literal_eval(_line_sim_assign("FULLTIME_PREFERENCE_KEYS")))
+    # 面談で聞く項目は propose_jobs と save_user_preferences の引数としても受け取れる(受け取れないと保存に乗らない)
     import inspect
 
-    params = inspect.signature(ResumeAdvisor.propose_jobs).parameters
-    for key in ResumeAdvisor._DIP_PREF_KEYS:
-        assert key in params, key
+    for tool in (ResumeAdvisor.propose_jobs, ResumeAdvisor.save_user_preferences):
+        params = inspect.signature(tool).parameters
+        for key in ResumeAdvisor._DIP_PREF_KEYS:
+            assert key in params, (tool.__name__, key)
+
+
+def test_fulltime_job_types_and_tracks_match_line_sim():
+    """正社員の職種の一覧と雇用区分が dip 側(FULLTIME_JOB_TYPES・TRACKS)と完全一致している。"""
+    assert FULLTIME_JOB_TYPES == tuple(ast.literal_eval(_line_sim_assign("FULLTIME_JOB_TYPES")))
+    assert TRACKS == tuple(ast.literal_eval(_line_sim_assign("TRACKS")))
+    doc = ResumeAdvisor.propose_jobs.__doc__ or ""
+    assert all(t in doc for t in FULLTIME_JOB_TYPES)
+
+
+def test_build_args_follow_the_track():
+    """区分が決まっていれば employment_type をその区分にし、職種はその区分の一覧だけ。未定なら両方の一覧から選べ、
+    employment_type を付けない(両方の区分から探す)。"""
+    args = build_recommend_args(job_type="企画・PM", area="渋谷", min_annual_salary=500, track="正社員")
+    assert args == {"job_type": "企画・PM", "area": "渋谷", "min_annual_salary": 500, "employment_type": "正社員"}
+    assert build_recommend_args(job_type="カフェ", track="アルバイト・パート")["employment_type"] == "アルバイト・パート"
+    assert build_recommend_args(job_type="企画・PM") == {"job_type": "企画・PM"}  # 未定
+    with pytest.raises(ValueError, match="正社員の一覧にありません"):
+        build_recommend_args(job_type="カフェ", track="正社員")
+    with pytest.raises(ValueError):
+        build_recommend_args(min_annual_salary=0, track="正社員")
 
 
 def test_job_types_listed_in_tool_description():
@@ -133,3 +157,11 @@ def test_spoken_job_line_is_short_single_sentence():
     assert "週2日から入れます" in line
     assert line.endswith("です。")
     assert len(line) <= 60  # 音声で1件を短く読める長さ
+
+
+def test_document_kinds_match_line_sim():
+    """下書きの書類の種類(document_kind)が dip 側(dip_mcp/logic.py の DOCUMENT_KINDS)と一致している。"""
+    from voice_resume.schema import DEFAULT_DOCUMENT_KIND, DOCUMENT_KINDS
+
+    assert DOCUMENT_KINDS == tuple(ast.literal_eval(_line_sim_assign("DOCUMENT_KINDS")))
+    assert DEFAULT_DOCUMENT_KIND == ast.literal_eval(_line_sim_assign("DEFAULT_DOCUMENT_KIND"))

@@ -123,14 +123,18 @@ voice-resume 本体は旧リポジトリ `jyoka/aica_ra_a2a_poc`(`cda42fd`)の `
   接続トークン(有効期限5分)を発行する(`voice_resume/livekit_token.py`)。ユーザーID は participant metadata(`{"user_id": ...}`)で音声ワーカーまで届く。
   会話ページを別のポートで配ることはしない(単一コンテナでの公開に合わせ、line_runtime の配下にまとめた)。
 - 会話中: ワーカーは会話の前に dip の要約(`get_user_conversation_summary`)を読み、前に話した希望が
-  あれば確認形で1回だけ使う。求人検索(`recommend_jobs` / `relax_conditions`)はそのユーザーID で呼び、
-  本人が言った希望(経験・できること・資格を含む8項目)は `save_user_preferences` で保存する(上のプロフィールと同じ入れ物)。
-- 終わり: 会話結果はコードが propose(提案できた)/ consult(提案なし)だけを記録する
+  あれば確認形で1回だけ使う。指示には今の雇用区分の音声版の playbook(`get_counseling_playbook(track, "voice")`)を入れ、
+  本人の発話で区分が変わったら `set_search_track` で記録して playbook を入れ替える(aica v2 の G)。
+  求人検索(`recommend_jobs` / `relax_conditions`)は今の区分とそのユーザーID で呼び、
+  本人が言った希望と本人のこと(経験・できること・資格、目的・強み・やりたいこと・避けたいこと・不安、正社員の条件)は
+  `save_user_preferences` で保存する(上のプロフィールと同じ入れ物)。
+- 終わり: 会話結果はコードが propose(提案できた)/ consult(提案なし)だけを、LLM が書いた相談のまとめと一緒に記録する
   (wait は断っていない人を wait にしない決まりのため、音声側からは記録しない)。話した希望・求人・下書きは
   `POST /api/voice/result`(`user_id` つき。共有鍵 `AICA_INTERNAL_KEY` で守るサーバー間の経路)でトーク(line_runtime)へ送られ、dip の `record_voice_result` が `voice_results` として預かり、
   line_runtime が今の会話に AI の返信として続ける(`LineRuntime.add_voice_result`。LLM は呼ばない。会話数も使わない)。
   返信は「音声で話した内容のまとめ」(`line_runtime/voice_reply.py`)・求人カード(`job_id` を dip の求人データと
-  照合してコードで作り直す。dip に無い求人はカードにならない)・「職務経歴書の下書きを見る」(`GET /liff/voice/draft`)。
+  照合してコードで作り直す。dip に無い求人はカードにならない)・「履歴書の下書きを見る」(正社員の面談なら「職務経歴書の下書きを見る」。
+  下書きの `document_kind` にそろえる。`GET /liff/voice/draft`)。
 - シートは開いている間だけ `POST /api/voice/wait`(開いた後に届いた、この面談の部屋の結果を最長25秒待つ)を繰り返し、
   届いたら閉じて同じ返信をトークに描く。常時の問い合わせはしない。
 - 起動手順と画面の流れは `README.md` の「音声相談(voice-resume との連携)」、

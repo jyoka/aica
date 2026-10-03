@@ -94,11 +94,29 @@ def test_three_chat_playbooks_are_served_by_the_dip_tool(tmp_path):
     assert "time_band" not in fulltime.split("## 保存先")[1].split("- 時間帯")[0]
 
 
-def test_playbook_tool_rejects_unknown_tracks_and_channels_and_voice_is_not_there_yet():
+def test_playbook_tool_rejects_unknown_tracks_and_channels():
     assert "error" in logic.counseling_playbook("契約社員")
     assert "error" in logic.counseling_playbook(SEISHAIN, "phone")
-    # 音声の playbook は G で足す。それまでは無いことをはっきり返す(チャット版で代用しない)
-    assert logic.counseling_playbook(SEISHAIN, "voice") == {"error": "voice の playbook はまだありません"}
+
+
+def test_voice_playbooks_share_the_chat_skeleton_but_speak_shorter():
+    """音声版の playbook(aica v2 の G)はチャットと同じ骨格(見出し)で、言い回しだけ短く・1問ずつ。
+    会話の決まりの値は音声のもの(1回の発話は2文まで・1問ずつ)。書類の呼び方は区分に合う。"""
+    for track in (BAITO, SEISHAIN, MITEI):
+        chat, voice = logic.counseling_playbook(track, "chat"), logic.counseling_playbook(track, "voice")
+        assert voice["track"] == track and voice["channel"] == "voice"
+        assert voice["rules"] == logic.VOICE_CONVERSATION_RULES[track] == {"questions_max": 1, "sentences_max": 2}
+        text = voice["playbook"]
+        assert text.startswith(f"# playbook: {track}(音声)") and "## 区分に共通の決まり(音声)" in text
+        headings = [h for h in chat["playbook"].split("\n") if h.startswith("## ") and "共通の決まり" not in h]
+        for h in headings:  # チャット版の見出しはすべて音声版にもある
+            assert h.split("(")[0] in text, (track, h)
+        assert "## 下書き" in text and "1回の発話は2文まで" in text
+    assert "職務経歴書の下書きができる" in logic.counseling_playbook(SEISHAIN, "voice")["playbook"]
+    assert "履歴書の下書きができる" in logic.counseling_playbook(BAITO, "voice")["playbook"]
+    assert "「履歴書など」と呼ぶ" in logic.counseling_playbook(MITEI, "voice")["playbook"]
+    # チャットの会話の決まりは変わらない(評価の形式判定がそのまま使う)
+    assert logic.counseling_playbook(SEISHAIN)["rules"] == logic.CONVERSATION_RULES[SEISHAIN]
 
 
 # ----------------------------- (2) 区分ごとの会話の決まり = 評価の形式判定 -----------------------------

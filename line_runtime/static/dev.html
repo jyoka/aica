@@ -274,11 +274,13 @@
                   ["push", "P", "push-ic", "dip からのプッシュ(送るかは dip が判定)"]];
   const groupOf = (event) => EVENT_LABEL[event] ? "greet" : "push";
   let scenarios = [], scenario = null, current = null, busy = false, t0 = 0, sums = null;
+  let track = null;  // 今のユーザーの雇用区分(dip の状態を読むたびに直す。「+」メニューの書類の呼び方に使う)
 
   // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は本番の / と共通(talk-core.js)
   const talk = createTalk({
     log, form: $("f"), getUser: () => current, isBusy: () => busy, setBusy,
     send: (text) => send(text), fire: (event) => fire(event), afterTurn: () => refreshState(),
+    getTrack: () => track,
   });
   const { el, sys, me, botCol, disableChips, renderReply } = talk, yen = talk.yen;
   // ターンの途中は、送信・「+」・シナリオの切り替えを止める
@@ -409,7 +411,8 @@
       const rows = [["状況", segBadge(s.segment)]];
       if (d.applications.length) rows.push(["応募", d.applications.map(a => `${a.job_id} ${a.status}`).join(" / ")]);
       if (d.saves.length) rows.push(["保存した求人", d.saves.map(x => x.job_id).join(", ")]);
-      rows.push(["雇用区分", s.search_track || "未定"]);
+      track = s.search_track || "未定";
+      rows.push(["雇用区分", track]);
       const prefs = Object.entries(s.stated_preferences || {});
       rows.push(["本人の希望", prefs.length ? prefs.map(([k, v]) => `${PREF[k] || k}: ${v.value}`).join(" / ") : "まだない"]);
       if (s.uploaded_resume) rows.push(["履歴書", `読み取り済み(${s.uploaded_resume.uploaded})`]);

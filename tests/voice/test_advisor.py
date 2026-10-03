@@ -63,13 +63,13 @@ class FakeDip:
         return {"saved": list(preferences), "rejected": []}
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
     ) -> dict:
         if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
         self.outcome_calls.append({
             "line_user_id": user_id, "outcome": outcome, "reason": reason,
-            "confidence": confidence,
+            "confidence": confidence, "summary": summary,
         })
         return {"recorded": {"outcome": outcome}}
 
@@ -271,7 +271,7 @@ def test_finalize_writes_draft_preferences_and_job_ids(tmp_path, monkeypatch):
         return next(p for p in tmp_path.iterdir() if p.name.startswith(prefix) and p.name.endswith(suffix))
 
     resume = json.loads(find("resume-draft", ".json").read_text(encoding="utf-8"))
-    assert resume["format_version"] == "1.0"
+    assert resume["format_version"] == "1.1" and resume["document_kind"] == "履歴書"  # 区分が正社員でなければ履歴書
     assert resume["source"] == "voice-interview"
     assert resume["resume"]["job_summary"] == "コンビニで1年半勤務。"
     assert all(v == "" for v in resume["personal"].values())
@@ -764,3 +764,40 @@ def test_research_company_passes_the_hint_and_asks_not_to_guess():
 def test_research_company_failure_keeps_the_conversation_going():
     advisor = ResumeAdvisor(research_client_factory=lambda: _FakeResearchClient(error=RuntimeError("timeout")))
     assert "失敗" in asyncio.run(advisor.research_company(name="ナイトマート 中野五差路店"))
+
+
+STYLE = {"remote": "可", "weekends_holidays": True, "max_overtime_hours": 0}
+ATTRS = {"max_talk_level": 1, "min_physical_level": 3}
+
+
+def test_propose_jobs_passes_work_style_only_in_a_fulltime_interview():
+    """正社員の音声でも働き方・休日(remote / weekends_holidays / max_overtime_hours)で絞る。
+    負例: アルバイト・パートの面談では渡さない(アルバイト・パートの求人には働き方の情報が無く、渡すと全部外れる)。
+    属性(人と話す量・体を使う量)はどちらの区分でも渡す。"""
+    fulltime = FakeDip()
+    asyncio.run(ResumeAdvisor(dip=fulltime, track="正社員").propose_jobs(
+        job_type="営業", min_annual_salary=400, **STYLE, **ATTRS))
+    assert fulltime.calls[0].items() >= {**STYLE, **ATTRS}.items()
+
+    parttime = FakeDip()
+    asyncio.run(ResumeAdvisor(dip=parttime, track="アルバイト・パート").propose_jobs(
+        job_type="カフェ", **STYLE, **ATTRS))
+    assert parttime.calls[0].items() >= ATTRS.items()
+    assert not set(STYLE) & set(parttime.calls[0])
+
+    unasked = FakeDip()  # 言っていない働き方・休日は正社員でも付けない
+    asyncio.run(ResumeAdvisor(dip=unasked, track="正社員").propose_jobs(job_type="営業", weekends_holidays=False))
+    assert not set(STYLE) & set(unasked.calls[0])
+
+
+def test_attribute_and_style_args_are_not_saved_as_preferences():
+    """属性と働き方・休日は検索だけの引数: save_user_preferences にも、記録する希望にも入らない。
+    負例: 一緒に言った職種と年収の下限は保存する。"""
+    dip = FakeDip()
+    advisor = ResumeAdvisor(dip=dip, track="正社員", user_id="u-test")
+    asyncio.run(advisor.propose_jobs(job_type="営業", min_annual_salary=400, **STYLE, **ATTRS))
+    assert dip.calls and dip.save_calls
+    saved = {k for c in dip.save_calls for k in c["preferences"]}
+    assert "job_type" in saved and "min_annual_salary" in saved
+    assert not saved & {*STYLE, *ATTRS}
+    assert not set(advisor.preferences) & {*STYLE, *ATTRS}

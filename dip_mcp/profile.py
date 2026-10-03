@@ -58,8 +58,8 @@ def view(state: State, line_user_id: str) -> dict:
                  if k not in logic.FULLTIME_PREFERENCE_KEYS or track == "正社員" or k in prefs]
         sections.append({"id": sid, "title": title, "items": items})
     jobs = logic.load_jobs()
-    drafts = [{"id": r["id"], "at": logic._md(r["at"])} for r in user.get("voice_results", [])
-              if r.get("draft_markdown")]
+    drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": logic.document_kind(r)}
+              for r in user.get("voice_results", []) if r.get("draft_markdown")]
     return {
         "track": {"current": track, "choices": list(logic.TRACKS), "history": [
             {"when": logic._md(h["at"]), "from": h["from"], "track": h["track"], "evidence": h["evidence"],
@@ -246,19 +246,55 @@ def delete_voice_draft(state: State, line_user_id: str, result_id: int) -> dict:
 
 
 def unsave_job(state: State, line_user_id: str, job_id: str) -> dict:
+    """保存をやめる。保存していた求人なら、次の本人のターンの前に AI へ知らせる(保存したままと思って話さないように)。"""
+    title = _job_title(logic.load_jobs(), job_id) or job_id
+
     def apply(u):
-        u["saves"] = [s for s in u.get("saves", []) if s["job_id"] != job_id]
+        saves = u.get("saves", [])
+        u["saves"] = [s for s in saves if s["job_id"] != job_id]
+        if len(u["saves"]) < len(saves):
+            _note(u, "消した", f"求人「{title}」の保存")
 
     state.update(line_user_id, apply)
     return {"unsaved": job_id}
 
 
+def resume_uploaded(state: State, line_user_id: str) -> None:
+    """新しい履歴書を保存した: まだ AI に渡していない「履歴書の読み取り結果を消した」知らせを落とす。
+    残すと、アップロードのターンで「消した履歴書は使わない」と新しい履歴書の両方が AI に届き、新しい方まで避けうる。"""
+    def apply(u):
+        changes = u.get("profile_changes") or []
+        u["profile_changes"] = [c for c in changes if not (c["what"] == RESUME_LABEL and c["action"] == "消した")]
+
+    state.update(line_user_id, apply)
+
+
+# 「すべて消す」の後も持ち越すもの: 連番(古いリンクの rid が、消した後の新しい履歴書・下書きを開かないように)と、
+# 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)
+_KEPT_ON_FORGET = ("resume_upload_seq", "voice_result_seq")
+
+
 def forget_all(state: State, line_user_id: str) -> dict:
     """すべて消す: そのユーザーの dip の状態(プロフィール・行動・トークを開いた記録)を初期化する。
-    書き出した音声の下書きのファイルは呼び出し元が消せるように返す。"""
-    files = [f for r in state.user(line_user_id).get("voice_results", []) for f in r.get("files") or []]
-    state.reset_user(line_user_id)
-    return {"forgotten": True, "files": files}
+    同じブラウザの /dev のシナリオ用ユーザー(「匿名ID:シナリオユーザー」)の状態も消す。
+    書き出した音声の下書きのファイルは呼び出し元が消せるように返し、消したユーザー(会話も消す対象)も返す。"""
+    users = [line_user_id, *sorted(u for u in state.user_ids() if u.startswith(f"{line_user_id}:"))]
+    files: list[str] = []
+    for uid in users:
+        before = state.user(uid)
+        files += [f for r in before.get("voice_results", []) for f in r.get("files") or []]
+        kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
+        if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
+            kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
+        if "voice_results" in before:
+            kept["voice_result_seq"] = logic._next_voice_id(before)
+        rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
+        if rooms:
+            kept["forgotten_voice_rooms"] = rooms
+        state.reset_user(uid)
+        if kept:
+            state.update(uid, lambda u, kept=kept: u.update(kept))
+    return {"forgotten": True, "files": files, "users": users}
 
 
 # ----------------------------- 会話の途中で直したときの知らせ -----------------------------

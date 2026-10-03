@@ -192,7 +192,9 @@ def test_chat_items_and_consultation_summary_reach_the_voice_advisor(tmp_path, m
     for fact in ("前職の経験を活かしたい", "未経験の職種で通用するか不安", SUMMARY_TEXT, "## 前の会話の相談のまとめ"):
         assert fact in advisor.instructions, fact
     assert "聞き直さず" in advisor.instructions
-    assert advisor.instructions.startswith(ResumeAdvisor().instructions)  # 基本の指示に追記する形
+    # 基本の指示(区分が未定の音声版の playbook つき)に追記する形
+    base = ResumeAdvisor(playbook=logic.counseling_playbook("未定", "voice")["playbook"]).instructions
+    assert advisor.instructions.startswith(base)
     assert "## 前の会話の相談のまとめ" not in ResumeAdvisor().instructions  # まとめが無ければ足さない
 
 
