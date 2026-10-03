@@ -19,4 +19,4 @@
 - 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns、経験 experience、できること skills、資格 certifications、エリア area。
 
 ## 提案に進むとき
-- employment_type を渡さない(両方の区分から出る)。職種は、本人が挙げたときだけ、どちらかの区分の一覧から選ぶ。
+- employment_type を渡さない(両方の区分から出る)。職種は、本人が挙げたときだけ、どちらかの区分の一覧から選ぶ。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。

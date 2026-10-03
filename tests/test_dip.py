@@ -266,7 +266,7 @@ def test_the_jobs_own_answer_comes_before_the_general_faq():
     assert top["source"] != "全体の FAQ"
 
 
-# ----------------------------- 本人が話した希望(長期メモリ) -----------------------------
+# ----------------------------- 本人が話した希望(プロフィール) -----------------------------
 
 
 def test_preferences_are_saved_and_returned_in_summary_next_time(state):

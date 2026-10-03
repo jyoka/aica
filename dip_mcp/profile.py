@@ -254,7 +254,7 @@ def unsave_job(state: State, line_user_id: str, job_id: str) -> dict:
 
 
 def forget_all(state: State, line_user_id: str) -> dict:
-    """すべて消す: そのユーザーの dip の状態(長期メモリ・行動・トークを開いた記録)を初期化する。
+    """すべて消す: そのユーザーの dip の状態(プロフィール・行動・トークを開いた記録)を初期化する。
     書き出した音声の下書きのファイルは呼び出し元が消せるように返す。"""
     files = [f for r in state.user(line_user_id).get("voice_results", []) for f in r.get("files") or []]
     state.reset_user(line_user_id)

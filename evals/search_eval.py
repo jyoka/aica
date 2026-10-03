@@ -1,13 +1,16 @@
-"""求人の意味検索(recommend_jobs の keywords)の質を、正解つきの評価セットの上位3件の再現率で測る。
+"""求人検索(recommend_jobs の keywords と、属性・働き方・休日・年収の引数)の質を、正解つきの評価セットの上位3件の再現率で測る。
 
 模擬ユーザーも LINE 側 LLM も使わず、dip のツールの中身(logic.recommend)を直接呼ぶ。
-評価セットは evals/search_eval_set.json(問い合わせごとに正解の求人・職種を決めてある)。
+評価セットは evals/search_eval_set.json(問い合わせごとに、エージェントが渡す引数と、正解の求人・職種を決めてある)。
 
 再現率@3 = 上位3件のうち正解の件数 ÷ min(3, 正解の件数)。正解が1件の問い合わせは、それが3位以内なら 1.0。
+無関係な問い合わせ(kind が 無関係。「宇宙飛行士になりたい」など)は正解を持たず、0件か、keywords の点を除いた傾向の点の
+順に並んでいれば合格とする(近いだけの求人が職種の傾向より上に並ばない)。再現率の平均には入れない。
 
     # オフライン(実 API なし): 保存済みの求人ベクトルと、記録した問い合わせのベクトルで今の設定を測る
     ./.venv/bin/python -m evals.search_eval
-    # 問い合わせのベクトルを今の設定(embedding.MODEL・DIMENSIONS)で記録し直す(実 API、$0.0001 未満)
+    # 記録の無い問い合わせのベクトルを今の設定(embedding.MODEL・DIMENSIONS)で足す(実 API、$0.0001 未満。費用は
+    # evals/budget.jsonl に1行足す)。--all なら全部を記録し直す
     ./.venv/bin/python -m evals.search_eval record
     # 設定(モデル・次元・求人の文面・下限と相対値・重み)を比べる(実 API。結果は data/search_eval/ に書く)
     ./.venv/bin/python -m evals.search_eval compare
@@ -31,6 +34,7 @@ from statistics import mean
 
 from dip_mcp import embedding, logic
 from dip_mcp.data import FIXTURES, ROOT, BaitoJob, State, load_jobs, pay_text
+from evals import budget
 
 HERE = Path(__file__).resolve().parent
 EVAL_SET = HERE / "search_eval_set.json"
@@ -48,6 +52,28 @@ def load_cases() -> list[dict]:
     return json.loads(EVAL_SET.read_text(encoding="utf-8"))["cases"]
 
 
+UNRELATED = "無関係"
+
+
+def case_keywords(case: dict) -> str | None:
+    """keywords に渡す文。省略なら本人の言葉(q)のまま、null なら渡さない(引数だけで探す)。"""
+    return case.get("keywords", case["q"])
+
+
+def _annual_mid(j: BaitoJob) -> float | None:
+    """年収の幅の中央値(円。月給は12か月分)。logic とは別に計算する(絞り込みの実装をそのまま正解にしないため)。"""
+    per_year = {"年収": 1, "月給": 12}.get(j.pay.kind)
+    return None if per_year is None else (j.pay.min + (j.pay.max or j.pay.min)) / 2 * per_year
+
+
+def _style_hit(j: BaitoJob, exp: dict) -> bool:
+    w, h = j.work_style, j.holidays
+    return bool((w and w.remote in exp.get("remote", ()))
+                or (exp.get("weekends_holidays") and h and h.weekends_holidays)
+                or ("max_overtime_hours" in exp and w and w.overtime_hours <= exp["max_overtime_hours"])
+                or ("min_annual_salary" in exp and (_annual_mid(j) or 0) >= exp["min_annual_salary"] * 10000))
+
+
 def relevant_ids(case: dict, jobs: dict[str, BaitoJob]) -> set[str]:
     """その問い合わせの正解の求人。雇用区分を指定した問い合わせは、その区分の求人だけ。"""
     exp, et = case["expected"], case.get("employment_type")
@@ -56,9 +82,17 @@ def relevant_ids(case: dict, jobs: dict[str, BaitoJob]) -> set[str]:
         if et and j.employment_type != et:
             continue
         if (j.job_id in exp.get("job_ids", ()) or j.job_type in exp.get("job_types", ())
-                or set(j.perks) & set(exp.get("perks", ())) or set(j.time_bands) & set(exp.get("time_bands", ()))):
+                or set(j.perks) & set(exp.get("perks", ())) or set(j.time_bands) & set(exp.get("time_bands", ()))
+                or _style_hit(j, exp)):
             out.add(j.job_id)
     return out
+
+
+def unrelated_ok(top: list[dict]) -> bool:
+    """無関係な問い合わせの合否。0件か、keywords の点を除いた点(職種の傾向・駅・給与など)の高い順に並んでいれば合格。
+    keywords の点で、傾向の点の低い求人が上に来ていたら不合格(近いだけの求人が傾向より上に並んだ)。"""
+    base = [c["match_score"] - c["score_breakdown"].get("keywords", 0.0) for c in top]
+    return all(a >= b - 1e-9 for a, b in itertools.pairwise(base))
 
 
 def recall_at_k(top: list[str], relevant: set[str], k: int = K) -> float:
@@ -90,8 +124,10 @@ def patched(query_vec: Callable[[str], tuple[float, ...] | None], vectors: dict 
 
 
 def run_case(state: State, case: dict) -> list[dict]:
-    """その問い合わせで recommend が返す上位の求人カード(patched の中で呼ぶ)。"""
-    r = logic.recommend(state, None, keywords=case["q"], employment_type=case.get("employment_type"))
+    """その問い合わせで recommend が返す上位の求人カード(patched の中で呼ぶ)。args は会話の指示どおりの引数、
+    user は傾向を使うシナリオ用ユーザー(省略なら傾向なし)。"""
+    r = logic.recommend(state, case.get("user"), keywords=case_keywords(case),
+                        employment_type=case.get("employment_type"), **case.get("args", {}))
     return r.get("jobs", [])
 
 
@@ -103,15 +139,24 @@ def evaluate(query_vectors: dict[str, list[float]], **patch) -> dict:
     rows = []
     with patched(lambda text: tuple(query_vectors[text]) if text in query_vectors else None, **patch):
         for case in load_cases():
-            rel = relevant_ids(case, jobs)
             top = run_case(state, case)
+            row = {"id": case["id"], "q": case["q"], "employment_type": case.get("employment_type"),
+                   "kind": case["kind"], "added_in": case.get("added_in")}
+            if case["kind"] == UNRELATED:
+                rows.append(row | {"recall": None, "ok": unrelated_ok(top), "top": [(c["job_id"], c["job_type"], None) for c in top]})
+                continue
+            rel = relevant_ids(case, jobs)
             ids = [c["job_id"] for c in top]
-            rows.append({"id": case["id"], "q": case["q"], "employment_type": case.get("employment_type"),
-                         "kind": case["kind"], "recall": round(recall_at_k(ids, rel), 3),
-                         "top": [(c["job_id"], c["job_type"], c["job_id"] in rel) for c in top]})
-    by_kind = {k: round(mean(r["recall"] for r in rows if r["kind"] == k), 3) for k in sorted({r["kind"] for r in rows})}
-    return {"recall_at_3": round(mean(r["recall"] for r in rows), 3), "by_kind": by_kind,
-            "zero_hits": sum(not r["top"] for r in rows), "cases": rows}
+            rows.append(row | {"recall": round(recall_at_k(ids, rel), 3),
+                               "top": [(c["job_id"], c["job_type"], c["job_id"] in rel) for c in top]})
+    scored = [r for r in rows if r["recall"] is not None]
+    unrelated = [r for r in rows if r["recall"] is None]
+    by_kind = {k: round(mean(r["recall"] for r in scored if r["kind"] == k), 3) for k in sorted({r["kind"] for r in scored})}
+    return {"recall_at_3": round(mean(r["recall"] for r in scored), 3),
+            # task 105 の評価セットにあった問い合わせだけの再現率(task 111 で足した問い合わせを除く。前の値と比べる用)
+            "recall_at_3_task105": round(mean(r["recall"] for r in scored if not r["added_in"]), 3),
+            "by_kind": by_kind, "zero_hits": sum(not r["top"] for r in scored),
+            "unrelated_ok": f"{sum(r['ok'] for r in unrelated)}/{len(unrelated)}", "cases": rows}
 
 
 def recorded_query_vectors() -> dict:
@@ -122,9 +167,11 @@ def main_offline() -> None:
     rec = recorded_query_vectors()
     rep = evaluate(rec["queries"])
     for r in rep["cases"]:
-        print(f"{r['recall']:.2f}  {r['id']:<16} {r['q']}  {[(i, t) for i, t, _ in r['top']]}")
-    print(f"model={rec['model']} dims={rec['dimensions']}  recall@3={rep['recall_at_3']}  by_kind={rep['by_kind']}  "
-          f"zero_hits={rep['zero_hits']}")
+        score = f"{r['recall']:.2f}" if r["recall"] is not None else ("ok  " if r["ok"] else "NG  ")
+        print(f"{score}  {r['id']:<16} {r['q']}  {[(i, t) for i, t, _ in r['top']]}")
+    print(f"model={rec['model']} dims={rec['dimensions']}  recall@3={rep['recall_at_3']}  "
+          f"(task 105 の問い合わせだけ {rep['recall_at_3_task105']})  by_kind={rep['by_kind']}  "
+          f"zero_hits={rep['zero_hits']}  無関係の合格={rep['unrelated_ok']}")
 
 
 # ----------------------------- 実 API(記録と比較) -----------------------------
@@ -153,18 +200,32 @@ def _embed(ledger: Ledger, model: str, dims: int, texts: list[str]) -> list[list
     return [d.embedding for d in resp.data]
 
 
-def main_record() -> None:
-    """評価セットの問い合わせを、今の設定で記録する(テストと main_offline が使う)。"""
+def eval_queries() -> set[str]:
+    """評価セットで keywords に渡す文(ベクトルを記録しておくもの)。"""
+    return {kw for c in load_cases() if (kw := case_keywords(c))}
+
+
+def main_record(rerecord_all: bool = False) -> None:
+    """評価セットの問い合わせのベクトルを、今の設定で記録する(テストと main_offline が使う)。
+    記録済みの問い合わせは、そのまま残す(記録し直すと、同じ文でも値がわずかに揺れて前の結果と比べにくくなるため)。"""
     ledger = Ledger()
     jobs_meta = embedding._vectors()
     model, dims = jobs_meta["model"], jobs_meta["dimensions"]
-    qs = sorted({c["q"] for c in load_cases()})
-    vecs = _embed(ledger, model, dims, qs)
+    have = {}
+    if QUERY_VECTORS.is_file() and not rerecord_all:
+        rec = recorded_query_vectors()
+        if (rec["model"], rec["dimensions"]) == (model, dims):
+            have = rec["queries"]
+    qs = sorted(eval_queries() - set(have))
+    vecs = _embed(ledger, model, dims, qs) if qs else []
+    queries = have | {q: [round(x, 6) for x in embedding.unit(v)] for q, v in zip(qs, vecs, strict=True)}
     out = {"_note": "evals/search_eval.py record が作る(手で編集しない)。求人ベクトルと同じモデル・次元で記録する。",
-           "model": model, "dimensions": dims,
-           "queries": {q: [round(x, 6) for x in embedding.unit(v)] for q, v in zip(qs, vecs, strict=True)}}
+           "model": model, "dimensions": dims, "queries": dict(sorted(queries.items()))}
     QUERY_VECTORS.write_text(json.dumps(out, ensure_ascii=False) + "\n")
-    print(f"{len(qs)} queries -> {QUERY_VECTORS}  {ledger}")
+    if qs:
+        budget.record(budget.LEDGER, "search-eval-record", ledger.usd(), case=f"検索評価の問い合わせ {len(qs)} 件の embedding",
+                      tokens=ledger.tokens)
+    print(f"{len(qs)} new queries (all {len(queries)}) -> {QUERY_VECTORS}  {ledger}")
 
 
 # 求人を embedding にする文面の候補。v1 は task 28 / 104 の文面(給与・場所・待遇・注意点を全部入れる)。
@@ -250,7 +311,7 @@ def _table(results: list[dict]) -> str:
 def main_compare() -> None:
     ledger = Ledger()
     jobs = load_jobs()
-    qs = sorted({c["q"] for c in load_cases()})
+    qs = sorted(eval_queries())
     results = []
     for (model, dims), (tname, tfn) in itertools.product(EMBEDDINGS, TEXTS.items()):
         jv = _cached(ledger, f"jobs-{model}-{tname}", model, {jid: tfn(j) for jid, j in jobs.items()})
@@ -258,7 +319,7 @@ def main_compare() -> None:
         vectors = {"model": model, "dimensions": dims,
                    "jobs": {jid: {"hash": sha1(tfn(jobs[jid]).encode("utf-8")).hexdigest()[:12], "v": _cut(v, dims)} for jid, v in jv.items()}}
         qvecs = {q: _cut(v, dims) for q, v in qv.items()}
-        best = max(sum(a * b for a, b in zip(qvecs[c["q"]], r["v"], strict=True)) for c in load_cases() for r in vectors["jobs"].values())
+        best = max(sum(a * b for a, b in zip(qvecs[q], r["v"], strict=True)) for q in qs for r in vectors["jobs"].values())
         for floor, rel, weight in SELECTIONS:
             rep = evaluate(qvecs, vectors=vectors, text_fn=tfn, SIM_FLOOR=floor, SIM_RELATIVE=rel, SIM_WEIGHT=weight)
             row = {"model": model, "dims": dims, "text": tname, "floor": floor, "relative": rel, "weight": weight,
@@ -280,5 +341,6 @@ if __name__ == "__main__":
     load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", nargs="?", choices=["eval", "record", "compare"], default="eval")
-    cmd = ap.parse_args().cmd
-    {"eval": main_offline, "record": main_record, "compare": main_compare}[cmd]()
+    ap.add_argument("--all", action="store_true", help="record で、記録済みの問い合わせも記録し直す")
+    a = ap.parse_args()
+    {"eval": main_offline, "record": lambda: main_record(a.all), "compare": main_compare}[a.cmd]()

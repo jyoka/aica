@@ -7,7 +7,7 @@ import asyncio
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from line_runtime.runtime import LineRuntime
+from line_runtime.runtime import CONVERSATION_TABLES, LineRuntime
 
 
 async def _write_checkpoint(saver, thread_id: str) -> None:
@@ -62,5 +62,27 @@ def test_numbers_come_from_the_largest_thread_and_erasing_touches_only_that_user
             assert await rt._current("u") == 0
             for t in ("u1:99", "u:x:50", "u;:7", "v:1"):
                 assert await saver.aget_tuple({"configurable": {"thread_id": t}}) is not None
+
+    asyncio.run(scenario())
+
+
+def test_erased_tables_are_all_the_conversation_tables_in_the_db(tmp_path):
+    """消す対象の表(CONVERSATION_TABLES)が、チェックポイントの DB にある表とちょうど一致する。
+    langgraph-checkpoint-sqlite の更新で表が増えたら(会話の中身を持つ表が消されずに残るかもしれないので)ここで落ちて気づく。"""
+    db = str(tmp_path / "ckpt.db")
+
+    async def scenario():
+        async with AsyncSqliteSaver.from_conn_string(db) as saver:
+            await saver.setup()
+            cfg = {"configurable": {"thread_id": "u:1", "checkpoint_ns": ""}}
+            cfg = await saver.aput(cfg, empty_checkpoint(), {}, {})
+            await saver.aput_writes(cfg, [("messages", "こんにちは")], "task-1")  # 書き込みの表も使ってから数える
+            async with saver.conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as cur:
+                tables = {name for (name,) in await cur.fetchall()}
+            assert tables == set(CONVERSATION_TABLES)
+            for table in tables:  # どの表も thread_id で消せる
+                async with saver.conn.execute(f"SELECT name FROM pragma_table_info('{table}')") as cur:
+                    assert "thread_id" in {name for (name,) in await cur.fetchall()}
 
     asyncio.run(scenario())
