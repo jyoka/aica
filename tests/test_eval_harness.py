@@ -471,7 +471,7 @@ def test_purpose_evidence_accepts_plain_acknowledgements_and_earlier_purpose_que
 
 PLAIN_PURPOSE_QUESTIONS = ("今回、パートを始めようと思った理由は何ですか?", "転職を考えたのはなぜですか?",
                            "どうしてバイトを始めようと思ったのですか?", "正社員を目指そうと思った理由を教えてください。",
-                           "探し始めたのはどうしてですか?")
+                           "探し始めたのはどうしてですか?", "働きたい理由は何ですか?", "バイトしたい理由は?")
 
 
 @pytest.mark.parametrize("question", PLAIN_PURPOSE_QUESTIONS)
@@ -487,12 +487,34 @@ def test_purpose_evidence_accepts_reason_questions_about_starting_the_search(que
 
 
 @pytest.mark.parametrize("question", ("カフェで働きたい理由は何ですか?", "その働き方を選ぶ理由は?", "土日に働けない理由はありますか?",
-                                      "夜勤を避けたい理由はありますか?", "この求人を選んだ理由は?"))
+                                      "夜勤を避けたい理由はありますか?", "この求人を選んだ理由は?",
+                                      "土日は働けない理由はありますか?", "夜は働けない理由は?", "時給で探す理由はありますか?",
+                                      "駅から近いところで探している理由は?", "夜勤を始めたい理由は?", "土日のバイトを探す理由は?",
+                                      "夜にパートで働けない理由は?", "正社員で働けない理由はありますか?",
+                                      "バイトで働けない時間帯がある理由は?", "午前中だけバイトで働く理由は?",
+                                      "渋谷でバイトを探す理由は?", "カフェでバイトを探す理由は?", "近場で仕事を探す理由は?",
+                                      "平日だけ働きたい理由は?", "週3でバイトしたい理由は?"))
 def test_reason_questions_about_conditions_are_not_purpose_questions(question):
-    """理由の問いでも、職種・働き方・条件・求人への問いは目的の問いではない。"""
+    """理由の問いでも、職種・働き方・条件・求人への問いは目的の問いではない。根拠より前の問いとしても数えない。"""
     from evals.judge import purpose_evidence
 
     assert purpose_evidence(question, [{"who": "agent", "text": "どうしますか?"}]) is False
+    log = [{"who": "agent", "text": question}, {"who": "user", "text": "家族の用事があるので"},
+           {"who": "agent", "text": "わかりました。働ける曜日はありますか?"}]
+    assert purpose_evidence("わかりました。働ける曜日はありますか?", log) is False
+    log = [{"who": "agent", "text": question}, {"who": "user", "text": "家族の用事があるので"},
+           {"who": "agent", "text": "わかりました。正社員のお仕事で考えますね。時間帯は?"}]
+    assert purpose_evidence("正社員のお仕事で考えますね。", log) is False
+
+
+def test_condition_reason_question_does_not_let_a_track_switch_line_through():
+    """条件の理由の問いに本人が答えた後の、区分の切り替えの一言は目的の根拠にならない(T-career-fulltime#2 の誤り)。"""
+    from evals.judge import purpose_evidence
+
+    log = [{"who": "agent", "text": "中野ですね。土日は働けない理由はありますか?"},
+           {"who": "user", "text": "土日は家族の用事があるので"},
+           {"who": "agent", "text": "わかりました。正社員のお仕事で考えますね。時間帯は?"}]
+    assert purpose_evidence("正社員のお仕事で考えますね。", log) is False
 
 
 def test_purpose_evidence_does_not_take_conditions_or_unanswered_questions():

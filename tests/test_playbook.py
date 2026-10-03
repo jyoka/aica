@@ -438,6 +438,7 @@ def _examples() -> dict[str, str]:
         "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
         "Prompt: 相談の入口(本人の状況や事情)": _between(PROMPT, "話して探し始めたとき(", ")。"),
         "Prompt: 提案の一言": _between(PROMPT, "その一言を本人の話につなげる(例:", ")。"),
+        "common: 提案の一言": _between(common, "経験とのつながりを伝える(例:", ")。"),
         "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),
         "fulltime: 強みの確認形": _between(fulltime, "本人がどう捉えているかを聞く(例:", ")。"),
         "fulltime: 方向の候補": _between(fulltime, "組み合わせて作る(例:", ")。"),
@@ -458,12 +459,13 @@ def _shared(example: str, persona: str, n: int = 4) -> set[str]:
 def test_examples_in_playbooks_and_prompt_do_not_echo_the_eval_personas():
     persona = _persona_text()
     examples = _examples()
-    assert len(examples) == 11 and all(examples.values())
+    assert len(examples) == 12 and all(examples.values())
     for where, example in examples.items():
         assert _shared(example, persona) == set(), (where, example, _shared(example, persona))
     # 負例: 差し替える前の例文(ペルソナとほぼ同じ)は、この判定で重なりとして見つかる
     for old in ("本業の後の空いた時間で", "子どもが小学校に上がったので", "転職を考えていて", "法人営業を4年されていたんですね",
                 "法人営業とPMの経歴で「新しいプロダクトを企画したい」", "「本や音楽が好き」「人見知り」",
                 "「渋谷でカフェのバイト」", "「人と話す仕事 / 事務や運営を支える仕事」", "「収入を増やしたい / 経験を積みたい」",
-                "「最初から企画する、というのは、どんな規模や役割のイメージですか?」", "「人と話すのが好き」"):
+                "「最初から企画する、というのは、どんな規模や役割のイメージですか?」", "「人と話すのが好き」",
+                "「接客をしてみたいというお話から、夕方に働ける3件です。」"):
         assert _shared(old, persona), old
