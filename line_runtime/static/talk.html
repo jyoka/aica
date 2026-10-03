@@ -28,7 +28,6 @@
   /* 今の雇用区分(表示だけ。確かめる・直すのはプロフィール) */
   header .track { flex: none; border-radius: 999px; background: #ffffff26; color: #fff; font-size: 11.5px; font-weight: 700; padding: 4px 10px; }
   header .track[hidden] { display: none; }
-  header .track[data-track="未定"] { background: transparent; color: #c5cddb; font-weight: 400; }
 
   /* ---------- トーク ---------- */
   #log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -155,12 +154,13 @@
   const { el, sys, me, botCol, disableChips, renderReply } = talk;
   function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
 
-  // ヘッダーの今の雇用区分(dip の記録。開いたとき・返信・切り替えの取り消し・プロフィールで変えたときに直す)
-  const TRACK_HEADER = { "正社員": "正社員で相談中", "アルバイト・パート": "アルバイト・パートで相談中", "未定": "区分は未定" };
+  // ヘッダーの今の雇用区分(dip の記録。開いたとき・返信・切り替えの取り消し・プロフィールで変えたときに直す)。
+  // 未定のときは出さない(区分はプロフィールで確かめられる)
+  const TRACK_HEADER = { "正社員": "正社員で相談中", "アルバイト・パート": "アルバイト・パートで相談中" };
   function setTrack(t) {
     const b = $("track");
-    if (!t || !TRACK_HEADER[t]) return;
-    b.textContent = TRACK_HEADER[t]; b.dataset.track = t; b.hidden = false;
+    if (!t) return;
+    b.textContent = TRACK_HEADER[t] || ""; b.dataset.track = t; b.hidden = !TRACK_HEADER[t];
   }
 
   function onEvent(ev, col) {

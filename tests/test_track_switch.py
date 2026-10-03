@@ -8,7 +8,8 @@
 (3) 表示のボタン(/api/talk/track/undo)で元の区分に戻り、dip に取り消しとして記録される(根拠はボタンを
     押したこと)。次のターンの前に知らせが届き、AI は要約を読み直して、戻した区分で続ける(同じ切り替えを繰り返さない)
 (4) 直前の切り替えでなければ(後に別の切り替え・取り消し済み・記録ごと消した)取り消さない。他人は取り消せない
-(5) ブラウザ: ヘッダーに今の区分が出て、表示は AI の返信の前に出て、ボタンで戻る。再読み込みしても dip の記録どおり。
+(5) ブラウザ: ヘッダーに今の区分が出て(未定のときは出さない)、表示は AI の返信の前に出て、ボタンで戻る。
+    元が未定ならボタンは「元に戻す」で、戻すと「区分を決めない相談に戻しました」。再読み込みしても dip の記録どおり。
     プロフィールの「記録ごと消す」は取り消しと別のもの(確認つき)
 (6) 追記(プロフィールのレビューから): 音声のシートを結果の前に閉じても、END_WAIT_MS を過ぎたら履歴の読み直しをやめる
 """
@@ -273,7 +274,7 @@ def test_the_switch_and_its_undo_in_the_browser(switched, browser, served_switch
     page.get_by_text(WELCOME).wait_for()
     uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
     header = page.locator("header #track")
-    assert header.inner_text() == "区分は未定"
+    assert header.is_hidden()  # 未定のときは区分を出さない
 
     # 切り替わらないターンには出ない
     _say(page, "ありがとう")
@@ -319,7 +320,62 @@ def test_the_switch_and_its_undo_in_the_browser(switched, browser, served_switch
     assert logic.search_track(switched.state.user(uid)) == "アルバイト・パート"  # まだ消さない
     row.locator(".pconfirm button.danger").click()
     page.locator('#profile .prow[data-key="track"] .pv', has_text="未定").wait_for()
-    assert header.inner_text() == "区分は未定"
+    assert header.is_hidden()
+    context.close()
+
+
+def test_undoing_a_switch_from_undecided_in_the_browser(switched, browser, served_switch):  # noqa: F811
+    """元が未定の切り替え: ボタンは「元に戻す」、取り消すと「区分を決めない相談に戻しました」。
+    ヘッダーの区分は未定のときだけ隠れる(切り替え・取り消し・再読み込みで出し入れする)。/dev も同じ部品で同じ表示。"""
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    page.goto(served_switch + "/")
+    page.get_by_text(WELCOME).wait_for()
+    header = page.locator("header #track")
+    assert header.is_hidden()
+
+    _say(page, "正社員で探したい")
+    page.get_by_text("正社員のお仕事で考えますね。").wait_for()
+    sw = page.locator(".track-switch")
+    assert sw.locator("button").all_inner_texts() == ["元に戻す"]
+    assert header.is_visible() and header.inner_text() == "正社員で相談中"
+
+    sw.locator("button", has_text="元に戻す").click()
+    sw.get_by_text("区分を決めない相談に戻しました").wait_for()
+    assert "未定" not in sw.inner_text() and sw.locator("button").count() == 0
+    assert header.is_hidden()
+
+    # 再読み込みしても同じ(取り消し済みで、ヘッダーに区分は出ない)
+    page.reload()
+    page.locator(".track-switch", has_text="区分を決めない相談に戻しました").wait_for()
+    assert page.locator(".track-switch button").count() == 0
+    assert header.is_hidden()
+
+    # また切り替えると出る(未定以外の区分が元なら、今までどおり区分の名前のボタン)
+    _say(page, "バイトを探しています")
+    page.get_by_text("アルバイト・パートのお仕事で考えますね。").wait_for()
+    assert header.is_visible() and header.inner_text() == "アルバイト・パートで相談中"
+    assert page.locator(".track-switch button").all_inner_texts() == ["元に戻す"]  # 元は未定
+    page.reload()
+    page.get_by_text("アルバイト・パートのお仕事で考えますね。").wait_for()
+    assert header.inner_text() == "アルバイト・パートで相談中"
+    _say(page, "正社員でお願いします")
+    page.locator(".track-switch").nth(2).wait_for()
+    assert page.locator(".track-switch button").all_inner_texts() == ["アルバイトで探す"]
+    assert header.inner_text() == "正社員で相談中"
+
+    # /dev: シナリオのユーザー(区分は未定)でも同じ文言
+    dev = context.new_page()
+    dev.set_viewport_size({"width": 1400, "height": 900})
+    dev.goto(served_switch + "/dev")
+    dev.locator("#scenarios .act").first.click()
+    dev.get_by_text(WELCOME).wait_for()
+    dev.locator("#t").fill("正社員で探したい")
+    dev.locator("#send").click()
+    dev.get_by_text("正社員のお仕事で考えますね。").wait_for()
+    dsw = dev.locator(".track-switch")
+    dsw.locator("button", has_text="元に戻す").click()
+    dsw.get_by_text("区分を決めない相談に戻しました").wait_for()
     context.close()
 
 
