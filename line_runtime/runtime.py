@@ -52,6 +52,18 @@ STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("gre
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話の入口(会話の state の entry)
+# 会話の記録の表(AsyncSqliteSaver のスキーマ)。1人の会話を消すときは、これらから1つのトランザクションで消す
+CONVERSATION_TABLES = ("checkpoints", "writes")
+
+
+def _threads_of(user_id: str) -> tuple[int, str, tuple]:
+    """SQL の条件: そのユーザーの会話の行(thread_id が「ユーザーID:番号」)。範囲の比較で主キーの索引を使い、
+    番号の部分が数字だけの行に絞る(ユーザー「u」の会話に、ユーザー「u:x」の会話「u:x:1」を含めない)。
+    返すのは (番号の始まる位置(substr の引数), 条件, 条件の引数)。"""
+    start = len(user_id) + 2
+    cond = ("thread_id > ? AND thread_id < ? AND substr(thread_id, ?) <> '' "
+            "AND substr(thread_id, ?) NOT GLOB '*[^0-9]*'")
+    return start, cond, (f"{user_id}:", f"{user_id};", start, start)
 
 
 def event_input(event: str, text: str | None, facts: dict | None) -> str:
@@ -141,13 +153,34 @@ class LineRuntime:
         return {"configurable": {"thread_id": f"{user_id}:{n}"}}
 
     async def _current(self, user_id: str) -> int:
-        """現在の会話番号。再起動後は、チェックポイントに残っている最後の会話から続ける(古い会話に戻らない)。"""
+        """現在の会話番号。再起動後は、チェックポイントに残っている最大の番号の会話から続ける(古い会話に戻らない。
+        会話を閉じた後は、前の会話を消して空の会話だけが残るので、番号は1番から連続しない)。"""
         if user_id not in self._threads:
-            n = 0
-            while await self._saver.aget_tuple(self._cfg(user_id, n + 1)):
-                n += 1
-            self._threads[user_id] = n
+            start, cond, args = _threads_of(user_id)
+            await self._saver.setup()
+            async with self._saver.lock, self._saver.conn.execute(
+                    f"SELECT MAX(CAST(substr(thread_id, ?) AS INTEGER)) FROM checkpoints WHERE {cond}",
+                    (start, *args)) as cur:
+                (n,) = await cur.fetchone()
+            self._threads[user_id] = n or 0
         return self._threads[user_id]
+
+    async def _erase(self, user_id: str, keep: int | None = None) -> None:
+        """そのユーザーの会話の記録(チェックポイントと書き込み)を1つのトランザクションで消す。keep の番号の会話は残す。
+        途中で失敗したら巻き戻す(落ちたときは SQLite が捨てる)ので、全部消えるか何も消えないかのどちらか。"""
+        saver = self._saver
+        await saver.setup()
+        _, cond, args = _threads_of(user_id)
+        if keep is not None:
+            cond, args = f"{cond} AND thread_id <> ?", (*args, f"{user_id}:{keep}")
+        async with saver.lock, saver.conn.cursor() as cur:  # lock: ほかのユーザーの書き込みの commit を挟まない
+            try:
+                for table in CONVERSATION_TABLES:
+                    await cur.execute(f"DELETE FROM {table} WHERE {cond}", args)
+                await saver.conn.commit()
+            except BaseException:
+                await saver.conn.rollback()
+                raise
 
     def user_lock(self, user_id: str) -> asyncio.Lock:
         """そのユーザーのターンと同じ排他。ターンの途中で dip の状態を初期に戻さないために使う。"""
@@ -199,26 +232,26 @@ class LineRuntime:
             return True
 
     async def close_conversation(self, user_id: str) -> None:
-        """今の会話を閉じる(プロフィールで履歴書を消したとき)。それまでの会話 1..n のチェックポイントをすべて消して
-        空の会話に置き換え、さらに空の会話を1つ進めて今の会話にする。前の会話の履歴(アップロードの要点・要約のツール
-        結果)は描き直せず、次の会話の文脈にも入らず、サーバーの DB にも残らない。番号は戻さず進めるので、古い会話を
-        開いたままのタブの発言は stale になる。空の会話は挨拶が返っていない会話と同じ扱い(続けずに新しい会話から
-        始まる)。LLM は呼ばない。呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
+        """今の会話を閉じる(プロフィールで履歴書を消したとき)。空の会話 n+1 を書いて今の会話にし、それまでの会話
+        1..n のチェックポイントを1つのトランザクションですべて消す。前の会話の履歴(アップロードの要点・要約のツール
+        結果)は描き直せず、次の会話の文脈にも入らず、サーバーの DB にも残らない。番号は戻さず進める(再起動後も
+        _current が最大の番号の n+1 から数える)ので、古い会話を開いたままのタブの発言は stale になる。空の会話は
+        挨拶が返っていない会話と同じ扱い(続けずに新しい会話から始まる)。
+        空の会話を先に書くので、消す途中で落ちても今の会話は空の n+1 のまま(前の会話は全部残るか全部消えるかで、
+        残っても文脈には戻らない。もう一度閉じれば消える)。LLM は呼ばない。
+        呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
         n = await self._current(user_id)
         if not n:
             return
-        for k in range(1, n + 1):
-            await self._saver.adelete_thread(f"{user_id}:{k}")
-        # 空のチェックポイントで番号を埋める(再起動後も _current が番号を数え直せるように。数え方は1番から連続)
-        for k in range(1, n + 2):
-            await self.agent.aupdate_state(self._cfg(user_id, k), {"messages": []}, as_node="model")
+        await self.agent.aupdate_state(self._cfg(user_id, n + 1), {"messages": []}, as_node="model")
         self._threads[user_id] = n + 1
+        await self._erase(user_id, keep=n + 1)
 
     async def forget(self, user_id: str) -> None:
-        """そのユーザーの会話(チェックポイント)をすべて消す(プロフィールの「すべて消す」)。次の会話は1番から。
+        """そのユーザーの会話(チェックポイント)をすべて、1つのトランザクションで消す(プロフィールの「すべて消す」)。
+        次の会話は1番から。途中で失敗したら何も消えていない(もう一度押せばやり直せる)。
         呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
-        for n in range(1, await self._current(user_id) + 1):
-            await self._saver.adelete_thread(f"{user_id}:{n}")
+        await self._erase(user_id)
         self._threads[user_id] = 0
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,

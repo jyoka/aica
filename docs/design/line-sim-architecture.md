@@ -164,7 +164,9 @@ dip の状態を初期に戻し、続けて `/api/event/stream` を呼んで LIN
 
 - dip の状態は JSON ファイル(`data/state.json`)。MCP の子プロセスと Web プロセスが共有するので、ファイルロックをかけて毎回読み書きする。
   評価は実行ごとに一時ファイルを使う。
-- 会話は AsyncSqliteSaver(`data/line_checkpoints.db`)。会話番号は再起動後にチェックポイントから復元し、古い会話に追記しない。
+- 会話は AsyncSqliteSaver(`data/line_checkpoints.db`)。会話番号は再起動後にチェックポイントに残る最大の番号から復元し、古い会話に追記しない。
+  1人の会話を消すとき(履歴書を消して会話を閉じる・すべて消す)は、その人の thread_id の行を `checkpoints` / `writes` から
+  1つのトランザクションで消す(途中で落ちても、全部消えるか何も消えないか)。
 
 ## 評価の仕組み(`evals/`)
 
