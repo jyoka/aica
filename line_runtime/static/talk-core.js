@@ -151,14 +151,16 @@ function createTalk(o) {
   // 例: 「正社員の相談に切り替えました [アルバイトで探す]」。ボタンで元の区分に戻す(dip に取り消しとして記録。
   // LLM は呼ばない。AI には次のターンの前に伝わる)。status(サーバーが dip の記録から足す): undoable = 取り消せる /
   // undone = 取り消した / past・gone = 後に別の切り替えがある・記録が消された(ボタンを出さない)
-  const TRACK_BUTTON = { "アルバイト・パート": "アルバイトで探す", "正社員": "正社員で探す", "未定": "区分を決めずに探す" };
+  // ボタン: 元が未定のときは「元に戻す」(TRACK_BUTTON に無い区分はそれになる)
+  const TRACK_BUTTON = { "アルバイト・パート": "アルバイトで探す", "正社員": "正社員で探す" };
   const switchedText = (sw) => sw.track === "未定" ? (sw.undo ? "区分を決めない相談に戻しました" : "区分を決めずに相談します")
     : `${sw.track}の相談に${sw.undo ? "戻しました" : "切り替えました"}`;
+  const undoneText = (track) => track === "未定" ? "区分を決めない相談に戻しました" : `取り消して、${track}に戻しました`;
   function trackSwitch(sw, row) {
     log.querySelectorAll(".track-switch button").forEach(b => b.remove());  // 取り消せるのは直前の切り替えだけ
     const box = el("div", "track-switch"); box.dataset.status = sw.status || "";
     box.appendChild(el("span", null, switchedText(sw)));
-    if (sw.status === "undone") box.appendChild(el("span", "done", `取り消して、${sw.from}に戻しました`));
+    if (sw.status === "undone") box.appendChild(el("span", "done", undoneText(sw.from)));
     else if (!sw.undo && (sw.status === "undoable" || sw.status == null)) {
       const b = el("button", null, TRACK_BUTTON[sw.from] || "元に戻す"); b.type = "button";
       b.onclick = () => undoSwitch(sw, box, b);
@@ -176,7 +178,7 @@ function createTalk(o) {
       let d = null; try { d = await res.json(); } catch (_) {}
       if (!res.ok) { b.remove(); box.appendChild(el("span", "done", d?.detail || "取り消せませんでした。")); return; }
       b.remove(); box.dataset.status = "undone";
-      box.appendChild(el("span", "done", `取り消して、${d.search_track}に戻しました`));
+      box.appendChild(el("span", "done", undoneText(d.search_track)));
       o.onTrack?.(d.search_track); o.afterTurn?.();
     } catch (e) { b.disabled = false; console.error(e); }
     finally { o.setBusy(false); }
