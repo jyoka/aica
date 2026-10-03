@@ -363,7 +363,7 @@
       rr.appendChild(el("span", "pl", `${p.resume.uploaded} に${p.resume.file || "履歴書"}から読み取り`));
       const b = el("div", "pbtns"), a = el("a", null, "読み取り結果を見る");
       a.href = p.resume.view_url; a.target = "_blank"; a.rel = "noopener";
-      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。今の会話は終わり、次は新しい会話から始まります。", "消す", deleteResume)));
+      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。今の会話は終わり、次は新しい会話から始まります。経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。", "消す", deleteResume)));
       rr.appendChild(b);
     } else rr.appendChild(el("div", "pv empty", EMPTY));
     rc.appendChild(rr); box.appendChild(rc);

@@ -352,6 +352,55 @@ def test_deleting_the_resume_closes_the_conversation_and_the_next_one_starts_new
         assert asyncio.run(rt.current_thread(uid)) == greeting["thread"]
 
 
+def _checkpoint_rows(rt, uid: str) -> dict[str, list[bytes]]:
+    """サーバーの DB(チェックポイントの SQLite)を直接読む: そのユーザーの会話ごとの、保存された中身(チェックポイントと書き込み)。"""
+    async def read():
+        rows: dict[str, list[bytes]] = {}
+        for sql in ("SELECT thread_id, checkpoint FROM checkpoints", "SELECT thread_id, value FROM writes"):
+            async with rt._saver.conn.execute(sql) as cur:
+                for thread_id, blob in await cur.fetchall():
+                    if thread_id.startswith(f"{uid}:"):
+                        rows.setdefault(thread_id, []).append(bytes(blob or b""))
+        return rows
+
+    return asyncio.run(read())
+
+
+def _mentions_resume(blobs: list[bytes]) -> bool:
+    needles = (RESUME_TEXT.encode(), json.dumps(RESUME_TEXT).strip('"').encode())  # そのまま / JSON の \u エスケープ
+    return any(n in b for b in blobs for n in needles)
+
+
+def test_deleting_the_resume_erases_the_upload_from_every_past_conversation_in_the_db(remembered):
+    """履歴書を消すと、今の会話だけでなく、その人のそれまでのすべての会話のチェックポイントから、アップロードの要点
+    (確認の吹き出し・要約のツール結果)が消える(DB を直接見る)。番号は空の会話で埋めて続き、再起動後も数え直せる。
+    会話数は余計に使わない。"""
+    with _client(remembered) as client:
+        uid, first = _talk_with_resume(client)
+        rt, quota = client.app.state.rt, client.app.state.quota
+        remembered.later(31)  # 30分を過ぎて開き直す: 新しい会話になり、そこでもまた履歴書の要点が出る
+        _, greeting = open_talk(client)
+        second = greeting["thread"]
+        assert second == first + 1
+        stream(client, uid, "message", second, "要約を読んで")
+        rows = _checkpoint_rows(rt, uid)
+        assert _mentions_resume(rows[f"{uid}:{first}"]) and _mentions_resume(rows[f"{uid}:{second}"])
+        used = quota.used(uid)
+
+        client.delete("/api/profile/resume")
+        rows = _checkpoint_rows(rt, uid)
+        assert sorted(rows) == sorted(f"{uid}:{k}" for k in range(1, second + 2))  # 空の会話で番号を埋める
+        assert not any(_mentions_resume(b) for b in rows.values())
+        for k in range(1, second + 2):
+            assert asyncio.run(rt.agent.aget_state(rt._cfg(uid, k))).values.get("messages") == []
+        assert quota.used(uid) == used
+
+        h = client.get("/api/talk/history").json()
+        assert h["thread"] == second + 1 and h["turns"] == []
+        rt._threads.pop(uid)  # 再起動しても、閉じた後の会話から数え直す
+        assert asyncio.run(rt.current_thread(uid)) == second + 1
+
+
 def test_an_old_tab_is_told_stale_after_the_resume_is_deleted_without_using_the_quota(remembered):
     """別のタブで古い会話を開いたまま: 履歴書を消した後の発言・アップロードは、既存の古いタブの案内(stale)になる。
     消すことも stale も会話数を使わない。新しい会話は挨拶の1回分だけ(迂回もできない: 数は消さない)。"""
@@ -397,7 +446,7 @@ def test_a_voice_result_after_the_resume_is_deleted_starts_the_next_conversation
 
 
 def test_deleting_the_resume_in_the_browser_starts_a_new_conversation(remembered, browser, served_profile):  # noqa: F811
-    """プロフィール画面で履歴書を消す確認に「今の会話は終わり」と出る。消してトークに戻ると、前の会話の吹き出しは
+    """プロフィール画面で履歴書を消す確認に「今の会話は終わり」と、会話で保存した内容は残り各項目から消せることが出る。消してトークに戻ると、前の会話の吹き出しは
     描かず、新しい会話(再訪の挨拶)から始まる。再読み込みしても前の会話には戻らない。"""
     from resume_intake.extract import finalize
 
@@ -415,6 +464,7 @@ def test_deleting_the_resume_in_the_browser_starts_a_new_conversation(remembered
     row = page.locator('#profile .prow[data-key="resume"]')
     row.locator("button.del").click()
     row.locator(".pconfirm", has_text="今の会話は終わり、次は新しい会話から始まります").wait_for()
+    row.locator(".pconfirm", has_text="経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。").wait_for()
     row.locator(".pconfirm button.danger").click()
     row.locator(".pv.empty").wait_for()
     assert logic.resume_upload(remembered.state, uid) is None
