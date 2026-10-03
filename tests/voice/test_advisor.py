@@ -801,3 +801,21 @@ def test_attribute_and_style_args_are_not_saved_as_preferences():
     assert "job_type" in saved and "min_annual_salary" in saved
     assert not saved & {*STYLE, *ATTRS}
     assert not set(advisor.preferences) & {*STYLE, *ATTRS}
+
+
+def test_excluded_jobs_are_searched_out_and_never_stay_in_the_proposal(tmp_path, monkeypatch):
+    """exclude_ids(出さない求人)は dip の検索に渡り、0件の探し直しでも前の提案から外れる(トークに届けない)。
+    検索の条件(recommend_args)には入れず、検索の経緯(search_attempts)に残す。0件のときの relax_conditions にも渡す。"""
+    dip = FakeDip()
+    advisor = _talk_advisor(dip, tmp_out=tmp_path, monkeypatch=monkeypatch)
+
+    reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
+    assert "1件目(求人ID b0305)" in reply and "exclude_ids" in reply
+    dip.result = {"total": 0, "jobs": []}
+    asyncio.run(advisor.propose_jobs(job_type="カフェ", exclude_ids=["b0304", "b0304"], search_only=True))
+
+    assert "exclude_ids" not in dip.calls[0] and dip.calls[1]["exclude_ids"] == ["b0304"]
+    assert dip.relax_calls[0]["exclude_ids"] == ["b0304"]
+    assert advisor.recommend_args == {"job_type": "カフェ"}
+    assert advisor.search_attempts[1]["exclude_ids"] == ["b0304"]
+    assert [j["job_id"] for j in advisor.proposed_jobs] == ["b0305", "b0301"]
