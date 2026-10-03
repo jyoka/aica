@@ -12,7 +12,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 
 マルチユーザー: 画面を開いたとき(GET / と GET /dev)にブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する
 (認証・招待制はしない)。本番の / は匿名ID そのものをユーザーIDにする。/dev のシナリオはブラウザ専用のユーザー
-「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても会話・長期メモリ・行動履歴・費用台帳が混線しない。
+「匿名ID:シナリオユーザー」で始めるので、複数の知人が同時に使っても会話・プロフィール・行動履歴・費用台帳が混線しない。
 
 ユーザーの分離の守り(task 99):
 - ブラウザから呼ぶ経路は、正しい形式の Cookie が必須(無い・不正なら 401)。扱えるのは Cookie の匿名IDのユーザーだけ
@@ -576,8 +576,17 @@ async def profile_track_delete(request: Request):
 
 @app.delete("/api/profile/resume")
 async def profile_resume_delete(request: Request):
+    """履歴書の読み取り結果を消し、今の会話を閉じる(それまでの会話の記録をすべて消すので、アップロードの要点・要約の
+    結果は画面にも AI にも出ず、サーバーにも残らない)。会話で保存した内容(経験など)は消さない(プロフィールの各項目から
+    消せる)。次にトークを開くと、30分以内でも新しい会話(挨拶)から始まる。古い会話を開いたままのタブの発言は
+    stale になる。LLM は呼ばず、会話数も使わない。消すものが無ければ会話は閉じない。
+    会話を閉じてから読み取り結果を消す(閉じる途中で失敗しても履歴書が残るので、もう一度押せば閉じられる)。"""
     user_id = _profile_writer(request)
-    profile.delete_resume(state, user_id)
+    rt = app.state.rt
+    async with rt.user_lock(user_id):  # 進行中のターンが終わってから閉じて消す
+        if state.user(user_id).get("resume_upload") is not None:
+            await rt.close_conversation(user_id)
+            profile.delete_resume(state, user_id)
     app.state.unread_uploads.pop(user_id, None)
     return _profile_view(user_id)
 
@@ -598,19 +607,24 @@ async def profile_unsave(job_id: str, request: Request):
 
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
-    """すべて消す: dip の状態(長期メモリ・保存・応募・トークを開いた記録)と会話(チェックポイント)を消す。
-    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。"""
-    user_id = _owner(request)
+    """すべて消す: dip の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
+    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。
+    同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
+    会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
+    続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
+    anon = _owner(request)
     rt = app.state.rt
-    # 同じブラウザの /dev のシナリオ用ユーザーも消す。どのユーザーも、進行中のターンが終わってから消す
-    users = [user_id, *sorted(u for u in state.user_ids() if u.startswith(f"{user_id}:"))]
+    # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
+    # どのユーザーも、進行中のターンが終わってから消す
+    users = sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
+                    *(f"{anon}:{s}" for s in _scenario_users())})
     async with AsyncExitStack() as locks:
         for uid in users:
             await locks.enter_async_context(rt.user_lock(uid))
-        out = profile.forget_all(state, user_id)
-        for uid in out["users"]:
+        for uid in users:
             await rt.forget(uid)
-    for uid in out["users"]:
+        out = profile.forget_all(state, anon)
+    for uid in users:
         app.state.unread_uploads.pop(uid, None)
     _remove_voice_files(out["files"])
     return {"forgotten": True}

@@ -28,4 +28,4 @@
 - 条件: 時間帯 time_band、週の日数 days_per_week、エリア area、時給の下限 min_wage、職種 job_type(アルバイト・パートの一覧から。本人が職種を挙げたとき)。
 
 ## 提案に進むとき
-- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。
+- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。

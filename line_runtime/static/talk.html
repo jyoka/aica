@@ -144,6 +144,7 @@
   let current = null, busy = false;  // current: このブラウザのユーザーID(匿名ID そのもの)
   let thread = null;  // この画面が表示している会話の番号(発言のときに送り、別のタブで会話が替わっていないかを照合する)
   let track = null;  // 今の雇用区分(setTrack が直す。「+」メニューの音声相談の説明が、書類の呼び方を合わせるのに使う)
+  let reopen = false;  // 今の会話が閉じられた(プロフィールで履歴書を消した): 次にトークを出すとき開き直す
 
   // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は /dev と共通(talk-core.js)
   const talk = createTalk({
@@ -235,7 +236,7 @@
     document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.view === v));
     if (v === "saved") loadSaved();
     if (v === "profile") loadProfile();
-    if (v === "talk") talk.scroll();
+    if (v === "talk") { if (reopen) { reopen = false; start(); } else talk.scroll(); }
   }
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showView(b.dataset.view));
 
@@ -274,6 +275,9 @@
   }
   const profileUrl = (path = "") => `/api/profile${path}`;  // 本人は Cookie で決まる(URL にユーザーIDは載せない)
   const EMPTY = "まだありません";
+  // 「すべて消す」で消えるもの・消えないもの(docs/prd/aica-v2-fulltime.md の範囲)
+  const FORGET_WHAT = "aica が覚えていること・保存した求人・応募・これまでの会話";
+  const FORGET_KEPT = "その日の利用回数は消えません。";
 
   async function loadProfile() {
     const box = $("profile");
@@ -283,8 +287,8 @@
   }
   // 変える操作をして、返ってきた最新のプロフィールで描き直す(失敗したら err に理由を出す)
   async function change(method, path, body, err) {
-    try { renderProfile(await api(method, profileUrl(path), body)); }
-    catch (e) { if (err) err.textContent = e.message; else alert(e.message); }
+    try { renderProfile(await api(method, profileUrl(path), body)); return true; }
+    catch (e) { if (err) err.textContent = e.message; else alert(e.message); return false; }
   }
   function btn(text, cls, onclick) { const b = el("button", cls, text); b.type = "button"; b.onclick = onclick; return b; }
   function card(title, note) {
@@ -364,7 +368,7 @@
       rr.appendChild(el("span", "pl", `${p.resume.uploaded} に${p.resume.file || "履歴書"}から読み取り`));
       const b = el("div", "pbtns"), a = el("a", null, "読み取り結果を見る");
       a.href = p.resume.view_url; a.target = "_blank"; a.rel = "noopener";
-      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。", "消す", () => change("DELETE", "/resume"))));
+      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。今の会話は終わり、次は新しい会話から始まります。これまでの会話の記録も消えます。経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。", "消す", deleteResume)));
       rr.appendChild(b);
     } else rr.appendChild(el("div", "pv empty", EMPTY));
     rc.appendChild(rr); box.appendChild(rc);
@@ -399,13 +403,19 @@
     }
     box.appendChild(ac);
 
-    // すべて消す(長期メモリの初期化)。確認の1段を挟む
-    const dc = card("すべて消す", "aica が覚えていること・保存した求人・これまでの会話をすべて消します。次に開くと、はじめての訪問として始まります。");
+    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない)。確認の1段を挟む
+    const dc = card("すべて消す", `${FORGET_WHAT}をすべて消します。${FORGET_KEPT}次に開くと、はじめての訪問として始まります。`);
     dc.classList.add("danger");
     const dr = el("div", "prow"); dr.dataset.key = "forget";
     const db = el("div", "pbtns");
-    db.appendChild(btn("すべて消す", "del", () => confirmIn(dr, "本当にすべて消しますか?元に戻せません。", "すべて消す", forgetAll)));
+    db.appendChild(btn("すべて消す", "del", () => confirmIn(dr, `本当にすべて消しますか?${FORGET_WHAT}が消え、元に戻せません。${FORGET_KEPT}`, "すべて消す", forgetAll)));
     dr.appendChild(db); dc.appendChild(dr); box.appendChild(dc);
+  }
+
+  // 履歴書を消すと、サーバーは今の会話を閉じる: 前の会話を消して、次にトークを出すとき新しい会話(挨拶)から始める
+  async function deleteResume() {
+    if (!await change("DELETE", "/resume")) return;
+    log.innerHTML = ""; thread = null; reopen = true;
   }
 
   async function forgetAll() {

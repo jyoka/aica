@@ -4,6 +4,7 @@
 完全一致させる(PR #25: 一覧に無い値はエラーになる)。ここにコピーを持ち、
 テストで dip 側とずれていないことを確かめる(dip_mcp のコードには依存しない)。
 エリアの一覧(AREAS)と広い言い方(AREA_PHRASES)、雇用区分(TRACKS)も同じやり方で持つ(task 33・aica v2 の G)。
+求人の属性(人と話す量・体を使う量)と正社員の働き方・休日の引数も同じやり方で持つ(task 111)。
 """
 
 from __future__ import annotations
@@ -56,16 +57,27 @@ AREA_PHRASES = ("東京都内", "都内", "東京", "東京都", "神奈川", "�
 
 TIME_BANDS = ("早朝", "日中", "夕方", "夜", "深夜")
 
+# dip_mcp/logic.py の ATTRIBUTE_ARGS・LEVELS と同じ(テストで同期を確認)。人と話す量・体を使う量(1〜3)の上限と下限
+ATTRIBUTE_ARGS = ("max_talk_level", "min_talk_level", "max_physical_level", "min_physical_level")
+LEVELS = (1, 2, 3)
+# dip_mcp/logic.py の FULLTIME_STYLE_ARGS・REMOTE_CHOICES のキーと同じ。正社員の求人だけに効く
+# (アルバイト・パートの求人には働き方の情報が無く、渡すと全部外れる。propose_jobs はアルバイト・パートの面談では落とす)
+FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
+REMOTE_CHOICES = ("可", "一部可")
+
 MAX_PROPOSALS = 3
 
 # 検索のためにゆるめられる(外せる)条件と、読み上げ用の呼び名。
 # dip の relax_conditions の options[].remove と同じ名前を使う。
-RELAXABLE = ("area", "time_band", "job_type", "min_wage", "min_annual_salary")
+RELAXABLE = ("area", "time_band", "job_type", "min_wage", "min_annual_salary", *ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)
 CONDITION_LABELS = {
     "area": "エリア", "time_band": "時間帯", "job_type": "職種",
     "min_wage": "時給の下限", "min_annual_salary": "希望年収の下限", "keywords": "その他の希望",
+    "max_talk_level": "人と話す量の上限", "min_talk_level": "人と話す量の下限",
+    "max_physical_level": "体を使う量の上限", "min_physical_level": "体を使う量の下限",
+    "remote": "リモート", "weekends_holidays": "土日祝休み", "max_overtime_hours": "残業の上限",
 }
-CONDITION_UNITS = {"min_wage": "円", "min_annual_salary": "万円"}
+CONDITION_UNITS = {"min_wage": "円", "min_annual_salary": "万円", "max_overtime_hours": "時間"}
 
 
 def build_recommend_args(
@@ -75,6 +87,13 @@ def build_recommend_args(
     time_band: str | None = None,
     min_wage: int | None = None,
     min_annual_salary: int | None = None,
+    max_talk_level: int | None = None,
+    min_talk_level: int | None = None,
+    max_physical_level: int | None = None,
+    min_physical_level: int | None = None,
+    remote: str | None = None,
+    weekends_holidays: bool | None = None,
+    max_overtime_hours: int | None = None,
     track: str | None = None,
 ) -> dict:
     """会話で聞いた希望から recommend_jobs の引数を作る。
@@ -82,6 +101,7 @@ def build_recommend_args(
     job_type / time_band は決まった一覧との完全一致だけを許す(合わなければ ValueError)。職種の一覧は
     今の雇用区分(track)のもの(未定なら両方)。区分が決まっていれば employment_type に入れる(未定なら入れず、
     両方の区分から探す)。
+    人と話す量・体を使う量は 1〜3、remote は 可 / 一部可 だけを許す。weekends_holidays は true のときだけ入れる。
     area はここでは一覧チェックをしない(駅名も許され、駅名の一覧は dip 側だけが持つ。
     一覧に無い値は dip 側がエラーと一覧を返す)。
     指定の無い条件は引数に入れない(dip 側で絞り込みされない)。
@@ -104,8 +124,18 @@ def build_recommend_args(
         min_annual_salary = int(min_annual_salary)
         if min_annual_salary <= 0:
             raise ValueError("min_annual_salary は正の整数(万円)にする")
+    levels = {"max_talk_level": max_talk_level, "min_talk_level": min_talk_level,
+              "max_physical_level": max_physical_level, "min_physical_level": min_physical_level}
+    for key, value in levels.items():
+        if value is not None and value not in LEVELS:
+            raise ValueError(f"{key} は 1〜3 のどれかにする(「{value}」は使えない)")
+    if remote is not None and remote not in REMOTE_CHOICES:
+        raise ValueError(f"remote「{remote}」は使えない。次から選ぶ: {' / '.join(REMOTE_CHOICES)}")
+    if max_overtime_hours is not None and int(max_overtime_hours) < 0:
+        raise ValueError("max_overtime_hours は0以上の整数(月の時間)にする")
     args = {"job_type": job_type, "area": area, "time_band": time_band, "min_wage": min_wage,
-            "min_annual_salary": min_annual_salary,
+            "min_annual_salary": min_annual_salary, **levels,
+            "remote": remote, "weekends_holidays": weekends_holidays or None, "max_overtime_hours": max_overtime_hours,
             "employment_type": track if track in EMPLOYMENT_TYPES else None}
     return {k: v for k, v in args.items() if v is not None}
 
@@ -136,7 +166,7 @@ def relax_option_line(option: dict) -> str:
     label = CONDITION_LABELS.get(key, key)
     current = option.get("current")
     unit = CONDITION_UNITS.get(key, "")
-    shown = f"({current}{unit})" if current not in (None, "") else ""
+    shown = f"({current}{unit})" if current not in (None, "") and not isinstance(current, bool) else ""
     return f"- {label}{shown}を外すと{option.get('total_after', 0)}件(relax: {key})"
 
 

@@ -371,6 +371,145 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
     assert model.script == []
 
 
+def stream_cut_off(client, uid: str, event: str, thread: int | None) -> list[dict]:
+    """本物の切断: ASGI アプリを直接呼び、/api/event/stream が2行目を送る時点で send が OSError を出す
+    (画面を閉じた・回線が切れた)。届いた行(1行目だけ)を返す。切断は send の例外か receive の
+    http.disconnect で流れてくる。そのターンの処理(裏で進む)が終わるまで待ってから返す。"""
+    import asyncio
+
+    from line_runtime.server import ANON_COOKIE
+
+    body = json.dumps({"user_id": uid, "event": event, "thread": thread}).encode()
+    got: list[dict] = []
+    cut = False
+
+    async def call() -> None:
+        nonlocal cut
+        disconnected = asyncio.Event()
+        requested = False
+
+        async def receive() -> dict:
+            nonlocal requested
+            if not requested:
+                requested = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await disconnected.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict) -> None:
+            nonlocal cut
+            if message["type"] != "http.response.body" or not message.get("body"):
+                return
+            if got:
+                cut = True
+                disconnected.set()
+                raise OSError("Connection reset by peer")
+            got.extend(json.loads(line) for line in message["body"].decode().splitlines())
+
+        scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1",
+                 "method": "POST", "scheme": "http", "path": "/api/event/stream", "raw_path": b"/api/event/stream",
+                 "query_string": b"", "root_path": "", "client": ("127.0.0.1", 50000), "server": ("testserver", 80),
+                 "headers": [(b"host", b"testserver"), (b"content-type", b"application/json"),
+                             (b"content-length", str(len(body)).encode()),
+                             (b"cookie", f"{ANON_COOKIE}={uid}".encode())]}
+        with pytest.raises(OSError):
+            await client.app(scope, receive, send)
+        async with client.app.state.rt.user_lock(uid):  # 画面が去っても、ターンは裏で最後まで進んで保存される
+            pass
+
+    client.portal.call(call)
+    assert cut
+    return got
+
+
+def test_a_first_greeting_cut_off_by_a_real_disconnect_still_counts_as_opened(app):
+    """本物の切断(ASGI の send が OSError)で初回の挨拶が画面に届かなかった: 開いた記録は残らないが、挨拶は会話に
+    保存される。30分後に開いたら、会った相手なので再訪の挨拶で始める(talk_open が記録を補う)。"""
+    from fastapi.testclient import TestClient
+
+    model = Greeter(script=[greet] * 3)  # 初回訪問 + 再訪(要約を読む → 挨拶)
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        client.get("/")
+        opened = client.post("/api/talk/open").json()
+        uid = opened["user"]
+        assert opened["event"] == "visit"
+        got = stream_cut_off(client, uid, "visit", opened["thread"])
+        assert [e["kind"] for e in got] == ["start"]  # 2行目(thread)からは届いていない
+        assert not app.state.user(uid).get("talk_opens")
+        assert client.get("/api/talk/history").json()["turns"][0]["bot"] is not None  # 挨拶は保存された
+
+        app.later(31)
+        reopened, again = open_talk(client)
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+    assert model.script == []
+
+
+def test_a_greeting_cut_off_before_its_wording_changed_still_counts_as_opened(app, monkeypatch):
+    """挨拶の文言を変えてデプロイした: 変える前の文言で切れた初回の挨拶も、会話を始めたときの入口(entry)で
+    挨拶と分かるので、30分後に開いたら再訪の挨拶で始める(初回訪問の挨拶を繰り返さない)。"""
+    from fastapi.testclient import TestClient
+
+    from line_runtime import runtime
+
+    model = Greeter(script=[greet] * 3)
+    app.set_model(model)
+    with TestClient(app.app) as client:
+        client.get("/")
+        opened = client.post("/api/talk/open").json()
+        uid = opened["user"]
+        stream_cut_off(client, uid, "visit", opened["thread"])
+        assert not app.state.user(uid).get("talk_opens")
+
+        monkeypatch.setattr(runtime, "FIRST_MESSAGE", "こちらから最初のひとことを送ってください。")
+        monkeypatch.setattr(runtime, "GREETINGS", {"visit": "はじめての訪問", "revisit": "ふたたびの訪問"})
+        app.later(31)
+        reopened, again = open_talk(client)
+        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+    assert model.script == []
+
+
+def test_greeted_reads_the_entry_and_falls_back_to_the_wording_only_for_old_records(app, monkeypatch):
+    """挨拶済みかは会話の入口(entry)で決める。entry の無い古い記録だけ、最初の入力を今の挨拶文と比べる。
+    閉じた後の空の会話・音声の結果(entry A)で始まった会話は挨拶済みではない。"""
+    from fastapi.testclient import TestClient
+    from langchain_core.messages import HumanMessage
+
+    from line_runtime import runtime
+
+    app.set_model(Greeter(script=[]))
+    with TestClient(app.app) as client:
+        client.get("/")
+        uid = client.post("/api/talk/open").json()["user"]
+        rt = client.app.state.rt
+
+        async def old_record(first: str) -> dict:
+            """entry を残す前の形の会話(挨拶の入力と返信だけ)を新しい会話として書き、conversation を返す。"""
+            await rt.new_conversation(uid)
+            cfg = rt._cfg(uid, await rt.current_thread(uid))
+            await rt.agent.aupdate_state(cfg, {"messages": [HumanMessage(first), reply(["こんにちは。"])]},
+                                         as_node="model")
+            return await rt.conversation(uid)
+
+        greeting = runtime.event_input("visit", None, None)
+        assert client.portal.call(old_record, greeting)["greeted"] is True
+        assert client.portal.call(old_record, "こんにちは")["greeted"] is False  # 本人の発言で始まった
+        monkeypatch.setattr(runtime, "FIRST_MESSAGE", "こちらから最初のひとことを送ってください。")
+        assert client.portal.call(old_record, greeting)["greeted"] is False  # 古い記録は文言を変えると見分けられない
+
+        async def closed_then_voice() -> tuple[dict, dict]:
+            await rt.close_conversation(uid)
+            closed = await rt.conversation(uid)
+            await rt.add_voice_result(uid, {"bubbles": ["音声の結果です。"], "quick_replies": [], "cards": []})
+            return closed, await rt.conversation(uid)
+
+        closed, voiced = client.portal.call(closed_then_voice)
+        assert closed["greeted"] is False and closed["turns"] == []
+        assert voiced["greeted"] is False and voiced["turns"][0]["bot"] is not None
+
+
 def test_a_user_message_that_looks_like_an_event_is_still_redrawn(app):
     """イベントとして画面に出さないのは会話の最初(挨拶・プッシュ)だけ。途中で本人が「[イベント:」と書いても描き直す。"""
     from fastapi.testclient import TestClient

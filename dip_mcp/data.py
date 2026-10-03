@@ -108,11 +108,32 @@ class EmploymentTerms(BaseModel):
     notes: str = Field("", description="試用期間中の条件の違いなど")
 
 
+# 求人の属性(task 111): 人と話す量と体を使う量を3段階で持つ。「立ち仕事は避けたい」「接客はしたくない」のような
+# 否定の言い方は、keywords の意味検索では避けたい仕事の文面(「立ちっぱなし」など)に近くなってしまうので、属性で絞る。
+# 座り仕事かどうかは physical_level の 1 と 2 以上の境で表す(立ち仕事かどうかを別の項目に持たない)。2 を「立ち仕事・
+# 歩くが力仕事は少ない」(コンビニ・カフェなど)と決めたので、座り仕事(1)・立ち仕事(2)・力仕事(3)が1つの軸に並ぶ
+TALK_LEVELS = {
+    1: "人と話すことはほとんど無い(黙々と作業する)",
+    2: "同僚との連絡や決まったやりとりはあるが、お客様と話すことは少ない",
+    3: "お客様・生徒・取引先など、人と話すのが仕事の中心(接客・電話・営業・指導・案内)",
+}
+PHYSICAL_LEVELS = {
+    1: "座り仕事が中心(デスク・電話・入力・座ってする作業や指導)",
+    2: "立ち仕事や歩くことが中心だが、力仕事は少ない(レジ・接客・調理・受付・講義)",
+    3: "体を使う仕事が中心(荷物の運搬・積み下ろし・倉庫を歩き回る・配達・介助・設営・屋外で動き回る)",
+}
+
+
+def _levels_text(levels: dict[int, str]) -> str:
+    return " / ".join(f"{k} = {v}" for k, v in levels.items())
+
+
 class BaitoJob(BaseModel):
     """求人1件。アルバイト・パートと正社員で同じ形(ADR-0002)。
 
     time_bands・days_min はアルバイト・パートの項目で、正社員の求人では空(time_bands=[]、days_min=None)。
     required_experience〜employment_terms は正社員の求人だけの任意項目(アルバイト・パートでは空)。
+    talk_level・physical_level は両方の区分の求人に必ず付ける(埋め込みの文面 job_text には入れない)。
     """
     job_id: str
     title: str
@@ -129,6 +150,8 @@ class BaitoJob(BaseModel):
     perks: list[str] = Field(default_factory=list)
     description: str
     drawback: str
+    talk_level: int = Field(ge=1, le=3, description=f"人と話す量: {_levels_text(TALK_LEVELS)}")
+    physical_level: int = Field(ge=1, le=3, description=f"体を使う量: {_levels_text(PHYSICAL_LEVELS)}")
     required_experience: list[str] = Field(default_factory=list, description="必須の経験・資格")
     preferred_experience: list[str] = Field(default_factory=list, description="歓迎の経験・資格")
     work_style: WorkStyle | None = None
@@ -151,10 +174,11 @@ def pay_text(pay: Pay) -> str:
     return f"{pay.kind}{man(pay.min)}万円"
 
 
-def annual_pay_max(pay: Pay) -> int | None:
-    """年収の上限の見込み(円)。年収はそのまま、月給は12か月分(賞与を含めない控えめな見込み)。時給は None。"""
-    top = pay.max or pay.min
-    return {"年収": top, "月給": top * 12}.get(pay.kind)
+def annual_pay_mid(pay: Pay) -> int | None:
+    """年収の見込みの中央値(円)。幅の真ん中で、月給は12か月分(賞与を含めない控えめな見込み)。時給は None。
+    希望年収の下限はこれと比べる(上端で比べると「600万以上」で年収480万〜700万が出てしまう。2026-10-03 のユーザーの決定)。"""
+    mid = (pay.min + (pay.max or pay.min)) // 2
+    return {"年収": mid, "月給": mid * 12}.get(pay.kind)
 
 
 def now() -> datetime:

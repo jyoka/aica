@@ -224,6 +224,13 @@ class ResumeAdvisor(Agent):
         area: str | None = None,
         time_band: str | None = None,
         min_wage: int | None = None,
+        max_talk_level: int | None = None,
+        min_talk_level: int | None = None,
+        max_physical_level: int | None = None,
+        min_physical_level: int | None = None,
+        remote: str | None = None,
+        weekends_holidays: bool | None = None,
+        max_overtime_hours: int | None = None,
         days_per_week: int | None = None,
         experience: str | None = None,
         skills: str | None = None,
@@ -267,6 +274,17 @@ class ResumeAdvisor(Agent):
                 そのときはエラーが示す一覧から選び直すか、area を外して検索する。
             time_band: 時間帯。早朝 / 日中 / 夕方 / 夜 / 深夜 のどれか1つ(アルバイト・パートの条件)
             min_wage: 希望の時給の下限(円)。本人が言った額のまま(アルバイト・パートの条件)
+            max_talk_level: 人と話す量の上限(1〜3。1 = 人と話すことはほとんど無い、2 = お客様と話すことは少ない、
+                3 = 接客・電話・指導など人と話すのが中心)。本人が避けたいことを言ったときだけ:
+                「人と話すのが苦手」「黙々と作業したい」なら 1、「接客はしたくない」「電話はしたくない」なら 2
+            min_talk_level: 人と話す量の下限(1〜3)。「人と話す仕事がしたい」「接客が好き」なら 3
+            max_physical_level: 体を使う量の上限(1〜3。1 = 座り仕事が中心、2 = 立ち仕事や歩くが力仕事は少ない、
+                3 = 運搬・配達・設営など体を使う)。「立ち仕事は避けたい」「座ってできる仕事」なら 1、
+                「力仕事は避けたい」なら 2
+            min_physical_level: 体を使う量の下限(1〜3)。「体を動かしたい」なら 3
+            remote: リモートの希望。可(フルリモート) / 一部可(リモートも混ぜたい) のどちらか(正社員の条件)
+            weekends_holidays: 土日祝休みを本人が希望したときだけ True(正社員の条件)
+            max_overtime_hours: 月の残業時間の上限(時間。「残業なし」なら 0)(正社員の条件)
             days_per_week: 週に働きたい日数(検索条件には使わず、希望として記録する。アルバイト・パートの条件)
             experience: これまで何をしてきたか(職歴・未経験など)を本人の言葉のまま短く
                 (例: コンビニで1年半、未経験)。検索条件には使わず、プロフィールとして記録する。
@@ -288,7 +306,9 @@ class ResumeAdvisor(Agent):
             start_timing: 働き始める時期(例: 3か月以内)。検索条件には使わず、希望として記録する(正社員の条件)
             other_wishes: その他の希望を本人の言葉で短く(例: 家から近い店がいい)。
                 検索の経緯(条件を外した・ゆるめた等)は書かない
-            relax: 検索のためにゆるめる(外す)条件の名前。area / time_band / job_type / min_wage / min_annual_salary。
+            relax: 検索のためにゆるめる(外す)条件の名前。area / time_band / job_type / min_wage / min_annual_salary /
+                max_talk_level / min_talk_level / max_physical_level / min_physical_level /
+                remote / weekends_holidays / max_overtime_hours。
                 0件だった検索の結果から本人が選んだものを、これまでの relax に足して入れる
                 (前に外した条件も入れたままにする)。希望の引数は書き換えない。
             search_only: 本人の希望は変わっていないが、検索条件だけを変えて探し直すときに True
@@ -327,6 +347,12 @@ class ResumeAdvisor(Agent):
             args = build_recommend_args(
                 job_type=stated.get("job_type"), area=area, time_band=stated.get("time_band"),
                 min_wage=stated.get("min_wage"), min_annual_salary=stated.get("min_annual_salary"), track=self._track,
+                # 属性と働き方・休日は検索だけの引数(希望としては保存しない)。働き方・休日はアルバイト・パートの求人に無いので、
+                # アルバイト・パートの面談では渡さない(渡すと全部外れる)
+                max_talk_level=max_talk_level, min_talk_level=min_talk_level,
+                max_physical_level=max_physical_level, min_physical_level=min_physical_level,
+                **({} if self._track == "アルバイト・パート" else
+                   {"remote": remote, "weekends_holidays": weekends_holidays, "max_overtime_hours": max_overtime_hours}),
             )
             # 希望はそのまま、検索だけをゆるめる(外した条件は relaxed として持つ)
             args, relaxed = split_relaxed(args, relax)
