@@ -41,7 +41,8 @@ _TALK = " / ".join(f"{k} = {v}" for k, v in TALK_LEVELS.items())
 _PHYSICAL = " / ".join(f"{k} = {v}" for k, v in PHYSICAL_LEVELS.items())
 MaxTalkLevel = Annotated[int | None, Field(description=(
     f"人と話す量の上限(1〜3)。{_TALK}。本人が避けたいことから決める: 「人と話すのが苦手」「黙々と作業したい」なら 1、"
-    "「接客はしたくない」「電話はしたくない」なら 2。両方の区分の求人に効く"))]
+    "「接客はしたくない」なら 2。電話だけを避けたいときは付けない(電話は接客と同じ 3 に入るので、2 にすると店頭の求人もほとんど"
+    "消える)。接客も避けたいかを1問で確かめ、避けたいときだけ 2 にする。両方の区分の求人に効く"))]
 MinTalkLevel = Annotated[int | None, Field(description=(
     "人と話す量の下限(1〜3。値の意味は max_talk_level と同じ)。「人と話す仕事がしたい」「接客が好き」なら 3"))]
 MaxPhysicalLevel = Annotated[int | None, Field(description=(
