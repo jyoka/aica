@@ -1,4 +1,4 @@
-"""会話数の上限とユーザー別費用集計(task 59)、IP ごと・全体の上限(task 112)。実 LLM なし(呼ばれた回数を数える偽のモデル)。"""
+"""会話数の上限とユーザー別費用集計(task 59)、IP ごと・全体の上限(task 112)、IPv6 の /64・全体の匿名IDの上限(task 113)。実 LLM なし(呼ばれた回数を数える偽のモデル)。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from line_runtime.quota import (
     DEFAULT_IP_IDS,
     DEFAULT_IP_LIMIT,
     DEFAULT_LIMIT,
+    DEFAULT_TOTAL_IDS,
     DEFAULT_TOTAL_LIMIT,
     IP_LIMIT_MESSAGE,
     JST,
@@ -24,7 +25,9 @@ from line_runtime.quota import (
     DailyQuota,
     daily_limit,
     ip_ids_limit,
+    ip_key,
     ip_limit,
+    total_ids_limit,
     total_limit,
 )
 from tests.test_handle import reply
@@ -57,7 +60,8 @@ class Clock:
 
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
            "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
-QUOTA_ENVS = ("AICA_DAILY_TURN_LIMIT_PER_IP", "AICA_DAILY_NEW_IDS_PER_IP", "AICA_DAILY_TURN_LIMIT_TOTAL", "AICA_TRUST_PROXY")
+QUOTA_ENVS = ("AICA_DAILY_TURN_LIMIT_PER_IP", "AICA_DAILY_NEW_IDS_PER_IP", "AICA_DAILY_TURN_LIMIT_TOTAL",
+              "AICA_DAILY_NEW_IDS_TOTAL", "AICA_TRUST_PROXY")
 
 
 def _server(tmp_path, monkeypatch, limit: str | None, **env: str):
@@ -324,6 +328,9 @@ def test_ip_and_total_limits_come_from_env_and_zero_means_unlimited(monkeypatch)
     monkeypatch.setenv("AICA_DAILY_NEW_IDS_PER_IP", "3")
     monkeypatch.setenv("AICA_DAILY_TURN_LIMIT_TOTAL", "0")
     assert (ip_limit(), ip_ids_limit(), total_limit()) == (7, 3, 0)
+    assert total_ids_limit() == DEFAULT_TOTAL_IDS == 300
+    monkeypatch.setenv("AICA_DAILY_NEW_IDS_TOTAL", "-1")
+    assert total_ids_limit() == -1
 
     q = DailyQuota(0, ip_limit=0, ip_ids=0, total_limit=-1)
     assert all(q.take(f"w-{i}", "1.1.1.1") for i in range(200))
@@ -355,6 +362,114 @@ def test_ip_counts_are_saved_and_reset_on_the_next_day(tmp_path):
     assert not DailyQuota(0, path, clock=clock, ip_limit=1).take("w-3", "a")  # 再起動しても当日の分は残る
     clock.now += timedelta(minutes=15)  # 日本時間の日付が変わると数え直す(IP も消える)
     assert q.take("w-2", "a") and "w-1" not in json.loads(path.read_text(encoding="utf-8"))["ips"]["a"]
+
+
+def test_ipv6_is_counted_per_64_and_ipv4_per_address():
+    """IPv6 は /64 にまとめる。IPv4 と IPv4 射影アドレスは1アドレス(射影アドレスは元の IPv4 と同じ)。"""
+    assert ip_key("2001:db8:1:2::1") == ip_key("2001:db8:1:2:ffff:ffff:ffff:ffff") == "2001:db8:1:2::/64"
+    assert ip_key("2001:DB8:1:2:0:0:0:abcd") == "2001:db8:1:2::/64"  # 書き方が違っても同じ鍵
+    assert ip_key("2001:db8:1:3::1") == "2001:db8:1:3::/64"
+    assert ip_key("203.0.113.5") == "203.0.113.5" and ip_key("::ffff:203.0.113.5") == "203.0.113.5"
+    assert ip_key("::ffff:203.0.113.6") == "203.0.113.6"  # 射影アドレスを /64 にまとめない(IPv4 全体が1つにならない)
+    assert ip_key("testclient") == "testclient" and ip_key("unknown") == "unknown"  # IP でない値はそのまま
+
+    q = DailyQuota(0, ip_limit=3, ip_ids=4)
+    for i in range(3):  # 同じ /64 の中で送信元を替えても、ターンは1つの IP として数える
+        assert q.try_take(f"w-{i}", f"2001:db8:1:2::{i + 1:x}") is None
+    assert q.try_take("w-0", "2001:db8:1:2:aaaa::1") == IP_LIMIT_MESSAGE
+    assert q.ip_used("2001:db8:1:2::99") == 3 and q.available("w-9", "2001:db8:1:3::1")  # 別の /64 は別に数える
+    assert q.admit("w-3", "2001:db8:1:2::50") is None  # 匿名IDの数も /64 で共有: 4つ目までは入る
+    assert q.admit("w-4", "2001:db8:1:2:1::1") == IP_LIMIT_MESSAGE
+    assert q.admit("w-4", "2001:db8:1:3::1") is None
+    q.refund("w-0", "2001:db8:1:2::ffff")  # 返すのも /64 で
+    assert q.ip_used("2001:db8:1:2::1") == 2
+
+    q = DailyQuota(0, ip_limit=2)
+    assert q.take("w-1", "203.0.113.5") and q.take("w-2", "::ffff:203.0.113.5")
+    assert not q.take("w-3", "203.0.113.5") and q.take("w-3", "203.0.113.6") and q.take("w-4", "::ffff:203.0.113.7")
+
+
+def _greet(client, headers) -> dict:
+    """本番のトーク画面を開いて挨拶まで(状態ファイルにユーザーを書くのは挨拶が返ったとき)。最後の行を返す。"""
+    opened = client.post("/api/talk/open", headers=headers).json()
+    r = client.post("/api/event/stream", json={"user_id": opened["user"], "event": opened["event"],
+                                               "thread": opened["thread"]}, headers=headers)
+    return [json.loads(x) for x in r.text.splitlines()][-1]
+
+
+def test_rotating_ipv6_addresses_in_one_64_share_the_ip_limits(tmp_path, monkeypatch):
+    """同じ /64 の中で IPv6 アドレスと Cookie を替えても、IP のターンと匿名IDの上限は共有される。別の /64 は別。"""
+    server, model = _server(tmp_path, monkeypatch, None, AICA_DAILY_TURN_LIMIT_PER_IP="2",
+                            AICA_DAILY_NEW_IDS_PER_IP="3", AICA_TRUST_PROXY="1")
+    from fastapi.testclient import TestClient
+
+    def via(ip: str) -> dict:
+        return {"X-Forwarded-For": ip}
+
+    with TestClient(server.app) as client:
+        for i in range(2):
+            assert _say(client, _new_browser(client), via(f"2001:db8:1:2::{i + 1}"))["bubbles"] == ["はい、どうぞ。"]
+        r = _say(client, _new_browser(client), via("2001:db8:1:2:dead:beef::7"))
+        assert r["limited"] and r["bubbles"] == [IP_LIMIT_MESSAGE] and model.calls == 2
+        assert _say(client, _new_browser(client), via("2001:db8:1:3::1"))["bubbles"] == ["はい、どうぞ。"]
+        quota = server.app.state.quota
+        assert quota.ip_used("2001:db8:1:2::ffff") == 2 and quota.ip_used("2001:db8:1:3::") == 1
+        # 匿名IDの数も /64 で共有(止めたターンの匿名IDは数えないので、使われたのは2つ): 3つ目まではシナリオを始められる
+        _new_browser(client)
+        assert client.post("/api/scenarios/F-follow-new/start", headers=via("2001:db8:1:2::abcd")).status_code == 200
+        _new_browser(client)
+        r = client.post("/api/scenarios/F-follow-new/start", headers=via("2001:db8:1:2:1:2:3:4"))
+        assert r.status_code == 429 and r.json()["detail"] == IP_LIMIT_MESSAGE
+        assert client.post("/api/scenarios/F-follow-new/start", headers=via("2001:db8:1:4::1")).status_code == 200
+        assert model.calls == 3
+
+
+def test_new_ids_are_capped_in_total_even_from_many_ips(tmp_path, monkeypatch):
+    """全体の匿名IDの数を超えると、別々の IP(別々の /64)からでも状態ファイルにユーザーが増えない。
+    その日にすでに使った匿名IDは続けて使える。"""
+    server, model = _server(tmp_path, monkeypatch, None, AICA_DAILY_NEW_IDS_TOTAL="2", AICA_TRUST_PROXY="1")
+    from fastapi.testclient import TestClient
+
+    def users() -> set[str]:
+        return set(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["users"])
+
+    with TestClient(server.app) as client:
+        first = _new_browser(client)
+        assert _greet(client, {"X-Forwarded-For": "203.0.113.1"})["bubbles"] == ["はい、どうぞ。"]
+        _new_browser(client)
+        assert _greet(client, {"X-Forwarded-For": "2001:db8:1::1"})["bubbles"] == ["はい、どうぞ。"]
+        before = users()
+        for i in range(3):  # 3つ目からは、IP をいくつ替えても挨拶も返さず、状態にも書かない
+            uid = _new_browser(client)
+            headers = {"X-Forwarded-For": f"2001:db8:{i + 2}::1"}
+            last = _greet(client, headers)
+            assert last["limited"] and last["bubbles"] == [TOTAL_LIMIT_MESSAGE]
+            for r in (client.post("/api/scenarios/F-follow-new/start", headers=headers),
+                      client.put("/api/profile/track", json={"track": "正社員"}, headers=headers),
+                      client.delete("/api/profile/saved/J-001", headers=headers)):
+                assert r.status_code == 429 and r.json()["detail"] == TOTAL_LIMIT_MESSAGE
+            assert uid not in users()
+        assert users() == before and model.calls == 2
+        quota = json.loads((tmp_path / "quota.json").read_text(encoding="utf-8"))
+        assert len(set(quota["counts"]).union(*quota["ips"].values())) == 2
+        # すでに使った匿名IDは、別の IP からでも続けて使える
+        client.cookies.clear()
+        client.cookies.set("aica_uid", first)
+        assert _say(client, first, {"X-Forwarded-For": "198.51.100.1"})["bubbles"] == ["はい、どうぞ。"]
+        assert client.post("/api/scenarios/F-follow-new/start", headers={"X-Forwarded-For": "198.51.100.2"}).status_code == 200
+        assert model.calls == 3
+
+
+def test_total_new_ids_limit_on_the_quota():
+    q = DailyQuota(0, total_ids=2)
+    assert q.admit("w-1:sim", "1.1.1.1") is None and q.try_take("w-2", "2.2.2.2") is None
+    assert q.admit("w-3", "3.3.3.3") == TOTAL_LIMIT_MESSAGE and q.try_take("w-3", "4.4.4.4") == TOTAL_LIMIT_MESSAGE
+    assert q.try_take("w-3") == TOTAL_LIMIT_MESSAGE and not q.available("w-3", "5.5.5.5")  # IP を渡さなくても
+    assert q.try_take("w-1", "9.9.9.9") is None and q.admit("w-2", "8.8.8.8") is None  # 使った匿名IDは別の IP からも
+    q = DailyQuota(0, ip_ids=1, total_ids=1)
+    assert q.admit("w-1", "a") is None and q.admit("w-2", "a") == IP_LIMIT_MESSAGE  # IP の上限を先に確かめる
+    assert q.admit("w-2", "b") == TOTAL_LIMIT_MESSAGE
+    assert all(DailyQuota(0, total_ids=0).take(f"w-{i}", f"10.0.0.{i}") for i in range(50))  # 0 は上限なし
 
 
 def test_costs_summarized_per_user_per_day_in_one_command(tmp_path, capsys):
