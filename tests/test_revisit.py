@@ -2,7 +2,7 @@
 
 挨拶は偽のモデルが、ランタイムから受け取ったものだけで決める: システムプロンプトに入った dip の入口のシナリオ
 (入口V / 入口R)と、get_user_conversation_summary の結果(前に話した希望 / 最近の閲覧)。
-なので「挨拶が変わる」ことは、イベント → 入口のシナリオ → dip の長期メモリと行動履歴 のつながりを確かめている。
+なので「挨拶が変わる」ことは、イベント → 入口のシナリオ → dip のプロフィールと行動履歴 のつながりを確かめている。
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatc
     assert first["entry"] == "visit" and first["tools"] == []  # 初回訪問は履歴を読まずにメニュー
     assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
     assert first["quick_replies"] == MENU
-    for r in (back_prefs, back_views):  # 再訪は要約(長期メモリと行動履歴)を読んでから挨拶する
+    for r in (back_prefs, back_views):  # 再訪は要約(プロフィールと行動履歴)を読んでから挨拶する
         assert r["entry"] == "revisit" and [t["name"] for t in r["tools"]] == ["get_user_conversation_summary"]
     assert back_prefs["bubbles"] == ["おかえりなさい。前回は渋谷・日中・カフェでしたが、今回も同じですか?"]
     assert back_views["bubbles"] == ["おかえりなさい。最近はカフェのお仕事を見ていましたか?"]
@@ -158,7 +158,7 @@ def test_revisit_with_preferences_confirms_and_takes_only_the_difference(tmp_pat
 
     jobs = load_jobs()
     assert all("夕方" in jobs[c["job_id"]].time_bands and jobs[c["job_id"]].job_type == "カフェ" for c in t2["cards"])
-    # 長期メモリは差分だけ更新され、次の再訪の確認にそのまま出る
+    # 本人が話した希望は差分だけ更新され、次の再訪の確認にそのまま出る
     prefs = {k: v["value"] for k, v in logic.stated_preferences(State(tmp_path / "state.json").user(uid)).items()}
     assert prefs == {"job_type": "カフェ", "area": "渋谷", "time_band": "夕方"}
     assert again["bubbles"] == ["おかえりなさい。前回は渋谷・夕方・カフェでしたが、今回も同じですか?"]

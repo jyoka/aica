@@ -273,6 +273,9 @@
   }
   const profileUrl = (path = "") => `/api/profile${path}`;  // 本人は Cookie で決まる(URL にユーザーIDは載せない)
   const EMPTY = "まだありません";
+  // 「すべて消す」で消えるもの・消えないもの(docs/prd/aica-v2-fulltime.md の範囲)
+  const FORGET_WHAT = "aica が覚えていること・保存した求人・応募・これまでの会話";
+  const FORGET_KEPT = "その日の利用回数は消えません。";
 
   async function loadProfile() {
     const box = $("profile");
@@ -363,7 +366,7 @@
       rr.appendChild(el("span", "pl", `${p.resume.uploaded} に${p.resume.file || "履歴書"}から読み取り`));
       const b = el("div", "pbtns"), a = el("a", null, "読み取り結果を見る");
       a.href = p.resume.view_url; a.target = "_blank"; a.rel = "noopener";
-      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。今の会話は終わり、次は新しい会話から始まります。経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。", "消す", deleteResume)));
+      b.append(a, btn("消す", "del", () => confirmIn(rr, "読み取り結果を丸ごと消します。チャットでも音声でも使われなくなります。今の会話は終わり、次は新しい会話から始まります。これまでの会話の記録も消えます。経験など、会話で保存した内容は残ります。プロフィールの各項目から消せます。", "消す", deleteResume)));
       rr.appendChild(b);
     } else rr.appendChild(el("div", "pv empty", EMPTY));
     rc.appendChild(rr); box.appendChild(rc);
@@ -398,12 +401,12 @@
     }
     box.appendChild(ac);
 
-    // すべて消す(長期メモリの初期化)。確認の1段を挟む
-    const dc = card("すべて消す", "aica が覚えていること・保存した求人・これまでの会話をすべて消します。次に開くと、はじめての訪問として始まります。");
+    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない)。確認の1段を挟む
+    const dc = card("すべて消す", `${FORGET_WHAT}をすべて消します。${FORGET_KEPT}次に開くと、はじめての訪問として始まります。`);
     dc.classList.add("danger");
     const dr = el("div", "prow"); dr.dataset.key = "forget";
     const db = el("div", "pbtns");
-    db.appendChild(btn("すべて消す", "del", () => confirmIn(dr, "本当にすべて消しますか?元に戻せません。", "すべて消す", forgetAll)));
+    db.appendChild(btn("すべて消す", "del", () => confirmIn(dr, `本当にすべて消しますか?${FORGET_WHAT}が消え、元に戻せません。${FORGET_KEPT}`, "すべて消す", forgetAll)));
     dr.appendChild(db); dc.appendChild(dr); box.appendChild(dc);
   }
 

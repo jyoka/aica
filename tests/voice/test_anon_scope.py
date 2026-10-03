@@ -1,4 +1,4 @@
-"""音声相談の長期メモリが、匿名ユーザーID のスコープで保存されることのテスト(task 62)。実 API なし。
+"""音声相談で話した希望(プロフィール)が、匿名ユーザーID のスコープで保存されることのテスト(task 62)。実 API なし。
 
 トークの「音声で相談」から入ると、ユーザーはブラウザ専用の「匿名ID:シナリオユーザー」(例 `w-…:sim-new`)。
 音声で話した希望・経験・できること・資格(dip の相談プロファイル8項目)は、dip の MCP サーバー(本物、stdio)経由で
@@ -61,7 +61,7 @@ def _voice_session(tmp_path, monkeypatch) -> tuple[State, _FakePoster]:
 def test_voice_wishes_are_saved_in_the_anonymous_user_scope(tmp_path, monkeypatch):
     state, poster = _voice_session(tmp_path, monkeypatch)
 
-    # 話した8項目がすべて、本人の言葉のまま U1 の長期メモリに入る
+    # 話した8項目がすべて、本人の言葉のまま U1 のプロフィールに入る
     stated = logic.conversation_summary(state, U1)["stated_preferences"]
     assert {k: v["value"] for k, v in stated.items()} == {k: str(v) for k, v in VOICE_WISHES.items()}
     # 別のブラウザ(同じシナリオ)や元のシナリオユーザーには混ざらない

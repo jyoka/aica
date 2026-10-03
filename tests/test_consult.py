@@ -3,7 +3,7 @@
 相談は別のエージェントではなく、dip の Prompt(入口と「playbook を読む」指示)と、雇用区分ごとの playbook
 (get_counseling_playbook)で動く。ここでは (1) dip の Prompt が LINE 側エージェントに届いていること、
 (2) 台本どおりに進めた会話(入口で playbook を読み、区分が決まったら読み直し、目的を聞いて掘り下げる)が評価の機械判定を
-通ること、(3) 相談で話した内容が dip の長期メモリに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、
+通ること、(3) 相談で話した内容が dip のプロフィールに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、
 を確かめる。区分ごとの playbook の中身と深さの台本は tests/test_playbook.py。
 """
 
@@ -177,7 +177,7 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
     assert all(len([b for b in r["bubbles"] if "?" in b or "?" in b]) == 1 for r in turns[:7])  # 毎ターン1問
     assert checks["outcomes"] == ["propose"] and turns[7]["cards"]
 
-    # 相談で話したことが長期メモリに残り、提案の条件にそのまま使われた(言い直し・聞き直しなし)
+    # 相談で話したことがプロフィールに残り、提案の条件にそのまま使われた(言い直し・聞き直しなし)
     assert stated(tmp_path, uid) == {"purpose": "働く経験を積みたい", "wants": "人と話す接客", "experience": "未経験",
                                      "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}
     rec = next(t for t in turns[7]["tools"] if t["name"] == "recommend_jobs")
