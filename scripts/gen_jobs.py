@@ -15,7 +15,7 @@ import json
 
 from pydantic import BaseModel
 
-from dip_mcp.data import FIXTURES, BaitoJob, Pay
+from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, BaitoJob, Pay
 from line_runtime import config, llm
 from line_runtime.config import load_env
 
@@ -34,6 +34,8 @@ SYSTEM = f"""あなたは日本のアルバイト求人票を作るライター�
 - time_bands は 早朝 / 日中 / 夕方 / 夜 / 深夜 から該当するもの(複数可)。shift は具体的な時間(例: 18:00〜翌1:00)。
 - days_min は週の最低勤務日数。perks は 未経験OK / 学生歓迎 / 主婦(夫)歓迎 / 日払い / 交通費支給 / まかない / 髪色自由 / 短時間OK / シフト自由 から該当するもの。
 - description は2〜3文。drawback には現実的な弱み(忙しい時間帯、立ち仕事、土日必須など)を1文で書く。
+- talk_level は人と話す量(1〜3): {" / ".join(f"{k} = {v}" for k, v in TALK_LEVELS.items())}。
+- physical_level は体を使う量(1〜3): {" / ".join(f"{k} = {v}" for k, v in PHYSICAL_LEVELS.items())}。
 - 同じ職種でもエリア・時間帯・時給がばらつくようにする。"""
 
 
@@ -51,6 +53,8 @@ class Draft(BaseModel):
     perks: list[str]
     description: str
     drawback: str
+    talk_level: int
+    physical_level: int
 
 
 class Batch(BaseModel):

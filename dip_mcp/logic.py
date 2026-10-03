@@ -14,18 +14,21 @@ import json
 import re
 import secrets
 from collections import Counter
+from statistics import median
 from urllib.parse import urlencode
 
 from dip_mcp import embedding
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
+    PHYSICAL_LEVELS,
     PII_FIELDS,
     ROOT,
+    TALK_LEVELS,
     BaitoJob,
     Pay,
     State,
-    annual_pay_max,
+    annual_pay_mid,
     fold_pii,
     has_pii,
     load_job_faq,
@@ -258,8 +261,60 @@ def _area_set(area) -> set[str] | None:
     return {area.removesuffix("駅")}
 
 
+# 求人の属性(人と話す量・体を使う量。1〜3)と、正社員の働き方・休日で絞る引数(task 111)。
+# recommend / relax / MCP の recommend_jobs・relax_conditions / 音声の voice_resume/jobs.py で同じ名前を使う(テストで同期を確認)
+ATTRIBUTE_ARGS = ("max_talk_level", "min_talk_level", "max_physical_level", "min_physical_level")
+FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
+LEVELS = (1, 2, 3)
+# remote の値 → 出す求人の work_style.remote。可 = 原則在宅の求人だけ、一部可 = 週に何日か以上在宅できる求人(可を含む)
+REMOTE_CHOICES = {"可": ("可",), "一部可": ("可", "一部可")}
+# 属性で絞ったときに理由に出す一言(求人に付けた属性の値の言い換え。事実はこの値だけ)
+TALK_REASONS = {1: "人と話すことが少ない仕事", 2: "お客様と話すことは少ない仕事", 3: "人と話すのが中心の仕事"}
+PHYSICAL_REASONS = {1: "座り仕事が中心", 2: "力仕事は少ない仕事", 3: "体を動かす仕事"}
+
+
+def _filters_error(filters: dict) -> dict | None:
+    """属性・働き方・休日の引数の値の誤り。0件で返さずエラーと使える値を返す(職種・エリアと同じ形)。"""
+    for k in ATTRIBUTE_ARGS:
+        v = filters.get(k)
+        if v is not None and (type(v) is not int or v not in LEVELS):
+            levels = TALK_LEVELS if "talk" in k else PHYSICAL_LEVELS
+            return {"error": f"{k}「{v}」は使えません。1〜3 の数字で渡してください",
+                    "levels": {str(n): t for n, t in levels.items()}}
+    for what in ("talk", "physical"):
+        lo, hi = filters.get(f"min_{what}_level"), filters.get(f"max_{what}_level")
+        if lo and hi and lo > hi:
+            return {"error": f"min_{what}_level({lo})が max_{what}_level({hi})より大きいので、合う求人がありません。どちらかを外してください"}
+    if filters.get("remote") and filters["remote"] not in REMOTE_CHOICES:
+        return {"error": f"remote「{filters['remote']}」は使えません。{' / '.join(REMOTE_CHOICES)} のどちらかを渡すか、"
+                         "リモートの希望が無ければ指定しない", "remote": list(REMOTE_CHOICES)}
+    if filters.get("max_overtime_hours") is not None and filters["max_overtime_hours"] < 0:
+        return {"error": "max_overtime_hours は月の残業時間の上限(0以上の整数)で渡してください"}
+    return None
+
+
+def _match_filters(job: BaitoJob, f: dict) -> bool:
+    """属性(両方の区分)と、正社員の働き方・休日(正社員の求人だけが持つ。指定するとアルバイト・パートの求人は出ない)。"""
+    if f.get("max_talk_level") and job.talk_level > f["max_talk_level"]:
+        return False
+    if f.get("min_talk_level") and job.talk_level < f["min_talk_level"]:
+        return False
+    if f.get("max_physical_level") and job.physical_level > f["max_physical_level"]:
+        return False
+    if f.get("min_physical_level") and job.physical_level < f["min_physical_level"]:
+        return False
+    w, h = job.work_style, job.holidays
+    if f.get("remote") and (w is None or w.remote not in REMOTE_CHOICES[f["remote"]]):
+        return False
+    if f.get("weekends_holidays") and (h is None or not h.weekends_holidays):
+        return False
+    return f.get("max_overtime_hours") is None or (w is not None and w.overtime_hours <= f["max_overtime_hours"])
+
+
 def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage,
-           employment_type=None, min_annual_salary=None) -> bool:
+           employment_type=None, min_annual_salary=None, filters: dict | None = None) -> bool:
+    if filters and not _match_filters(job, filters):
+        return False
     if employment_type and job.employment_type != employment_type:
         return False
     if areas and job.area not in areas and job.station.removesuffix("駅") not in areas:
@@ -270,16 +325,30 @@ def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage,
         return False
     if min_wage and (job.pay.kind != "時給" or job.pay.min < min_wage):  # 時給の下限は時給の求人だけに効く
         return False
-    if min_annual_salary:  # 年収の下限(万円)は、年収・月給の求人の上限の見込みと比べる(時給の求人は出ない)
-        top = annual_pay_max(job.pay)
-        if top is None or top < min_annual_salary * 10000:
+    if min_annual_salary:  # 年収の下限(万円)は、年収・月給の求人の年収の幅の中央値と比べる(時給の求人は出ない)
+        mid = annual_pay_mid(job.pay)
+        if mid is None or mid < min_annual_salary * 10000:
             return False
     return True
 
 
+def _style_words(job: BaitoJob) -> list[str]:
+    """正社員の働き方・休日を、部分一致で当たる言葉にする。働き方・休日は引数(remote など)で絞るが、keywords に
+    「在宅」「土日祝休み」が入ったときも、意味検索が使えないときの部分一致で当たるように(求人の文面には書いていない)。"""
+    w, h = job.work_style, job.holidays
+    out = []
+    if w:
+        out += {"可": ["リモート可", "在宅勤務"], "一部可": ["一部リモート可", "一部在宅"], "不可": []}[w.remote]
+        out += ["フレックス"] if w.flex else []
+        out += ["残業少なめ"] if w.overtime_hours <= 10 else []
+    if h and h.weekends_holidays:
+        out += ["土日祝休み", "土日休み"]
+    return out
+
+
 def _keyword_hit(job: BaitoJob, keywords: str) -> bool:
-    """keywords の部分一致(空白区切りのどれかが求人の文面に含まれる)。意味検索が使えないときの唯一の照合。"""
-    text = f"{job.title} {job.job_type} {job.description} {' '.join(job.perks)}"
+    """keywords の部分一致(空白区切りのどれかが求人の文面か働き方・休日の言葉に含まれる)。意味検索が使えないときの唯一の照合。"""
+    text = f"{job.title} {job.job_type} {job.description} {' '.join(job.perks)} {' '.join(_style_words(job))}"
     return any(k in text for k in keywords.split())
 
 
@@ -297,23 +366,44 @@ SIM_TOP = 10          # 意味の近さで拾う上限件数(total が水増し�
 # score_breakdown の keywords = SIM_WEIGHT × 類似度。上位の求人どうしの類似度の差は 0.05 ほどなので、重みが小さい(6)と
 # 駅からの近さ(0〜1点)・給与(0.3〜1.2点)の差に埋もれ、意味の近い求人が上位3件に入らなかった
 SIM_WEIGHT = 24
+# 意味の近さを使うのは、全求人の中で最高値が中央値から SIM_PEAK 以上抜けている問い合わせだけ。抜けていない問い合わせは
+# どの求人とも同じくらい近い(= 求人を分けられない)ので、意味の近さを絞り込みにも並べ替えにも使わず、部分一致だけにする
+# (API が使えないときと同じ)。task 111: 求人の情報に無い希望が keywords に入ると、近いだけの最大10件が SIM_WEIGHT の点で
+# 職種の傾向(2点)より上に並んでいた。最高値の絶対値では分けられない(「アットホームな職場」は 0.467 で、関係のある
+# 「車の運転が好き」0.365 より高い)が、最高値と中央値の差なら、評価セットの無関係な問い合わせ(「宇宙飛行士になりたい」0.094・
+# 「人間関係が良い職場」0.087・「アットホームな職場」0.113)と、keywords で探す問い合わせ(最小は「電話対応の経験を
+# 活かしたい」0.133)が分かれる。差の小さかった言い換え・否定(「体を動かしたい」0.096・「人と話すのが苦手」0.094・
+# 「立ち仕事は避けたい」0.092)は、属性の引数(min_physical_level など)で探すようにした。境目の余裕は 0.01〜0.02 と小さいので、
+# 問い合わせを足したら evals/search_eval.py で測り直す
+SIM_PEAK = 0.12
 
 
-def _keyword_filter(cands: list[BaitoJob], keywords: str) -> tuple[list[BaitoJob], dict[str, float] | None]:
-    """keywords で候補を絞る。意味検索(embedding)が使えれば「部分一致 or 意味が近い」、
-    使えなければ従来の部分一致だけ(検索は止めない)。類似度は並べ替え用に返す。"""
+def _keyword_filter(cands: list[BaitoJob], keywords: str,
+                    jobs: dict[str, BaitoJob]) -> tuple[list[BaitoJob], dict[str, float] | None, bool]:
+    """keywords で候補を絞る。意味検索(embedding)が使えて、問い合わせが求人を分けられる(SIM_PEAK)なら
+    「部分一致 or 意味が近い」、使えないか分けられなければ従来の部分一致だけ(検索は止めない)。
+    類似度は並べ替え用に返す(部分一致だけのときは None)。3つ目は、意味検索は使えたが求人を分けられなかったか。
+    jobs は全求人(問い合わせの分けやすさを測る)。"""
     qvec = embedding.embed_query(keywords)
-    sims = embedding.similarities(qvec, cands) if qvec else None
-    if sims is None:
-        return [j for j in cands if _keyword_hit(j, keywords)], None
+    every = embedding.similarities(qvec, jobs.values()) if qvec else {}
+    if not every or max(every.values()) - median(every.values()) < SIM_PEAK:
+        return [j for j in cands if _keyword_hit(j, keywords)], None, bool(every)
+    sims = {j.job_id: every[j.job_id] for j in cands if j.job_id in every}
     floor = max(SIM_FLOOR, max(sims.values(), default=0.0) * SIM_RELATIVE)
     near = {jid for jid, s in sorted(sims.items(), key=lambda x: -x[1])[:SIM_TOP] if s >= floor}
-    return [j for j in cands if j.job_id in near or _keyword_hit(j, keywords)], sims
+    return [j for j in cands if j.job_id in near or _keyword_hit(j, keywords)], sims, False
 
 
-def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob]) -> list[str]:
-    """推薦理由。指定された条件か、90日以内の本人の行動に基づく事実だけを並べる。"""
+def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob],
+             filters: dict | None = None) -> list[str]:
+    """推薦理由。指定された条件か、90日以内の本人の行動に基づく事実だけを並べる。
+    属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。"""
+    f = filters or {}
     reasons = []
+    if f.get("max_talk_level") or f.get("min_talk_level"):
+        reasons.append(TALK_REASONS[job.talk_level])
+    if f.get("max_physical_level") or f.get("min_physical_level"):
+        reasons.append(PHYSICAL_REASONS[job.physical_level])
     for a in _recent(user.get("applications", []), "applied_at"):
         past = jobs.get(a["job_id"])
         if past and past.job_type == job.job_type and past.job_id != job.job_id:
@@ -368,8 +458,19 @@ def _wage_score(pay: Pay) -> float:
     (区分が未定で両方を並べるときに、どちらかの区分だけが上に偏らないように)。"""
     if pay.kind == "時給":
         return round(pay.min / 2000, 2)
-    per_year = 12 if pay.kind == "月給" else 1
-    return round((pay.min + (pay.max or pay.min)) / 2 * per_year / 8_000_000, 2)
+    return round(annual_pay_mid(pay) / 8_000_000, 2)
+
+
+# 希望年収を指定した検索では、給与の高さを並びに加味する(2026-10-03 のユーザーの決定)。希望の下限を超える分の
+# 100万円ごとに1点(上限 SALARY_MAX 点)。wage(年収800万円で1点)より強く効かせる(年収を指定した人は給与の高さを
+# 重く見ている)。上限の3点は職種の傾向(1番目 2点)より少し重いが、下限を200万円以上超える差が無ければ傾向が勝つ
+SALARY_PER_POINT = 1_000_000
+SALARY_MAX = 3.0
+
+
+def _salary_score(pay: Pay, min_annual_salary: int) -> float:
+    mid = annual_pay_mid(pay) or 0
+    return round(min(SALARY_MAX, max(0.0, (mid - min_annual_salary * 10000) / SALARY_PER_POINT)), 2)
 
 
 def match_breakdown(job: BaitoJob, tend: dict, mixed: bool = False) -> dict[str, float]:
@@ -389,11 +490,17 @@ def match_breakdown(job: BaitoJob, tend: dict, mixed: bool = False) -> dict[str,
 
 def recommend(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
               keywords=None, exclude_ids: list[str] | None = None, limit: int = MAX_JOBS,
-              posted_within_days: int | None = None, employment_type=None, min_annual_salary=None) -> dict:
+              posted_within_days: int | None = None, employment_type=None, min_annual_salary=None,
+              **filters) -> dict:
     """employment_type(アルバイト・パート / 正社員)で区分を絞る。未定(指定なし・「未定」)なら両方の区分から出す。
-    min_annual_salary は希望年収の下限(万円)。年収・月給の求人だけが対象になる。"""
+    min_annual_salary は希望年収の下限(万円)。年収・月給の求人の年収の中央値と比べ、給与の高さを並びにも加味する。
+    filters は属性(ATTRIBUTE_ARGS)と正社員の働き方・休日(FULLTIME_STYLE_ARGS)。"""
+    if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
+        raise TypeError(f"recommend() に知らない引数: {sorted(unknown)}")
+    filters = {k: v for k, v in filters.items() if v is not None and v is not False}
     employment_type = _employment_type(employment_type)
-    if err := _employment_type_error(employment_type) or _job_type_error(job_type, employment_type):
+    if err := (_employment_type_error(employment_type) or _job_type_error(job_type, employment_type)
+               or _filters_error(filters)):
         return err
     jobs = load_jobs()  # 傾向と理由(過去の応募との比較)は全体の求人から数える
     if err := _area_error(area, jobs):
@@ -409,36 +516,49 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     exclude = set(exclude_ids or []) | applied  # 応募済みの求人は出さない
     tend = preferences(user, jobs) if user.get("dip_id") else {"job_type": [], "area": [], "time_band": []}
     cands = [j for j in pool.values() if j.job_id not in exclude
-             and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary)]
-    sims = None
+             and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
+    sims, unmatched = None, False
     if keywords:
-        cands, sims = _keyword_filter(cands, keywords)
+        cands, sims, unmatched = _keyword_filter(cands, keywords, jobs)
     hits = []
     mixed = len({j.employment_type for j in cands}) > 1
     for j in cands:
         b = match_breakdown(j, tend, mixed=mixed)
         if sims is not None:
             b["keywords"] = round(SIM_WEIGHT * sims.get(j.job_id, 0.0), 2)
+        if min_annual_salary:
+            b["salary"] = _salary_score(j.pay, min_annual_salary)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs)) | {"match_score": score, "score_breakdown": b}
+    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs, filters))
+           | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
-    return {"total": len(hits), "jobs": top}
+    out = {"total": len(hits), "jobs": top}
+    if unmatched and not hits:  # 言い換えを keywords に入れて0件になったとき、引数で探し直せるように
+        out["keywords_note"] = (f"keywords「{keywords}」に意味の近い求人はなく、語が一致した求人もありませんでした。"
+                                "人と話す量・体を使う量・リモート・土日祝休み・残業の希望なら、keywords から外して "
+                                "max_talk_level・min_physical_level・remote などの引数で探し直してください。"
+                                "それ以外の希望(求人の情報に無いこと)なら、relax_conditions で外す案を示してください")
+    return out
 
 
 def relax(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
-          keywords=None, employment_type=None, min_annual_salary=None) -> dict:
-    """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。"""
+          keywords=None, employment_type=None, min_annual_salary=None, **filters) -> dict:
+    """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。
+    属性・働き方・休日の引数(filters)も外す候補にする。"""
+    if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
+        raise TypeError(f"relax() に知らない引数: {sorted(unknown)}")
     employment_type = _employment_type(employment_type)
     if err := (_employment_type_error(employment_type) or _job_type_error(job_type, employment_type)
-               or _area_error(area, load_jobs())):
+               or _area_error(area, load_jobs()) or _filters_error(filters)):
         return err
     cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage,
             "min_annual_salary": min_annual_salary, "keywords": keywords}
+    cond |= {k: filters.get(k) for k in (*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)}
     base = recommend(state, line_user_id, **cond, employment_type=employment_type)["total"]
     options = []
     for k, v in cond.items():
-        if v:
+        if v is not None and v is not False and v != "":  # max_overtime_hours=0 も外す候補にする
             n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type)["total"]
             if n > base:
                 options.append({"remove": k, "current": v, "total_after": n})

@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from dip_mcp import logic
-from dip_mcp.data import FIXTURES, State
+from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, State
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
 
@@ -36,7 +36,28 @@ EmploymentType = Annotated[str | None, Field(description=(
     "(今の雇用区分)をそのまま渡す。search_track が未定なら指定しない(両方の区分から探す)"))]
 MinAnnualSalary = Annotated[int | None, Field(description=(
     "希望年収の下限(万円。例: 年収500万円以上なら 500)。本人が言った額のまま。正社員の求人(年収・月給)だけが対象で、"
-    "求人の年収の幅の上限(月給は12か月分)がこの額に届くものを出す。時給の求人は出なくなる"))]
+    "求人の年収の幅の中央値(月給は12か月分)がこの額に届くものを出し、給与の高い順に寄せて並べる。時給の求人は出なくなる"))]
+_TALK = " / ".join(f"{k} = {v}" for k, v in TALK_LEVELS.items())
+_PHYSICAL = " / ".join(f"{k} = {v}" for k, v in PHYSICAL_LEVELS.items())
+MaxTalkLevel = Annotated[int | None, Field(description=(
+    f"人と話す量の上限(1〜3)。{_TALK}。本人が避けたいことから決める: 「人と話すのが苦手」「黙々と作業したい」なら 1、"
+    "「接客はしたくない」「電話はしたくない」なら 2。両方の区分の求人に効く"))]
+MinTalkLevel = Annotated[int | None, Field(description=(
+    "人と話す量の下限(1〜3。値の意味は max_talk_level と同じ)。「人と話す仕事がしたい」「接客が好き」なら 3"))]
+MaxPhysicalLevel = Annotated[int | None, Field(description=(
+    f"体を使う量の上限(1〜3)。{_PHYSICAL}。「立ち仕事は避けたい」「座ってできる仕事」なら 1、"
+    "「力仕事は避けたい」「重いものは持てない」なら 2。両方の区分の求人に効く"))]
+MinPhysicalLevel = Annotated[int | None, Field(description=(
+    "体を使う量の下限(1〜3。値の意味は max_physical_level と同じ)。「体を動かしたい」なら 3"))]
+Remote = Annotated[str | None, Field(description=(
+    "リモートワークの希望(正社員の求人だけが対象。指定するとアルバイト・パートの求人は出ない)。"
+    "可 = 原則在宅の求人だけ(「在宅で働きたい」「フルリモート」)、一部可 = 週に何日か以上在宅できる求人(可も含む。"
+    "「リモートもできたら」「週に何日か在宅」)。希望が無ければ指定しない"))]
+WeekendsHolidays = Annotated[bool | None, Field(description=(
+    "true なら土日祝が休みの求人だけ(「土日祝休み」「土日は休みたい」)。正社員の求人だけが対象"))]
+MaxOvertimeHours = Annotated[int | None, Field(description=(
+    "月の残業時間の上限(正社員の求人の残業の目安と比べる)。本人が時間を言ったらその数、"
+    "「残業少なめ」「残業はほとんど無い方がいい」だけなら 10。正社員の求人だけが対象"))]
 Area = Annotated[str | None, Field(description=(
     f"エリアか駅名。地名は次の中から選ぶ: {' / '.join(logic.AREAS)}(駅名も可。例: 中野駅)。"
     f"「{'」「'.join(logic.AREA_GROUPS)}」のような広い言い方は、そのまま渡すとその範囲の地名に広げて検索される。"
@@ -73,10 +94,19 @@ def recommend_jobs(
     min_wage: Annotated[int | None, Field(description="時給の下限(円)。時給の求人(アルバイト・パート)だけが対象")] = None,
     employment_type: EmploymentType = None,
     min_annual_salary: MinAnnualSalary = None,
+    max_talk_level: MaxTalkLevel = None,
+    min_talk_level: MinTalkLevel = None,
+    max_physical_level: MaxPhysicalLevel = None,
+    min_physical_level: MinPhysicalLevel = None,
+    remote: Remote = None,
+    weekends_holidays: WeekendsHolidays = None,
+    max_overtime_hours: MaxOvertimeHours = None,
     keywords: Annotated[str | None, Field(description=(
-        "その他の希望を本人の言葉のまま(例: 日払い 未経験OK、まかない付き、人と話さず黙々と)。"
+        "その他の希望を本人の言葉のまま(例: 日払い 未経験OK、まかない付き、コーヒーが好き)。"
         "語の一致に加えて意味の近さでも探すので、求人の文言に言い換えて寄せない。複数の希望は空白区切り。"
-        "エリア・時間帯・職種・時給・年収・雇用区分は keywords に入れず、それぞれの引数で渡す"))] = None,
+        "エリア・時間帯・職種・時給・年収・雇用区分・人と話す量・体を使う量・リモート・土日祝休み・残業は keywords に入れず、"
+        "それぞれの引数で渡す。避けたいこと(「〜したくない」「〜は苦手」)は keywords に入れない"
+        "(意味の近さで探すので、避けたい仕事の方が上に出てしまう)"))] = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(すでに見せたもの)")] = None,
     posted_within_days: Annotated[int | None, Field(description="この日数以内に掲載された新着だけにする")] = None,
 ) -> dict:
@@ -88,10 +118,15 @@ def recommend_jobs(
     給与は各求人の pay(kind が 時給 / 月給 / 年収、金額は円)と pay_text(表示用)。正社員の求人には
     働き方(work_style: リモート・フレックス・残業の目安)と休日(holidays: 年間休日・土日祝休みか)も付く。
     各求人の match_score は本人の傾向との合い具合(内訳 score_breakdown)。高い順に並ぶ。
-    keywords は意味検索(embedding)で言い換えも拾い、意味が近い求人ほど上に来る(内訳の keywords)。"""
+    keywords は意味検索(embedding)で言い換えも拾い、意味が近い求人ほど上に来る(内訳の keywords)。
+    意味の近い求人が無い希望(求人の情報に無いこと)は、語が一致した求人だけになり0件になりやすい(0件なら keywords_note に次の手がある)。
+    人と話す量・体を使う量(max_talk_level など)は両方の区分の求人に、リモート・土日祝休み・残業は正社員の求人だけに効く。"""
     return logic.recommend(state, line_user_id, area, time_band, job_type, min_wage, keywords, exclude_ids,
                            posted_within_days=posted_within_days, employment_type=employment_type,
-                           min_annual_salary=min_annual_salary)
+                           min_annual_salary=min_annual_salary, max_talk_level=max_talk_level,
+                           min_talk_level=min_talk_level, max_physical_level=max_physical_level,
+                           min_physical_level=min_physical_level, remote=remote,
+                           weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
 
 
 @mcp.tool()
@@ -100,10 +135,17 @@ def relax_conditions(
     area: Area = None, time_band: str | None = None, job_type: JobType = None,
     min_wage: int | None = None, keywords: str | None = None,
     employment_type: EmploymentType = None, min_annual_salary: MinAnnualSalary = None,
+    max_talk_level: MaxTalkLevel = None, min_talk_level: MinTalkLevel = None,
+    max_physical_level: MaxPhysicalLevel = None, min_physical_level: MinPhysicalLevel = None,
+    remote: Remote = None, weekends_holidays: WeekendsHolidays = None, max_overtime_hours: MaxOvertimeHours = None,
 ) -> dict:
-    """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。"""
+    """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。
+    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。"""
     return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
-                       employment_type=employment_type, min_annual_salary=min_annual_salary)
+                       employment_type=employment_type, min_annual_salary=min_annual_salary,
+                       max_talk_level=max_talk_level, min_talk_level=min_talk_level,
+                       max_physical_level=max_physical_level, min_physical_level=min_physical_level,
+                       remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
 
 
 @mcp.tool()

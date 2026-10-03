@@ -19,7 +19,7 @@ import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic
-from dip_mcp.data import ROOT, State, annual_pay_max, load_jobs, pay_text
+from dip_mcp.data import ROOT, State, annual_pay_mid, load_jobs, pay_text
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_talk_actions import (  # noqa: F401  browser はフィクスチャ
@@ -103,13 +103,37 @@ def test_undecided_recommends_from_both_employment_types(state):
 def test_min_annual_salary_keeps_only_fulltime_jobs_that_reach_it(state):
     jobs = load_jobs()
     r = logic.recommend(state, None, min_annual_salary=600)
-    ids = {j.job_id for j in jobs.values() if (annual_pay_max(j.pay) or 0) >= 6_000_000}
+    ids = {j.job_id for j in jobs.values() if (annual_pay_mid(j.pay) or 0) >= 6_000_000}
     assert r["total"] == len(ids) and r["total"] > 0
     assert all(j["job_id"] in ids and j["employment_type"] == "正社員" for j in r["jobs"])
-    # 月給は12か月分で見る(f0104 は池袋の営業で月給26万〜35万円 = 420万円): 400万円なら届き、500万円なら届かない
+    # 月給は12か月分の幅の中央値で見る(f0104 は池袋の営業で月給26万〜35万円 = 中央値30.5万円 × 12 = 366万円):
+    # 300万円なら届き、400万円なら届かない(上端の420万円では比べない)
     ids_at = lambda man: [c["job_id"] for c in logic.recommend(state, None, area="池袋", job_type="営業", min_annual_salary=man)["jobs"]]
-    assert ids_at(400) == ["f0104"] and ids_at(500) == []
+    assert ids_at(300) == ["f0104"] and ids_at(400) == []
     assert logic.recommend(state, None, min_annual_salary=2000)["total"] == 0
+
+
+def test_min_annual_salary_compares_the_middle_of_the_range_not_the_top(state):
+    """「600万以上」で、上端だけが届く求人(年収480万〜700万 = 中央値590万)を出さない(2026-10-03 のユーザーの決定)。"""
+    jobs = load_jobs()
+    straddling = [j for j in jobs.values() if j.pay.kind == "年収" and (j.pay.max or 0) >= 6_000_000 > annual_pay_mid(j.pay)]
+    assert straddling, "上端だけが600万に届く求人が fixtures にある(この確認の前提)"
+    got = {c["job_id"] for c in logic.recommend(state, None, min_annual_salary=600, limit=3)["jobs"]}
+    total = logic.recommend(state, None, min_annual_salary=600)["total"]
+    assert not got & {j.job_id for j in straddling}
+    assert total == sum(1 for j in jobs.values() if (annual_pay_mid(j.pay) or 0) >= 6_000_000)
+
+
+def test_min_annual_salary_ranks_higher_pay_first(state):
+    """年収を指定した検索は、給与の高さを並びに加味する(傾向の無い人なら、上位3件は中央値の高い順に近い)。"""
+    r = logic.recommend(state, None, min_annual_salary=500)
+    mids = [annual_pay_mid(load_jobs()[c["job_id"]].pay) for c in r["jobs"]]
+    assert all(c["score_breakdown"]["salary"] > 0 for c in r["jobs"])
+    assert mids == sorted(mids, reverse=True), mids
+    every = sorted((annual_pay_mid(j.pay) for j in load_jobs().values() if (annual_pay_mid(j.pay) or 0) >= 5_000_000), reverse=True)
+    assert mids[0] >= every[2]  # 1位は中央値の上位3つに入る
+    # 年収を指定しない検索には給与の点を足さない(今までの並びのまま)
+    assert all("salary" not in c["score_breakdown"] for c in logic.recommend(state, None, employment_type="正社員")["jobs"])
 
 
 def test_part_time_conditions_do_not_bring_fulltime_jobs(state):
@@ -204,15 +228,15 @@ def test_fulltime_search_in_the_talk_returns_fulltime_cards_and_undecided_gets_b
         opened, greeting = open_talk(client)
         r = stream(client, opened["user"], "message", greeting["thread"], "正社員で年収600万以上")[-1]
         assert r["kind"] == "reply" and r["cards"]
-        assert all(c["employment_type"] == "正社員" and annual_pay_max_of(c) >= 6_000_000 for c in r["cards"])
+        assert all(c["employment_type"] == "正社員" and annual_pay_mid_of(c) >= 6_000_000 for c in r["cards"])
         assert r["cards"][0]["pay_text"].startswith("年収")
         r = stream(client, opened["user"], "message", greeting["thread"], "どちらも見たい")[-1]
         assert {c["employment_type"] for c in r["cards"]} == {"アルバイト・パート", "正社員"}
 
 
-def annual_pay_max_of(card: dict) -> int:
+def annual_pay_mid_of(card: dict) -> int:
     p = card["pay"]
-    return (p["max"] or p["min"]) * (12 if p["kind"] == "月給" else 1)
+    return (p["min"] + (p["max"] or p["min"])) // 2 * (12 if p["kind"] == "月給" else 1)
 
 
 @pytest.fixture
