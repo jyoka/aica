@@ -375,9 +375,16 @@ def test_checks_catch_jobs_proposed_before_asking_the_purpose():
     assert v == ["T4: 目的(なぜ今探すのか)を確かめる前に求人を出した"]
     # 目的を聞いた・目的を保存したなら違反ではない(負例)
     for asked in ("今回、お仕事を探そうと思ったきっかけは何ですか?", "なぜ今、バイトを探しているのですか?",
-                  "バイトを探す目的は何ですか?"):
+                  "バイトを探す目的は何ですか?", "働き始めたいと思ったのは、どんな変化からですか?",
+                  "お仕事を探そうと思ったのは、どんな変化からですか？", "収入のほかに、このバイトで得たいことはありますか?"):
         turns[1]["bubbles"] = [asked]
         assert conversation_checks(CONSULT, turns, said)["violations"] == [], asked
+    # 求人や条件への「思ったのは」「どんな変化」は目的の問いではないので、違反のまま
+    for asked in ("カフェがいいと思ったのは、どんなところからですか?", "このお仕事を良いと思ったのは、どの点ですか?",
+                  "働く時間帯にどんな変化がありそうですか?"):
+        turns[1]["bubbles"] = [asked]
+        assert conversation_checks(CONSULT, turns, said)["violations"] == [
+            "T4: 目的(なぜ今探すのか)を確かめる前に求人を出した"], asked
     turns[1]["bubbles"] = ["時間帯とエリアはどのあたりですか?"]
     turns[2]["tools"] = [{"name": "save_user_preferences", "args": {"preferences": {"purpose": "生活費"}}, "result": {}}]
     assert conversation_checks(CONSULT, turns, said)["violations"] == []

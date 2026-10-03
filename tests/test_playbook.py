@@ -7,11 +7,15 @@
 (3) 台本の相談(経歴の厚い正社員志望): 目的を聞く / 掘り下げる / 選択肢が履歴書・発言から作られる /
     「分からない」で職種を並べない。同じ場面の悪い振る舞いは評価の機械判定が捕まえる
 (4) 区分が変わったターンで playbook を読み直す(読み直さなければ評価の違反)
+(5) 相談の長さ: 目的とやりたいことを掘り下げ、探す条件が揃ったら、次の返信で求人を見るかを聞く(目安は5、6問。
+    R2 で3本が評価の8ターンの上限までに提案に届かなかった)
+(6) playbook と Prompt の例文が、評価のペルソナの発言・経歴と重ならない(例文をなぞるだけで評価が良くならないように)
 LLM が playbook どおりに深く聞けるかは、評価(実 API、LLM ジャッジの深さの項目)で測る。
 """
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -314,3 +318,152 @@ def test_switch_that_did_not_change_the_track_needs_no_reread():
     turns = [t(["どうしますか?"]), t(["バイトですね。どこで働きたいですか?"], [same]),
              t(["わかりました。どこで働きたいですか?"], [failed])]
     assert checks.playbook_violations(turns) == []
+
+
+# ----------------------------- (5) 相談の長さ: 条件が揃ったら次の返信で求人を見るかを聞く -----------------------------
+
+LENGTH_SAID = [None,
+               "資格の勉強と並行して、パートを探したいです",
+               "介護の資格の学費を、自分でまかないたいからです",
+               "勉強している介護の現場を、少しでも見ておきたいです",
+               "利用者さんとの関わり方を、近くで見てみたいです",
+               "平日の日中、週2日くらい、大宮あたりです",
+               "求人を見る",
+               "ありがとう、考えます"]
+LENGTH_SC = {"expect_outcome": ["propose"], "consult_mode": True, "max_turns": 8,
+             "expect_tracks": [{"track": BAITO, "on_said": "パート"}],
+             "expect_saved_preferences": ["purpose", "wants", "time_band", "area"]}
+
+
+def length_script(after_conditions: list) -> list:
+    """目的を聞く → 掘り下げる → やりたいことを掘り下げる → 生活の制約を聞く → 条件を保存した後は after_conditions。"""
+    return [
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        switch_and_read(UID, BAITO, LENGTH_SAID[1]),
+        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+               "勉強と並行して働きたいと思ったのは、どんな理由からですか?"], quick_replies=["それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": UID, "preferences": {"purpose": "介護の資格の学費を自分でまかないたい"}}),
+        reply(["学費を自分でまかないたいのですね。", "学費のほかに、このパートで得たいことはありますか?"],
+              quick_replies=["それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": UID, "preferences": {"wants": "介護の現場を見ておきたい"}}),
+        reply(["介護の現場を見ておきたいのですね。", "『現場を見ておきたい』というのは、例えばどんなことですか?"],
+              quick_replies=["それ以外", "今はいい"]),
+        reply(["利用者さんとの関わり方を近くで見たいのですね。", "勉強の時間を除くと、働けるのはいつ、どのあたりですか?"],
+              quick_replies=["平日の日中", "それ以外", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": UID, "preferences": {
+            "time_band": "日中", "days_per_week": "週2日", "area": "大宮"}}),
+        *after_conditions,
+    ]
+
+
+def test_consult_asks_to_see_jobs_right_after_the_conditions_are_in(tmp_path):
+    """目的とやりたいことを掘り下げ、探す条件(時間帯・エリア)が揃ったターンの返信で、まとめて求人を見るかを聞く。
+    不安・強みが残っていても聞き続けない。5問で提案に進み、評価の8ターンの上限に余裕を残す。"""
+    model = ConsultModel(script=length_script([
+        reply(["学費をまかないつつ介護の現場を近くで見たい、大宮の平日日中・週2日で整理しました。", "この内容で求人を見ますか?"],
+              quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
+        calls(("recommend_jobs", {"line_user_id": UID, "employment_type": BAITO, "area": "大宮", "time_band": "日中"}),
+              ("record_conversation_outcome", {"line_user_id": UID, "outcome": "propose",
+                                               "reason": "相談のあと求人を見る", "confidence": 0.8})),
+        lambda msgs: reply(["介護の現場を見ておきたいというお話から、大宮の平日日中の求人です。"],
+                           job_ids=returned_jobs(msgs), quick_replies=CLOSING),
+        reply(["またいつでもご相談ください。"], quick_replies=CLOSING),
+    ]))
+    turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in LENGTH_SAID[1:]], tmp_path)
+    # 配られた playbook に、相談の長さの決まりがある
+    text = next(x["result"]["playbook"] for x in turns[1]["tools"] if x["name"] == "get_counseling_playbook")
+    assert "目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で" in text
+    assert "この内容で求人を見るかを1問で聞く" in text and "目安は5、6問" in text
+    r = conversation_checks(LENGTH_SC, turns, LENGTH_SAID)
+    assert r["violations"] == [], r["violations"]
+    assert r["outcome_as_expected"] is True and r["outcomes"] == ["propose"]
+    # 目的を聞く → 掘り下げ(目的・やりたいこと)→ 条件 → 求人を見るか、の5問
+    questions = [i for i, x in enumerate(turns) if any("?" in b for b in x["bubbles"]) and not x["cards"]]
+    assert questions == [0, 1, 2, 3, 4, 5]  # 0 は挨拶のメニュー
+    assert PURPOSE_ASK.search(turns[1]["bubbles"][-1]) and PROFILE_FOLLOW_UP.search(turns[3]["bubbles"][-1])
+    # 条件を保存したターンの返信で、求人を見るかを聞いた。提案は6回目の返信で、上限(8)より前
+    saved = next(i for i, x in enumerate(turns) for t in x["tools"]
+                 if t["name"] == "save_user_preferences" and "area" in t["args"]["preferences"])
+    assert "求人を見ますか" in turns[saved]["bubbles"][-1]
+    assert turns[saved + 1]["cards"] and r["branch_turn"] == saved + 2  # branch_turn は挨拶を T1 と数える
+    assert saved + 1 == 6 < LENGTH_SC["max_turns"]  # ユーザーの6回目の返信で提案
+
+
+def test_asking_on_after_the_conditions_are_in_does_not_reach_a_proposal_in_eight_turns(tmp_path):
+    """条件が揃った後も不安・経験・強みを聞き続けると、評価の8ターンの上限までに提案に届かない(R2 の後退の形)。
+    評価では outcome_as_expected が満たさないになる。"""
+    said = [*LENGTH_SAID[:6], "飲食店で2年働きました", "体力が続くか少し心配です", "細かい作業は得意です"]
+    model = ConsultModel(script=length_script([
+        reply(["大宮の平日日中ですね。", "これまでに、どんなお仕事をされてきましたか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["飲食店で2年されていたんですね。", "働くうえで、不安なことはありますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["体力のことが気になるのですね。", "得意なことはありますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["細かい作業が得意なのですね。", "ほかに気になることはありますか?"], quick_replies=["それ以外", "今はいい"]),
+    ]))
+    turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in said[1:]], tmp_path)
+    assert len(said) - 1 == LENGTH_SC["max_turns"]
+    r = conversation_checks(LENGTH_SC, turns, said)
+    assert r["outcomes"] == [] and r["outcome_as_expected"] is False
+
+
+# ----------------------------- (6) 例文を評価のペルソナから離す -----------------------------
+
+EVALS = ROOT / "evals"
+PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
+
+
+def _persona_text() -> str:
+    """評価のペルソナの発言と経歴(scenarios.json の persona・script と、evals/personas の履歴書)。"""
+    parts = [x for sc in load_scenarios() for x in (sc.get("persona", ""), *(sc.get("script") or []))]
+    parts += [json.dumps(json.loads(f.read_text(encoding="utf-8")), ensure_ascii=False)
+              for f in sorted((EVALS / "personas").glob("*.json"))]
+    return "\n".join(parts)
+
+
+def _between(text: str, start: str, end: str) -> str:
+    i = text.index(start) + len(start)
+    return text[i:text.index(end, i)]
+
+
+def _quotes(text: str) -> str:
+    """指示の文に混ざった例(「」の中)だけ。"""
+    return "".join(re.findall(r"「[^」]*」", text))
+
+
+def _examples() -> dict[str, str]:
+    """ペルソナから離す例文(場所 -> 例の文)。"""
+    common = (PLAYBOOKS / "common_chat.md").read_text(encoding="utf-8")
+    fulltime = (PLAYBOOKS / "fulltime_chat.md").read_text(encoding="utf-8")
+    parttime = (PLAYBOOKS / "parttime_chat.md").read_text(encoding="utf-8")
+    return {
+        "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
+        "Prompt: 相談の入口(本人の状況や事情)": _between(PROMPT, "話して探し始めたとき(", ")。"),
+        "Prompt: 提案の一言": _between(PROMPT, "その一言を本人の話につなげる(例:", ")。"),
+        "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),
+        "fulltime: 強みの確認形": _between(fulltime, "本人がどう捉えているかを聞く(例:", ")。"),
+        "fulltime: 方向の候補": _between(fulltime, "組み合わせて作る(例:", ")。"),
+        "parttime: 方向の候補": _between(parttime, "制約から作る(例:", ")。"),
+        "Prompt: 相談に入らない条件だけの発言": _between(PROMPT, "条件だけ(", ")を言ったとき"),
+        "common: 一般論の選択肢と答えの種類の一覧(悪い例)": _quotes(_between(common, "誰にでも出す一般論の例(", "を選択肢にしない")),
+        "fulltime: やりたいことの掘り下げ": _quotes(_between(fulltime, "- やりたいこと: ", "\n")),
+        "parttime: 興味の掘り下げ": _quotes(_between(parttime, "- やりたいこと・興味: ", "\n")),
+    }
+
+
+def _shared(example: str, persona: str, n: int = 4) -> set[str]:
+    """例文とペルソナが共有する n 文字(漢字かカタカナを含むもの。「ますか?」のような言い回しは数えない)。"""
+    return {example[i:i + n] for i in range(len(example) - n + 1)
+            if re.search(r"[一-龥々ァ-ヴ]", example[i:i + n]) and example[i:i + n] in persona}
+
+
+def test_examples_in_playbooks_and_prompt_do_not_echo_the_eval_personas():
+    persona = _persona_text()
+    examples = _examples()
+    assert len(examples) == 11 and all(examples.values())
+    for where, example in examples.items():
+        assert _shared(example, persona) == set(), (where, example, _shared(example, persona))
+    # 負例: 差し替える前の例文(ペルソナとほぼ同じ)は、この判定で重なりとして見つかる
+    for old in ("本業の後の空いた時間で", "子どもが小学校に上がったので", "転職を考えていて", "法人営業を4年されていたんですね",
+                "法人営業とPMの経歴で「新しいプロダクトを企画したい」", "「本や音楽が好き」「人見知り」",
+                "「渋谷でカフェのバイト」", "「人と話す仕事 / 事務や運営を支える仕事」", "「収入を増やしたい / 経験を積みたい」",
+                "「最初から企画する、というのは、どんな規模や役割のイメージですか?」", "「人と話すのが好き」"):
+        assert _shared(old, persona), old

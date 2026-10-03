@@ -19,7 +19,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from evals.checks import PURPOSE_ASK
+from dip_mcp.logic import AREAS
+from evals.checks import JOB_TYPE_ALIASES, PURPOSE_QUESTION
 from line_runtime import llm
 
 Verdict = Literal["満たした", "満たさない", "該当なし"]
@@ -64,27 +65,69 @@ verdict は「満たした」「満たさない」「該当なし」。evidence 
 - comment: 1〜2文。"""
 
 
-# 本人の目的を受け止めた言い方(「〜したいのですね」「〜ということですね」)
-PURPOSE_ACK = re.compile(r"(の|ん)ですね|ということ|とのこと|なんですね")
-# 受け止めの根拠にしない語(区分の切り替えの一言「正社員のお仕事で考えますね」の語)
-_TRACK_WORDS = {"正社員", "アルバイト", "バイト", "パート", "仕事", "お仕事"}
+# 本人の目的を受け止めた言い方(「家計のためですね」「〜したいのですね」「〜ということですね」)
+PURPOSE_ACK = re.compile(r"ですね|ということ|とのこと")
+# 受け止めた内容が目的の言い方(「〜のため」「〜したい」「〜を考えて」「〜を目指して」)。「扶養内ですね」
+# 「残業が少ないところですね」「正社員に切り替えるということですね」のような、条件や区分の受け止めには付かない
+PURPOSE_WORDING = re.compile(r"ため|たい|たく|ほしい|欲しい|考え|目指")
+# 受け止めの根拠にしない語: 区分の切り替えの一言(「正社員のお仕事で考えますね」)の語、探す・働くこと自体の語、
+# 条件(職種・エリア・時間・日数・給与)の語。「カフェで働きたいのですね」「吉祥寺あたりですね」は目的の受け止めではない
+_NOT_PURPOSE = re.compile("|".join(map(re.escape, sorted(
+    {"正社員", "アルバイト", "バイト", "パート", "お仕事", "仕事", "求人", "探し", "探す", "働き", "働く", "働け", "働い",
+     "考え", "希望", "条件", "エリア", "あたり", "時間", "平日", "土日", "週末", "曜日", "日中", "夕方", "午前", "午後",
+     "深夜", "年収", "月給", "時給", "リモート", "シフト", "勤務", "週", *AREAS, *JOB_TYPE_ALIASES}, key=len, reverse=True)))
+    + r"|[0-9０-９〜~]+(時|日|分|万円|万|円|歳|年|か月)?")
+# 受け止めと本人の発言が共有する2文字(漢字かカタカナを1字以上含む。「お金」「貯め」のような、ひらがな混じりの語幹も見る。
+# 助詞を含む2文字「で働」「内で」は語ではないので数えない)
+_UNIT = re.compile(r"(?=([ぁ-んァ-ヴー一-龥々]{2}))")
+_KANA_KANJI = re.compile(r"[ァ-ヴ一-龥々]")
+_PARTICLE = re.compile(r"[をのでにがはとへだな]")
+# 会話ログの吹き出しの後ろに付く、選択肢・操作・カードの表示
+_ATTACHED = re.compile(r"\s*\[(選択肢|操作|求人カード)\]")
 JUDGE_SAMPLES = 2
 
 
+def _sentences(text: str) -> list[str]:
+    return re.split(r"(?<=[。!！?？\n])", text)
+
+
+def _asks_purpose(text: str) -> bool:
+    """アシスタントの吹き出しに、目的だけを聞く問い(PURPOSE_QUESTION)がある。問いは疑問符のある文か「教えてください」の文で、
+    後ろに付く選択肢などの表示は見ない。"""
+    return any(PURPOSE_QUESTION.search(x) for x in _sentences(_ATTACHED.split(text)[0])
+               if "?" in x or "？" in x or "教えて" in x)
+
+
+def _ack_units(evidence: str) -> set[str]:
+    """根拠のうち、目的の言い方(PURPOSE_WORDING)で受け止めた文の、条件などの語を除いた2文字の単位。"""
+    out = set()
+    for x in _sentences(evidence):
+        if PURPOSE_ACK.search(x) and PURPOSE_WORDING.search(x):
+            x = _NOT_PURPOSE.sub("|", x)
+            out |= {u for u in _UNIT.findall(x) if _KANA_KANJI.search(u) and not _PARTICLE.search(u)}
+    return out
+
+
 def purpose_evidence(evidence: str, transcript: list[dict]) -> bool:
-    """asked_purpose の根拠が、目的を聞く問い(PURPOSE_ASK)か、本人がそれより前に話したことを受け止めたアシスタントの
-    発言(受け止めの言い方があり、前の本人の発言と内容語を共有する)か。"""
+    """asked_purpose の根拠が、目的を聞いた・受け止めた発言か。次のどれかなら True:
+    - 根拠が目的を聞く問い(PURPOSE_QUESTION)。
+    - 根拠のアシスタントの発言より前に、目的を聞く問いがあり、本人が答えている(「どんな変化からですか?」→「家計のため」
+      →「家計のためですね。…」。根拠が受け止めの一言でも、目的は聞いている)。
+    - 根拠が目的の言い方の受け止め(PURPOSE_ACK と PURPOSE_WORDING)で、本人がそれより前に話したことと2文字の単位を
+      共有する(条件・区分の語を除く)。"""
     ev = _norm(evidence)
     if not ev:
         return False
-    if PURPOSE_ASK.search(ev):
+    if PURPOSE_QUESTION.search(ev):
         return True
     at = next((i for i, t in enumerate(transcript) if t["who"] == "agent" and ev in _norm(t["text"])), None)
-    if at is None or not PURPOSE_ACK.search(ev):
+    if at is None:
         return False
-    said = "".join(t["text"] for t in transcript[:at] if t["who"] == "user")
-    words = {w for w in re.findall(r"[一-龥々]{2,}|[ァ-ヴー]{2,}", ev) if w not in _TRACK_WORDS}
-    return any(w in said for w in words)
+    for i, t in enumerate(transcript[:at]):
+        if t["who"] == "agent" and _asks_purpose(t["text"]) and any(u["who"] == "user" for u in transcript[i + 1:at]):
+            return True
+    said = _norm("".join(t["text"] for t in transcript[:at] if t["who"] == "user"))
+    return any(u in said for u in _ack_units(ev))
 
 
 def _log(transcript: list[dict]) -> str:

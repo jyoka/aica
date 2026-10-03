@@ -446,6 +446,114 @@ def test_purpose_evidence_must_ask_or_take_up_the_purpose():
     assert purpose_evidence("収入を増やしたいのですね。", log + [{"who": "agent", "text": "収入を増やしたいのですね。"}]) is False
 
 
+def test_purpose_evidence_accepts_plain_acknowledgements_and_earlier_purpose_questions():
+    """R2 の T-blank-parent: ジャッジは2回とも満たしたのに、「〜ためですね」が受け止めに数えられず False になった。"""
+    from evals.judge import purpose_evidence
+
+    opening = [{"who": "agent", "text": "はじめまして。今日は何から始めますか? [選択肢] 求人を探す / まず相談する / 今はいい"}]
+    # 負例(正しい根拠を違反にしない): 「ですね」全般の受け止めと、ひらがな混じりの語幹(お金・貯め)の共有
+    log = opening + [{"who": "user", "text": "家計のためにパートを探したい"},
+                     {"who": "agent", "text": "家計のためですね。いくつか伺います。"}]
+    assert purpose_evidence("家計のためですね。", log) is True
+    log = opening + [{"who": "user", "text": "お金を貯めたいです"},
+                     {"who": "agent", "text": "お金を貯めたい、ということですね。働ける曜日はありますか?"}]
+    assert purpose_evidence("お金を貯めたい、ということですね。", log) is True
+    # 負例: 目的を聞く問いの言い方
+    assert purpose_evidence("お仕事を探そうと思ったのは、どんな変化からですか？", opening) is True
+    assert purpose_evidence("収入のほかに、このバイトで得たいことはありますか?", opening) is True
+    # 根拠より前に目的を聞く問いがあり、本人が答えていれば、根拠の一言が受け止めの形でなくても目的は聞いている
+    log = opening + [{"who": "user", "text": "子どもが小学校に上がったので、久しぶりにパートを探したいです。"},
+                     {"who": "agent", "text": "働き始めたいと思ったのは、どんな変化からですか？ [選択肢] 家計のため / それ以外"},
+                     {"who": "user", "text": "家計のため"},
+                     {"who": "agent", "text": "わかりました。収入のほかに、パートで大切にしたいことはありますか？"}]
+    assert purpose_evidence("わかりました。収入のほかに、パートで大切にしたいことはありますか？", log) is True
+
+
+PLAIN_PURPOSE_QUESTIONS = ("今回、パートを始めようと思った理由は何ですか?", "転職を考えたのはなぜですか?",
+                           "どうしてバイトを始めようと思ったのですか?", "正社員を目指そうと思った理由を教えてください。",
+                           "探し始めたのはどうしてですか?")
+
+
+@pytest.mark.parametrize("question", PLAIN_PURPOSE_QUESTIONS)
+def test_purpose_evidence_accepts_reason_questions_about_starting_the_search(question):
+    """負例(正しい根拠を違反にしない): なぜ・理由・どうして で、探し始めること・働くことの理由を聞く素直な問い。
+    根拠そのものでも、根拠より前の問い(本人が答えた)でも数える。"""
+    from evals.judge import purpose_evidence
+
+    assert purpose_evidence(question, [{"who": "agent", "text": "どうしますか?"}]) is True
+    log = [{"who": "agent", "text": question}, {"who": "user", "text": "家計のため"},
+           {"who": "agent", "text": "わかりました。働ける曜日はありますか?"}]
+    assert purpose_evidence("わかりました。働ける曜日はありますか?", log) is True
+
+
+@pytest.mark.parametrize("question", ("カフェで働きたい理由は何ですか?", "その働き方を選ぶ理由は?", "土日に働けない理由はありますか?",
+                                      "夜勤を避けたい理由はありますか?", "この求人を選んだ理由は?"))
+def test_reason_questions_about_conditions_are_not_purpose_questions(question):
+    """理由の問いでも、職種・働き方・条件・求人への問いは目的の問いではない。"""
+    from evals.judge import purpose_evidence
+
+    assert purpose_evidence(question, [{"who": "agent", "text": "どうしますか?"}]) is False
+
+
+def test_purpose_evidence_does_not_take_conditions_or_unanswered_questions():
+    """「ですね」を広げても、条件(職種・エリア・時間)や区分の受け止めは目的の根拠にならない。"""
+    from evals.judge import purpose_evidence
+
+    log = [{"who": "agent", "text": "今日は何から始めますか?"},
+           {"who": "user", "text": "吉祥寺あたりで、平日の9時から14時まで、週3〜4日で、カフェのパートを探したいです。"},
+           {"who": "agent", "text": "カフェのお仕事ですね。吉祥寺あたりですね。平日9時〜14時、週3〜4日ですね。パートのお仕事ですね。"}]
+    for ev in ("カフェのお仕事ですね。", "吉祥寺あたりですね。", "平日9時〜14時、週3〜4日ですね。", "パートのお仕事ですね。"):
+        assert purpose_evidence(ev, log) is False, ev
+    # 目的を聞く問いがあっても、本人がまだ答えていなければ、その前後の別の発言は根拠にならない
+    log = [{"who": "agent", "text": "今回お仕事を探そうと思ったきっかけは何ですか? [選択肢] それ以外 / 今はいい"},
+           {"who": "agent", "text": "働ける時間帯はいつ頃ですか?"}]
+    assert purpose_evidence("働ける時間帯はいつ頃ですか?", log) is False
+    # 選択肢の表示(「理由を話す」)は目的を聞く問いではない
+    log = [{"who": "agent", "text": "希望のエリアはありますか? [選択肢] 理由を話す / 今はいい"},
+           {"who": "user", "text": "渋谷"},
+           {"who": "agent", "text": "働ける時間帯はいつ頃ですか?"}]
+    assert purpose_evidence("働ける時間帯はいつ頃ですか?", log) is False
+
+
+@pytest.mark.parametrize("said, ack", [
+    # 一覧に無い条件の語でも、目的の言い方(ため・たい・考え など)が無い受け止めは根拠にならない
+    ("扶養内で働きたいです", "扶養内ですね。"),
+    ("土曜だけ働きたい", "土曜だけですね。"),
+    ("短時間で働きたい", "短時間ですね。"),
+    ("交通費が出るところ", "交通費支給ですね。"),
+    ("夜だけ働きたい", "夜だけですね。"),
+    ("未経験でもできるところ", "未経験OKのところですね。"),
+    ("朝から昼まで", "朝から昼までですね。"),
+    ("残業が少ないところ", "残業が少ないところですね。"),
+    ("シフトの融通がきくところ", "シフトの融通がきくところですね。"),
+    ("はい、お願いします", "お願いします、ということですね。"),
+    # 区分の受け止めは、目的の言い方があっても区分・働くことの語だけなので根拠にならない(T-career-fulltime#2 の型)
+    ("正社員に切り替えたい", "正社員に切り替えるということですね。"),
+    ("正社員で働きたい", "正社員で働きたいということですね。"),
+])
+def test_purpose_evidence_rejects_acknowledging_conditions_and_tracks(said, ack):
+    from evals.judge import purpose_evidence
+
+    log = [{"who": "agent", "text": "どうしますか?"}, {"who": "user", "text": said}, {"who": "agent", "text": ack}]
+    assert purpose_evidence(ack, log) is False
+
+
+def test_earlier_question_must_ask_the_purpose_itself():
+    """根拠より前の問いが、目的だけを聞く問いのときに限る。「理由」「思ったのは」が求人・条件への問いなら数えない。"""
+    from evals.judge import purpose_evidence
+
+    later = "エリアはどのあたりがいいですか?"
+    for question, answer in (("カフェがいいと思ったのは、どんなところからですか?", "コーヒーが好き"),
+                             ("渋谷ですね。その理由も含めて、時間帯はいつ頃がいいですか?", "夕方"),
+                             ("事務を避けたいと思ったのは、どんな場面ですか?", "電話が多いのが苦手")):
+        log = [{"who": "agent", "text": question}, {"who": "user", "text": answer}, {"who": "agent", "text": later}]
+        assert purpose_evidence(later, log) is False, question
+    # 負例: 疑問符の無い「目的を教えてください」も目的の問い
+    log = [{"who": "agent", "text": "今回お仕事を探す目的を教えてください。"}, {"who": "user", "text": "家計のため"},
+           {"who": "agent", "text": "わかりました。働ける曜日はありますか?"}]
+    assert purpose_evidence("わかりました。働ける曜日はありますか?", log) is True
+
+
 def test_purpose_met_on_an_unrelated_quote_counts_as_not_met():
     r = shape(judgement(evidence="正社員のお仕事で考えますね。"), TRANSCRIPT)
     assert r["depth"]["asked_purpose"]["verdict"] == "満たした"  # ジャッジの判定は残す(人が照合する材料)
