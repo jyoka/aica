@@ -89,6 +89,9 @@ class ResumeAdvisor(Agent):
         self.recommend_args: dict = {}  # 最後の検索に使った条件(ゆるめたものを含む)
         self.relaxed: dict = {}  # 検索のためにゆるめた(外した)条件。希望(preferences)は書き換えない
         self.search_attempts: list[dict] = []  # 検索の経緯(使った条件と件数)
+        # 出さない求人ID(propose_jobs の exclude_ids をこの面談の間ためる)。後で条件を変えて探すときに LLM が
+        # exclude_ids を付け忘れても、外した求人(電話が中心の求人など)が出ないように、毎回まとめて dip に渡す
+        self.excluded_ids: list[str] = []
         self.proposed_jobs: list[dict] = []
         self.finalized: dict | None = None
         self._finalize_reply: str | None = None  # finalize 済みなら2回目はこれを返す(副作用なし)
@@ -318,8 +321,9 @@ class ResumeAdvisor(Agent):
                 0件だった検索の結果から本人が選んだものを、これまでの relax に足して入れる
                 (前に外した条件も入れたままにする)。希望の引数は書き換えない。
             exclude_ids: 出さない求人ID(結果のかっこの求人ID)。電話が中心の求人(コールセンターなど)を外すとき、
-                すでに出した求人を外して別の求人を探すときに使う。前に外したIDも入れたままにする。
-                ここに入れた求人は提案に入らず、トークにも届かない
+                すでに出した求人を外して別の求人を探すときに使う。前に外したIDは覚えていて、この後の検索でも外す
+                (入れたままでもよい)。外して探し直した結果が1件以上なら、それが新しい提案になり、外した求人はトークに
+                届かない。0件なら前の提案がそのまま残る
             search_only: 本人の希望は変わっていないが、検索条件だけを変えて探し直すときに True
                 (例: 見つからないので、本人の同意を得て時給の下限を外す)。
                 True のときは希望条件の記録を変えず、検索条件だけを変える
@@ -374,8 +378,10 @@ class ResumeAdvisor(Agent):
             if not search_only:
                 # 本人が言った希望だけを dip に保存する(検索のためにゆるめた条件や推測は保存しない)
                 await self._save_stated_preferences(stated)
-            # 出さない求人は検索だけに渡す(希望でも検索の条件でもないので recommend_args には入れない)
-            exclude = list(dict.fromkeys(exclude_ids or []))
+            # 出さない求人は検索だけに渡す(希望でも検索の条件でもないので recommend_args には入れない)。
+            # 前の呼び出しで外した分も合わせて渡す(0件のときの relax_conditions にも同じものが渡る)
+            self.excluded_ids = list(dict.fromkeys([*self.excluded_ids, *(exclude_ids or [])]))
+            exclude = list(self.excluded_ids)
             search = {**args, "exclude_ids": exclude} if exclude else args
             try:
                 result = await self._dip.recommend_jobs(**self._with_user(search))
@@ -396,10 +402,10 @@ class ResumeAdvisor(Agent):
                     "proposed_job_ids": [j.get("job_id", "") for j in jobs],
                 }
             )
-            # 提案済みの記録は0件の再検索で消さない(out/ の job-proposal に残すため)。ただし外した求人は残さない
-            # (トークに届けない)。画面はその回の結果をそのまま出す(0件なら「見つかりませんでした」)
-            if exclude:
-                self.proposed_jobs = [j for j in self.proposed_jobs if j.get("job_id") not in exclude]
+            # 提案済みの記録は0件の再検索で消さない(out/ の job-proposal とトークに残すため)。外した求人を除いて
+            # 探し直して0件のときも、前の提案をそのまま残す(「ほかには?」で0件でも、本人が聞いた求人はトークに届く)。
+            # そのため、電話が中心の求人だけが当たって外した後に0件なら、読み上げていないその求人もトークに届く
+            # (ユーザーの決定、2026-10-04)。画面はその回の結果をそのまま出す(0件なら「見つかりませんでした」)
             if jobs:
                 self.proposed_jobs = jobs
             await self._publish({"type": "jobs", "jobs": jobs, "total": result.get("total", 0)})
