@@ -801,3 +801,27 @@ def test_attribute_and_style_args_are_not_saved_as_preferences():
     assert "job_type" in saved and "min_annual_salary" in saved
     assert not saved & {*STYLE, *ATTRS}
     assert not set(advisor.preferences) & {*STYLE, *ATTRS}
+
+
+def test_excluded_jobs_are_searched_out_and_remembered_for_later_searches(tmp_path, monkeypatch):
+    """exclude_ids(出さない求人)は dip の検索に渡り、advisor が覚えて後の検索(0件のときの relax_conditions も)に
+    合わせて渡す。検索の条件(recommend_args)には入れず、検索の経緯(search_attempts)に残す。
+    0件の探し直しでは前の提案をそのまま残す(ユーザーの決定、2026-10-04)。"""
+    dip = FakeDip()
+    advisor = _talk_advisor(dip, tmp_out=tmp_path, monkeypatch=monkeypatch)
+
+    reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
+    assert "1件目(求人ID b0305)" in reply and "exclude_ids" in reply
+    dip.result = {"total": 0, "jobs": []}
+    asyncio.run(advisor.propose_jobs(job_type="カフェ", exclude_ids=["b0304", "b0304"], search_only=True))
+    # 後で条件を変えて、exclude_ids を付けずに探しても、外した求人は dip に渡る(新しく外した分は足す)
+    asyncio.run(advisor.propose_jobs(job_type="カフェ", area="中野", search_only=True))
+    asyncio.run(advisor.propose_jobs(job_type="カフェ", exclude_ids=["b0301"], search_only=True))
+
+    assert "exclude_ids" not in dip.calls[0] and dip.calls[1]["exclude_ids"] == ["b0304"]
+    assert dip.calls[2]["exclude_ids"] == ["b0304"] and dip.calls[3]["exclude_ids"] == ["b0304", "b0301"]
+    assert [c["exclude_ids"] for c in dip.relax_calls] == [["b0304"], ["b0304"], ["b0304", "b0301"]]
+    assert advisor.recommend_args == {"job_type": "カフェ"}
+    assert [a.get("exclude_ids") for a in advisor.search_attempts] == [None, ["b0304"], ["b0304"], ["b0304", "b0301"]]
+    # 0件の探し直しでは、前の提案(外した求人を含む)を変えない
+    assert [j["job_id"] for j in advisor.proposed_jobs] == [j["job_id"] for j in JOBS[:3]]

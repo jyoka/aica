@@ -139,11 +139,12 @@ def relax_conditions(
     max_talk_level: MaxTalkLevel = None, min_talk_level: MinTalkLevel = None,
     max_physical_level: MaxPhysicalLevel = None, min_physical_level: MinPhysicalLevel = None,
     remote: Remote = None, weekends_holidays: WeekendsHolidays = None, max_overtime_hours: MaxOvertimeHours = None,
+    exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(recommend_jobs に渡したもの)")] = None,
 ) -> dict:
     """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。
-    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。"""
+    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。"""
     return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
-                       employment_type=employment_type, min_annual_salary=min_annual_salary,
+                       employment_type=employment_type, min_annual_salary=min_annual_salary, exclude_ids=exclude_ids,
                        max_talk_level=max_talk_level, min_talk_level=min_talk_level,
                        max_physical_level=max_physical_level, min_physical_level=min_physical_level,
                        remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)

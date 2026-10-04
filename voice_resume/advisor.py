@@ -89,6 +89,9 @@ class ResumeAdvisor(Agent):
         self.recommend_args: dict = {}  # 最後の検索に使った条件(ゆるめたものを含む)
         self.relaxed: dict = {}  # 検索のためにゆるめた(外した)条件。希望(preferences)は書き換えない
         self.search_attempts: list[dict] = []  # 検索の経緯(使った条件と件数)
+        # 出さない求人ID(propose_jobs の exclude_ids をこの面談の間ためる)。後で条件を変えて探すときに LLM が
+        # exclude_ids を付け忘れても、外した求人(電話が中心の求人など)が出ないように、毎回まとめて dip に渡す
+        self.excluded_ids: list[str] = []
         self.proposed_jobs: list[dict] = []
         self.finalized: dict | None = None
         self._finalize_reply: str | None = None  # finalize 済みなら2回目はこれを返す(副作用なし)
@@ -245,6 +248,7 @@ class ResumeAdvisor(Agent):
         start_timing: str | None = None,
         other_wishes: str | None = None,
         relax: list[str] | None = None,
+        exclude_ids: list[str] | None = None,
         search_only: bool = False,
     ) -> str:
         """会話で聞いた希望条件に合う求人を、今の雇用区分の中から最大3件探す(区分が未定なら両方の区分から)。
@@ -258,6 +262,9 @@ class ResumeAdvisor(Agent):
 
         0件のときは、どの条件を外すと何件見つかるかが結果に入る。それを本人に伝えて
         選んでもらい、選ばれた条件名をこれまでの relax に足して、他の引数は変えずにもう一度呼ぶ。
+
+        結果の求人を出さずに探し直すとき(電話が中心の求人を外すとき、すでに出した求人を外すとき)は、
+        その求人IDを exclude_ids に入れて、他の引数は変えずにもう一度呼ぶ。
 
         Args:
             job_type: 職種。本人が職種を言ったときだけ、今の雇用区分の一覧から1つをそのまま選ぶ。
@@ -313,6 +320,10 @@ class ResumeAdvisor(Agent):
                 remote / weekends_holidays / max_overtime_hours。
                 0件だった検索の結果から本人が選んだものを、これまでの relax に足して入れる
                 (前に外した条件も入れたままにする)。希望の引数は書き換えない。
+            exclude_ids: 出さない求人ID(結果のかっこの求人ID)。電話が中心の求人(コールセンターなど)を外すとき、
+                すでに出した求人を外して別の求人を探すときに使う。前に外したIDは覚えていて、この後の検索でも外す
+                (入れたままでもよい)。外して探し直した結果が1件以上なら、それが新しい提案になり、外した求人はトークに
+                届かない。0件なら前の提案がそのまま残る
             search_only: 本人の希望は変わっていないが、検索条件だけを変えて探し直すときに True
                 (例: 見つからないので、本人の同意を得て時給の下限を外す)。
                 True のときは希望条件の記録を変えず、検索条件だけを変える
@@ -367,8 +378,13 @@ class ResumeAdvisor(Agent):
             if not search_only:
                 # 本人が言った希望だけを dip に保存する(検索のためにゆるめた条件や推測は保存しない)
                 await self._save_stated_preferences(stated)
+            # 出さない求人は検索だけに渡す(希望でも検索の条件でもないので recommend_args には入れない)。
+            # 前の呼び出しで外した分も合わせて渡す(0件のときの relax_conditions にも同じものが渡る)
+            self.excluded_ids = list(dict.fromkeys([*self.excluded_ids, *(exclude_ids or [])]))
+            exclude = list(self.excluded_ids)
+            search = {**args, "exclude_ids": exclude} if exclude else args
             try:
-                result = await self._dip.recommend_jobs(**self._with_user(args))
+                result = await self._dip.recommend_jobs(**self._with_user(search))
             except Exception as exc:  # noqa: BLE001 - 提案に失敗しても会話は続ける
                 logger.warning("recommend_jobs 失敗: %s", exc)
                 return "求人の検索に失敗しました。その旨を伝えて会話を締めてください。"
@@ -381,21 +397,25 @@ class ResumeAdvisor(Agent):
             self.search_attempts.append(
                 {
                     "args": args,
+                    **({"exclude_ids": exclude} if exclude else {}),
                     "found": result.get("total", 0),
                     "proposed_job_ids": [j.get("job_id", "") for j in jobs],
                 }
             )
-            # 提案済みの記録は0件の再検索で消さない(out/ の job-proposal に残すため)。
-            # 画面はその回の結果をそのまま出す(0件なら「見つかりませんでした」)
+            # 提案済みの記録は0件の再検索で消さない(out/ の job-proposal とトークに残すため)。外した求人を除いて
+            # 探し直して0件のときも、前の提案をそのまま残す(「ほかには?」で0件でも、本人が聞いた求人はトークに届く)。
+            # そのため、電話が中心の求人だけが当たって外した後に0件なら、読み上げていないその求人もトークに届く
+            # (ユーザーの決定、2026-10-04)。画面はその回の結果をそのまま出す(0件なら「見つかりませんでした」)
             if jobs:
                 self.proposed_jobs = jobs
             await self._publish({"type": "jobs", "jobs": jobs, "total": result.get("total", 0)})
             if not jobs:
-                return await self._zero_hit_reply(args)
-        lines = [f"{i}件目: {spoken_job_line(job)}" for i, job in enumerate(jobs, 1)]
+                return await self._zero_hit_reply(search)
+        lines = [f"{i}件目(求人ID {job.get('job_id', '')}): {spoken_job_line(job)}" for i, job in enumerate(jobs, 1)]
         return (
             f"求人が{len(jobs)}件見つかりました(面談が終わるとトークにも出ます)。"
-            "1件ずつ短く読み上げてください:\n" + "\n".join(lines) + self._dropped_note(dropped)
+            "1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n"
+            + "\n".join(lines) + self._dropped_note(dropped)
         )
 
     @function_tool
@@ -677,7 +697,7 @@ class ResumeAdvisor(Agent):
             + "\n".join(lines)
             + "\nこの件数を具体的に伝えて、どの条件を外すか本人に一度で選んでもらってください。"
             "「探してもよいですか?」のような許可の確認はしないこと。選ばれたら、その条件名を "
-            "これまでの relax に足して propose_jobs をもう一度呼ぶ(希望の引数は変えない)。"
+            "これまでの relax に足して propose_jobs をもう一度呼ぶ(希望の引数と exclude_ids は変えない)。"
         )
 
     async def _search(self, subject: str) -> str | None:

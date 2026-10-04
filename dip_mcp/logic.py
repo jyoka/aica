@@ -543,9 +543,10 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
 
 
 def relax(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
-          keywords=None, employment_type=None, min_annual_salary=None, **filters) -> dict:
+          keywords=None, employment_type=None, min_annual_salary=None, exclude_ids: list[str] | None = None,
+          **filters) -> dict:
     """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。
-    属性・働き方・休日の引数(filters)も外す候補にする。"""
+    属性・働き方・休日の引数(filters)も外す候補にする。exclude_ids(出さない求人)は外す候補にせず、どの件数からも除く。"""
     if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
         raise TypeError(f"relax() に知らない引数: {sorted(unknown)}")
     employment_type = _employment_type(employment_type)
@@ -555,11 +556,12 @@ def relax(state: State, line_user_id: str | None, area=None, time_band=None, job
     cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage,
             "min_annual_salary": min_annual_salary, "keywords": keywords}
     cond |= {k: filters.get(k) for k in (*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)}
-    base = recommend(state, line_user_id, **cond, employment_type=employment_type)["total"]
+    base = recommend(state, line_user_id, **cond, employment_type=employment_type, exclude_ids=exclude_ids)["total"]
     options = []
     for k, v in cond.items():
         if v is not None and v is not False and v != "":  # max_overtime_hours=0 も外す候補にする
-            n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type)["total"]
+            n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type,
+                          exclude_ids=exclude_ids)["total"]
             if n > base:
                 options.append({"remove": k, "current": v, "total_after": n})
     options.sort(key=lambda o: o["total_after"], reverse=True)
