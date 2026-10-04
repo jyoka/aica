@@ -33,7 +33,7 @@ def test_avoids_put_into_keywords_are_flagged(kw):
 
 
 @pytest.mark.parametrize("kw", ["コーヒー", "黙々と作業", "経験なし", "未経験", "残業少ない", "子どもに勉強を教える",
-                                "人間関係が良い"])
+                                "人間関係が良い", "まかない付き", "まかない アットホームな職場"])
 def test_wants_and_plain_conditions_in_keywords_are_not_flagged(kw):
     assert _v(["探しています"], [turn(["こんにちは"]), turn(["探しますね。"], {"keywords": kw})]) == []
 

@@ -1,0 +1,1015 @@
+{
+  "at": "2026-10-04 11:46",
+  "results": [
+    {
+      "id": "V-phone-night",
+      "channel": "voice",
+      "title": "音声: 電話だけを避けたい・深夜(コールセンターが上位3件に入る)・ほかには・前の求人に戻りたい",
+      "observation": {
+        "phone_turn_item": 1,
+        "confirm_question": "電話は避けたいとのことですが、お客様と話す接客も避けたいですか？",
+        "first_propose_args": {
+          "job_type": null,
+          "area": "どこでもいいです",
+          "time_band": "深夜",
+          "min_wage": null,
+          "max_talk_level": null,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "days_per_week": null,
+          "experience": null,
+          "skills": null,
+          "certifications": null,
+          "purpose": null,
+          "strengths": null,
+          "wants": null,
+          "avoids": "電話はしたくないです",
+          "concerns": null,
+          "min_annual_salary": null,
+          "work_style": null,
+          "start_timing": null,
+          "other_wishes": null,
+          "relax": null,
+          "exclude_ids": null,
+          "search_only": null
+        },
+        "talk_level": null,
+        "propose_calls": [
+          {
+            "job_type": null,
+            "area": "どこでもいいです",
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          },
+          {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          },
+          {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903"
+            ],
+            "search_only": true
+          },
+          {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903",
+              "b0401",
+              "b0203",
+              "b0502"
+            ],
+            "search_only": true
+          }
+        ],
+        "call_center_in_results_then_recalled": 1,
+        "call_center_read_before_recall": 0,
+        "job_id_spoken": [],
+        "exclude_ids_forgotten_by_llm": 0,
+        "zero_after_exclude": 0,
+        "zero_after_exclude_with_previous_proposal": 0,
+        "delivered_job_ids": [
+          "a001",
+          "b0201",
+          "b0101"
+        ],
+        "delivered_call_centers": [],
+        "back_promise": [],
+        "talk_level_as_expected": true
+      },
+      "items": [
+        {
+          "kind": "say",
+          "text": "こんにちは、バイトルのキャリアアドバイザーです。5分ほど希望や経験を伺い、最後に求人をご提案します。面談後には履歴書などの下書きも出ます。正社員のお仕事と、空いた時間のアルバイト、どちらを考えていますか？"
+        },
+        {
+          "kind": "user",
+          "text": "深夜で探したいです。電話はしたくないです"
+        },
+        {
+          "kind": "call",
+          "name": "set_search_track",
+          "args": {
+            "track": "アルバイト・パート",
+            "evidence": "深夜で探したいです。電話はしたくないです"
+          }
+        },
+        {
+          "kind": "output",
+          "name": "set_search_track",
+          "text": "雇用区分を「未定」から「アルバイト・パート」に切り替えました(dip に記録済み)。指示の相談の playbook をアルバイト・パート(音声)のものに入れ替えたので、以降はそれに従う。書類は「履歴書」と呼ぶ。本人には切り替えたことを1文で伝え、playbook の次の1問に進む。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: 時間帯、避けたいこと。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "アルバイトのお仕事で考えますね。電話は避けたいとのことですが、お客様と話す接客も避けたいですか？"
+        },
+        {
+          "kind": "user",
+          "text": "お客様と話すレジや接客は大丈夫です。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": null,
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": null,
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存する項目がありませんでした。"
+        },
+        {
+          "kind": "say",
+          "text": "接客は大丈夫で、電話は避けたいのですね。今回アルバイトを探している理由を教えてください。"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください"
+        },
+        {
+          "kind": "say",
+          "text": "理由は特にないのですね。求人を絞るために、希望のエリアか最寄り駅を教えてください。"
+        },
+        {
+          "kind": "user",
+          "text": "エリアはどこでもいいです。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": null,
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": "どこでもいいです",
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: エリア・駅。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "エリアはどこでもよいのですね。職種に希望はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください"
+        },
+        {
+          "kind": "say",
+          "text": "職種は指定せずに探す形ですね。深夜、エリアはどこでも、電話は避けて接客は大丈夫、という条件でよろしいですか？"
+        },
+        {
+          "kind": "user",
+          "text": "はい、その条件でお願いします。"
+        },
+        {
+          "kind": "say",
+          "text": "その条件で探しますね。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": "どこでもいいです",
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "検索エラー: エリア「どこでもいいです」の求人の取り扱いはありません。areas の地名か、求人の最寄り駅名で指定し直してください。「東京都内」「都内」「東京」「東京都」「神奈川」「神奈川県」「埼玉」「埼玉県」「どこでも」「指定なし」のような広い言い方はそのまま使えます。エリアを決めていない人には、area を外して検索してください"
+        },
+        {
+          "kind": "say",
+          "text": "エリア指定なしで探し直しますね。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "求人が3件見つかりました(面談が終わるとトークにも出ます)。1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n1件目(求人ID b0401): コンビニのお仕事、場所は中野、時給1750円、深夜の勤務(22:00〜翌7:00)です。\n2件目(求人ID b0903): コールセンターのお仕事、場所は川崎、時給2100円、深夜の勤務(22:00〜翌7:00)です。\n3件目(求人ID b0203): 飲食キッチンのお仕事、場所は川崎駅、時給1450円、深夜の勤務(21:00〜翌3:00)です。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903"
+            ],
+            "search_only": true
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "求人が3件見つかりました(面談が終わるとトークにも出ます)。1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n1件目(求人ID b0401): コンビニのお仕事、場所は中野、時給1750円、深夜の勤務(22:00〜翌7:00)です。\n2件目(求人ID b0203): 飲食キッチンのお仕事、場所は川崎駅、時給1450円、深夜の勤務(21:00〜翌3:00)です。\n3件目(求人ID b0502): スーパー・販売のお仕事、場所は川崎、時給1650円、深夜の勤務(22:00〜翌5:00)です。"
+        },
+        {
+          "kind": "say",
+          "text": "電話が中心の仕事は除きました。中野のコンビニは時給1750円で22時から翌7時、川崎駅の飲食キッチンは時給1450円で21時から翌3時、川崎のスーパーは時給1650円で22時から翌5時です。気になる求人はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "ほかにはありますか?"
+        },
+        {
+          "kind": "say",
+          "text": "今の３件とは別の求人を探しますね。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903",
+              "b0401",
+              "b0203",
+              "b0502"
+            ],
+            "search_only": true
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "求人が3件見つかりました(面談が終わるとトークにも出ます)。1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n1件目(求人ID a001): 飲食ホールのお仕事、場所は新宿、時給1350円、深夜の勤務(18:00〜翌1:00)です。\n2件目(求人ID b0201): 飲食キッチンのお仕事、場所は新宿三丁目駅、時給1380円、深夜の勤務(17:00〜翌1:00)です。\n3件目(求人ID b0101): 飲食ホールのお仕事、場所は新宿三丁目、時給1350円、深夜の勤務(17:00〜翌0:00)です。"
+        },
+        {
+          "kind": "say",
+          "text": "別の求人では、新宿の飲食ホールが時給1350円で18時から翌1時、新宿三丁目駅の飲食キッチンが時給1380円で17時から翌1時、新宿三丁目の飲食ホールが時給1350円で17時から翌0時です。気になるものはありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "やっぱり、さっきの最初の求人に戻りたいです。"
+        },
+        {
+          "kind": "say",
+          "text": "最初にご紹介した中野のコンビニですね。時給1750円で、勤務は22時から翌7時です。この求人が気になりますか？"
+        },
+        {
+          "kind": "user",
+          "text": "はい、最初の中野のコンビニ求人が気になります。以上です。"
+        },
+        {
+          "kind": "call",
+          "name": "finalize_interview",
+          "args": {
+            "summary": "深夜のアルバイトを希望。エリアと職種の指定はなし。電話は避けたいが、レジや接客は大丈夫。中野のコンビニ求人（時給1750円、22時～翌7時）が気になるとのこと。"
+          }
+        },
+        {
+          "kind": "output",
+          "name": "finalize_interview",
+          "text": "履歴書の下書きと求人の提案を保存し、トークに送りました(話し終えると通話の画面が閉じ、トークに続きが出ます)。内容は本人が確認・修正する旨を伝え、お礼を述べて短く締めてください。"
+        },
+        {
+          "kind": "say",
+          "text": "中野のコンビニ求人が気になるのですね。面談を終えるとトークに履歴書の下書きと求人が出ます。内容は必ずご自身で確認・修正してくださいね。ありがとうございました。"
+        }
+      ],
+      "search_attempts": [
+        {
+          "args": {
+            "time_band": "深夜",
+            "employment_type": "アルバイト・パート"
+          },
+          "found": 13,
+          "proposed_job_ids": [
+            "b0401",
+            "b0903",
+            "b0203"
+          ]
+        },
+        {
+          "args": {
+            "time_band": "深夜",
+            "employment_type": "アルバイト・パート"
+          },
+          "exclude_ids": [
+            "b0903"
+          ],
+          "found": 12,
+          "proposed_job_ids": [
+            "b0401",
+            "b0203",
+            "b0502"
+          ]
+        },
+        {
+          "args": {
+            "time_band": "深夜",
+            "employment_type": "アルバイト・パート"
+          },
+          "exclude_ids": [
+            "b0903",
+            "b0401",
+            "b0203",
+            "b0502"
+          ],
+          "found": 9,
+          "proposed_job_ids": [
+            "a001",
+            "b0201",
+            "b0101"
+          ]
+        }
+      ],
+      "cost_usd": 0.059
+    },
+    {
+      "id": "V-phone-sit",
+      "channel": "voice",
+      "title": "音声: 電話だけを避けたい・深夜 → 座ってできる仕事(当たるのはコールセンターだけ)",
+      "observation": {
+        "phone_turn_item": 1,
+        "confirm_question": "電話だけを避けたいですか、それとも接客も避けたいですか？",
+        "first_propose_args": {
+          "job_type": null,
+          "area": null,
+          "time_band": "深夜",
+          "min_wage": null,
+          "max_talk_level": null,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "days_per_week": null,
+          "experience": null,
+          "skills": null,
+          "certifications": null,
+          "purpose": null,
+          "strengths": null,
+          "wants": null,
+          "avoids": "電話はしたくないです",
+          "concerns": null,
+          "min_annual_salary": null,
+          "work_style": null,
+          "start_timing": null,
+          "other_wishes": null,
+          "relax": null,
+          "exclude_ids": null,
+          "search_only": null
+        },
+        "talk_level": null,
+        "propose_calls": [
+          {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          },
+          {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903"
+            ],
+            "search_only": true
+          }
+        ],
+        "call_center_in_results_then_recalled": 1,
+        "call_center_read_before_recall": 0,
+        "job_id_spoken": [],
+        "exclude_ids_forgotten_by_llm": 0,
+        "zero_after_exclude": 0,
+        "zero_after_exclude_with_previous_proposal": 0,
+        "delivered_job_ids": [],
+        "delivered_call_centers": [],
+        "back_promise": [],
+        "talk_level_as_expected": true
+      },
+      "items": [
+        {
+          "kind": "say",
+          "text": "こんにちは、バイトルの仕事探し相談です。5分ほど希望や経験を伺い、終わると求人の提案と履歴書などの下書きが出ます。正社員のお仕事と、空いた時間のアルバイト、どちらを考えていますか？"
+        },
+        {
+          "kind": "user",
+          "text": "深夜で探したいです。電話はしたくないです"
+        },
+        {
+          "kind": "call",
+          "name": "set_search_track",
+          "args": {
+            "track": "アルバイト・パート",
+            "evidence": "深夜で探したいです。電話はしたくないです"
+          }
+        },
+        {
+          "kind": "output",
+          "name": "set_search_track",
+          "text": "雇用区分を「未定」から「アルバイト・パート」に切り替えました(dip に記録済み)。指示の相談の playbook をアルバイト・パート(音声)のものに入れ替えたので、以降はそれに従う。書類は「履歴書」と呼ぶ。本人には切り替えたことを1文で伝え、playbook の次の1問に進む。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: 時間帯、避けたいこと。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "深夜のアルバイトで考えますね。電話だけを避けたいですか、それとも接客も避けたいですか？"
+        },
+        {
+          "kind": "user",
+          "text": "お客様と話すレジや接客は大丈夫です。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": null,
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: 避けたいこと。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "レジや接客は大丈夫で、電話は避けたいのですね。今回バイトを探しているのは、どうしてですか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください"
+        },
+        {
+          "kind": "say",
+          "text": "理由は特にないのですね。求人を探す前に、働きたいエリアか最寄り駅を教えてください。"
+        },
+        {
+          "kind": "user",
+          "text": "どこでもいいです。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": null,
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": "どこでもいいです",
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: エリア・駅。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "場所はどこでもよいのですね。希望する職種はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください。"
+        },
+        {
+          "kind": "say",
+          "text": "職種は絞らないのですね。週に何日くらい働きたいですか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください。"
+        },
+        {
+          "kind": "say",
+          "text": "週の日数も指定なしですね。希望の時給はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないので、この条件で求人を探してください。"
+        },
+        {
+          "kind": "say",
+          "text": "時給も指定なしですね。これまでにバイトや仕事をした経験はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "わからないです。"
+        },
+        {
+          "kind": "say",
+          "text": "分からなければ、そのままで大丈夫です。持っている資格や免許はありますか？"
+        },
+        {
+          "kind": "user",
+          "text": "特にないです。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": null,
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": "特にないです",
+            "job_type": null,
+            "area": null,
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: 資格・免許。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "資格や免許は特になしですね。深夜帯で、場所や職種、日数、時給は絞らず、電話が中心の仕事は除いて求人を見る、という条件でよいですか？"
+        },
+        {
+          "kind": "user",
+          "text": "はい、お願いします。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": null,
+            "search_only": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "求人が3件見つかりました(面談が終わるとトークにも出ます)。1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n1件目(求人ID b0401): コンビニのお仕事、場所は中野、時給1750円、深夜の勤務(22:00〜翌7:00)です。\n2件目(求人ID b0903): コールセンターのお仕事、場所は川崎、時給2100円、深夜の勤務(22:00〜翌7:00)です。\n3件目(求人ID b0203): 飲食キッチンのお仕事、場所は川崎駅、時給1450円、深夜の勤務(21:00〜翌3:00)です。"
+        },
+        {
+          "kind": "call",
+          "name": "propose_jobs",
+          "args": {
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "min_wage": null,
+            "max_talk_level": null,
+            "min_talk_level": null,
+            "max_physical_level": null,
+            "min_physical_level": null,
+            "remote": null,
+            "weekends_holidays": null,
+            "max_overtime_hours": null,
+            "days_per_week": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null,
+            "other_wishes": null,
+            "relax": null,
+            "exclude_ids": [
+              "b0903"
+            ],
+            "search_only": true
+          }
+        },
+        {
+          "kind": "output",
+          "name": "propose_jobs",
+          "text": "求人が3件見つかりました(面談が終わるとトークにも出ます)。1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n1件目(求人ID b0401): コンビニのお仕事、場所は中野、時給1750円、深夜の勤務(22:00〜翌7:00)です。\n2件目(求人ID b0203): 飲食キッチンのお仕事、場所は川崎駅、時給1450円、深夜の勤務(21:00〜翌3:00)です。\n3件目(求人ID b0502): スーパー・販売のお仕事、場所は川崎、時給1650円、深夜の勤務(22:00〜翌5:00)です。"
+        },
+        {
+          "kind": "say",
+          "text": "深夜帯では、中野のコンビニが時給1750円、川崎駅の飲食キッチンが1450円、川崎のスーパーが1650円です。電話が中心の求人は外しましたが、気になるものはありますか？"
+        }
+      ],
+      "search_attempts": [
+        {
+          "args": {
+            "time_band": "深夜",
+            "employment_type": "アルバイト・パート"
+          },
+          "found": 13,
+          "proposed_job_ids": [
+            "b0401",
+            "b0903",
+            "b0203"
+          ]
+        },
+        {
+          "args": {
+            "time_band": "深夜",
+            "employment_type": "アルバイト・パート"
+          },
+          "exclude_ids": [
+            "b0903"
+          ],
+          "found": 12,
+          "proposed_job_ids": [
+            "b0401",
+            "b0203",
+            "b0502"
+          ]
+        }
+      ],
+      "cost_usd": 0.0492
+    }
+  ],
+  "stopped": null,
+  "ledger_total_usd": 3.580575,
+  "spent_usd": 0.1098
+}

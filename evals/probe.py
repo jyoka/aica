@@ -322,10 +322,13 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
 # ----------------------------- 結果 -----------------------------
 
 
+STOPPED_NOTE = {"budget": "(上限に達したので途中で止めた)", "interrupted": "(途中で中断した)"}
+
+
 def report(doc: dict) -> str:
     lines = [f"# 電話の扱いの計測(実 LLM、{doc['at']})", "",
              f"- この実行の費用: ${doc.get('spent_usd', 0):.4f}、費用台帳の累計: ${doc.get('ledger_total_usd', 0):.4f}"
-             + ("(上限に達したので途中で止めた)" if doc.get("stopped") else ""), ""]
+             + STOPPED_NOTE.get(doc.get("stopped"), ""), ""]
     for r in doc["results"]:
         lines.append(f"## {r['id']}({r['channel']}): {r.get('title', '')}")
         if "error" in r:

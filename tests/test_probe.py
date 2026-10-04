@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from evals import probe
 from tests.test_talk_page import app  # noqa: F401  フィクスチャ
 from tests.test_voice_track import _scripted_llm
@@ -109,3 +111,14 @@ def test_voice_probe_runs_offline_with_a_scripted_llm(app, tmp_path, monkeypatch
     assert o["call_center_in_results_then_recalled"] == 1 and o["call_center_read_before_recall"] == 0
     assert [a.get("exclude_ids") for a in r["search_attempts"]] == [None, ["b0903"]]
     assert len(ledger.read_text(encoding="utf-8").splitlines()) == 1  # 1本ごとに台帳へ
+
+
+@pytest.mark.parametrize(("stopped", "note"), [
+    ("budget", "(上限に達したので途中で止めた)"),
+    ("interrupted", "(途中で中断した)"),
+    (None, ""),
+])
+def test_report_tells_why_the_run_stopped(stopped, note):
+    head = probe.report({"at": "2026-10-04 11:44", "results": [], "stopped": stopped,
+                         "spent_usd": 0.1, "ledger_total_usd": 3.4})
+    assert head.splitlines()[2] == f"- この実行の費用: $0.1000、費用台帳の累計: $3.4000{note}"
