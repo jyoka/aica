@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import threading
+import warnings
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,10 +35,19 @@ PRICES = {
 WEB_SEARCH_PER_CALL = 0.01
 
 
+_UNPRICED: set[str] = set()
+
+
 def price(model: str) -> tuple[float, float]:
+    """料金表に無いモデルは $0 で数える。台帳が過少になるので、モデルごとに1回だけ警告を出す
+    (モデル名を変えたときに PRICES を足し忘れていないか気づくため)。"""
     for prefix, p in PRICES.items():
         if model.startswith(prefix):
             return p
+    if model not in _UNPRICED:
+        _UNPRICED.add(model)
+        warnings.warn(f"料金表(line_runtime/ledger.py の PRICES)に無いモデル {model!r} の費用を $0 で数えます",
+                      stacklevel=2)
     return (0.0, 0.0)
 
 

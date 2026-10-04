@@ -91,3 +91,29 @@
 {"at": "2026-10-03T03:01:12+00:00", "run": "sim-f107-round3-killed-estimate", "cost_usd": 0.02, "case": "F(task 107)の調整の3回目(開始直後に停止)", "estimate": true, "note": "推定値。3回目は開始2秒で止まり、結果も台帳の行も残らなかったので、実費の代わりに推定 $0.02 を載せた(2026-10-03 のユーザーの決定)"}
 {"at": "2026-10-03T05:24:09+00:00", "run": "search-eval-record", "cost_usd": 7e-06, "case": "検索評価の問い合わせ 4 件の embedding", "tokens": {"text-embedding-3-large": 53}}
 {"at": "2026-10-03T05:34:44+00:00", "run": "search-eval-record", "cost_usd": 2e-06, "case": "検索評価の問い合わせ 1 件の embedding", "tokens": {"text-embedding-3-large": 14}}
+{"at": "2026-10-04T02:32:14+00:00", "run": "sim-20261004-113109", "cost_usd": 0.1057, "case": "F-follow-new", "rep": 0}
+{"at": "2026-10-04T02:32:44+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0616, "case": "B-exit", "rep": 0}
+{"at": "2026-10-04T02:33:16+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0301, "case": "pii", "rep": 0}
+{"at": "2026-10-04T02:33:58+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0681, "case": "R-revisit", "rep": 0}
+{"at": "2026-10-04T02:34:50+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0855, "case": "R-revisit-browsing", "rep": 0}
+{"at": "2026-10-04T02:35:33+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0521, "case": "Q-job-question", "rep": 0}
+{"at": "2026-10-04T02:36:55+00:00", "run": "sim-20261004-113109", "cost_usd": 0.1118, "case": "C-consult-propose", "rep": 0}
+{"at": "2026-10-04T02:37:21+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0355, "case": "C-consult-only", "rep": 0}
+{"at": "2026-10-04T02:38:00+00:00", "run": "sim-20261004-113109", "cost_usd": 0.051, "case": "C-consult-switch", "rep": 0}
+{"at": "2026-10-04T02:38:58+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0635, "case": "R-revisit-track", "rep": 0}
+{"at": "2026-10-04T02:40:04+00:00", "run": "sim-20261004-113109", "cost_usd": 0.095, "case": "T-career-fulltime", "rep": 0}
+{"at": "2026-10-04T02:41:15+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0925, "case": "T-side-job", "rep": 0}
+{"at": "2026-10-04T02:42:21+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0701, "case": "T-student-first", "rep": 0}
+{"at": "2026-10-04T02:43:25+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0763, "case": "T-blank-parent", "rep": 0}
+{"at": "2026-10-04T02:44:27+00:00", "run": "sim-20261004-113109", "cost_usd": 0.096, "case": "T-switch-to-fulltime", "rep": 0}
+{"at": "2026-10-04T02:44:28+00:00", "run": "sim-20261004-113109", "cost_usd": 0.0, "case": "F-follow-new", "rep": 1, "interrupted": true}
+{"at": "2026-10-04T02:45:15+00:00", "run": "probe-20261004-114447-voice", "cost_usd": 0.071788, "case": "V-phone-night", "rep": 0}
+{"at": "2026-10-04T02:45:40+00:00", "run": "probe-20261004-114447-voice", "cost_usd": 0.025707, "case": "V-phone-sit", "rep": 0, "interrupted": true}
+{"at": "2026-10-04T02:46:59+00:00", "run": "probe-20261004-114615-voice", "cost_usd": 0.059796, "case": "V-phone-night", "rep": 0}
+{"at": "2026-10-04T02:47:37+00:00", "run": "probe-20261004-114615-voice", "cost_usd": 0.049975, "case": "V-phone-sit", "rep": 0}
+{"at": "2026-10-04T02:48:54+00:00", "run": "probe-20261004-114811-chat", "cost_usd": 0.0767, "case": "P-chat-phone", "rep": 0}
+{"at": "2026-10-04T02:49:24+00:00", "run": "probe-20261004-114811-chat", "cost_usd": 0.0487, "case": "P-chat-phone-nigate", "rep": 0}
+{"at": "2026-10-04T02:50:06+00:00", "run": "probe-20261004-114811-chat", "cost_usd": 0.0693, "case": "P-chat-phone-iya", "rep": 0}
+{"at": "2026-10-04T02:50:27+00:00", "run": "probe-20261004-114811-chat", "cost_usd": 0.04, "case": "P-chat-phone-and-service", "rep": 0}
+{"at": "2026-10-04T02:51:00+00:00", "run": "probe-20261004-114811-chat", "cost_usd": 0.0473, "case": "P-chat-phone-fulltime", "rep": 0}
+{"at": "2026-10-04T02:51:39+00:00", "run": "probe-20261004-115122-voice", "cost_usd": 0.023619, "case": "V-phone-and-service", "rep": 0}

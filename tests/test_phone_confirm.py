@@ -43,6 +43,7 @@ PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encod
 COMMON_VOICE = (ROOT / "dip_mcp" / "playbooks" / "common_voice.md").read_text(encoding="utf-8")
 PHONE = "「電話はしたくない」"
 CONFIRM = "お客様と話すレジや接客は大丈夫ですか?"
+CONFIRM_FULLTIME = "お客様や取引先と話す仕事は大丈夫ですか?"  # 正社員の人と話す量の3は営業・企画・教育など(task 109 の計測)
 CONFIRM_REPLIES = ["レジや接客は大丈夫", "接客も苦手", "それ以外", "今はいい"]
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 JOBS = load_jobs()
@@ -76,6 +77,7 @@ def test_phone_is_in_no_mapping_and_both_channels_confirm_with_one_question():
     for where, text in {"Prompt": PROMPT, "common_voice": COMMON_VOICE}.items():
         rule = next(line for line in text.splitlines() if PHONE in line)
         assert CONFIRM in rule and "max_talk_level=2" in rule and "人と話す量では絞らず" in rule, where
+        assert CONFIRM_FULLTIME in rule and "正社員の区分" in rule, where  # 正社員にはレジが無い
     # 引数の説明(チャットの MCP・音声のツール)も、電話だけなら付けないと言う
     for doc in (_talk_level_description(), inspect.getdoc(ResumeAdvisor.propose_jobs) or ""):
         doc = re.sub(r"\s+", "", doc)  # docstring の折り返しを詰める

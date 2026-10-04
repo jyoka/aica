@@ -201,10 +201,13 @@ FUYO_MAN = {103, 106, 123, 130, 150, 160}
 # 「月28万円の求人」)は目安に数えない
 ESTIMATE_HEAD = re.compile(r"(月|週)に?(約|およそ|だいたい|大体)?$")
 ESTIMATE_WORDS = re.compile(r"約|およそ|だいたい|大体|くらい|ぐらい|ほど|程度|前後|目安|なら|だと")
-PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人")
+# 求人を指す語(「こちらは月に約30万円です」「1件目は月に約25万円」)がある文も、求人の給与の主張として照合する
+PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人|こちら|そちら|あちら"
+                            r"|(この|その|あの)(お)?仕事|(この|その|あの)(会社|お店|店舗|職場)|件目|つ目")
 _KANJI_DIGIT = {c: i for i, c in enumerate("〇一二三四五六七八九")}
 _KANJI_UNIT = {"十": 10, "百": 100, "千": 1000}
-KANJI_NUM = re.compile(r"[〇一二三四五六七八九十百千]+")
+# 算用数字が混じった言い方(「1千万」「3千円」「1千2百万」)も1つの数として読む(「1千万」を「11000万」にしない)
+KANJI_NUM = re.compile(r"\d*[〇一二三四五六七八九十百千][\d〇一二三四五六七八九十百千]*")
 _DIP_PROMPTS = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "dip_mcp" / "prompts").iterdir())
                        if p.suffix in (".md", ".json"))
 
@@ -221,8 +224,8 @@ def _man(x: str) -> Decimal:
 def _kanji_int(k: str) -> int:
     total, cur = 0, 0
     for c in k:
-        if c in _KANJI_DIGIT:
-            cur = cur * 10 + _KANJI_DIGIT[c]
+        if c.isdigit() or c in _KANJI_DIGIT:
+            cur = cur * 10 + (int(c) if c.isdigit() else _KANJI_DIGIT[c])
         else:
             total += (cur or 1) * _KANJI_UNIT[c]
             cur = 0
@@ -842,6 +845,84 @@ def upload_violations(turns: list[dict], upload: dict | None) -> list[str]:
     return out
 
 
+# ----- 避けたいこと・やりたいことと検索の引数(task 111 のレビュー・task 126 の後続。task 109) -----
+# keywords に入った避けたいこと(「接客はしたくない」を keywords に入れると、意味の近さで飲食ホールが上位に来る)。
+# 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし)を見る。「経験なし」「少ない」は避けたいことではない
+AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<![がの])(?<!少)(さ|し|か|た|わ|ら)ない"
+                               r"|(?<!経験)(?<!経験が)(なし|無し)")
+# 本人の言葉 -> 当てるべき属性の引数(dip の Prompt「避けたいこと・やりたいことから絞り込みの引数を埋める」と同じ対応)。
+# max_* は値がそれ以下、min_* はそれ以上なら当てたとみなす
+ATTRIBUTE_SAYINGS = (
+    (re.compile(r"人と話す(の|こと)が苦手|黙々と"), "max_talk_level", 1),
+    (re.compile(r"接客(は|も|が)?[^。!？?]{0,4}(したくない|やりたくない|苦手|避け|嫌)"), "max_talk_level", 2),
+    (re.compile(r"人と話す仕事がしたい|接客が好き"), "min_talk_level", 3),
+    (re.compile(r"立ち仕事(は|を)?避け|座ってできる"), "max_physical_level", 1),
+    (re.compile(r"力仕事(は|を)?避け|重いもの(は|を)?持てない"), "max_physical_level", 2),
+    (re.compile(r"体を動かしたい"), "min_physical_level", 3),
+)
+# 電話だけを避けたい言い方と、接客まで避けたい答え(task 126: 電話だけなら max_talk_level を付けない)
+PHONE_AVOID = re.compile(r"電話(対応|応対)?(は|が|も)?[^。!？?]{0,4}(したくない|やりたくない|苦手|嫌|避け|無理)")
+SERVICE_WORDS = re.compile(r"接客|レジ|お客様|お客さん|人と話す")
+SERVICE_AVOID = re.compile(rf"({SERVICE_WORDS.pattern})[^。!？?]{{0,6}}(したくない|やりたくない|苦手|嫌|避け|無理)"
+                           r"|人と話す(の|こと)が苦手|黙々と")
+YES_AVOID = re.compile(r"はい|そう(です|ですね)|避けたい|苦手|嫌|したくない|無理|できれば")
+SERVICE_OK = re.compile(r"大丈夫|平気|問題な|できます|好き|いい(です)?$")
+
+
+def _service_avoided(turns: list[dict], user_msgs: list[str | None], upto: int) -> bool:
+    """T1..T(upto+1) の本人の発言までに、接客(お客様と話す仕事)も避けたいと言ったか。
+    「お客様と話すレジや接客は大丈夫ですか?」への「はい、避けたいです」のような答えも数える。"""
+    for k in range(1, min(upto, len(user_msgs) - 1) + 1):
+        m = user_msgs[k] or ""
+        if SERVICE_AVOID.search(m):
+            return True
+        asked = SERVICE_WORDS.search("\n".join(turns[k - 1]["bubbles"]))
+        if asked and YES_AVOID.search(m) and not SERVICE_OK.search(m):
+            return True
+    return False
+
+
+def _searches(turns: list[dict]):
+    """(ターンの添字, ツール名, args)。求人を探す呼び出し(recommend_jobs・relax_conditions)だけ。"""
+    for i, r in enumerate(turns):
+        for t in r["tools"]:
+            if t["name"] in ("recommend_jobs", "relax_conditions"):
+                yield i, t["name"], t.get("args") or {}
+
+
+def search_arg_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """避けたいこと・やりたいことを検索の引数に正しく当てたか(違反ではなく別の指標 search_arg_violations で数える。
+    基準(2026-09-29)には無い判定なので、violations に混ぜると基準と比べられなくなる)。
+    (1) keywords に避けたいことを入れた(否定の言い方)
+    (2) 属性で言える避けたいこと・やりたいこと(ATTRIBUTE_SAYINGS)を、言った後の最初の recommend_jobs で引数に当てていない
+    (3) 電話だけを避けたい答えで max_talk_level を付けた(接客まで避けたいとは言っていない)"""
+    out = []
+    for i, name, args in _searches(turns):
+        kw = args.get("keywords") or ""
+        if AVOID_IN_KEYWORDS.search(kw):
+            out.append(f"T{i + 1}: {name} の keywords に避けたいことを入れた: {kw!r}")
+        said = "\n".join(m or "" for m in user_msgs[:i + 1])
+        level = args.get("max_talk_level")
+        if (level is not None and level <= 2 and PHONE_AVOID.search(said)
+                and not _service_avoided(turns, user_msgs, i)):
+            out.append(f"T{i + 1}: 電話だけを避けたい答えで {name} に max_talk_level={level} を付けた")
+    for rx, arg, want in ATTRIBUTE_SAYINGS:
+        k = next((k for k, m in enumerate(user_msgs) if m and rx.search(m)), None)
+        if k is None:
+            continue
+        # user_msgs[k] に答えたのが turns[k]。そのターン以降の最初の recommend_jobs
+        first = next(((i, a) for i, n, a in _searches(turns) if n == "recommend_jobs" and i >= k), None)
+        if first is None:
+            continue
+        i, a = first
+        v = a.get(arg)
+        ok = v is not None and (v <= want if arg.startswith("max_") else v >= want)
+        if not ok:
+            out.append(f"T{i + 1}: 本人の「{rx.search(user_msgs[k]).group(0)}」を recommend_jobs の {arg} に当てていない"
+                       f"({arg}={v})")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
@@ -915,4 +996,5 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "outcome_as_expected": bool(set(outcomes) & set(sc["expect_outcome"])),
         "violations": violations + fabrications,
         "fabrications": fabrications,
+        "search_arg_violations": search_arg_violations(turns, user_msgs),
     }
