@@ -293,7 +293,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 旧リポジトリの `resume-intake/`(`cda42fd`)を `resume_intake/` に移植し、トークからアップロードできるようにした(task 63)。
 履歴書(PDF / JPEG / PNG)を OpenAI API(構造化出力。既定 `gpt-6-sol`、`RESUME_INTAKE_MODEL` で差し替え可)で読み取り、
-[履歴書下書きの共通スキーマ](docs/design/resume-draft-schema.md)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
+[履歴書下書きの共通スキーマ](docs/architecture/lld.md#55-resume-draft)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
 
 ```
 AI が差し出す [ファイルを選ぶ] か、入力欄の「+」→「履歴書・職務経歴書を送る」→ ファイルを選ぶ
@@ -332,7 +332,7 @@ CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリ
 
 ## 音声相談(voice-resume との連携)
 
-AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))と話せる
+AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [LLD の 1.4](docs/architecture/lld.md#14-voice_resume))と話せる
 (旧リポジトリの task 40 を task 62 で移植。task 92 で別タブをやめ、トークと同じ画面のシートで開くようにした)。
 音声はトークの上に重ねる通話中のシート(画面下から出る)で話し、タブはまたがない。シートにはマイクの許可・
 接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています の状態と「面談を終える」がある。
@@ -397,7 +397,7 @@ dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP
 
 オフラインテスト(実 API なし。台本(文字起こし)駆動の会話の流れ・検索引数・下書き、dip の MCP 結合、匿名ユーザーID のスコープ)は
 `./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
-(費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
+(費用がかかる。[LLD の 10 章](docs/architecture/lld.md#10-テストと評価の仕組み))。
 
 → <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 入力欄の「+」→「音声で相談する」
 → 同じ画面のシートで面談(マイク許可。イヤホン推奨)
