@@ -256,7 +256,7 @@ classDiagram
 | `run.py` | 評価のハーネス。模擬ユーザーとエージェントを会話させて採点する(4.7)。`--rejudge` で保存した会話をジャッジだけで判定し直す |
 | `scenarios.json`、`scenarios.py` | シナリオの一覧(15 件)と、始める前の準備(`prepare`、`upload_resume`、`load_resume`)。開発者画面と共通 |
 | `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
-| `judge.py` | LLM ジャッジ。相談の深さの 4 項目とトーン。`samples` 回(既定 2)判定してまとめる |
+| `judge.py` | LLM ジャッジ。相談の深さの 4 項目、トーン、設計への合い方(`design_fit`)、ひとこと(`comment`)。`samples` 回(既定 2)判定してまとめる |
 | `meter.py` | Anthropic と OpenAI の SDK の呼び出しをクラスごと包んで、トークンと費用を数える(評価だけで使う) |
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
 | `personas/` | ペルソナの架空の履歴書(読み取り結果の形) |
@@ -347,7 +347,7 @@ flowchart LR
 | `POST /api/event/stream` | `event_stream` | 本人 | 1 | 同上。途中経過は NDJSON(3.2) |
 | `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「dip から見た状態」) |
 | `GET /api/profile` | `profile_get` | Cookie | - | - |
-| `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値と長すぎる値と知らない項目は 400、無ければ 404(`_checked`) |
+| `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
 | `PUT`、`DELETE /api/profile/track` | `profile_track`、`profile_track_delete` | Cookie + 書き込みの枠 | - | 雇用区分、知らせ |
 | `DELETE /api/profile/resume` | `profile_resume_delete` | Cookie + 書き込みの枠 | - | 会話を閉じてから読み取り結果を消す(4.6) |
 | `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` のファイルを消す。無ければ 404 |
@@ -653,6 +653,11 @@ sequenceDiagram
 - 会話を消してから dip の状態を消します。途中で失敗しても、もう一度押せばやり直せます
 - `forget_all` は `resume_upload_seq`、`voice_result_seq` を残します。古いリンクの番号が、消した後の新しい結果を開かないためです。
   消す前に発行した部屋は `forgotten_voice_rooms` に移し、後から届いた結果を 410 で断ります
+- 音声相談の途中で消したときに止まるのは、相談の終わりの処理だけです。ワーカーが結果を送って 410 を受けたときは、
+  会話の段階の結果と相談のまとめを記録せず、書き出したファイルも消します(`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。
+  410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、記録もファイルも残ります(8 章、R20)。また、消した後も通話が続く間に
+  `set_search_track` と `save_user_preferences` で保存した雇用区分と本人が話した希望は、dip の状態に残ります。
+  `DipMCP` と dip のツールは消した部屋を見ず、消した部屋を見るのは `server.voice_result_in`(`logic.voice_room_forgotten`)だけだからです(R7)
 - 履歴書を消す(`profile_resume_delete`)ときは、`close_conversation` で空の会話 n+1 を書いてから、それまでの会話をすべて消し、
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
 - ターン数の上限の数と費用台帳は消しません
@@ -756,7 +761,8 @@ sequenceDiagram
 |---|---|---|
 | `line_user_id`、`dip_id`、`label` | ユーザーID、dip ID(無ければ未連携)、開発者画面の説明 | fixtures、`_new_user` |
 | `applications` | `{job_id, applied_at, status}` | fixtures、`submit_application` |
-| `views`、`saves` | `{job_id, at}` | fixtures、`save_job`、`unsave_job` |
+| `views` | `{job_id, at}` | fixtures |
+| `saves` | `{job_id, at}` | fixtures、`save_job`、`profile.unsave_job` |
 | `form_exits` | `{job_id, exited_at, completed: {項目: 値}, remaining: [項目]}` | fixtures、`resume_form`、`submit_application` |
 | `contacts` | `{at, channel, message}`(プッシュの記録) | `push_trigger` |
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
@@ -835,7 +841,8 @@ sequenceDiagram
 - 分からない文字列は空文字、無いリストは空の配列です。null は使いません
 - `created_at` はオフセット付きの ISO 8601 で、日本時間(`+09:00`)です
 - `self_pr` は `job_summary` の言い換えにしません。材料が無ければ空文字にして、確かめたい点を `unconfirmed` に挙げます
-- 文字列から電話、メール、郵便番号を `scrub_pii` で消します。全角の数字は消せません(R3)
+- 文字列から電話、メール、郵便番号を `scrub_pii` で消します。`\d` は全角の数字にも当たりますが、先頭が全角の 0 の電話番号と、
+  全角のハイフン(`－`)を使う番号は消せず、一部だけ残ることもあります(R3)
 
 形(format_version 1.0):
 
@@ -1034,9 +1041,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 | 履歴書を読み取れない(API の失敗) | 502。dip に何も書かない | `server.resume_upload` |
 | 履歴書から何も読めない | 前の読み取り結果を残し、読めなかった前提で 1 問 | `server.resume_upload`、`event_input` |
 | 消す途中で失敗 | 会話は 1 つのトランザクション。もう一度押せばやり直せる順で消す | `LineRuntime._erase`、`profile_forget`、`profile_resume_delete` |
-| dip の MCP に繋がらない(音声) | 求人の提案なしで相談を続ける | `voice_resume.agent.entrypoint`、`ResumeAdvisor.propose_jobs` |
+| dip の MCP に繋がらない(音声) | 相談は始まる。`propose_jobs` は「提案できない」と LLM に伝え、会話を締めさせる | `voice_resume.agent.entrypoint`、`ResumeAdvisor.propose_jobs` |
 | dip の要約か playbook が読めない(音声) | 確認なし、`FALLBACK_PLAYBOOK` で始める | `prepare_advisor`、`advisor_instructions` |
-| 検索、保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
+| 求人の検索の失敗(音声) | 警告のログを出し、LLM に伝えて会話を締めさせる | `ResumeAdvisor.propose_jobs` |
+| 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
 | 下書きの保存の失敗 | LLM に謝らせる。トークへは送らない | `finalize_interview` |
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
 | 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20) | 同上 |
@@ -1061,8 +1069,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 8. 断っていない人を wait にしません(`tests/test_dip.py::test_wait_without_refusal_words_is_not_recorded`)。音声側からは記録できません
    (`DipMCP.record_conversation_outcome`、`tests/voice/test_dip_mcp.py::test_record_conversation_outcome_refuses_wait_client_side`)
 9. 個人情報: 読み取り結果と下書きの `personal` は空です(`test_save_resume_upload_blanks_personal_and_scrubs_pii`、
-   `tests/voice/test_drafter.py::test_finalize_envelope_has_blank_personal`)。希望とフォームに電話、メール、住所らしい値は保存しません
-   (`tests/test_dip.py::test_preferences_reject_unknown_keys_and_pii`、`test_resume_form_rejects_pii_in_values_of_other_fields`)。
+   `tests/voice/test_drafter.py::test_finalize_envelope_has_blank_personal`)。希望には電話、メール、住所らしい値を保存しません
+   (`tests/test_dip.py::test_preferences_reject_unknown_keys_and_pii`、`::test_preferences_accept_numbers_and_reject_addresses`)。
+   フォーム(`logic.resume_form`)が断るのは、個人情報の項目名と、値の電話とメールです。住所らしい値は断りません
+   (`::test_resume_form_rejects_pii_in_values_of_other_fields`、R7)。
    全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)
 10. 音声の写し(職種、エリア、雇用区分、希望の項目、書類の種類)は dip と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
 11. 会話の決まりの値は playbook、dip の Prompt、評価の形式の判定で同じです
@@ -1090,8 +1100,8 @@ python3 -m unittest discover -s evalkit  # evalkit
   (`tests/test_quota.py`)、`responses.parse` を持つスタブ(履歴書の読み取り、下書き)です
 - dip の MCP サーバーは本物を stdio で起動します。dip の状態は `DIP_STATE_PATH` で一時ファイルにします
 - Web サーバーは FastAPI の `TestClient` で、`lifespan` ごと動かします。時刻は `server.clock` を、日付は `DailyQuota` の `clock` を差し替えます
-- 画面のテストのうち名前が「in the browser」で終わるものは、Playwright の Chromium で画面を押します。共通の `browser` fixture
-  (`tests/test_talk_actions.py`)が `pytest.importorskip` で、playwright が入っていなければ飛ばします
+- `browser` fixture を使うテストは、Playwright の Chromium で画面を押します。この fixture(`tests/test_talk_actions.py`)は
+  `pytest.importorskip` で、playwright が入っていなければ飛ばします
 - 音声は、台本(文字起こし)からアドバイザーのツールを呼びます。dip は本物の MCP、トークは本物の HTTP サーバーで、区分の切り替えは
   LiveKit の `AgentSession` の中でも確かめます(`tests/test_voice_track.py`)。LiveKit Cloud、STT、TTS は使いません
 - 意味検索は `embedding._api_embed` を差し替えるか、`fixtures/search_query_vectors.json` の保存済みのベクトルを使います
