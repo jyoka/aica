@@ -194,6 +194,7 @@ flowchart LR
     dm["dip_mcp"]
     ri["resume_intake"]
     vr["voice_resume"]
+    rd["resume_draft"]
     ev["evals"]
     sc["scripts"]
 
@@ -201,7 +202,12 @@ flowchart LR
     lr -- "scenarios(開発者画面)" --> ev
     lr --> ri
     lr -- "livekit_token、config" --> vr
-    dm -- "scrub_pii、ResumeDraft" --> ri
+    dm -- "ResumeDraft、scrub_pii、has_pii" --> rd
+    ri -- "ResumeDraft、envelope、scrub_pii" --> rd
+    vr -- "ResumeDraft、envelope、scrub_pii" --> rd
+    lr -- "document_kind_of" --> rd
+    ev -- "has_pii" --> rd
+    sc -- "JST" --> rd
     ri -. "CLI とサンプルの検証だけ load_env" .-> lr
     vr -. "子プロセスとして起動するだけ" .-> dm
     ev --> lr
@@ -212,6 +218,8 @@ flowchart LR
 ```
 
 - `voice_resume` は `dip_mcp` を import しません。職種、エリア、雇用区分の一覧は写しを持ち、テストで同期を確かめます
+- Resume Draft の形と個人情報の決まりは `resume_draft` の 1 か所にあり、読み取り、下書き、dip の保存が同じものを使います。
+  `resume_draft` はほかのパッケージに依存しません
 - 境界の扱いは [review-2026-10.md](review-2026-10.md) の R1 に書きました
 
 ## 4. データの流れ
@@ -443,8 +451,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書のファイル本体とファイル名は保存しません
 - 本人がトークに書いた文は、そのまま会話に保存し、LLM のプロバイダに送ります。個人情報が書かれても消しません
 - 音声相談の文字起こしは `data/voice-resume/` に保存します
-- 個人情報を見分ける決まりは 2 種類あります。`dip_mcp/data.py` の `has_pii` と、`scrub_pii`(`resume_intake` と
-  `voice_resume` に同じものが 2 つ)です。違いは [review-2026-10.md](review-2026-10.md) の R3
+- 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`(トークの発言、希望、相談の記録)と、
+  Resume Draft から電話、メール、郵便番号を消す `scrub_pii`(読み取り結果、下書き、dip への保存)があります。
+  どちらも全角の数字やハイフンを `fold_pii` でそろえてから照合します
 
 ### ユーザーの分離
 
@@ -536,7 +545,7 @@ flowchart TB
 | 評価のシナリオ | `evals/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
-| Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_intake/schema.py` と `voice_resume/schema.py` の両方 |
+| Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_draft/schema.py`、`tests/fixtures/resume_draft_schema.json` |
 
 ## 10. 用語
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from resume_draft.schema import PERSONAL_KEYS, Preferences, ResumeDraft, WorkExperience
 from voice_resume.drafter import build_draft, finalize, scrub_pii, transcript_to_text
-from voice_resume.schema import PERSONAL_KEYS, Preferences, ResumeDraft, WorkExperience
 
 TRANSCRIPT = [
     {"role": "assistant", "text": "こんにちは。これまでの経験を教えてください。"},

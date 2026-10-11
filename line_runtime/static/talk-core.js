@@ -186,7 +186,7 @@ function createTalk(o) {
     scroll();
   }
 
-  // ---------- 書類の呼び方(音声相談で作る下書き。voice_resume/schema.py の document_name と同じ) ----------
+  // ---------- 書類の呼び方(音声相談で作る下書き。voice_resume/prompts.py の document_name と同じ) ----------
   // 正社員 = 職務経歴書、アルバイト・パート = 履歴書。区分が決まっていなければ、どちらにも当てはまる言い方にする
   const DOC_NAME = { "正社員": "職務経歴書", "アルバイト・パート": "履歴書" };
   const docName = (track) => DOC_NAME[track] || "履歴書など";

@@ -20,7 +20,9 @@ import copy
 import json
 
 from dip_mcp import logic
-from dip_mcp.data import State, fold_pii, has_pii, now
+from dip_mcp.data import State, now
+from resume_draft.pii import fold_pii, has_pii
+from resume_draft.schema import document_kind_of
 
 # 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
 SECTIONS = (
@@ -58,7 +60,7 @@ def view(state: State, line_user_id: str) -> dict:
                  if k not in logic.FULLTIME_PREFERENCE_KEYS or track == "正社員" or k in prefs]
         sections.append({"id": sid, "title": title, "items": items})
     jobs = logic.load_jobs()
-    drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": logic.document_kind(r)}
+    drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": document_kind_of(r)}
               for r in user.get("voice_results", []) if r.get("draft_markdown")]
     return {
         "track": {"current": track, "choices": list(logic.TRACKS), "history": [

@@ -17,7 +17,7 @@ import pytest
 
 from dip_mcp import logic
 from dip_mcp.data import State
-from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
+from resume_draft.schema import PERSONAL_KEYS, ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import CLEAN, StubClient
 

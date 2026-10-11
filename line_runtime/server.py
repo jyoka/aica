@@ -58,6 +58,7 @@ from line_runtime.resume_confirm import INTRO as RESUME_INTRO
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
+from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
 
@@ -631,7 +632,7 @@ async def liff_voice_draft(rid: int, request: Request, scenario_user: str | None
     r = logic.voice_result(state, user, rid)
     if r is None or not r.get("draft_markdown"):
         return HTMLResponse(_page("下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
-    kind = logic.document_kind(r)
+    kind = document_kind_of(r)
     body = (f"<p>音声の相談から作った{kind}の下書きです。内容は必ずご自身で確認・修正してください。</p>"
             f"<pre style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px'>"
             f"{escape(r['draft_markdown'])}</pre>")
@@ -714,7 +715,7 @@ async def liff_resume(rid: int, request: Request, scenario_user: str | None = No
 
 
 def _resume_html(r: dict) -> str:
-    """読み取り結果(resume_intake.schema.ResumeDraft の形)を読める HTML に。書いてある項目だけ出す。"""
+    """読み取り結果(resume_draft.schema.ResumeDraft の形)を読める HTML に。書いてある項目だけ出す。"""
     def line(*parts: str) -> str:
         return escape(" ".join(x for x in parts if x))
 

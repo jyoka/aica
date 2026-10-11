@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from voice_resume.drafter import finalize
-from voice_resume.render import to_markdown
-from voice_resume.schema import (
+from resume_draft.schema import (
     Certification,
     Education,
     OtherExperience,
@@ -12,6 +10,8 @@ from voice_resume.schema import (
     ResumeDraft,
     WorkExperience,
 )
+from voice_resume.drafter import finalize
+from voice_resume.render import to_markdown
 
 
 def _env() -> dict:

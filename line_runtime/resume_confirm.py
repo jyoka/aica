@@ -71,7 +71,7 @@ def _unconfirmed(items: list[str]) -> str:
 
 
 def resume_bubbles(resume: dict, *, empty: bool = False) -> list[str]:
-    """読み取り結果(resume_intake.schema.ResumeDraft の形)から、トークに出す確認の吹き出しを作る。"""
+    """読み取り結果(resume_draft.schema.ResumeDraft の形)から、トークに出す確認の吹き出しを作る。"""
     unconfirmed = [x for x in resume.get("unconfirmed", []) if x.strip()]
     if empty:
         return [EMPTY, *([_clip(unconfirmed[0], MAX_CHARS)] if unconfirmed else [])]

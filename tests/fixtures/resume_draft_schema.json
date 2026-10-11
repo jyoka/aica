@@ -1,0 +1,227 @@
+{
+  "$defs": {
+    "Certification": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "acquired": {
+          "default": "",
+          "title": "Acquired",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "acquired"
+      ],
+      "title": "Certification",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "Education": {
+      "properties": {
+        "period": {
+          "default": "",
+          "title": "Period",
+          "type": "string"
+        },
+        "school": {
+          "title": "School",
+          "type": "string"
+        },
+        "status": {
+          "default": "",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "period",
+        "school",
+        "status"
+      ],
+      "title": "Education",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "OtherExperience": {
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "description"
+      ],
+      "title": "OtherExperience",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "Preferences": {
+      "properties": {
+        "desired_work": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Desired Work",
+          "type": "array"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "Preferences",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "desired_work",
+        "conditions",
+        "notes"
+      ]
+    },
+    "WorkExperience": {
+      "properties": {
+        "period": {
+          "default": "",
+          "title": "Period",
+          "type": "string"
+        },
+        "organization": {
+          "title": "Organization",
+          "type": "string"
+        },
+        "employment_type": {
+          "default": "",
+          "title": "Employment Type",
+          "type": "string"
+        },
+        "role": {
+          "default": "",
+          "title": "Role",
+          "type": "string"
+        },
+        "duties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Duties",
+          "type": "array"
+        },
+        "achievements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Achievements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "period",
+        "organization",
+        "employment_type",
+        "role",
+        "duties",
+        "achievements"
+      ],
+      "title": "WorkExperience",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "job_summary": {
+      "default": "",
+      "title": "Job Summary",
+      "type": "string"
+    },
+    "self_pr": {
+      "default": "",
+      "title": "Self Pr",
+      "type": "string"
+    },
+    "education": {
+      "items": {
+        "$ref": "#/$defs/Education"
+      },
+      "title": "Education",
+      "type": "array"
+    },
+    "work_history": {
+      "items": {
+        "$ref": "#/$defs/WorkExperience"
+      },
+      "title": "Work History",
+      "type": "array"
+    },
+    "other_experience": {
+      "items": {
+        "$ref": "#/$defs/OtherExperience"
+      },
+      "title": "Other Experience",
+      "type": "array"
+    },
+    "skills": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Skills",
+      "type": "array"
+    },
+    "certifications": {
+      "items": {
+        "$ref": "#/$defs/Certification"
+      },
+      "title": "Certifications",
+      "type": "array"
+    },
+    "preferences": {
+      "$ref": "#/$defs/Preferences"
+    },
+    "unconfirmed": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unconfirmed",
+      "type": "array"
+    }
+  },
+  "title": "ResumeDraft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_summary",
+    "self_pr",
+    "education",
+    "work_history",
+    "other_experience",
+    "skills",
+    "certifications",
+    "preferences",
+    "unconfirmed"
+  ]
+}

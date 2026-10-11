@@ -29,18 +29,20 @@ from dip_mcp.data import (
     Pay,
     State,
     annual_pay_mid,
-    fold_pii,
-    has_pii,
     load_job_faq,
     load_jobs,
     load_listings,
     now,
     parse_ts,
     pay_text,
-    redact_pii,
 )
-from resume_intake.extract import scrub_pii
-from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
+from resume_draft.pii import fold_pii, has_pii, redact_pii, scrub_pii
+from resume_draft.schema import (
+    DEFAULT_DOCUMENT_KIND,
+    DOCUMENT_KINDS,
+    PERSONAL_KEYS,
+    ResumeDraft,
+)
 
 HISTORY_DAYS = 90
 MAX_JOBS = 3
@@ -917,10 +919,6 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
 # ----------------------------- 音声相談の結果(トークへ戻す) -----------------------------
 
 
-# 音声の下書きの書類の種類(docs/design/resume-draft-schema.md の document_kind。voice_resume/schema.py と同期)。
-# 種類の無い結果(format_version 1.0 の頃の下書き)は履歴書
-DOCUMENT_KINDS = ("履歴書", "職務経歴書")
-DEFAULT_DOCUMENT_KIND = "履歴書"
 VOICE_ROOMS_KEPT = 20  # 覚えておく音声相談の部屋の数(「すべて消す」の前に始めた面談の結果を見分けるため)
 
 
@@ -994,12 +992,6 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
     return None
 
 
-def document_kind(rec: dict | None) -> str:
-    """音声相談の結果(または下書きの JSON)の書類の種類。種類の無い 1.0 の頃のものは履歴書。"""
-    kind = (rec or {}).get("document_kind")
-    return kind if kind in DOCUMENT_KINDS else DEFAULT_DOCUMENT_KIND
-
-
 def record_voice_room(state: State, line_user_id: str, room: str) -> None:
     """音声相談の部屋を発行したことを覚える(「すべて消す」の後に、その前に始めた面談の結果を受け取らないため)。"""
     state.update(line_user_id, lambda u: u.__setitem__(
@@ -1015,7 +1007,7 @@ def voice_room_forgotten(state: State, line_user_id: str, room: str | None) -> b
 
 
 def save_resume_upload(state: State, line_user_id: str, result: dict, file: str = "") -> dict:
-    """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
+    """履歴書の読み取り結果(resume_draft.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
     id はそのユーザーのアップロードの通し番号(トークの「読み取り結果を見る」が、どのアップロードの結果かを指す)。
     番号は resume_upload_seq から振る: プロフィール画面で読み取り結果を消しても番号は戻らないので、
     消す前のターンのリンクが、あとのアップロードを開くことはない。
