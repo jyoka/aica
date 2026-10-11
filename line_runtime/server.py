@@ -45,19 +45,18 @@ from pydantic import BaseModel, Field
 from dip_mcp import logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config
+from line_runtime import config, turn
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
     ip_ids_limit,
     ip_limit,
-    limit_reply,
     total_ids_limit,
     total_limit,
 )
 from line_runtime.resume_confirm import INTRO as RESUME_INTRO
-from line_runtime.resume_confirm import resume_bubbles
-from line_runtime.runtime import EVENTS, LineRuntime
+from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
+from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -165,8 +164,6 @@ def _profile_writer(request: Request) -> str:
     return user_id
 
 
-LIMIT_REASON = "本日の会話数の上限に達している"
-
 # 本番のトーク画面: 最後のやりとりからこの時間内に開き直したら(再読み込み・タブの開き直し)、今の会話を続ける
 TALK_RESUME_WINDOW = timedelta(minutes=30)
 
@@ -266,16 +263,8 @@ async def talk_history(request: Request):
     async with rt.user_lock(user_id):
         conv = await rt.conversation(user_id)
     for t in conv["turns"]:
-        _track_status(user_id, t["bot"])
+        turn.track_status(state, user_id, t["bot"])
     return {"thread": conv["thread"], "turns": conv["turns"], "search_track": logic.search_track(state.user(user_id))}
-
-
-def _track_status(user_id: str, reply: dict | None) -> dict | None:
-    """返信の切り替えの表示(track_switch)に、今の状態(取り消せるか・取り消したか)を dip の記録から足す。"""
-    sw = (reply or {}).get("track_switch")
-    if sw:
-        sw["status"] = profile.switch_status(state, user_id, sw["id"])
-    return reply
 
 
 class UndoIn(BaseModel):
@@ -286,7 +275,7 @@ class UndoIn(BaseModel):
 @app.post("/api/talk/track/undo")
 async def talk_track_undo(body: UndoIn, request: Request):
     """トークの切り替えの表示のボタン: その切り替えを取り消して元の区分に戻す(dip に取り消しとして記録。LLM は呼ばず、
-    会話数も使わない)。AI には次の本人のターンの前に知らせる(_profile_notice)。直前の切り替えでなければ 409。
+    会話数も使わない)。AI には次の本人のターンの前に知らせる(turn.profile_notice)。直前の切り替えでなければ 409。
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
     _admit(request, body.user_id)
@@ -327,146 +316,51 @@ async def start_scenario(scenario_id: str, request: Request):
     return {"user": user, "event": sc["event"]}
 
 
+def _deps(request: Request) -> turn.TurnDeps:
+    """1ターンの受け付けに使うもの。state は要求のたびに読む(テストが server.state を差し替える)。"""
+    return turn.TurnDeps(state=state, quota=app.state.quota, rt=app.state.rt, unread_uploads=app.state.unread_uploads,
+                         ip=_client_ip(request))
+
+
 @app.post("/api/event")
 async def event(body: EventIn, request: Request):
+    """1ターンを進めて、最後の返信だけを返す。受け付けとターンの決まりは line_runtime.turn。"""
     _require_own(request, body.user_id)
-    if body.event not in EVENTS:
-        raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
-    _require_text(body)
-    entry, kind = EVENTS[body.event]
-    quota, ip = app.state.quota, _client_ip(request)
-    facts = _upload_facts(body)
-    if kind == "push":
-        # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
-        if not quota.available(body.user_id, ip):
-            return {"sent": False, "reason": LIMIT_REASON}
-        # ここは dip のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを dip が決める。
-        gate = logic.push_trigger(state, body.user_id, body.event)
-        if not gate["allowed"]:
-            return {"sent": False, "reason": gate["reason"]}
-        facts = gate["facts"]
-    stale = await _stale(body)
-    if stale is not None:  # 会話数を使う前に断る(runtime もターンの排他の中で同じ照合をする)
-        return {"stale": True, "thread": stale}
-    limited = quota.try_take(body.user_id, ip)
-    if limited is not None:
-        return limit_reply(entry, limited)
-    changes, notice = _profile_notice(body)
+    deps = _deps(request)
     try:
-        r = await app.state.rt.handle(body.user_id, body.event, body.text, facts, talk_thread=body.thread,
-                                      notice=notice)
-    except ValueError as e:
+        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread)
+        return await turn.reply_of(deps, t)
+    except turn.BadTurn as e:
         raise HTTPException(400, str(e)) from e
-    if r and r.get("stale"):  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す
-        quota.refund(body.user_id, ip)
-    _record_open(body, r, changes)
-    if r and not r.get("stale") and r.get("sent") is not False:
-        r["search_track"] = logic.search_track(state.user(body.user_id))
-    return _track_status(body.user_id, r)
 
 
 @app.post("/api/event/stream")
 async def event_stream(body: EventIn, request: Request):
     """1ターンの途中経過を1行1件の JSON で順に返す(画面のリアルタイム表示用)。
-    start → (プッシュなら gate)→ llm / tool_start / tools … → reply。途中で失敗したら error。"""
+    start → (プッシュなら gate)→ llm / tool_start / tools … → reply。途中で失敗したら error。
+    受け付けとターンの決まりは line_runtime.turn。"""
     _require_own(request, body.user_id)
-    if body.event not in EVENTS:
-        raise HTTPException(400, f"event は {list(EVENTS)} のいずれか")
-    _require_text(body)
-    upload = _upload_facts(body)
-    ip = _client_ip(request)
+    deps = _deps(request)
+    try:
+        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread)
+    except turn.BadTurn as e:  # 応答を返し始める前なので 400 にできる
+        raise HTTPException(400, str(e)) from e
 
     async def lines():
-        entry, kind = EVENTS[body.event]
-        yield _line({"kind": "start", "event": body.event, "entry": entry, "event_kind": kind, "model": config.MODEL})
-        facts = upload
-        quota = app.state.quota
-        if kind == "push":
-            if not quota.available(body.user_id, ip):
-                yield _line({"kind": "reply", "sent": False, "reason": LIMIT_REASON})
-                return
-            gate = logic.push_trigger(state, body.user_id, body.event)
-            yield _line({"kind": "gate", **gate})
-            if not gate["allowed"]:
-                yield _line({"kind": "reply", "sent": False, "reason": gate["reason"]})
-                return
-            facts = gate["facts"]
-        stale = await _stale(body)
-        if stale is not None:  # 別のタブで新しい会話が始まっていた: 発言を混ぜず、会話数も使わない
-            yield _line({"kind": "stale", "thread": stale})
-            return
-        limited = quota.try_take(body.user_id, ip)
-        if limited is not None:  # 上限を超えたら LLM を呼ばずに案内だけ返す
-            yield _line({"kind": "reply", **limit_reply(entry, limited)})
-            return
-        changes, notice = _profile_notice(body)
+        yield _line({"kind": "start", "event": t.event, "entry": t.entry, "event_kind": t.kind, "model": config.MODEL})
         try:
-            async for ev in app.state.rt.handle_stream(body.user_id, body.event, body.text, facts, talk_thread=body.thread,
-                                                       notice=notice):
-                if ev["kind"] == "reply":
-                    _record_open(body, ev, changes)
-                    _track_status(body.user_id, ev)["search_track"] = logic.search_track(state.user(body.user_id))
-                elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: 会話数を返す
-                    quota.refund(body.user_id, ip)
+            async for ev in turn.run(deps, t):
                 yield _line(ev)
-        except Exception as e:  # noqa: BLE001  API・MCP のエラーも画面に出す(応答を返し始めた後なので HTTP のエラーにはできない)
-            yield _line({"kind": "error", "message": f"{type(e).__name__}: {e}"})
+        except (turn.BadTurn, turn.TurnFailed) as e:  # API・MCP のエラーも画面に出す(応答を返し始めた後なので HTTP のエラーにはできない)
+            yield _line({"kind": "error", "message": _error_text(e)})
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")
 
 
-async def _stale(body: EventIn) -> int | None:
-    """本番のトーク画面からの発言で、今の会話が画面の会話と違えば今の会話番号(違わなければ None)。"""
-    if body.thread is None or EVENTS[body.event][1] not in ("user", "upload"):
-        return None
-    n = await app.state.rt.current_thread(body.user_id)
-    return n if n != body.thread else None
-
-
-def _profile_notice(body: EventIn) -> tuple[int, str | None]:
-    """プロフィール画面で変えたことのうち、まだ AI に渡していないもの: (件数, 知らせの文)。
-    新しい会話を始めるイベント(挨拶・プッシュ)では渡さない(最初に要約を読み直すので、返ったら渡し終えた扱い)。"""
-    changes = profile.pending_changes(state, body.user_id)
-    if not changes or EVENTS[body.event][1] not in ("user", "upload"):
-        return len(changes), None
-    return len(changes), profile.notice(state, body.user_id, changes)
-
-
-def _record_open(body: EventIn, reply: dict | None, changes: int = 0) -> None:
-    """本番のトーク画面の挨拶が返ったら、開いたことを dip に記録する(次からは再訪)。
-    読み取れなかったアップロードに続くターンが返ったら、その事実は使い終わり(次のアップロードのターンに持ち越さない)。
-    返信が返ったら、そのターンで渡したプロフィールの変更の知らせ(changes 件)も渡し終えた。"""
-    if not reply or reply.get("stale"):
-        return
-    profile.take_changes(state, body.user_id, changes)
-    if body.thread is not None and EVENTS[body.event][1] == "greet":
-        logic.record_talk_open(state, body.user_id)
-    if EVENTS[body.event][1] == "upload":
-        app.state.unread_uploads.pop(body.user_id, None)
-
-
-def _upload_facts(body: EventIn) -> dict | None:
-    """履歴書のアップロードのターンに渡す事実: ファイルの表示名・トークに出した確認の吹き出し・読み取り結果の番号。
-    どれも dip に保存した読み取り結果から作る(画面からは受け取らない。ファイル名はどこにも無い)。
-    会話の記録にそのまま残るので、読み取り結果の画面の URL は入れない(履歴を返すときに番号から組み立てる)。
-    直前のアップロードが読み取れなかった(empty)ときは、そのとき出した案内と empty を渡す(dip には保存していない)。
-    読み取り結果が無ければ、会話数を使う前に断る。"""
-    if EVENTS[body.event][1] != "upload":
-        return None
-    unread = app.state.unread_uploads.get(body.user_id)
-    if unread is not None:  # 直前のアップロードは読み取れなかった: その前提で AI が1問返す
-        return unread
-    rec = logic.resume_upload(state, body.user_id)
-    if rec is None:
-        raise HTTPException(400, "アップロードした履歴書がありません")
-    return {"file": rec.get("file") or RESUME_LABEL["application/pdf"], "shown": resume_bubbles(rec["resume"]),
-            "upload_id": rec.get("id")}
-
-
-def _require_text(body: EventIn) -> None:
-    """空の発言は、会話数を使う前に断る(上限の1回分を無駄にしない)。"""
-    if EVENTS[body.event][1] == "user" and not (body.text or "").strip():
-        raise HTTPException(400, f"{body.event} には空でない text が必要です")
+def _error_text(e: Exception) -> str:
+    """stream の error の行の文。turn が包む前の例外の名前と文にする(開発者画面に原因の型を出す)。"""
+    cause = e.__cause__ or e
+    return f"{type(cause).__name__}: {cause}"
 
 
 def _line(obj: dict) -> str:
@@ -491,7 +385,7 @@ async def dip_view(body: UserIn, request: Request):
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
 # 本番のトーク画面の下のナビ「プロフィール」。読むのも変えるのも、本人の匿名ID(Cookie)のユーザーだけ
-# (パスにユーザーIDは載せない。Cookie が無い・不正なら 401)。中身は dip_mcp.profile。変えたことは次の本人のターンの前に AI へ渡す(_profile_notice)。
+# (パスにユーザーIDは載せない。Cookie が無い・不正なら 401)。中身は dip_mcp.profile。変えたことは次の本人のターンの前に AI へ渡す(turn.profile_notice)。
 
 
 class ProfileEditIn(BaseModel):
@@ -745,10 +639,6 @@ async def liff_voice_draft(rid: int, request: Request, scenario_user: str | None
 
 
 # ----------------------------- 履歴書のアップロード(resume-intake) -----------------------------
-
-
-# トークに出すファイルの表示名(ファイル名は氏名が入りがちなので出さない。種類だけ)
-RESUME_LABEL = {"application/pdf": "履歴書(PDF)", "image/jpeg": "履歴書(画像)", "image/png": "履歴書(画像)"}
 
 
 def resume_client():

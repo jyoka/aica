@@ -16,6 +16,8 @@ MAX_CHARS = 80
 MAX_BUBBLES = 3
 MAX_ITEMS = 3
 HEADING_CHARS = 16  # スキルの見出しの長さの上限
+# トークに出すファイルの表示名(ファイル名は氏名が入りがちなので出さない。種類だけ)
+RESUME_LABEL = {"application/pdf": "履歴書(PDF)", "image/jpeg": "履歴書(画像)", "image/png": "履歴書(画像)"}
 INTRO = "履歴書を読み取りました。内容をご確認ください。"
 EMPTY = "履歴書から読み取れた項目がありませんでした。ファイルが履歴書か、写りを確認してもう一度お試しください。"
 # スキルの見出しの区切り(「言語: Python, Java」「Office(Word、Excel)」の先頭だけを取る)

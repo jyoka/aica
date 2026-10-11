@@ -266,7 +266,7 @@
   }
 
   // ---------- わたしのプロフィール: aica が覚えていることを見る・直す・消す ----------
-  // 読むのも変えるのも本人の匿名ID(Cookie)だけ。変えたことは次の返信の前に AI へ伝わる(サーバーの _profile_notice)
+  // 読むのも変えるのも本人の匿名ID(Cookie)だけ。変えたことは次の返信の前に AI へ伝わる(サーバーの turn.profile_notice)
   async function api(method, url, body) {
     const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {},
                                    body: body ? JSON.stringify(body) : undefined });

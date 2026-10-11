@@ -291,6 +291,8 @@ def test_stale_found_inside_the_turn_lock_gives_the_turn_back(app, monkeypatch):
     """事前の照合(ロックの外)をすり抜けて会話数を使った後に、runtime が stale と判定したら会話数を返す。"""
     from fastapi.testclient import TestClient
 
+    from line_runtime import turn
+
     model = Greeter(script=[greet, greet, greet])
     app.set_model(model)
     with TestClient(app.app) as client:
@@ -300,10 +302,10 @@ def test_stale_found_inside_the_turn_lock_gives_the_turn_back(app, monkeypatch):
         open_talk(client)
         used = client.app.state.quota.used(uid)
 
-        async def passes(body):  # 照合とターンの間に別のタブが会話を始めた、の再現
+        async def passes(deps, t):  # 照合とターンの間に別のタブが会話を始めた、の再現
             return None
 
-        monkeypatch.setattr(app, "_stale", passes)
+        monkeypatch.setattr(turn, "stale_thread", passes)
         assert stream(client, uid, "message", 1, "古いタブから")[-1] == {"kind": "stale", "thread": 2}
         r = client.post("/api/event", json={"user_id": uid, "event": "message", "text": "古いタブから", "thread": 1})
         assert r.json() == {"stale": True, "thread": 2}

@@ -14,7 +14,8 @@
 ```mermaid
 flowchart TB
     subgraph lr["line_runtime(LINE 側)"]
-        server["server.py<br/>FastAPI の app、受け付け、LIFF 画面"]
+        server["server.py<br/>FastAPI の app、Cookie の照合、LIFF 画面"]
+        turn["turn.py<br/>イベントの受け付けとターン"]
         runtime["runtime.py<br/>LineRuntime、render、history"]
         agent["agent.py<br/>build_agent、LineReply、middleware"]
         quota["quota.py<br/>DailyQuota"]
@@ -41,6 +42,10 @@ flowchart TB
     end
 
     server --> runtime --> agent
+    server --> turn
+    turn --> runtime
+    turn --> quota
+    turn --> logic
     server --> quota
     runtime --> ledger
     ledger --> quota
@@ -67,13 +72,14 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの受け付け、プロフィール、音声相談、履歴書のアップロード、LIFF 画面 | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`event`、`event_stream`、`_stale`、`_profile_notice`、`_record_open`、`_upload_facts`、`_remove_voice_files` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面 | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files` |
+| `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限 | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する | `PRICES`、`cost_usd`、`Ledger`、`summarize` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
-| `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading` |
+| `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
 | `llm.py` | 模擬ユーザーとジャッジが SDK を直接呼ぶところの、プロバイダの違いの吸収 | `client`、`parse`、`text` |
 | `config.py` | 設定と `.env` の読み込み | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
 | `static/` | 画面。`talk.html`(トーク画面)、`dev.html`(開発者画面)、共通部品 `talk-core.js`、`talk-core.css` | - |
@@ -500,10 +506,17 @@ sequenceDiagram
 - `render` は、会話の中のツールの結果と音声相談の結果から `CARD_KEYS` を持つものを拾い、モデルの `job_ids` のうち拾えたものだけをカードにします。
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
 
-Web サーバーの受け付け(`event`、`event_stream`)は、`_require_own` → イベントの名前と空の発言の確かめ → アップロードの事実
-(`_upload_facts`)→ プッシュなら上限に空きがあるかと `push_trigger` → `_stale` → `try_take` → `_profile_notice` → LineRuntime の順に
-進みます。返信が返ったら `_record_open` が、渡した知らせを消し(`profile.take_changes`)、本番のトーク画面(`thread` あり)の挨拶なら開いた記録を残し、
-読み取れなかったアップロードの事実を捨てます。LineRuntime が stale を返したら、使ったターンを `refund` で返します。
+Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と空の発言の確かめ、アップロードの事実
+(`upload_facts`))を呼び、`turn.run` でターンを進めます。`run` は、プッシュなら上限に空きがあるかと `push_trigger` → `stale_thread` →
+`try_take` → `profile_notice` → LineRuntime の順に進み、行を順に出します。返信が返ったら `record_open` が、渡した知らせを消し
+(`profile.take_changes`)、本番のトーク画面(`thread` あり)の挨拶なら開いた記録を残し、読み取れなかったアップロードの事実を捨てます。
+LineRuntime が stale を返したら、使ったターンを `refund` で返します。`event` は `turn.reply_of` で最後の返信だけを返し、
+`event_stream` は行をそのまま NDJSON にします(最初に `start` を足します)。
+
+`run` は、LineRuntime を回し始めてから終わるまでの例外を包みます。LineRuntime の `ValueError` は `BadTurn`(`ValueError` の子)に、
+ほか(`reply` と `stale` の行の副作用の `ValueError` も)は `TurnFailed` に包みます。`event` は `BadTurn` を 400 にし、`TurnFailed` は 500 のままです。
+`event_stream` は 2 つを `error` の行にし、文は包む前の例外の名前と文にします(`_error_text`)。その前の受け付け(`push_trigger` など)の
+例外は包まないので、`event` は 500、`event_stream` は `start` の行の後に応答が途中で切れます。
 
 ### 4.2 トークを開く
 
@@ -547,7 +560,7 @@ HLD の 4.2 の詳しい手順です。
 3. 読み取れた項目が無ければ(`unconfirmed` を除いて空)、dip に保存せず、`app.state.unread_uploads` に事実を置きます
 4. 読み取れたら `logic.save_resume_upload` が、`personal` を空にし、もう一度 `scrub_pii` をかけ、`resume_upload_seq` から番号を振って
    最新の 1 件として保存します。`profile.resume_uploaded` が、まだ渡していない「履歴書を消した」知らせを落とします
-5. 画面は確認の吹き出しを出し、`/api/event/stream` に `resume_upload` を送ります。`_upload_facts` は dip の読み取り結果か
+5. 画面は確認の吹き出しを出し、`/api/event/stream` に `resume_upload` を送ります。`turn.upload_facts` は dip の読み取り結果か
    `unread_uploads` から事実を作ります(画面からは受け取りません)
 6. 入力の文(`event_input`)は、画面に出した確認をくり返さずに読み取り結果を見て続けるよう指示します。エージェントは dip の要約
    (`get_user_conversation_summary`)を呼び直して `uploaded_resume` を見て、次の 1 問を返します
@@ -1242,11 +1255,11 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 
 | 失敗 | 扱い | 場所 |
 |---|---|---|
-| ターンの途中の例外(LLM、MCP) | JSON の口は `ValueError` だけ 400、ほかは 500。NDJSON は `error` の行。使ったターンは返さない | `event`、`event_stream` |
+| ターンの途中の例外(LLM、MCP) | JSON の口は `ValueError` だけ 400、ほかは 500。NDJSON は `error` の行。使ったターンは返さない | `turn.run`、`event`、`event_stream` |
 | 画面との接続が切れた | ターンは最後まで進めて会話を保存する | `LineRuntime.handle_stream`、`_running` |
-| 別のタブで会話が替わった | LLM を呼ばず stale。使ったターンは返す | `_stale`、`LineRuntime._turn`、`DailyQuota.refund` |
+| 別のタブで会話が替わった | LLM を呼ばず stale。使ったターンは返す | `turn.stale_thread`、`LineRuntime._turn`、`DailyQuota.refund` |
 | ターン数の上限 | LLM を呼ばずに案内の返信(`limit_reply`)か 429 | `DailyQuota.try_take` |
-| プッシュを送れない | `sent: false` と理由。上限なら dip に聞く前に止める | `push_trigger`、`event_stream` |
+| プッシュを送れない | `sent: false` と理由。上限なら dip に聞く前に止める | `push_trigger`、`turn.run` |
 | 意味検索が使えない(キーが無い、失敗、時間切れ) | 部分一致に戻る。失敗は覚えない | `embedding.embed_query`、`logic._keyword_filter` |
 | 求人のベクトルが古い | その求人は部分一致だけで探す | `embedding.similarities` |
 | エージェントが一覧に無い値を渡した | `error` と使える値を返し、指定し直させる | `logic._job_type_error` など |
@@ -1299,6 +1312,8 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 15. 予算台帳が $4 に達したら評価は次のシナリオを始めず、止めても払った分を載せます(`tests/test_eval_harness.py`)
 16. 音声の検索のために外した条件と推測した職種は、本人の希望として保存しません
     (`tests/voice/test_advisor.py::test_relaxed_or_guessed_search_conditions_are_not_saved_as_wishes`)
+17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
+    違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
 
 ## 10. テストと評価の仕組み
 
