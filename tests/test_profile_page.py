@@ -19,12 +19,14 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic, profile
+from dip_mcp.data import JST
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -145,7 +147,8 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         assert items["purpose"] == "転職" and items["area"] == "渋谷" and items["skills"] == "Excel"
         assert items["min_annual_salary"] == "500万円以上" and "work_style" in items  # 正社員なら条件も出す
         assert p["track"]["current"] == "正社員"
-        assert p["track"]["history"][0] == {"when": "9/23", "from": "未定", "track": "正社員",
+        today = datetime.now(JST)  # 本番のユーザーは実際の時刻で記録する(ADR-0004)
+        assert p["track"]["history"][0] == {"when": f"{today.month}/{today.day}", "from": "未定", "track": "正社員",
                                                  "evidence": "転職を考えています", "undo": False}
         assert p["consultation_summary"]["text"].startswith("転職で渋谷")
         assert p["resume"]["view_url"] == "/liff/resume?rid=0" and p["resume"]["highlights"]

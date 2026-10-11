@@ -155,7 +155,7 @@ classDiagram
 | `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
 | `profile.py` | プロフィール画面の中身と、知らせ | `view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
-| `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
+| `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
@@ -999,9 +999,15 @@ sequenceDiagram
 | `voice_rooms`、`forgotten_voice_rooms` | 発行した部屋と、「すべて消す」の前の部屋(それぞれ直近 20) | `record_voice_room`、`forget_all` |
 | `profile_changes` | 知らせ `{at, action, what, value?, undone?}`(最大 20) | `profile._note`、`take_changes` |
 
-時刻は `data.now()` の値です。今のコードは、どのユーザーにも `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)を返します。
-2026-10-12 に、本番のユーザーは実際の時刻にし、`SIM_NOW` はシナリオユーザーと評価だけに効かせると決めました
-(HLD の 4.7、R4、ADR-0004)。実装はまだです。
+時刻は `data.now(line_user_id)` の値です(HLD の 4.7、R4、ADR-0004)。
+
+- 評価のユーザー(fixtures のユーザーそのもの)、シナリオユーザー(`:` の後ろが fixtures のユーザー)、ユーザーの無い呼び出しは
+  `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)です。見分けるのは `data.uses_sim_clock` です
+- ほかのユーザー(本番の匿名ユーザーID)は実際の時刻(日本時間)です
+- 期間の判定(90 日、30 日、7 日、3 日)は `logic._days_ago(ts, at)` で、`at` にそのユーザーの `now` を渡します
+- 新着の絞り込み(`recommend` の `posted_within_days`)だけは、誰でも `now(None)`(`SIM_NOW`)から数えます。
+  掲載開始の日付(`fixtures/listings.json` の `posted_at`)が `SIM_NOW` から見て書いてあるからです
+- 2026-10-12 の実装(jyoka/tasks#175)の前に本番のユーザーについて書いた時刻は、`SIM_NOW` のまま残っています。書き換えません
 
 ### 5.2 会話(`data/line_checkpoints.db`)
 
@@ -1345,6 +1351,7 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`tests/voice/test_advisor.py::test_relaxed_or_guessed_search_conditions_are_not_saved_as_wishes`)
 17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
     違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
+18. 本番のユーザーの dip の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
 
 ## 10. テストと評価の仕組み
 
