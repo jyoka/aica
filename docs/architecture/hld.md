@@ -87,6 +87,7 @@ flowchart TB
 
     subgraph web["Web プロセス: python -m line_runtime.server"]
         server["Web サーバー<br/>line_runtime/server.py(FastAPI)"]
+        turn["受け付けとターン<br/>turn.py"]
         quota["ターン数の上限<br/>quota.py"]
         rt["LineRuntime<br/>runtime.py"]
         agent["エージェント<br/>agent.py(LangChain create_agent)"]
@@ -121,6 +122,10 @@ flowchart TB
     talk --> core
     devp --> core
     core -- "HTTP、NDJSON" --> server
+    server --> turn
+    turn --> quota
+    turn --> rt
+    turn -- "直接読み書き" --> logic
     server --> quota
     server --> rt
     server --> intake
@@ -149,7 +154,8 @@ flowchart TB
 | 部品 | 役割 | 書いてよいもの |
 |---|---|---|
 | 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ | 何も持たない。Cookie の匿名ユーザーIDだけ |
-| Web サーバー(`line_runtime/server.py`) | 受け付け(Cookie、ターン数の上限、プッシュの判定、stale)、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
+| Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
+| 受け付けとターン(`line_runtime/turn.py`) | イベントの受け付け(検証、ターン数の上限、プッシュの判定、stale、知らせ)と、LineRuntime を呼んだ後の記録。`POST /api/event` と `POST /api/event/stream` が共通に使う。FastAPI に依存しない | dip の状態(開いた記録、知らせの渡し終わり、`push_trigger` が残す接触)、`quota.json` |
 | LineRuntime(`line_runtime/runtime.py`) | 1 ターンを進める。会話の番号、ユーザーごとの排他、返信の描画(`render`) | 会話(チェックポイント)、費用台帳 |
 | エージェント(`agent.py`) | LINE の共通ルールと dip の Prompt で会話し、`LineReply` を返す | 何も書かない。dip のツールを呼ぶだけ |
 | dip の MCP サーバー(`dip_mcp/`) | 求人、ユーザーの状況、プロフィール、雇用区分、playbook、会話の結果。LLM を使わない | dip の状態 |
@@ -213,7 +219,8 @@ flowchart LR
 ### 4.1 トークの 1 ターン
 
 画面は `POST /api/event/stream` を呼び、1 行 1 件の JSON(NDJSON)で途中経過を受け取ります。`POST /api/event` は
-同じ処理で返信だけをまとめて返します。
+同じ処理で返信だけをまとめて返します。受け付けとターンの手順は `line_runtime/turn.py` の 1 か所にあり、
+2 つの API は Cookie の照合と書き出しの形だけを受け持ちます。
 
 ```mermaid
 sequenceDiagram
@@ -221,6 +228,7 @@ sequenceDiagram
     actor U as 求職者
     participant P as トーク画面
     participant S as Web サーバー
+    participant T as 受け付けとターン(turn.py)
     participant R as LineRuntime
     participant A as エージェント
     participant D as dip の MCP サーバー
@@ -229,10 +237,11 @@ sequenceDiagram
     U->>P: 書く、または選択肢を押す
     P->>S: POST /api/event/stream(user_id、event、text、thread)
     S->>S: Cookie と user_id を照合する(401、403)
-    S->>S: プッシュなら、上限に空きがあるかを見てから push_trigger で送ってよいかを決める
-    S->>S: 会話が替わっていれば stale で返す
-    S->>S: ターンを 1 つ数える(上限を超えたら LLM を呼ばずに案内)
-    S->>R: handle_stream(プロフィールの変更の知らせつき)
+    S->>T: accept: イベント、空の発言、アップロードの事実を確かめる(だめなら 400)
+    T->>T: プッシュなら、上限に空きがあるかを見てから push_trigger で送ってよいかを決める
+    T->>T: 会話が替わっていれば stale で返す
+    T->>T: ターンを 1 つ数える(上限を超えたら LLM を呼ばずに案内)
+    T->>R: handle_stream(プロフィールの変更の知らせつき)
     R->>R: ユーザーの排他。挨拶とプッシュなら新しい会話
     loop ツールを呼ぶ間
         R->>A: 入力
@@ -241,11 +250,13 @@ sequenceDiagram
         R->>R: LLM の呼び出しごとに費用台帳に 1 行書く
         A->>D: ツール(line_user_id は会話のユーザーに固定)
         D-->>A: 事実(JSON)
-        R-->>P: llm、tool_start、tools の行
+        R-->>P: llm、tool_start、tools の行(T と S を通る)
     end
     L-->>A: LineReply(吹き出し、選択肢、求人 ID、ボタン、操作)
     R->>R: 会話を保存する
-    R-->>P: reply の行(render の結果)
+    R-->>T: reply の行(render の結果)
+    T->>T: 開いた記録、知らせの渡し終わり、search_track
+    T-->>P: reply の行(S を通る)
     P-->>U: 吹き出し、求人カード、選択肢
 ```
 
@@ -518,7 +529,7 @@ flowchart TB
 | 足したいもの | 入口 | 一緒に変えるもの |
 |---|---|---|
 | dip のツール | `dip_mcp/server.py` に `@mcp.tool()`、中身は `dip_mcp/logic.py` | 音声でも使うなら `voice_resume/dip.py` |
-| 会話の入口(イベント) | `runtime.py` の `EVENTS` | `dip_mcp/prompts/entries.json`、Web サーバーの受け付け |
+| 会話の入口(イベント) | `runtime.py` の `EVENTS` | `dip_mcp/prompts/entries.json`、`line_runtime/turn.py` |
 | playbook | `dip_mcp/playbooks/{区分}_{チャネル}.md` | `logic.PLAYBOOK_FILES` |
 | 雇用区分 | `logic.TRACKS`、`CONVERSATION_RULES`、`PLAYBOOK_FILES` | `voice_resume/jobs.py` の写し、評価の `FORMAT_RULES` |
 | 求人 | `fixtures/*.json` | `python -m scripts.gen_job_vectors` でベクトルを作り直す(ADR-0002) |
