@@ -42,10 +42,11 @@ from voice_resume.prompts import (
     PREFERENCE_LABELS,
     advisor_instructions,
     consultation_summary_note,
+    document_kind_for,
+    document_name,
     stated_preferences_note,
     uploaded_resume_note,
 )
-from voice_resume.schema import document_kind_for, document_name
 from voice_resume.wages import WageReference, answer_from_reference, load_reference
 
 logger = logging.getLogger("voice-resume.advisor")

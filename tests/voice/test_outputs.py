@@ -6,9 +6,9 @@ import asyncio
 import datetime as dt
 from types import SimpleNamespace
 
+from resume_draft.schema import JST, ResumeDraft
 from voice_resume import config
 from voice_resume.outputs import write_outputs
-from voice_resume.schema import JST, ResumeDraft
 
 TRANSCRIPT = [
     {"role": "assistant", "text": "これまでの経験を教えてください。"},

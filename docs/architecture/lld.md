@@ -27,11 +27,14 @@ flowchart TB
         mcp["server.py<br/>FastMCP baitoru-mcp"]
         logic["logic.py<br/>業務ロジック"]
         profile["profile.py<br/>プロフィールを見る、直す、消す"]
-        data["data.py<br/>State、BaitoJob、個人情報の判定、now"]
+        data["data.py<br/>State、BaitoJob、now"]
         emb["embedding.py<br/>意味検索"]
     end
     subgraph ri["resume_intake"]
-        extract["extract.py、schema.py"]
+        extract["extract.py"]
+    end
+    subgraph rd["resume_draft"]
+        rdraft["schema.py、pii.py<br/>Resume Draft の形、個人情報の決まり"]
     end
     subgraph vr["voice_resume(音声ワーカー)"]
         vagent["agent.py<br/>entrypoint"]
@@ -59,7 +62,12 @@ flowchart TB
     profile --> logic
     logic --> data
     logic --> emb
-    logic --> extract
+    logic --> rdraft
+    profile --> rdraft
+    server --> rdraft
+    vreply --> rdraft
+    extract --> rdraft
+    vout --> rdraft
     vagent --> advisor --> vdip
     advisor --> vout
     vdip -. "子プロセスとして起動" .-> mcp
@@ -147,7 +155,7 @@ classDiagram
 | `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
 | `profile.py` | プロフィール画面の中身と、知らせ | `view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
-| `data.py` | 求人の形、dip の状態の読み書き、個人情報の判定、時計 | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`SIM_NOW`、`PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`、`pay_text`、`annual_pay_mid` |
+| `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
@@ -164,7 +172,7 @@ classDiagram
 | 本人が話した希望と、本人について | `PREFERENCE_KEYS`、`FULLTIME_PREFERENCE_KEYS`、`PREFERENCE_VALUE_MAX`、`ADDRESS_LIKE`、`address_spans`、`save_preferences` |
 | 雇用区分 | `TRACKS`、`search_track`、`track_history`、`set_search_track` |
 | 相談の playbook | `PLAYBOOK_FILES`、`CHANNELS`、`CONVERSATION_RULES`、`VOICE_CONVERSATION_RULES`、`counseling_playbook` |
-| 音声相談の結果 | `DOCUMENT_KINDS`、`record_voice_result`、`voice_results_since`、`voice_result`、`document_kind`、`record_voice_room`、`voice_room_forgotten` |
+| 音声相談の結果 | `record_voice_result`、`voice_results_since`、`voice_result`、`record_voice_room`、`voice_room_forgotten` |
 | アップロードした履歴書 | `save_resume_upload`、`resume_upload`、`uploaded_resume` |
 | 会話の段階の結果の記録 | `OUTCOMES`、`REFUSAL_WORDS`、`CONSULTATION_SUMMARY_MAX`、`record_outcome`、`consultation_summary` |
 | プッシュ | `PUSH_TRIGGERS`、`PUSH_INTERVAL_DAYS`、`push_trigger` |
@@ -176,8 +184,7 @@ dip の関数はどれも、1 つ目の引数に `State` を受け取ります�
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `extract.py` | 履歴書のファイルから Resume Draft を作る。OpenAI の Responses API の構造化出力 | `EXTRACT_SYSTEM`、`media_type`、`content_part`、`extract_bytes`、`extract_draft`、`scrub_pii`、`finalize`、`Usage` |
-| `schema.py` | Resume Draft の形(5.5)。`FORMAT_VERSION = "1.0"` | `ResumeDraft`、`envelope`、`PERSONAL_KEYS` |
+| `extract.py` | 履歴書のファイルから Resume Draft を作る。OpenAI の Responses API の構造化出力。形と `scrub_pii` は `resume_draft`(1.8) | `EXTRACT_SYSTEM`、`media_type`、`content_part`、`extract_bytes`、`extract_draft`、`finalize`、`Usage` |
 | `config.py` | モデル、上限、出力先 | `MODEL`(既定 `gpt-6-sol`)、`MAX_UPLOAD_BYTES`(10MB)、`OUT_DIR` |
 | `cli.py`、`run_samples.py` | 運営者が手で回す読み取りと、サンプルの正解との比較(実 API) | - |
 | `samples/` | 架空の履歴書 4 つと正解 3 つ | - |
@@ -206,12 +213,11 @@ OpenAI Realtime の構成から作り直しました)。
 | `agent.py` | LiveKit のワーカーの入口。`python -m voice_resume.agent dev` | `prewarm`、`entrypoint`、`participant_user_id`、`prepare_advisor` |
 | `advisor.py` | 音声アドバイザー(LiveKit の `Agent`)。ツール(3.4)と、トークへの結果の返送 | `ResumeAdvisor`、`TalkForgotten`、`_post_json`、`_remove_files` |
 | `dip.py` | dip のクライアント。音声で使う 7 つのツールだけを公開する | `DipMCP`、`ANON_USER_ID` |
-| `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system` |
+| `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
 | `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
-| `drafter.py` | 文字起こしから下書きを作る | `build_draft`、`scrub_pii`、`finalize` |
+| `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
 | `outputs.py` | 相談の終わりに 4 つのファイルを書く(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
-| `schema.py` | Resume Draft の形。`FORMAT_VERSION = "1.1"` | `ResumeDraft`、`envelope`、`DOCUMENT_KINDS`、`document_kind_for`、`document_name` |
 | `livekit_token.py` | 部屋の接続トークンの発行。Web サーバーが使う | `configured`、`issue_token`、`TOKEN_TTL`(5 分) |
 | `stt.py` | STT の作り分け | `create_stt` |
 | `flow.py`、`stt_eval.py` | 文字起こしから会話の流れを確かめるチェッカーと、STT の聞き取りの台本(テストと評価で使う) | `verify_flow`、`count_experience_probes`、`find_leading_questions`、`score_transcripts` |
@@ -287,6 +293,22 @@ classDiagram
 | `voice/live_room_smoke.py` | LiveKit の部屋の実経路の確かめ |
 | `voice/eval_stt.py`、`voice/eval_hearing.py`、`voice/tool_call_probe.py` | STT の比較、ヒアリングの深さ、ツールを同じターンで呼ぶかの計測(実 API) |
 | `voice/update_wage_reference.py` | 平均時給の参考データを web 検索で作り直す(年 1 回くらい、1 回 $0.05 前後) |
+
+### 1.8 resume_draft
+
+Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_resume`)、dip の保存(`dip_mcp`)が同じものを使います。
+`dip_mcp` にも `voice_resume` にも依存しません。
+
+| モジュール | 役割 | 主な名前 |
+|---|---|---|
+| `schema.py` | Resume Draft の形と envelope(5.5) | `ResumeDraft`(と 5 つの部品の型)、`envelope`、`document_kind_of`、`FORMAT_VERSION`(`1.0`)、`FORMAT_VERSION_WITH_KIND`(`1.1`)、`PERSONAL_KEYS`、`DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`JST` |
+| `pii.py` | 電話、メール、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
+
+- `has_pii` と `redact_pii` は電話とメールを探します。トークの発言、希望、相談の記録の照合に使います
+- `scrub_pii` は Resume Draft の文字列から、電話、メール、郵便番号を消します。`PII_VALUE` より広く取ります
+  (区切りが空白 1 つの電話番号、郵便番号も消す)。`SCRUB_PATTERNS` を順に当てるのを、元の文字列と `fold_pii` でそろえた文字の両方で行い、
+  どちらかで消えた位置を元の文字列から消します(`fold_pii` は 1 文字を 1 文字に写すので位置は同じ)。元の文字列でも照合するのは、
+  全角の「０１」が電話番号の始まりに見えて、すぐ後ろの半角の電話番号を途中までしか取れなくなるのを防ぐためです
 
 ## 2. プロセス
 
@@ -426,7 +448,7 @@ flowchart LR
 
 Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
-`voice_result`、`voice_result_count`、`document_kind`、`record_voice_room`、`voice_room_forgotten`、`liff_url`、`_md`、
+`voice_result`、`voice_result_count`、`record_voice_room`、`voice_room_forgotten`、`liff_url`、`_md`、
 `conversation_summary`(開発者画面)、`save_preferences` と `set_search_track`(シナリオの準備の `evals.scenarios.prepare`)と、
 `profile` の関数です(R1)。
 
@@ -604,7 +626,7 @@ sequenceDiagram
 ```
 
 - 会話の段階の結果はコードが決めます。求人を提案できたら `propose`、できなければ `consult` です(`ResumeAdvisor._record_outcome`)
-- 下書きの書類は今の区分で決まります(`schema.document_kind_for`)。正社員なら職務経歴書、それ以外は履歴書です
+- 下書きの書類は今の区分で決まります(`prompts.document_kind_for`)。正社員なら職務経歴書、それ以外は履歴書です
 - `_deliver_to_talk` が送るのは `user_id`、`jobs`(dip のカードの形)、`draft_markdown`、`document_kind`、`files`、`preferences`
   (今の区分で使う、dip に保存できる項目だけ)、`room` です
 - Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
@@ -638,7 +660,7 @@ sequenceDiagram
 - 声色、話し方、性格、感情、思考の傾向を推し量りません
 - 本人が言ったことと、会話で確かめた事実だけを書きます。あいまいな点は下書きに入れず、`unconfirmed` に分けます
 - 「本人の希望」(`preferences`)と「検索に使った条件」(`recommend_args`、`relaxed`、`search_attempts`)を分けて記録します
-- 氏名、住所、電話番号、メール、生年月日は聞かず、保存しません(下書きの `personal` は常に空、`drafter.scrub_pii`)
+- 氏名、住所、電話番号、メール、生年月日は聞かず、保存しません(下書きの `personal` は常に空、`resume_draft.pii.scrub_pii`)
 - 下書きは本人が確認して直してから使うものです。画面と Markdown にそう書きます
 
 音声が途切れる、割り込まれる問題への手当て(`agent.entrypoint` と `config`):
@@ -1053,8 +1075,12 @@ sequenceDiagram
 ### 5.5 Resume Draft
 
 履歴書と職務経歴書の共通の形です。読み取り結果(`resume_intake`)と下書き(`voice_resume`)が同じ形を使います。
-形のコードは `resume_intake/schema.py` と `voice_resume/schema.py` の 2 か所にあり、同じクラスを持っています(R3)。
-形を変えるときは両方を直します。
+この節が正で、形のコードは `resume_draft/schema.py` の 1 か所です(1.8)。読み取り、下書き、dip の保存(`save_resume_upload`)が
+同じものを使います。形を変えるときは、この節と `resume_draft/schema.py` を直し、`tests/test_resume_draft.py` の固定値
+(`tests/fixtures/resume_draft_schema.json`)を作り直します。
+
+説明の文(LLM に送るスキーマの一部)は読み取りと下書きで共通です。「書いてあるまま」と「本人が言ったまま」の違いは、
+それぞれの指示(`resume_intake.extract.EXTRACT_SYSTEM` と `voice_resume/prompts.py` の下書きの指示)に書きます。
 
 決まり:
 
@@ -1065,8 +1091,8 @@ sequenceDiagram
 - 分からない文字列は空文字、無いリストは空の配列です。null は使いません
 - `created_at` はオフセット付きの ISO 8601 で、日本時間(`+09:00`)です
 - `self_pr` は `job_summary` の言い換えにしません。材料が無ければ空文字にして、確かめたい点を `unconfirmed` に挙げます
-- 文字列から電話、メール、郵便番号を `scrub_pii` で消します。`\d` は全角の数字にも当たりますが、先頭が全角の 0 の電話番号と、
-  全角のハイフン(`－`)を使う番号は消せず、一部だけ残ることもあります(R3)
+- 文字列から電話、メール、郵便番号を `scrub_pii`(`resume_draft/pii.py` の 1 か所)で消します。全角の数字、長音記号やマイナスの
+  ハイフン、全角の `＠` と `．` は、`fold_pii` でそろえてから照合します。読み取りの直後と、dip に保存するときの 2 回かけます
 
 形(format_version 1.0):
 
@@ -1139,7 +1165,7 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 }
 ```
 
-- `document_kind` は `履歴書` か `職務経歴書` です。無いときは `履歴書` として読みます(`logic.document_kind`、`schema.document_kind_of`)。
+- `document_kind` は `履歴書` か `職務経歴書` です。無いときは `履歴書` として読みます(`resume_draft.schema.document_kind_of`)。
   1.0 の下書きはすべて履歴書でした
 - 下書きは常に 1.1 で `document_kind` を書きます。相談の終わりの雇用区分が正社員なら職務経歴書、アルバイト・パートと未定なら履歴書です
 - 職務経歴書の書き方は `prompts.CAREER_DRAFTER_SYSTEM` にあります。`job_summary` は経歴の全体(業界、年数、役割、主な成果)を
@@ -1300,8 +1326,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
    (`tests/test_dip.py::test_preferences_reject_unknown_keys_and_pii`、`::test_preferences_accept_numbers_and_reject_addresses`)。
    フォーム(`logic.resume_form`)が断るのは、個人情報の項目名と、値の電話とメールです。住所らしい値は断りません
    (`::test_resume_form_rejects_pii_in_values_of_other_fields`、R7)。
-   全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)
-10. 音声の写し(職種、エリア、雇用区分、希望の項目、書類の種類)は dip と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
+   全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)。
+   読み取りと下書きは、同じ LLM の出力から同じ形の Resume Draft を出し、全角で書いた電話、メール、郵便番号も消します。
+   envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)
+10. 音声の写し(職種、エリア、雇用区分、希望の項目)は dip と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
 11. 会話の決まりの値は playbook、dip の Prompt、評価の形式の判定で同じです
     (`tests/test_playbook.py::test_conversation_rules_match_between_playbooks_prompt_and_eval_format_checks`)
 12. 求人のベクトルは求人のデータと合っています(`tests/test_embedding.py::test_job_vectors_file_is_in_sync_with_the_job_data`)

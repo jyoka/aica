@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from voice_resume.schema import document_kind_of
+from resume_draft.schema import document_kind_of
 
 _PERSONAL_LABELS = {
     "name": "氏名",
@@ -25,7 +25,7 @@ def _section(title: str) -> str:
 
 
 def to_markdown(env: dict) -> str:
-    """envelope(schema.envelope の返り値)を、書類の種類に合わせた下書きの Markdown にする。"""
+    """envelope(resume_draft.schema.envelope の返り値)を、書類の種類に合わせた下書きの Markdown にする。"""
     kind = document_kind_of(env)
     out = [f"# {kind}(下書き)", ""]
     out.append(f"作成: {env.get('created_at', '')} / 元データ: {env.get('source', '')}")

@@ -16,8 +16,22 @@ from __future__ import annotations
 
 import re
 
+from resume_draft.schema import DEFAULT_DOCUMENT_KIND
 from voice_resume.jobs import DEFAULT_TRACK, on_track
-from voice_resume.schema import document_name
+
+# 書類の呼び方(入口・アドバイザーの話し方)。区分が未定のあいだは、どちらにも当てはまる言い方にする
+UNDECIDED_DOCUMENT_NAME = "履歴書など"
+
+
+def document_kind_for(track: str | None) -> str:
+    """その雇用区分で作る下書きの書類(正社員 = 職務経歴書、アルバイト・パートと未定 = 履歴書)。"""
+    return "職務経歴書" if track == "正社員" else DEFAULT_DOCUMENT_KIND
+
+
+def document_name(track: str | None) -> str:
+    """その雇用区分での書類の呼び方。区分が決まっていなければ「履歴書など」。"""
+    return {"正社員": "職務経歴書", "アルバイト・パート": "履歴書"}.get(track or "", UNDECIDED_DOCUMENT_NAME)
+
 
 # アルバイト・パートの面談の流れ(parttime_voice.md の「明らかにすること」の順。flow.py の文字起こしの確認でも使う)。
 STAGES = (

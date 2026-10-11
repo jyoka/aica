@@ -12,8 +12,9 @@ LLM は使わない(音声相談を始めたときに会話数を1つ使って�
 
 from __future__ import annotations
 
-from dip_mcp.logic import PREFERENCE_KEYS, document_kind, liff_url
+from dip_mcp.logic import PREFERENCE_KEYS, liff_url
 from line_runtime.resume_confirm import _clip
+from resume_draft.schema import document_kind_of
 
 MAX_CHARS = 80
 INTRO = "音声でお話しした内容をまとめました。"
@@ -70,7 +71,7 @@ _OLD_DRAFT_BUBBLE = "職務経歴書の下書きもできました。内容は�
 def voice_history_reply(user_id: str, voice: dict) -> dict:
     """会話の記録に残った音声相談の返信を、画面に描き直す形にする。ボタンの URL は今の形で組み直し、書類の呼び方は
     下書きの document_kind にそろえる(document_kind の無い古い返信は履歴書。吹き出しの古い文言も直す)。"""
-    kind = document_kind(voice)
+    kind = document_kind_of(voice)
     bubbles = [_draft_bubble(kind) if b == _OLD_DRAFT_BUBBLE else b for b in voice.get("bubbles", [])]
     buttons = ([draft_button(user_id, voice["voice_result"], kind)]
                if voice.get("buttons") and voice.get("voice_result") is not None else [])
@@ -93,7 +94,7 @@ def voice_reply(user_id: str, rec: dict, search_track: str | None = None) -> dic
         bubbles.append("条件に合う求人は、まだ見つかっていません。条件を変えて一緒に探せます。")
         quick = ["条件を変えて探す", "今はいい"]
     buttons = []
-    kind = document_kind(rec)
+    kind = document_kind_of(rec)
     if rec.get("draft_markdown"):
         bubbles.append(_draft_bubble(kind))
         buttons = [draft_button(user_id, rec["id"], kind)]

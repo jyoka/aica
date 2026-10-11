@@ -158,10 +158,3 @@ def test_spoken_job_line_is_short_single_sentence():
     assert line.endswith("です。")
     assert len(line) <= 60  # 音声で1件を短く読める長さ
 
-
-def test_document_kinds_match_line_sim():
-    """下書きの書類の種類(document_kind)が dip 側(dip_mcp/logic.py の DOCUMENT_KINDS)と一致している。"""
-    from voice_resume.schema import DEFAULT_DOCUMENT_KIND, DOCUMENT_KINDS
-
-    assert DOCUMENT_KINDS == tuple(ast.literal_eval(_line_sim_assign("DOCUMENT_KINDS")))
-    assert DEFAULT_DOCUMENT_KIND == ast.literal_eval(_line_sim_assign("DEFAULT_DOCUMENT_KIND"))

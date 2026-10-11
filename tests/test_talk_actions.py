@@ -195,7 +195,7 @@ def test_an_unreadable_upload_still_continues_the_talk_with_one_question(advised
     選択肢が付く。再読み込みしても、ファイルの吹き出し → 案内 → 1問 のまま残る(task 92 の追記)。"""
     from fastapi.testclient import TestClient
 
-    from resume_intake.schema import ResumeDraft
+    from resume_draft.schema import ResumeDraft
     from tests.test_resume_intake import StubClient
 
     monkeypatch.setattr(advised, "resume_client", lambda: StubClient(ResumeDraft(unconfirmed=["画像が不鮮明"])))

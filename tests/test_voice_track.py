@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from dip_mcp import logic
+from resume_draft.schema import Certification, Education, ResumeDraft, WorkExperience
 from tests.test_talk_actions import (  # noqa: F401  フィクスチャ
     advised,
     browser,
@@ -34,7 +35,6 @@ from voice_resume import config as voice_config
 from voice_resume.agent import prepare_advisor
 from voice_resume.dip import DipMCP
 from voice_resume.prompts import CAREER_DRAFTER_SYSTEM, DRAFTER_SYSTEM
-from voice_resume.schema import Certification, Education, ResumeDraft, WorkExperience
 
 BAITO, SEISHAIN, MITEI = "アルバイト・パート", "正社員", "未定"
 DOC = {SEISHAIN: "職務経歴書", BAITO: "履歴書"}  # 下書きの書類(未定のまま終わったら履歴書)

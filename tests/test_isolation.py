@@ -19,7 +19,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from dip_mcp import logic
-from dip_mcp.data import State, has_pii, redact_pii
+from dip_mcp.data import State
+from resume_draft.pii import has_pii, redact_pii
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_revisit import Greeter, greet
 from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
