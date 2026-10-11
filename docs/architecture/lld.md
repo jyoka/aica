@@ -395,7 +395,7 @@ flowchart LR
   ブラウザの履歴、アクセスログ、Referer に残るためです
 - dip の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
   Cookie の無い `POST /api/talk/open` は 401 で、何も書きません
-- ターンを数えるのは `DailyQuota.try_take` を呼ぶ 4 つの口です(R2)。上限のときは LLM を呼びません
+- ターンを数えるのは `DailyQuota.try_take` を呼ぶ 3 つの口です(`turn.run`、音声相談の開始、履歴書のアップロード)。上限のときは LLM を呼びません
 - IP は `_client_ip` が決めます。`AICA_TRUST_PROXY=1` のときだけ `X-Forwarded-For` の最後の値を使います
 
 ### 3.2 NDJSON の行(`POST /api/event/stream`)
@@ -450,7 +450,8 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
 `voice_result`、`voice_result_count`、`record_voice_room`、`voice_room_forgotten`、`liff_url`、`_md`、
 `conversation_summary`(開発者画面)、`save_preferences` と `set_search_track`(シナリオの準備の `evals.scenarios.prepare`)と、
-`profile` の関数です(R1)。
+`profile` の関数です。Web サーバーと評価が dip の関数を直接呼ぶのは、HLD の 1.1 で認めた形です(R1、ADR-0003)。
+守る境界はエージェントの側だけです。エージェントは dip のツールと、イベントの入力に添えた事実を通してだけ dip の事実を得ます(HLD の 1.1)。
 
 ### 3.4 音声アドバイザーのツールと、画面とのやりとり
 
@@ -998,7 +999,9 @@ sequenceDiagram
 | `voice_rooms`、`forgotten_voice_rooms` | 発行した部屋と、「すべて消す」の前の部屋(それぞれ直近 20) | `record_voice_room`、`forget_all` |
 | `profile_changes` | 知らせ `{at, action, what, value?, undone?}`(最大 20) | `profile._note`、`take_changes` |
 
-時刻は `data.now()` の値です。今は `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)に固定されています(R4)。
+時刻は `data.now()` の値です。今のコードは、どのユーザーにも `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)を返します。
+2026-10-12 に、本番のユーザーは実際の時刻にし、`SIM_NOW` はシナリオユーザーと評価だけに効かせると決めました
+(HLD の 4.7、R4、ADR-0004)。実装はまだです。
 
 ### 5.2 会話(`data/line_checkpoints.db`)
 
