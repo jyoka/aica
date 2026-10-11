@@ -24,7 +24,7 @@
 候補 2 の次の 2 点は、このメモでは決めません。両方の案を並べます(「決めてほしい 2 点」)。
 
 - A. stream の `error` の行の文: `BadTurn` に包む前の例外の名前に戻すか(案 A1)、`BadTurn: ...` に変わるのを受け入れるか(案 A2)
-- B. stream の受け付けの途中の例外: 応答が途中で切れる今の振る舞いを残すか(案 B1)、`error` の行にする変化を受け入れるか(案 B2)
+- B. stream で `handle_stream` を回す前(プッシュの判定、stale の照合、ターン数の上限、知らせ)の例外: 応答が途中で切れる今の振る舞いを残すか(案 B1)、`error` の行にする変化を受け入れるか(案 B2)
 
 ## 候補 2: イベントの受け付けとターンを 1 か所にする(R2)
 
@@ -157,6 +157,9 @@ def track_status(state, user_id, reply) -> dict | None:  # server._track_status 
 - `run` が `BadTurn` に包むのは LineRuntime の `ValueError` だけです。包む `try` は、`handle_stream` から次の行を受け取る
   ところ(`__anext__`)だけを囲みます。`push_trigger` や、`reply` の行を受け取った後の副作用(開いた記録、`search_track`)の
   `ValueError` は包みません。JSON の API では、今と同じく 500 のままにするためです
+- 点 B で B1 を選んだときは、`run` はもう 1 つの範囲に印を付けます。範囲は「`handle_stream` を回し始めてから終わるまで」で、
+  LineRuntime と、`reply` と `stale` の行の副作用(開いた記録、知らせの渡し終わり、`search_track`、`quota.refund`)を含みます。
+  今の stream の `try`(`server.py:403-413`)と同じ範囲です。その前の受け付け(`push_trigger`、stale の照合、`try_take`、知らせ)は含みません
 - `TurnDeps` の `state` は、Web サーバーが要求のたびに `server.state` から渡します。テストは `server.state` を差し替えているからです
   (`tests/test_quota.py:84` ほか)
 
@@ -212,7 +215,7 @@ async def event_stream(body: EventIn, request: Request):
     return StreamingResponse(lines(), media_type="application/x-ndjson")
 ```
 
-`try` が `run` 全体を囲んでいるのが、決めてほしい点 B です。
+`try` が `run` 全体(`handle_stream` を回す前の受け付けも含む)を囲んでいるのが、決めてほしい点 B です。
 
 ### JSON と stream で残す違い
 
@@ -225,7 +228,8 @@ async def event_stream(body: EventIn, request: Request):
 | `accept` の `BadTurn` | 400 | 400(応答を返し始める前) |
 | LineRuntime の `ValueError` | 400 | `error` の行(文は点 A) |
 | LineRuntime のほかの例外 | 500 | `error` の行 |
-| 受け付けの途中の例外(`push_trigger` など) | 500 | 点 B |
+| `reply` と `stale` の行の副作用の例外(`search_track`、`quota.refund` など) | 500 | `error` の行 |
+| `handle_stream` を回す前の受け付けの例外(`push_trigger` など) | 500 | 点 B |
 
 ### 決めてほしい 2 点
 
@@ -242,15 +246,16 @@ async def event_stream(body: EventIn, request: Request):
 
 トーク画面(`talk.html:178-180`)は決まった文を出し、`message` は `console.error` に渡すだけです。どちらの案でも、求職者に見える文は変わりません。
 
-#### B. stream の受け付けの途中の例外
+#### B. stream で `handle_stream` を回す前の例外
 
-今の stream の `try`(`server.py:403-413`)は LineRuntime の部分だけを囲んでいます。その前の `push_trigger`、`_stale`、
-`try_take`、`_profile_notice` が例外を出すと、`start` の行を送った後に応答が途中で切れます。
-上の形では `try` が `run` 全体を囲むので、これらも `error` の行になります。
+今の stream の `try`(`server.py:403-413`)は、`handle_stream` を回す部分だけを囲んでいます。
+LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_track_status`、`logic.search_track`、`quota.refund`)です。
+その前の `quota.available`、`push_trigger`、`_stale`、`try_take`、`_profile_notice` が例外を出すと、
+`start` の行を送った後に応答が途中で切れます。上の形では `try` が `run` 全体を囲むので、これらも `error` の行になります。
 
 | 案 | 中身 | 良い点 | 気になる点 |
 |---|---|---|---|
-| B1: 今の振る舞いを残す | `run` が LineRuntime の例外だけに印を付け(たとえば包む例外を分ける)、stream はその例外だけを `error` の行にする。ほかは投げ直す | 振る舞いはまったく同じ | `run` と stream の間の決まりが 1 つ増える |
+| B1: 今の振る舞いを残す | `run` は「`handle_stream` を回し始めてから終わるまで」の例外に印を付ける(決まりごとの範囲)。LineRuntime の `ValueError` は今までどおり `BadTurn` に包み、ほかは新しい `TurnFailed`(`ValueError` の子ではない)に `from e` で包む。stream は `BadTurn` と `TurnFailed` だけを `error` の行にし、ほかは投げ直す | どの例外が `error` の行になり、どの例外で応答が切れるかは今と同じ。JSON の API も今と同じ(`TurnFailed` は 500) | `run` と stream の間の決まりが 1 つ増える。`TurnFailed` の文は `__cause__` から作る必要がある(作らないと、`ValueError` 以外の `error` の行がすべて `TurnFailed: ...` に変わる)。これは点 A で A2 を選んでも要る |
 | B2: 変化を受け入れる | 上の形のまま | 画面は待ちの表示を消せる。トーク画面は「うまく返信できませんでした」を出す | 振る舞いが変わる。今は応答が切れたとき、画面の読み取りが失敗すれば「通信できませんでした」になる(`talk.html:198-201`)。ブラウザでは確かめていない |
 
 どちらの案でも、JSON の API は今と同じく 500 です。
@@ -276,7 +281,9 @@ async def event_stream(body: EventIn, request: Request):
 | `reply` を受け取った後の副作用が `ValueError` を出す | 500(400 にならない) | `error` の行 |
 
 - 最後の場面の偽の LineRuntime は、`handle` と `handle_stream` の両方を持たせます。今の JSON の API は `handle` を呼ぶからです
-- 点 A と点 B を決めたら、それに合わせた行を足します(点 B は `push_trigger` が例外を出す場面)
+- 点 A と点 B を決めたら、それに合わせた行を足します。点 B は `push_trigger` が例外を出す場面で、JSON は 500、stream は
+  B1 なら `start` の後に途切れ、B2 なら `start`、`error` です
+- 上の「副作用が `ValueError` を出す」場面は、B1 の印の範囲の境目も確かめます。`error` の行の文は、点 A の決め方によらず、元の例外の名前と文です
 - ロックの中の stale は、`tests/test_talk_page.py:290` がすでに両方の API で確かめています
 
 今あるテストは、`tests/test_talk_page.py:302-306`(差し替える先と、偽の関数の引数)のほかは、変えずに通るようにします。
@@ -561,5 +568,6 @@ def scrub_pii(value): ...
 
 - 新しいテスト(`tests/test_event_turn.py`、`tests/test_resume_draft.py`)が今の main で書いたとおりに通るか。実装のタスクで書きます
 - 点 B の案 B1 で、応答が途中で切れたときにブラウザの画面がどう見えるか
+- 点 B の案 B1 の `TurnFailed` の仕組みは、コードで試していない(今の `server.py:403-413` の `try` の範囲と、読んで突き合わせただけ)
 - そろえた説明の文で、読み取りと下書きの出力がどれだけ変わるか
 - 全角の電話番号が、実際の履歴書の読み取りでどのくらい出るか
