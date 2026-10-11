@@ -15,7 +15,7 @@ line-sim(LINE 風トーク × dip の AI アシスタントのシミュレータ
 | どの入口でも同じ会話の骨格とルール | `dip_mcp/prompts/baitoru_assistant.md` |
 | プッシュの判定 | `dip_mcp/logic.py` の `push_trigger` |
 | 評価の機械判定 | `evals/checks.py` |
-| 全体の仕組み | `docs/design/line-sim-architecture.md` |
+| 全体の仕組み | [docs/architecture/hld.md](../architecture/hld.md) |
 
 ## 1. 前提: どのシナリオも AI 側の1通目から始める
 
