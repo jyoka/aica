@@ -9,7 +9,7 @@ python3 evalkit/aggregate.py diff BEFORE.json AFTER.json # 変更前後の差。
 python3 -m unittest discover -s evalkit                  # テスト
 ```
 
-結果ファイルの形と集計のルールは `aggregate.py` の先頭に書いてある。評価ハーネス(`line-sim/evals/run.py`)は
+結果ファイルの形と集計のルールは `aggregate.py` の先頭に書いてある。評価ハーネス(`evals/run.py`)は
 この形で書き出し、自分の Markdown レポートにも `summary_md` を使う。
 
 目安: 割合の指標は「ケース数 × 回数」が小さいとノイズ幅が大きい(9ケース × 3回 = 27回で、全勝なら区間幅 ±6pt、9割で ±12pt、5割で ±18pt)。

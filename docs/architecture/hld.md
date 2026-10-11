@@ -5,7 +5,7 @@ aica が何でできていて、データがどこを流れるかの全体図で
 
 - 2026-10-11 の main(`7521952`)のコードから書き起こしました。コードと食い違ったら、コードが正です
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
-- 部品の中身、関数、ファイルの形式は LLD(`lld.md`、(2/3) で書く)に書きます
+- 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
 - 書く中で見つけた設計の問題は [review-2026-10.md](review-2026-10.md) にまとめました
 
@@ -525,7 +525,7 @@ flowchart TB
 | 評価のシナリオ | `evals/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
-| Resume Draft の形 | `docs/design/resume-draft-schema.md` | `resume_intake/schema.py` と `voice_resume/schema.py` の両方 |
+| Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_intake/schema.py` と `voice_resume/schema.py` の両方 |
 
 ## 10. 用語
 
@@ -590,7 +590,7 @@ flowchart TB
 
 | 語 | 意味 | 使わない語 |
 |---|---|---|
-| Resume Draft | 履歴書と職務経歴書の共通の形(`ResumeDraft` と envelope)。[resume-draft-schema.md](../design/resume-draft-schema.md) | 履歴書 JSON |
+| Resume Draft | 履歴書と職務経歴書の共通の形(`ResumeDraft` と envelope)。[LLD の 5.5](lld.md#55-resume-draft) | 履歴書 JSON |
 | 書類の種類 | Resume Draft の `document_kind`。履歴書か職務経歴書 | - |
 | 読み取り結果 | アップロードした履歴書から作った Resume Draft | 解析結果 |
 | 下書き | 音声相談から作った Resume Draft と、その Markdown | ドラフト |
