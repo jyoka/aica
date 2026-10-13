@@ -16,7 +16,7 @@ import pytest
 
 from dip_mcp import logic
 from dip_mcp.data import State
-from evals.scenarios import load_scenarios, prepare
+from scenarios import load_scenarios, prepare
 from tests.test_handle import ScriptedModel, call, reply
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor

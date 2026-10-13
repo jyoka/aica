@@ -18,9 +18,9 @@ from langchain_core.messages import AIMessage
 from dip_mcp import logic
 from dip_mcp.data import State
 from evals.checks import conversation_checks, turn_violations
-from evals.scenarios import load_scenarios
 from line_runtime.runtime import _tool_payload
 from resume_draft.schema import ResumeDraft
+from scenarios import load_scenarios
 from tests.test_handle import ScriptedModel, call, reply, run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}

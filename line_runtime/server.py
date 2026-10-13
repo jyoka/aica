@@ -3,7 +3,7 @@
 本番の / は求職者が使うトーク1画面。シナリオを選ばせず、開いたブラウザの匿名ユーザー(匿名ID そのもの)について
 最後のやりとりから30分以内なら今の会話を続け(/api/talk/history で履歴を描き直す。LLM は呼ばない)、
 過ぎていれば dip が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から新しい会話を始める。
-/dev のシナリオは評価と同じ一覧(evals/scenarios.json)。どれも AI 側の1通目から始まる。
+/dev のシナリオは評価と同じ一覧(scenarios/scenarios.json)。どれも AI 側の1通目から始まる。
 
     ./.venv/bin/python -m line_runtime.server   # http://127.0.0.1:8030
 
@@ -44,7 +44,6 @@ from pydantic import BaseModel, Field
 
 from dip_mcp import logic, profile
 from dip_mcp.data import State, load_jobs
-from evals.scenarios import load_scenarios, prepare
 from line_runtime import config, turn
 from line_runtime.quota import (
     DailyQuota,
@@ -61,6 +60,7 @@ from line_runtime.voice_reply import voice_reply
 from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
+from scenarios import load_scenarios, prepare
 
 STATIC = config.ROOT / "line_runtime" / "static"
 state = State()

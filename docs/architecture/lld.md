@@ -89,7 +89,7 @@ flowchart TB
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
 | `llm.py` | 模擬ユーザーとジャッジが SDK を直接呼ぶところの、プロバイダの違いの吸収 | `client`、`parse`、`text` |
-| `config.py` | 設定と `.env` の読み込み | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
+| `config.py` | 設定。`.env` の読み込みは `aica_env` のものをここからも出す | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
 | `static/` | 画面。`talk.html`(トーク画面)、`dev.html`(開発者画面)、共通部品 `talk-core.js`、`talk-core.css` | - |
 
 ```mermaid
@@ -222,7 +222,7 @@ OpenAI Realtime の構成から作り直しました)。
 | `stt.py` | STT の作り分け | `create_stt` |
 | `flow.py`、`stt_eval.py` | 文字起こしから会話の流れを確かめるチェッカーと、STT の聞き取りの台本(テストと評価で使う) | `verify_flow`、`count_experience_probes`、`find_leading_questions`、`score_transcripts` |
 | `wages.py` | 平均時給の参考データ(`data/wage_reference.json`) | `load_reference`、`answer_from_reference` |
-| `config.py` | 設定(7.1)と `.env` の読み込み | `OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
+| `config.py` | 設定(7.1)。`.env` の読み込みは `aica_env` のものをここからも出す | `OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
 | `results/` | 画面の証跡(PNG) | - |
 
 ```mermaid
@@ -266,13 +266,11 @@ classDiagram
 
 | モジュール | 役割 |
 |---|---|
-| `run.py` | 評価のハーネス。模擬ユーザーとエージェントを会話させて採点する(4.7)。`--rejudge` で保存した会話をジャッジだけで判定し直す |
-| `scenarios.json`、`scenarios.py` | シナリオの一覧(15 件)と、始める前の準備(`prepare`、`upload_resume`、`load_resume`)。開発者画面と共通 |
+| `run.py` | 評価のハーネス。模擬ユーザーとエージェントを会話させて採点する(4.7)。`--rejudge` で保存した会話をジャッジだけで判定し直す。会話の途中のアップロード(`upload_resume`)と、深さを数えるシナリオか(`measures_depth`)もここ |
 | `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
 | `judge.py` | LLM ジャッジ。相談の深さの 4 項目、トーン、設計への合い方(`design_fit`)、ひとこと(`comment`)。`samples` 回(既定 2)判定してまとめる |
 | `meter.py` | Anthropic と OpenAI の SDK の呼び出しをクラスごと包んで、トークンと費用を数える(評価だけで使う) |
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
-| `personas/` | ペルソナの架空の履歴書(読み取り結果の形) |
 | `search_eval.py`、`search_eval_set.json` | 意味検索の評価セットと、上位 3 件の再現率 |
 | `jobtype_repro.py`、`semantic_repro.py`、`wait_repro.py` | 個別の問題を実 API で再現するスクリプト |
 | `baseline/` | 比較の基準にした評価の結果 |
@@ -309,6 +307,22 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
   (区切りが空白 1 つの電話番号、郵便番号も消す)。`SCRUB_PATTERNS` を順に当てるのを、元の文字列と `fold_pii` でそろえた文字の両方で行い、
   どちらかで消えた位置を元の文字列から消します(`fold_pii` は 1 文字を 1 文字に写すので位置は同じ)。元の文字列でも照合するのは、
   全角の「０１」が電話番号の始まりに見えて、すぐ後ろの半角の電話番号を途中までしか取れなくなるのを防ぐためです
+
+### 1.9 scenarios
+
+開発者画面と評価が共通に使うシナリオです。評価のパッケージの外に置き、Web サーバーが `evals` を import しないようにしています(R10)。
+dip の関数だけに依存します。
+
+| モジュール、ファイル | 役割 | 主な名前 |
+|---|---|---|
+| `__init__.py` | 一覧を読む、始める前に dip の状態を初期に戻して種を入れる | `load_scenarios`、`prepare`、`load_resume`、`RESUME_FILE`、`SEED_TRACK_EVIDENCE` |
+| `scenarios.json` | シナリオの一覧(15 件)。画面に出す項目、種、評価の期待の値 | - |
+| `personas/` | ペルソナの架空の履歴書(読み取り結果の形) | - |
+
+### 1.10 aica_env
+
+リポジトリ直下の `.env` を `os.environ` へ読み込む `load_env` だけを持ちます。どのパッケージにも依存しません。
+`line_runtime.config` と `voice_resume.config` は、呼び出し元のために同じ関数をそのまま出します(R13)。
 
 ## 2. プロセス
 
@@ -371,7 +385,7 @@ flowchart LR
 | `POST /api/talk/track/undo` | `talk_track_undo` | 本人 + 書き込みの枠 | - | 雇用区分の取り消し、知らせ。直前の切り替えでなければ 409 |
 | `GET /api/saved` | `saved` | Cookie | - | - |
 | `GET /api/scenarios` | `scenarios` | - | - | - |
-| `POST /api/scenarios/{id}/start` | `start_scenario` | Cookie + 書き込みの枠 | - | シナリオユーザーの dip の状態を初期に戻す(`evals.scenarios.prepare`) |
+| `POST /api/scenarios/{id}/start` | `start_scenario` | Cookie + 書き込みの枠 | - | シナリオユーザーの dip の状態を初期に戻す(`scenarios.prepare`) |
 | `POST /api/event` | `event` | 本人 | 1 | 会話、dip の状態(ツール)、費用台帳。`ValueError` は 400 |
 | `POST /api/event/stream` | `event_stream` | 本人 | 1 | 同上。途中経過は NDJSON(3.2) |
 | `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「dip から見た状態」) |
@@ -449,7 +463,7 @@ flowchart LR
 Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
 `voice_result`、`voice_result_count`、`record_voice_room`、`voice_room_forgotten`、`liff_url`、`_md`、
-`conversation_summary`(開発者画面)、`save_preferences` と `set_search_track`(シナリオの準備の `evals.scenarios.prepare`)と、
+`conversation_summary`(開発者画面)、`save_preferences` と `set_search_track`(シナリオの準備の `scenarios.prepare`)と、
 `profile` の関数です。Web サーバーと評価が dip の関数を直接呼ぶのは、HLD の 1.1 で認めた形です(R1、ADR-0003)。
 守る境界はエージェントの側だけです。エージェントは dip のツールと、イベントの入力に添えた事実を通してだけ dip の事実を得ます(HLD の 1.1)。
 
@@ -1345,6 +1359,8 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`tests/voice/test_advisor.py::test_relaxed_or_guessed_search_conditions_are_not_saved_as_wishes`)
 17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
     違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
+18. パッケージの間の import に循環はありません。Web サーバーは評価のパッケージを、`resume_intake` は `line_runtime` を import しません
+    (`tests/test_package_deps.py`)
 
 ## 10. テストと評価の仕組み
 

@@ -206,7 +206,7 @@ def test_phrase_inside_a_longer_message_is_not_a_refusal():
 
 def _checks(sc_id: str, turns: list[dict]) -> list[str]:
     from evals.checks import conversation_checks
-    from evals.scenarios import load_scenarios
+    from scenarios import load_scenarios
 
     sc = next(s for s in load_scenarios() if s["id"] == sc_id)
     return conversation_checks(sc, turns, [None] + ["はい"] * (len(turns) - 1))["violations"]
@@ -227,7 +227,7 @@ def test_revisit_reasking_a_saved_preference_is_a_violation():
 
     # 本人が変えた項目を、今回の値で確かめるのは聞き直しではない(R-revisit のペルソナは「エリアは原宿も入れてほしい」と答える)
     from evals.checks import conversation_checks
-    from evals.scenarios import load_scenarios
+    from scenarios import load_scenarios
 
     sc = next(s for s in load_scenarios() if s["id"] == "R-revisit")
     msgs = [None, "そのとおりで、エリアは原宿も入れてほしい", "はい"]

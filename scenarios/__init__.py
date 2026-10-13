@@ -1,7 +1,9 @@
-"""シナリオの一覧(scenarios.json)と、シナリオを始める前の準備。画面(line_runtime.server)と評価(evals.run)で共通。
+"""シナリオの一覧(scenarios.json)と、シナリオを始める前の準備。開発者画面(line_runtime.server)と評価(evals.run)で共通。
 
 どのシナリオも AI 側の1通目から始まる: 初回訪問・再訪の挨拶と、dip が許可したプッシュのどちらか。
-ペルソナの履歴書(evals/personas/*.json)はすべて架空。
+ペルソナの履歴書(scenarios/personas/*.json)はすべて架空。
+評価のパッケージの外に置くのは、Web サーバーが評価のパッケージを import しないため(review-2026-10.md の R10)。
+dip の関数だけに依存し、line_runtime と evals のどちらにも依存しない。
 """
 
 from __future__ import annotations
@@ -24,25 +26,9 @@ def load_scenarios() -> list[dict]:
     return json.loads(SCENARIOS.read_text(encoding="utf-8"))
 
 
-def measures_depth(case: str) -> bool:
-    """相談の深さ(ジャッジの4項目)を数えるシナリオか(相談・ペルソナのシナリオ。scenarios.json の measure_depth)。"""
-    return any(sc["id"] == case and sc.get("measure_depth") for sc in load_scenarios())
-
-
 def load_resume(name: str) -> dict:
     """ペルソナの架空の履歴書(読み取り結果の形。resume_draft.schema.envelope と同じ)。"""
     return json.loads((PERSONAS / f"{name}.json").read_text(encoding="utf-8"))
-
-
-def upload_resume(state: State, sc: dict, user: str | None = None) -> dict:
-    """会話の途中で本人が履歴書をアップロードしたことにする(sc["upload_resume"])。
-    本番の /api/resume/.../upload と同じく dip に保存し、resume_upload のイベントに渡す事実を返す。"""
-    from line_runtime.resume_confirm import resume_bubbles
-
-    user = user or sc["user"]
-    rec = logic.save_resume_upload(state, user, load_resume(sc["upload_resume"]), file=RESUME_FILE)
-    # 画面の URL はランタイムが upload_id から作る(URL に user_id を入れない)。id は main 側の save_resume_upload が振る
-    return {"file": rec["file"], "shown": resume_bubbles(rec["resume"]), "upload_id": rec.get("id")}
 
 
 def prepare(state: State, sc: dict, user: str | None = None) -> None:

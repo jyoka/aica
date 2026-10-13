@@ -9,8 +9,8 @@ aica(旧称 line-sim)の開発者画面と評価で使うシナリオ 15 件に�
 
 | 内容 | 場所 |
 |---|---|
-| シナリオの一覧(画面と評価で共通) | `evals/scenarios.json` |
-| シナリオを始める前の準備(状態の初期化・希望の種) | `evals/scenarios.py` |
+| シナリオの一覧(画面と評価で共通) | `scenarios/scenarios.json` |
+| シナリオを始める前の準備(状態の初期化・希望の種) | `scenarios/__init__.py` |
 | 入口ごとの dip の Prompt | `dip_mcp/prompts/entries.json` |
 | どの入口でも同じ会話の骨格とルール | `dip_mcp/prompts/baitoru_assistant.md` |
 | プッシュの判定 | `dip_mcp/logic.py` の `push_trigger` |

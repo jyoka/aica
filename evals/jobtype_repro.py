@@ -29,7 +29,7 @@ SEARCH_TOOLS = ("recommend_jobs", "relax_conditions")
 
 async def run_once(rt, meter) -> dict:
     from dip_mcp.data import State
-    from evals.scenarios import prepare
+    from scenarios import prepare
 
     prepare(State(), {"user": CASE["user"], "event": CASE["event"]})
     k = meter.mark()

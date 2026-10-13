@@ -18,9 +18,11 @@ import os
 import sys
 from pathlib import Path
 
+# .env の読み込みは aica_env の 1 か所。呼び出し元が config.load_env() で使えるよう、ここからも出す
+from aica_env import load_env  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]  # リポジトリ直下
 # LIVEKIT_* / OPENAI_API_KEY / DEEPGRAM_API_KEY / CARTESIA_API_KEY はリポジトリ直下の .env(line_runtime と共通)
-ENV_FILE = ROOT / ".env"
 
 # --- STT(文字起こし)---
 # provider は deepgram / openai。作り分けは voice_resume/stt.py の create_stt()
@@ -75,18 +77,6 @@ OUT_DIR = Path(os.environ.get("VOICE_RESUME_OUT_DIR", ROOT / "data" / "voice-res
 RESULTS_DIR = ROOT / "voice_resume" / "results"
 
 LIVEKIT_ROOM_PREFIX = "voice-resume"
-
-
-def load_env() -> None:
-    """リポジトリ直下の .env を os.environ へ(既存値は上書きしない)。"""
-    if not ENV_FILE.is_file():
-        return
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def dip_server_command() -> list[str]:

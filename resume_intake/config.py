@@ -4,7 +4,7 @@
 同 guides/pdf-files)で確認したもの:
 - 読み取り: gpt-6-sol(画像入力と PDF 入力(input_file)に対応。line_runtime の
   既定 OpenAI モデルと同じ。入力 $2 / 出力 $10 per 1M tokens)
-.env の読み込みは line_runtime.config.load_env(リポジトリ直下の .env)を使う。
+.env の読み込みは aica_env.load_env(リポジトリ直下の .env)を使う。
 """
 
 from __future__ import annotations

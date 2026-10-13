@@ -1,4 +1,4 @@
-"""シナリオの一覧(evals/scenarios.json)と、シナリオを始める準備(evals/scenarios.py)。実 LLM なし。
+"""シナリオの一覧(scenarios/scenarios.json)と、シナリオを始める準備(scenarios/__init__.py)。実 LLM なし。
 
 どのシナリオも AI 側の1通目(初回訪問・再訪の挨拶、dip のプッシュ)から始まること、
 同じシナリオを何度始めても前回の接触でプッシュが止まらないことを確かめる。
@@ -14,8 +14,8 @@ import pytest
 
 from dip_mcp import logic
 from dip_mcp.data import State
-from evals.scenarios import load_scenarios, prepare
 from line_runtime.runtime import EVENTS
+from scenarios import load_scenarios, prepare
 
 SCENARIOS = load_scenarios()
 

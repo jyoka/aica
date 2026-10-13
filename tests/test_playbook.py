@@ -30,7 +30,7 @@ from evals.checks import (
     dont_know_violations,
     turn_violations,
 )
-from evals.scenarios import load_scenarios, prepare
+from scenarios import load_scenarios, prepare
 from tests.test_consult import (
     CLOSING,
     MENU,
@@ -425,15 +425,15 @@ def test_asking_on_after_the_conditions_are_in_does_not_reach_a_proposal_in_eigh
 
 # ----------------------------- (6) 例文を評価のペルソナから離す -----------------------------
 
-EVALS = ROOT / "evals"
+PERSONAS = ROOT / "scenarios" / "personas"
 PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
 
 
 def _persona_text() -> str:
-    """評価のペルソナの発言と経歴(scenarios.json の persona・script と、evals/personas の履歴書)。"""
+    """評価のペルソナの発言と経歴(scenarios.json の persona・script と、scenarios/personas の履歴書)。"""
     parts = [x for sc in load_scenarios() for x in (sc.get("persona", ""), *(sc.get("script") or []))]
     parts += [json.dumps(json.loads(f.read_text(encoding="utf-8")), ensure_ascii=False)
-              for f in sorted((EVALS / "personas").glob("*.json"))]
+              for f in sorted(PERSONAS.glob("*.json"))]
     return "\n".join(parts)
 
 
