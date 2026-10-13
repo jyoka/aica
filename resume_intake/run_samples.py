@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from openai import AsyncOpenAI
 
-from line_runtime.config import load_env
+from aica_env import load_env
 from resume_intake import config
 from resume_intake.extract import extract_draft, finalize
 

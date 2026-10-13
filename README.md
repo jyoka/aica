@@ -80,7 +80,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 - ブラウザごとに匿名ユーザーIDを Cookie で発行します。認証はありません(URL を知っている知人だけが使う前提)
 - 1 日あたりのターン数に上限があります(下の「設定」)
-- シナリオは 15 件で、開発者画面と評価で同じ一覧(`evals/scenarios.json`)です
+- シナリオは 15 件で、開発者画面と評価で同じ一覧(`scenarios/scenarios.json`)です
 
 画面の細かい動きは [LLD の 4.10](docs/architecture/lld.md#410-画面) にあります。
 

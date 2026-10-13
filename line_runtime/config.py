@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# .env の読み込みは aica_env の 1 か所。呼び出し元が config.load_env() で使えるよう、ここからも出す
+from aica_env import load_env  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
-REPO_ENV = ROOT / ".env"
 
 # LLM のプロバイダ(openai / anthropic)。LINE 側エージェント・模擬ユーザー・ジャッジ・データ生成の既定モデルもこれで決まる。
 PROVIDER = os.environ.get("LINE_SIM_PROVIDER", "openai")
@@ -15,15 +17,3 @@ EFFORT = os.environ.get("LINE_SIM_EFFORT", "low")
 # dip 側 MCP サーバー。既定は子プロセス(stdio)で起動。DIP_MCP_URL を与えると HTTP で接続する。
 DIP_MCP_URL = os.environ.get("DIP_MCP_URL")
 DATA_DIR = Path(os.environ.get("LINE_SIM_DATA_DIR", ROOT / "data"))
-
-
-def load_env() -> None:
-    """リポジトリ直下の .env を os.environ へ(既存値は上書きしない)。"""
-    if not REPO_ENV.is_file():
-        return
-    for line in REPO_ENV.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))

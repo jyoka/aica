@@ -256,9 +256,13 @@ flowchart LR
     rd["resume_draft"]
     ev["evals"]
     sc["scripts"]
+    sn["scenarios"]
+    ae["aica_env"]
 
     lr -- "logic、profile、State を直接使う" --> dm
-    lr -- "scenarios(開発者画面)" --> ev
+    lr -- "load_scenarios、prepare(開発者画面)" --> sn
+    ev -- "load_scenarios、prepare、load_resume" --> sn
+    sn -- "logic、State" --> dm
     lr --> ri
     lr -- "livekit_token、config" --> vr
     dm -- "ResumeDraft、scrub_pii、has_pii" --> rd
@@ -267,7 +271,9 @@ flowchart LR
     lr -- "document_kind_of" --> rd
     ev -- "has_pii" --> rd
     sc -- "JST" --> rd
-    ri -. "CLI とサンプルの検証だけ load_env" .-> lr
+    lr -- "load_env" --> ae
+    ri -- "load_env" --> ae
+    vr -- "load_env" --> ae
     vr -. "子プロセスとして起動するだけ" .-> dm
     ev --> lr
     ev --> dm
@@ -276,6 +282,8 @@ flowchart LR
     sc --> vr
 ```
 
+- パッケージの間に循環はありません(`tests/test_package_deps.py`)。開発者画面と評価が共通に使うシナリオは `scenarios`、
+  `.env` の読み込みは `aica_env` にあり、どちらもほかのパッケージから戻る矢印を持ちません(review-2026-10.md の R10、R13)
 - `voice_resume` は `dip_mcp` を import しません。職種、エリア、雇用区分の一覧は写しを持ち、テストで同期を確かめます
 - Resume Draft の形と個人情報の決まりは `resume_draft` の 1 か所にあり、読み取り、下書き、dip の保存が同じものを使います。
   `resume_draft` はほかのパッケージに依存しません
@@ -437,8 +445,8 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    sc[("evals/scenarios.json<br/>15 のシナリオ")] --> run["evals.run"]
-    per[("evals/personas/")] --> run
+    sc[("scenarios/scenarios.json<br/>15 のシナリオ")] --> run["evals.run"]
+    per[("scenarios/personas/")] --> run
     run -- "LineRuntime を直接呼ぶ<br/>(Web サーバーは通らない)" --> rt["LineRuntime<br/>会話はメモリ、dip の状態は一時ファイル"]
     run -- "模擬ユーザー、ジャッジ" --> llm[("LLM")]
     rt --> llm
@@ -634,7 +642,7 @@ flowchart TB
 | playbook | `dip_mcp/playbooks/{区分}_{チャネル}.md` | `logic.PLAYBOOK_FILES` |
 | 雇用区分 | `logic.TRACKS`、`CONVERSATION_RULES`、`PLAYBOOK_FILES` | `voice_resume/jobs.py` の写し、評価の `FORMAT_RULES` |
 | 求人 | `fixtures/*.json` | `python -m scripts.gen_job_vectors` でベクトルを作り直す(ADR-0002) |
-| 評価のシナリオ | `evals/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
+| 評価のシナリオ | `scenarios/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
 | Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_draft/schema.py`、`tests/fixtures/resume_draft_schema.json` |
@@ -711,8 +719,8 @@ flowchart TB
 
 | 語 | 意味 | 使わない語 |
 |---|---|---|
-| シナリオ | 評価と開発者画面で使う会話の型。決まったユーザーと 1 通目から始まる(`evals/scenarios.json`) | dip の Prompt の意味で使わない |
-| ペルソナ | 模擬ユーザーの設定と架空の経歴(`evals/personas/`) | - |
+| シナリオ | 評価と開発者画面で使う会話の型。決まったユーザーと 1 通目から始まる(`scenarios/scenarios.json`) | dip の Prompt の意味で使わない |
+| ペルソナ | 模擬ユーザーの設定と架空の経歴(`scenarios/personas/`) | - |
 | 模擬ユーザー | 評価で求職者の代わりに話す LLM | シミュレーター |
 | ジャッジ | 相談の深さとトーンを判定する LLM(`evals/judge.py`) | - |
 | ターン数の上限 | 1 日あたりのターン数の上限(`quota.py`) | 会話数の上限(コードに残る) |

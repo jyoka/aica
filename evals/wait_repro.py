@@ -41,8 +41,8 @@ async def run_once(rt, meter, case: dict) -> dict:
     from dip_mcp import logic
     from dip_mcp.data import State
     from evals.checks import REFUSAL
-    from evals.scenarios import prepare
     from line_runtime.runtime import EVENTS
+    from scenarios import prepare
 
     prepare(State(), {"user": case["user"], "event": case["event"]})
     facts = None

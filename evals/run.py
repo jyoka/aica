@@ -1,7 +1,7 @@
 """シナリオ評価: 模擬ユーザー(LLM)と LINE 側ランタイムを会話させ、設計書のルールと KPI で採点する。
 
 各シナリオはそのユーザーの dip の状態を初期に戻してから走る(評価全体で独立した一時ファイル)。
-シナリオの一覧は画面と共通(scenarios.json)。どれも AI 側の1通目(挨拶・プッシュ)から始まる(evals/scenarios.py)。
+シナリオの一覧は画面と共通(scenarios/scenarios.json)。どれも AI 側の1通目(挨拶・プッシュ)から始まる(scenarios/__init__.py)。
 指標の cost_usd・llm_calls はランタイム側の LLM 呼び出しだけ(模擬ユーザーとジャッジは除く)。
 
 各シナリオを --repeat 回(既定1)くり返し、集計と比較は evalkit(リポジトリ直下の evalkit/)に任せる。
@@ -106,6 +106,26 @@ def _usage(meter, marks: list[tuple[int, int]]) -> dict:
     return {"cost_usd": u["cost_usd"], "llm_calls": u["llm_calls"], "cache_hit_rate": u["cache_hit_rate"]}
 
 
+def upload_resume(state, sc: dict, user: str | None = None) -> dict:
+    """会話の途中で本人が履歴書をアップロードしたことにする(sc["upload_resume"])。
+    本番の /api/resume/.../upload と同じく dip に保存し、resume_upload のイベントに渡す事実を返す。"""
+    from dip_mcp import logic
+    from line_runtime.resume_confirm import resume_bubbles
+    from scenarios import RESUME_FILE, load_resume
+
+    user = user or sc["user"]
+    rec = logic.save_resume_upload(state, user, load_resume(sc["upload_resume"]), file=RESUME_FILE)
+    # 画面の URL はランタイムが upload_id から作る(URL に user_id を入れない)。id は main 側の save_resume_upload が振る
+    return {"file": rec["file"], "shown": resume_bubbles(rec["resume"]), "upload_id": rec.get("id")}
+
+
+def measures_depth(case: str) -> bool:
+    """相談の深さ(ジャッジの4項目)を数えるシナリオか(相談・ペルソナのシナリオ。scenarios.json の measure_depth)。"""
+    from scenarios import load_scenarios
+
+    return any(sc["id"] == case and sc.get("measure_depth") for sc in load_scenarios())
+
+
 def _wants_upload(sc: dict, r: dict, n_turns: int) -> bool:
     """履歴書を持つペルソナ(upload_resume)がアップロードするか: AI が履歴書の操作ボタンを出したら、そのとき。
     upload_by_turn のターンまでに出なければ、そこでアップロードする(アップロード後の1問を必ず見るため)。"""
@@ -118,8 +138,8 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
     from dip_mcp.data import State
     from evals.checks import conversation_checks
     from evals.judge import judge
-    from evals.scenarios import load_resume, prepare, upload_resume
     from line_runtime.runtime import EVENTS
+    from scenarios import load_resume, prepare
 
     prepare(State(), sc)  # 新しい会話は最初のイベント(visit・revisit・プッシュ)が始める
     push_facts = None
@@ -193,7 +213,6 @@ def depth_of(case: str, judge_result: dict | None) -> dict:
     """深さの4項目の指標。相談・ペルソナのシナリオ(measure_depth)だけで数え、ほかのシナリオは None
     (B-exit・pii などの相談でない会話が「満たさない」で数えられて、全体の率が薄まらないように)。"""
     from evals.judge import DEPTH_ITEMS, depth_metrics
-    from evals.scenarios import measures_depth
 
     return depth_metrics(judge_result) if measures_depth(case) else dict.fromkeys(DEPTH_ITEMS.values())
 
@@ -279,7 +298,7 @@ def recheck(detail: dict, sc: dict | None = None) -> dict:
     """保存した結果の detail(turn_log・user_msgs・upload)から、今の evals/checks.py で機械判定をやり直す(実 API を使わない)。
     detail に turn_log が無い結果(2026-09-29 の基準など、保存を始める前のもの)は再判定できない。"""
     from evals.checks import conversation_checks
-    from evals.scenarios import load_scenarios
+    from scenarios import load_scenarios
 
     if "turn_log" not in detail:
         raise ValueError(f"{detail.get('id')}: turn_log が保存されていない結果は再判定できない")
@@ -289,7 +308,7 @@ def recheck(detail: dict, sc: dict | None = None) -> dict:
 
 def _resume_of(case: str, scenarios: list[dict]) -> dict | None:
     """ジャッジに渡す本人の履歴書(run_scenario と同じく upload_resume か seed_resume)。"""
-    from evals.scenarios import load_resume
+    from scenarios import load_resume
 
     sc = next((x for x in scenarios if x["id"] == case), {})
     name = sc.get("upload_resume") or sc.get("seed_resume")
@@ -327,7 +346,7 @@ async def rejudge(src: Path, ledger: Path = budget.LEDGER, judge_samples: int | 
     $4 の停止も同じ。結果は evals/results/<元の名前>-rejudge-<日時>.{json,md} に別ファイルで書く。"""
     from evals.judge import JUDGE_SAMPLES, judge
     from evals.meter import Meter
-    from evals.scenarios import load_scenarios
+    from scenarios import load_scenarios
 
     samples = judge_samples or JUDGE_SAMPLES
     doc = json.loads(Path(src).read_text(encoding="utf-8"))
@@ -418,8 +437,8 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
                judge_samples: int | None = None) -> int:
     from evals.judge import JUDGE_SAMPLES
     from evals.meter import Meter
-    from evals.scenarios import load_scenarios
     from line_runtime.runtime import LineRuntime
+    from scenarios import load_scenarios
 
     scenarios = select(load_scenarios(), only)
     print(budget.line(ledger), flush=True)

@@ -19,8 +19,8 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from evals import budget
 from evals.judge import DEPTH_ITEMS, SYSTEM, DepthItem, Judgement, depth_metrics, shape
 from evals.run import JUDGE_MODEL, SimTurn, run_cases, select
-from evals.scenarios import load_scenarios
 from line_runtime import config
+from scenarios import load_scenarios
 from tests.test_handle import call, reply
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
