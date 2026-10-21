@@ -10,6 +10,8 @@ fastapi>=0.115
 openai>=1.99
 pydantic>=2.8
 uvicorn>=0.30
+# LINE の Messaging API の呼び出し(line_runtime/line_channel.py)。openai と fastapi のテストが使うので、もとから入っている
+httpx>=0.27
 pytest>=8.3
 # 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ OpenAI + Cartesia TTS(ja)+ Silero VAD
 # + 多言語 turn detector。オフラインテストも livekit-agents を import するので、同じ venv に入れる。
