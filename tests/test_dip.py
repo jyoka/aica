@@ -157,7 +157,7 @@ def test_resume_form_rejects_pii_and_returns_liff(state):
     assert logic.form_exit(state, "sim-exit")["completed_fields"] == ["氏名", "年齢", "希望開始日"]
     # dip に書くのは答えた項目名だけ(form_fill のイベント)。値は持たない
     assert state.user("sim-exit")[behavior.WRITES][-1] | {"seq": None, "at": None} == {
-        "seq": None, "at": None, "kind": "form_fill", "job_id": "a002", "data": {"fields": ["希望開始日"]}}
+        "seq": None, "at": None, "kind": "form_fill", "job_id": "a002", "data": {"fields": ["希望開始日"]}, "dip_id": "D1002"}
 
 
 def test_resume_form_rejects_pii_in_values_of_other_fields(state):

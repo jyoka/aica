@@ -63,6 +63,7 @@
   .state { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
   .state dl { margin: 0; display: grid; grid-template-columns: 84px 1fr; gap: 5px 8px; font-size: 12px; }
   .state dt { color: var(--sub); } .state dd { margin: 0; line-height: 1.45; word-break: break-word; }
+  .linkrow { display: flex; gap: 6px; margin-top: 6px; } .linkrow .restart { flex: 1; }
   .restart { width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 4px; font-size: 12px; cursor: pointer; }
 
   /* ---------- 中央: トークルーム ---------- */
@@ -183,6 +184,16 @@
     <div class="step">
       <h2><span class="n">3</span>やり直す</h2>
       <button type="button" class="restart" id="restart">このシナリオを最初から</button>
+    </div>
+    <div class="step">
+      <h2><span class="n">4</span>アカウント連携(偽物の LINE)</h2>
+      <div class="hint">本番のトーク画面(<a href="/">/</a>)の匿名ユーザーを、LINE と同じ流れ(linkToken → dip のログイン → nonce → accountLink)で dip の会員につなぎます。
+        ログインの例: <code>exit@dip.test</code> / <code>demo-pass-1002</code>(ほかの会員は README)。</div>
+      <div class="state" id="link-state"><div class="empty">-</div></div>
+      <div class="linkrow">
+        <button type="button" class="restart" id="link-start">連携を始める</button>
+        <button type="button" class="restart" id="link-stop">連携を解除</button>
+      </div>
     </div>
     <div class="hint">これは評価・説明用の開発者画面です。求職者が使う本番のトーク画面は <a href="/">/</a>。</div>
   </aside>
@@ -443,6 +454,24 @@
   }
 
   $("restart").onclick = () => { if (scenario) startScenario(scenario.id); };
+
+  // ---------- 左: アカウント連携(本番のトーク画面の匿名ユーザー) ----------
+  async function refreshLink() {
+    try {
+      const r = await (await fetch("/api/dev/link")).json();
+      $("link-state").textContent = r.dip_id ? `${r.user_id} は dip の会員 ${r.dip_id} と連携済み` : `${r.user_id} は未連携`;
+      $("link-start").disabled = !!r.dip_id; $("link-stop").disabled = !r.dip_id;
+    } catch (e) { $("link-state").textContent = e.message; }
+  }
+  $("link-start").onclick = async () => {
+    try { const r = await post("/api/dev/link/start", {}); window.open(r.url, "_blank"); }
+    catch (e) { $("link-state").textContent = `連携を始められない: ${e.message}`; }
+  };
+  $("link-stop").onclick = async () => {
+    try { await post("/api/dev/link/unlink", {}); } catch (e) { $("link-state").textContent = e.message; return; }
+    refreshLink(); if (current) refreshState();
+  };
+  addEventListener("focus", refreshLink);  // dip のログインのタブから戻ったら読み直す
   $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
 
   // ---------- 画面の幅に合わせたタブ ----------
@@ -465,6 +494,7 @@
     setBusy(false);  // シナリオを選ぶまでは送れない・「+」(履歴書・音声)も使えない(会話の相手が決まっていない)
     scenarios = await (await fetch("/api/scenarios")).json();
     renderScenarios();
+    refreshLink();
     sys("シナリオを選ぶと、AI 側の1通目から会話が始まります");
   })();
 </script>

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import behavior, logic, summarize
+from dip_mcp import accounts, behavior, logic, summarize
 from dip_mcp.data import JST, SIM_NOW, State, now, parse_ts
 from evals.scenarios import load_scenarios, prepare
 from tests.test_resume_upload import _open, _upload
@@ -76,7 +76,7 @@ def test_production_user_periods_count_from_real_time(app):
                    ("dip-prod-1", "contact", real - timedelta(days=4), None,
                     {"channel": "LINE AI通知", "message": "form_exit"})])
     summarize.run(events, summaries, real)
-    app.state.update(uid, lambda u: u.__setitem__("dip_id", "dip-prod-1"))
+    accounts.of(app.state).set_link(uid, "dip-prod-1")
     assert [(a["job_id"], a["days_ago"]) for a in logic.recent_applications(app.state, uid)] == [("b0102", 2)]
     assert logic.conversation_summary(app.state, uid)["form_exit"]["hours_ago"] == 5
     # 最後の接触は 4 日前なので、3 日の間隔を過ぎている(前は SIM_NOW から見て「未来の接触」で、ずっと断っていた)

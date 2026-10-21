@@ -3,6 +3,8 @@
 - 読む(view): 会員 1 人 1 行の状況の要約(summarize.SummaryStore)に、会話の側から書いたイベントのうち要約にまだ
   入っていないもの(State の 1 人の dict の dip_writes)を重ねる。行動の元データ(events.EventStore)は読まない
 - 書く(record): 元データにイベントとして追記し、同じイベントを dip_writes にも残す。要約は次のバッチまで変わらない。
+  dip_writes の 1 件は、書いたときに連携していた会員(dip_id。未連携なら None)を持つ。読むときは、今の会員の分と未連携の間に
+  書いた分だけを重ねる(連携を解除した・別の会員につなぎ替えた後に、前の会員の行動を重ねない。ADR-0007)。
   重ねるのは書いた事実(保存、保存の取り消し、フォームの項目への答え、応募、接触)だけで、傾向(tendency)と
   閲覧・訪問の数はバッチを待つ
 
@@ -21,7 +23,7 @@ from datetime import datetime
 from functools import cache
 from pathlib import Path
 
-from dip_mcp import summarize
+from dip_mcp import accounts, summarize
 from dip_mcp.data import SIM_NOW, State, now
 from dip_mcp.events import EVENTS_PATH, KINDS, EventStore, iso, load_scenario_events
 
@@ -30,11 +32,18 @@ LOCK_FILE = "dip_events.lock"
 
 
 def dip_id(state: State, line_user_id: str | None) -> str | None:
-    """LINE のユーザーIDから dip の会員ID(dip_id)を引く、ただ 1 か所。今はシミュレーションの状態の 1 人の dict の
-    dip_id(fixtures/users.json から写したもの)を見る。認証のカードで、LINE の連携の表に差し替える。"""
+    """LINE のユーザーIDから dip の会員ID(dip_id)を引く、ただ 1 か所。LINE のアカウント連携で作る連携の表
+    (dip_mcp.accounts。シナリオのユーザーは最初から連携済み)を読む。表に無ければ未連携(None)。"""
     if not line_user_id:
         return None
-    return state.user(line_user_id).get("dip_id")
+    return accounts.of(state).dip_id(line_user_id)
+
+
+def _mine(e: dict, did: str | None) -> bool:
+    """会話の側の記録の 1 件が、今の連携で重ねる分か: 未連携の間に書いた分(dip_id が None)と、今の会員に書いた分。
+    dip_id を持たない古い記録は、今の会員に書いた分とみなす。"""
+    member = e.get("dip_id", did)
+    return member is None or member == did
 
 
 def _prepare(folder: Path) -> None:
@@ -134,14 +143,15 @@ def view(state: State, line_user_id: str | None) -> dict:
     did = dip_id(state, line_user_id)
     s = _summary(state, did)
     writes = state.user(line_user_id).get(WRITES, []) if line_user_id else []
-    return overlay(s, [e for e in writes if _pending(e, s)])
+    return overlay(s, [e for e in writes if _mine(e, did) and _pending(e, s)])
 
 
 def record(state: State, line_user_id: str, kind: str, job_id: str | None = None, **data) -> dict:
     """会話の側から dip に書く 1 件。連携している人は元データに追記し(番号 seq がつく)、どちらの人も dip_writes に残す。
     連携していない人は dip に会員がいないので、元データには書かず dip_writes にだけ残る(seq は None)。
     dip_id はあっても元データの会員に無い人(シナリオの会員を入れずに作った元データ、連携の表と dip のずれ)も、
-    連携していない人と同じく dip_writes にだけ残す。要約に入ったイベントは、ここで dip_writes から落とす。"""
+    連携していない人と同じく dip_writes にだけ残す。要約に入った今の会員のイベントは、ここで dip_writes から落とす
+    (ほかの会員に書いた分は、その会員の要約と比べられないので残す)。"""
     if kind not in KINDS:
         raise ValueError(f"知らないイベントの種類: {kind}")
     at = iso(now(line_user_id))
@@ -152,7 +162,8 @@ def record(state: State, line_user_id: str, kind: str, job_id: str | None = None
             seq = stores(state)[0].append(did, kind, at, job_id, **data)
         except sqlite3.IntegrityError:  # 会員の表に無い dip_id(元データの外部キー)
             pass
-    e = {"seq": seq, "at": at, "kind": kind, "job_id": job_id, "data": data}
+    e = {"seq": seq, "at": at, "kind": kind, "job_id": job_id, "data": data, "dip_id": did}
     s = _summary(state, did)
-    state.update(line_user_id, lambda u: u.__setitem__(WRITES, [*(x for x in u.get(WRITES, []) if _pending(x, s)), e]))
+    state.update(line_user_id, lambda u: u.__setitem__(
+        WRITES, [*(x for x in u.get(WRITES, []) if not _mine(x, did) or _pending(x, s)), e]))
     return e

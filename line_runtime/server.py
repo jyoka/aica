@@ -27,6 +27,12 @@ IPv6 は /64 にまとめて数える)。全体の匿名IDの数の上限で、I
 LINE 公式アカウント(task 177): POST /line/webhook が 2 つ目のチャネル。LINE_CHANNEL_SECRET と LINE_CHANNEL_ACCESS_TOKEN が
 あるときだけ開く(無ければ 404)。署名(X-Line-Signature)が合わなければ 400。テキストのメッセージは Web と同じターンの処理
 (line_runtime.turn)に流し、友だち追加(follow)では初回の挨拶を返す。部品は line_runtime.line_channel。
+
+LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント連携」と送ると、bot が LINE から linkToken をもらい、dip の
+ログインの画面(GET/POST /dip/login。dip の画面の偽物)へのボタンを返す。ログインできると dip が nonce を作り、本人を LINE の
+accountLink の画面に送る。LINE から accountLink の webhook が来たら、nonce から会員を引いて連携の表に書く(dip_mcp.accounts)。
+「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
+偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import (
     BackgroundTasks,
@@ -49,17 +56,23 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
 )
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
-from dip_mcp import behavior, logic, profile
+from dip_mcp import accounts, behavior, logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, line_channel, turn
+from line_runtime import config, fake_line, line_channel, turn
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -206,6 +219,7 @@ async def lifespan(app: FastAPI):
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
+    app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
         yield
@@ -397,7 +411,8 @@ async def dip_view(body: UserIn, request: Request):
     _require_own(request, user_id)
     u, b = state.user(user_id), behavior.view(state, user_id)
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
-            "saves": b["saves"], "applications": b["applications"], "last_contact": b["last_contact"]}
+            "saves": b["saves"], "applications": b["applications"], "last_contact": b["last_contact"],
+            "dip_id": behavior.dip_id(state, user_id)}
 
 
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
@@ -413,14 +428,17 @@ def line_api() -> line_channel.LineApi:
 
 
 def _line_kind(e: dict) -> str | None:
-    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message)と友だち追加(follow)。ほかは None(無視する)。
+    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link と
+    解除 unlink)、友だち追加(follow)、アカウント連携の結果(account_link)。ほかは None(無視する)。
     standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。"""
     src = e.get("source") or {}
     if src.get("type") != "user" or not src.get("userId") or e.get("mode", "active") != "active":
         return None
     msg = e.get("message") or {}
     if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
-        return "message"
+        return line_channel.link_command(str(msg["text"])) or "message"
+    if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
+        return "account_link"
     return "follow" if e.get("type") == "follow" else None
 
 
@@ -461,13 +479,69 @@ async def _line_user_events(line_uid: str, events: list[dict]) -> None:
         for e in events:
             await api.loading(line_uid)
             try:
-                reply = await _line_turn(uid, _line_kind(e), e)
-                messages = line_channel.to_messages(reply) if reply is not None else None
+                messages = await _line_messages(api, line_uid, uid, _line_kind(e), e)
             except Exception:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
                 line_channel.log.exception("LINE のイベントを処理できませんでした(%s)", uid)
                 messages = line_channel.to_messages({"bubbles": [line_channel.FAILED_TEXT]})
             if messages:
                 await api.send(e.get("replyToken"), line_uid, messages)
+
+
+async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kind: str, e: dict) -> list[dict] | None:
+    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)は LLM を使わず、会話数も数えない。
+    ほかは会話のターン(返すものが無ければ None)。"""
+    if kind == "account_link":
+        return line_channel.texts(account_link(uid, e["link"]))
+    if kind == "link":
+        return await _line_link_start(api, line_uid, uid)
+    if kind == "unlink":
+        return line_channel.texts(line_channel.UNLINKED_TEXT if _unlink(uid) else line_channel.NOT_LINKED_TEXT)
+    reply = await _line_turn(uid, kind, e)
+    return line_channel.to_messages(reply) if reply is not None else None
+
+
+async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -> list[dict]:
+    """連携を始める: LINE から linkToken をもらい、だれに出したかを覚えて、dip のログインの画面へのボタンを返す。
+    もう連携していれば、そう伝える。公開 URL(ボタンの前に付ける)が無い・linkToken がもらえなければ、始められないと伝える。"""
+    if behavior.dip_id(state, uid):
+        return line_channel.texts(line_channel.ALREADY_LINKED_TEXT)
+    base = line_channel.public_url()
+    if not base.startswith(("https://", "http://")):
+        line_channel.log.warning("%s が無いので、アカウント連携を始められません", line_channel.PUBLIC_URL_ENV)
+        return line_channel.texts(line_channel.LINK_UNAVAILABLE_TEXT)
+    token = await api.link_token(line_uid)
+    if token is None:
+        return line_channel.texts(line_channel.LINK_UNAVAILABLE_TEXT)
+    accounts.of(state).record_link_token(uid, token)
+    return line_channel.link_messages(base, token)
+
+
+def account_link(uid: str, link: dict) -> str:
+    """accountLink のイベントの link(result と nonce)で、連携の表に書く。本人に伝える文を返す。
+    呼ぶのは、署名を確かめた LINE の webhook と、開発者画面の偽物の LINE(Web の匿名ユーザー)。
+    result が ok でなければ nonce を使えなくして、連携しない。nonce が無い・知らない・使い終わった・期限切れ・
+    別のユーザーに出した linkToken のものなら、連携しない(dip_mcp.accounts.complete_link)。"""
+    nonce = link.get("nonce")
+    if not isinstance(nonce, str) or not nonce:
+        return line_channel.LINK_FAILED_TEXT
+    if link.get("result") != "ok":
+        accounts.of(state).burn_nonce(nonce)
+        return line_channel.LINK_FAILED_TEXT
+    r = accounts.of(state).complete_link(uid, nonce)
+    if "error" in r:
+        line_channel.log.warning("アカウント連携をしませんでした(%s): %s", uid, r["error"])
+        return line_channel.LINK_FAILED_TEXT
+    profile.link_changed(state, uid, linked=True)
+    return line_channel.LINKED_TEXT
+
+
+def _unlink(uid: str) -> str | None:
+    """連携を解除する(連携の表から外す)。未連携の扱いに戻る: 要約を読まず、会員に書いた分も重ねない(behavior.view)。
+    会話の途中なら次のターンの前に AI へ知らせる。外した dip_id(連携していなければ None)。"""
+    gone = accounts.of(state).unlink(uid)
+    if gone:
+        profile.link_changed(state, uid, linked=False)
+    return gone
 
 
 async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
@@ -488,6 +562,99 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
     return reply
+
+
+# ----------------------------- dip のログイン(アカウント連携。dip の画面の偽物) -----------------------------
+# LINE のトークのボタン(と開発者画面)から linkToken つきで開く。ログインできたら dip が nonce を作り、LINE の accountLink の
+# 画面に送る(linkToken が偽物の LINE のものなら、このサーバーの /fake-line/… に送る)。会員はクッキーで決めない(dip の会員の
+# ログインで決める)。ログインを続けてまちがえると、しばらくログインできない(dip_mcp.accounts)。
+
+LINK_TOKEN_FORM = re.compile(r"[A-Za-z0-9_\-]{8,128}")
+FAKE_ACCOUNT_LINK_PATH = "/fake-line/dialog/bot/accountLink"
+LOGIN_MESSAGES = {"bad": "ログインID かパスワードがちがいます。",
+                  "locked": f"続けてまちがえたので、{accounts.LOCK.seconds // 60} 分ほどログインできません。時間をおいてやり直してください。"}
+
+
+def _login_form(link_token: str, message: str = "") -> str:
+    note = f"<p style='color:#b3261e'>{escape(message)}</p>" if message else ""
+    return (f"{note}<p>dip の会員のログインID とパスワードでログインすると、LINE と dip の会員がつながります。</p>"
+            f"<form method='post' action='{line_channel.LINK_LOGIN_PATH}'>"
+            f"<input type='hidden' name='linkToken' value='{escape(link_token)}'>"
+            "<label>ログインID<input name='login_id' autocomplete='username' required></label>"
+            "<label>パスワード<input name='password' type='password' autocomplete='current-password' required></label>"
+            "<button>ログインして連携する</button></form>")
+
+
+def _bad_link_page() -> HTMLResponse:
+    return HTMLResponse(_page("dip にログイン", "<p>このリンクは使えません。LINE のトークから、もう一度「アカウント連携」と"
+                                               "送ってください。</p>"), status_code=400)
+
+
+@app.get(line_channel.LINK_LOGIN_PATH, response_class=HTMLResponse)
+async def dip_login_page(link_token: Annotated[str, Query(alias="linkToken")] = ""):
+    if not LINK_TOKEN_FORM.fullmatch(link_token):
+        return _bad_link_page()
+    return _page("dip にログイン", _login_form(link_token))
+
+
+@app.post(line_channel.LINK_LOGIN_PATH)
+async def dip_login(link_token: Annotated[str, Form(alias="linkToken")] = "", login_id: Annotated[str, Form()] = "",
+                    password: Annotated[str, Form()] = ""):
+    """ログインできたら nonce を作って会員と linkToken に結び、LINE の accountLink の画面へ送る(303)。
+    できなければ理由を出してもう一度(ID とパスワードのどちらがちがうかは言わない)。"""
+    if not LINK_TOKEN_FORM.fullmatch(link_token):
+        return _bad_link_page()
+    acc = accounts.of(state)
+    r = await asyncio.to_thread(acc.login, login_id, password)  # ハッシュの計算は遅いので、ほかの要求を止めない
+    if "error" in r:
+        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]])),
+                            status_code=429 if r["error"] == "locked" else 401)
+    nonce = acc.issue_nonce(r["dip_id"], link_token)
+    base = FAKE_ACCOUNT_LINK_PATH if app.state.fake_line.knows(link_token) else line_channel.ACCOUNT_LINK_URL
+    return RedirectResponse(line_channel.account_link_url(link_token, nonce, base), status_code=303)
+
+
+# ----------------------------- 開発者画面から試すアカウント連携(偽物の LINE) -----------------------------
+# Web の LINE 風の画面(/)の匿名ユーザー(Cookie の匿名ID)を、LINE のときと同じ流れで dip の会員につなぐ。
+# bot が LINE に linkToken を頼むところと、accountLink の画面と webhook は偽物の LINE(app.state.fake_line)がする。
+
+
+@app.get("/api/dev/link")
+async def dev_link(request: Request):
+    uid = _owner(request)
+    return {"user_id": uid, "dip_id": behavior.dip_id(state, uid)}
+
+
+@app.post("/api/dev/link/start")
+async def dev_link_start(request: Request):
+    """連携を始める: 偽物の LINE が linkToken を出し、bot がだれに出したかを覚える。開く dip のログインの画面の URL を返す。
+    もう連携していれば 409。"""
+    uid = _owner(request)
+    _admit(request, uid)
+    if behavior.dip_id(state, uid):
+        raise HTTPException(409, line_channel.ALREADY_LINKED_TEXT)
+    token = app.state.fake_line.issue_link_token(uid)
+    accounts.of(state).record_link_token(uid, token)
+    return {"url": f"{line_channel.LINK_LOGIN_PATH}?{urlencode({'linkToken': token})}"}
+
+
+@app.post("/api/dev/link/unlink")
+async def dev_link_unlink(request: Request):
+    uid = _owner(request)
+    return {"unlinked": _unlink(uid)}
+
+
+@app.get(FAKE_ACCOUNT_LINK_PATH, response_class=HTMLResponse)
+async def fake_line_account_link(request: Request, link_token: Annotated[str, Query(alias="linkToken")] = "",
+                                  nonce: str = ""):
+    """偽物の LINE の accountLink の画面。開いた人(Cookie の匿名ID)が linkToken のユーザーなら、LINE が webhook で送る
+    accountLink のイベントと同じものを、署名を確かめた後の webhook と同じ処理(account_link)に渡す。"""
+    opener = _owner(request)
+    event = app.state.fake_line.open_account_link(link_token, nonce, opener)
+    if event is None:
+        return HTMLResponse(_page("アカウント連携", "<p>このリンクは使えません。</p>", "偽物の LINE"), status_code=404)
+    text = account_link(event["source"]["userId"], event["link"])
+    return _page("アカウント連携", f"<p>{escape(text)}</p><p><a href='/'>トークに戻る</a></p>", "偽物の LINE")
 
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
@@ -877,7 +1044,7 @@ async def liff_submit(request: Request, job: str = Form(...), scenario_user: str
     return _page("応募完了", "<p>応募しました。店舗からの連絡をお待ちください。</p><p>このタブを閉じてトークに戻れます。</p>")
 
 
-def _page(title: str, body: str) -> str:
+def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>
 <style>body{{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:#f4f6f8;color:#111}}
@@ -885,7 +1052,7 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 .job{{background:#fff;border-radius:10px;padding:12px;font-weight:700}}label{{display:block;margin:12px 0;font-size:14px}}
 input{{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px;font-size:16px;border:1px solid #ccd;border-radius:8px}}
 button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}</style>
-</head><body><header>{title}(LIFF・dip の画面)</header><main>{body}</main></body></html>"""
+</head><body><header>{title}({site})</header><main>{body}</main></body></html>"""
 
 
 if __name__ == "__main__":

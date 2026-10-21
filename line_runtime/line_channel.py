@@ -7,7 +7,9 @@ POST /line/webhook(line_runtime.server)が使う部品。FastAPI には依存し
   (返信と push の宛先にだけ、その webhook を処理する間メモリで使う)。
 - 再送: 同じ webhookEventId には 2 回答えない(SeenEvents。ID は data/line_events.json に置き、再起動しても覚えている)。
 - 返信: runtime.render の結果を LINE のメッセージにする(to_messages)。1 回 5 メッセージまで。
-- 送信: LineApi(入力中の表示・返信・push)。HTTP は httpx(すでに入っている依存。LINE の SDK は足さない)。
+- 送信: LineApi(入力中の表示・返信・push・linkToken の発行)。HTTP は httpx(すでに入っている依存。LINE の SDK は足さない)。
+- アカウント連携(task 182): 決まった文(LINK_TEXT / UNLINK_TEXT。リッチメニューのボタンが送る文)で始める・解除する。
+  dip のログインの画面へのボタン(link_messages)と、dip がログインの後に本人を送る LINE の画面の URL(account_link_url)。
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import re
 import threading
 from pathlib import Path
 from typing import Self
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -32,6 +35,7 @@ TOKEN_ENV = "LINE_CHANNEL_ACCESS_TOKEN"
 PUBLIC_URL_ENV = "AICA_PUBLIC_URL"
 
 API_BASE = "https://api.line.me"
+ACCOUNT_LINK_URL = "https://access.line.me/dialog/bot/accountLink"  # dip がログインの後に本人を送る LINE の画面
 MAX_MESSAGES = 5  # 1 回の返信・push で送れるメッセージの数(Messaging API の上限)
 LOADING_SECONDS = 60  # 入力中の表示の長さ(5〜60 秒。返信を送ると消える)
 LINE_ID = re.compile(r"l-[0-9a-f]{16}")
@@ -62,6 +66,10 @@ def verify_signature(secret: str, body: bytes, signature: str | None) -> bool:
         return False
     expected = base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest())
     return hmac.compare_digest(expected, signature.encode())
+
+
+def account_link_url(link_token: str, nonce: str, base: str = ACCOUNT_LINK_URL) -> str:
+    return f"{base}?{urlencode({'linkToken': link_token, 'nonce': nonce})}"
 
 
 def line_user(user_id: str) -> str:
@@ -207,6 +215,39 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
     return messages
 
 
+# ----------------------------- アカウント連携 -----------------------------
+
+LINK_TEXT = "アカウント連携"  # 本人がこの文を送ると連携を始める(リッチメニューのボタンが送る文)
+UNLINK_TEXT = "連携解除"
+LINK_LOGIN_PATH = "/dip/login"  # dip のログインの画面(偽物。line_runtime.server)
+LINK_INTRO = "dip にログインすると、この LINE と dip の会員がつながり、閲覧や応募の状況をふまえて相談できます。リンクの期限は 10 分です。"
+LINKED_TEXT = "dip の会員とつながりました。閲覧や応募の状況をふまえて相談できます。解除するときは「連携解除」と送ってください。"
+ALREADY_LINKED_TEXT = "この LINE は、もう dip の会員とつながっています。解除するときは「連携解除」と送ってください。"
+LINK_FAILED_TEXT = "dip の会員とつなげませんでした。もう一度「アカウント連携」と送って、最初からやり直してください。"
+LINK_UNAVAILABLE_TEXT = "いまは dip の会員とつなぐことができません。少し時間をおいて、もう一度送ってください。"
+UNLINKED_TEXT = "dip の会員との連携を解除しました。もう一度つなぐときは「アカウント連携」と送ってください。"
+NOT_LINKED_TEXT = "この LINE は、dip の会員とつながっていません。つなぐときは「アカウント連携」と送ってください。"
+
+
+def link_command(text: str) -> str | None:
+    """連携を始める・解除する決まった文なら "link" / "unlink"(前後の空白は見ない)。ほかは None(ふつうの発言)。"""
+    return {LINK_TEXT: "link", UNLINK_TEXT: "unlink"}.get(text.strip())
+
+
+def link_messages(base: str, link_token: str) -> list[dict]:
+    """dip のログインの画面(linkToken つき)へのボタン。"""
+    url = f"{base}{LINK_LOGIN_PATH}?{urlencode({'linkToken': link_token})}"
+    return [_text(LINK_INTRO),
+            {"type": "flex", "altText": "dip にログインして連携する", "contents": {"type": "bubble", "size": "kilo", "body": {
+                "type": "box", "layout": "vertical", "contents": [
+                    {"type": "button", "style": "primary", "color": "#06c755", "height": "sm",
+                     "action": {"type": "uri", "label": "dip にログイン", "uri": url}}]}}}]
+
+
+def texts(*items: str) -> list[dict]:
+    return [_text(t) for t in items]
+
+
 # ----------------------------- LINE の API -----------------------------
 
 
@@ -242,6 +283,23 @@ class LineApi:
     async def loading(self, user_id: str, seconds: int = LOADING_SECONDS) -> str:
         """トークに「入力中」の表示を出す(1 対 1 のトークだけ。返信を送ると消える)。"""
         return await self._post("/v2/bot/chat/loading/start", {"chatId": user_id, "loadingSeconds": seconds})
+
+    async def link_token(self, user_id: str) -> str | None:
+        """アカウント連携の linkToken を発行してもらう(10 分、1 回だけ使える)。もらえなければ None。"""
+        path = f"/v2/bot/user/{quote(user_id, safe='')}/linkToken"
+        try:
+            r = await self._client.post(path)
+        except httpx.HTTPError as e:
+            log.warning("LINE API linkToken を呼べませんでした: %s", type(e).__name__)
+            return None
+        if not r.is_success:
+            log.warning("LINE API linkToken が %d を返しました", r.status_code)
+            return None
+        try:
+            token = r.json().get("linkToken")
+        except (ValueError, AttributeError):
+            token = None
+        return token if isinstance(token, str) and token else None
 
     async def reply(self, reply_token: str, messages: list[dict]) -> str:
         return await self._post("/v2/bot/message/reply", {"replyToken": reply_token, "messages": messages})

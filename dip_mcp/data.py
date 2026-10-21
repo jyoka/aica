@@ -208,7 +208,7 @@ class State:
     def _read(self) -> dict:
         if self.path.is_file():
             return json.loads(self.path.read_text(encoding="utf-8"))
-        return {"users": copy.deepcopy(load_users())}
+        return {"users": _initial_users()}
 
     def _write(self, data: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -217,21 +217,29 @@ class State:
         tmp.replace(self.path)
 
     def reset(self) -> None:
+        """全員を初期状態に戻す。連携の表も初期(シナリオのユーザーだけが連携済み)に戻す。"""
+        from dip_mcp import accounts  # accounts が data を読むので、ここで読む
+
         with self._lock():
-            self._write({"users": copy.deepcopy(load_users())})
+            self._write({"users": _initial_users()})
+        accounts.of(self).reset_links()
 
     def reset_user(self, line_user_id: str, template: str | None = None) -> None:
-        """1人だけ初期状態に戻す。fixtures に無いユーザーは消す(未連携の新規に戻る)。
+        """1人だけ初期状態に戻す。fixtures に無いユーザーは消し、連携も外す(未連携の新規に戻る)。
         template を与えると、そのシナリオ用ユーザーの初期状態を line_user_id に写す
-        (ブラウザごとの匿名ユーザーが、同じシナリオを他の人と混線せずに使えるように)。"""
+        (ブラウザごとの匿名ユーザーが、同じシナリオを他の人と混線せずに使えるように)。
+        連携の表も写す: シナリオのユーザーは、最初から同じ dip の会員と連携済みとして始まる(ADR-0007)。"""
+        from dip_mcp import accounts
+
         with self._lock():
             data = self._read()
-            u = load_users().get(template or line_user_id)
+            u = _initial_users().get(template or line_user_id)
             if u is None:
                 data["users"].pop(line_user_id, None)
             else:
-                data["users"][line_user_id] = copy.deepcopy(u) | {"line_user_id": line_user_id}
+                data["users"][line_user_id] = u | {"line_user_id": line_user_id}
             self._write(data)
+        accounts.of(self).set_link(line_user_id, accounts.fixture_dip_id(template or line_user_id))
 
     def user_ids(self) -> list[str]:
         """状態にいるユーザーの ID(fixtures の初期ユーザーを含む)。"""
@@ -239,7 +247,7 @@ class State:
             return list(self._read()["users"])
 
     def user(self, line_user_id: str) -> dict:
-        """未知の LINE ユーザーは「dip ID 未連携の新規」として扱う。"""
+        """未知の LINE ユーザーは新規として扱う(dip と連携しているかは連携の表で決まる。dip_mcp.behavior.dip_id)。"""
         with self._lock():
             u = self._read()["users"].get(line_user_id)
         return u or _new_user(line_user_id)
@@ -253,5 +261,11 @@ class State:
             return copy.deepcopy(u)
 
 
+def _initial_users() -> dict[str, dict]:
+    """fixtures のユーザーの初期状態。dip_id は連携の表(dip_mcp.accounts)の種なので、1 人の dict には写さない
+    (dip_id を引くのは連携の表だけ。ADR-0007)。"""
+    return {uid: {k: v for k, v in u.items() if k != "dip_id"} for uid, u in copy.deepcopy(load_users()).items()}
+
+
 def _new_user(line_user_id: str) -> dict:
-    return {"line_user_id": line_user_id, "dip_id": None, "label": "未連携の新規", "outcomes": []}
+    return {"line_user_id": line_user_id, "label": "未連携の新規", "outcomes": []}

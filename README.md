@@ -76,7 +76,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 ### LINE で試す
 
-LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶だけです
+LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶と、アカウント連携(下の「アカウント連携を試す」)だけです
 (履歴書のファイルと音声相談は、LINE ではまだ使えません。エージェントがそれを勧めたときは、文で書くよう案内します)。
 設定(`LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN`)が無ければ `POST /line/webhook` は 404 で、ほかは何も変わりません。
 
@@ -108,6 +108,30 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
   本人を決めるので、LINE のユーザーの画面にはなりません(今は LINE でこのリンクが出る流れはありません。[HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api))
 - ターン数の上限は LINE のユーザーごとと全体で数えます。IP ごとの上限は LINE にはかかりません
 
+### アカウント連携を試す
+
+LINE のユーザーと dip の会員を、LINE の「アカウント連携」の流れで結べます。連携すると、dip のツールがその会員の行動の要約を読みます。
+流れと守っていることは [HLD の 4.10](docs/architecture/hld.md#410-line-のアカウント連携) にあります。
+
+- LINE で: トークに「アカウント連携」と送ると、dip のログインの画面へのボタンが届きます(`AICA_PUBLIC_URL` が要ります)。
+  ログインすると LINE の画面に移り、トークに「つながりました」と届きます。「連携解除」と送ると外れます
+- Web で: 開発者画面(`/dev`)の左の「4 アカウント連携(偽物の LINE)」で「連携を始める」を押すと、本番のトーク画面(`/`)の
+  匿名ユーザーで同じ流れを試せます。LINE の役は偽物の LINE がします。実 LINE は呼びません
+
+dip の会員(シミュレーション。架空)のログインです。会員の行動は fixtures のシナリオのユーザーと同じです。
+
+| ログインID | パスワード | 会員 | 行動 |
+|---|---|---|---|
+| `yoru@dip.test` | `demo-pass-1001` | D1001 | シーンA: 新宿の居酒屋に応募・夜希望 |
+| `exit@dip.test` | `demo-pass-1002` | D1002 | シーンB: コンビニ夜勤の応募フォームで離脱 |
+| `applied@dip.test` | `demo-pass-1004` | D1004 | シーンD: 居酒屋に応募・連絡待ち |
+| `browsing@dip.test` | `demo-pass-1005` | D1005 | 比較検討層: 閲覧・保存あり |
+
+- 続けて 5 回まちがえると、15 分ログインできません
+- LINE と Web の匿名ユーザーは実際の時計なので、fixtures の会員の「2 時間前に離脱」などは、何日も前の出来事として読まれます。
+  傾向と 30 日の数は要約のまま読めます
+- シナリオのユーザーは最初から連携済みです。前から手元にある `data/` のシナリオユーザーは、シナリオを始め直すと連携済みに戻ります
+
 ## 画面
 
 | 画面 | URL | 中身 |
@@ -115,9 +139,11 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
 | トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
 | 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
 | LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き |
+| dip のログイン | `/dip/login` | dip の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
 | LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
 
-- ブラウザごとに匿名ユーザーIDを Cookie で発行します。認証はありません(URL を知っている知人だけが使う前提)
+- ブラウザごとに匿名ユーザーIDを Cookie で発行します。aica のログインはありません(URL を知っている知人だけが使う前提)。
+  dip のログインは、アカウント連携のときだけ使います
 - 1 日あたりのターン数に上限があります(下の「設定」)
 - シナリオは 15 件で、開発者画面と評価で同じ一覧(`evals/scenarios.json`)です
 
@@ -166,7 +192,7 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `LINE_SIM_PORT` | `8030` | Web サーバーのポート | 不可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
 | `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
-| `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)も同じディレクトリに置く | 不可 |
+| `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
 | `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りのモデル | 不可 |
 
@@ -186,8 +212,8 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 環境変数 | 既定 | 用途 | `.env` |
 |---|---|---|---|
 | `LINE_CHANNEL_SECRET` | なし | チャネルシークレット。webhook の署名(`X-Line-Signature`)を確かめる。`LINE_CHANNEL_ACCESS_TOKEN` と両方あるときだけ `POST /line/webhook` を開く(無ければ 404) | 可 |
-| `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push に使う | 可 |
-| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(トンネルの https の URL)。LINE で出す LIFF 画面へのリンクの前に付ける。無ければリンクを出さない | 可 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push、アカウント連携の linkToken の発行に使う | 可 |
+| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(トンネルの https の URL)。LINE で出す LIFF 画面と dip のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
 
 音声相談で使うものです。トークだけを試すなら要りません。
 
@@ -211,7 +237,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](docs/prd/aica-v2-fulltime.md)(PRD) |
-| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる |
+| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](docs/adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |

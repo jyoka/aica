@@ -7,6 +7,7 @@ aica が何でできていて、データがどこを流れるかの全体図で
   4.7 の時計は、2026-10-12 の決定を実装した後のコード(jyoka/tasks#175)に合わせました
 - LINE 公式アカウントのチャネル(4.8)は、2026-10-21 のユーザーの依頼で足しました(jyoka/tasks#177)
 - 4.9 の行動データと状況の要約は、task 180 で足しました。ツールが要約を読むところは task 181 で足しました
+- 4.10 の LINE のアカウント連携は、2026-10-21 のユーザーの依頼で、task 182 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -150,12 +151,13 @@ flowchart TB
         talk["トーク画面 /<br/>talk.html"]
         devp["開発者画面 /dev<br/>dev.html"]
         core["トークの部品<br/>talk-core.js、talk-core.css"]
-        liff["LIFF 画面<br/>/liff/apply、/liff/resume、/liff/voice/draft"]
+        liff["LIFF 画面<br/>/liff/apply、/liff/resume、/liff/voice/draft<br/>dip のログイン /dip/login"]
     end
 
     subgraph web["Web プロセス: python -m line_runtime.server"]
         server["Web サーバー<br/>line_runtime/server.py(FastAPI)"]
         linech["LINE のチャネル<br/>line_channel.py"]
+        fakeline["偽物の LINE<br/>fake_line.py(開発者画面の連携)"]
         turn["受け付けとターン<br/>turn.py"]
         quota["ターン数の上限<br/>quota.py"]
         rt["LineRuntime<br/>runtime.py"]
@@ -167,6 +169,7 @@ flowchart TB
     subgraph dip["dip 側: python -m dip_mcp.server(子プロセス)"]
         mcp["dip の MCP サーバー<br/>dip_mcp/server.py"]
         logic["業務ロジック<br/>logic.py、profile.py、embedding.py"]
+        accts["会員のログインと連携の表<br/>accounts.py"]
         content["dip の Prompt と playbook<br/>prompts/、playbooks/"]
     end
 
@@ -184,6 +187,7 @@ flowchart TB
 
     subgraph store["手元の状態(data/)"]
         state[("state.json<br/>dip の状態")]
+        links[("dip_accounts.db<br/>ログイン、nonce、連携の表")]
         ckpt[("line_checkpoints.db<br/>会話")]
         files[("costs.jsonl、quota.json<br/>voice-resume/")]
     end
@@ -207,6 +211,10 @@ flowchart TB
     mcp --> logic
     mcp --> content
     logic --> state
+    logic -- "dip_id を引く" --> accts
+    server -- "ログイン、nonce、連携" --> accts
+    server --> fakeline
+    accts --> links
     rt --> ckpt
     ledger --> files
     quota --> files
@@ -225,7 +233,9 @@ flowchart TB
 |---|---|---|
 | 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ | 何も持たない。Cookie の匿名ユーザーIDだけ |
 | Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
-| LINE のチャネル(`line_runtime/line_channel.py`) | webhook の署名の確かめ、LINE の userId から LINE のユーザーIDを作る、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し。FastAPI に依存しない | `data/line_events.json`(受けた webhook のイベントの ID) |
+| LINE のチャネル(`line_runtime/line_channel.py`) | webhook の署名の確かめ、LINE の userId から LINE のユーザーIDを作る、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し(linkToken の発行を含む)、アカウント連携の文とボタン。FastAPI に依存しない | `data/line_events.json`(受けた webhook のイベントの ID) |
+| 偽物の LINE(`line_runtime/fake_line.py`) | アカウント連携の LINE の役(linkToken の発行、accountLink の画面、webhook のイベント)。テストと、開発者画面から試す Web の匿名ユーザーの連携で使う | 何も書かない(出した linkToken はメモリだけ) |
+| 会員のログインと連携の表(`dip_mcp/accounts.py`) | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.10)。LLM を使わない | `data/dip_accounts.db` |
 | 受け付けとターン(`line_runtime/turn.py`) | イベントの受け付け(検証、ターン数の上限、プッシュの判定、stale、知らせ)と、LineRuntime を呼んだ後の記録。`POST /api/event` と `POST /api/event/stream` が共通に使う。FastAPI に依存しない | dip の状態(開いた記録、知らせの渡し終わり、`push_trigger` が残す接触)、`quota.json` |
 | LineRuntime(`line_runtime/runtime.py`) | 1 ターンを進める。会話の番号、ユーザーごとの排他、返信の描画(`render`) | 会話(チェックポイント)、費用台帳 |
 | エージェント(`agent.py`) | LINE の共通ルールと dip の Prompt で会話し、`LineReply` を返す | 何も書かない。dip のツールを呼ぶだけ |
@@ -475,7 +485,7 @@ flowchart LR
 
 | 場所 | 中身 | 書く部品 | 消えるとき |
 |---|---|---|---|
-| `data/state.json` | dip の状態: ユーザーごとの `dip_id`、プロフィール、雇用区分の履歴、会話の段階の結果、履歴書の読み取り結果、音声相談の結果、会話の中で dip に書いた行動のイベント(`dip_writes`。要約に入るまで重ねて読む分) | Web サーバー、dip の MCP サーバー(Web の子プロセスと、音声相談ごとの子プロセス) | プロフィールの「すべて消す」、開発者画面のシナリオの開始 |
+| `data/state.json` | dip の状態: ユーザーごとのプロフィール、雇用区分の履歴、会話の段階の結果、履歴書の読み取り結果、音声相談の結果、会話の中で dip に書いた行動のイベント(`dip_writes`。要約に入るまで重ねて読む分) | Web サーバー、dip の MCP サーバー(Web の子プロセスと、音声相談ごとの子プロセス) | プロフィールの「すべて消す」、開発者画面のシナリオの開始 |
 | `data/line_checkpoints.db` | 会話(LangGraph のチェックポイント)。本人の発言、ツールの結果、返信 | LineRuntime | 「すべて消す」、履歴書を消したとき。それ以外は消さない |
 | `data/costs.jsonl` | 費用台帳。LLM の呼び出し 1 回 1 行(user_id つき) | LineRuntime、Web サーバー(履歴書の読み取り) | 消さない |
 | `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す |
@@ -484,6 +494,7 @@ flowchart LR
 | `evals/results/`、`evals/budget.jsonl` | 評価の結果と予算台帳 | 評価 | 結果は git に入れない。予算台帳は git に入れる |
 | `data/dip_events.db` | dip の行動の元データ: 会員とイベントのログ(4.9)。シミュレーションのデータ | 生成器(`python -m scripts.gen_dip_events`)、dip のツール(会話の中の保存、フォームの答え、応募、接触の追記)、最初に要約が無いときの準備(シナリオのユーザー) | 生成器の `--replace` で作り直すとき。イベントは追記だけ |
 | `data/dip_summaries.db` | 状況の要約: 会員 1 人 1 行(4.9) | 要約のバッチ(`python -m dip_mcp.summarize`)、最初に要約が無いときの準備 | バッチのたびに全員分を置き換える |
+| `data/dip_accounts.db` | dip の会員のログイン(パスワードはハッシュ)、nonce、bot が出した linkToken(nonce と linkToken はハッシュ)、連携の表(4.10) | Web サーバー(dip のログイン、アカウント連携)、`State.reset` と `State.reset_user`(シナリオの連携を写す、外す)、最初に作るとき(fixtures の会員のログインとシナリオの連携) | 連携の解除、「すべて消す」、開発者画面のシナリオの開始(写し元の連携に戻す) |
 
 `data/` と `evals/results/` は `.gitignore` に入っています。
 
@@ -548,7 +559,8 @@ sequenceDiagram
     L-->>U: テキスト、求人カード、クイックリプライ
 ```
 
-- 答えるのは、1 対 1 のトークのテキストのメッセージと、友だち追加(`follow`)だけです。ほかのイベントは 200 で無視します
+- 答えるのは、1 対 1 のトークのテキストのメッセージと、友だち追加(`follow`)と、アカウント連携の結果(`accountLink`。4.10)だけです。
+  ほかのイベントは 200 で無視します。テキストが「アカウント連携」「連携解除」のときは、ターンに流さず連携を始める、外す(4.10)
 - LINE のユーザーIDは `l-<16桁hex>` です。LINE の userId のハッシュから作ります。匿名ユーザーID(`w-…`)とも、
   シナリオユーザーとも重なりません。LINE の userId そのものは保存しません。返信と push の宛先にだけ、処理の間メモリで使います
 - LINE のユーザーは本番のユーザーです。dip の時計は実際の時刻です(4.7)
@@ -610,7 +622,7 @@ flowchart LR
   入っていないことがある」と書いてあります。期間の判定(90 日、7 日)は、読む側がそのユーザーの「今」(4.7)でもう一度絞ります
 - dip と連携していない人は会員がいないので、元データには書かず、`dip_writes` にだけ残ります。`dip_id` はあっても元データの会員に
   無い人(シナリオの会員を入れずに作った元データ、連携の表と dip のずれ)も同じです
-- LINE のユーザーIDから `dip_id` を引くのは 1 か所(`dip_mcp/behavior.py` の `dip_id`)です。認証のカードで連携の表に差し替えます
+- LINE のユーザーIDから `dip_id` を引くのは 1 か所(`dip_mcp/behavior.py` の `dip_id`)です。読むのは連携の表です(4.10)
 
 **今のコード**
 
@@ -618,6 +630,51 @@ flowchart LR
 - 元データと要約は `State` と同じディレクトリに置きます。要約が無ければ、シナリオのユーザーの元データを入れて `SIM_NOW` で
   バッチを 1 回回してから始めます(評価とテストは実行ごとの一時ディレクトリなので、毎回この状態から始まります)
 - シナリオの 5 人で、行動を読むツールの結果は task 180 の時点と同じで、違うのは `as_of` だけです(`tests/test_dip_summary_read.py`)
+
+### 4.10 LINE のアカウント連携
+
+LINE のユーザーと dip の会員を、LINE の Messaging API の「アカウント連携」の流れで結びます
+(2026-10-21 に決定、[ADR-0007](../adr/0007-line-account-link-table.md))。結んだ対応は連携の表(`data/dip_accounts.db`)に置き、
+dip のツールは連携の表で `dip_id` を引きます。表に無い人は「dip ID と未連携の新規」の扱いです。関数と表の形は
+[LLD の 4.12](lld.md#412-line-のアカウント連携) にあります。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者
+    participant L as LINE プラットフォーム
+    participant B as Web サーバー(bot)
+    participant D as dip のログインの画面(/dip/login)
+    participant A as 連携の表など(accounts.py)
+
+    U->>L: 「アカウント連携」と送る
+    L->>B: webhook(message)
+    B->>L: linkToken を頼む
+    L-->>B: linkToken
+    B->>A: だれに出した linkToken かを覚える
+    B->>L: dip のログインの画面へのボタン(linkToken つき)
+    U->>D: ログイン ID とパスワード
+    D->>A: 確かめる(続けてまちがえたらロック)
+    D->>A: nonce を作り、会員ID と linkToken に結ぶ
+    D-->>U: LINE の accountLink の画面へ(linkToken と nonce)
+    U->>L: accountLink の画面を開く
+    L->>B: webhook(accountLink: link.result と link.nonce、署名つき)
+    B->>A: nonce から会員ID を引き、連携の表に書く
+    B->>L: 「つながりました」
+    Note over B,A: 次のターンから、dip のツールはその会員の要約を読む
+```
+
+- 連携を始める、外すのは決まった文(「アカウント連携」「連携解除」。リッチメニューのボタンが送る文)です。LLM を使わず、ターン数も数えません
+- nonce は推測できない乱数(256 ビット)です。1 回だけ使え、10 分で切れます。使い終わり、期限切れ、`link.result` が ok でない、
+  nonce を作ったときの linkToken が webhook のユーザーに出したものでない、のどれかなら連携しません。署名の無い webhook は 400 です(4.8)
+- ログインのパスワードはハッシュだけを持ちます。同じログインID で続けて 5 回まちがえると 15 分ログインできません(会員にいない ID も同じ)
+- LINE の userId そのものは保存しません。連携の表の鍵は LINE のユーザーID(`l-…`)です。nonce と linkToken もハッシュで持ちます
+- 連携を解除すると、未連携の扱いに戻ります。会話の中で書いた分(`dip_writes`)は書いたときの会員を持ち、今の会員の分だけを重ねるので、
+  前の会員の行動は重なりません。会話の途中でつないだ・解除したことは、次のターンの前にエージェントへ知らせます(4.4 の知らせと同じ)
+- シナリオのユーザーは最初から連携済みです(`fixtures/users.json` の `dip_id` が種)。開発者画面のブラウザごとのシナリオユーザーも、
+  写し元と同じ会員と連携済みで始まります。評価の結果は変わりません
+- Web のトーク画面の匿名ユーザーは、開発者画面の「アカウント連携(偽物の LINE)」から同じ流れを試せます。LINE の役は偽物の LINE
+  (`line_runtime/fake_line.py`)がします。テストも同じ偽物の LINE を使い、実 LINE は呼びません
 
 ## 5. 責任の分担
 
@@ -677,6 +734,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 同じシナリオから始めた別のブラウザのシナリオユーザーは、同じ dip の会員の要約を読みます。会話の中で書いた分(保存など)は
   本人にだけ重なるので、互いに見えません(4.9)
 - 評価は Web サーバーを通らないので、Cookie を使いません
+- dip のログインの画面(`/dip/login`)は Cookie を使わず、dip の会員のログインで会員を決めます。ログインできた後の nonce は、
+  webhook のユーザーに bot が出した linkToken とだけ組み合わせられます(4.10)。偽物の LINE の accountLink の画面は、開いた Cookie の
+  匿名ユーザーが linkToken のユーザーのときだけ連携します
 - LINE の webhook は、Cookie ではなく署名(`X-Line-Signature`。チャネルシークレットで本文の HMAC-SHA256 を取った値の base64)で
   守ります。署名が無い、違うときは 400 で、エージェントを動かしません。LINE のユーザーIDは LINE の userId からだけ作るので、
   ブラウザから LINE のユーザーを名乗ることはできません(Cookie の形は `w-…` だけ)
@@ -771,6 +831,7 @@ flowchart TB
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
 | LINE で答えるイベント、LINE のメッセージの形 | `server._line_kind`、`line_channel.to_messages` | 返信の形は `render` と同じ |
+| アカウント連携の決まり(期限、ログインの失敗の上限、連携の文) | `dip_mcp/accounts.py` の `NONCE_TTL`、`MAX_FAILURES`、`LOCK`、`line_channel.LINK_TEXT` | 偽物の LINE(`fake_line.py`)、4.10 |
 | Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_draft/schema.py`、`tests/fixtures/resume_draft_schema.json` |
 
 ## 10. 用語
@@ -797,6 +858,9 @@ flowchart TB
 | 行動の元データ | dip の会員と行動のイベントのログ(`data/dip_events.db`)。追記だけ(4.9) | 生ログ、アクセスログ(本番の dip のものを指すときだけ使う) |
 | 状況の要約 | 会員 1 人 1 行の、直近の状況の要約(`data/dip_summaries.db`)。要約のバッチが作る(4.9) | 行動サマリー、dip の要約(ツールの結果と区別する) |
 | 要約のバッチ | 元データから全員分の状況の要約を作り直す処理(`python -m dip_mcp.summarize`) | 集計ジョブ |
+| アカウント連携 | LINE のユーザーと dip の会員を、LINE の Messaging API の流れ(linkToken、dip のログイン、nonce、accountLink)で結ぶこと(4.10) | ID 連携、ひも付け |
+| 連携の表 | aica のユーザーIDと `dip_id` の対応(`data/dip_accounts.db` の `links`)。dip のツールはここで `dip_id` を引く | ひも付けテーブル |
+| 偽物の LINE | テストと開発者画面で LINE の役をする部品(`line_runtime/fake_line.py`) | モック LINE |
 | playbook | 雇用区分とチャネルごとの、相談の進め方の指針 | 台本、シナリオ、ステージ指針 |
 | 会話の決まり | 雇用区分ごとの質問の数、吹き出しの字数、期限(`CONVERSATION_RULES`) | 形式ルール |
 | LIFF 画面 | dip の画面のモック(`/liff/*`)。応募フォーム、読み取り結果、下書き | LIFF ページ |
