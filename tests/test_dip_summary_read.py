@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from dip_mcp import behavior, events, logic, profile, server, summarize
+from dip_mcp import accounts, behavior, events, logic, profile, server, summarize
 from dip_mcp.data import JST, ROOT, SIM_NOW, State, load_users
 from scripts import gen_dip_events
 
@@ -243,7 +243,7 @@ def test_unsaving_a_job_older_than_the_summary_shows_still_reaches_the_raw_event
     summarize.run(events, summaries, SIM_NOW)
     uid = "w-dddddddddddddddd:sim-new"  # 固定の時計のユーザーを、その会員につなぐ
     state.reset_user(uid, template="sim-new")
-    state.update(uid, lambda u: u.__setitem__("dip_id", "D9001"))
+    accounts.of(state).set_link(uid, "D9001")
     oldest = jobs[0]
     assert oldest not in [j["job_id"] for j in logic.saved_jobs(state, uid)]
     profile.unsave_job(state, uid, oldest)
@@ -282,7 +282,7 @@ def test_unsaving_counts_down_saves_30d_from_as_of_when_now_is_after_as_of(state
                    ("D9100", "save", as_of - timedelta(days=30), "a002", {})])
     summarize.run(events, summaries, as_of)
     uid = "w-eeeeeeeeeeeeeeee"  # 本番のユーザー(実際の時計)を、その会員につなぐ
-    state.update(uid, lambda u: u.__setitem__("dip_id", "D9100"))
+    accounts.of(state).set_link(uid, "D9100")
     assert logic.conversation_summary(state, uid)["saves_30d"] == 1
 
     profile.unsave_job(state, uid, "a001")  # as_of から 40 日前の保存は、もともと数に入っていない

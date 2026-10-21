@@ -1,0 +1,25 @@
+{
+  "_about": "dip の会員のログイン(シミュレーション。架空)。パスワードはハッシュだけを持つ(PBKDF2-SHA256)。開発者画面と README で試すためのパスワードは「demo-pass-」に会員番号の数字 4 桁(例 D1002 は demo-pass-1002)。",
+  "logins": [
+    {
+      "dip_id": "D1001",
+      "login_id": "yoru@dip.test",
+      "password_hash": "pbkdf2_sha256$200000$d43a838285e317c4de033bba413e206a$12501e45ece4e9076c7ef761a6286aeb1b918b0186f6d51e938b4beda6bbf3ed"
+    },
+    {
+      "dip_id": "D1002",
+      "login_id": "exit@dip.test",
+      "password_hash": "pbkdf2_sha256$200000$70db788c8c64de3c6457fd567d867aa1$a96aa2d55ed1db0d0785c643acca89fe131464d397aaecb927b40e3cc4f49780"
+    },
+    {
+      "dip_id": "D1004",
+      "login_id": "applied@dip.test",
+      "password_hash": "pbkdf2_sha256$200000$5774a645a9846913f7e07fa6732ca4b0$e03fd699d8eca0ab6868f7ebde39a3ce7c1e030c1d865ddd6a7021c032c1796c"
+    },
+    {
+      "dip_id": "D1005",
+      "login_id": "browsing@dip.test",
+      "password_hash": "pbkdf2_sha256$200000$b6dce89cc45d3e0f687e91bf644ca9ad$33287a175b080c04298038bb592349411566735be353b0752beaa55785d1a2af"
+    }
+  ]
+}

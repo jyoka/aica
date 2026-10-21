@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from dip_mcp import data
 from dip_mcp.data import State, load_jobs
 from line_runtime import line_channel
+from line_runtime.fake_line import FakeLinePlatform
 from line_runtime.line_channel import LINE_ID, LineApi, line_user, to_messages
 from line_runtime.quota import JST
 from tests.test_handle import call, reply
@@ -35,17 +36,21 @@ QUOTA_ENVS = ("LINE_SIM_DAILY_TURN_LIMIT", "AICA_DAILY_TURN_LIMIT_PER_IP", "AICA
 class FakeLine:
     """偽物の LINE の API。受けた呼び出しを順に記録する。fail のパスは 400 を返す(期限切れの返信トークなど)。
     reject(パス, 本文)が真なら 400(メッセージの形を断る)。timeout のパスは応答を返さない(ReadTimeout)。
-    slow_loading: 最初の「入力中」の表示だけ、この秒数だけ待ってから返す。"""
+    slow_loading: 最初の「入力中」の表示だけ、この秒数だけ待ってから返す。
+    linkToken の発行は偽物の LINE プラットフォーム(platform。line_runtime.fake_line)が答える。"""
 
     def __init__(self, fail: tuple[str, ...] = (), reject=None, timeout: tuple[str, ...] = (),
                  slow_loading: float = 0.0) -> None:
         self.calls: list[tuple[str, dict, str | None]] = []
         self.fail, self.reject, self.timeout, self.slow_loading = set(fail), reject, set(timeout), slow_loading
+        self.platform = FakeLinePlatform()
         self.transport = httpx.MockTransport(self._handle)
 
     async def _handle(self, request: httpx.Request) -> httpx.Response:
-        path, body = request.url.path, json.loads(request.content)
+        path, body = request.url.path, json.loads(request.content or b"{}")
         self.calls.append((path, body, request.headers.get("authorization")))
+        if path not in self.fail and (issued := self.platform.api_response(request)) is not None:
+            return issued
         if path == LOADING and self.slow_loading:
             delay, self.slow_loading = self.slow_loading, 0.0
             await asyncio.sleep(delay)

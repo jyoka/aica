@@ -10,6 +10,7 @@
 - 4.7 と 4.8 の後半、4.9、4.10、5.3 の後半、5.7 の件数、10 章の履歴書の読み取りは、README を書き直したとき(jyoka/tasks#167)に README から移しました
 - LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
 - dip のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
+- LINE のアカウント連携(4.12、5.9、`accounts.py`、`fake_line.py`)は task 182 で足しました
 
 ## 1. パッケージの構成
 
@@ -82,8 +83,9 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_turn` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し。FastAPI に依存しない | `verify_signature`、`line_user`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT` |
+| `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
@@ -157,12 +159,13 @@ classDiagram
 |---|---|---|
 | `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
-| `profile.py` | プロフィール画面の中身と、知らせ | `view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
+| `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
 | `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`SUMMARIES_PATH` |
-| `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(5.8、ADR-0006) | `view`、`record`、`overlay`、`dip_id`、`stores`、`WRITES` |
+| `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
+| `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
 
@@ -399,7 +402,12 @@ flowchart LR
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。入力値は保存しない |
-| `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1 | 4.11。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳 |
+| `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳、連携の表 |
+| `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | dip の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
+| `GET /api/dev/link` | `dev_link` | Cookie | - | -(開発者画面の「アカウント連携」。匿名ユーザーIDと `dip_id`) |
+| `POST /api/dev/link/start` | `dev_link_start` | Cookie + 書き込みの枠 | - | 偽物の LINE の linkToken、bot が出した linkToken の記録。連携済みなら 409 |
+| `POST /api/dev/link/unlink` | `dev_link_unlink` | Cookie | - | 連携の表から外す |
+| `GET /fake-line/dialog/bot/accountLink` | `fake_line_account_link` | Cookie(開いた人が linkToken のユーザーか) | - | 4.12。偽物の LINE の accountLink の画面。知らない linkToken は 404 |
 
 - Cookie `aica_uid` は HttpOnly、SameSite=Lax です。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
@@ -984,7 +992,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 1. `LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN` の両方が無ければ 404(`line_channel.configured`)。リクエストのたびに環境変数を読みます
 2. 本文をそのまま読み、`X-Line-Signature` を確かめます。合わなければ 400 で、本文の JSON も読みません
 3. `events` のうち、答えるもの(`_line_kind`)だけを残します。1 対 1 のトーク(`source.type == "user"`)の、
-   空白だけでないテキストのメッセージ(`message`、`message.type == "text"`)と友だち追加(`follow`)です。
+   空白だけでないテキストのメッセージ(`message`、`message.type == "text"`)と友だち追加(`follow`)と、アカウント連携の結果
+   (`accountLink`。4.12)です。テキストが `LINK_TEXT`(「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら、`link` と `unlink` です。
    `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
 4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
    ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
@@ -999,6 +1008,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 - `LineApi.loading` で「入力中」の表示(60 秒。返信を送ると消える)を出してから、ターンを進めます
 - ユーザーIDは `line_user(userId)` = `"l-" + sha256("aica-line:" + userId)` の先頭 16 桁です。鍵は使いません(チャネルシークレットを
   作り直しても同じユーザーのまま)。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
+- 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12 で、LLM を使いません
 - ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。今の会話に続けます
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
@@ -1025,6 +1035,98 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 - `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
 - LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
 
+### 4.12 LINE のアカウント連携
+
+HLD の 4.10 の中身です。決定は [ADR-0007](../adr/0007-line-account-link-table.md) にあります。LINE の Messaging API の
+アカウント連携の流れ(linkToken、サービスのログイン、nonce、accountLink の webhook)と同じ順に進めます。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者(LINE アプリ)
+    participant L as LINE プラットフォーム(テストでは fake_line.FakeLinePlatform)
+    participant W as server.line_webhook と _line_messages
+    participant D as server.dip_login(/dip/login)
+    participant A as dip_mcp.accounts.Accounts
+    participant BH as dip_mcp.behavior と profile
+    participant T as dip のツール
+
+    U->>L: 「アカウント連携」(LINK_TEXT)
+    L->>W: POST /line/webhook(署名つき)
+    W->>W: verify_signature、_line_kind → link
+    W->>BH: dip_id(連携済みなら ALREADY_LINKED_TEXT で終わり)
+    W->>L: LineApi.link_token: POST /v2/bot/user/{userId}/linkToken
+    L-->>W: {"linkToken": …}(10 分、1 回だけ)
+    W->>A: record_link_token(l-…, linkToken)(ハッシュで 10 分)
+    W->>L: 返信: LINK_INTRO と、AICA_PUBLIC_URL/dip/login?linkToken=… のボタン
+    U->>D: GET /dip/login?linkToken=…(フォーム)
+    U->>D: POST /dip/login(login_id、password、linkToken)
+    D->>A: login(失敗の数、ロック)
+    alt ID かパスワードがちがう、ロック中
+        D-->>U: 401 か 429(フォームをもう一度)
+    else ログインできた
+        D->>A: issue_nonce(dip_id, linkToken)(nonce の期限 10 分)
+        D-->>U: 303 https://access.line.me/dialog/bot/accountLink?linkToken=…&nonce=…
+    end
+    U->>L: accountLink の画面を開く
+    L->>W: POST /line/webhook: accountLink、link.result、link.nonce(署名つき)
+    W->>W: _line_kind → account_link → account_link(l-…, link)
+    alt result が ok
+        W->>A: complete_link: nonce を使い終わりにし、期限と linkToken の持ち主を確かめ、links に書く
+        W->>BH: profile.link_changed(つなげたら。次のターンの前にエージェントへ知らせる)
+    else result が failed
+        W->>A: burn_nonce
+    end
+    W->>L: 返信: LINKED_TEXT か LINK_FAILED_TEXT
+    Note over T,A: 次のターンから behavior.dip_id(l-…)が会員の dip_id を返し、ツールはその会員の要約を読む
+```
+
+**dip のログイン(`Accounts.login`)**
+
+- パスワードは `pbkdf2_sha256$回数$塩$ハッシュ`(PBKDF2-SHA256、塩 16 バイト、20 万回)で持ちます。fixtures の会員のログインは
+  `fixtures/dip_accounts.json` にあり、`data/dip_accounts.db` を初めて作るときに入れます
+- まちがえた数はログインID ごとに `login_failures` に数えます。会員にいない ID も同じに数えます。`MAX_FAILURES`(5 回)に達したら
+  `locked_until` を `LOCK`(15 分)後にします。ロックの間は、正しいパスワードでも `locked` です。ロックが明けたら数え直し、
+  ログインできたら行を消します。最後の失敗から `LOCK` 過ぎた行は、次のログインのときに消します
+- 同時に送られたログインでも上限を超えないように、ハッシュの計算の前に、トランザクションの中で失敗 1 回分を数えておきます。
+  まちがえた数と計算中の数で `MAX_FAILURES` に達していたら、計算せずに `locked` です。計算の後は、トランザクションの中で
+  ロックを確かめ直します。計算の間にほかの失敗でロックされていたら、正しいパスワードでも `locked` で、ロックも消しません
+- 無いログインID は `bad` で、同じだけハッシュの計算をします(ID があるかを、答えの文、ロック、時間で知られないため)
+- ハッシュの計算(1 回 20 ミリ秒ほど)はトランザクションの外でします。`dip_login` は `asyncio.to_thread` で呼び、ほかの要求を止めません
+
+**nonce と linkToken(`Accounts.issue_nonce`、`record_link_token`、`complete_link`)**
+
+- nonce は `secrets.token_urlsafe(32)`(43 字、256 ビット)です。表には sha256 のハッシュだけを、会員ID、linkToken のハッシュ、期限と一緒に置きます
+- bot は、LINE からもらった linkToken を、だれ(aica のユーザーID)に出したかと一緒に 10 分覚えます(ハッシュ)
+- `complete_link(user_id, nonce)` は `BEGIN IMMEDIATE` の 1 つのトランザクションで、次の順に確かめます。nonce が無い(`unknown`)、
+  使い終わり(`used`)なら連携しません。それ以外は、ここで使い終わりにしてから、期限切れ(`expired`)、nonce の linkToken を bot が
+  `user_id` に出していない(`other_token`)を確かめます。通ったら linkToken の記録を消し、`links` に書きます
+- `link.result` が ok でない accountLink では、`burn_nonce` で nonce を使い終わりにします
+- 偽物の LINE(`FakeLinePlatform.open_account_link`)は、知らない linkToken には webhook を送らず(None)、使い終わり、期限切れ、
+  開いた人が linkToken のユーザーでないときは `result: failed` のイベントを作ります
+
+**解除と、連携の表を直接書くところ**
+
+- 「連携解除」(`UNLINK_TEXT`)と開発者画面の「連携を解除」は `server._unlink`(`Accounts.unlink`)です。`links` から外すだけで、
+  `dip_writes` は消しません。連携していなければ `NOT_LINKED_TEXT` です
+- `behavior.record` は `dip_writes` の 1 件に、書いたときの会員(`dip_id`。未連携なら None)を入れます。`behavior.view` が重ねるのは、
+  今の会員の分と未連携の間に書いた分だけです(`_mine`。`dip_id` を持たない古い記録は今の会員の分とみなす)。解除した後は前の会員の
+  行動が重ならず、同じ会員につなぎ直すとまた重なります。ツールが書いている途中に解除されても、その 1 件は未連携の人に重なりません
+- つないだ(`account_link`)・解除した(`_unlink`)ことは `profile.link_changed` で知らせ(`profile_changes`)に残し、次の本人の
+  ターンの前にエージェントへ渡します(`profile.notice`。要約を読み直すよう書く)
+- `State.reset_user(uid, template)` は `set_link(uid, fixture_dip_id(template or uid))` を呼びます。シナリオの写しは写し元と同じ会員、
+  fixtures に無い人は連携を外します(「すべて消す」もこれを通ります)。`State.reset` は `reset_links` で、`links`、`link_tokens`、
+  `nonces` を消してシナリオの連携を入れ直します
+
+**Web の匿名ユーザー(開発者画面の「アカウント連携(偽物の LINE)」)**
+
+1. 「連携を始める」: `POST /api/dev/link/start`。`app.state.fake_line` が linkToken を出し、`record_link_token` で匿名ユーザーIDに出したと覚えます。
+   画面は返った `/dip/login?linkToken=…` を新しいタブで開きます
+2. ログインできると、`dip_login` は linkToken が偽物の LINE のもの(`FakeLinePlatform.knows`)なので、`https://access.line.me/…` ではなく
+   `/fake-line/dialog/bot/accountLink?…` に送ります
+3. `fake_line_account_link` は、開いた Cookie の匿名ユーザーIDで `open_account_link` を呼び、できた accountLink のイベントの `link` を
+   `account_link` に渡します(LINE の webhook の署名を確かめた後と同じ処理)。結果の文を画面に出します
+
 ## 5. 手元のファイルと保存するデータ
 
 | ファイル | 書く者 | 読む者 | 形式 |
@@ -1043,6 +1145,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `data/dip_events.db` | `scripts/gen_dip_events.py`、`EventStore.append`(追記だけ。`behavior.record`)、`behavior.stores`(最初の準備) | 要約のバッチ | SQLite(5.8)。場所は `State` と同じディレクトリ |
 | `data/dip_summaries.db` | 要約のバッチ(`SummaryStore.replace_all`) | `SummaryStore.get`(`behavior.view`) | SQLite(5.8)。場所は `State` と同じディレクトリ |
 | `data/dip_events.lock` | `behavior.stores` | 同 | `fcntl.flock` の印(最初の準備を 1 つのプロセスだけが行う) |
+| `data/dip_accounts.db` | `dip_mcp.accounts.Accounts`(Web プロセス、`State.reset` と `reset_user`) | `Accounts.dip_id`(`behavior.dip_id`。dip の子プロセスも) | SQLite(5.9)。場所は `State` と同じディレクトリ |
 | `fixtures/*.json` | 人、`scripts/gen_*.py` | dip、評価 | 5.7 |
 | `voice_resume/data/wage_reference.json` | `scripts/voice/update_wage_reference.py` | `wages.load_reference` | `WageReference` |
 
@@ -1051,13 +1154,13 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 
 ### 5.1 dip の状態(`data/state.json`)
 
-`{"users": {ユーザーID: ユーザー}}` の 1 つの JSON です。ファイルが無ければ `fixtures/users.json` を初期の状態にします。
-知らないユーザーは `_new_user`(dip ID と未連携の新規)として読み、書くときに作ります。
+`{"users": {ユーザーID: ユーザー}}` の 1 つの JSON です。ファイルが無ければ `fixtures/users.json`(`dip_id` を除く)を初期の状態にします。
+知らないユーザーは `_new_user`(新規)として読み、書くときに作ります。dip と連携しているかは連携の表(5.9)で決まり、ここには持ちません。
 
 | キー | 中身 | 書く関数 |
 |---|---|---|
-| `line_user_id`、`dip_id`、`label` | ユーザーID、dip ID(無ければ未連携)、開発者画面の説明 | fixtures、`_new_user` |
-| `dip_writes` | 会話の側から dip に書いた行動のイベント `{seq, at, kind, job_id, data}`(元データに追記したものと同じ。連携していない人は `seq` が None)。要約に入ったものは次に書くときに落とす(5.8) | `behavior.record`(`save_job`、`resume_form`、`submit_application`、`push_trigger`、`profile.unsave_job`) |
+| `line_user_id`、`label` | ユーザーID、開発者画面の説明 | fixtures、`_new_user` |
+| `dip_writes` | 会話の側から dip に書いた行動のイベント `{seq, at, kind, job_id, data, dip_id}`(元データに追記したものと同じ。連携していない人は `seq` と `dip_id` が None。`dip_id` は書いたときの会員)。今の会員の分で要約に入ったものは次に書くときに落とす(5.8、4.12) | `behavior.record`(`save_job`、`resume_form`、`submit_application`、`push_trigger`、`profile.unsave_job`) |
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
@@ -1283,7 +1386,8 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 | `search_query_vectors.json` | 検索評価セットの問い合わせのベクトル(評価をオフラインで回すため) |
 | `listings.json` | 掲載の開始と終了の日付 |
 | `faq.json`、`job_faq.json` | 全体の FAQ と、求人ごとの Q&A |
-| `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章)。`dip_id` と説明だけで、行動は `dip_events.json` にある |
+| `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章)。`dip_id` と説明だけで、行動は `dip_events.json` にある。`dip_id` は連携の表の種(5.9) |
+| `dip_accounts.json` | dip の会員 4 人のログイン(ログインID とパスワードのハッシュ)。試すためのパスワードは README の「アカウント連携を試す」 |
 | `dip_events.json` | シナリオのユーザーのうち dip ID のある 4 人の、行動の元データ(会員とイベント。5.8) |
 
 求人は 103 件で、アルバイト・パートが 63 件(`jobs.json` 60 件、`anchor_jobs.json` 3 件)、正社員が 40 件(`fulltime_jobs.json`)です。
@@ -1369,7 +1473,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 - 書く: `record(state, line_user_id, kind, job_id, **data)` は、`dip_id` があれば `EventStore.append` で元データに追記し、同じイベントを
   `dip_writes` に足します。`dip_id` が無ければ元データには書かず、`dip_writes` にだけ残します(`seq` は None)。
   `dip_id` が元データの会員に無い(追記が外部キーの `IntegrityError` になる)ときも同じです
-- `dip_id(state, line_user_id)` が、LINE のユーザーIDから `dip_id` を引く 1 か所です。`logic`、`profile`、`server` は `dip_id` の欄を直接読みません
+- `dip_id(state, line_user_id)` が、LINE のユーザーIDから `dip_id` を引く 1 か所です。連携の表(5.9)を読みます。`logic`、`profile`、`server` は `dip_id` の欄を直接読みません
 - `stores(state)` は `State` と同じディレクトリの元データと要約を返します。要約のファイルが無ければ、`dip_events.lock` を取って、
   元データ(無ければシナリオのユーザーの分を入れて作る)から `SIM_NOW` で要約のバッチを 1 回回します。
   要約は `dip_summaries.db.building` に作ってから `os.replace` で置き換えます。`stores` はロックを取らずにファイルがあるかだけを見るので、作りかけの空の要約を別のプロセスに読ませないためです
@@ -1385,6 +1489,20 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `save_job`、`saved_jobs`、`profile.view`、`profile.unsave_job` | `saves`、`saves_total`、`applications` |
 | `push_trigger` | `last_contact`(間隔)、`form_exit`(話しかける根拠) |
 
+### 5.9 ログインと連携の表(`data/dip_accounts.db`)
+
+`dip_mcp/accounts.py` が持つ SQLite です(4.12)。ファイルが無ければ、表を作り、1 回だけ(`meta` の `seeded`)fixtures の会員のログインと、
+シナリオのユーザーの連携を入れます。時刻は UTC の ISO 8601 です。
+
+| 表 | 列 | 中身 |
+|---|---|---|
+| `logins` | `dip_id`(主キー)、`login_id`(一意)、`password_hash` | dip の会員のログイン |
+| `login_failures` | `login_id`(主キー)、`failures`、`last_failed_at`、`locked_until` | ログインID ごとの、続けてまちがえた数とロック(会員にいない ID も) |
+| `nonces` | `nonce_hash`(主キー)、`dip_id`、`link_token_hash`、`expires_at`、`used_at` | dip が作った nonce。期限から 10 分過ぎたものは、次に作るときに消す |
+| `link_tokens` | `link_token_hash`(主キー)、`user_id`、`expires_at` | bot が LINE からもらって本人に出した linkToken。期限の過ぎたものは次に覚えるときに消す |
+| `links` | `user_id`(主キー)、`dip_id`、`linked_at` | 連携の表。`user_id` は aica のユーザーID(`l-…`、`w-…`、シナリオユーザー)。LINE の userId は持たない |
+| `meta` | `key`、`value` | 種を入れたか(`seeded`) |
+
 ## 6. 並行と排他
 
 - **ユーザーの排他**: `LineRuntime._locks[user_id]`(`asyncio.Lock`)。1 人のターンは 1 つずつ進みます。Web サーバーは、会話を読む、
@@ -1398,6 +1516,9 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
   要約は別の名前のファイルに作ってから置き換えるので、ロックを取らずに読む側は、準備が終わるまで要約が無いと見てロックを待ちます。
   追記は SQLite の 1 つのトランザクションです。`behavior.record` は元データに追記してから `State.update` で `dip_writes` に足します
   (準備は `state.lock` を取らず、`State.update` の中では `stores` を呼ばないので、2 つのロックは入れ子になりません)
+- **ログインと連携の表**: `Accounts` の書く処理は、どれも `BEGIN IMMEDIATE` のトランザクションです。nonce を使い終わりにして `links` に
+  書くまでが 1 つなので、同じ nonce を 2 つのプロセスが同時に使っても、連携するのは 1 回だけです。表を作って種を入れるのは、プロセスごとに
+  ファイル 1 つにつき 1 回で、種を入れたかを同じトランザクションの中で確かめます
 - **LINE の再送**: `SeenEvents._lock`(`threading.Lock`)の中で、受けたかを確かめて覚え、ファイルに書きます
 - **音声相談の待ち合わせ**: ユーザーごとの `asyncio.Condition`(`app.state.voice_ready`)。結果が届いたら `notify_all` します
 - **プロセスのメモリにあるもの**: `_locks`、`_threads`、`_running`、`voice_ready`、`unread_uploads`、`Ledger.rows`。Web プロセスは
@@ -1542,6 +1663,11 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     task 180 の時点(`tests/fixtures/dip_tools_main.json`)と同じで、違うのは `as_of` だけです(`::test_tools_return_the_same_as_main_except_as_of`)。
     保存した直後の会話で保存が読め、要約の行は次のバッチまで変わりません
     (`::test_a_saved_job_is_there_right_after_saving_while_the_summary_waits_for_the_batch`)
+
+22. アカウント連携は、偽物の LINE で linkToken から accountLink の webhook まで通り、その後の dip のツールがその会員の要約を読みます
+    (`tests/test_account_link.py::test_line_user_links_end_to_end_and_tools_then_read_the_members_summary`)。nonce の使い回し、期限切れ、
+    `link.result` が failed、署名の無い webhook、別の linkToken との組み合わせは連携しません。ログインの失敗には上限があり、
+    解除すると未連携の扱いに戻ります。シナリオのユーザーは最初から連携済みです(`tests/test_account_link.py`)
 
 ## 10. テストと評価の仕組み
 

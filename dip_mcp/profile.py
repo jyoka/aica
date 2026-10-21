@@ -79,6 +79,15 @@ def view(state: State, line_user_id: str) -> dict:
     }
 
 
+LINK_LABEL = "dip の会員との連携"
+LINK_ACTIONS = ("つないだ", "解除した")
+
+
+def link_changed(state: State, line_user_id: str, linked: bool) -> None:
+    """LINE のアカウント連携でつないだ・解除した: 行動の事実が変わるので、会話の途中なら次の本人のターンの前に AI へ知らせる。"""
+    state.update(line_user_id, lambda u: _note(u, LINK_ACTIONS[0] if linked else LINK_ACTIONS[1], LINK_LABEL))
+
+
 def _note(u: dict, action: str, what: str, value: str | None = None, undone: str | None = None) -> None:
     """次の本人のターンの前に AI へ渡す、変えたことの知らせ。undone は取り消した切り替えの区分(取り消しのときだけ)。"""
     rec = ({"at": now(u["line_user_id"]).isoformat(), "action": action, "what": what} | ({"value": value} if value is not None else {})
@@ -318,7 +327,9 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
     """次の本人のターンの前に AI へ渡す知らせ。変えたことと、今の内容(要約と同じ形)を並べる。"""
     done, undone = [], []
     for c in changes:
-        if c["action"] == "取り消した":
+        if c["what"] == LINK_LABEL:
+            done.append(f"{LINK_LABEL}を{c['action']}")
+        elif c["action"] == "取り消した":
             done.append(f"{c['what']}の「{c['undone']}」への切り替えを取り消して「{c['value']}」に戻した")
             undone.append(c["undone"])
         else:
@@ -328,7 +339,9 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
             "stated_preferences": {k: v["value"] for k, v in logic.stated_preferences(user).items()},
             "consultation_summary": (logic.consultation_summary(user) or {}).get("text"),
             "uploaded_resume": "あり" if user.get("resume_upload") else "なし"}
-    where = "トークの表示のボタンで" if all(c["action"] == "取り消した" for c in changes) else "画面で"
+    where = ("トークの表示のボタンで" if all(c["action"] == "取り消した" for c in changes)
+             else "アカウント連携で" if all(c["what"] == LINK_LABEL for c in changes) else "画面で")
+    relinked = any(c["what"] == LINK_LABEL for c in changes)
     return (f"[お知らせ: 本人が{where}、aica が覚えていることを変えました] "
             f"変えたこと: {'、'.join(dict.fromkeys(done))}。"
             f"今の内容: {json.dumps(now_, ensure_ascii=False)} "
@@ -336,4 +349,6 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
             "変えたことを長々と確認しない。"
             + (f"雇用区分の切り替えが取り消されたので、返信の前に get_user_conversation_summary を読み直し、今の区分"
                f"(search_track)で続ける。本人がはっきり言わない限り、「{'」「'.join(dict.fromkeys(undone))}」へ"
-               "すぐに切り替え直さない(set_search_track を呼ばない)。" if undone else ""))
+               "すぐに切り替え直さない(set_search_track を呼ばない)。" if undone else "")
+            + ("dip の会員との連携が変わったので、閲覧・応募・保存・離脱などの行動の事実は、この会話の前の部分や前に読んだ要約の"
+               "ものを使わず、返信の前に get_user_conversation_summary を読み直す。" if relinked else ""))
