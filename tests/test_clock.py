@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
+from dip_mcp import behavior, logic, summarize
 from dip_mcp.data import JST, SIM_NOW, State, now, parse_ts
 from evals.scenarios import load_scenarios, prepare
 from tests.test_resume_upload import _open, _upload
@@ -40,7 +40,7 @@ def test_production_user_records_use_real_time(app):
     dip に残る時刻は実際の時刻(前は、どれも SIM_NOW の 2026-09-23 12:00 になっていた)。"""
     with TestClient(app.app) as client:
         uid = _open(client)
-        before = datetime.now(JST)
+        before = datetime.now(JST).replace(microsecond=0)  # dip の行動のイベントの時刻は秒まで
         assert client.put("/api/profile/items/area", json={"value": "新宿"}).status_code == 200
         assert client.put("/api/profile/track", json={"track": "正社員"}).status_code == 200
         assert _upload(client, uid).status_code == 200
@@ -53,7 +53,7 @@ def test_production_user_records_use_real_time(app):
     u = app.state.user(uid)
     stamps = {"希望の保存日": u["preferences"]["area"]["at"], "区分の切り替え": u["track_history"][-1]["at"],
               "履歴書のアップロード": u["resume_upload"]["uploaded_at"], "音声相談の結果": u["voice_results"][-1]["at"],
-              "保存": u["saves"][-1]["at"], "プロフィールの知らせ": u["profile_changes"][-1]["at"]}
+              "保存": behavior.view(app.state, uid)["saves"][0]["at"], "プロフィールの知らせ": u["profile_changes"][-1]["at"]}
     assert {k: v for k, v in stamps.items() if not _real(v, before, after)} == {}
     # 画面に出す日付も今日(前は 9/23)
     today = f"{after.month}/{after.day}"
@@ -65,23 +65,23 @@ def test_production_user_periods_count_from_real_time(app):
     100 日前の応募は 90 日を過ぎたので出さない(前は SIM_NOW から数えたので、日数が実際とずれていた)。"""
     with TestClient(app.app) as client:
         uid = _open(client)
-    real = datetime.now(JST)
-
-    def seed(u):
-        u["dip_id"] = "dip-prod-1"  # 連携済みの本番のユーザー(プッシュの判定まで進むように)
-        u["applications"] = [{"job_id": "b0101", "applied_at": (real - timedelta(days=100)).isoformat(), "status": "不採用"},
-                             {"job_id": "b0102", "applied_at": (real - timedelta(days=2)).isoformat(),
-                              "status": "応募済み(店舗からの連絡待ち)"}]
-        u["form_exits"] = [{"job_id": "b0103", "exited_at": (real - timedelta(hours=5)).isoformat(),
-                            "completed": {"氏名": "架空"}, "remaining": ["電話番号"]}]
-        u["contacts"] = [{"at": (real - timedelta(days=4)).isoformat(), "channel": "LINE AI通知", "message": "form_exit"}]
-
-    app.state.update(uid, seed)
+    real = datetime.now(JST).replace(microsecond=0)
+    # 連携済みの本番のユーザー(プッシュの判定まで進むように)の行動の元データと、実際の時刻で回した要約のバッチ
+    events, summaries = behavior.stores(app.state)
+    events.add_members([("dip-prod-1", real - timedelta(days=200))])
+    events.extend([("dip-prod-1", "apply", real - timedelta(days=100), "b0101", {"status": "不採用"}),
+                   ("dip-prod-1", "apply", real - timedelta(days=2), "b0102", {"status": "応募済み(店舗からの連絡待ち)"}),
+                   ("dip-prod-1", "form_exit", real - timedelta(hours=5), "b0103",
+                    {"completed": ["氏名"], "remaining": ["電話番号"]}),
+                   ("dip-prod-1", "contact", real - timedelta(days=4), None,
+                    {"channel": "LINE AI通知", "message": "form_exit"})])
+    summarize.run(events, summaries, real)
+    app.state.update(uid, lambda u: u.__setitem__("dip_id", "dip-prod-1"))
     assert [(a["job_id"], a["days_ago"]) for a in logic.recent_applications(app.state, uid)] == [("b0102", 2)]
     assert logic.conversation_summary(app.state, uid)["form_exit"]["hours_ago"] == 5
     # 最後の接触は 4 日前なので、3 日の間隔を過ぎている(前は SIM_NOW から見て「未来の接触」で、ずっと断っていた)
     assert logic.push_trigger(app.state, uid, "form_exit")["allowed"] is True
-    assert _real(app.state.user(uid)["contacts"][-1]["at"], real, datetime.now(JST))
+    assert _real(behavior.view(app.state, uid)["last_contact"]["at"], real, datetime.now(JST))
 
 
 def test_production_user_new_listings_count_from_the_fixture_clock(app):
@@ -113,9 +113,9 @@ def test_scenario_user_keeps_the_fixed_clock(app):
     logic.save_preferences(app.state, user, {"area": "新宿"})
     logic.set_search_track(app.state, user, "正社員", "本人が「正社員で探したい」と話した")
     logic.save_job(app.state, user, "b0101")
-    u = app.state.user(user)
-    stamps = [u["applications"][-1]["applied_at"], u["resume_upload"]["uploaded_at"], u["preferences"]["area"]["at"],
-              u["track_history"][-1]["at"], u["saves"][-1]["at"]]
+    u, acts = app.state.user(user), behavior.view(app.state, user)
+    stamps = [acts["applications"][0]["applied_at"], u["resume_upload"]["uploaded_at"], u["preferences"]["area"]["at"],
+              u["track_history"][-1]["at"], acts["saves"][0]["at"]]
     assert {parse_ts(s) for s in stamps} == {SIM_NOW}
 
 
@@ -128,9 +128,9 @@ def test_eval_users_keep_the_fixed_clock(tmp_path):
     assert logic.conversation_summary(state, "sim-applied")["last_application"]["days_ago"] == 4  # 9/19 に応募
     assert logic.conversation_summary(state, "sim-exit")["form_exit"]["hours_ago"] == 2
     assert logic.push_trigger(state, "sim-exit", "form_exit")["allowed"] is True
-    assert parse_ts(state.user("sim-exit")["contacts"][-1]["at"]) == SIM_NOW
+    assert parse_ts(behavior.view(state, "sim-exit")["last_contact"]["at"]) == SIM_NOW
     logic.save_job(state, "sim-new", "b0101")
-    assert parse_ts(state.user("sim-new")["saves"][-1]["at"]) == SIM_NOW
+    assert parse_ts(behavior.view(state, "sim-new")["saves"][0]["at"]) == SIM_NOW
     # 新着の絞り込み(掲載開始が SIM_NOW の前日の求人)も SIM_NOW から数える
     assert logic.recommend(state, None, posted_within_days=3)["total"] > 0
 

@@ -14,7 +14,7 @@ import re
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic
+from dip_mcp import behavior, logic
 from dip_mcp.data import State
 from tests.test_handle import call, reply
 
@@ -79,7 +79,8 @@ def test_reset_user_can_seed_a_browser_user_from_a_scenario_template(tmp_path):
     state.reset_user("w-aaaaaaaaaaaaaaaa:sim-browsing", template="sim-browsing")
     u = state.user("w-aaaaaaaaaaaaaaaa:sim-browsing")
     assert u["line_user_id"] == "w-aaaaaaaaaaaaaaaa:sim-browsing"
-    assert u["dip_id"] and u["views"]  # fixtures の行動履歴ごと写る
+    assert u["dip_id"] == "D1005"  # 同じ dip の会員として、シナリオの行動の要約を読む
+    assert behavior.view(state, "w-aaaaaaaaaaaaaaaa:sim-browsing")["recent_views"]
     assert state.user("sim-browsing")["line_user_id"] == "sim-browsing"  # 元のシナリオユーザーはそのまま
 
 

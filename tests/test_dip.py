@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from dip_mcp import logic
+from dip_mcp import behavior, logic
 from dip_mcp.data import ROOT, State
 
 
@@ -154,14 +154,17 @@ def test_resume_form_rejects_pii_and_returns_liff(state):
     r = logic.resume_form(state, "sim-exit", "a002", {"希望開始日": "来週から", "電話番号": "090-1234-5678"})
     assert r["remaining_fields"] == ["電話番号"] and r["rejected_pii"] == ["電話番号"]
     assert r["liff_url"].startswith("/liff/apply")
-    stored = state.user("sim-exit")["form_exits"][0]
-    assert stored["completed"]["希望開始日"] == "来週から" and "電話番号" not in stored["completed"]
+    assert logic.form_exit(state, "sim-exit")["completed_fields"] == ["氏名", "年齢", "希望開始日"]
+    # dip に書くのは答えた項目名だけ(form_fill のイベント)。値は持たない
+    assert state.user("sim-exit")[behavior.WRITES][-1] | {"seq": None, "at": None} == {
+        "seq": None, "at": None, "kind": "form_fill", "job_id": "a002", "data": {"fields": ["希望開始日"]}}
 
 
 def test_resume_form_rejects_pii_in_values_of_other_fields(state):
     r = logic.resume_form(state, "sim-exit", "a002", {"希望開始日": "来週 090-1234-5678に電話ください"})
     assert r["rejected_pii"] == ["希望開始日"]
-    assert "希望開始日" not in state.user("sim-exit")["form_exits"][0]["completed"]
+    assert "希望開始日" not in logic.form_exit(state, "sim-exit")["completed_fields"]
+    assert not state.user("sim-exit").get(behavior.WRITES)  # 何も書かない
 
 
 def test_outcome_reason_is_scrubbed_of_pii(state):
@@ -326,7 +329,7 @@ def test_push_denied_for_unlinked_and_unknown_trigger(state):
 def test_push_frequency_cap_and_contact_is_recorded(state):
     r = logic.push_trigger(state, "sim-exit", "form_exit")
     assert r["allowed"]
-    assert state.user("sim-exit")["contacts"][-1]["channel"] == "LINE AI通知"
+    assert behavior.view(state, "sim-exit")["last_contact"]["channel"] == "LINE AI通知"
     again = logic.push_trigger(state, "sim-exit", "form_exit")
     assert not again["allowed"] and "日以内" in again["reason"]
 

@@ -12,7 +12,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic, profile
+from dip_mcp import behavior, logic, profile
 from line_runtime.quota import LIMIT_MESSAGE, limit_reply
 from tests.test_quota import _server
 
@@ -102,9 +102,9 @@ def test_a_push_at_the_limit_is_not_sent_and_leaves_no_contact_in_dip(tmp_path, 
     def scene(api):
         user = api.start("B-exit")  # 上限が無ければ dip が許可するユーザー
         assert api.send(user, "message", "こんにちは")[0] == 200  # 上限の 1 回を使う
-        contacts = api.server.state.user(user).get("contacts", [])
+        contact = behavior.view(api.server.state, user)["last_contact"]
         status, r = api.send(user, "form_exit")
-        return status, r, api.kinds, api.server.state.user(user).get("contacts", []) == contacts, api.model.calls
+        return status, r, api.kinds, behavior.view(api.server.state, user)["last_contact"] == contact, api.model.calls
 
     out = both(tmp_path, monkeypatch, scene, limit="1")
     assert out["json"][:2] == out["stream"][:2] == (200, {"sent": False, "reason": LIMIT_REASON})

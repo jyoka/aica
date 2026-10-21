@@ -142,8 +142,8 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
-| `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ | 使わない |
-| `python -m dip_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/dip_summaries.db`)を全員分作り直す | 使わない |
+| `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
+| `python -m dip_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/dip_summaries.db`)を全員分作り直す。dip のツールが読むのはこの要約で、会話の中で書いたこと(保存、応募など)は次のバッチまで本人の分だけ重ねて読む。要約が無ければ、最初にツールを使うときにシナリオのユーザーの分を作る。`data/` で回すと、開発者画面のシナリオユーザーが書いた分も要約に入る(シナリオの初期に戻すには `data/dip_events.db` と `data/dip_summaries.db` を消す) | 使わない |
 
 評価の判定と回し方は [LLD の 4.8](docs/architecture/lld.md#48-評価の-1-シナリオevalsrunrun_scenario)、テストの仕組みは
 [LLD の 10 章](docs/architecture/lld.md#10-テストと評価の仕組み)にあります。
@@ -166,7 +166,7 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `LINE_SIM_PORT` | `8030` | Web サーバーのポート | 不可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
 | `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
-| `DIP_STATE_PATH` | `data/state.json` | dip の状態 | 不可 |
+| `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)も同じディレクトリに置く | 不可 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
 | `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りのモデル | 不可 |
 
@@ -211,7 +211,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](docs/prd/aica-v2-fulltime.md)(PRD) |
-| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける |
+| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |

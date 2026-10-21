@@ -1,0 +1,8770 @@
+{
+ "sim-applied": {
+  "reads": {
+   "application_status": {
+    "applications": [
+     {
+      "applied": "9/19",
+      "days_ago": 4,
+      "job_id": "a001",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "application_status_a001": {
+    "applications": [
+     {
+      "applied": "9/19",
+      "days_ago": 4,
+      "job_id": "a001",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "conversation_summary": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": {
+     "applied": "9/19",
+     "area": "新宿",
+     "days_ago": 4,
+     "job_id": "a001",
+     "job_type": "飲食ホール",
+     "status": "応募済み(店舗からの連絡待ち)",
+     "title": "居酒屋ホール 新宿西口"
+    },
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {},
+     "count_30d": 0
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "applied_waiting",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "新宿"
+     ],
+     "job_type": [
+      "飲食ホール"
+     ],
+     "time_band": [
+      "夕方",
+      "夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "form_exit": null,
+   "profile": {
+    "applications": [
+     {
+      "applied": "9/19",
+      "job_id": "a001",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "consultation_summary": null,
+    "resume": null,
+    "saved_jobs": [],
+    "sections": [
+     {
+      "id": "purpose",
+      "items": [
+       {
+        "key": "purpose",
+        "label": "目的",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "目的"
+     },
+     {
+      "id": "wishes",
+      "items": [
+       {
+        "key": "area",
+        "label": "エリア・駅",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "time_band",
+        "label": "時間帯",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "job_type",
+        "label": "職種",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "min_wage",
+        "label": "時給の下限(円)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "days_per_week",
+        "label": "週の日数",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "wants",
+        "label": "やりたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "avoids",
+        "label": "避けたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "concerns",
+        "label": "不安",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "希望"
+     },
+     {
+      "id": "career",
+      "items": [
+       {
+        "key": "experience",
+        "label": "経験(未経験など)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "skills",
+        "label": "できること",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "certifications",
+        "label": "資格・免許",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "strengths",
+        "label": "強み",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "経歴"
+     }
+    ],
+    "track": {
+     "choices": [
+      "アルバイト・パート",
+      "正社員",
+      "未定"
+     ],
+     "current": "未定",
+     "history": []
+    },
+    "voice_drafts": []
+   },
+   "recent_applications": [
+    {
+     "applied": "9/19",
+     "days_ago": 4,
+     "job_id": "a001",
+     "status": "応募済み(店舗からの連絡待ち)",
+     "title": "居酒屋ホール 新宿西口"
+    }
+   ],
+   "recommend": [
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 4.28,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 3.31,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "川崎駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.61
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 3.15,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 0.0,
+        "wage": 0.85
+       }
+      }
+     ],
+     "total": 102
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 5.28,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "夜の勤務(17:00〜翌0:00)"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0602",
+       "match_score": 3.42,
+       "reasons": [
+        "夜の勤務(16:00〜22:00(実働6h))",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.72
+       }
+      },
+      {
+       "job_id": "b0201",
+       "match_score": 3.29,
+       "reasons": [
+        "夜の勤務(17:00〜翌1:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.69
+       }
+      }
+     ],
+     "total": 3
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 5.28,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 4.15,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 1.0,
+        "wage": 0.85
+       }
+      },
+      {
+       "job_id": "b0103",
+       "match_score": 3.82,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.2,
+        "time_band": 1.0,
+        "wage": 0.62
+       }
+      }
+     ],
+     "total": 5
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "f0201",
+       "match_score": 2.5,
+       "reasons": [
+        "新宿駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 1.0
+       }
+      },
+      {
+       "job_id": "f0902",
+       "match_score": 2.34,
+       "reasons": [
+        "新宿御苑前駅から徒歩3分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.64
+       }
+      },
+      {
+       "job_id": "f0402",
+       "match_score": 2.29,
+       "reasons": [
+        "西新宿駅から徒歩4分",
+        "一部リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.69
+       }
+      }
+     ],
+     "total": 40
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 2.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 2.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 1.0,
+        "wage": 0.6
+       }
+      },
+      {
+       "job_id": "a002",
+       "match_score": 1.24,
+       "reasons": [
+        "中野駅から徒歩5分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.74
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 4.28,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 3.31,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "川崎駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.61
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 3.15,
+       "reasons": [
+        "9月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 0.0,
+        "wage": 0.85
+       }
+      }
+     ],
+     "total": 101
+    }
+   ],
+   "relax": {
+    "options": [
+     {
+      "current": "塾講師・家庭教師",
+      "remove": "job_type",
+      "total_after": 1
+     }
+    ],
+    "total_now": 0
+   },
+   "saved_jobs": [],
+   "talk_entry": "visit"
+  },
+  "writes": {
+   "after_push": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": {
+     "applied": "9/19",
+     "area": "新宿",
+     "days_ago": 4,
+     "job_id": "a001",
+     "job_type": "飲食ホール",
+     "status": "応募済み(店舗からの連絡待ち)",
+     "title": "居酒屋ホール 新宿西口"
+    },
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {},
+     "count_30d": 0
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "applied_waiting",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "新宿"
+     ],
+     "job_type": [
+      "飲食ホール"
+     ],
+     "time_band": [
+      "夕方",
+      "夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "after_resume_form": {
+    "form_exit": null,
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/19",
+      "area": "新宿",
+      "days_ago": 4,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {},
+      "count_30d": 0
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿"
+      ],
+      "job_type": [
+       "飲食ホール"
+      ],
+      "time_band": [
+       "夕方",
+       "夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "after_save": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/19",
+       "days_ago": 4,
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [
+      {
+       "applied": "9/19",
+       "days_ago": 4,
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/19",
+      "area": "新宿",
+      "days_ago": 4,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {},
+      "count_30d": 0
+     },
+     "saves_30d": 1,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿"
+      ],
+      "job_type": [
+       "飲食ホール"
+      ],
+      "time_band": [
+       "夕方",
+       "夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/19",
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "b0101",
+       "saved_at": "9/23"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/19",
+      "days_ago": 4,
+      "job_id": "a001",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 3.15,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 0.0,
+         "wage": 0.85
+        }
+       }
+      ],
+      "total": 102
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "夜の勤務(17:00〜翌0:00)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 3.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 4.15,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0103",
+        "match_score": 3.82,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 1.0,
+         "wage": 0.62
+        }
+       }
+      ],
+      "total": 5
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 2.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0902",
+        "match_score": 2.34,
+        "reasons": [
+         "新宿御苑前駅から徒歩3分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.64
+        }
+       },
+       {
+        "job_id": "f0402",
+        "match_score": 2.29,
+        "reasons": [
+         "西新宿駅から徒歩4分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 2.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 2.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "a002",
+        "match_score": 1.24,
+        "reasons": [
+         "中野駅から徒歩5分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.74
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 3.15,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 0.0,
+         "wage": 0.85
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "b0101",
+      "saved_at": "9/23"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_submit": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "days_ago": 0,
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      },
+      {
+       "applied": "9/19",
+       "days_ago": 4,
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [
+      {
+       "applied": "9/19",
+       "days_ago": 4,
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/23",
+      "area": "中野",
+      "days_ago": 0,
+      "job_id": "a002",
+      "job_type": "コンビニ",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {},
+      "count_30d": 0
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿",
+       "中野"
+      ],
+      "job_type": [
+       "飲食ホール",
+       "コンビニ"
+      ],
+      "time_band": [
+       "深夜",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      },
+      {
+       "applied": "9/19",
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/23",
+      "days_ago": 0,
+      "job_id": "a002",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     {
+      "applied": "9/19",
+      "days_ago": 4,
+      "job_id": "a001",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 3.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 101
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "夜の勤務(17:00〜翌0:00)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 3.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 4.15,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0103",
+        "match_score": 3.82,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 1.0,
+         "wage": 0.62
+        }
+       }
+      ],
+      "total": 5
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 2.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0902",
+        "match_score": 2.34,
+        "reasons": [
+         "新宿御苑前駅から徒歩3分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.64
+        }
+       },
+       {
+        "job_id": "f0402",
+        "match_score": 2.29,
+        "reasons": [
+         "西新宿駅から徒歩4分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0402",
+        "match_score": 2.05,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "品川エリア"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.65
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 3.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "9月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [],
+    "talk_entry": "visit"
+   },
+   "after_unsave": {
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/19",
+       "job_id": "a001",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "saved_jobs": [],
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/19",
+      "area": "新宿",
+      "days_ago": 4,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {},
+      "count_30d": 0
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿"
+      ],
+      "job_type": [
+       "飲食ホール"
+      ],
+      "time_band": [
+       "夕方",
+       "夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "push": [
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    },
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    }
+   ],
+   "resume_form": {
+    "error": "a002 の入力途中の応募フォームはありません"
+   },
+   "save_job": {
+    "saved": "b0101",
+    "saves_total": 1
+   },
+   "unsave": {
+    "unsaved": "a003"
+   }
+  }
+ },
+ "sim-browsing": {
+  "reads": {
+   "application_status": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "application_status_a001": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "conversation_summary": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": null,
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "アパレル販売": 1,
+      "カフェ": 2
+     },
+     "count_30d": 3
+    },
+    "saves_30d": 1,
+    "search_track": "未定",
+    "segment": "browsing",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "渋谷",
+      "品川"
+     ],
+     "job_type": [
+      "カフェ",
+      "アパレル販売"
+     ],
+     "time_band": [
+      "日中",
+      "夕方"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "form_exit": null,
+   "profile": {
+    "applications": [],
+    "consultation_summary": null,
+    "resume": null,
+    "saved_jobs": [
+     {
+      "job_id": "a003",
+      "saved_at": "9/19"
+     }
+    ],
+    "sections": [
+     {
+      "id": "purpose",
+      "items": [
+       {
+        "key": "purpose",
+        "label": "目的",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "目的"
+     },
+     {
+      "id": "wishes",
+      "items": [
+       {
+        "key": "area",
+        "label": "エリア・駅",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "time_band",
+        "label": "時間帯",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "job_type",
+        "label": "職種",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "min_wage",
+        "label": "時給の下限(円)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "days_per_week",
+        "label": "週の日数",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "wants",
+        "label": "やりたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "avoids",
+        "label": "避けたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "concerns",
+        "label": "不安",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "希望"
+     },
+     {
+      "id": "career",
+      "items": [
+       {
+        "key": "experience",
+        "label": "経験(未経験など)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "skills",
+        "label": "できること",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "certifications",
+        "label": "資格・免許",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "strengths",
+        "label": "強み",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "経歴"
+     }
+    ],
+    "track": {
+     "choices": [
+      "アルバイト・パート",
+      "正社員",
+      "未定"
+     ],
+     "current": "未定",
+     "history": []
+    },
+    "voice_drafts": []
+   },
+   "recent_applications": [],
+   "recommend": [
+    {
+     "jobs": [
+      {
+       "job_id": "b0302",
+       "match_score": 4.08,
+       "reasons": [
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "a003",
+       "match_score": 4.02,
+       "reasons": [
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.62
+       }
+      },
+      {
+       "job_id": "b0303",
+       "match_score": 3.95,
+       "reasons": [
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.2,
+        "time_band": 0.0,
+        "wage": 0.75
+       }
+      }
+     ],
+     "total": 103
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0602",
+       "match_score": 3.42,
+       "reasons": [
+        "夜の勤務(16:00〜22:00(実働6h))",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 1.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.72
+       }
+      },
+      {
+       "job_id": "a001",
+       "match_score": 2.38,
+       "reasons": [
+        "夜の勤務(18:00〜翌1:00)",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0201",
+       "match_score": 2.29,
+       "reasons": [
+        "夜の勤務(17:00〜翌1:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.69
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "a001",
+       "match_score": 2.38,
+       "reasons": [
+        "新宿駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 2.31,
+       "reasons": [
+        "川崎駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.61
+       }
+      },
+      {
+       "job_id": "b0101",
+       "match_score": 2.28,
+       "reasons": [
+        "新宿三丁目駅から徒歩4分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      }
+     ],
+     "total": 6
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "f0303",
+       "match_score": 2.44,
+       "reasons": [
+        "品川駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.94
+       }
+      },
+      {
+       "job_id": "f0904",
+       "match_score": 2.34,
+       "reasons": [
+        "品川駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.84
+       }
+      },
+      {
+       "job_id": "f0101",
+       "match_score": 2.18,
+       "reasons": [
+        "一部リモート可",
+        "土日祝休み(年間休日125日)"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.78
+       }
+      }
+     ],
+     "total": 40
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0402",
+       "match_score": 3.05,
+       "reasons": [
+        "品川エリア",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.4,
+        "time_band": 1.0,
+        "wage": 0.65
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 2.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 1.0,
+        "wage": 0.6
+       }
+      },
+      {
+       "job_id": "b0401",
+       "match_score": 1.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0302",
+       "match_score": 4.08,
+       "reasons": [
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "a003",
+       "match_score": 4.02,
+       "reasons": [
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.62
+       }
+      },
+      {
+       "job_id": "b0303",
+       "match_score": 3.95,
+       "reasons": [
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.2,
+        "time_band": 0.0,
+        "wage": 0.75
+       }
+      }
+     ],
+     "total": 101
+    }
+   ],
+   "relax": {
+    "options": [
+     {
+      "current": "塾講師・家庭教師",
+      "remove": "job_type",
+      "total_after": 1
+     }
+    ],
+    "total_now": 0
+   },
+   "saved_jobs": [
+    {
+     "job_id": "a003",
+     "saved_at": "9/19"
+    }
+   ],
+   "talk_entry": "visit"
+  },
+  "writes": {
+   "after_push": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": null,
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "アパレル販売": 1,
+      "カフェ": 2
+     },
+     "count_30d": 3
+    },
+    "saves_30d": 1,
+    "search_track": "未定",
+    "segment": "browsing",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "渋谷",
+      "品川"
+     ],
+     "job_type": [
+      "カフェ",
+      "アパレル販売"
+     ],
+     "time_band": [
+      "日中",
+      "夕方"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "after_resume_form": {
+    "form_exit": null,
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "アパレル販売": 1,
+       "カフェ": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 1,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "渋谷",
+       "品川"
+      ],
+      "job_type": [
+       "カフェ",
+       "アパレル販売"
+      ],
+      "time_band": [
+       "日中",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "after_save": {
+    "application_status": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "アパレル販売": 1,
+       "カフェ": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 2,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "渋谷",
+       "品川"
+      ],
+      "job_type": [
+       "カフェ",
+       "アパレル販売"
+      ],
+      "time_band": [
+       "日中",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "b0101",
+       "saved_at": "9/23"
+      },
+      {
+       "job_id": "a003",
+       "saved_at": "9/19"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0302",
+        "match_score": 4.08,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "a003",
+        "match_score": 4.02,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.62
+        }
+       },
+       {
+        "job_id": "b0303",
+        "match_score": 3.95,
+        "reasons": [
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.75
+        }
+       }
+      ],
+      "total": 103
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 2.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 2.31,
+        "reasons": [
+         "川崎駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 2.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0303",
+        "match_score": 2.44,
+        "reasons": [
+         "品川駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.94
+        }
+       },
+       {
+        "job_id": "f0904",
+        "match_score": 2.34,
+        "reasons": [
+         "品川駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.84
+        }
+       },
+       {
+        "job_id": "f0101",
+        "match_score": 2.18,
+        "reasons": [
+         "一部リモート可",
+         "土日祝休み(年間休日125日)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.78
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0402",
+        "match_score": 3.05,
+        "reasons": [
+         "品川エリア",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.4,
+         "time_band": 1.0,
+         "wage": 0.65
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 2.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0302",
+        "match_score": 4.08,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "a003",
+        "match_score": 4.02,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.62
+        }
+       },
+       {
+        "job_id": "b0303",
+        "match_score": 3.95,
+        "reasons": [
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.75
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "b0101",
+      "saved_at": "9/23"
+     },
+     {
+      "job_id": "a003",
+      "saved_at": "9/19"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_submit": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "days_ago": 0,
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/23",
+      "area": "中野",
+      "days_ago": 0,
+      "job_id": "a002",
+      "job_type": "コンビニ",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "アパレル販売": 1,
+       "カフェ": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 1,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "渋谷",
+       "中野"
+      ],
+      "job_type": [
+       "カフェ",
+       "コンビニ"
+      ],
+      "time_band": [
+       "日中",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "a003",
+       "saved_at": "9/19"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/23",
+      "days_ago": 0,
+      "job_id": "a002",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0304",
+        "match_score": 4.26,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.56
+        }
+       },
+       {
+        "job_id": "a003",
+        "match_score": 4.02,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.62
+        }
+       },
+       {
+        "job_id": "b0303",
+        "match_score": 3.95,
+        "reasons": [
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.75
+        }
+       }
+      ],
+      "total": 102
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0602",
+        "match_score": 2.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 2.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 2.31,
+        "reasons": [
+         "川崎駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 2.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0101",
+        "match_score": 2.18,
+        "reasons": [
+         "一部リモート可",
+         "土日祝休み(年間休日125日)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.78
+        }
+       },
+       {
+        "job_id": "f0801",
+        "match_score": 2.15,
+        "reasons": [
+         "渋谷駅から徒歩4分",
+         "残業は月10時間ほど"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.55
+        }
+       },
+       {
+        "job_id": "f0301",
+        "match_score": 2.08,
+        "reasons": [
+         "リモート可",
+         "土日祝休み(年間休日125日)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 3.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0402",
+        "match_score": 3.05,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "品川エリア"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.4,
+         "time_band": 1.0,
+         "wage": 0.65
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0304",
+        "match_score": 4.26,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.56
+        }
+       },
+       {
+        "job_id": "a003",
+        "match_score": 4.02,
+        "reasons": [
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.62
+        }
+       },
+       {
+        "job_id": "b0303",
+        "match_score": 3.95,
+        "reasons": [
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.75
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "a003",
+      "saved_at": "9/19"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_unsave": {
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "saved_jobs": [],
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "アパレル販売": 1,
+       "カフェ": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "渋谷",
+       "品川"
+      ],
+      "job_type": [
+       "カフェ",
+       "アパレル販売"
+      ],
+      "time_band": [
+       "日中",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "push": [
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    },
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    }
+   ],
+   "resume_form": {
+    "error": "a002 の入力途中の応募フォームはありません"
+   },
+   "save_job": {
+    "saved": "b0101",
+    "saves_total": 2
+   },
+   "unsave": {
+    "unsaved": "a003"
+   }
+  }
+ },
+ "sim-exit": {
+  "reads": {
+   "application_status": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "application_status_a001": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "conversation_summary": {
+    "consultation_summary": null,
+    "form_exit": {
+     "hours_ago": 2,
+     "job_id": "a002",
+     "remaining": [
+      "電話番号",
+      "希望開始日"
+     ],
+     "title": "コンビニ夜勤 中野"
+    },
+    "last_application": null,
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "コンビニ": 1
+     },
+     "count_30d": 1
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "form_exit",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "中野"
+     ],
+     "job_type": [
+      "コンビニ"
+     ],
+     "time_band": [
+      "深夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "form_exit": {
+    "completed_fields": [
+     "氏名",
+     "年齢"
+    ],
+    "exited_at": "2026-09-23T10:00:00+09:00",
+    "job_id": "a002",
+    "remaining_fields": [
+     "電話番号",
+     "希望開始日"
+    ],
+    "remaining_in_talk_ok": [
+     "希望開始日"
+    ],
+    "remaining_needs_liff": [
+     "電話番号"
+    ],
+    "title": "コンビニ夜勤 中野"
+   },
+   "profile": {
+    "applications": [],
+    "consultation_summary": null,
+    "resume": null,
+    "saved_jobs": [],
+    "sections": [
+     {
+      "id": "purpose",
+      "items": [
+       {
+        "key": "purpose",
+        "label": "目的",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "目的"
+     },
+     {
+      "id": "wishes",
+      "items": [
+       {
+        "key": "area",
+        "label": "エリア・駅",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "time_band",
+        "label": "時間帯",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "job_type",
+        "label": "職種",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "min_wage",
+        "label": "時給の下限(円)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "days_per_week",
+        "label": "週の日数",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "wants",
+        "label": "やりたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "avoids",
+        "label": "避けたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "concerns",
+        "label": "不安",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "希望"
+     },
+     {
+      "id": "career",
+      "items": [
+       {
+        "key": "experience",
+        "label": "経験(未経験など)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "skills",
+        "label": "できること",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "certifications",
+        "label": "資格・免許",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "strengths",
+        "label": "強み",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "経歴"
+     }
+    ],
+    "track": {
+     "choices": [
+      "アルバイト・パート",
+      "正社員",
+      "未定"
+     ],
+     "current": "未定",
+     "history": []
+    },
+    "voice_drafts": []
+   },
+   "recent_applications": [],
+   "recommend": [
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 4.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "a002",
+       "match_score": 4.24,
+       "reasons": [
+        "中野駅から徒歩5分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.74
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 3.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.6
+       }
+      }
+     ],
+     "total": 103
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "a001",
+       "match_score": 2.38,
+       "reasons": [
+        "夜の勤務(18:00〜翌1:00)",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0201",
+       "match_score": 2.29,
+       "reasons": [
+        "夜の勤務(17:00〜翌1:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.69
+       }
+      },
+      {
+       "job_id": "b0101",
+       "match_score": 2.28,
+       "reasons": [
+        "夜の勤務(17:00〜翌0:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "a001",
+       "match_score": 2.38,
+       "reasons": [
+        "新宿駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0101",
+       "match_score": 2.28,
+       "reasons": [
+        "新宿三丁目駅から徒歩4分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 2.15,
+       "reasons": [
+        "希望の飲食ホール",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.3,
+        "time_band": 1.0,
+        "wage": 0.85
+       }
+      }
+     ],
+     "total": 6
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "f0203",
+       "match_score": 2.07,
+       "reasons": [
+        "一部リモート可",
+        "土日祝休み(年間休日122日)"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.4,
+        "time_band": 0.0,
+        "wage": 0.67
+       }
+      },
+      {
+       "job_id": "f0604",
+       "match_score": 1.68,
+       "reasons": [
+        "一部リモート可",
+        "土日祝休み(年間休日120日)"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.3,
+        "time_band": 0.0,
+        "wage": 0.38
+       }
+      },
+      {
+       "job_id": "f0701",
+       "match_score": 1.61,
+       "reasons": [
+        "残業は月10時間ほど",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.2,
+        "time_band": 0.0,
+        "wage": 0.41
+       }
+      }
+     ],
+     "total": 40
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 5.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "a002",
+       "match_score": 5.24,
+       "reasons": [
+        "中野駅から徒歩5分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.5,
+        "time_band": 1.0,
+        "wage": 0.74
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 3.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.6
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 4.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 3.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.6
+       }
+      },
+      {
+       "job_id": "b0405",
+       "match_score": 3.3,
+       "reasons": [
+        "横浜駅から徒歩4分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.7
+       }
+      }
+     ],
+     "total": 101
+    }
+   ],
+   "relax": {
+    "options": [
+     {
+      "current": "塾講師・家庭教師",
+      "remove": "job_type",
+      "total_after": 1
+     }
+    ],
+    "total_now": 0
+   },
+   "saved_jobs": [],
+   "talk_entry": "visit"
+  },
+  "writes": {
+   "after_push": {
+    "consultation_summary": null,
+    "form_exit": {
+     "hours_ago": 2,
+     "job_id": "a002",
+     "remaining": [
+      "電話番号",
+      "希望開始日"
+     ],
+     "title": "コンビニ夜勤 中野"
+    },
+    "last_application": null,
+    "last_contact": {
+     "channel": "LINE AI通知",
+     "message": "form_exit",
+     "when": "9/23"
+    },
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "コンビニ": 1
+     },
+     "count_30d": 1
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "form_exit",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "中野"
+     ],
+     "job_type": [
+      "コンビニ"
+     ],
+     "time_band": [
+      "深夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "after_resume_form": {
+    "form_exit": {
+     "completed_fields": [
+      "氏名",
+      "年齢",
+      "希望開始日"
+     ],
+     "exited_at": "2026-09-23T10:00:00+09:00",
+     "job_id": "a002",
+     "remaining_fields": [
+      "電話番号"
+     ],
+     "remaining_in_talk_ok": [],
+     "remaining_needs_liff": [
+      "電話番号"
+     ],
+     "title": "コンビニ夜勤 中野"
+    },
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": {
+      "hours_ago": 2,
+      "job_id": "a002",
+      "remaining": [
+       "電話番号"
+      ],
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "コンビニ": 1
+      },
+      "count_30d": 1
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "form_exit",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "中野"
+      ],
+      "job_type": [
+       "コンビニ"
+      ],
+      "time_band": [
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "after_save": {
+    "application_status": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": {
+      "hours_ago": 2,
+      "job_id": "a002",
+      "remaining": [
+       "電話番号",
+       "希望開始日"
+      ],
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "コンビニ": 1
+      },
+      "count_30d": 1
+     },
+     "saves_30d": 1,
+     "search_track": "未定",
+     "segment": "form_exit",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "中野",
+       "新宿"
+      ],
+      "job_type": [
+       "コンビニ",
+       "飲食ホール"
+      ],
+      "time_band": [
+       "深夜",
+       "夕方"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": {
+     "completed_fields": [
+      "氏名",
+      "年齢"
+     ],
+     "exited_at": "2026-09-23T10:00:00+09:00",
+     "job_id": "a002",
+     "remaining_fields": [
+      "電話番号",
+      "希望開始日"
+     ],
+     "remaining_in_talk_ok": [
+      "希望開始日"
+     ],
+     "remaining_needs_liff": [
+      "電話番号"
+     ],
+     "title": "コンビニ夜勤 中野"
+    },
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "b0101",
+       "saved_at": "9/23"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "a002",
+        "match_score": 4.24,
+        "reasons": [
+         "中野駅から徒歩5分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.74
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       }
+      ],
+      "total": 103
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 4.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "夜の勤務(17:00〜翌0:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 4.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 3.15,
+        "reasons": [
+         "希望の飲食ホール",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 2.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0902",
+        "match_score": 2.34,
+        "reasons": [
+         "新宿御苑前駅から徒歩3分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.64
+        }
+       },
+       {
+        "job_id": "f0402",
+        "match_score": 2.29,
+        "reasons": [
+         "西新宿駅から徒歩4分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 5.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "a002",
+        "match_score": 5.24,
+        "reasons": [
+         "中野駅から徒歩5分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.5,
+         "time_band": 1.0,
+         "wage": 0.74
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 4.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0405",
+        "match_score": 3.3,
+        "reasons": [
+         "横浜駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.7
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "b0101",
+      "saved_at": "9/23"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_submit": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "days_ago": 0,
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/23",
+      "area": "中野",
+      "days_ago": 0,
+      "job_id": "a002",
+      "job_type": "コンビニ",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "コンビニ": 1
+      },
+      "count_30d": 1
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "中野"
+      ],
+      "job_type": [
+       "コンビニ"
+      ],
+      "time_band": [
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/23",
+      "days_ago": 0,
+      "job_id": "a002",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0405",
+        "match_score": 3.3,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "横浜駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.7
+        }
+       }
+      ],
+      "total": 102
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 2.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 2.28,
+        "reasons": [
+         "夜の勤務(17:00〜翌0:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 2.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 2.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 2.15,
+        "reasons": [
+         "希望の飲食ホール",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0203",
+        "match_score": 2.07,
+        "reasons": [
+         "一部リモート可",
+         "土日祝休み(年間休日122日)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.67
+        }
+       },
+       {
+        "job_id": "f0604",
+        "match_score": 1.68,
+        "reasons": [
+         "一部リモート可",
+         "土日祝休み(年間休日120日)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.3,
+         "time_band": 0.0,
+         "wage": 0.38
+        }
+       },
+       {
+        "job_id": "f0701",
+        "match_score": 1.61,
+        "reasons": [
+         "残業は月10時間ほど",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.2,
+         "time_band": 0.0,
+         "wage": 0.41
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 5.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0402",
+        "match_score": 3.05,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "品川エリア"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.65
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0405",
+        "match_score": 3.3,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "横浜駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.7
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [],
+    "talk_entry": "visit"
+   },
+   "after_unsave": {
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "saved_jobs": [],
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": {
+      "hours_ago": 2,
+      "job_id": "a002",
+      "remaining": [
+       "電話番号",
+       "希望開始日"
+      ],
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_application": null,
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "コンビニ": 1
+      },
+      "count_30d": 1
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "form_exit",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "中野"
+      ],
+      "job_type": [
+       "コンビニ"
+      ],
+      "time_band": [
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "push": [
+    {
+     "allowed": true,
+     "facts": {
+      "job_id": "a002",
+      "remaining_fields": [
+       "電話番号",
+       "希望開始日"
+      ],
+      "remaining_needs_liff": [
+       "電話番号"
+      ],
+      "title": "コンビニ夜勤 中野"
+     },
+     "trigger": "form_exit"
+    },
+    {
+     "allowed": false,
+     "reason": "3日以内に接触済み(9/23 LINE AI通知)"
+    }
+   ],
+   "resume_form": {
+    "job_id": "a002",
+    "liff_url": "/liff/apply?job=a002",
+    "note": "個人情報はトークで受け取らない。LIFF 画面の URL をボタンで案内する。",
+    "rejected_pii": [
+     "電話番号"
+    ],
+    "remaining_fields": [
+     "電話番号"
+    ]
+   },
+   "save_job": {
+    "saved": "b0101",
+    "saves_total": 1
+   },
+   "unsave": {
+    "unsaved": "a003"
+   }
+  }
+ },
+ "sim-new": {
+  "reads": {
+   "application_status": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "application_status_a001": {
+    "applications": [],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "conversation_summary": {
+    "consultation_summary": null,
+    "linked": false,
+    "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "search_track": "未定",
+    "segment": "unlinked",
+    "stated_preferences": {},
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "form_exit": null,
+   "profile": {
+    "applications": [],
+    "consultation_summary": null,
+    "resume": null,
+    "saved_jobs": [],
+    "sections": [
+     {
+      "id": "purpose",
+      "items": [
+       {
+        "key": "purpose",
+        "label": "目的",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "目的"
+     },
+     {
+      "id": "wishes",
+      "items": [
+       {
+        "key": "area",
+        "label": "エリア・駅",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "time_band",
+        "label": "時間帯",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "job_type",
+        "label": "職種",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "min_wage",
+        "label": "時給の下限(円)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "days_per_week",
+        "label": "週の日数",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "wants",
+        "label": "やりたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "avoids",
+        "label": "避けたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "concerns",
+        "label": "不安",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "希望"
+     },
+     {
+      "id": "career",
+      "items": [
+       {
+        "key": "experience",
+        "label": "経験(未経験など)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "skills",
+        "label": "できること",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "certifications",
+        "label": "資格・免許",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "strengths",
+        "label": "強み",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "経歴"
+     }
+    ],
+    "track": {
+     "choices": [
+      "アルバイト・パート",
+      "正社員",
+      "未定"
+     ],
+     "current": "未定",
+     "history": []
+    },
+    "voice_drafts": []
+   },
+   "recent_applications": [],
+   "recommend": [
+    {
+     "jobs": [
+      {
+       "job_id": "b1004",
+       "match_score": 1.75,
+       "reasons": [
+        "吉祥寺駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 1.05
+       }
+      },
+      {
+       "job_id": "b0605",
+       "match_score": 1.6,
+       "reasons": [
+        "大宮駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.8
+       }
+      },
+      {
+       "job_id": "b0401",
+       "match_score": 1.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      }
+     ],
+     "total": 103
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0602",
+       "match_score": 1.42,
+       "reasons": [
+        "夜の勤務(16:00〜22:00(実働6h))",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.72
+       }
+      },
+      {
+       "job_id": "a001",
+       "match_score": 1.38,
+       "reasons": [
+        "夜の勤務(18:00〜翌1:00)",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0201",
+       "match_score": 1.29,
+       "reasons": [
+        "夜の勤務(17:00〜翌1:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.69
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "a001",
+       "match_score": 1.38,
+       "reasons": [
+        "新宿駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 1.31,
+       "reasons": [
+        "川崎駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.61
+       }
+      },
+      {
+       "job_id": "b0101",
+       "match_score": 1.28,
+       "reasons": [
+        "新宿三丁目駅から徒歩4分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      }
+     ],
+     "total": 6
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "f0201",
+       "match_score": 1.5,
+       "reasons": [
+        "新宿駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 1.0
+       }
+      },
+      {
+       "job_id": "f0202",
+       "match_score": 1.44,
+       "reasons": [
+        "上野駅から徒歩3分",
+        "一部リモート可"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.74
+       }
+      },
+      {
+       "job_id": "f0303",
+       "match_score": 1.44,
+       "reasons": [
+        "品川駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.94
+       }
+      }
+     ],
+     "total": 40
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 1.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 1.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.6
+       }
+      },
+      {
+       "job_id": "a002",
+       "match_score": 1.24,
+       "reasons": [
+        "中野駅から徒歩5分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 0.74
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b1004",
+       "match_score": 1.75,
+       "reasons": [
+        "吉祥寺駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 1.05
+       }
+      },
+      {
+       "job_id": "b0605",
+       "match_score": 1.6,
+       "reasons": [
+        "大宮駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 0.0,
+        "wage": 0.8
+       }
+      },
+      {
+       "job_id": "b0401",
+       "match_score": 1.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.88
+       }
+      }
+     ],
+     "total": 101
+    }
+   ],
+   "relax": {
+    "options": [
+     {
+      "current": "塾講師・家庭教師",
+      "remove": "job_type",
+      "total_after": 1
+     }
+    ],
+    "total_now": 0
+   },
+   "saved_jobs": [],
+   "talk_entry": "visit"
+  },
+  "writes": {
+   "after_push": {
+    "consultation_summary": null,
+    "linked": false,
+    "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "search_track": "未定",
+    "segment": "unlinked",
+    "stated_preferences": {},
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "after_resume_form": {
+    "form_exit": null,
+    "summary": {
+     "consultation_summary": null,
+     "linked": false,
+     "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "search_track": "未定",
+     "segment": "unlinked",
+     "stated_preferences": {},
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "after_save": {
+    "application_status": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "linked": false,
+     "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "search_track": "未定",
+     "segment": "unlinked",
+     "stated_preferences": {},
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "b0101",
+       "saved_at": "9/23"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b1004",
+        "match_score": 1.75,
+        "reasons": [
+         "吉祥寺駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 1.05
+        }
+       },
+       {
+        "job_id": "b0605",
+        "match_score": 1.6,
+        "reasons": [
+         "大宮駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.8
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 103
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0602",
+        "match_score": 1.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "a001",
+        "match_score": 1.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 1.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 1.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 1.31,
+        "reasons": [
+         "川崎駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 1.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 1.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0202",
+        "match_score": 1.44,
+        "reasons": [
+         "上野駅から徒歩3分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.74
+        }
+       },
+       {
+        "job_id": "f0303",
+        "match_score": 1.44,
+        "reasons": [
+         "品川駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.94
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 1.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "a002",
+        "match_score": 1.24,
+        "reasons": [
+         "中野駅から徒歩5分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.74
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b1004",
+        "match_score": 1.75,
+        "reasons": [
+         "吉祥寺駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 1.05
+        }
+       },
+       {
+        "job_id": "b0605",
+        "match_score": 1.6,
+        "reasons": [
+         "大宮駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.8
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "b0101",
+      "saved_at": "9/23"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_submit": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "days_ago": 0,
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "linked": false,
+     "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "search_track": "未定",
+     "segment": "unlinked",
+     "stated_preferences": {},
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/23",
+      "days_ago": 0,
+      "job_id": "a002",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b1004",
+        "match_score": 1.75,
+        "reasons": [
+         "吉祥寺駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 1.05
+        }
+       },
+       {
+        "job_id": "b0605",
+        "match_score": 1.6,
+        "reasons": [
+         "大宮駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.8
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 102
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0602",
+        "match_score": 1.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "a001",
+        "match_score": 1.38,
+        "reasons": [
+         "夜の勤務(18:00〜翌1:00)",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 1.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "a001",
+        "match_score": 1.38,
+        "reasons": [
+         "新宿駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 1.31,
+        "reasons": [
+         "川崎駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       },
+       {
+        "job_id": "b0101",
+        "match_score": 1.28,
+        "reasons": [
+         "新宿三丁目駅から徒歩4分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       }
+      ],
+      "total": 6
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 1.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0202",
+        "match_score": 1.44,
+        "reasons": [
+         "上野駅から徒歩3分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.74
+        }
+       },
+       {
+        "job_id": "f0303",
+        "match_score": 1.44,
+        "reasons": [
+         "品川駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 0.94
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 1.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0402",
+        "match_score": 1.05,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "品川エリア"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.65
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b1004",
+        "match_score": 1.75,
+        "reasons": [
+         "吉祥寺駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 1.05
+        }
+       },
+       {
+        "job_id": "b0605",
+        "match_score": 1.6,
+        "reasons": [
+         "大宮駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 0.0,
+         "wage": 0.8
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 1.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [],
+    "talk_entry": "visit"
+   },
+   "after_unsave": {
+    "profile": {
+     "applications": [],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "saved_jobs": [],
+    "summary": {
+     "consultation_summary": null,
+     "linked": false,
+     "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "search_track": "未定",
+     "segment": "unlinked",
+     "stated_preferences": {},
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "push": [
+    {
+     "allowed": false,
+     "reason": "dip ID と未連携なので行動イベントがない"
+    },
+    {
+     "allowed": false,
+     "reason": "dip ID と未連携なので行動イベントがない"
+    }
+   ],
+   "resume_form": {
+    "error": "a002 の入力途中の応募フォームはありません"
+   },
+   "save_job": {
+    "saved": "b0101",
+    "saves_total": 1
+   },
+   "unsave": {
+    "unsaved": "a003"
+   }
+  }
+ },
+ "sim-yoru": {
+  "reads": {
+   "application_status": {
+    "applications": [
+     {
+      "applied": "7/14",
+      "days_ago": 71,
+      "job_id": "a001",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "application_status_a001": {
+    "applications": [
+     {
+      "applied": "7/14",
+      "days_ago": 71,
+      "job_id": "a001",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+   },
+   "conversation_summary": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": {
+     "applied": "7/14",
+     "area": "新宿",
+     "days_ago": 71,
+     "job_id": "a001",
+     "job_type": "飲食ホール",
+     "status": "不採用(シフトが合わず)",
+     "title": "居酒屋ホール 新宿西口"
+    },
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "飲食キッチン": 1,
+      "飲食ホール": 2
+     },
+     "count_30d": 3
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "browsing",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "新宿",
+      "渋谷"
+     ],
+     "job_type": [
+      "飲食ホール",
+      "飲食キッチン"
+     ],
+     "time_band": [
+      "夜",
+      "深夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "form_exit": null,
+   "profile": {
+    "applications": [
+     {
+      "applied": "7/14",
+      "job_id": "a001",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "consultation_summary": null,
+    "resume": null,
+    "saved_jobs": [],
+    "sections": [
+     {
+      "id": "purpose",
+      "items": [
+       {
+        "key": "purpose",
+        "label": "目的",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "目的"
+     },
+     {
+      "id": "wishes",
+      "items": [
+       {
+        "key": "area",
+        "label": "エリア・駅",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "time_band",
+        "label": "時間帯",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "job_type",
+        "label": "職種",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "min_wage",
+        "label": "時給の下限(円)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "days_per_week",
+        "label": "週の日数",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "wants",
+        "label": "やりたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "avoids",
+        "label": "避けたいこと",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "concerns",
+        "label": "不安",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "希望"
+     },
+     {
+      "id": "career",
+      "items": [
+       {
+        "key": "experience",
+        "label": "経験(未経験など)",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "skills",
+        "label": "できること",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "certifications",
+        "label": "資格・免許",
+        "saved": null,
+        "value": null
+       },
+       {
+        "key": "strengths",
+        "label": "強み",
+        "saved": null,
+        "value": null
+       }
+      ],
+      "title": "経歴"
+     }
+    ],
+    "track": {
+     "choices": [
+      "アルバイト・パート",
+      "正社員",
+      "未定"
+     ],
+     "current": "未定",
+     "history": []
+    },
+    "voice_drafts": []
+   },
+   "recent_applications": [
+    {
+     "applied": "7/14",
+     "days_ago": 71,
+     "job_id": "a001",
+     "status": "不採用(シフトが合わず)",
+     "title": "居酒屋ホール 新宿西口"
+    }
+   ],
+   "recommend": [
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 4.28,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 4.15,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 0.0,
+        "wage": 0.85
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 3.31,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "川崎駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.61
+       }
+      }
+     ],
+     "total": 102
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 5.28,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "夜の勤務(17:00〜翌0:00)"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0201",
+       "match_score": 4.29,
+       "reasons": [
+        "夜の勤務(17:00〜翌1:00)",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 1.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.69
+       }
+      },
+      {
+       "job_id": "b0602",
+       "match_score": 3.42,
+       "reasons": [
+        "夜の勤務(16:00〜22:00(実働6h))",
+        "新宿駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.72
+       }
+      }
+     ],
+     "total": 3
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 5.28,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 1.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 5.15,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 1.0,
+        "wage": 0.85
+       }
+      },
+      {
+       "job_id": "b0103",
+       "match_score": 3.82,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.2,
+        "time_band": 1.0,
+        "wage": 0.62
+       }
+      }
+     ],
+     "total": 5
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "f0201",
+       "match_score": 2.5,
+       "reasons": [
+        "新宿駅から徒歩5分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 0.0,
+        "wage": 1.0
+       }
+      },
+      {
+       "job_id": "f0902",
+       "match_score": 2.34,
+       "reasons": [
+        "新宿御苑前駅から徒歩3分",
+        "リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.64
+       }
+      },
+      {
+       "job_id": "f0402",
+       "match_score": 2.29,
+       "reasons": [
+        "西新宿駅から徒歩4分",
+        "一部リモート可"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 0.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.69
+       }
+      }
+     ],
+     "total": 40
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0401",
+       "match_score": 2.58,
+       "reasons": [
+        "中野駅から徒歩3分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.7,
+        "time_band": 1.0,
+        "wage": 0.88
+       }
+      },
+      {
+       "job_id": "b0403",
+       "match_score": 2.4,
+       "reasons": [
+        "高円寺駅から徒歩2分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.8,
+        "time_band": 1.0,
+        "wage": 0.6
+       }
+      },
+      {
+       "job_id": "a002",
+       "match_score": 2.24,
+       "reasons": [
+        "中野駅から徒歩5分",
+        "未経験OK"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 0.0,
+        "station": 0.5,
+        "time_band": 1.0,
+        "wage": 0.74
+       }
+      }
+     ],
+     "total": 4
+    },
+    {
+     "jobs": [
+      {
+       "job_id": "b0101",
+       "match_score": 4.28,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "新宿三丁目駅から徒歩4分"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.6,
+        "time_band": 0.0,
+        "wage": 0.68
+       }
+      },
+      {
+       "job_id": "b0105",
+       "match_score": 4.15,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "日払い"
+       ],
+       "score_breakdown": {
+        "area": 1.0,
+        "job_type": 2.0,
+        "station": 0.3,
+        "time_band": 0.0,
+        "wage": 0.85
+       }
+      },
+      {
+       "job_id": "b0104",
+       "match_score": 3.31,
+       "reasons": [
+        "7月に応募した飲食ホールと同系統",
+        "川崎駅から徒歩3分"
+       ],
+       "score_breakdown": {
+        "area": 0.0,
+        "job_type": 2.0,
+        "station": 0.7,
+        "time_band": 0.0,
+        "wage": 0.61
+       }
+      }
+     ],
+     "total": 101
+    }
+   ],
+   "relax": {
+    "options": [
+     {
+      "current": "塾講師・家庭教師",
+      "remove": "job_type",
+      "total_after": 1
+     }
+    ],
+    "total_now": 0
+   },
+   "saved_jobs": [],
+   "talk_entry": "visit"
+  },
+  "writes": {
+   "after_push": {
+    "consultation_summary": null,
+    "form_exit": null,
+    "last_application": {
+     "applied": "7/14",
+     "area": "新宿",
+     "days_ago": 71,
+     "job_id": "a001",
+     "job_type": "飲食ホール",
+     "status": "不採用(シフトが合わず)",
+     "title": "居酒屋ホール 新宿西口"
+    },
+    "last_contact": null,
+    "linked": true,
+    "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+    "recent_views": {
+     "by_job_type": {
+      "飲食キッチン": 1,
+      "飲食ホール": 2
+     },
+     "count_30d": 3
+    },
+    "saves_30d": 0,
+    "search_track": "未定",
+    "segment": "browsing",
+    "stated_preferences": {},
+    "tendency": {
+     "area": [
+      "新宿",
+      "渋谷"
+     ],
+     "job_type": [
+      "飲食ホール",
+      "飲食キッチン"
+     ],
+     "time_band": [
+      "夜",
+      "深夜"
+     ]
+    },
+    "track_history": [],
+    "uploaded_resume": null
+   },
+   "after_resume_form": {
+    "form_exit": null,
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "7/14",
+      "area": "新宿",
+      "days_ago": 71,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "飲食キッチン": 1,
+       "飲食ホール": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿",
+       "渋谷"
+      ],
+      "job_type": [
+       "飲食ホール",
+       "飲食キッチン"
+      ],
+      "time_band": [
+       "夜",
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "after_save": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "7/14",
+       "days_ago": 71,
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [
+      {
+       "applied": "7/14",
+       "days_ago": 71,
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "7/14",
+      "area": "新宿",
+      "days_ago": 71,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "飲食キッチン": 1,
+       "飲食ホール": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 1,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿",
+       "渋谷"
+      ],
+      "job_type": [
+       "飲食ホール",
+       "飲食キッチン"
+      ],
+      "time_band": [
+       "夜",
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "7/14",
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [
+      {
+       "job_id": "b0101",
+       "saved_at": "9/23"
+      }
+     ],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "7/14",
+      "days_ago": 71,
+      "job_id": "a001",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 4.15,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 0.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 102
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "夜の勤務(17:00〜翌0:00)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 4.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       },
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 5.15,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0103",
+        "match_score": 3.82,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 1.0,
+         "wage": 0.62
+        }
+       }
+      ],
+      "total": 5
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 2.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0902",
+        "match_score": 2.34,
+        "reasons": [
+         "新宿御苑前駅から徒歩3分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.64
+        }
+       },
+       {
+        "job_id": "f0402",
+        "match_score": 2.29,
+        "reasons": [
+         "西新宿駅から徒歩4分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 2.58,
+        "reasons": [
+         "中野駅から徒歩3分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 2.4,
+        "reasons": [
+         "高円寺駅から徒歩2分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "a002",
+        "match_score": 2.24,
+        "reasons": [
+         "中野駅から徒歩5分",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 1.0,
+         "wage": 0.74
+        }
+       }
+      ],
+      "total": 4
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 4.15,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 0.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [
+     {
+      "job_id": "b0101",
+      "saved_at": "9/23"
+     }
+    ],
+    "talk_entry": "visit"
+   },
+   "after_submit": {
+    "application_status": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "days_ago": 0,
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      },
+      {
+       "applied": "7/14",
+       "days_ago": 71,
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "application_status_a001": {
+     "applications": [
+      {
+       "applied": "7/14",
+       "days_ago": 71,
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "reference": "多くの店舗は応募から1週間以内に電話かメールで連絡します。1週間を過ぎても連絡がない場合は、応募履歴画面の「お問い合わせ」から店舗に確認できます。"
+    },
+    "conversation_summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "9/23",
+      "area": "中野",
+      "days_ago": 0,
+      "job_id": "a002",
+      "job_type": "コンビニ",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "飲食キッチン": 1,
+       "飲食ホール": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "applied_waiting",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿",
+       "中野"
+      ],
+      "job_type": [
+       "飲食ホール",
+       "コンビニ"
+      ],
+      "time_band": [
+       "深夜",
+       "夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    },
+    "form_exit": null,
+    "profile": {
+     "applications": [
+      {
+       "applied": "9/23",
+       "job_id": "a002",
+       "status": "応募済み(店舗からの連絡待ち)",
+       "title": "コンビニ夜勤 中野"
+      },
+      {
+       "applied": "7/14",
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "recent_applications": [
+     {
+      "applied": "9/23",
+      "days_ago": 0,
+      "job_id": "a002",
+      "status": "応募済み(店舗からの連絡待ち)",
+      "title": "コンビニ夜勤 中野"
+     },
+     {
+      "applied": "7/14",
+      "days_ago": 71,
+      "job_id": "a001",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     }
+    ],
+    "recommend": [
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 3.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 101
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "夜の勤務(17:00〜翌0:00)"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0602",
+        "match_score": 3.42,
+        "reasons": [
+         "夜の勤務(16:00〜22:00(実働6h))",
+         "新宿駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.72
+        }
+       },
+       {
+        "job_id": "b0201",
+        "match_score": 3.29,
+        "reasons": [
+         "夜の勤務(17:00〜翌1:00)",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 5.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 1.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0105",
+        "match_score": 4.15,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "日払い"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.3,
+         "time_band": 1.0,
+         "wage": 0.85
+        }
+       },
+       {
+        "job_id": "b0103",
+        "match_score": 3.82,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "未経験OK"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.2,
+         "time_band": 1.0,
+         "wage": 0.62
+        }
+       }
+      ],
+      "total": 5
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "f0201",
+        "match_score": 2.5,
+        "reasons": [
+         "新宿駅から徒歩5分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.5,
+         "time_band": 0.0,
+         "wage": 1.0
+        }
+       },
+       {
+        "job_id": "f0902",
+        "match_score": 2.34,
+        "reasons": [
+         "新宿御苑前駅から徒歩3分",
+         "リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.64
+        }
+       },
+       {
+        "job_id": "f0402",
+        "match_score": 2.29,
+        "reasons": [
+         "西新宿駅から徒歩4分",
+         "一部リモート可"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 0.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.69
+        }
+       }
+      ],
+      "total": 40
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0401",
+        "match_score": 4.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 1.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0403",
+        "match_score": 3.4,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "高円寺駅から徒歩2分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.8,
+         "time_band": 1.0,
+         "wage": 0.6
+        }
+       },
+       {
+        "job_id": "b0402",
+        "match_score": 2.05,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "品川エリア"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 1.0,
+         "station": 0.4,
+         "time_band": 0.0,
+         "wage": 0.65
+        }
+       }
+      ],
+      "total": 3
+     },
+     {
+      "jobs": [
+       {
+        "job_id": "b0101",
+        "match_score": 4.28,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "新宿三丁目駅から徒歩4分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 2.0,
+         "station": 0.6,
+         "time_band": 0.0,
+         "wage": 0.68
+        }
+       },
+       {
+        "job_id": "b0401",
+        "match_score": 3.58,
+        "reasons": [
+         "9月に応募したコンビニと同系統",
+         "中野駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 1.0,
+         "job_type": 1.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.88
+        }
+       },
+       {
+        "job_id": "b0104",
+        "match_score": 3.31,
+        "reasons": [
+         "7月に応募した飲食ホールと同系統",
+         "川崎駅から徒歩3分"
+        ],
+        "score_breakdown": {
+         "area": 0.0,
+         "job_type": 2.0,
+         "station": 0.7,
+         "time_band": 0.0,
+         "wage": 0.61
+        }
+       }
+      ],
+      "total": 101
+     }
+    ],
+    "relax": {
+     "options": [
+      {
+       "current": "塾講師・家庭教師",
+       "remove": "job_type",
+       "total_after": 1
+      }
+     ],
+     "total_now": 0
+    },
+    "saved_jobs": [],
+    "talk_entry": "visit"
+   },
+   "after_unsave": {
+    "profile": {
+     "applications": [
+      {
+       "applied": "7/14",
+       "job_id": "a001",
+       "status": "不採用(シフトが合わず)",
+       "title": "居酒屋ホール 新宿西口"
+      }
+     ],
+     "consultation_summary": null,
+     "resume": null,
+     "saved_jobs": [],
+     "sections": [
+      {
+       "id": "purpose",
+       "items": [
+        {
+         "key": "purpose",
+         "label": "目的",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "目的"
+      },
+      {
+       "id": "wishes",
+       "items": [
+        {
+         "key": "area",
+         "label": "エリア・駅",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "time_band",
+         "label": "時間帯",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "job_type",
+         "label": "職種",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "min_wage",
+         "label": "時給の下限(円)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "days_per_week",
+         "label": "週の日数",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "wants",
+         "label": "やりたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "avoids",
+         "label": "避けたいこと",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "concerns",
+         "label": "不安",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "希望"
+      },
+      {
+       "id": "career",
+       "items": [
+        {
+         "key": "experience",
+         "label": "経験(未経験など)",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "skills",
+         "label": "できること",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "certifications",
+         "label": "資格・免許",
+         "saved": null,
+         "value": null
+        },
+        {
+         "key": "strengths",
+         "label": "強み",
+         "saved": null,
+         "value": null
+        }
+       ],
+       "title": "経歴"
+      }
+     ],
+     "track": {
+      "choices": [
+       "アルバイト・パート",
+       "正社員",
+       "未定"
+      ],
+      "current": "未定",
+      "history": []
+     },
+     "voice_drafts": []
+    },
+    "saved_jobs": [],
+    "summary": {
+     "consultation_summary": null,
+     "form_exit": null,
+     "last_application": {
+      "applied": "7/14",
+      "area": "新宿",
+      "days_ago": 71,
+      "job_id": "a001",
+      "job_type": "飲食ホール",
+      "status": "不採用(シフトが合わず)",
+      "title": "居酒屋ホール 新宿西口"
+     },
+     "last_contact": null,
+     "linked": true,
+     "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。stated_preferences は本人が前に話した希望(行動データより優先する)。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。",
+     "recent_views": {
+      "by_job_type": {
+       "飲食キッチン": 1,
+       "飲食ホール": 2
+      },
+      "count_30d": 3
+     },
+     "saves_30d": 0,
+     "search_track": "未定",
+     "segment": "browsing",
+     "stated_preferences": {},
+     "tendency": {
+      "area": [
+       "新宿",
+       "渋谷"
+      ],
+      "job_type": [
+       "飲食ホール",
+       "飲食キッチン"
+      ],
+      "time_band": [
+       "夜",
+       "深夜"
+      ]
+     },
+     "track_history": [],
+     "uploaded_resume": null
+    }
+   },
+   "push": [
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    },
+    {
+     "allowed": false,
+     "reason": "form_exit の根拠になる事実がない"
+    }
+   ],
+   "resume_form": {
+    "error": "a002 の入力途中の応募フォームはありません"
+   },
+   "save_job": {
+    "saved": "b0101",
+    "saves_total": 1
+   },
+   "unsave": {
+    "unsaved": "a003"
+   }
+  }
+ }
+}

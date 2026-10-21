@@ -25,7 +25,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic, profile
+from dip_mcp import behavior, logic, profile
 from dip_mcp.data import JST
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
@@ -730,14 +730,14 @@ def test_forget_all_also_clears_the_dev_scenario_users_of_this_browser(remembere
             logic.submit_application(remembered.state, r["user"], "a003")
         seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
         assert seen["summary"]["stated_preferences"] and seen["saves"] and seen["applications"]
-        assert remembered.state.user(mine["user"])["views"] and a.portal.call(rt.current_thread, mine["user"]) == 1
+        assert behavior.view(remembered.state, mine["user"])["recent_views"] and a.portal.call(rt.current_thread, mine["user"]) == 1
 
         assert a.post("/api/profile/forget", params={"user_id": theirs["user"]},
                       json={"user_id": theirs["user"]}).json() == {"forgotten": True}
         seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
         assert seen["summary"]["stated_preferences"] == {} and seen["summary"]["linked"] is False
         assert seen["saves"] == seen["applications"] == seen["outcomes"] == [] and seen["last_contact"] is None
-        assert not remembered.state.user(mine["user"]).get("views")
+        assert not behavior.view(remembered.state, mine["user"])["recent_views"]
         assert a.portal.call(rt.current_thread, mine["user"]) == 0  # 会話も消える
         # 別のブラウザのシナリオ利用者はそのまま
         kept = b.post("/api/dip", json={"user_id": theirs["user"]}).json()
@@ -774,7 +774,7 @@ def test_another_users_profile_can_be_neither_read_nor_changed(remembered):
             assert getattr(a, method)(f"/api/profile{path}", params={"user_id": ub}, **body).status_code in (200, 404), \
                 (method, path)
         after = remembered.state.user(ub)
-        assert logic.stated_preferences(after)["area"]["value"] == "渋谷" and after.get("saves")  # 変わっていない
+        assert logic.stated_preferences(after)["area"]["value"] == "渋谷" and logic.saved_jobs(remembered.state, ub)  # 変わっていない
         # 旧来の「パスにユーザーID」の形は無い
         assert a.get(f"/api/profile/{ub}").status_code == 404
 

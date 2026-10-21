@@ -9,6 +9,7 @@
 - 書く中で見つけた設計の問題は [review-2026-10.md](review-2026-10.md) にまとめました(R17 から後は、この文書を書く中で足したもの)
 - 4.7 と 4.8 の後半、4.9、4.10、5.3 の後半、5.7 の件数、10 章の履歴書の読み取りは、README を書き直したとき(jyoka/tasks#167)に README から移しました
 - LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
+- dip のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
 
 ## 1. パッケージの構成
 
@@ -159,8 +160,9 @@ classDiagram
 | `profile.py` | プロフィール画面の中身と、知らせ | `view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
-| `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
-| `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`SUMMARIES_PATH` |
+| `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
+| `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`SUMMARIES_PATH` |
+| `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(5.8、ADR-0006) | `view`、`record`、`overlay`、`dip_id`、`stores`、`WRITES` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
 
@@ -439,13 +441,15 @@ flowchart LR
 | `relax_conditions` | `logic.relax` | - | 使う |
 | `answer_job_question` | `logic.answer_material` | - | - |
 | `get_application_status` | `logic.application_status` | - | - |
-| `resume_application_form` | `logic.resume_form` | `form_exits` | - |
-| `save_job` | `logic.save_job` | `saves` | - |
+| `resume_application_form` | `logic.resume_form` | 元データの `form_fill`、`dip_writes` | - |
+| `save_job` | `logic.save_job` | 元データの `save`、`dip_writes` | - |
 | `save_user_preferences` | `logic.save_preferences` | `preferences` | 使う |
 | `set_search_track` | `logic.set_search_track` | `track_history` | 使う |
 | `get_counseling_playbook` | `logic.counseling_playbook` | - | 使う |
 | `record_conversation_outcome` | `logic.record_outcome` | `outcomes` | 使う |
 
+- 本人の行動を読むツールは、`behavior.view`(要約に、会話の中で書いた分を重ねたもの)だけを読みます。行動の元データは読みません(5.8)。
+  `get_user_conversation_summary`(連携している人)と `get_application_status` は、要約を作った時刻 `as_of` を返します
 - Prompt `baitoru_assistant(entry)` は `prompts/baitoru_assistant.md` に、`entries.json` の入口の文(無い入口は `A`)を足して返します
 - Resource `baitoru://faq` は `fixtures/faq.json` をそのまま返します
 - 一覧に無い職種、エリア、属性の値は、0 件で返さずに `error` と使える値の一覧を返します(`_job_type_error`、`_area_error`、`_filters_error`)。
@@ -1036,8 +1040,9 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `data/resume_intake/` | `resume_intake.cli`、`run_samples` | 人 | 読み取り結果の JSON と比較の Markdown |
 | `evals/results/` | `evals.run` | `evalkit`、人 | 5.6。git に入れない |
 | `evals/budget.jsonl` | `budget.record`(追記) | `budget.check`、`python -m evals.budget` | JSON Lines(5.6)。git に入れる |
-| `data/dip_events.db` | `scripts/gen_dip_events.py`、`EventStore.append`(追記だけ) | 要約のバッチ | SQLite(5.8) |
-| `data/dip_summaries.db` | 要約のバッチ(`SummaryStore.replace_all`) | `SummaryStore.get`(2/2 で dip のツール) | SQLite(5.8) |
+| `data/dip_events.db` | `scripts/gen_dip_events.py`、`EventStore.append`(追記だけ。`behavior.record`)、`behavior.stores`(最初の準備) | 要約のバッチ | SQLite(5.8)。場所は `State` と同じディレクトリ |
+| `data/dip_summaries.db` | 要約のバッチ(`SummaryStore.replace_all`) | `SummaryStore.get`(`behavior.view`) | SQLite(5.8)。場所は `State` と同じディレクトリ |
+| `data/dip_events.lock` | `behavior.stores` | 同 | `fcntl.flock` の印(最初の準備を 1 つのプロセスだけが行う) |
 | `fixtures/*.json` | 人、`scripts/gen_*.py` | dip、評価 | 5.7 |
 | `voice_resume/data/wage_reference.json` | `scripts/voice/update_wage_reference.py` | `wages.load_reference` | `WageReference` |
 
@@ -1052,11 +1057,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | キー | 中身 | 書く関数 |
 |---|---|---|
 | `line_user_id`、`dip_id`、`label` | ユーザーID、dip ID(無ければ未連携)、開発者画面の説明 | fixtures、`_new_user` |
-| `applications` | `{job_id, applied_at, status}` | fixtures、`submit_application` |
-| `views` | `{job_id, at}` | fixtures |
-| `saves` | `{job_id, at}` | fixtures、`save_job`、`profile.unsave_job` |
-| `form_exits` | `{job_id, exited_at, completed: {項目: 値}, remaining: [項目]}` | fixtures、`resume_form`、`submit_application` |
-| `contacts` | `{at, channel, message}`(プッシュの記録) | `push_trigger` |
+| `dip_writes` | 会話の側から dip に書いた行動のイベント `{seq, at, kind, job_id, data}`(元データに追記したものと同じ。連携していない人は `seq` が None)。要約に入ったものは次に書くときに落とす(5.8) | `behavior.record`(`save_job`、`resume_form`、`submit_application`、`push_trigger`、`profile.unsave_job`) |
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
@@ -1282,7 +1283,7 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 | `search_query_vectors.json` | 検索評価セットの問い合わせのベクトル(評価をオフラインで回すため) |
 | `listings.json` | 掲載の開始と終了の日付 |
 | `faq.json`、`job_faq.json` | 全体の FAQ と、求人ごとの Q&A |
-| `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章) |
+| `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章)。`dip_id` と説明だけで、行動は `dip_events.json` にある |
 | `dip_events.json` | シナリオのユーザーのうち dip ID のある 4 人の、行動の元データ(会員とイベント。5.8) |
 
 求人は 103 件で、アルバイト・パートが 63 件(`jobs.json` 60 件、`anchor_jobs.json` 3 件)、正社員が 40 件(`fulltime_jobs.json`)です。
@@ -1294,13 +1295,14 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 
 1. 生成器とシナリオのユーザー(`fixtures/dip_events.json`)が、行動の元データ(`data/dip_events.db`)に会員とイベントを書く(追記だけ)
 2. 要約のバッチ(`python -m dip_mcp.summarize`)が、元データから全員分の状況の要約を作り直し、`data/dip_summaries.db` を置き換える(1 人 1 行)
-3. dip のツールが要約を読む(2/2。今は `data/state.json` を読む)
+3. dip のツールが要約を読む。会話の中で書いたことは元データに追記し、次のバッチまでは本人の分だけ要約に重ねて読む(`dip_mcp/behavior.py`、
+   [ADR-0006](../adr/0006-tools-read-summary-and-overlay-own-writes.md))
 
 **行動の元データ(`data/dip_events.db`、`dip_mcp/events.py`)**
 
 | 表 | 列 | 決まり |
 |---|---|---|
-| `members` | `dip_id`(主キー)、`registered_at` | dip の会員。LINE のユーザーIDは持たない(連携は dip の状態の `dip_id`) |
+| `members` | `dip_id`(主キー)、`registered_at` | dip の会員。LINE のユーザーIDは持たない(連携は dip の状態の `dip_id`。引くのは `behavior.dip_id`) |
 | `events` | `seq`(番号、増えるだけ)、`dip_id`、`at`、`kind`、`job_id`、`data`(JSON) | 追記だけ。UPDATE と DELETE はトリガーで止まる。`at` は日本時間の ISO 8601(秒まで) |
 
 | `kind` | 意味 | `job_id` | `data` |
@@ -1309,10 +1311,11 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `view` | 求人の閲覧 | あり | なし |
 | `save`、`unsave` | 求人の保存と、その取り消し | あり | なし |
 | `form_exit` | 応募フォームの離脱 | あり | `completed`、`remaining`(項目名だけ。入力した値は持たない) |
+| `form_fill` | 離脱した応募フォームの残りの項目に、トークで答えた(`resume_application_form`) | あり | `fields`(答えた項目名だけ。値は持たない) |
 | `apply` | 応募 | あり | `status`(応募したときの選考の状態) |
 | `status` | 選考の状態の変化 | あり | `status` |
 | `inquiry` | 本人から求人への問い合わせ | あり | `topic` |
-| `contact` | dip から本人への接触(今の `contacts`。プッシュの記録) | なし | `channel`、`message` |
+| `contact` | dip から本人への接触(プッシュの記録) | なし | `channel`、`message` |
 
 **生成器(`python -m scripts.gen_dip_events`)**
 
@@ -1343,7 +1346,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `views_30d` | 30 日の閲覧の数と職種ごとの数 `{count, by_job_type}` | `conversation_summary` の `recent_views` |
 | `applications` | 90 日の応募の新しい順 5 件 `{job_id, applied_at, status, status_at}` | `recent_applications`、`last_application` |
 | `applied_job_ids` | 応募した求人(期間なし)の新しい順 30 件 | `recommend` で応募済みを外す |
-| `saves`、`saves_30d` | 保存している求人の新しい順 10 件 `{job_id, at}` と、30 日の保存の数 | `saved_jobs`、`saves_30d` |
+| `saves`、`saves_30d`、`saves_total` | 保存している求人の新しい順 10 件 `{job_id, at}`、30 日の保存の数、保存している求人の数 | `saved_jobs`、`saves_30d`、`save_job` の `saves_total` |
 | `form_exit` | 7 日以内の最後の離脱 `{job_id, exited_at, completed, remaining}`。後で応募した求人の離脱は消える | `form_exit`、`push_trigger` |
 | `last_contact` | 最後の接触 `{at, channel, message}` | `last_contact`、`push_trigger` の間隔 |
 | `tendency` | 職種・エリア・時間帯の傾向(`logic.preferences` と同じ数え方。90 日の応募、30 日の閲覧と保存) | `tendency`、`recommend` の並び |
@@ -1354,6 +1357,34 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 - 求人名などは持たず、求人IDだけです。求人の中身は読む側が `load_jobs` で引きます
 - 問い合わせ(`inquiry`)は今のツールが使わないので、要約に入りません
 
+**ツールが読む、書く(`dip_mcp/behavior.py`)**
+
+- 読む: `view(state, line_user_id)` が、要約(`SummaryStore.get`)に、その人の `dip_writes` のうち要約にまだ入っていないものを
+  重ねて返します(`overlay`)。形は要約と同じです。入ったかどうかは、`seq` が `through_seq` 以下で、時刻が `as_of` 以下かで決めます
+  (要約のバッチが取り込む条件と同じ)。要約の行が無い人(連携していない人、バッチの後に会員になった人)は `empty_summary`(`as_of` は None)に重ねます
+- 重ねる中身: `save` は `saves` の先頭に足し、`saves_30d` と `saves_total` を 1 増やします(保存済みなら何もしない)。`unsave` は外して数を減らします。
+  `saves_30d` は、この会話で重ねた保存なら足した分を引き、要約から来た保存なら要約と同じく `as_of` から数えて 30 日以内のときだけ引きます。
+  `form_fill` は離脱の `remaining` から `completed` へ項目を移します。`apply` は `applications` と `applied_job_ids` の先頭に足し、
+  その求人の離脱を消します。`contact` は `last_contact` を置き換えます。`tendency`、`views_30d`、`visits_30d` は変えません
+- 書く: `record(state, line_user_id, kind, job_id, **data)` は、`dip_id` があれば `EventStore.append` で元データに追記し、同じイベントを
+  `dip_writes` に足します。`dip_id` が無ければ元データには書かず、`dip_writes` にだけ残します(`seq` は None)。
+  `dip_id` が元データの会員に無い(追記が外部キーの `IntegrityError` になる)ときも同じです
+- `dip_id(state, line_user_id)` が、LINE のユーザーIDから `dip_id` を引く 1 か所です。`logic`、`profile`、`server` は `dip_id` の欄を直接読みません
+- `stores(state)` は `State` と同じディレクトリの元データと要約を返します。要約のファイルが無ければ、`dip_events.lock` を取って、
+  元データ(無ければシナリオのユーザーの分を入れて作る)から `SIM_NOW` で要約のバッチを 1 回回します。
+  要約は `dip_summaries.db.building` に作ってから `os.replace` で置き換えます。`stores` はロックを取らずにファイルがあるかだけを見るので、作りかけの空の要約を別のプロセスに読ませないためです
+- 読む側の期間の判定: `conversation_summary`、`recent_applications`、`form_exit`、`push_trigger` は、要約の一覧をそのユーザーの
+  `now` でもう一度絞ります(90 日、7 日、3 日)。30 日の閲覧と保存の数は、`as_of` から数えたものをそのまま使います
+
+| ツールの結果 | 要約のどこから |
+|---|---|
+| `conversation_summary` | `as_of`、`applications`(`last_application`)、`form_exit`、`views_30d`(`recent_views`)、`saves_30d`、`tendency`、`last_contact` |
+| `recent_applications`、`application_status` | `applications`(新しい順 5 件。`application_status` は `as_of` も) |
+| `form_exit`、`resume_form` | `form_exit`(最後の 1 件) |
+| `recommend`、`relax` | `applied_job_ids`(外す求人)、`tendency`(並び)、`applications`(理由の「〜月に応募した〜と同系統」) |
+| `save_job`、`saved_jobs`、`profile.view`、`profile.unsave_job` | `saves`、`saves_total`、`applications` |
+| `push_trigger` | `last_contact`(間隔)、`form_exit`(話しかける根拠) |
+
 ## 6. 並行と排他
 
 - **ユーザーの排他**: `LineRuntime._locks[user_id]`(`asyncio.Lock`)。1 人のターンは 1 つずつ進みます。Web サーバーは、会話を読む、
@@ -1363,6 +1394,10 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 - **会話**: `AsyncSqliteSaver` の 1 つの接続です。`_erase` は saver の `lock` を取り、1 つのトランザクションで消します
 - **ターン数**: `DailyQuota._lock`(`threading.Lock`)の中で数えて書きます。ファイルは一時ファイルを使わずに書き直します(R18)
 - **費用台帳**: `Ledger._lock` の中で 1 行を追記します
+- **dip の行動の元データと要約**: 最初の準備(要約が無いときのシナリオの元データとバッチ)は `dip_events.lock` の `fcntl.flock` の中で 1 回だけ行います。
+  要約は別の名前のファイルに作ってから置き換えるので、ロックを取らずに読む側は、準備が終わるまで要約が無いと見てロックを待ちます。
+  追記は SQLite の 1 つのトランザクションです。`behavior.record` は元データに追記してから `State.update` で `dip_writes` に足します
+  (準備は `state.lock` を取らず、`State.update` の中では `stores` を呼ばないので、2 つのロックは入れ子になりません)
 - **LINE の再送**: `SeenEvents._lock`(`threading.Lock`)の中で、受けたかを確かめて覚え、ファイルに書きます
 - **音声相談の待ち合わせ**: ユーザーごとの `asyncio.Condition`(`app.state.voice_ready`)。結果が届いたら `notify_all` します
 - **プロセスのメモリにあるもの**: `_locks`、`_threads`、`_running`、`voice_ready`、`unread_uploads`、`Ledger.rows`。Web プロセスは
@@ -1499,10 +1534,14 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     実際の時刻を使い、匿名ユーザーIDとシナリオユーザーと重ならず、LINE の userId はどのファイルにも残りません。設定が無ければ 404 です
     (`tests/test_line_webhook.py`)
 20. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
-    (`::test_generator_makes_the_same_data_from_the_same_seed`)。シナリオのユーザーの要約の事実は、`users.json` から `logic` が出すものと同じです
-    (`::test_scenario_summary_has_the_same_facts_as_logic_on_users_json`)。バッチの後に足したイベントは次のバッチまで要約に入りません
+    (`::test_generator_makes_the_same_data_from_the_same_seed`)。バッチの後に足したイベントは次のバッチまで要約に入りません
     (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
     (`::test_summary_stays_under_the_length_cap_for_a_heavy_member`)
+21. dip のツールは行動の元データを読みません。元データを読む関数を、呼ばれたら落ちるものに差し替えても、どのツールも動きます
+    (`tests/test_dip_summary_read.py::test_tools_never_read_the_raw_events`)。シナリオの 5 人で、行動を読むツールの結果は
+    task 180 の時点(`tests/fixtures/dip_tools_main.json`)と同じで、違うのは `as_of` だけです(`::test_tools_return_the_same_as_main_except_as_of`)。
+    保存した直後の会話で保存が読め、要約の行は次のバッチまで変わりません
+    (`::test_a_saved_job_is_there_right_after_saving_while_the_summary_waits_for_the_batch`)
 
 ## 10. テストと評価の仕組み
 

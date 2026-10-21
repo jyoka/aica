@@ -1,5 +1,5 @@
 {
-  "_about": "シナリオのユーザー(fixtures/users.json で dip ID のある 4 人)の行動の元データ。閲覧・応募・保存・離脱は users.json と同じ時刻と中身。訪問は users.json に無いので、それぞれの行動の最初の時刻に置いた。D1001 の不採用の時刻(7/17)も users.json に無いので決めた値。sim-new は dip ID と未連携なので会員にいない",
+  "_about": "シナリオのユーザー(fixtures/users.json で dip ID のある 4 人)の行動の元データ。閲覧・応募・保存・離脱は、task 180 まで users.json に持っていたものと同じ時刻と中身(task 181 で users.json から行動を外し、ここだけにした)。訪問は users.json に無かったので、それぞれの行動の最初の時刻に置いた。D1001 の不採用の時刻(7/17)も users.json に無いので決めた値。sim-new は dip ID と未連携なので会員にいない",
   "members": [
     {"dip_id": "D1001", "registered_at": "2026-06-01T10:00:00+09:00"},
     {"dip_id": "D1002", "registered_at": "2026-06-01T10:00:00+09:00"},

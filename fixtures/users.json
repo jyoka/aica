@@ -1,22 +1,7 @@
 [
-  {"line_user_id": "sim-yoru", "dip_id": "D1001", "label": "シーンA: 7月に新宿の居酒屋に応募・夜希望",
-   "applications": [{"job_id": "a001", "applied_at": "2026-07-14T20:10:00+09:00", "status": "不採用(シフトが合わず)"}],
-   "views": [{"job_id": "b0101", "at": "2026-09-20T23:05:00+09:00"}, {"job_id": "b0105", "at": "2026-09-21T00:12:00+09:00"},
-             {"job_id": "b0201", "at": "2026-09-21T00:20:00+09:00"}],
-   "saves": [], "form_exits": [], "contacts": [], "outcomes": []},
-  {"line_user_id": "sim-exit", "dip_id": "D1002", "label": "シーンB: 2時間前にコンビニ夜勤の応募フォームで離脱",
-   "applications": [], "views": [{"job_id": "a002", "at": "2026-09-23T09:48:00+09:00"}], "saves": [],
-   "form_exits": [{"job_id": "a002", "exited_at": "2026-09-23T10:00:00+09:00",
-                   "completed": {"氏名": "(入力済み)", "年齢": "(入力済み)"}, "remaining": ["電話番号", "希望開始日"]}],
-   "contacts": [], "outcomes": []},
-  {"line_user_id": "sim-applied", "dip_id": "D1004", "label": "シーンD: 9/19に居酒屋に応募・連絡待ち",
-   "applications": [{"job_id": "a001", "applied_at": "2026-09-19T21:00:00+09:00", "status": "応募済み(店舗からの連絡待ち)"}],
-   "views": [], "saves": [], "form_exits": [], "contacts": [], "outcomes": []},
-  {"line_user_id": "sim-browsing", "dip_id": "D1005", "label": "比較検討層: 閲覧・保存あり、応募なし",
-   "applications": [],
-   "views": [{"job_id": "b0302", "at": "2026-09-18T19:00:00+09:00"}, {"job_id": "a003", "at": "2026-09-19T20:00:00+09:00"},
-             {"job_id": "b0601", "at": "2026-09-21T21:30:00+09:00"}],
-   "saves": [{"job_id": "a003", "at": "2026-09-19T20:02:00+09:00"}], "form_exits": [], "contacts": [], "outcomes": []},
-  {"line_user_id": "sim-new", "dip_id": null, "label": "dip ID 未連携の新規ユーザー",
-   "applications": [], "views": [], "saves": [], "form_exits": [], "contacts": [], "outcomes": []}
+  {"line_user_id": "sim-yoru", "dip_id": "D1001", "label": "シーンA: 7月に新宿の居酒屋に応募・夜希望", "outcomes": []},
+  {"line_user_id": "sim-exit", "dip_id": "D1002", "label": "シーンB: 2時間前にコンビニ夜勤の応募フォームで離脱", "outcomes": []},
+  {"line_user_id": "sim-applied", "dip_id": "D1004", "label": "シーンD: 9/19に居酒屋に応募・連絡待ち", "outcomes": []},
+  {"line_user_id": "sim-browsing", "dip_id": "D1005", "label": "比較検討層: 閲覧・保存あり、応募なし", "outcomes": []},
+  {"line_user_id": "sim-new", "dip_id": null, "label": "dip ID 未連携の新規ユーザー", "outcomes": []}
 ]

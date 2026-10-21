@@ -3,6 +3,8 @@
 見せるもの(CONTEXT.md の「プロフィール」): 雇用区分と切り替えの記録・目的・希望・経歴(stated_preferences の項目)・
 相談のまとめ・アップロードした履歴書・音声相談の下書き・保存した求人・応募した求人。
 
+- 保存した求人と応募した求人は、dip のツールと同じく行動の要約(と、この会話で書いた分)から読む(dip_mcp/behavior.py)。
+  保存をやめると、元データに unsave のイベントを書く
 - 直す・消すは、会話の要約(get_user_conversation_summary)と同じ dip の状態を書き換えるので、次に要約を読んだ時点で
   すぐ反映される。会話の途中で直したときのために、変えたことを「知らせ」として残し(profile_changes)、
   LINE 側が次の本人のターンの前に AI へ渡す(notice)。渡し終えたら消す(take_changes の n 件)
@@ -19,7 +21,7 @@ from __future__ import annotations
 import copy
 import json
 
-from dip_mcp import logic
+from dip_mcp import behavior, logic
 from dip_mcp.data import State, now
 from resume_draft.pii import fold_pii, has_pii
 from resume_draft.schema import document_kind_of
@@ -73,7 +75,7 @@ def view(state: State, line_user_id: str) -> dict:
         "saved_jobs": logic.saved_jobs(state, line_user_id),
         "applications": [{"job_id": a["job_id"], "title": _job_title(jobs, a["job_id"]), "applied": logic._md(a["applied_at"]),
                           "status": a["status"]}
-                         for a in sorted(user.get("applications", []), key=lambda a: a["applied_at"], reverse=True)],
+                         for a in behavior.view(state, line_user_id)["applications"]],  # 新しい順
     }
 
 
@@ -248,16 +250,16 @@ def delete_voice_draft(state: State, line_user_id: str, result_id: int) -> dict:
 
 
 def unsave_job(state: State, line_user_id: str, job_id: str) -> dict:
-    """保存をやめる。保存していた求人なら、次の本人のターンの前に AI へ知らせる(保存したままと思って話さないように)。"""
+    """保存をやめる。保存していた求人なら、次の本人のターンの前に AI へ知らせる(保存したままと思って話さないように)。
+    要約の保存は新しい順の 10 件までなので、それより多く保存している人は、載っていない求人でも取り消しを書く
+    (保存していなければ、次のバッチで何も起きない)。"""
     title = _job_title(logic.load_jobs(), job_id) or job_id
-
-    def apply(u):
-        saves = u.get("saves", [])
-        u["saves"] = [s for s in saves if s["job_id"] != job_id]
-        if len(u["saves"]) < len(saves):
-            _note(u, "消した", f"求人「{title}」の保存")
-
-    state.update(line_user_id, apply)
+    acts = behavior.view(state, line_user_id)
+    shown = job_id in {s["job_id"] for s in acts["saves"]}
+    if shown or acts["saves_total"] > len(acts["saves"]):
+        behavior.record(state, line_user_id, "unsave", job_id)
+    if shown:
+        state.update(line_user_id, lambda u: _note(u, "消した", f"求人「{title}」の保存"))
     return {"unsaved": job_id}
 
 

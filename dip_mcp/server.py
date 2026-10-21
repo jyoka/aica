@@ -70,7 +70,8 @@ def get_user_conversation_summary(line_user_id: UserId) -> dict:
     """ユーザーの状況要約(今の雇用区分・直近の応募・フォーム離脱・閲覧傾向・直近の接触・本人が話した希望と
     相談で分かったこと(stated_preferences)・前の会話の相談のまとめ(consultation_summary)・
     アップロードした履歴書の読み取り結果)を返す。チャットと音声は同じ要約を読む。会話の最初と、本人が履歴書をアップロードした後に呼ぶ。
-    要約は仮説であり、生の行動ログは含まない。"""
+    要約は仮説であり、生の行動ログは含まない。as_of は行動の事実(応募・離脱・閲覧・保存・接触)をいつ時点の要約から
+    読んだか(その後の行動は入っていないことがある。この会話で保存・応募したことは入っている)。"""
     return logic.conversation_summary(state, line_user_id)
 
 
@@ -164,7 +165,7 @@ def answer_job_question(
 
 @mcp.tool()
 def get_application_status(line_user_id: UserId, job_id: str | None = None) -> dict:
-    """応募の選考状況と、連絡までの一般的な目安。"""
+    """応募の選考状況と、連絡までの一般的な目安。as_of は選考状況をいつ時点の要約から読んだか。"""
     return logic.application_status(state, line_user_id, job_id)
 
 
