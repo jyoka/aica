@@ -79,6 +79,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶と、アカウント連携(下の「アカウント連携を試す」)だけです
 (履歴書のファイルと音声相談は、LINE ではまだ使えません。エージェントがそれを勧めたときは、文で書くよう案内します)。
 設定(`LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN`)が無ければ `POST /line/webhook` は 404 で、ほかは何も変わりません。
+設定があるときは、LINE のユーザーIDを作る鍵 `AICA_ID_KEY` も要ります(下の 3)。
 
 人がする操作です。LINE のアカウントと、トンネルのツール(ここでは cloudflared)が要ります。
 
@@ -89,6 +90,14 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
 3. [LINE Developers コンソール](https://developers.line.biz/console/) で、そのプロバイダーのチャネルを開く
    - 「チャネル基本設定」のチャネルシークレットを `.env` の `LINE_CHANNEL_SECRET` に書く
    - 「Messaging API設定」でチャネルアクセストークン(長期)を発行し、`.env` の `LINE_CHANNEL_ACCESS_TOKEN` に書く
+   - LINE のユーザーIDを作る aica 専用の鍵を作り、`.env` の `AICA_ID_KEY` に書く(32 バイト以上。無い、短いと Web サーバーは起動で止まります)
+
+     ```bash
+     python -c "import secrets; print(secrets.token_hex(32))"
+     ```
+
+     **鍵を変えると、LINE のユーザー全員の ID が変わり、それまでのデータ(会話、プロフィール、アカウント連携)とつながらなくなります**。
+     一度決めたら変えず、なくさないように控えておきます([ADR-0008](docs/adr/0008-keyed-line-user-id.md))
 4. 手元の Web サーバーを、トンネルで https に出す(cloudflared は `brew install cloudflared` で入れる)
 
    ```bash
@@ -213,6 +222,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 |---|---|---|---|
 | `LINE_CHANNEL_SECRET` | なし | チャネルシークレット。webhook の署名(`X-Line-Signature`)を確かめる。`LINE_CHANNEL_ACCESS_TOKEN` と両方あるときだけ `POST /line/webhook` を開く(無ければ 404) | 可 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push、アカウント連携の linkToken の発行に使う | 可 |
+| `AICA_ID_KEY` | なし(LINE の 2 つがあるときは必須) | LINE のユーザーID(`l-…`)を作る HMAC-SHA256 の鍵。32 バイト以上(例 `python -c "import secrets; print(secrets.token_hex(32))"`)。LINE の 2 つがあるのに無い、短いときは起動で止まる。変えると全員の ID が変わり、それまでのデータとつながらない([ADR-0008](docs/adr/0008-keyed-line-user-id.md)) | 可 |
 | `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(トンネルの https の URL)。LINE で出す LIFF 画面と dip のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
 
 音声相談で使うものです。トークだけを試すなら要りません。
@@ -237,7 +247,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](docs/prd/aica-v2-fulltime.md)(PRD) |
-| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](docs/adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く |
+| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](docs/adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](docs/adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |

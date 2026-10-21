@@ -34,6 +34,7 @@ aica は、LINE 公式アカウントの AI アシスタント(バイトル)を�
 いまは知人に試してもらう本番のトーク画面(`/`)と、評価と説明のための開発者画面(`/dev`)の両方を持っています。
 求職者と話すチャネルは 2 つです。Web のトーク画面(LINE 風の画面)と、LINE 公式アカウント(Messaging API の webhook、4.8)です。
 LINE のチャネルは、設定(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)があるときだけ開きます。
+そのときは LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も要り、無ければ Web サーバーは起動で止まります。
 
 範囲外:
 
@@ -561,7 +562,9 @@ sequenceDiagram
 
 - 答えるのは、1 対 1 のトークのテキストのメッセージと、友だち追加(`follow`)と、アカウント連携の結果(`accountLink`。4.10)だけです。
   ほかのイベントは 200 で無視します。テキストが「アカウント連携」「連携解除」のときは、ターンに流さず連携を始める、外す(4.10)
-- LINE のユーザーIDは `l-<16桁hex>` です。LINE の userId のハッシュから作ります。匿名ユーザーID(`w-…`)とも、
+- LINE のユーザーIDは `l-<16桁hex>` です。LINE の userId から、aica 専用の鍵 `AICA_ID_KEY` つきのハッシュ(HMAC-SHA256)で作ります
+  ([ADR-0008](../adr/0008-keyed-line-user-id.md))。鍵を知らなければ、userId を知っていても `l-…` を作れません。
+  鍵を変えると全員の ID が変わり、それまでのデータとつながりません。匿名ユーザーID(`w-…`)とも、
   シナリオユーザーとも重なりません。LINE の userId そのものは保存しません。返信と push の宛先にだけ、処理の間メモリで使います
 - LINE のユーザーは本番のユーザーです。dip の時計は実際の時刻です(4.7)
 - ターン数は、LINE のユーザーごとと全体で数えます。IP ごとには数えません。どの人の webhook も LINE のサーバーから届くからです
@@ -748,6 +751,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - dip の MCP サーバーの子プロセスは、親の環境変数をすべて受け取ります
 - ブラウザに渡すのは、LiveKit の部屋ごとの接続トークン(有効期限 5 分)だけです
 - LINE のチャネルシークレットとチャネルアクセストークン(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)も `.env` に置きます
+- LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も `.env` に置きます。漏れると、userId を知っている人が `l-…` を作れます
 - 音声ワーカーから Web サーバーへの `POST /api/voice/result` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
   (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
 
@@ -898,7 +902,7 @@ flowchart TB
 | 目的 | その仕事探しで本人が得たいもの | 動機づけ |
 | 職種 | 求人の仕事の種類。雇用区分ごとの一覧 | ジャンル、カテゴリ |
 | 匿名ユーザーID | Cookie `aica_uid` の `w-<16桁hex>`。本番のトーク画面のユーザーID | LINE ユーザーID |
-| LINE のユーザーID | LINE 公式アカウントで話すユーザーの ID `l-<16桁hex>`。LINE の userId のハッシュから作る(4.8) | - |
+| LINE のユーザーID | LINE 公式アカウントで話すユーザーの ID `l-<16桁hex>`。LINE の userId から、鍵 `AICA_ID_KEY` つきのハッシュで作る(4.8) | - |
 | LINE の userId | LINE プラットフォームが付ける ID(`U` + 32 桁)。aica は保存しない | - |
 | シナリオユーザー | 開発者画面のユーザー。ID は `<匿名ユーザーID>:<fixtures のユーザー>`(例 `w-…:sim-new`)。`fixtures/users.json` の初期状態を写す | - |
 

@@ -84,7 +84,7 @@ flowchart TB
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
 | `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
@@ -1006,8 +1006,10 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   イベントも、LINE のユーザーごとの `asyncio.Lock`(`app.state.line_locks`)で届いた順に 1 つずつ進めます。入力中の表示を待つ間に、
   後の発言が先にターンへ入らないためです
 - `LineApi.loading` で「入力中」の表示(60 秒。返信を送ると消える)を出してから、ターンを進めます
-- ユーザーIDは `line_user(userId)` = `"l-" + sha256("aica-line:" + userId)` の先頭 16 桁です。鍵は使いません(チャネルシークレットを
-  作り直しても同じユーザーのまま)。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
+- ユーザーIDは `line_user(userId)` = `"l-" + HMAC-SHA256(AICA_ID_KEY, userId)` の先頭 16 桁です([ADR-0008](../adr/0008-keyed-line-user-id.md))。
+  鍵は aica 専用の `AICA_ID_KEY`(32 バイト以上)で、鍵を知らなければ userId から `l-…` を作れません。チャネルシークレットは鍵に
+  使いません(作り直すと全員の ID が変わるため)。LINE の設定があるのに鍵が無い、短いときは、`lifespan` の `check_id_key` で起動を
+  止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
 - 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12 で、LLM を使いません
 - ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。今の会話に続けます
