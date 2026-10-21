@@ -514,11 +514,11 @@ sequenceDiagram
     participant D as dip の MCP サーバー
     participant L as 費用台帳
 
-    S->>H: user_id、event、text、facts、talk_thread、notice
+    S->>H: user_id、event、text、facts、talk_thread、notice、new_conversation
     H->>T: asyncio.create_task(_running に入れる)
     T->>T: event_input で入力の文を作る
     T->>T: ユーザーの排他(_locks[user_id])を取る
-    opt 挨拶かプッシュ
+    opt 挨拶かプッシュ、または new_conversation
         T->>T: new_conversation(番号を 1 つ進める)
     end
     alt 発言かアップロードなのに、会話の番号が talk_thread と違う
@@ -544,6 +544,8 @@ sequenceDiagram
 ```
 
 - 入力の文は `event_input` が作ります。挨拶とプッシュは `[イベント: ...]` で始まる文です。アップロードは `facts` の確認の吹き出しを入れます
+- `new_conversation` は、発言でも新しい会話を始める指定です。LINE の発言で、最後のやりとりから間が空いたときだけ真です(4.11)。
+  新しい会話の最初のターンなので、`entry`(A)と `line_user_id` を書き、知らせは置きません
 - 知らせ(`notice`)は、続きのターンの本人の入力の直前に `HumanMessage(additional_kwargs={"profile_notice": True})` で置きます。
   新しい会話を始めるターンでは使いません(最初に dip の要約を読むので)
 - 受け取り手が切れても `_turn` は最後まで進みます(`handle_stream` は `queue` を読むだけ)。ツールの結果が無い会話を保存しないためです
@@ -591,6 +593,8 @@ sequenceDiagram
 
 - 会話の番号は、最初に使うとき `_current` がチェックポイントの最大の番号から復元します。再起動しても古い会話に戻りません
 - `LineRuntime.conversation` の `last_at` は、返信のある会話の最後のチェックポイントの時刻です。返信の無い会話は続けません
+- 続けるかは `server.talk_continues` が決めます(`last_at` が None でなく、`clock()` との差が `TALK_RESUME_WINDOW`(30 分)以内)。
+  LINE のテキストのメッセージも同じ関数で決めます(4.11)
 - `history` は 1 ターン 1 件で、本人の発言(イベントなら None)と返信(`render` と同じ形)を返します。アップロードと音声相談の
   ターンは、会話に添えた `upload`、`voice` から描き直します。画面の URL は記録から取らず、`liff_url` で組み立て直します
 
@@ -1012,7 +1016,11 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
 - 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12 で、LLM を使いません
 - ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
-  - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。今の会話に続けます
+  - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。`user_lock` の中で `rt.conversation` を読み、
+    `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
+    偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
+    本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
+    保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
     `logic.record_talk_open` で記録します(ブロックを解いてもう一度友だち追加すると再訪)
   - ターンの途中の失敗(`BadTurn`、`TurnFailed`、ほかの例外)と、LINE のメッセージにする途中の失敗は `FAILED_TEXT` を返します
@@ -1661,7 +1669,9 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 18. 本番のユーザーの dip の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
 19. LINE の webhook は、署名が合うときだけエージェントを動かし、同じイベントに 2 回答えず、返信は 1 回だけ届きます。LINE のユーザーは
     実際の時刻を使い、匿名ユーザーIDとシナリオユーザーと重ならず、LINE の userId はどのファイルにも残りません。設定が無ければ 404 です
-    (`tests/test_line_webhook.py`)
+    (`tests/test_line_webhook.py`)。LINE のテキストは、最後のやりとりから 29 分なら同じ会話、31 分なら新しい会話で、新しい会話にも
+    保存した希望と相談のまとめが渡ります(`::test_text_continues_within_30_minutes_and_starts_a_new_conversation_after`、
+    `::test_new_conversation_after_30_minutes_still_gets_saved_preferences_and_the_consultation_summary`)
 20. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
     (`::test_generator_makes_the_same_data_from_the_same_seed`)。バッチの後に足したイベントは次のバッチまで要約に入りません
     (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
