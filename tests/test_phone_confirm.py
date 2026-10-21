@@ -14,6 +14,9 @@ task 127: 電話だけを避けたい人に、電話が中心の求人(コール
 (2) チャットはカードから除き、(4) 音声は propose_jobs の exclude_ids で外して呼び直し、トークに届く提案に入れない。
 (5) 音声の advisor は外した求人を覚え、後で exclude_ids を付けずに条件を変えて探しても出さない。
 (6) 「ほかには?」で出した求人を外して探し直し0件なら、前の提案を残す(トークに届き、dip の記録は propose)。
+
+task 131: 本人が外した求人・前の提案の求人に戻りたがったとき、届かない求人を「トークに出ます」と言わない。
+(8) 音声の playbook に答え方があり、propose_jobs の結果に、トークに届く求人IDと外した求人ID(読み上げない)が入る。
 """
 
 from __future__ import annotations
@@ -326,3 +329,91 @@ def test_dip_server_relax_conditions_passes_exclude_ids():
     cond = {"time_band": "深夜", "job_type": "コールセンター"}
     assert server.relax_conditions("sim-new", **cond)["total_now"] == 1
     assert server.relax_conditions("sim-new", **cond, exclude_ids=[CALL_CENTER])["total_now"] == 0
+
+
+# ----------------------------- (8) 音声: 前の求人に戻りたがったときの答え方(task 131) -----------------------------
+
+
+BACK_RULE = "- 本人が外した求人や前の提案の求人に戻りたがったら"
+
+
+def _note(output: str) -> str:
+    """propose_jobs の結果のうち、読み上げない部分(トークに届く求人と届かない求人)。"""
+    return output[output.index("(読み上げない:"):]
+
+
+def test_voice_playbook_says_how_to_answer_when_going_back_to_an_earlier_job():
+    rule = next(line for line in COMMON_VOICE.splitlines() if line.startswith(BACK_RULE))
+    assert "この面談ではもうご紹介できない" in rule  # 外した求人は出せないと伝える
+    assert "トークに届くのは最後に出した求人だけ" in rule and "「トークに出ます」" in rule and "言わない" in rule
+    assert "読み上げない" in rule  # 結果の読み上げない部分を見て答える
+    # 外して0件だったときは前の提案が残ってトークに届くので、「ご紹介できない」だけで終わらせない
+    assert "「前の提案としてトークに届く」" in rule and "もう検索では出せないがトークには届く" in rule
+    # 求人の読み上げの決まりも、トークに出るのは最後に出した求人だと言う(「求人は〜トークにも出る」にしない)
+    assert "最後に出した求人は面談が終わるとトークにも出る" in COMMON_VOICE
+    assert "求人は面談が終わるとトークにも出る" not in COMMON_VOICE.replace("最後に出した求人は", "")
+
+
+def test_voice_tells_the_llm_which_jobs_reach_the_talk_after_showing_others(app, tmp_path, monkeypatch):  # noqa: F811
+    """probe-20261004-114613 の V-phone-night: 深夜でコールセンターを外し、「ほかには?」で出した3件(最初が中野のコンビニ
+    b0401)を外して探し直した後に、本人が「さっきの最初の求人に戻りたい」と言う。最後の結果文に、トークに届くのは
+    最後の3件だけで、b0401 は外したのでこの面談では出せず届かないことが入る。LiveKit の AgentSession(文字のターン)で、
+    本物の dip MCP につなぐ。"""
+    night = [j["job_id"] for j in logic.recommend(server.state, None, time_band="深夜", exclude_ids=[CALL_CENTER])["jobs"]]
+    assert night[0] == "b0401" and JOBS["b0401"].job_type == "コンビニ"  # 最初に読み上げるのが中野のコンビニ
+    excluded = [CALL_CENTER, *night]
+    model = _scripted_llm([
+        ("tool", "save_user_preferences", {"time_band": "深夜", "avoids": "電話"}),
+        ("say", CONFIRM),
+        ("tool", "propose_jobs", {"time_band": "深夜"}),
+        ("tool", "propose_jobs", {"time_band": "深夜", "exclude_ids": [CALL_CENTER], "search_only": True}),
+        ("say", "見つかった求人を1件ずつお伝えしますね。"),
+        ("tool", "propose_jobs", {"time_band": "深夜", "exclude_ids": excluded, "search_only": True}),
+        ("say", "別の求人を1件ずつお伝えしますね。"),
+        ("say", "最初の中野のコンビニは外したので、この面談ではもうご紹介できず、トークにも届きません。"),
+        ("tool", "finalize_interview", {"summary": "深夜で探している。電話は避けたいが、レジや接客は大丈夫。"}),
+        ("say", "ありがとうございました。"),
+    ])
+    advisor, outputs, poster = _run_voice(
+        "w-1313131313131313", model,
+        ["深夜で探したいです。電話はしたくないです", "レジは大丈夫です", "ほかにはありますか?",
+         "やっぱり、さっきの最初の求人に戻りたいです", "以上です"],
+        tmp_path, monkeypatch)
+    assert BACK_RULE in model.instructions[0]  # 答え方(区分に共通の決まり)が指示に入っている
+    *_, last = advisor.search_attempts
+    latest = last["proposed_job_ids"]
+    assert latest and not set(latest) & set(excluded)
+    found = [o for o in outputs if "件見つかりました" in o]
+    # 毎回の結果文に、その時点でトークに届く求人が入る(コールセンターを外した後は night の3件)
+    assert f"トークに届く求人は、今の提案の求人ID {'・'.join(night)} だけ" in _note(found[1])
+    # 戻りたがる前の最後の結果文: 届くのは最後の3件だけ、b0401 を含む外した求人は出せず届かない
+    note = _note(found[-1])
+    assert f"トークに届く求人は、今の提案の求人ID {'・'.join(latest)} だけ" in note
+    assert f"外した求人ID {'・'.join(excluded)} はこの面談ではもう出せず、トークにも届かない" in note
+    assert "「トークに出ます」" in note
+    # 読み上げる行には、届かない注記が混ざらない(注記は最後の1行)
+    assert note.count("\n") == 0
+    # 実際にトークに届くのは最後の3件で、本人が戻りたがった b0401 は届かない
+    assert _delivered(poster) == latest and "b0401" not in latest
+
+
+def test_voice_zero_hit_after_excluding_says_the_previous_proposal_still_reaches_the_talk(app, tmp_path, monkeypatch):  # noqa: F811
+    """(6) と同じ流れ(中野のコンビニ2件を外して0件)。0件の結果文にも、前の提案の2件がトークに届くことが入り、
+    「外したので届かない」とは言わない(ユーザーの決定、2026-10-04)。"""
+    shown = [j["job_id"] for j in logic.recommend(server.state, None, job_type="コンビニ", area="中野")["jobs"]]
+    model = _scripted_llm([
+        ("tool", "propose_jobs", {"job_type": "コンビニ", "area": "中野"}),
+        ("say", "見つかった求人を1件ずつお伝えしますね。"),
+        ("tool", "propose_jobs", {"job_type": "コンビニ", "area": "中野", "exclude_ids": shown, "search_only": True}),
+        ("say", "ほかには見つかりませんでした。"),
+        ("tool", "finalize_interview", {"summary": "中野でコンビニのバイトを探している。"}),
+        ("say", "ありがとうございました。"),
+    ])
+    _, outputs, poster = _run_voice(
+        "w-1314131413141314", model, ["中野でコンビニのバイトを探しています", "ほかにはありますか?", "以上です"],
+        tmp_path, monkeypatch)
+    zero = next(o for o in outputs if "見つかりませんでした" in o)
+    note = _note(zero)
+    assert f"トークに届く求人は、今の提案の求人ID {'・'.join(shown)} だけ" in note
+    assert "前の提案としてトークに届く" in note and "トークにも届かない" not in note
+    assert _delivered(poster) == shown

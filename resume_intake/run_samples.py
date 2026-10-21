@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from openai import AsyncOpenAI
 
@@ -39,7 +39,7 @@ async def main() -> None:
     load_env()
     client = AsyncOpenAI()
     RESULTS.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     lines = [f"# サンプル読み取り結果({stamp} UTC, model={config.MODEL})", ""]
     total_cost = 0.0
     for path in SAMPLES:

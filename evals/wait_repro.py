@@ -88,7 +88,7 @@ async def main(case_id: str, n: int, tag: str) -> None:
     case = CASES[case_id]
     doc = {"case": case_id, "tag": tag, "model": config.MODEL, "effort": config.EFFORT,
            "script": case, "runs": []}
-    out = HERE / "results" / f"wait-repro-{tag}-{case_id}-{datetime.now():%Y%m%d-%H%M%S}.json"  # noqa: DTZ005  run.py と同じ(ローカル時刻のファイル名)
+    out = HERE / "results" / f"wait-repro-{tag}-{case_id}-{datetime.now():%Y%m%d-%H%M%S}.json"  # run.py と同じ(ローカル時刻のファイル名)
     async with LineRuntime(in_memory=True) as rt:
         for i in range(n):
             try:

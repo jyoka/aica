@@ -411,12 +411,12 @@ class ResumeAdvisor(Agent):
                 self.proposed_jobs = jobs
             await self._publish({"type": "jobs", "jobs": jobs, "total": result.get("total", 0)})
             if not jobs:
-                return await self._zero_hit_reply(search)
+                return await self._zero_hit_reply(search) + self._talk_note()
         lines = [f"{i}件目(求人ID {job.get('job_id', '')}): {spoken_job_line(job)}" for i, job in enumerate(jobs, 1)]
         return (
-            f"求人が{len(jobs)}件見つかりました(面談が終わるとトークにも出ます)。"
+            f"求人が{len(jobs)}件見つかりました。"
             "1件ずつ短く読み上げてください(かっこの求人IDは読み上げない。外して探し直すときの exclude_ids に使う):\n"
-            + "\n".join(lines) + self._dropped_note(dropped)
+            + "\n".join(lines) + self._talk_note() + self._dropped_note(dropped)
         )
 
     @function_tool
@@ -574,6 +574,28 @@ class ResumeAdvisor(Agent):
         (区分を戻したとき、使わない条件を「前回の希望」として確かめないように)。"""
         kept = {k: v for k, v in stated.items() if on_track(k, v, self._track)}
         return kept, [k for k in stated if k not in kept]
+
+    def _talk_note(self) -> str:
+        """面談が終わるとトークに届く予定の求人と、届かない求人(propose_jobs の結果に足す。読み上げない)。
+
+        トークに届くのは最後に1件以上見つかった提案(proposed_jobs)だけで、外した求人はこの面談では出せない。
+        本人が前の求人に戻りたがったときに、LLM が届かない求人を「トークに出ます」と約束しないための材料。
+        """
+        delivered = [j.get("job_id", "") for j in self.proposed_jobs]
+        shown = dict.fromkeys(i for a in self.search_attempts for i in a.get("proposed_job_ids", []))
+        earlier = [i for i in shown if i not in delivered and i not in self.excluded_ids]
+        out = ("\n(読み上げない: 面談が終わるとトークに届く求人は、今の提案の求人ID "
+               f"{'・'.join(delivered)} だけ。" if delivered else "\n(読み上げない: トークに届く求人はまだ無い。")
+        gone = [i for i in self.excluded_ids if i not in delivered]
+        if gone:
+            out += f"外した求人ID {'・'.join(gone)} はこの面談ではもう出せず、トークにも届かない。"
+        if kept := [i for i in self.excluded_ids if i in delivered]:
+            # 外して探し直した結果が0件だったので、前の提案がそのまま残っている(ユーザーの決定、2026-10-04)
+            out += (f"求人ID {'・'.join(kept)} は外して探し直したが0件だったので、前の提案としてトークに届く"
+                    "(この面談の検索ではもう出ない)。")
+        if earlier:
+            out += f"前の結果に出た求人ID {'・'.join(earlier)} もトークには届かない。"
+        return out + "本人が前の求人に戻りたがったら、トークに届かない求人を「トークに出ます」「送ります」と言わない)"
 
     def _dropped_note(self, dropped: list[str]) -> str:
         if not dropped:
