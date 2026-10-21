@@ -21,7 +21,7 @@ from datetime import datetime
 from statistics import median
 from urllib.parse import urlencode
 
-from dip_mcp import behavior, embedding
+from dip_mcp import behavior, embedding, summarize
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -173,7 +173,8 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
     }
 
 
-def recent_applications(state: State, line_user_id: str) -> list[dict]:
+def _applications(state: State, line_user_id: str) -> list[dict]:
+    """90 日以内の応募の全件(新しい順)と、その選考の状態。エージェントに渡すときは件数で切る(recent_applications)。"""
     jobs, at = load_jobs(), now(line_user_id)
     out = []
     for a in _recent(behavior.view(state, line_user_id)["applications"], "applied_at", at):
@@ -181,6 +182,19 @@ def recent_applications(state: State, line_user_id: str) -> list[dict]:
         out.append({"job_id": a["job_id"], "title": j.title if j else "", "applied": _md(a["applied_at"]),
                     "days_ago": _days_ago(a["applied_at"], at), "status": a["status"]})
     return out
+
+
+def _more_applications(n: int) -> dict:
+    """エージェントに渡さなかった古い応募の数(「ほかに N 件」)。"""
+    return {"more": n, "note": f"ほかに {n} 件の古い応募がある(90日以内)。特定の求人の選考状況は "
+                               "get_application_status に job_id を渡すと分かる"}
+
+
+def recent_applications(state: State, line_user_id: str) -> list[dict]:
+    """エージェントに渡す、90 日以内の応募の新しい順 summarize.AGENT_APPLICATIONS 件。それより多ければ、
+    最後に渡さなかった件数({"more": N, "note": ...})を 1 つ足す。"""
+    apps, more = summarize.head(_applications(state, line_user_id), summarize.AGENT_APPLICATIONS)
+    return [*apps, _more_applications(more)] if more else apps
 
 
 def form_exit(state: State, line_user_id: str) -> dict | None:
@@ -540,7 +554,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
                 if "posted_at" in listings.get(k, {})
                 and _days_ago(listings[k]["posted_at"], listed_at) <= posted_within_days}
     acts = behavior.view(state, line_user_id)
-    exclude = set(exclude_ids or []) | set(acts["applied_job_ids"])  # 応募済みの求人は出さない(要約の新しい順の 30 件)
+    exclude = set(exclude_ids or []) | set(acts["applied_job_ids"])  # 応募済みの求人は出さない(要約の全件)
     tend = acts["tendency"] if behavior.dip_id(state, line_user_id) else {"job_type": [], "area": [], "time_band": []}
     cands = [j for j in pool.values() if j.job_id not in exclude
              and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
@@ -683,12 +697,16 @@ def answer_material(question: str, job_id: str | None = None) -> dict:
 
 
 def application_status(state: State, line_user_id: str, job_id: str | None = None) -> dict:
-    """as_of は選考の状態をいつ時点の要約から読んだか(連携していない人は None)。"""
-    apps = recent_applications(state, line_user_id)
+    """as_of は選考の状態をいつ時点の要約から読んだか(連携していない人は None)。job_id を渡したら、90 日以内の応募の
+    全件からその求人の分を引く。渡さなければ、新しい順に summarize.AGENT_APPLICATIONS 件と、ほかの件数(more)。"""
+    apps, more = _applications(state, line_user_id), 0
     if job_id:
         apps = [a for a in apps if a["job_id"] == job_id]
+    else:
+        apps, more = summarize.head(apps, summarize.AGENT_APPLICATIONS)
     faq = {f["id"]: f["a"] for f in json.loads((FIXTURES / "faq.json").read_text(encoding="utf-8"))}
-    return {"applications": apps, "as_of": behavior.view(state, line_user_id)["as_of"], "reference": faq["faq-contact"]}
+    return ({"applications": apps, "as_of": behavior.view(state, line_user_id)["as_of"], "reference": faq["faq-contact"]}
+            | (_more_applications(more) if more else {}))
 
 
 # ----------------------------- 手続き(フォームの続き) -----------------------------
@@ -729,7 +747,7 @@ def save_job(state: State, line_user_id: str, job_id: str) -> dict:
 
 def saved_jobs(state: State, line_user_id: str) -> list[dict]:
     """保存した求人を新しい順に、求人カードの形で(本番のトーク画面の「保存した求人」)。掲載が無くなった求人は出さない。
-    要約に載るのは新しい順に 10 件(summarize.SAVES)と、この会話で保存した分。"""
+    画面に出すので全件(要約の全件と、この会話で保存した分)。"""
     jobs = load_jobs()
     saves = behavior.view(state, line_user_id)["saves"]
     return [job_card(jobs[s["job_id"]], []) | {"saved_at": _md(s["at"])} for s in saves if s["job_id"] in jobs]

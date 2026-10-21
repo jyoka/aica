@@ -163,7 +163,7 @@ classDiagram
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
-| `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`SUMMARIES_PATH` |
+| `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`for_agent`、`head`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`AGENT_APPLICATIONS`、`AGENT_SAVES`、`SUMMARIES_PATH` |
 | `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
@@ -1458,16 +1458,22 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `last_visit`、`visits_30d` | 直近の訪問の日時、30 日の訪問の回数 | (今のツールは使わない) |
 | `recent_views` | 90 日の閲覧の新しい順 5 件 `{job_id, at}` | - |
 | `views_30d` | 30 日の閲覧の数と職種ごとの数 `{count, by_job_type}` | `conversation_summary` の `recent_views` |
-| `applications` | 90 日の応募の新しい順 5 件 `{job_id, applied_at, status, status_at}` | `recent_applications`、`last_application` |
-| `applied_job_ids` | 応募した求人(期間なし)の新しい順 30 件 | `recommend` で応募済みを外す |
-| `saves`、`saves_30d`、`saves_total` | 保存している求人の新しい順 10 件 `{job_id, at}`、30 日の保存の数、保存している求人の数 | `saved_jobs`、`saves_30d`、`save_job` の `saves_total` |
+| `applications` | 90 日の応募の全件(新しい順) `{job_id, applied_at, status, status_at}` | `recent_applications`、`application_status`、`last_application`、プロフィールの応募の履歴 |
+| `applied_job_ids` | 応募した求人(期間なし)の全件(新しい順) | `recommend` で応募済みを外す |
+| `saves`、`saves_30d`、`saves_total` | 保存している求人の全件(新しい順) `{job_id, at}`、30 日の保存の数、保存している求人の数 | `saved_jobs`、`saves_30d`、`save_job` の `saves_total` |
 | `form_exit` | 7 日以内の最後の離脱 `{job_id, exited_at, completed, remaining}`。後で応募した求人の離脱は消える | `form_exit`、`push_trigger` |
 | `last_contact` | 最後の接触 `{at, channel, message}` | `last_contact`、`push_trigger` の間隔 |
 | `tendency` | 職種・エリア・時間帯の傾向(`logic.preferences` と同じ数え方。90 日の応募、30 日の閲覧と保存) | `tendency`、`recommend` の並び |
 
-- 長さの上限: 件数は上の表のとおりです。選考の状態と接触の文は 30 字、フォームの項目名は 12 字で 8 つまでに切ります。
-  1 行は JSON で `SUMMARY_MAX_CHARS`(3,500 字)を超えません。超えたらバッチは止まります(上限の決め方の誤りなので)。
-  生成した 1,000 人では最大 2,249 字、平均 920 字です
+- 件数: 応募と保存と応募済みの求人は全件です。画面(保存した求人、プロフィールの応募の履歴)と、ツールの中の絞り込み
+  (応募済みの求人を推薦から外す、`application_status` に `job_id` を渡したときの選考状況)は全件を使います。閲覧の一覧だけは 5 件で切ります
+- エージェントに渡す一覧: `for_agent(summary)` が、要約のうちエージェントに渡しうる分です。応募は新しい順に `AGENT_APPLICATIONS`(5)件、
+  保存は `AGENT_SAVES`(10)件で切り(`head`)、渡さない件数を `applications_more`、`saves_more` に置きます。`applied_job_ids` は入れません。
+  ツールの戻り値の一覧も同じ件数で切ります(下の表)
+- 長さの上限: 選考の状態と接触の文は 30 字、フォームの項目名は 12 字で 8 つまでに切ります。`for_agent` の JSON は
+  `SUMMARY_MAX_CHARS`(3,500 字)を超えません。超えたらバッチは止まります(上限の決め方の誤りなので)。1 行そのものには上限を置かず、
+  応募と保存の数だけ長くなります(応募 500 件・保存 300 件の会員で約 9 万字、エージェントに渡しうる分は約 1,600 字)。
+  生成した 1,000 人では、1 行が最大 3,617 字・平均 983 字、エージェントに渡しうる分が最大 2,124 字・平均 945 字です
 - 求人名などは持たず、求人IDだけです。求人の中身は読む側が `load_jobs` で引きます
 - 問い合わせ(`inquiry`)は今のツールが使わないので、要約に入りません
 
@@ -1493,10 +1499,10 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | ツールの結果 | 要約のどこから |
 |---|---|
 | `conversation_summary` | `as_of`、`applications`(`last_application`)、`form_exit`、`views_30d`(`recent_views`)、`saves_30d`、`tendency`、`last_contact` |
-| `recent_applications`、`application_status` | `applications`(新しい順 5 件。`application_status` は `as_of` も) |
+| `recent_applications`、`application_status` | `applications`(90 日の全件から新しい順に 5 件。それより多ければ、渡さない件数を `recent_applications` は最後の 1 件 `{more, note}`、`application_status` は `more` と `note` で返す。`application_status` は `as_of` も。`job_id` を渡すと全件からその求人の分) |
 | `form_exit`、`resume_form` | `form_exit`(最後の 1 件) |
 | `recommend`、`relax` | `applied_job_ids`(外す求人)、`tendency`(並び)、`applications`(理由の「〜月に応募した〜と同系統」) |
-| `save_job`、`saved_jobs`、`profile.view`、`profile.unsave_job` | `saves`、`saves_total`、`applications` |
+| `save_job`、`saved_jobs`、`profile.view`、`profile.unsave_job` | `saves`、`saves_total`、`applications`(画面なので全件。`unsave_job` は `saves` にある求人だけ取り消しを書く) |
 | `push_trigger` | `last_contact`(間隔)、`form_exit`(話しかける根拠) |
 
 ### 5.9 ログインと連携の表(`data/dip_accounts.db`)
