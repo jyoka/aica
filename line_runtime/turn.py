@@ -38,7 +38,7 @@ class TurnDeps:
     quota: DailyQuota
     rt: LineRuntime
     unread_uploads: dict[str, dict]  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
-    ip: str  # 会話数の IP ごとの上限を数える IP
+    ip: str | None  # 会話数の IP ごとの上限を数える IP。None なら IP の上限を見ない(LINE: どの人も LINE のサーバーから届く)
 
 
 @dataclass(frozen=True)

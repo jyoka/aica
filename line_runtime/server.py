@@ -23,6 +23,10 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
 丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
 IPv6 は /64 にまとめて数える)。全体の匿名IDの数の上限で、IP をいくつ持っていても状態ファイルにユーザーが増え続けない。
+
+LINE 公式アカウント(task 177): POST /line/webhook が 2 つ目のチャネル。LINE_CHANNEL_SECRET と LINE_CHANNEL_ACCESS_TOKEN が
+あるときだけ開く(無ければ 404)。署名(X-Line-Signature)が合わなければ 400。テキストのメッセージは Web と同じターンの処理
+(line_runtime.turn)に流し、友だち追加(follow)では初回の挨拶を返す。部品は line_runtime.line_channel。
 """
 
 from __future__ import annotations
@@ -32,20 +36,30 @@ import json
 import os
 import re
 import secrets
+from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from dip_mcp import logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, turn
+from line_runtime import config, line_channel, turn
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -190,6 +204,8 @@ async def lifespan(app: FastAPI):
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
+    app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
+    app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
     async with LineRuntime() as rt:
         app.state.rt = rt
         yield
@@ -382,6 +398,96 @@ async def dip_view(body: UserIn, request: Request):
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": u.get("saves", []), "applications": u.get("applications", []),
             "last_contact": (u.get("contacts") or [None])[-1]}
+
+
+# ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
+# 2 つ目のチャネル。ユーザーは LINE の userId から作った「l-<ハッシュ>」(line_channel.line_user。userId は保存しない)。
+# 本番のユーザーなので dip の時計は実際の時刻(data.uses_sim_clock に当たらない)。会話数は LINE のユーザーごとと全体で数え、
+# IP ごとには数えない(どの人の webhook も LINE のサーバーから届く)。
+# webhook にはすぐ 200 を返し、ターンは応答の後に進める(LLM が遅くても LINE が待ちきれずに再送しないように)。
+
+
+def line_api() -> line_channel.LineApi:
+    """LINE の API(テストでは偽物の LINE API に差し替える)。"""
+    return line_channel.LineApi(line_channel.access_token())
+
+
+def _line_kind(e: dict) -> str | None:
+    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message)と友だち追加(follow)。ほかは None(無視する)。
+    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。"""
+    src = e.get("source") or {}
+    if src.get("type") != "user" or not src.get("userId") or e.get("mode", "active") != "active":
+        return None
+    msg = e.get("message") or {}
+    if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
+        return "message"
+    return "follow" if e.get("type") == "follow" else None
+
+
+@app.post("/line/webhook")
+async def line_webhook(request: Request, background: BackgroundTasks):
+    """LINE プラットフォームからの webhook。設定が無ければ 404、署名が合わなければ 400(どちらもエージェントを動かさない)。
+    同じ webhookEventId(再送)は受けたことがあれば無視する。答えるイベントは応答の後に処理する。"""
+    if not line_channel.configured():
+        raise HTTPException(404)
+    body = await request.body()
+    if not line_channel.verify_signature(line_channel.channel_secret(), body, request.headers.get("x-line-signature")):
+        raise HTTPException(400, "署名が合いません")
+    try:
+        events = json.loads(body).get("events") or []
+    except (ValueError, AttributeError) as e:
+        raise HTTPException(400, "本文が webhook の形ではありません") from e
+    todo = [e for e in events if isinstance(e, dict) and _line_kind(e)
+            and (not e.get("webhookEventId") or app.state.line_seen.first_time(e["webhookEventId"]))]
+    if todo:
+        background.add_task(_line_handle, todo)
+    return {}
+
+
+async def _line_handle(events: list[dict]) -> None:
+    """webhook のイベントを、LINE のユーザーごとに届いた順で処理する(ユーザーどうしは並べて進める)。"""
+    by_user: dict[str, list[dict]] = {}
+    for e in events:
+        by_user.setdefault(e["source"]["userId"], []).append(e)
+    await asyncio.gather(*(_line_user_events(uid, evs) for uid, evs in by_user.items()))
+
+
+async def _line_user_events(line_uid: str, events: list[dict]) -> None:
+    """1 人の LINE ユーザーのイベント: 入力中の表示を出し、ターンを進め、返信トークで返す(返せなければ push)。
+    line_uid(LINE の userId)はここでだけ宛先に使い、会話にも dip の状態にも渡さない。"""
+    uid = line_channel.line_user(line_uid)
+    # 同じ人の webhook どうしも、届いた順に 1 つずつ(入力中の表示を待つ間に、後の発言が先にターンへ入らないように)
+    async with app.state.line_locks[uid], line_api() as api:
+        for e in events:
+            await api.loading(line_uid)
+            try:
+                reply = await _line_turn(uid, _line_kind(e), e)
+                messages = line_channel.to_messages(reply) if reply is not None else None
+            except Exception:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
+                line_channel.log.exception("LINE のイベントを処理できませんでした(%s)", uid)
+                messages = line_channel.to_messages({"bubbles": [line_channel.FAILED_TEXT]})
+            if messages:
+                await api.send(e.get("replyToken"), line_uid, messages)
+
+
+async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
+    """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
+    受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。"""
+    deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=app.state.rt, unread_uploads=app.state.unread_uploads,
+                         ip=None)
+    event, text = (logic.talk_entry(state, uid), None) if kind == "follow" else ("message", e["message"].get("text"))
+    try:
+        t = turn.accept(deps, uid, event, text, None)
+    except turn.BadTurn:
+        return None
+    try:
+        reply = await turn.reply_of(deps, t)
+    except (turn.BadTurn, turn.TurnFailed) as err:
+        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, _error_text(err))
+        return {"bubbles": [line_channel.FAILED_TEXT]}
+    if reply is not None and t.kind == "greet" and not reply.get("limited"):
+        logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
+    return reply
 
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------

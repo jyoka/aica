@@ -8,6 +8,7 @@
 - 関数名はモジュールの名前と一緒に書きます。行番号は変わるので書きません(`grep -n "def <名前>" <ファイル>` で探します)
 - 書く中で見つけた設計の問題は [review-2026-10.md](review-2026-10.md) にまとめました(R17 から後は、この文書を書く中で足したもの)
 - 4.7 と 4.8 の後半、4.9、4.10、5.3 の後半、5.7 の件数、10 章の履歴書の読み取りは、README を書き直したとき(jyoka/tasks#167)に README から移しました
+- LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
 
 ## 1. パッケージの構成
 
@@ -80,7 +81,8 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面 | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_turn` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し。FastAPI に依存しない | `verify_signature`、`line_user`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
@@ -341,7 +343,7 @@ flowchart LR
     job -- "POST /api/voice/result" --> app
 ```
 
-- Web プロセスは `lifespan` で `.env` を読み、`DailyQuota` を作り、`LineRuntime` に入ります。`LineRuntime.__aenter__` は
+- Web プロセスは `lifespan` で `.env` を読み、`DailyQuota` と LINE の `SeenEvents` を作り、`LineRuntime` に入ります。`LineRuntime.__aenter__` は
   dip と MCP のセッションを 1 本だけ張り(`dip_connection`)、ツールを読み、イベントの入口(`A`、`visit`、`revisit`、`D`)ごとに dip の
   Prompt を読んでから、エージェントを作ります。dip の Prompt を変えたら Web プロセスを起動し直します
 - dip の子プロセスは親の環境変数をすべて受け取ります(`env=dict(os.environ)`、R15)
@@ -364,6 +366,8 @@ flowchart LR
 - 画面: `_page_user`。Cookie の匿名ユーザーIDに、URL の `scenario_user` を付ける
 - 書き込みの枠: `_admit`(`DailyQuota.admit`)。この IP か全体で、その日に使える匿名ユーザーIDの数を超えたら 429
 - 内部の鍵: `_require_internal`。`Authorization: Bearer <AICA_INTERNAL_KEY>` でなければ 401
+- LINE の署名: `line_channel.verify_signature`。`X-Line-Signature` が、チャネルシークレットで本文そのままの HMAC-SHA256 を取った値の
+  base64 でなければ 400
 
 | メソッドとパス | 関数 | 本人の確かめ | ターン | 書くもの |
 |---|---|---|---|---|
@@ -393,6 +397,7 @@ flowchart LR
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。入力値は保存しない |
+| `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1 | 4.11。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳 |
 
 - Cookie `aica_uid` は HttpOnly、SameSite=Lax です。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
@@ -965,6 +970,57 @@ sequenceDiagram
 - 右: 構成図と、このターンの処理の流れ(HLD の 4.1)です。構成図の動いている部分を光らせます
 - 音声相談の結果は、左の「本人の希望」「会話の結果」(画面の見出し)にも出ます
 
+### 4.11 LINE のトーク(`POST /line/webhook`)
+
+LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD の 4.8)。口は `server.line_webhook`、部品は
+`line_runtime/line_channel.py` です。LINE の SDK は使わず、HTTP はすでに入っている `httpx` で呼びます。
+
+受け付け(`line_webhook`。応答の前):
+
+1. `LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN` の両方が無ければ 404(`line_channel.configured`)。リクエストのたびに環境変数を読みます
+2. 本文をそのまま読み、`X-Line-Signature` を確かめます。合わなければ 400 で、本文の JSON も読みません
+3. `events` のうち、答えるもの(`_line_kind`)だけを残します。1 対 1 のトーク(`source.type == "user"`)の、
+   空白だけでないテキストのメッセージ(`message`、`message.type == "text"`)と友だち追加(`follow`)です。
+   `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
+4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
+   ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
+   ファイルは一時ファイルから置き換えます。壊れていたら警告のログを出し、空から始めます(Web サーバーの起動は止めません)
+5. 残ったイベントを `BackgroundTasks` に渡し、すぐ 200 を返します。LLM が遅くても、LINE が待ちきれずに再送しないためです
+
+処理(`_line_handle`。応答の後):
+
+- イベントを LINE の userId ごとに分け、人どうしは並べて、1 人のイベントは届いた順に進めます。別々の webhook で届いた同じ人の
+  イベントも、LINE のユーザーごとの `asyncio.Lock`(`app.state.line_locks`)で届いた順に 1 つずつ進めます。入力中の表示を待つ間に、
+  後の発言が先にターンへ入らないためです
+- `LineApi.loading` で「入力中」の表示(60 秒。返信を送ると消える)を出してから、ターンを進めます
+- ユーザーIDは `line_user(userId)` = `"l-" + sha256("aica-line:" + userId)` の先頭 16 桁です。鍵は使いません(チャネルシークレットを
+  作り直しても同じユーザーのまま)。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
+- ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
+  - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。今の会話に続けます
+  - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
+    `logic.record_talk_open` で記録します(ブロックを解いてもう一度友だち追加すると再訪)
+  - ターンの途中の失敗(`BadTurn`、`TurnFailed`、ほかの例外)と、LINE のメッセージにする途中の失敗は `FAILED_TEXT` を返します
+- 返信は `to_messages` で LINE のメッセージにし、`LineApi.send` で返信トークで返します。push で返すのは、届いていないと分かったとき
+  だけです。返信トークを断られた(期限切れなど、HTTP のエラー)ときと、つながらなかったときです。送った後に応答が来なかった
+  (届いたかもしれない)ときは、2 回届かないように送り直しません
+- push も LINE に断られたら(メッセージの形が違うなど)、`FAILED_TEXT` だけを push します
+
+返信の形(`to_messages`。`render` の結果と、上限の案内 `limit_reply` を同じに扱う):
+
+| `render` の項目 | LINE のメッセージ |
+|---|---|
+| `bubbles` | 1 つずつテキスト |
+| `actions` | `ACTION_NOTES` の文をテキストで足す。LINE ではファイルを選べず、音声相談もできないので、文で書くよう案内する |
+| `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
+| `buttons` | `/liff/` で始まるものだけ、`AICA_PUBLIC_URL` + パスへの URI のボタン。`AICA_PUBLIC_URL` が無ければ出さない(警告のログ) |
+| `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
+
+- 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
+- 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
+  `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
+- `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
+- LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+
 ## 5. 手元のファイルと保存するデータ
 
 | ファイル | 書く者 | 読む者 | 形式 |
@@ -975,6 +1031,7 @@ sequenceDiagram
 | `data/line_checkpoints.db` | `AsyncSqliteSaver`、`LineRuntime._erase` | LineRuntime | SQLite(5.2) |
 | `data/costs.jsonl` | `Ledger.record`(追記) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
 | `data/quota.json` | `DailyQuota._save` | `DailyQuota.__init__` | JSON(5.3) |
+| `data/line_events.json` | `line_channel.SeenEvents.first_time` | `SeenEvents.__init__` | 受けた webhook のイベントの ID の JSON の配列(直近 2,000 件、4.11) |
 | `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs` | Web サーバー(消すだけ)、人 | 5.4 |
 | `data/resume_intake/` | `resume_intake.cli`、`run_samples` | 人 | 読み取り結果の JSON と比較の Markdown |
 | `evals/results/` | `evals.run` | `evalkit`、人 | 5.6。git に入れない |
@@ -1013,7 +1070,7 @@ sequenceDiagram
 
 - 評価のユーザー(fixtures のユーザーそのもの)、シナリオユーザー(`:` の後ろが fixtures のユーザー)、ユーザーの無い呼び出しは
   `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)です。見分けるのは `data.uses_sim_clock` です
-- ほかのユーザー(本番の匿名ユーザーID)は実際の時刻(日本時間)です
+- ほかのユーザー(本番の匿名ユーザーIDと LINE のユーザーID `l-…`)は実際の時刻(日本時間)です
 - 期間の判定(90 日、30 日、7 日、3 日)は `logic._days_ago(ts, at)` で、`at` にそのユーザーの `now` を渡します
 - 新着の絞り込み(`recommend` の `posted_within_days`)だけは、誰でも `now(None)`(`SIM_NOW`)から数えます。
   掲載開始の日付(`fixtures/listings.json` の `posted_at`)が `SIM_NOW` から見て書いてあるからです
@@ -1233,7 +1290,7 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 
 ### 5.8 dip の行動の元データと状況の要約
 
-HLD の 4.8 の中身です。決定は [ADR-0005](../adr/0005-separate-event-log-and-member-summary.md) にあります。
+HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-log-and-member-summary.md) にあります。
 
 1. 生成器とシナリオのユーザー(`fixtures/dip_events.json`)が、行動の元データ(`data/dip_events.db`)に会員とイベントを書く(追記だけ)
 2. 要約のバッチ(`python -m dip_mcp.summarize`)が、元データから全員分の状況の要約を作り直し、`data/dip_summaries.db` を置き換える(1 人 1 行)
@@ -1306,6 +1363,7 @@ HLD の 4.8 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 - **会話**: `AsyncSqliteSaver` の 1 つの接続です。`_erase` は saver の `lock` を取り、1 つのトランザクションで消します
 - **ターン数**: `DailyQuota._lock`(`threading.Lock`)の中で数えて書きます。ファイルは一時ファイルを使わずに書き直します(R18)
 - **費用台帳**: `Ledger._lock` の中で 1 行を追記します
+- **LINE の再送**: `SeenEvents._lock`(`threading.Lock`)の中で、受けたかを確かめて覚え、ファイルに書きます
 - **音声相談の待ち合わせ**: ユーザーごとの `asyncio.Condition`(`app.state.voice_ready`)。結果が届いたら `notify_all` します
 - **プロセスのメモリにあるもの**: `_locks`、`_threads`、`_running`、`voice_ready`、`unread_uploads`、`Ledger.rows`。Web プロセスは
   1 つだけの前提です(HLD 7 章、R12)
@@ -1326,6 +1384,7 @@ HLD の 4.8 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | 調べもの | `ResumeAdvisor._search` | OpenAI Responses `gpt-6-sol` + `web_search`(`search_context_size=low`) | 本人が聞いたとき | なし(R6) |
 | 部屋 | ブラウザ、ワーカー | LiveKit Cloud | 相談ごと | なし |
 | LiveKit のブラウザ用ライブラリ | `talk-core.js` | jsDelivr の `livekit-client@2` | シートを開いたとき | -(R11) |
+| LINE の入力中の表示、返信、push | `server._line_user_events`(`line_channel.LineApi`) | LINE Messaging API(`api.line.me`)。1 回 10 秒で打ち切り | LINE のイベントごと。push は返信トークで返せなかったときだけ | なし。push は LINE 公式アカウントの月のメッセージ数に数えられる |
 | 模擬ユーザー、ジャッジ | `evals.run.sim_reply`、`evals.judge` | `gpt-6-luna`(既定)か `claude-haiku-4-5` | 評価のときだけ | 予算台帳 |
 
 料金表は `line_runtime/ledger.py` の `PRICES` が正で、評価の計測(`evals/meter.py`)も同じ表を使います(1M トークンあたり、`gpt-6-sol` は入力 $2、出力 $10、`gpt-6-luna` は $0.1、$0.5)。
@@ -1388,6 +1447,13 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
 | 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
+| LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
+| LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
+| LINE のターンの途中の失敗 | `FAILED_TEXT` を返す。使ったターンは返さない | `server._line_turn`、`_line_user_events` |
+| LINE の返信トークで返せない(断られた、つながらない) | push で返す | `LineApi.send`、`LineApi._post` |
+| LINE の返信の応答が来ない | 届いたかもしれないので push しない(警告のログ) | `LineApi.send` |
+| LINE がメッセージの形を断った | `FAILED_TEXT` だけを push する。それも届かなければ警告のログだけ(本文とユーザーIDは出さない) | `LineApi.send` |
+| `data/line_events.json` が壊れている | 警告のログを出し、空から始める | `SeenEvents.__init__` |
 | 評価の 1 シナリオの失敗 | その回を `status: error` にして次へ。払った分は予算台帳に載せる | `evals.run.main` の `run_one`、`to_run`、`run_cases` |
 
 ## 9. 守る約束(テストで確かめているもの)
@@ -1429,7 +1495,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
     違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
 18. 本番のユーザーの dip の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
-19. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
+19. LINE の webhook は、署名が合うときだけエージェントを動かし、同じイベントに 2 回答えず、返信は 1 回だけ届きます。LINE のユーザーは
+    実際の時刻を使い、匿名ユーザーIDとシナリオユーザーと重ならず、LINE の userId はどのファイルにも残りません。設定が無ければ 404 です
+    (`tests/test_line_webhook.py`)
+20. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
     (`::test_generator_makes_the_same_data_from_the_same_seed`)。シナリオのユーザーの要約の事実は、`users.json` から `logic` が出すものと同じです
     (`::test_scenario_summary_has_the_same_facts_as_logic_on_users_json`)。バッチの後に足したイベントは次のバッチまで要約に入りません
     (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
@@ -1453,6 +1522,7 @@ python3 -m unittest discover -s evalkit  # evalkit
   `pytest.importorskip` で、playwright が入っていなければ飛ばします
 - 音声は、台本(文字起こし)からアドバイザーのツールを呼びます。dip は本物の MCP、トークは本物の HTTP サーバーで、区分の切り替えは
   LiveKit の `AgentSession` の中でも確かめます(`tests/test_voice_track.py`)。LiveKit Cloud、STT、TTS は使いません
+- LINE の API は `server.line_api` を差し替え、`httpx.MockTransport` の偽物の LINE API で受けます(`tests/test_line_webhook.py` の `FakeLine`)
 - 意味検索は `embedding._api_embed` を差し替えるか、`fixtures/search_query_vectors.json` の保存済みのベクトルを使います
 
 ### 評価(実 API を使う、費用がかかる)
