@@ -2,9 +2,11 @@
 
 POST /line/webhook(line_runtime.server)が使う部品。FastAPI には依存しない。
 - 署名: X-Line-Signature は、チャネルシークレットで本文そのままを HMAC-SHA256 にかけた値の base64(verify_signature)。
-- ユーザー: LINE の userId から aica のユーザーID「l-<ハッシュ16桁>」を作る(line_user)。匿名ユーザーID(w-…)とも
+- ユーザー: LINE の userId から aica のユーザーID「l-<ハッシュ16桁>」を作る(line_user。鍵 AICA_ID_KEY つきの HMAC-SHA256、
+  task 183・ADR-0008)。匿名ユーザーID(w-…)とも
   シナリオのユーザー(fixtures の名前、「匿名ID:シナリオユーザー」)とも重ならない。userId そのものはどこにも保存しない
-  (返信と push の宛先にだけ、その webhook を処理する間メモリで使う)。
+  (返信と push の宛先にだけ、その webhook を処理する間メモリで使う)。LINE の設定があるのに鍵が無い・短いときは
+  起動で止める(check_id_key)。
 - 再送: 同じ webhookEventId には 2 回答えない(SeenEvents。ID は data/line_events.json に置き、再起動しても覚えている)。
 - 返信: runtime.render の結果を LINE のメッセージにする(to_messages)。1 回 5 メッセージまで。
 - 送信: LineApi(入力中の表示・返信・push・linkToken の発行)。HTTP は httpx(すでに入っている依存。LINE の SDK は足さない)。
@@ -33,6 +35,8 @@ log = logging.getLogger(__name__)
 SECRET_ENV = "LINE_CHANNEL_SECRET"
 TOKEN_ENV = "LINE_CHANNEL_ACCESS_TOKEN"
 PUBLIC_URL_ENV = "AICA_PUBLIC_URL"
+ID_KEY_ENV = "AICA_ID_KEY"
+MIN_ID_KEY_BYTES = 32  # 鍵の長さの下限(UTF-8 のバイト数)
 
 API_BASE = "https://api.line.me"
 ACCOUNT_LINK_URL = "https://access.line.me/dialog/bot/accountLink"  # dip がログインの後に本人を送る LINE の画面
@@ -72,11 +76,33 @@ def account_link_url(link_token: str, nonce: str, base: str = ACCOUNT_LINK_URL) 
     return f"{base}?{urlencode({'linkToken': link_token, 'nonce': nonce})}"
 
 
-def line_user(user_id: str) -> str:
-    """LINE の userId から aica のユーザーID「l-<16桁hex>」を作る(同じ userId なら毎回同じ)。
-    userId は推測できない 128 ビットの乱数なので、ハッシュから元の userId には戻せない。鍵は使わない
-    (チャネルシークレットを作り直しても、同じ人が同じユーザーのまま)。"""
-    return "l-" + hashlib.sha256(f"aica-line:{user_id}".encode()).hexdigest()[:16]
+class IdKeyError(RuntimeError):
+    """LINE のユーザーIDを作る鍵(AICA_ID_KEY)が無い・短い。"""
+
+
+def id_key() -> bytes:
+    """LINE のユーザーIDを作る aica 専用の鍵。無い・MIN_ID_KEY_BYTES より短いときは IdKeyError。"""
+    key = os.environ.get(ID_KEY_ENV, "").strip().encode()
+    if len(key) < MIN_ID_KEY_BYTES:
+        why = "がありません" if not key else f"が短すぎます({len(key)} バイト。{MIN_ID_KEY_BYTES} バイト以上にしてください)"
+        raise IdKeyError(f"{ID_KEY_ENV} {why}。LINE のユーザーIDを作る鍵です。.env に書いてください"
+                         ' (作り方の例: python -c "import secrets; print(secrets.token_hex(32))")')
+    return key
+
+
+def check_id_key() -> None:
+    """起動のときに呼ぶ。LINE の設定(シークレットとトークン)があるのに鍵が無い・短ければ IdKeyError で止める。
+    LINE の設定が無ければ、鍵は要らない(何もしない)。"""
+    if configured():
+        id_key()
+
+
+def line_user(user_id: str, key: bytes | None = None) -> str:
+    """LINE の userId から aica のユーザーID「l-<16桁hex>」を作る(同じ鍵と userId なら毎回同じ)。
+    LINE のユーザーIDを作るのはこの関数だけ。HMAC-SHA256 で、鍵は aica 専用の AICA_ID_KEY(key を与えなければ環境変数から)。
+    鍵を知らなければ、userId を知っていても l-… を作れない(データが漏れても誰のものか突き止められない)。
+    チャネルシークレットは鍵に使わない(作り直すと全員の ID が変わる)。鍵を変えると全員の ID が変わり、前のデータとつながらない。"""
+    return "l-" + hmac.new(key or id_key(), user_id.encode(), hashlib.sha256).hexdigest()[:16]
 
 
 class SeenEvents:
