@@ -296,15 +296,16 @@ def test_i_dont_know_with_show_me_jobs_may_get_jobs():
 
 
 def test_switching_track_mid_conversation_rereads_the_playbook(tmp_path):
-    """アルバイトで探していた人が「やっぱり正社員で」。切り替えたターンで正社員の playbook を読み直し、
-    その会話の決まり(吹き出しの字数)と保存先で続ける。"""
+    """アルバイトで探していた人が「やっぱり正社員で」。切り替えたターンで正社員の playbook を読み、
+    その会話の決まり(吹き出しの字数)と保存先で続ける。条件だけ(相談に入っていない)のアルバイト・パートへの
+    切り替えでは playbook を読まない(task 132: 呼び出しを重ねない)。"""
     said = [None, "渋谷あたりでカフェのバイトを探しています", "やっぱり正社員で探したいです。販売の仕事で店長を目指したい"]
     long = ("正社員のお仕事で考えますね。カフェのホールでの経験を、販売の店長を目指すお仕事につなげられるように、"
             "正社員の求人を探す前に、目的や強み、条件をいくつか伺いながら一緒に整理します。")
     assert 80 < len(long) <= 120
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
-        switch_and_read(UID, BAITO, said[1]),
+        call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": said[1]}),
         reply(["アルバイト・パートのお仕事で考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=["それ以外", "今はいい"]),
         switch_and_read(UID, SEISHAIN, said[2]),
         reply([long, "店長を目指したいと思ったのは、なぜですか?"], quick_replies=["それ以外", "今はいい"]),
@@ -312,13 +313,12 @@ def test_switching_track_mid_conversation_rereads_the_playbook(tmp_path):
     turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in said[1:]], tmp_path)
     sc = SCENARIOS["T-switch-to-fulltime"]
     r = conversation_checks(sc, turns, said)
-    assert r["violations"] == [] and r["track_ok"] is True
+    assert r["violations"] == [] and r["track_ok"] is True and r["call_overlaps"] == []
     assert r["tracks"] == [MITEI, BAITO, SEISHAIN]
-    first, second = (next(x["result"] for x in turns[i]["tools"] if x["name"] == "get_counseling_playbook")
-                     for i in (1, 2))
-    assert (first["track"], second["track"]) == (BAITO, SEISHAIN)
-    assert "min_annual_salary" in second["playbook"] and "min_annual_salary" not in first["playbook"]
-    assert second["rules"]["bubble_max"] == 120 and first["rules"]["bubble_max"] == 80
+    assert playbooks_read(turns[1]) == []
+    second = next(x["result"] for x in turns[2]["tools"] if x["name"] == "get_counseling_playbook")
+    assert second["track"] == SEISHAIN
+    assert "min_annual_salary" in second["playbook"] and second["rules"]["bubble_max"] == 120
 
     # 読み直さない・古い区分を読み直すのは違反(負例: 読み直していれば違反にならないことは上で見た)
     for tools in ([x for x in turns[2]["tools"] if x["name"] != "get_counseling_playbook"],
