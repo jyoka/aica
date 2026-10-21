@@ -22,6 +22,7 @@ JOBS_MAX = 3
 FORMAT_RULES = {track: dict(rules) for track, rules in CONVERSATION_RULES.items()}
 JOB_TYPE_NAMES = set(JOB_TYPES) | set(FULLTIME_JOB_TYPES)
 DEFAULT_TRACK = "未定"
+FULLTIME_TRACK = "正社員"
 ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いらない|大丈夫|特にない|あとで")
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
 # この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
@@ -646,10 +647,26 @@ def playbook_reads(r: dict) -> list[str]:
             and not (isinstance(t.get("result"), dict) and "error" in t["result"])]
 
 
-def playbook_violations(turns: list[dict]) -> list[str]:
-    """区分が変わったターン(set_search_track で実際に切り替えた・取り消した)で、新しい区分の playbook を読み直したか。"""
+# 相談の入口で伝える1文(Prompt の「いくつか伺いながら一緒に整理します」)。相談に入ったかを返信から見る手がかり
+CONSULT_OPENING = re.compile(r"一緒に整理")
+
+
+def consult_entered(turns: list[dict], user_msgs: list[str | None], i: int) -> bool:
+    """i ターン目までに相談に入っていたか: 前のターンで playbook を読んだ、本人の発言に相談の合図(CONSULT_SIGN)がある、
+    または返信で相談の入口の1文(CONSULT_OPENING)を伝えた。"""
+    return (any(playbook_reads(r) for r in turns[:i])
+            or any(m and CONSULT_SIGN.search(m) for m in user_msgs[:i + 1])
+            or any(CONSULT_OPENING.search(b) for r in turns[:i + 1] for b in r["bubbles"]))
+
+
+def playbook_violations(turns: list[dict], user_msgs: list[str | None] = ()) -> list[str]:
+    """区分が変わったターン(set_search_track で実際に切り替えた・取り消した)で、新しい区分の playbook を読み直したか。
+    相談に入る前(まだ playbook を読んでいない)のアルバイト・パートか未定への切り替えでは読まなくてよい(task 132: 呼び出しを重ねない)。
+    一度読んだ後の切り替えは、前の区分の playbook の決まりを残さないため読み直す。
+    正社員への切り替えは、相談に入っていなくても読む(求人の前に経歴と目的を聞くので、正社員の playbook を使う)。"""
     return [f"T{i + 1}: 区分を「{track}」に切り替えたのに、同じターンで playbook を読み直していない"
-            for i, track in track_switches(turns) if track not in playbook_reads(turns[i])]
+            for i, track in track_switches(turns) if track not in playbook_reads(turns[i])
+            and (track == FULLTIME_TRACK or consult_entered(turns, user_msgs, i))]
 
 
 def _job_type_aliases() -> dict[str, str]:
@@ -892,6 +909,69 @@ def _searches(turns: list[dict]):
                 yield i, t["name"], t.get("args") or {}
 
 
+SAVE_TOOL = "save_user_preferences"
+
+
+def _search_args(t: dict) -> dict:
+    """検索の条件(値の無い引数・本人の ID・exclude_ids を除く)。"""
+    return {k: v for k, v in (t.get("args") or {}).items()
+            if k not in ("line_user_id", "exclude_ids") and v not in (None, "", [], False)}
+
+
+def _choices_side_by_side(searches: list[dict], said: str) -> bool:
+    """同じターンの検索が、本人が挙げたエリアか職種を1つずつ並べたものか(「渋谷か池袋」→ 渋谷と池袋を並べて探す)。
+    違う引数がエリアか職種の1つだけで、どの検索にもあり、値がすべて本人の発言にある。"""
+    keys = {k for a in searches for b in searches for k in set(a) | set(b) if a.get(k) != b.get(k)}
+    if len(keys) != 1 or not keys <= {"area", "job_type"}:
+        return False
+    (key,) = keys
+    return all(key in a and str(a[key]) in said for a in searches)
+
+
+def call_overlaps(turns: list[dict], user_msgs: list[str | None] = ()) -> list[str]:
+    """呼び出しの重複(task 132)。ツールを呼ぶたびに LLM の呼び出しが1回増えるので、同じ会話の中で重ねた場面を数える。
+    違反ではなく別の指標 call_overlaps で数える(基準には無い判定なので、violations に混ぜると基準と比べられなくなる)。
+    (1) 同じターンで save_user_preferences を2回以上呼んだ
+    (2) 掘り下げの答えだけで save_user_preferences を呼んだ(そのターンのツールが保存だけで、項目がすべて保存済みの
+        本人のこと PROFILE_KEYS。Prompt の決まりでは、次にツールを呼ぶターンにまとめる)
+    (3) 区分が変わっていないのに playbook を読み直した
+    (4) 相談に入る前のアルバイト・パートか未定への切り替えで playbook を読んだ
+    (5) 同じターンで条件を変えて recommend_jobs を2回以上呼んだ(本人が挙げたエリア・職種を並べて探すのは除く)
+    (6) 前の検索の条件に1つだけ足して、後のターンで探し直した(絞り込みの条件を1つずつ聞いて探した。本人が自分から
+        1つ足したときも数えるので、違反ではなく回数として見る)"""
+    out = []
+    saved: set[str] = set()
+    last_read = None
+    prev = None  # (前に探したターンの添字, その条件)
+    for i, r in enumerate(turns):
+        names = {t["name"] for t in r["tools"]}
+        saves = [t["args"].get("preferences") or {} for t in r["tools"] if t["name"] == SAVE_TOOL]
+        if len(saves) >= 2:
+            out.append(f"T{i + 1}: 同じターンで save_user_preferences を{len(saves)}回呼んだ")
+        keys = {k for p in saves for k in p}
+        if names == {SAVE_TOOL} and keys and keys <= saved and keys <= set(PROFILE_KEYS):
+            out.append(f"T{i + 1}: 掘り下げの答えだけで save_user_preferences を呼んだ(保存済みの {', '.join(sorted(keys))})")
+        saved |= keys
+        switched = [track for _, track in track_switches([r])]
+        for track in playbook_reads(r):
+            if track == last_read and not switched:
+                out.append(f"T{i + 1}: 区分が変わっていないのに playbook を読み直した({track})")
+            elif (last_read is None and switched and track != FULLTIME_TRACK
+                  and not consult_entered(turns, user_msgs, i)):
+                out.append(f"T{i + 1}: 相談に入る前の切り替えで playbook を読んだ({track})")
+            last_read = track
+        searches = [_search_args(t) for t in r["tools"] if t["name"] == "recommend_jobs"]
+        said = "\n".join(m or "" for m in user_msgs[:i + 1])
+        if len(searches) >= 2 and not _choices_side_by_side(searches, said):
+            out.append(f"T{i + 1}: 同じターンで条件を変えて recommend_jobs を{len(searches)}回呼んだ")
+        if searches:
+            first = searches[0]
+            if prev and len(added := set(first) - set(prev[1])) == 1 and all(first.get(k) == v for k, v in prev[1].items()):
+                out.append(f"T{i + 1}: 前の検索(T{prev[0] + 1})の条件に {added.pop()} だけ足して探し直した")
+            prev = (i, searches[-1])
+    return out
+
+
 def search_arg_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
     """避けたいこと・やりたいことを検索の引数に正しく当てたか(違反ではなく別の指標 search_arg_violations で数える。
     基準(2026-09-29)には無い判定なので、violations に混ぜると基準と比べられなくなる)。
@@ -946,7 +1026,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if sc.get("expect_track_in_greeting"):
         violations += greeting_track_violations(sc, turns)
     violations += upload_violations(turns, upload)
-    violations += playbook_violations(turns) + dont_know_violations(turns, user_msgs)
+    violations += playbook_violations(turns, user_msgs) + dont_know_violations(turns, user_msgs)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")
@@ -999,4 +1079,5 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "violations": violations + fabrications,
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),
+        "call_overlaps": call_overlaps(turns, user_msgs),
     }

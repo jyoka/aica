@@ -202,7 +202,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
-              "search_arg_violations": "down",
+              "search_arg_violations": "down", "call_overlaps": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -226,6 +226,7 @@ def to_run(r: dict, rep: int) -> dict:
     metrics = {k: r[k] for k in ("branch_within_3", "outcome_recorded", "outcome_as_expected", "track_ok")}
     metrics |= {"violations": len(r["violations"]), "fabrications": len(r["fabrications"]), "turns": r["turns"],
                 "search_arg_violations": len(r.get("search_arg_violations", [])),
+                "call_overlaps": len(r.get("call_overlaps", [])),
                 "action_offers": len(r["action_offers"]),
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
@@ -259,6 +260,8 @@ def report(doc: dict) -> str:
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"]["violations"]] or ["- なし"]
     lines += ["", "## 検索の引数(避けたいこと・やりたいこと。違反とは別に数える)", ""]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("search_arg_violations", [])] or ["- なし"]
+    lines += ["", "## 呼び出しの重複(save・playbook・検索。違反とは別に数える)", ""]
+    lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("call_overlaps", [])] or ["- なし"]
     lines += ["", "## keywords の検索(最高値 - 中央値。SIM_PEAK 未満は部分一致だけ)", ""]
     lines += [f"- **{tag(r)}** 「{k['keywords']}」 {k['peak']} → {'意味検索' if k['semantic'] else '部分一致だけ'}"
               f"(候補 {k['candidates']} → {k['kept']} 件)"

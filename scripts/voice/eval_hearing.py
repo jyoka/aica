@@ -147,7 +147,7 @@ async def main() -> None:
     tokens_out = sum(r["tokens"]["out"] for r in runs)
     cost = tokens_in * PRICE_IN / 1e6 + tokens_out * PRICE_OUT / 1e6
 
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d-%H%M%S")
     lines = [
         f"# ヒアリング評価({args.label})",
         "",
