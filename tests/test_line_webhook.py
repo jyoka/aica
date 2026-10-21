@@ -11,8 +11,10 @@ import json
 import re
 from datetime import datetime, timedelta
 from functools import partial
+from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from dip_mcp import data
@@ -25,12 +27,19 @@ from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, greet, propose
 
 SECRET = "offline-test-channel-secret"
+ID_KEY = "offline-test-aica-id-key-0123456789abcdef"  # LINE のユーザーIDを作る鍵(32 バイト以上)
 RAW_USER = "U" + "0123456789abcdef" * 2  # LINE の userId の形(U + 32 桁)。どこにも保存されてはいけない
 RAW_OTHER = "U" + "fedcba9876543210" * 2
 REPLY, PUSH, LOADING = "/v2/bot/message/reply", "/v2/bot/message/push", "/v2/bot/chat/loading/start"
 LINE_ENVS = ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "AICA_PUBLIC_URL")
 QUOTA_ENVS = ("LINE_SIM_DAILY_TURN_LIMIT", "AICA_DAILY_TURN_LIMIT_PER_IP", "AICA_DAILY_NEW_IDS_PER_IP",
               "AICA_DAILY_TURN_LIMIT_TOTAL", "AICA_DAILY_NEW_IDS_TOTAL", "AICA_TRUST_PROXY")
+
+
+@pytest.fixture(autouse=True)
+def line_id_key(monkeypatch):
+    """LINE のユーザーIDを作る鍵。LINE の設定があるときは起動に要る(test_account_link も import して使う)。"""
+    monkeypatch.setenv(line_channel.ID_KEY_ENV, ID_KEY)
 
 
 class FakeLine:
@@ -318,6 +327,68 @@ def test_other_events_are_ignored_with_200(tmp_path, monkeypatch):
                        [_event("postback", event_id="01P")]):
             assert _post(client, events).status_code == 200
     assert len(model.script) == 1 and fake.calls == []
+
+
+# ----------------------------- ユーザーIDの鍵 -----------------------------
+
+
+def test_line_user_id_is_a_keyed_hash_that_cannot_be_made_from_the_user_id_alone(monkeypatch):
+    """同じ鍵と userId なら同じ l-…、鍵が違えば違う l-…。鍵なしの sha256(前の作り方)とは一致しないので、
+    userId を知っていても鍵を知らなければ l-… を作れない。鍵が無い・短いときは作らない。"""
+    other_key = "another-offline-aica-id-key-fedcba9876543210"
+    uid = line_user(RAW_USER)
+    assert LINE_ID.fullmatch(uid) and uid == line_user(RAW_USER) == line_user(RAW_USER, ID_KEY.encode())
+    assert uid != line_user(RAW_OTHER)
+    assert uid == "l-" + hmac.new(ID_KEY.encode(), RAW_USER.encode(), hashlib.sha256).hexdigest()[:16]
+    assert line_user(RAW_USER, other_key.encode()) != uid
+    monkeypatch.setenv(line_channel.ID_KEY_ENV, other_key)
+    assert line_user(RAW_USER) == line_user(RAW_USER, other_key.encode()) != uid
+    unkeyed = {hashlib.sha256(f"aica-line:{RAW_USER}".encode()).hexdigest()[:16],
+               hashlib.sha256(RAW_USER.encode()).hexdigest()[:16]}
+    assert {uid[2:], line_user(RAW_USER)[2:]}.isdisjoint(unkeyed)
+
+    for key in ("", "too-short-key"):
+        monkeypatch.setenv(line_channel.ID_KEY_ENV, key)
+        with pytest.raises(line_channel.IdKeyError, match="AICA_ID_KEY"):
+            line_user(RAW_USER)
+    monkeypatch.delenv(line_channel.ID_KEY_ENV)
+    with pytest.raises(line_channel.IdKeyError, match="AICA_ID_KEY"):
+        line_user(RAW_USER)
+
+
+def test_line_settings_without_a_long_enough_id_key_stop_the_server_at_startup(tmp_path, monkeypatch):
+    model = Greeter(script=[reply(["呼ばれてはいけない"])])
+    server, fake = _server(tmp_path, monkeypatch, model)
+    for key, why in ((None, "がありません"), ("x" * 31, "が短すぎます")):
+        if key is None:
+            monkeypatch.delenv(line_channel.ID_KEY_ENV)
+        else:
+            monkeypatch.setenv(line_channel.ID_KEY_ENV, key)
+        with pytest.raises(line_channel.IdKeyError, match=f"AICA_ID_KEY {why}") as err, TestClient(server.app):
+            pass
+        assert "secrets.token_hex(32)" in str(err.value)  # 鍵の作り方も出す
+    monkeypatch.setenv(line_channel.ID_KEY_ENV, "x" * 32)  # 32 バイトあれば起動する
+    with TestClient(server.app) as client:
+        assert client.get("/").status_code == 200
+    assert len(model.script) == 1 and fake.calls == []
+
+
+def test_without_line_settings_the_server_starts_without_an_id_key(tmp_path, monkeypatch):
+    model = Greeter(script=[reply(["呼ばれてはいけない"])])
+    server, fake = _server(tmp_path, monkeypatch, model, configured=False)
+    monkeypatch.delenv(line_channel.ID_KEY_ENV)
+    with TestClient(server.app) as client:
+        assert client.get("/").status_code == 200
+        assert _post(client, [_event("message", text="こんにちは")]).status_code == 404
+    assert len(model.script) == 1 and fake.calls == []
+
+
+def test_line_user_ids_are_made_only_by_line_user():
+    """LINE のユーザーID(l-…)を作るのは line_channel.line_user だけ(ほかの所で鍵なしの ID を作らない)。"""
+    root = Path(__file__).resolve().parents[1]
+    makers = [p.relative_to(root).as_posix() for d in ("dip_mcp", "line_runtime", "evals", "voice_resume", "scripts")
+              for p in (root / d).rglob("*.py") if re.search(r"[\"']l-[\"']", p.read_text(encoding="utf-8"))]
+    assert makers == ["line_runtime/line_channel.py"]
 
 
 # ----------------------------- 設定が無いとき -----------------------------

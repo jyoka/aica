@@ -25,6 +25,7 @@ from tests.test_line_webhook import (
     _event,
     _post,
     _server,
+    line_id_key,  # noqa: F401  LINE のユーザーIDを作る鍵(autouse の fixture)
 )
 from tests.test_revisit import Greeter, _tool_result
 

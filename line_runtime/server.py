@@ -25,8 +25,9 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 IPv6 は /64 にまとめて数える)。全体の匿名IDの数の上限で、IP をいくつ持っていても状態ファイルにユーザーが増え続けない。
 
 LINE 公式アカウント(task 177): POST /line/webhook が 2 つ目のチャネル。LINE_CHANNEL_SECRET と LINE_CHANNEL_ACCESS_TOKEN が
-あるときだけ開く(無ければ 404)。署名(X-Line-Signature)が合わなければ 400。テキストのメッセージは Web と同じターンの処理
-(line_runtime.turn)に流し、友だち追加(follow)では初回の挨拶を返す。部品は line_runtime.line_channel。
+あるときだけ開く(無ければ 404)。そのときは LINE のユーザーIDを作る鍵 AICA_ID_KEY も要る(無い・短ければ起動で止まる。
+ADR-0008)。署名(X-Line-Signature)が合わなければ 400。テキストのメッセージは Web と同じターンの処理(line_runtime.turn)に流し、
+友だち追加(follow)では初回の挨拶を返す。部品は line_runtime.line_channel。
 
 LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント連携」と送ると、bot が LINE から linkToken をもらい、dip の
 ログインの画面(GET/POST /dip/login。dip の画面の偽物)へのボタンを返す。ログインできると dip が nonce を作り、本人を LINE の
@@ -213,6 +214,7 @@ class EventIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.load_env()
+    line_channel.check_id_key()  # LINE の設定があるのに AICA_ID_KEY が無い・短ければ、ここで止める
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
