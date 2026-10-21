@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from decimal import Decimal
 
 from dip_mcp.data import ROOT, load_jobs
@@ -474,64 +473,15 @@ def _split_words(v: str) -> list[str]:
     return [w for w in re.split(r"[とや・、,/\s]+|または|および", v) if w]
 
 
-# 削ると意味が逆になる語(否定・避けたいこと・対比)
-NEGATION_WORDS = ("ません", "ない", "なく", "無理", "避け", "苦手", "嫌", "NG", "以外", "より", "ちょっと")
-
-
-# 1文の中で節を区切る語(理由・逆接)。節をまたいで語を組み合わせると、意味の違う保存になる
-# (「渋谷は遠いので新宿がいいです」→「渋谷がいい」)
-_CLAUSE_BREAK = r"ので|のに|けど|けれど|(?<=[いだすた])から|(?<=す)が|(?<=[いた])が[、,]|(?<=い)し|(?<=く)て|て[、,]"
-# 保存した値を区切る単位(漢字・ひらがな・カタカナ・英数字の続き)。1文字ずつには分けない
-_VALUE_RUN = re.compile(r"[一-龥々]+|[ぁ-ゖ]+|[ァ-ヶー]+|[A-Za-z0-9]+")
-# 助詞が後に続く語(述語がかかる語の候補)。値の最後のこの語から終わりまでは、節の中にそのままなければならない
-_PARTICLE_NOUN = re.compile(r"(?:[一-龥々]+|[ァ-ヶー]+|[A-Za-z0-9]+)(?=なら|より|まで|から|[がはにでをもかとやの])")
-
-
-def _runs_in_order(runs: list[str], clause: str) -> bool:
-    """区切った値がどれも、節の中にそのまま(連続した部分文字列として)順に並んでいるか。"""
-    pos = 0
-    for w in runs:
-        i = clause.find(w, pos)
-        if i < 0:
-            return False
-        pos = i + len(w)
-    return True
-
-
-def _trimmed_from_a_sentence(v: str, said: str) -> bool:
-    """値が発言の1節から一部を削っただけで、否定・避けたい語を削っていないか(意味を保った言い換え)。
-    値の語は節の中にそのままなければならない(「夜は寝たいので、勤務は昼がいい」から「夜勤」は作れない)。
-    値の最後の、助詞が後に続く語から終わりまでも節の中にそのままなければならない。述語がかかる語を差し替えた値は作り話
-    (「渋谷ではなく新宿がいいです」→「渋谷がいい」)。
-    文の否定・対比の語が値より多ければ、否定を削ったとみなす(「土日は働けないし平日は問題ない」→「土日は問題ない」、
-    「接客より事務の仕事がいい」→「接客の仕事がいい」)。"""
-    v = unicodedata.normalize("NFKC", v)
-    runs = _VALUE_RUN.findall(v)
-    nouns = list(_PARTICLE_NOUN.finditer(v))
-    if not runs or not nouns:
-        return False
-    tail = v[nouns[-1].start():]
-    for s in re.split(r"[。\n!?]", unicodedata.normalize("NFKC", said)):
-        if any(s.count(w) > v.count(w) for w in NEGATION_WORDS):
-            continue
-        if any(tail in c and _runs_in_order(runs, c) for c in re.split(_CLAUSE_BREAK, s)):
-            return True
-    return False
-
-
-def _saved_preference_checks(turns: list[dict], user_msgs: list[str]) -> tuple[list[str], list[str]]:
-    """保存した希望を照合して、(作り話, 言葉のままでない保存) を返す。
-    数字(時給・日数)は数字で、自由記述の項目(FREE_TEXT_KEYS)は内容語で、それ以外は
-    「渋谷と原宿」のような並びを区切って語ごとに照合する。それ以外の項目で語が発言のままでなくても、値の語(漢字・かなの続き)が
-    そのまま発言の1節の中に順に並ぶ値は作り話ではなく、言葉のままの決まりの違反(「平日は19時以降か、土日なら働けます」
-    →「平日か土日なら働けます」)。ただし否定・避けたい語を削った値(「土日は働けませんが…」→「土日なら働けます」)と、
-    語を1文字ずつ拾ったり節をまたいで組み合わせたりした値(「夜は寝たいので、勤務は昼がいい」→「夜勤」)と、
-    述語がかかる語を差し替えた値(「渋谷ではなく新宿がいいです」→「渋谷がいい」)は作り話。"""
+def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
+    """保存した希望が、本人の発言か、前に保存済みの希望(要約の stated_preferences)に基づくか。
+    数字(時給・日数)は数字で、自由記述の項目(FREE_TEXT_KEYS)は内容語の大半で、それ以外は
+    「渋谷と原宿」のような並びを区切って語ごとに照合する。"""
     prior = [str(p["value"]) for r in turns for t in r["tools"] if t["name"] == "get_user_conversation_summary"
              and isinstance(t["result"], dict) for p in (t["result"].get("stated_preferences") or {}).values()]
     said = _arabic("\n".join([m or "" for m in user_msgs] + prior))
     said_nums = _numbers(said)
-    made_up, reworded = [], []
+    out = []
     for i, r in enumerate(turns):
         for t in r["tools"]:
             if t["name"] != "save_user_preferences":
@@ -549,22 +499,9 @@ def _saved_preference_checks(turns: list[dict], user_msgs: list[str]) -> tuple[l
                     ok = _free_text_ok(v, said, k)
                 else:
                     ok = all(w in said for w in _split_words(v))
-                    if not ok and _trimmed_from_a_sentence(v, said):
-                        reworded.append(f"T{i + 1}: 本人の言葉のままでない希望を保存した: {k}={v}")
-                        continue
                 if not ok:
-                    made_up.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
-    return made_up, reworded
-
-
-def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
-    """保存した希望が、本人の発言か、前に保存済みの希望(要約の stated_preferences)に基づくか(作り話だけ)。"""
-    return _saved_preference_checks(turns, user_msgs)[0]
-
-
-def reworded_preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
-    """本人の言葉を言い換えて保存した希望(内容語は発言にある。作り話には数えない)。"""
-    return _saved_preference_checks(turns, user_msgs)[1]
+                    out.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
+    return out
 
 
 def _question_part(b: str) -> str:
@@ -1105,7 +1042,6 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         violations += greeting_track_violations(sc, turns)
     violations += upload_violations(turns, upload)
     violations += playbook_violations(turns, user_msgs) + dont_know_violations(turns, user_msgs)
-    violations += reworded_preference_violations(turns, user_msgs)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")
