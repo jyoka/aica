@@ -1,0 +1,2668 @@
+{
+  "at": "2026-10-04 11:48",
+  "results": [
+    {
+      "id": "P-chat-phone",
+      "channel": "chat",
+      "title": "電話だけを避けたい(レジや接客は大丈夫)・深夜",
+      "observation": {
+        "phone_turn": 2,
+        "searched_on_phone_turn": false,
+        "confirm_question": "レジなど、お客様と直接話す仕事は大丈夫ですか？",
+        "confirm_turn": 2,
+        "first_search_turn": 3,
+        "first_search_args": {
+          "line_user_id": "sim-new",
+          "area": null,
+          "time_band": "深夜",
+          "job_type": null,
+          "min_wage": null,
+          "employment_type": "アルバイト・パート",
+          "min_annual_salary": null,
+          "max_talk_level": null,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "keywords": null,
+          "exclude_ids": null,
+          "posted_within_days": null
+        },
+        "talk_level": null,
+        "talk_level_as_expected": true,
+        "call_center_cards": [],
+        "search_arg_violations": []
+      },
+      "cost_usd": 0.0764,
+      "violations": [],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "はじめまして。お仕事探しや応募について、一緒に考えます。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "深夜のアルバイトを探しています。電話はしたくないです"
+        },
+        {
+          "who": "agent",
+          "text": "アルバイト・パートのお仕事で考えますね。深夜帯で、電話を使わない仕事を探します。\nレジなど、お客様と直接話す仕事は大丈夫ですか？\n[選択肢] 接客は大丈夫 / 接客も避けたい / それ以外 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "接客は大丈夫"
+        },
+        {
+          "who": "agent",
+          "text": "深夜帯のアルバイトを3件ご紹介します。電話業務の有無は、この情報だけでは確認できていません。\n[求人カード] 深夜コンビニスタッフ｜22時以降は時給1750円 / アルバイト・パート / 時給1750円 / 22:00〜翌7:00 / 理由: 深夜の勤務(22:00〜翌7:00)・中野駅から徒歩3分\n[求人カード] ラーメン店の調理スタッフ / アルバイト・パート / 時給1450円 / 21:00〜翌3:00 / 理由: 深夜の勤務(21:00〜翌3:00)・川崎駅から徒歩3分\n[求人カード] 深夜スーパーの品出し・在庫補充 / アルバイト・パート / 時給1650円 / 22:00〜翌5:00 / 理由: 深夜の勤務(22:00〜翌5:00)・川崎駅から徒歩4分\n[選択肢] 勤務地で絞る / 電話業務を確認したい / 求人を探す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "勤務地はどこでもいいです。電話業務の有無を確認したいです。"
+        },
+        {
+          "who": "agent",
+          "text": "勤務地はどこでもよいのですね。電話業務の有無は求人ごとに確認します。どの求人が気になりますか？\n[選択肢] 中野のコンビニ / 川崎のラーメン店 / 川崎のスーパー / それ以外"
+        },
+        {
+          "who": "user",
+          "text": "中野のコンビニ"
+        },
+        {
+          "who": "agent",
+          "text": "中野のコンビニ求人にはレジ・品出し・清掃とありますが、電話業務の有無は書かれていません。応募画面や面接で確認してください。\n[選択肢] ほかの求人も確認 / 求人を探す / 応募履歴を確認 / 使い方"
+        }
+      ],
+      "turn_log": [
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "はじめまして。お仕事探しや応募について、一緒に考えます。今日は何から始めますか？"
+          ],
+          "quick_replies": [
+            "求人を探す",
+            "まず相談する",
+            "応募履歴を確認",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "get_user_conversation_summary",
+              "args": {
+                "line_user_id": "sim-new"
+              },
+              "result": {
+                "linked": false,
+                "segment": "unlinked",
+                "search_track": "未定",
+                "track_history": [],
+                "stated_preferences": {},
+                "consultation_summary": null,
+                "uploaded_resume": null,
+                "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": {
+            "id": "7538cc88c8e0",
+            "from": "未定",
+            "track": "アルバイト・パート",
+            "undo": false
+          },
+          "bubbles": [
+            "アルバイト・パートのお仕事で考えますね。深夜帯で、電話を使わない仕事を探します。",
+            "レジなど、お客様と直接話す仕事は大丈夫ですか？"
+          ],
+          "quick_replies": [
+            "接客は大丈夫",
+            "接客も避けたい",
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "set_search_track",
+              "args": {
+                "line_user_id": "sim-new",
+                "track": "アルバイト・パート",
+                "evidence": "深夜のアルバイトを探しています。電話はしたくないです",
+                "undo": false
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "changed": true,
+                "recorded": {
+                  "id": "7538cc88c8e0",
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "from": "未定",
+                  "track": "アルバイト・パート",
+                  "evidence": "深夜のアルバイトを探しています。電話はしたくないです",
+                  "undo": false
+                }
+              }
+            },
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "time_band": "深夜",
+                  "avoids": "電話はしたくないです"
+                }
+              },
+              "result": {
+                "saved": [
+                  "time_band",
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "get_counseling_playbook",
+              "args": {
+                "track": "アルバイト・パート",
+                "channel": "chat"
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "channel": "chat",
+                "rules": {
+                  "questions_max": 1,
+                  "bubble_max": 80,
+                  "branch_by": 3
+                },
+                "playbook": "# playbook: アルバイト・パート(チャット)\n\n## 会話の決まり(アルバイト・パート)\n- 1つの吹き出しは80字以内。吹き出しは最大3つ。\n- 1回の返信で質問は1つ。\n- 会話の段階(提案・相談・支援・待つ)には、ユーザーの3回目の返信までに入る。相談の途中は適用しない。\n\n## 明らかにすること\n番号は並べるための便宜で、聞く順番ではない。\n1. 目的: 生活費・副業(本業と別の収入)・経験を積む・学業や家事との両立 など。なぜ今アルバイト・パートなのか。\n2. 生活の制約: 働ける時間帯・曜日(週の日数)・エリア。まとめて1問にしてよい。\n3. 興味・得意: やってみたいこと・好きなこと・得意なこと。\n4. 経験: これまでの仕事・アルバイト(未経験でもよい)。履歴書があれば聞き直さず確認形で使う。summary の uploaded_resume が無く経験をまだ聞いていなければ、この問いが「履歴書・音声の提案」の場面になる。\n5. 不安: 未経験・人見知り・ブランク・扶養 など。\n\n## 掘り下げ方\n- 目的: 「お金のため」「副業」のような答えには、収入のほかに得たいことがあるかを1回聞く(例:「収入のほかに、このバイトで得たいことはありますか?」)。\n- やりたいこと・興味: 「体を動かすのが好き」のような答えは、具体的な場面を聞く(例:「どんな場面で、体を動かすのが楽しいと感じましたか?」)。\n- 不安: 何が起きると困るのかを1回聞き、資料で答えられる範囲で答える。\n- 生活の制約は掘り下げない。本人が言った値をそのまま保存する。\n\n## 選択肢の作り方\n- 方向の候補は、本人の目的・興味・経験・制約から作る(例: 「絵を描くのが好き」「大きな声を出すのは苦手」なら「絵や手作業を活かせる仕事」「静かな環境で働ける仕事」)。アルバイト・パートの職種の一覧をそのまま並べない。\n\n## 保存先\n- 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns。\n- 経験 experience、できること skills、資格 certifications。\n- 条件: 時間帯 time_band、週の日数 days_per_week、エリア area、時給の下限 min_wage、職種 job_type(アルバイト・パートの一覧から。本人が職種を挙げたとき)。\n\n## 提案に進むとき\n- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。\n\n## 区分に共通の決まり(チャット)\n- この playbook は「明らかにすること」と「掘り下げ方」の指針で、聞く順番は決めない。本人の話の流れに合わせて、まだ分かっていないことを1問ずつ聞く。summary(stated_preferences・uploaded_resume・consultation_summary)と、この会話で分かったことは聞き直さない。\n- 求人を出す前に、目的(なぜ今探すのか)を1問で確かめる。本人がすでに話していれば聞き直さず、受け止めて掘り下げる。本人が自分から「求人を見せて」と言ったら、先に出してよい。\n- 目的とやりたいことは、それぞれ最低1回掘り下げる。目的の答えを受けたら、次の返信で本人の言葉を使って1問で聞く(例:「そう感じたのは、どんな場面でしたか?」「『〜したい』というのは、例えばどんなことですか?」「それはなぜですか?」)。掘り下げないまま別の項目(時間帯・エリアなど)や求人探しへ移らない。\n- 掘り下げは1つの項目につき2回まで。「分からない」「特にない」が続いたら、その項目は置いて、まだ分かっていない別の項目へ進む(同じ項目を3回続けて聞かない)。項目を埋めること自体は目的ではない。\n- 選択肢(クイックリプライ)と、仕事の方向の候補は、本人の履歴書(uploaded_resume)と本人の発言から作る。誰にでも出す一般論の例(「手を動かす仕事 / 裏方で支える仕事」、職種の一覧をそのまま並べる など)は使わない。目的の問いでも、答えの種類の一覧(「お小遣いを稼ぎたい / 新しいことを覚えたい」など)を選択肢にしない。本人が最初に話したこと(「資格の勉強と並行して」「契約が終わるので」)の言葉を使った選択肢にするか、手がかりが無ければ選択肢を「それ以外」「今はいい」だけにして自由に書いてもらう。仕事の方向は、本人の話が出るまで候補を出さない。\n- 方向の候補を出すときは2つまでにし、候補ごとに、どの経歴・発言から作ったかを添える。\n- 「分からない」「まだ決めていない」「思いつかない」には、職種を並べない。問いを小さくして掘り下げに戻る(例:「これまでで、手応えがあった・楽しかった場面はありますか?」「逆に、もう続けたくないと感じたことはありますか?」)。本人が「求人を見せて」と言うまで、職種の候補で埋めない。\n- 答えを聞いたら、そのターンで save_user_preferences に本人の言葉のまま保存する(保存先は区分ごとの「保存先」)。こちらの言い換え・まとめ・推測は保存しない。\n- 相談の途中は、会話の段階に入る期限(区分ごとの「会話の決まり」)を適用しない。本人が切り上げる(「今はいい」「求人を見せて」など)まで、1問ずつ続けてよい。本人が切り上げる前に record_conversation_outcome を記録して会話を締めない。\n- 目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で聞いた内容を1文でまとめ、この内容で求人を見るかを1問で聞く(選択肢: 求人を見る / もう少し相談したい / 今はいい。目安は5、6問)。残りの項目(不安・強みなど)は、「もう少し相談したい」が選ばれたときか、求人を見た後に聞く。\n- 提案に進むとき(「求人を見る」、または途中の「求人を見せて」「求人を探したい」)は、その時点までに分かったことをそのまま recommend_jobs の条件にする(区分ごとの「提案に進むとき」)。残りを聞いてから、にしない。条件を言い直させない。提案の吹き出しの一言で、条件の一致だけでなく、本人の目的・やりたいこと・経験とのつながりを伝える(例:「植物の世話が好きというお話から、園芸店の3件です。」)。提案したら propose を記録する。\n- 「今はいい」: 提案せずに短く終える。1つでも答えていれば consult(理由は「相談のみ」)、何も話していなければ wait を記録する。\n- 不安には、answer_job_question の資料で答えられる範囲で答える(資料に無いことは言わない)。\n"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "深夜帯のアルバイトを3件ご紹介します。電話業務の有無は、この情報だけでは確認できていません。"
+          ],
+          "quick_replies": [
+            "勤務地で絞る",
+            "電話業務を確認したい",
+            "求人を探す",
+            "今はいい"
+          ],
+          "cards": [
+            {
+              "job_id": "b0401",
+              "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+              "employer": "ハミングマート中野南口店",
+              "employment_type": "アルバイト・パート",
+              "job_type": "コンビニ",
+              "area": "中野",
+              "station": "中野",
+              "walk_min": 3,
+              "pay": {
+                "kind": "時給",
+                "min": 1750,
+                "max": null
+              },
+              "pay_text": "時給1750円",
+              "shift": "22:00〜翌7:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "深夜の勤務(22:00〜翌7:00)",
+                "中野駅から徒歩3分"
+              ],
+              "match_score": 1.58,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.7,
+                "wage": 0.88
+              }
+            },
+            {
+              "job_id": "b0203",
+              "title": "ラーメン店の調理スタッフ",
+              "employer": "麺屋 くろがね亭",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "川崎",
+              "station": "川崎駅",
+              "walk_min": 3,
+              "pay": {
+                "kind": "時給",
+                "min": 1450,
+                "max": null
+              },
+              "pay_text": "時給1450円",
+              "shift": "21:00〜翌3:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "日払い",
+                "交通費支給",
+                "まかない"
+              ],
+              "reasons": [
+                "深夜の勤務(21:00〜翌3:00)",
+                "川崎駅から徒歩3分"
+              ],
+              "match_score": 1.42,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.7,
+                "wage": 0.72
+              }
+            },
+            {
+              "job_id": "b0502",
+              "title": "深夜スーパーの品出し・在庫補充",
+              "employer": "24hマーケット ソレイユ川崎店",
+              "employment_type": "アルバイト・パート",
+              "job_type": "スーパー・販売",
+              "area": "川崎",
+              "station": "川崎",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1650,
+                "max": null
+              },
+              "pay_text": "時給1650円",
+              "shift": "22:00〜翌5:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "日払い",
+                "交通費支給",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "深夜の勤務(22:00〜翌5:00)",
+                "川崎駅から徒歩4分"
+              ],
+              "match_score": 1.42,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.82
+              }
+            }
+          ],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": null,
+                "time_band": "深夜",
+                "job_type": null,
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": null,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 13,
+                "jobs": [
+                  {
+                    "job_id": "b0401",
+                    "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                    "employer": "ハミングマート中野南口店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コンビニ",
+                    "area": "中野",
+                    "station": "中野",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1750,
+                      "max": null
+                    },
+                    "pay_text": "時給1750円",
+                    "shift": "22:00〜翌7:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(22:00〜翌7:00)",
+                      "中野駅から徒歩3分"
+                    ],
+                    "match_score": 1.58,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.88
+                    }
+                  },
+                  {
+                    "job_id": "b0903",
+                    "title": "深夜帯の緊急駆けつけ受付オペレーター",
+                    "employer": "株式会社ナイトゲート警備サービス",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コールセンター",
+                    "area": "川崎",
+                    "station": "川崎",
+                    "walk_min": 6,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 2100,
+                      "max": null
+                    },
+                    "pay_text": "時給2100円",
+                    "shift": "22:00〜翌7:00",
+                    "days_min": 2,
+                    "perks": [
+                      "交通費支給",
+                      "日払い",
+                      "未経験OK"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(22:00〜翌7:00)",
+                      "日払い"
+                    ],
+                    "match_score": 1.45,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.4,
+                      "wage": 1.05
+                    }
+                  },
+                  {
+                    "job_id": "b0203",
+                    "title": "ラーメン店の調理スタッフ",
+                    "employer": "麺屋 くろがね亭",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "川崎",
+                    "station": "川崎駅",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1450,
+                      "max": null
+                    },
+                    "pay_text": "時給1450円",
+                    "shift": "21:00〜翌3:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "日払い",
+                      "交通費支給",
+                      "まかない"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(21:00〜翌3:00)",
+                      "川崎駅から徒歩3分"
+                    ],
+                    "match_score": 1.42,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.72
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": null,
+                "time_band": "深夜",
+                "job_type": null,
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": null,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": [
+                  "b0401",
+                  "b0903",
+                  "b0203"
+                ],
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 10,
+                "jobs": [
+                  {
+                    "job_id": "b0502",
+                    "title": "深夜スーパーの品出し・在庫補充",
+                    "employer": "24hマーケット ソレイユ川崎店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "スーパー・販売",
+                    "area": "川崎",
+                    "station": "川崎",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1650,
+                      "max": null
+                    },
+                    "pay_text": "時給1650円",
+                    "shift": "22:00〜翌5:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "日払い",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(22:00〜翌5:00)",
+                      "川崎駅から徒歩4分"
+                    ],
+                    "match_score": 1.42,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.82
+                    }
+                  },
+                  {
+                    "job_id": "a001",
+                    "title": "居酒屋ホール 新宿西口",
+                    "employer": "炉端酒場 にしぐち灯",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食ホール",
+                    "area": "新宿",
+                    "station": "新宿",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1350,
+                      "max": null
+                    },
+                    "pay_text": "時給1350円",
+                    "shift": "18:00〜翌1:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "まかない",
+                      "交通費支給",
+                      "学生歓迎"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(18:00〜翌1:00)",
+                      "新宿駅から徒歩3分"
+                    ],
+                    "match_score": 1.38,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.68
+                    }
+                  },
+                  {
+                    "job_id": "b0201",
+                    "title": "居酒屋のキッチンスタッフ(調理補助)",
+                    "employer": "炭火酒場 とりよし堂",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1380,
+                      "max": null
+                    },
+                    "pay_text": "時給1380円",
+                    "shift": "17:00〜翌1:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "まかない",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "深夜の勤務(17:00〜翌1:00)",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.29,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.69
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "record_conversation_outcome",
+              "args": {
+                "line_user_id": "sim-new",
+                "outcome": "propose",
+                "reason": "深夜のアルバイトを探しています。電話はしたくないです。接客は大丈夫",
+                "confidence": 0.95,
+                "summary": "深夜のアルバイトを探している。電話はしたくないが、接客は大丈夫。次に確かめること: 希望の勤務地と、気になる求人の電話業務の有無。"
+              },
+              "result": {
+                "recorded": {
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "outcome": "propose",
+                  "reason": "深夜のアルバイトを探しています。電話はしたくないです。接客は大丈夫",
+                  "confidence": 0.95,
+                  "summary": "深夜のアルバイトを探している。電話はしたくないが、接客は大丈夫。次に確かめること: 希望の勤務地と、気になる求人の電話業務の有無。"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "勤務地はどこでもよいのですね。電話業務の有無は求人ごとに確認します。どの求人が気になりますか？"
+          ],
+          "quick_replies": [
+            "中野のコンビニ",
+            "川崎のラーメン店",
+            "川崎のスーパー",
+            "それ以外"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "area": "どこでもいい"
+                }
+              },
+              "result": {
+                "saved": [
+                  "area"
+                ],
+                "rejected": []
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "中野のコンビニ求人にはレジ・品出し・清掃とありますが、電話業務の有無は書かれていません。応募画面や面接で確認してください。"
+          ],
+          "quick_replies": [
+            "ほかの求人も確認",
+            "求人を探す",
+            "応募履歴を確認",
+            "使い方"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "answer_job_question",
+              "args": {
+                "question": "電話業務の有無を確認したいです。",
+                "job_id": "b0401"
+              },
+              "result": {
+                "job": {
+                  "job_id": "b0401",
+                  "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                  "employer": "ハミングマート中野南口店",
+                  "employment_type": "アルバイト・パート",
+                  "job_type": "コンビニ",
+                  "area": "中野",
+                  "station": "中野",
+                  "walk_min": 3,
+                  "pay": {
+                    "kind": "時給",
+                    "min": 1750,
+                    "max": null
+                  },
+                  "time_bands": [
+                    "夜",
+                    "深夜"
+                  ],
+                  "shift": "22:00〜翌7:00",
+                  "days_min": 2,
+                  "perks": [
+                    "未経験OK",
+                    "学生歓迎",
+                    "交通費支給",
+                    "髪色自由",
+                    "シフト自由"
+                  ],
+                  "description": "駅南口の商店街沿いにある小型店で、深夜はレジ・品出し・清掃を2名体制で回します。研修は日中に3回入ってから深夜デビューなので、コンビニ未経験でも安心です。発注業務はオーナーが担当するため覚えることは多くありません。",
+                  "drawback": "終電後は酔ったお客様の対応が必要になることがあり、朝方は雑誌や新聞の陳列で体力を使います。",
+                  "talk_level": 3,
+                  "physical_level": 2,
+                  "required_experience": [],
+                  "preferred_experience": [],
+                  "work_style": null,
+                  "holidays": null,
+                  "employment_terms": null
+                },
+                "card": {
+                  "job_id": "b0401",
+                  "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                  "employer": "ハミングマート中野南口店",
+                  "employment_type": "アルバイト・パート",
+                  "job_type": "コンビニ",
+                  "area": "中野",
+                  "station": "中野",
+                  "walk_min": 3,
+                  "pay": {
+                    "kind": "時給",
+                    "min": 1750,
+                    "max": null
+                  },
+                  "pay_text": "時給1750円",
+                  "shift": "22:00〜翌7:00",
+                  "days_min": 2,
+                  "perks": [
+                    "未経験OK",
+                    "学生歓迎",
+                    "交通費支給",
+                    "髪色自由",
+                    "シフト自由"
+                  ],
+                  "reasons": [
+                    "中野駅から徒歩3分",
+                    "未経験OK"
+                  ]
+                },
+                "hits": [],
+                "note": "この質問に答える情報にない(案件の FAQ・求人の説明・全体の FAQ のどれにも無い)。ただし job(この求人の説明・時給・勤務時間・待遇など)に答えがあれば、それで答える。それにも無ければ、推測で答えず、分からないと伝え、応募の画面や面接で確認できると案内する。"
+              }
+            },
+            {
+              "name": "record_conversation_outcome",
+              "args": {
+                "line_user_id": "sim-new",
+                "outcome": "consult",
+                "reason": "中野のコンビニの電話業務の有無を確認したい",
+                "confidence": 0.98,
+                "summary": "深夜のアルバイトを探している。勤務地はどこでもよく、電話はしたくないが接客は大丈夫。中野のコンビニの電話業務の有無を気にしている。次に確かめること: 応募画面や面接で電話業務の有無。"
+              },
+              "result": {
+                "recorded": {
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "outcome": "consult",
+                  "reason": "中野のコンビニの電話業務の有無を確認したい",
+                  "confidence": 0.98,
+                  "summary": "深夜のアルバイトを探している。勤務地はどこでもよく、電話はしたくないが接客は大丈夫。中野のコンビニの電話業務の有無を気にしている。次に確かめること: 応募画面や面接で電話業務の有無。"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-chat-phone-nigate",
+      "channel": "chat",
+      "title": "言い換え「電話が苦手」・接客も苦手",
+      "observation": {
+        "phone_turn": 2,
+        "searched_on_phone_turn": false,
+        "confirm_question": "アルバイト・パートのお仕事で考えますね。新宿で、電話が苦手なのですね。レジなど、お客様と対面で話す仕事は大丈夫ですか？",
+        "confirm_turn": 2,
+        "first_search_turn": 3,
+        "first_search_args": {
+          "line_user_id": "sim-new",
+          "area": "新宿",
+          "time_band": null,
+          "job_type": null,
+          "min_wage": null,
+          "employment_type": "アルバイト・パート",
+          "min_annual_salary": null,
+          "max_talk_level": 2,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "keywords": null,
+          "exclude_ids": null,
+          "posted_within_days": null
+        },
+        "talk_level": 2,
+        "talk_level_as_expected": true,
+        "call_center_cards": [],
+        "search_arg_violations": []
+      },
+      "cost_usd": 0.0485,
+      "violations": [],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "はじめまして。お仕事探しや応募について、トークでお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "新宿でアルバイトを探しています。電話が苦手です"
+        },
+        {
+          "who": "agent",
+          "text": "アルバイト・パートのお仕事で考えますね。新宿で、電話が苦手なのですね。レジなど、お客様と対面で話す仕事は大丈夫ですか？\n[選択肢] 対面なら大丈夫 / 接客も避けたい / それ以外 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "接客も避けたい"
+        },
+        {
+          "who": "agent",
+          "text": "新宿で、接客が少ないアルバイトが2件あります。気になる仕事はありますか？\n[求人カード] 未経験歓迎のかんたんデータ入力・書類整理 / アルバイト・パート / 時給1400円 / 10:00〜17:00 / 理由: 人と話すことが少ない仕事・新宿三丁目駅から徒歩4分\n[求人カード] 居酒屋のキッチンスタッフ(調理補助) / アルバイト・パート / 時給1380円 / 17:00〜翌1:00 / 理由: お客様と話すことは少ない仕事・新宿三丁目駅から徒歩4分\n[選択肢] データ入力が気になる / キッチンが気になる / 条件を変えたい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "ありがとう、考えます"
+        },
+        {
+          "who": "agent",
+          "text": "どういたしまして。決める前に、どの点が気になっていますか？\n[選択肢] 仕事内容 / 勤務時間 / 接客の有無 / 今はいい"
+        }
+      ],
+      "turn_log": [
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "はじめまして。お仕事探しや応募について、トークでお手伝いします。今日は何から始めますか？"
+          ],
+          "quick_replies": [
+            "求人を探す",
+            "まず相談する",
+            "応募履歴を確認",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "get_user_conversation_summary",
+              "args": {
+                "line_user_id": "sim-new"
+              },
+              "result": {
+                "linked": false,
+                "segment": "unlinked",
+                "search_track": "未定",
+                "track_history": [],
+                "stated_preferences": {},
+                "consultation_summary": null,
+                "uploaded_resume": null,
+                "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": {
+            "id": "683597fa0811",
+            "from": "未定",
+            "track": "アルバイト・パート",
+            "undo": false
+          },
+          "bubbles": [
+            "アルバイト・パートのお仕事で考えますね。新宿で、電話が苦手なのですね。レジなど、お客様と対面で話す仕事は大丈夫ですか？"
+          ],
+          "quick_replies": [
+            "対面なら大丈夫",
+            "接客も避けたい",
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "set_search_track",
+              "args": {
+                "line_user_id": "sim-new",
+                "track": "アルバイト・パート",
+                "evidence": "新宿でアルバイトを探しています。電話が苦手です",
+                "undo": false
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "changed": true,
+                "recorded": {
+                  "id": "683597fa0811",
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "from": "未定",
+                  "track": "アルバイト・パート",
+                  "evidence": "新宿でアルバイトを探しています。電話が苦手です",
+                  "undo": false
+                }
+              }
+            },
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "area": "新宿",
+                  "avoids": "電話が苦手です"
+                }
+              },
+              "result": {
+                "saved": [
+                  "area",
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "get_counseling_playbook",
+              "args": {
+                "track": "アルバイト・パート",
+                "channel": "chat"
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "channel": "chat",
+                "rules": {
+                  "questions_max": 1,
+                  "bubble_max": 80,
+                  "branch_by": 3
+                },
+                "playbook": "# playbook: アルバイト・パート(チャット)\n\n## 会話の決まり(アルバイト・パート)\n- 1つの吹き出しは80字以内。吹き出しは最大3つ。\n- 1回の返信で質問は1つ。\n- 会話の段階(提案・相談・支援・待つ)には、ユーザーの3回目の返信までに入る。相談の途中は適用しない。\n\n## 明らかにすること\n番号は並べるための便宜で、聞く順番ではない。\n1. 目的: 生活費・副業(本業と別の収入)・経験を積む・学業や家事との両立 など。なぜ今アルバイト・パートなのか。\n2. 生活の制約: 働ける時間帯・曜日(週の日数)・エリア。まとめて1問にしてよい。\n3. 興味・得意: やってみたいこと・好きなこと・得意なこと。\n4. 経験: これまでの仕事・アルバイト(未経験でもよい)。履歴書があれば聞き直さず確認形で使う。summary の uploaded_resume が無く経験をまだ聞いていなければ、この問いが「履歴書・音声の提案」の場面になる。\n5. 不安: 未経験・人見知り・ブランク・扶養 など。\n\n## 掘り下げ方\n- 目的: 「お金のため」「副業」のような答えには、収入のほかに得たいことがあるかを1回聞く(例:「収入のほかに、このバイトで得たいことはありますか?」)。\n- やりたいこと・興味: 「体を動かすのが好き」のような答えは、具体的な場面を聞く(例:「どんな場面で、体を動かすのが楽しいと感じましたか?」)。\n- 不安: 何が起きると困るのかを1回聞き、資料で答えられる範囲で答える。\n- 生活の制約は掘り下げない。本人が言った値をそのまま保存する。\n\n## 選択肢の作り方\n- 方向の候補は、本人の目的・興味・経験・制約から作る(例: 「絵を描くのが好き」「大きな声を出すのは苦手」なら「絵や手作業を活かせる仕事」「静かな環境で働ける仕事」)。アルバイト・パートの職種の一覧をそのまま並べない。\n\n## 保存先\n- 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns。\n- 経験 experience、できること skills、資格 certifications。\n- 条件: 時間帯 time_band、週の日数 days_per_week、エリア area、時給の下限 min_wage、職種 job_type(アルバイト・パートの一覧から。本人が職種を挙げたとき)。\n\n## 提案に進むとき\n- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。\n\n## 区分に共通の決まり(チャット)\n- この playbook は「明らかにすること」と「掘り下げ方」の指針で、聞く順番は決めない。本人の話の流れに合わせて、まだ分かっていないことを1問ずつ聞く。summary(stated_preferences・uploaded_resume・consultation_summary)と、この会話で分かったことは聞き直さない。\n- 求人を出す前に、目的(なぜ今探すのか)を1問で確かめる。本人がすでに話していれば聞き直さず、受け止めて掘り下げる。本人が自分から「求人を見せて」と言ったら、先に出してよい。\n- 目的とやりたいことは、それぞれ最低1回掘り下げる。目的の答えを受けたら、次の返信で本人の言葉を使って1問で聞く(例:「そう感じたのは、どんな場面でしたか?」「『〜したい』というのは、例えばどんなことですか?」「それはなぜですか?」)。掘り下げないまま別の項目(時間帯・エリアなど)や求人探しへ移らない。\n- 掘り下げは1つの項目につき2回まで。「分からない」「特にない」が続いたら、その項目は置いて、まだ分かっていない別の項目へ進む(同じ項目を3回続けて聞かない)。項目を埋めること自体は目的ではない。\n- 選択肢(クイックリプライ)と、仕事の方向の候補は、本人の履歴書(uploaded_resume)と本人の発言から作る。誰にでも出す一般論の例(「手を動かす仕事 / 裏方で支える仕事」、職種の一覧をそのまま並べる など)は使わない。目的の問いでも、答えの種類の一覧(「お小遣いを稼ぎたい / 新しいことを覚えたい」など)を選択肢にしない。本人が最初に話したこと(「資格の勉強と並行して」「契約が終わるので」)の言葉を使った選択肢にするか、手がかりが無ければ選択肢を「それ以外」「今はいい」だけにして自由に書いてもらう。仕事の方向は、本人の話が出るまで候補を出さない。\n- 方向の候補を出すときは2つまでにし、候補ごとに、どの経歴・発言から作ったかを添える。\n- 「分からない」「まだ決めていない」「思いつかない」には、職種を並べない。問いを小さくして掘り下げに戻る(例:「これまでで、手応えがあった・楽しかった場面はありますか?」「逆に、もう続けたくないと感じたことはありますか?」)。本人が「求人を見せて」と言うまで、職種の候補で埋めない。\n- 答えを聞いたら、そのターンで save_user_preferences に本人の言葉のまま保存する(保存先は区分ごとの「保存先」)。こちらの言い換え・まとめ・推測は保存しない。\n- 相談の途中は、会話の段階に入る期限(区分ごとの「会話の決まり」)を適用しない。本人が切り上げる(「今はいい」「求人を見せて」など)まで、1問ずつ続けてよい。本人が切り上げる前に record_conversation_outcome を記録して会話を締めない。\n- 目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で聞いた内容を1文でまとめ、この内容で求人を見るかを1問で聞く(選択肢: 求人を見る / もう少し相談したい / 今はいい。目安は5、6問)。残りの項目(不安・強みなど)は、「もう少し相談したい」が選ばれたときか、求人を見た後に聞く。\n- 提案に進むとき(「求人を見る」、または途中の「求人を見せて」「求人を探したい」)は、その時点までに分かったことをそのまま recommend_jobs の条件にする(区分ごとの「提案に進むとき」)。残りを聞いてから、にしない。条件を言い直させない。提案の吹き出しの一言で、条件の一致だけでなく、本人の目的・やりたいこと・経験とのつながりを伝える(例:「植物の世話が好きというお話から、園芸店の3件です。」)。提案したら propose を記録する。\n- 「今はいい」: 提案せずに短く終える。1つでも答えていれば consult(理由は「相談のみ」)、何も話していなければ wait を記録する。\n- 不安には、answer_job_question の資料で答えられる範囲で答える(資料に無いことは言わない)。\n"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "新宿で、接客が少ないアルバイトが2件あります。気になる仕事はありますか？"
+          ],
+          "quick_replies": [
+            "データ入力が気になる",
+            "キッチンが気になる",
+            "条件を変えたい",
+            "今はいい"
+          ],
+          "cards": [
+            {
+              "job_id": "b1201",
+              "title": "未経験歓迎のかんたんデータ入力・書類整理",
+              "employer": "株式会社コトノハ商会",
+              "employment_type": "アルバイト・パート",
+              "job_type": "オフィス事務",
+              "area": "新宿",
+              "station": "新宿三丁目駅",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1400,
+                "max": null
+              },
+              "pay_text": "時給1400円",
+              "shift": "10:00〜17:00",
+              "days_min": 3,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "人と話すことが少ない仕事",
+                "新宿三丁目駅から徒歩4分"
+              ],
+              "match_score": 1.3,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.7
+              }
+            },
+            {
+              "job_id": "b0201",
+              "title": "居酒屋のキッチンスタッフ(調理補助)",
+              "employer": "炭火酒場 とりよし堂",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "新宿",
+              "station": "新宿三丁目駅",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1380,
+                "max": null
+              },
+              "pay_text": "時給1380円",
+              "shift": "17:00〜翌1:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "まかない",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "お客様と話すことは少ない仕事",
+                "新宿三丁目駅から徒歩4分"
+              ],
+              "match_score": 1.29,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.69
+              }
+            }
+          ],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "avoids": "電話が苦手です。接客も避けたい"
+                }
+              },
+              "result": {
+                "saved": [
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": "新宿",
+                "time_band": null,
+                "job_type": null,
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": 2,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 2,
+                "jobs": [
+                  {
+                    "job_id": "b1201",
+                    "title": "未経験歓迎のかんたんデータ入力・書類整理",
+                    "employer": "株式会社コトノハ商会",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "オフィス事務",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1400,
+                      "max": null
+                    },
+                    "pay_text": "時給1400円",
+                    "shift": "10:00〜17:00",
+                    "days_min": 3,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "人と話すことが少ない仕事",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.3,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.7
+                    }
+                  },
+                  {
+                    "job_id": "b0201",
+                    "title": "居酒屋のキッチンスタッフ(調理補助)",
+                    "employer": "炭火酒場 とりよし堂",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1380,
+                      "max": null
+                    },
+                    "pay_text": "時給1380円",
+                    "shift": "17:00〜翌1:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "まかない",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "お客様と話すことは少ない仕事",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.29,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.69
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "record_conversation_outcome",
+              "args": {
+                "line_user_id": "sim-new",
+                "outcome": "propose",
+                "reason": "新宿でアルバイトを探している。電話と接客を避けたい",
+                "confidence": 0.95,
+                "summary": "新宿でアルバイトを探している。電話が苦手で接客も避けたい。次に確かめること: 希望する時間帯や仕事内容。"
+              },
+              "result": {
+                "recorded": {
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "outcome": "propose",
+                  "reason": "新宿でアルバイトを探している。電話と接客を避けたい",
+                  "confidence": 0.95,
+                  "summary": "新宿でアルバイトを探している。電話が苦手で接客も避けたい。次に確かめること: 希望する時間帯や仕事内容。"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "どういたしまして。決める前に、どの点が気になっていますか？"
+          ],
+          "quick_replies": [
+            "仕事内容",
+            "勤務時間",
+            "接客の有無",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": []
+        }
+      ]
+    },
+    {
+      "id": "P-chat-phone-iya",
+      "channel": "chat",
+      "title": "言い換え「電話対応は嫌」・レジは大丈夫",
+      "observation": {
+        "phone_turn": 2,
+        "searched_on_phone_turn": false,
+        "confirm_question": "レジや店頭でお客様と話す仕事は大丈夫ですか？",
+        "confirm_turn": 2,
+        "first_search_turn": 3,
+        "first_search_args": {
+          "line_user_id": "sim-new",
+          "area": null,
+          "time_band": "夜",
+          "job_type": null,
+          "min_wage": null,
+          "employment_type": "アルバイト・パート",
+          "min_annual_salary": null,
+          "max_talk_level": null,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "keywords": null,
+          "exclude_ids": null,
+          "posted_within_days": null
+        },
+        "talk_level": null,
+        "talk_level_as_expected": true,
+        "call_center_cards": [],
+        "search_arg_violations": []
+      },
+      "cost_usd": 0.069,
+      "violations": [],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "はじめまして。バイトルのお仕事探しや応募についてお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "夜にアルバイトを探しています。電話対応は嫌です"
+        },
+        {
+          "who": "agent",
+          "text": "アルバイト・パートのお仕事で考えますね。夜の仕事で、電話対応は避けたいのですね。\nレジや店頭でお客様と話す仕事は大丈夫ですか？\n[選択肢] 接客は大丈夫 / 接客も避けたい / それ以外 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "接客は大丈夫"
+        },
+        {
+          "who": "agent",
+          "text": "接客は大丈夫で、電話対応は避けたいのですね。夜の求人を探すなら、どのエリアがよいですか？\n[選択肢] 東京都内 / 神奈川県 / 埼玉県 / それ以外"
+        },
+        {
+          "who": "user",
+          "text": "どこでもいいです。"
+        },
+        {
+          "who": "agent",
+          "text": "夜に働けるキッチンの求人が3件あります。電話対応の有無は求人情報だけでは確認できていません。気になる求人はありますか？\n[求人カード] ラーメン店の調理スタッフ / アルバイト・パート / 時給1450円 / 21:00〜翌3:00 / 理由: 夜の勤務(21:00〜翌3:00)・川崎駅から徒歩3分\n[求人カード] 居酒屋のキッチンスタッフ(調理補助) / アルバイト・パート / 時給1380円 / 17:00〜翌1:00 / 理由: 夜の勤務(17:00〜翌1:00)・新宿三丁目駅から徒歩4分\n[求人カード] イタリアンバルのキッチンスタッフ / アルバイト・パート / 時給1550円 / 16:30〜23:30 / 理由: 夜の勤務(16:30〜23:30)・横浜エリア\n[選択肢] 1件目が気になる / 2件目が気になる / 3件目が気になる / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "ありがとう、考えます"
+        },
+        {
+          "who": "agent",
+          "text": "ありがとうございます。どの点で迷っていますか？\n[選択肢] 電話対応の有無 / 勤務時間 / 仕事内容 / 今はいい"
+        }
+      ],
+      "turn_log": [
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "はじめまして。バイトルのお仕事探しや応募についてお手伝いします。今日は何から始めますか？"
+          ],
+          "quick_replies": [
+            "求人を探す",
+            "まず相談する",
+            "応募履歴を確認",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "get_user_conversation_summary",
+              "args": {
+                "line_user_id": "sim-new"
+              },
+              "result": {
+                "linked": false,
+                "segment": "unlinked",
+                "search_track": "未定",
+                "track_history": [],
+                "stated_preferences": {},
+                "consultation_summary": null,
+                "uploaded_resume": null,
+                "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": {
+            "id": "86953cab2fce",
+            "from": "未定",
+            "track": "アルバイト・パート",
+            "undo": false
+          },
+          "bubbles": [
+            "アルバイト・パートのお仕事で考えますね。夜の仕事で、電話対応は避けたいのですね。",
+            "レジや店頭でお客様と話す仕事は大丈夫ですか？"
+          ],
+          "quick_replies": [
+            "接客は大丈夫",
+            "接客も避けたい",
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "set_search_track",
+              "args": {
+                "line_user_id": "sim-new",
+                "track": "アルバイト・パート",
+                "evidence": "夜にアルバイトを探しています。電話対応は嫌です",
+                "undo": false
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "changed": true,
+                "recorded": {
+                  "id": "86953cab2fce",
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "from": "未定",
+                  "track": "アルバイト・パート",
+                  "evidence": "夜にアルバイトを探しています。電話対応は嫌です",
+                  "undo": false
+                }
+              }
+            },
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "time_band": "夜",
+                  "avoids": "電話対応は嫌です"
+                }
+              },
+              "result": {
+                "saved": [
+                  "time_band",
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "get_counseling_playbook",
+              "args": {
+                "track": "アルバイト・パート",
+                "channel": "chat"
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "channel": "chat",
+                "rules": {
+                  "questions_max": 1,
+                  "bubble_max": 80,
+                  "branch_by": 3
+                },
+                "playbook": "# playbook: アルバイト・パート(チャット)\n\n## 会話の決まり(アルバイト・パート)\n- 1つの吹き出しは80字以内。吹き出しは最大3つ。\n- 1回の返信で質問は1つ。\n- 会話の段階(提案・相談・支援・待つ)には、ユーザーの3回目の返信までに入る。相談の途中は適用しない。\n\n## 明らかにすること\n番号は並べるための便宜で、聞く順番ではない。\n1. 目的: 生活費・副業(本業と別の収入)・経験を積む・学業や家事との両立 など。なぜ今アルバイト・パートなのか。\n2. 生活の制約: 働ける時間帯・曜日(週の日数)・エリア。まとめて1問にしてよい。\n3. 興味・得意: やってみたいこと・好きなこと・得意なこと。\n4. 経験: これまでの仕事・アルバイト(未経験でもよい)。履歴書があれば聞き直さず確認形で使う。summary の uploaded_resume が無く経験をまだ聞いていなければ、この問いが「履歴書・音声の提案」の場面になる。\n5. 不安: 未経験・人見知り・ブランク・扶養 など。\n\n## 掘り下げ方\n- 目的: 「お金のため」「副業」のような答えには、収入のほかに得たいことがあるかを1回聞く(例:「収入のほかに、このバイトで得たいことはありますか?」)。\n- やりたいこと・興味: 「体を動かすのが好き」のような答えは、具体的な場面を聞く(例:「どんな場面で、体を動かすのが楽しいと感じましたか?」)。\n- 不安: 何が起きると困るのかを1回聞き、資料で答えられる範囲で答える。\n- 生活の制約は掘り下げない。本人が言った値をそのまま保存する。\n\n## 選択肢の作り方\n- 方向の候補は、本人の目的・興味・経験・制約から作る(例: 「絵を描くのが好き」「大きな声を出すのは苦手」なら「絵や手作業を活かせる仕事」「静かな環境で働ける仕事」)。アルバイト・パートの職種の一覧をそのまま並べない。\n\n## 保存先\n- 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns。\n- 経験 experience、できること skills、資格 certifications。\n- 条件: 時間帯 time_band、週の日数 days_per_week、エリア area、時給の下限 min_wage、職種 job_type(アルバイト・パートの一覧から。本人が職種を挙げたとき)。\n\n## 提案に進むとき\n- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。\n\n## 区分に共通の決まり(チャット)\n- この playbook は「明らかにすること」と「掘り下げ方」の指針で、聞く順番は決めない。本人の話の流れに合わせて、まだ分かっていないことを1問ずつ聞く。summary(stated_preferences・uploaded_resume・consultation_summary)と、この会話で分かったことは聞き直さない。\n- 求人を出す前に、目的(なぜ今探すのか)を1問で確かめる。本人がすでに話していれば聞き直さず、受け止めて掘り下げる。本人が自分から「求人を見せて」と言ったら、先に出してよい。\n- 目的とやりたいことは、それぞれ最低1回掘り下げる。目的の答えを受けたら、次の返信で本人の言葉を使って1問で聞く(例:「そう感じたのは、どんな場面でしたか?」「『〜したい』というのは、例えばどんなことですか?」「それはなぜですか?」)。掘り下げないまま別の項目(時間帯・エリアなど)や求人探しへ移らない。\n- 掘り下げは1つの項目につき2回まで。「分からない」「特にない」が続いたら、その項目は置いて、まだ分かっていない別の項目へ進む(同じ項目を3回続けて聞かない)。項目を埋めること自体は目的ではない。\n- 選択肢(クイックリプライ)と、仕事の方向の候補は、本人の履歴書(uploaded_resume)と本人の発言から作る。誰にでも出す一般論の例(「手を動かす仕事 / 裏方で支える仕事」、職種の一覧をそのまま並べる など)は使わない。目的の問いでも、答えの種類の一覧(「お小遣いを稼ぎたい / 新しいことを覚えたい」など)を選択肢にしない。本人が最初に話したこと(「資格の勉強と並行して」「契約が終わるので」)の言葉を使った選択肢にするか、手がかりが無ければ選択肢を「それ以外」「今はいい」だけにして自由に書いてもらう。仕事の方向は、本人の話が出るまで候補を出さない。\n- 方向の候補を出すときは2つまでにし、候補ごとに、どの経歴・発言から作ったかを添える。\n- 「分からない」「まだ決めていない」「思いつかない」には、職種を並べない。問いを小さくして掘り下げに戻る(例:「これまでで、手応えがあった・楽しかった場面はありますか?」「逆に、もう続けたくないと感じたことはありますか?」)。本人が「求人を見せて」と言うまで、職種の候補で埋めない。\n- 答えを聞いたら、そのターンで save_user_preferences に本人の言葉のまま保存する(保存先は区分ごとの「保存先」)。こちらの言い換え・まとめ・推測は保存しない。\n- 相談の途中は、会話の段階に入る期限(区分ごとの「会話の決まり」)を適用しない。本人が切り上げる(「今はいい」「求人を見せて」など)まで、1問ずつ続けてよい。本人が切り上げる前に record_conversation_outcome を記録して会話を締めない。\n- 目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で聞いた内容を1文でまとめ、この内容で求人を見るかを1問で聞く(選択肢: 求人を見る / もう少し相談したい / 今はいい。目安は5、6問)。残りの項目(不安・強みなど)は、「もう少し相談したい」が選ばれたときか、求人を見た後に聞く。\n- 提案に進むとき(「求人を見る」、または途中の「求人を見せて」「求人を探したい」)は、その時点までに分かったことをそのまま recommend_jobs の条件にする(区分ごとの「提案に進むとき」)。残りを聞いてから、にしない。条件を言い直させない。提案の吹き出しの一言で、条件の一致だけでなく、本人の目的・やりたいこと・経験とのつながりを伝える(例:「植物の世話が好きというお話から、園芸店の3件です。」)。提案したら propose を記録する。\n- 「今はいい」: 提案せずに短く終える。1つでも答えていれば consult(理由は「相談のみ」)、何も話していなければ wait を記録する。\n- 不安には、answer_job_question の資料で答えられる範囲で答える(資料に無いことは言わない)。\n"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "接客は大丈夫で、電話対応は避けたいのですね。夜の求人を探すなら、どのエリアがよいですか？"
+          ],
+          "quick_replies": [
+            "東京都内",
+            "神奈川県",
+            "埼玉県",
+            "それ以外"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": null,
+                "time_band": "夜",
+                "job_type": null,
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": null,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 25,
+                "jobs": [
+                  {
+                    "job_id": "b1004",
+                    "title": "訪問型の家庭教師(小中学生・1件ずつ選べる)",
+                    "employer": "家庭教師センター あおば学びサポート",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "塾講師・家庭教師",
+                    "area": "吉祥寺",
+                    "station": "吉祥寺駅",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 2100,
+                      "max": null
+                    },
+                    "pay_text": "時給2100円",
+                    "shift": "15:00〜21:00の間で90分〜120分",
+                    "days_min": 1,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "主婦(夫)歓迎",
+                      "交通費支給",
+                      "短時間OK",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(15:00〜21:00の間で90分〜120分)",
+                      "吉祥寺駅から徒歩3分"
+                    ],
+                    "match_score": 1.75,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 1.05
+                    }
+                  },
+                  {
+                    "job_id": "b0401",
+                    "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                    "employer": "ハミングマート中野南口店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コンビニ",
+                    "area": "中野",
+                    "station": "中野",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1750,
+                      "max": null
+                    },
+                    "pay_text": "時給1750円",
+                    "shift": "22:00〜翌7:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(22:00〜翌7:00)",
+                      "中野駅から徒歩3分"
+                    ],
+                    "match_score": 1.58,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.88
+                    }
+                  },
+                  {
+                    "job_id": "b1001",
+                    "title": "【集団指導】中学生向け数学・英語の塾講師",
+                    "employer": "個別指導塾 まなびの森ゼミナール",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "塾講師・家庭教師",
+                    "area": "中野",
+                    "station": "中野駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1800,
+                      "max": null
+                    },
+                    "pay_text": "時給1800円",
+                    "shift": "17:30〜21:40",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(17:30〜21:40)",
+                      "中野駅から徒歩4分"
+                    ],
+                    "match_score": 1.5,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.9
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": null,
+                "time_band": "夜",
+                "job_type": "コンビニ",
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": null,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 3,
+                "jobs": [
+                  {
+                    "job_id": "b0401",
+                    "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                    "employer": "ハミングマート中野南口店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コンビニ",
+                    "area": "中野",
+                    "station": "中野",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1750,
+                      "max": null
+                    },
+                    "pay_text": "時給1750円",
+                    "shift": "22:00〜翌7:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(22:00〜翌7:00)",
+                      "中野駅から徒歩3分"
+                    ],
+                    "match_score": 1.58,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.88
+                    }
+                  },
+                  {
+                    "job_id": "b0403",
+                    "title": "夕方〜夜のコンビニスタッフ｜学生さん多数",
+                    "employer": "ベリーベルストア高円寺北口店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コンビニ",
+                    "area": "高円寺",
+                    "station": "高円寺",
+                    "walk_min": 2,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1200,
+                      "max": null
+                    },
+                    "pay_text": "時給1200円",
+                    "shift": "17:00〜22:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(17:00〜22:00)",
+                      "高円寺駅から徒歩2分"
+                    ],
+                    "match_score": 1.4,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.8,
+                      "wage": 0.6
+                    }
+                  },
+                  {
+                    "job_id": "b0405",
+                    "title": "駅前大型コンビニ｜たばこ・宅配便カウンター担当",
+                    "employer": "クオリマート横浜西口五番街店",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "コンビニ",
+                    "area": "横浜",
+                    "station": "横浜",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1400,
+                      "max": null
+                    },
+                    "pay_text": "時給1400円",
+                    "shift": "13:00〜21:00（応相談）",
+                    "days_min": 3,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "日払い",
+                      "交通費支給",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(13:00〜21:00（応相談）)",
+                      "横浜駅から徒歩4分"
+                    ],
+                    "match_score": 1.3,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.7
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "夜に働けるキッチンの求人が3件あります。電話対応の有無は求人情報だけでは確認できていません。気になる求人はありますか？"
+          ],
+          "quick_replies": [
+            "1件目が気になる",
+            "2件目が気になる",
+            "3件目が気になる",
+            "今はいい"
+          ],
+          "cards": [
+            {
+              "job_id": "b0203",
+              "title": "ラーメン店の調理スタッフ",
+              "employer": "麺屋 くろがね亭",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "川崎",
+              "station": "川崎駅",
+              "walk_min": 3,
+              "pay": {
+                "kind": "時給",
+                "min": 1450,
+                "max": null
+              },
+              "pay_text": "時給1450円",
+              "shift": "21:00〜翌3:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "日払い",
+                "交通費支給",
+                "まかない"
+              ],
+              "reasons": [
+                "夜の勤務(21:00〜翌3:00)",
+                "川崎駅から徒歩3分"
+              ],
+              "match_score": 1.42,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.7,
+                "wage": 0.72
+              }
+            },
+            {
+              "job_id": "b0201",
+              "title": "居酒屋のキッチンスタッフ(調理補助)",
+              "employer": "炭火酒場 とりよし堂",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "新宿",
+              "station": "新宿三丁目駅",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1380,
+                "max": null
+              },
+              "pay_text": "時給1380円",
+              "shift": "17:00〜翌1:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "まかない",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "夜の勤務(17:00〜翌1:00)",
+                "新宿三丁目駅から徒歩4分"
+              ],
+              "match_score": 1.29,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.69
+              }
+            },
+            {
+              "job_id": "b0205",
+              "title": "イタリアンバルのキッチンスタッフ",
+              "employer": "トラットリア・ヴェントーゾ横浜",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "横浜",
+              "station": "関内駅",
+              "walk_min": 6,
+              "pay": {
+                "kind": "時給",
+                "min": 1550,
+                "max": null
+              },
+              "pay_text": "時給1550円",
+              "shift": "16:30〜23:30",
+              "days_min": 3,
+              "perks": [
+                "交通費支給",
+                "まかない",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "夜の勤務(16:30〜23:30)",
+                "横浜エリア"
+              ],
+              "match_score": 1.18,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.4,
+                "wage": 0.78
+              }
+            }
+          ],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "area": "どこでもいいです",
+                  "avoids": "電話対応は嫌です",
+                  "time_band": "夜"
+                }
+              },
+              "result": {
+                "saved": [
+                  "area",
+                  "avoids",
+                  "time_band"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": "どこでも",
+                "time_band": "夜",
+                "job_type": "飲食キッチン",
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": null,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 3,
+                "jobs": [
+                  {
+                    "job_id": "b0203",
+                    "title": "ラーメン店の調理スタッフ",
+                    "employer": "麺屋 くろがね亭",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "川崎",
+                    "station": "川崎駅",
+                    "walk_min": 3,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1450,
+                      "max": null
+                    },
+                    "pay_text": "時給1450円",
+                    "shift": "21:00〜翌3:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "日払い",
+                      "交通費支給",
+                      "まかない"
+                    ],
+                    "reasons": [
+                      "夜の勤務(21:00〜翌3:00)",
+                      "川崎駅から徒歩3分"
+                    ],
+                    "match_score": 1.42,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.7,
+                      "wage": 0.72
+                    }
+                  },
+                  {
+                    "job_id": "b0201",
+                    "title": "居酒屋のキッチンスタッフ(調理補助)",
+                    "employer": "炭火酒場 とりよし堂",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1380,
+                      "max": null
+                    },
+                    "pay_text": "時給1380円",
+                    "shift": "17:00〜翌1:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "まかない",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(17:00〜翌1:00)",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.29,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.69
+                    }
+                  },
+                  {
+                    "job_id": "b0205",
+                    "title": "イタリアンバルのキッチンスタッフ",
+                    "employer": "トラットリア・ヴェントーゾ横浜",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "横浜",
+                    "station": "関内駅",
+                    "walk_min": 6,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1550,
+                      "max": null
+                    },
+                    "pay_text": "時給1550円",
+                    "shift": "16:30〜23:30",
+                    "days_min": 3,
+                    "perks": [
+                      "交通費支給",
+                      "まかない",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "夜の勤務(16:30〜23:30)",
+                      "横浜エリア"
+                    ],
+                    "match_score": 1.18,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.4,
+                      "wage": 0.78
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "record_conversation_outcome",
+              "args": {
+                "line_user_id": "sim-new",
+                "outcome": "propose",
+                "reason": "夜にアルバイトを探しています。電話対応は嫌です。接客は大丈夫。どこでもいいです。",
+                "confidence": 0.95,
+                "summary": "夜のアルバイトを探している。電話対応は避けたいが、接客は大丈夫。エリアはどこでもいい。次に確かめること: 紹介した求人の仕事内容や電話対応の有無で気になる点。"
+              },
+              "result": {
+                "recorded": {
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "outcome": "propose",
+                  "reason": "夜にアルバイトを探しています。電話対応は嫌です。接客は大丈夫。どこでもいいです。",
+                  "confidence": 0.95,
+                  "summary": "夜のアルバイトを探している。電話対応は避けたいが、接客は大丈夫。エリアはどこでもいい。次に確かめること: 紹介した求人の仕事内容や電話対応の有無で気になる点。"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "ありがとうございます。どの点で迷っていますか？"
+          ],
+          "quick_replies": [
+            "電話対応の有無",
+            "勤務時間",
+            "仕事内容",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": []
+        }
+      ]
+    },
+    {
+      "id": "P-chat-phone-and-service",
+      "channel": "chat",
+      "title": "一度に「電話も接客もしたくない」",
+      "observation": {
+        "phone_turn": 2,
+        "searched_on_phone_turn": true,
+        "confirm_question": "アルバイト・パートのお仕事で考えますね。新宿で、電話や接客が中心ではない求人が2件あります。気になるものはありますか？",
+        "confirm_turn": 2,
+        "first_search_turn": 2,
+        "first_search_args": {
+          "line_user_id": "sim-new",
+          "area": "新宿",
+          "time_band": null,
+          "job_type": null,
+          "min_wage": null,
+          "employment_type": "アルバイト・パート",
+          "min_annual_salary": null,
+          "max_talk_level": 2,
+          "min_talk_level": null,
+          "max_physical_level": null,
+          "min_physical_level": null,
+          "remote": null,
+          "weekends_holidays": null,
+          "max_overtime_hours": null,
+          "keywords": null,
+          "exclude_ids": null,
+          "posted_within_days": null
+        },
+        "talk_level": 2,
+        "talk_level_as_expected": true,
+        "call_center_cards": [],
+        "search_arg_violations": []
+      },
+      "cost_usd": 0.0398,
+      "violations": [],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "はじめまして。お仕事探しや応募についての相談をお手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "新宿でアルバイトを探しています。電話も接客もしたくないです"
+        },
+        {
+          "who": "agent",
+          "text": "アルバイト・パートのお仕事で考えますね。新宿で、電話や接客が中心ではない求人が2件あります。気になるものはありますか？\n[求人カード] 未経験歓迎のかんたんデータ入力・書類整理 / アルバイト・パート / 時給1400円 / 10:00〜17:00 / 理由: 人と話すことが少ない仕事・新宿三丁目駅から徒歩4分\n[求人カード] 居酒屋のキッチンスタッフ(調理補助) / アルバイト・パート / 時給1380円 / 17:00〜翌1:00 / 理由: お客様と話すことは少ない仕事・新宿三丁目駅から徒歩4分\n[選択肢] 1件目が気になる / 2件目が気になる / 別の条件で探す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "ありがとう、考えます"
+        },
+        {
+          "who": "agent",
+          "text": "もちろんです。迷っている点があれば、一緒に確認できます。どのあたりが気になりますか？\n[選択肢] 時給 / 勤務時間 / 仕事内容 / 今はいい"
+        }
+      ],
+      "turn_log": [
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "はじめまして。お仕事探しや応募についての相談をお手伝いします。今日は何から始めますか？"
+          ],
+          "quick_replies": [
+            "求人を探す",
+            "まず相談する",
+            "応募履歴を確認",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "get_user_conversation_summary",
+              "args": {
+                "line_user_id": "sim-new"
+              },
+              "result": {
+                "linked": false,
+                "segment": "unlinked",
+                "search_track": "未定",
+                "track_history": [],
+                "stated_preferences": {},
+                "consultation_summary": null,
+                "uploaded_resume": null,
+                "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": {
+            "id": "752be7c80bc1",
+            "from": "未定",
+            "track": "アルバイト・パート",
+            "undo": false
+          },
+          "bubbles": [
+            "アルバイト・パートのお仕事で考えますね。新宿で、電話や接客が中心ではない求人が2件あります。気になるものはありますか？"
+          ],
+          "quick_replies": [
+            "1件目が気になる",
+            "2件目が気になる",
+            "別の条件で探す",
+            "今はいい"
+          ],
+          "cards": [
+            {
+              "job_id": "b1201",
+              "title": "未経験歓迎のかんたんデータ入力・書類整理",
+              "employer": "株式会社コトノハ商会",
+              "employment_type": "アルバイト・パート",
+              "job_type": "オフィス事務",
+              "area": "新宿",
+              "station": "新宿三丁目駅",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1400,
+                "max": null
+              },
+              "pay_text": "時給1400円",
+              "shift": "10:00〜17:00",
+              "days_min": 3,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "人と話すことが少ない仕事",
+                "新宿三丁目駅から徒歩4分"
+              ],
+              "match_score": 1.3,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.7
+              }
+            },
+            {
+              "job_id": "b0201",
+              "title": "居酒屋のキッチンスタッフ(調理補助)",
+              "employer": "炭火酒場 とりよし堂",
+              "employment_type": "アルバイト・パート",
+              "job_type": "飲食キッチン",
+              "area": "新宿",
+              "station": "新宿三丁目駅",
+              "walk_min": 4,
+              "pay": {
+                "kind": "時給",
+                "min": 1380,
+                "max": null
+              },
+              "pay_text": "時給1380円",
+              "shift": "17:00〜翌1:00",
+              "days_min": 2,
+              "perks": [
+                "未経験OK",
+                "学生歓迎",
+                "交通費支給",
+                "まかない",
+                "髪色自由",
+                "シフト自由"
+              ],
+              "reasons": [
+                "お客様と話すことは少ない仕事",
+                "新宿三丁目駅から徒歩4分"
+              ],
+              "match_score": 1.29,
+              "score_breakdown": {
+                "job_type": 0.0,
+                "time_band": 0.0,
+                "area": 0.0,
+                "station": 0.6,
+                "wage": 0.69
+              }
+            }
+          ],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "set_search_track",
+              "args": {
+                "line_user_id": "sim-new",
+                "track": "アルバイト・パート",
+                "evidence": "新宿でアルバイトを探しています。電話も接客もしたくないです",
+                "undo": false
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "changed": true,
+                "recorded": {
+                  "id": "752be7c80bc1",
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "from": "未定",
+                  "track": "アルバイト・パート",
+                  "evidence": "新宿でアルバイトを探しています。電話も接客もしたくないです",
+                  "undo": false
+                }
+              }
+            },
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "area": "新宿",
+                  "avoids": "電話も接客もしたくないです"
+                }
+              },
+              "result": {
+                "saved": [
+                  "area",
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "get_counseling_playbook",
+              "args": {
+                "track": "アルバイト・パート",
+                "channel": "chat"
+              },
+              "result": {
+                "track": "アルバイト・パート",
+                "channel": "chat",
+                "rules": {
+                  "questions_max": 1,
+                  "bubble_max": 80,
+                  "branch_by": 3
+                },
+                "playbook": "# playbook: アルバイト・パート(チャット)\n\n## 会話の決まり(アルバイト・パート)\n- 1つの吹き出しは80字以内。吹き出しは最大3つ。\n- 1回の返信で質問は1つ。\n- 会話の段階(提案・相談・支援・待つ)には、ユーザーの3回目の返信までに入る。相談の途中は適用しない。\n\n## 明らかにすること\n番号は並べるための便宜で、聞く順番ではない。\n1. 目的: 生活費・副業(本業と別の収入)・経験を積む・学業や家事との両立 など。なぜ今アルバイト・パートなのか。\n2. 生活の制約: 働ける時間帯・曜日(週の日数)・エリア。まとめて1問にしてよい。\n3. 興味・得意: やってみたいこと・好きなこと・得意なこと。\n4. 経験: これまでの仕事・アルバイト(未経験でもよい)。履歴書があれば聞き直さず確認形で使う。summary の uploaded_resume が無く経験をまだ聞いていなければ、この問いが「履歴書・音声の提案」の場面になる。\n5. 不安: 未経験・人見知り・ブランク・扶養 など。\n\n## 掘り下げ方\n- 目的: 「お金のため」「副業」のような答えには、収入のほかに得たいことがあるかを1回聞く(例:「収入のほかに、このバイトで得たいことはありますか?」)。\n- やりたいこと・興味: 「体を動かすのが好き」のような答えは、具体的な場面を聞く(例:「どんな場面で、体を動かすのが楽しいと感じましたか?」)。\n- 不安: 何が起きると困るのかを1回聞き、資料で答えられる範囲で答える。\n- 生活の制約は掘り下げない。本人が言った値をそのまま保存する。\n\n## 選択肢の作り方\n- 方向の候補は、本人の目的・興味・経験・制約から作る(例: 「絵を描くのが好き」「大きな声を出すのは苦手」なら「絵や手作業を活かせる仕事」「静かな環境で働ける仕事」)。アルバイト・パートの職種の一覧をそのまま並べない。\n\n## 保存先\n- 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns。\n- 経験 experience、できること skills、資格 certifications。\n- 条件: 時間帯 time_band、週の日数 days_per_week、エリア area、時給の下限 min_wage、職種 job_type(アルバイト・パートの一覧から。本人が職種を挙げたとき)。\n\n## 提案に進むとき\n- recommend_jobs に employment_type=アルバイト・パートと、分かっている条件(area・time_band・job_type)を渡し、目的・興味・経験を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。\n\n## 区分に共通の決まり(チャット)\n- この playbook は「明らかにすること」と「掘り下げ方」の指針で、聞く順番は決めない。本人の話の流れに合わせて、まだ分かっていないことを1問ずつ聞く。summary(stated_preferences・uploaded_resume・consultation_summary)と、この会話で分かったことは聞き直さない。\n- 求人を出す前に、目的(なぜ今探すのか)を1問で確かめる。本人がすでに話していれば聞き直さず、受け止めて掘り下げる。本人が自分から「求人を見せて」と言ったら、先に出してよい。\n- 目的とやりたいことは、それぞれ最低1回掘り下げる。目的の答えを受けたら、次の返信で本人の言葉を使って1問で聞く(例:「そう感じたのは、どんな場面でしたか?」「『〜したい』というのは、例えばどんなことですか?」「それはなぜですか?」)。掘り下げないまま別の項目(時間帯・エリアなど)や求人探しへ移らない。\n- 掘り下げは1つの項目につき2回まで。「分からない」「特にない」が続いたら、その項目は置いて、まだ分かっていない別の項目へ進む(同じ項目を3回続けて聞かない)。項目を埋めること自体は目的ではない。\n- 選択肢(クイックリプライ)と、仕事の方向の候補は、本人の履歴書(uploaded_resume)と本人の発言から作る。誰にでも出す一般論の例(「手を動かす仕事 / 裏方で支える仕事」、職種の一覧をそのまま並べる など)は使わない。目的の問いでも、答えの種類の一覧(「お小遣いを稼ぎたい / 新しいことを覚えたい」など)を選択肢にしない。本人が最初に話したこと(「資格の勉強と並行して」「契約が終わるので」)の言葉を使った選択肢にするか、手がかりが無ければ選択肢を「それ以外」「今はいい」だけにして自由に書いてもらう。仕事の方向は、本人の話が出るまで候補を出さない。\n- 方向の候補を出すときは2つまでにし、候補ごとに、どの経歴・発言から作ったかを添える。\n- 「分からない」「まだ決めていない」「思いつかない」には、職種を並べない。問いを小さくして掘り下げに戻る(例:「これまでで、手応えがあった・楽しかった場面はありますか?」「逆に、もう続けたくないと感じたことはありますか?」)。本人が「求人を見せて」と言うまで、職種の候補で埋めない。\n- 答えを聞いたら、そのターンで save_user_preferences に本人の言葉のまま保存する(保存先は区分ごとの「保存先」)。こちらの言い換え・まとめ・推測は保存しない。\n- 相談の途中は、会話の段階に入る期限(区分ごとの「会話の決まり」)を適用しない。本人が切り上げる(「今はいい」「求人を見せて」など)まで、1問ずつ続けてよい。本人が切り上げる前に record_conversation_outcome を記録して会話を締めない。\n- 目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で聞いた内容を1文でまとめ、この内容で求人を見るかを1問で聞く(選択肢: 求人を見る / もう少し相談したい / 今はいい。目安は5、6問)。残りの項目(不安・強みなど)は、「もう少し相談したい」が選ばれたときか、求人を見た後に聞く。\n- 提案に進むとき(「求人を見る」、または途中の「求人を見せて」「求人を探したい」)は、その時点までに分かったことをそのまま recommend_jobs の条件にする(区分ごとの「提案に進むとき」)。残りを聞いてから、にしない。条件を言い直させない。提案の吹き出しの一言で、条件の一致だけでなく、本人の目的・やりたいこと・経験とのつながりを伝える(例:「植物の世話が好きというお話から、園芸店の3件です。」)。提案したら propose を記録する。\n- 「今はいい」: 提案せずに短く終える。1つでも答えていれば consult(理由は「相談のみ」)、何も話していなければ wait を記録する。\n- 不安には、answer_job_question の資料で答えられる範囲で答える(資料に無いことは言わない)。\n"
+              }
+            },
+            {
+              "name": "recommend_jobs",
+              "args": {
+                "line_user_id": "sim-new",
+                "area": "新宿",
+                "time_band": null,
+                "job_type": null,
+                "min_wage": null,
+                "employment_type": "アルバイト・パート",
+                "min_annual_salary": null,
+                "max_talk_level": 2,
+                "min_talk_level": null,
+                "max_physical_level": null,
+                "min_physical_level": null,
+                "remote": null,
+                "weekends_holidays": null,
+                "max_overtime_hours": null,
+                "keywords": null,
+                "exclude_ids": null,
+                "posted_within_days": null
+              },
+              "result": {
+                "total": 2,
+                "jobs": [
+                  {
+                    "job_id": "b1201",
+                    "title": "未経験歓迎のかんたんデータ入力・書類整理",
+                    "employer": "株式会社コトノハ商会",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "オフィス事務",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1400,
+                      "max": null
+                    },
+                    "pay_text": "時給1400円",
+                    "shift": "10:00〜17:00",
+                    "days_min": 3,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "人と話すことが少ない仕事",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.3,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.7
+                    }
+                  },
+                  {
+                    "job_id": "b0201",
+                    "title": "居酒屋のキッチンスタッフ(調理補助)",
+                    "employer": "炭火酒場 とりよし堂",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "飲食キッチン",
+                    "area": "新宿",
+                    "station": "新宿三丁目駅",
+                    "walk_min": 4,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1380,
+                      "max": null
+                    },
+                    "pay_text": "時給1380円",
+                    "shift": "17:00〜翌1:00",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "学生歓迎",
+                      "交通費支給",
+                      "まかない",
+                      "髪色自由",
+                      "シフト自由"
+                    ],
+                    "reasons": [
+                      "お客様と話すことは少ない仕事",
+                      "新宿三丁目駅から徒歩4分"
+                    ],
+                    "match_score": 1.29,
+                    "score_breakdown": {
+                      "job_type": 0.0,
+                      "time_band": 0.0,
+                      "area": 0.0,
+                      "station": 0.6,
+                      "wage": 0.69
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "record_conversation_outcome",
+              "args": {
+                "line_user_id": "sim-new",
+                "outcome": "propose",
+                "reason": "新宿でアルバイトを探しています。電話も接客もしたくないです",
+                "confidence": 0.97,
+                "summary": "新宿でアルバイトを探している。電話も接客もしたくない。次に確かめること: 紹介した求人で気になる点があるか。"
+              },
+              "result": {
+                "recorded": {
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "outcome": "propose",
+                  "reason": "新宿でアルバイトを探しています。電話も接客もしたくないです",
+                  "confidence": 0.97,
+                  "summary": "新宿でアルバイトを探している。電話も接客もしたくない。次に確かめること: 紹介した求人で気になる点があるか。"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "もちろんです。迷っている点があれば、一緒に確認できます。どのあたりが気になりますか？"
+          ],
+          "quick_replies": [
+            "時給",
+            "勤務時間",
+            "仕事内容",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": []
+        }
+      ]
+    },
+    {
+      "id": "P-chat-phone-fulltime",
+      "channel": "chat",
+      "title": "正社員の区分で「電話はしたくない」(確認の問いの言い方)",
+      "observation": {
+        "phone_turn": 2,
+        "searched_on_phone_turn": false,
+        "confirm_question": "求人を探す前に確認させてください。お客様と話す接客の仕事は大丈夫ですか？",
+        "confirm_turn": 2,
+        "first_search_turn": null,
+        "first_search_args": null,
+        "talk_level": null,
+        "talk_level_as_expected": null,
+        "call_center_cards": [],
+        "search_arg_violations": []
+      },
+      "cost_usd": 0.0469,
+      "violations": [],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "はじめまして。お仕事探しや応募について、お手伝いします。今日は何から始めますか？\n[選択肢] 求人を探す / まず相談する / 応募履歴を確認 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "正社員の仕事を探しています。電話はしたくないです"
+        },
+        {
+          "who": "agent",
+          "text": "正社員のお仕事で考えますね。電話を使う仕事は避けたいのですね。\n求人を探す前に確認させてください。お客様と話す接客の仕事は大丈夫ですか？\n[選択肢] 接客は大丈夫 / 接客も避けたい / それ以外 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "お客様と会って話すのは大丈夫です。"
+        },
+        {
+          "who": "agent",
+          "text": "対面でお客様と話す仕事は候補に入れ、電話が中心の仕事は避けます。これまでにどんなお仕事をされてきましたか？職務経歴書や履歴書があれば、読み込むと早いです。\n[操作] ファイルを選ぶ(履歴書)\n[操作] 話して伝える(音声・約5分)\n[選択肢] 文字で話す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "不動産会社で営業事務を5年していました。"
+        },
+        {
+          "who": "agent",
+          "text": "不動産会社で営業事務を5年されていたのですね。今回お仕事を探しているのは、なぜですか？\n[選択肢] それ以外 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "今の会社は残業が多いからです。"
+        },
+        {
+          "who": "agent",
+          "text": "残業の多さを変えたくて探しているのですね。次の職場では、残業は月に何時間くらいまでなら大丈夫ですか？\n[選択肢] 月10時間まで / 月20時間まで / それ以外 / 今はいい"
+        }
+      ],
+      "turn_log": [
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "はじめまして。お仕事探しや応募について、お手伝いします。今日は何から始めますか？"
+          ],
+          "quick_replies": [
+            "求人を探す",
+            "まず相談する",
+            "応募履歴を確認",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "get_user_conversation_summary",
+              "args": {
+                "line_user_id": "sim-new"
+              },
+              "result": {
+                "linked": false,
+                "segment": "unlinked",
+                "search_track": "未定",
+                "track_history": [],
+                "stated_preferences": {},
+                "consultation_summary": null,
+                "uploaded_resume": null,
+                "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": {
+            "id": "95b82d52f3ef",
+            "from": "未定",
+            "track": "正社員",
+            "undo": false
+          },
+          "bubbles": [
+            "正社員のお仕事で考えますね。電話を使う仕事は避けたいのですね。",
+            "求人を探す前に確認させてください。お客様と話す接客の仕事は大丈夫ですか？"
+          ],
+          "quick_replies": [
+            "接客は大丈夫",
+            "接客も避けたい",
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "set_search_track",
+              "args": {
+                "line_user_id": "sim-new",
+                "track": "正社員",
+                "evidence": "正社員の仕事を探しています。電話はしたくないです",
+                "undo": false
+              },
+              "result": {
+                "track": "正社員",
+                "changed": true,
+                "recorded": {
+                  "id": "95b82d52f3ef",
+                  "at": "2026-09-23T12:00:00+09:00",
+                  "from": "未定",
+                  "track": "正社員",
+                  "evidence": "正社員の仕事を探しています。電話はしたくないです",
+                  "undo": false
+                }
+              }
+            },
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "avoids": "電話はしたくないです"
+                }
+              },
+              "result": {
+                "saved": [
+                  "avoids"
+                ],
+                "rejected": []
+              }
+            },
+            {
+              "name": "get_counseling_playbook",
+              "args": {
+                "track": "正社員",
+                "channel": "chat"
+              },
+              "result": {
+                "track": "正社員",
+                "channel": "chat",
+                "rules": {
+                  "questions_max": 1,
+                  "bubble_max": 120,
+                  "branch_by": 6
+                },
+                "playbook": "# playbook: 正社員(チャット)\n\n## 会話の決まり(正社員)\n- 1つの吹き出しは120字以内(経歴や本人の言葉を受け止めてから聞くため、アルバイト・パートより長くてよい)。吹き出しは最大3つ。\n- 1回の返信で質問は1つ。\n- 会話の段階(提案・相談・支援・待つ)には、ユーザーの6回目の返信までに入る。相談の途中は適用しない。\n\n## 明らかにすること\n番号は並べるための便宜で、聞く順番ではない。\n1. 目的・転職の理由: なぜ今探すのか。今の仕事の何を変えたいのか。\n2. 強み: 履歴書と会話から、本人の言葉で。履歴書の経歴は聞き直さず確認形で使い、本人がどう捉えているかを聞く(例:「物流倉庫の現場リーダーを6年されていたんですね。その中で、特に評価されたのはどんなところでしたか?」)。\n3. 次にやりたいこと・避けたいこと。\n4. 条件: 年収(希望の下限)・勤務地・働き方(リモート・フレックス・残業)・時期(いつまでに働き始めたいか)。\n5. 不安: ブランク・年齢・未経験の職種への挑戦 など。\n\n## 掘り下げ方\n- 目的: 「なぜ今か」を、今の仕事で起きた具体的な場面で聞く(例:「そう感じたのは、どんな場面でしたか?」)。\n- やりたいこと: 抽象的な言葉(「人を育てたい」「成長したい」)は、本人の言葉を使って具体にする(例:「人を育てる、というのは、どんな相手や場面のイメージですか?」)。\n- 強み: 役割・規模・結果のどれか1つを聞く。「特にない」には、履歴書の経歴から1つ挙げて確認形で聞く。\n- 避けたいこと: 理由を1回聞く(やりたいことの裏返しが分かる)。\n- 条件は掘り下げない。本人が言った値をそのまま保存する。\n\n## 選択肢の作り方\n- 方向の候補は、履歴書の職歴と、本人が話した強み・やりたいことを組み合わせて作る(例: 倉庫の現場リーダーと在庫システムの導入の経歴で「現場の段取りを良くする仕事がしたい」なら「物流の業務改善」「在庫システムの導入支援」)。正社員の職種の一覧をそのまま並べない。\n\n## 保存先\n- 目的 purpose、強み strengths、やりたいこと wants、避けたいこと avoids、不安 concerns。\n- 経歴 experience(これまでの仕事の1問への答えも、ここに保存する。保存しないと次の会話で経歴を聞き直し、履歴書・音声の提案も再び出てしまう)、できること skills、資格 certifications。\n- 条件: 希望年収の下限 min_annual_salary、働き方 work_style、働き始める時期 start_timing、勤務地 area、職種 job_type(正社員の一覧から)。\n- 時間帯(time_band)・週の日数(days_per_week)・時給の下限(min_wage)はアルバイト・パートの条件なので、聞かない・保存しない・検索に入れない。\n\n## 提案に進むとき\n- recommend_jobs に employment_type=正社員と、分かっている条件(area・job_type・min_annual_salary、働き方・休日の remote・weekends_holidays・max_overtime_hours)を渡し、目的・やりたいこと・経歴を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。\n\n## 区分に共通の決まり(チャット)\n- この playbook は「明らかにすること」と「掘り下げ方」の指針で、聞く順番は決めない。本人の話の流れに合わせて、まだ分かっていないことを1問ずつ聞く。summary(stated_preferences・uploaded_resume・consultation_summary)と、この会話で分かったことは聞き直さない。\n- 求人を出す前に、目的(なぜ今探すのか)を1問で確かめる。本人がすでに話していれば聞き直さず、受け止めて掘り下げる。本人が自分から「求人を見せて」と言ったら、先に出してよい。\n- 目的とやりたいことは、それぞれ最低1回掘り下げる。目的の答えを受けたら、次の返信で本人の言葉を使って1問で聞く(例:「そう感じたのは、どんな場面でしたか?」「『〜したい』というのは、例えばどんなことですか?」「それはなぜですか?」)。掘り下げないまま別の項目(時間帯・エリアなど)や求人探しへ移らない。\n- 掘り下げは1つの項目につき2回まで。「分からない」「特にない」が続いたら、その項目は置いて、まだ分かっていない別の項目へ進む(同じ項目を3回続けて聞かない)。項目を埋めること自体は目的ではない。\n- 選択肢(クイックリプライ)と、仕事の方向の候補は、本人の履歴書(uploaded_resume)と本人の発言から作る。誰にでも出す一般論の例(「手を動かす仕事 / 裏方で支える仕事」、職種の一覧をそのまま並べる など)は使わない。目的の問いでも、答えの種類の一覧(「お小遣いを稼ぎたい / 新しいことを覚えたい」など)を選択肢にしない。本人が最初に話したこと(「資格の勉強と並行して」「契約が終わるので」)の言葉を使った選択肢にするか、手がかりが無ければ選択肢を「それ以外」「今はいい」だけにして自由に書いてもらう。仕事の方向は、本人の話が出るまで候補を出さない。\n- 方向の候補を出すときは2つまでにし、候補ごとに、どの経歴・発言から作ったかを添える。\n- 「分からない」「まだ決めていない」「思いつかない」には、職種を並べない。問いを小さくして掘り下げに戻る(例:「これまでで、手応えがあった・楽しかった場面はありますか?」「逆に、もう続けたくないと感じたことはありますか?」)。本人が「求人を見せて」と言うまで、職種の候補で埋めない。\n- 答えを聞いたら、そのターンで save_user_preferences に本人の言葉のまま保存する(保存先は区分ごとの「保存先」)。こちらの言い換え・まとめ・推測は保存しない。\n- 相談の途中は、会話の段階に入る期限(区分ごとの「会話の決まり」)を適用しない。本人が切り上げる(「今はいい」「求人を見せて」など)まで、1問ずつ続けてよい。本人が切り上げる前に record_conversation_outcome を記録して会話を締めない。\n- 目的とやりたいことを掘り下げ、探す条件が揃ったら、ほかの項目が残っていても、次の返信で聞いた内容を1文でまとめ、この内容で求人を見るかを1問で聞く(選択肢: 求人を見る / もう少し相談したい / 今はいい。目安は5、6問)。残りの項目(不安・強みなど)は、「もう少し相談したい」が選ばれたときか、求人を見た後に聞く。\n- 提案に進むとき(「求人を見る」、または途中の「求人を見せて」「求人を探したい」)は、その時点までに分かったことをそのまま recommend_jobs の条件にする(区分ごとの「提案に進むとき」)。残りを聞いてから、にしない。条件を言い直させない。提案の吹き出しの一言で、条件の一致だけでなく、本人の目的・やりたいこと・経験とのつながりを伝える(例:「植物の世話が好きというお話から、園芸店の3件です。」)。提案したら propose を記録する。\n- 「今はいい」: 提案せずに短く終える。1つでも答えていれば consult(理由は「相談のみ」)、何も話していなければ wait を記録する。\n- 不安には、answer_job_question の資料で答えられる範囲で答える(資料に無いことは言わない)。\n"
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "対面でお客様と話す仕事は候補に入れ、電話が中心の仕事は避けます。これまでにどんなお仕事をされてきましたか？職務経歴書や履歴書があれば、読み込むと早いです。"
+          ],
+          "quick_replies": [
+            "文字で話す",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [
+            "resume_upload",
+            "voice_consult"
+          ],
+          "tools": []
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "不動産会社で営業事務を5年されていたのですね。今回お仕事を探しているのは、なぜですか？"
+          ],
+          "quick_replies": [
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "experience": "不動産会社で営業事務を5年していました"
+                }
+              },
+              "result": {
+                "saved": [
+                  "experience"
+                ],
+                "rejected": []
+              }
+            }
+          ]
+        },
+        {
+          "entry": "visit",
+          "track_switch": null,
+          "bubbles": [
+            "残業の多さを変えたくて探しているのですね。次の職場では、残業は月に何時間くらいまでなら大丈夫ですか？"
+          ],
+          "quick_replies": [
+            "月10時間まで",
+            "月20時間まで",
+            "それ以外",
+            "今はいい"
+          ],
+          "cards": [],
+          "unknown_job_ids": [],
+          "buttons": [],
+          "actions": [],
+          "tools": [
+            {
+              "name": "save_user_preferences",
+              "args": {
+                "line_user_id": "sim-new",
+                "preferences": {
+                  "purpose": "今の会社は残業が多いからです"
+                }
+              },
+              "result": {
+                "saved": [
+                  "purpose"
+                ],
+                "rejected": []
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "stopped": null,
+  "ledger_total_usd": 3.862575,
+  "spent_usd": 0.282
+}

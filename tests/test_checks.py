@@ -419,6 +419,28 @@ def test_amount_said_in_kanji_numerals_can_be_repeated():
     assert any("1件" in x for x in v)
 
 
+def test_amount_said_with_arabic_digits_and_kanji_units_is_one_number():
+    """「年収1千万」を「11000万」と読まない(E の PR レビューの指摘)。正しく繰り返した「1000万円」は違反にしない。"""
+    for said in ("年収は1千万以上がいい", "年収は一千万以上がいい", "年収は1,000万以上がいい"):
+        assert fact_violations([turn(["年収1000万円以上で探しますね。"], [SUMMARY])], [said], None) == [], said
+    assert fact_violations([turn(["3000円の差です。"], [SUMMARY])], ["時給で3千円違う"], None) == []
+    v = fact_violations([turn(["年収1100万円以上で探しますね。"], [SUMMARY])], ["年収は1千万以上がいい"], None)
+    assert any("1100万円" in x for x in v)
+    # 算用数字のあとの普通の語(「2人一緒に」)は数として読まない
+    v = fact_violations([turn(["21件あります。"], [SUMMARY])], ["2人一緒に探して"], None)
+    assert any("21件" in x for x in v)
+
+
+def test_estimate_wording_about_a_job_is_still_a_pay_claim():
+    """「こちらは月に約30万円です」は求人の給与の主張(目安の言い方でも照合する)。E の PR レビューの指摘。"""
+    for line in ("こちらは月に約30万円です。", "このお仕事は月に約30万円です。", "1件目は月に約30万円です。"):
+        v = fact_violations([turn([line], [SUMMARY])], ["正社員で"], None)
+        assert any("30万円" in x for x in v), line
+    # 本人の働き方から計算した目安は、今までどおり主張に数えない(負例)
+    ok = [turn(["週3日・1日5時間なら月に約7万円です。"], [SUMMARY]), turn(["月1万5千円くらいのお小遣いになります。"])]
+    assert fact_violations(ok, ["週3日で働きたい"], None) == []
+
+
 def test_short_fulltime_job_type_names_inside_other_words_are_not_a_list():
     # 正社員の職種名(営業・教育・物流)は短く、「営業時間」「研修・教育制度」の中にも出る。それは職種の羅列ではない
     fine = turn(["おかえりなさい。最近は営業時間が短めのカフェのお仕事を見ていましたか?"])

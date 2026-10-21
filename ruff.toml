@@ -6,3 +6,4 @@ known-first-party = ["dip_mcp", "line_runtime", "evals", "resume_draft", "resume
 [lint.per-file-ignores]
 # 評価レポートの見出し・結果ファイル名の時刻はローカル時刻で十分(既知の DTZ005 ×2)
 "evals/run.py" = ["DTZ005"]
+"evals/probe.py" = ["DTZ005"]

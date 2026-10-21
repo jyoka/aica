@@ -552,3 +552,19 @@ def test_depth_is_counted_only_on_consult_and_persona_scenarios():
     measured = {sc["id"] for sc in SCENARIOS.values() if sc.get("measure_depth")}
     assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime", "T-side-job",
                         "T-student-first", "T-blank-parent", "T-switch-to-fulltime"}
+
+
+def test_keyword_trace_is_split_per_conversation(tmp_path, monkeypatch):
+    """dip が残した keywords の検索の記録(DIP_KEYWORDS_TRACE)を、会話ごとに切り分けて結果に付ける。"""
+    from evals import run
+
+    monkeypatch.delenv("DIP_KEYWORDS_TRACE", raising=False)
+    assert run._trace_size() == 0 and run._trace_since(0) == []
+    trace = tmp_path / "keywords.jsonl"
+    monkeypatch.setenv("DIP_KEYWORDS_TRACE", str(trace))
+    assert run._trace_size() == 0  # まだ1回も検索していない
+    trace.write_text('{"keywords": "前の会話", "peak": 0.2}\n', encoding="utf-8")
+    at = run._trace_size()
+    with open(trace, "a", encoding="utf-8") as f:
+        f.write('{"keywords": "コーヒー", "peak": 0.15}\n')
+    assert run._trace_since(at) == [{"keywords": "コーヒー", "peak": 0.15}]

@@ -1,0 +1,161 @@
+{
+  "at": "2026-10-04 11:44",
+  "results": [
+    {
+      "id": "V-phone-night",
+      "channel": "voice",
+      "title": "音声: 電話だけを避けたい・深夜(コールセンターが上位3件に入る)・ほかには・前の求人に戻りたい",
+      "observation": {
+        "phone_turn_item": 1,
+        "confirm_question": null,
+        "first_propose_args": null,
+        "talk_level": null,
+        "propose_calls": [],
+        "call_center_in_results_then_recalled": 0,
+        "call_center_read_before_recall": 0,
+        "job_id_spoken": [],
+        "exclude_ids_forgotten_by_llm": 0,
+        "zero_after_exclude": 0,
+        "zero_after_exclude_with_previous_proposal": 0,
+        "delivered_job_ids": [],
+        "delivered_call_centers": [],
+        "back_promise": [],
+        "talk_level_as_expected": null
+      },
+      "items": [
+        {
+          "kind": "say",
+          "text": "こんにちは、バイトルのキャリアアドバイザーです。5分ほど希望と経験を伺い、終わると求人の提案と履歴書などの下書きが出ますので、まずは正社員のお仕事と空いた時間のアルバイト、どちらを考えていますか。"
+        },
+        {
+          "kind": "user",
+          "text": "深夜で探したいです。電話はしたくないです"
+        },
+        {
+          "kind": "call",
+          "name": "set_search_track",
+          "args": {
+            "track": "アルバイト・パート",
+            "evidence": "深夜で探したいです。電話はしたくないです"
+          }
+        },
+        {
+          "kind": "output",
+          "name": "set_search_track",
+          "text": "雇用区分を「未定」から「アルバイト・パート」に切り替えました(dip に記録済み)。指示の相談の playbook をアルバイト・パート(音声)のものに入れ替えたので、以降はそれに従う。書類は「履歴書」と呼ぶ。本人には切り替えたことを1文で伝え、playbook の次の1問に進む。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": null,
+            "time_band": "深夜",
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: 時間帯、避けたいこと。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "アルバイト・パートのお仕事で考えますね。今、バイトを探している理由は何ですか。"
+        },
+        {
+          "kind": "user",
+          "text": "特にないです。"
+        },
+        {
+          "kind": "say",
+          "text": "わかりました。収入を得るため、なども特にないですか。"
+        },
+        {
+          "kind": "user",
+          "text": "はい、特にないです。"
+        },
+        {
+          "kind": "say",
+          "text": "わかりました。電話は避けたいとのことですが、お店でお客様と話す仕事も避けたいですか。"
+        },
+        {
+          "kind": "user",
+          "text": "お客様と話すレジや接客は大丈夫です。"
+        },
+        {
+          "kind": "say",
+          "text": "接客は大丈夫で、電話は避けたいのですね。働きたいエリアや最寄り駅はありますか。"
+        },
+        {
+          "kind": "user",
+          "text": "どこでも大丈夫です。"
+        },
+        {
+          "kind": "call",
+          "name": "save_user_preferences",
+          "args": {
+            "purpose": null,
+            "strengths": null,
+            "wants": null,
+            "avoids": "電話はしたくないです",
+            "concerns": null,
+            "experience": null,
+            "skills": null,
+            "certifications": null,
+            "job_type": null,
+            "area": "どこでも大丈夫です",
+            "time_band": null,
+            "days_per_week": null,
+            "min_wage": null,
+            "min_annual_salary": null,
+            "work_style": null,
+            "start_timing": null
+          }
+        },
+        {
+          "kind": "output",
+          "name": "save_user_preferences",
+          "text": "保存しました: エリア・駅、避けたいこと。本人には言わずに会話を続ける。"
+        },
+        {
+          "kind": "say",
+          "text": "場所のこだわりはないのですね。希望する職種はありますか。"
+        },
+        {
+          "kind": "user",
+          "text": "特にないです。"
+        },
+        {
+          "kind": "say",
+          "text": "職種は決めずに進めますね。週に何日くらい働きたいですか。"
+        },
+        {
+          "kind": "user",
+          "text": "特に決めていません。"
+        },
+        {
+          "kind": "say",
+          "text": "週の日数も決めていないのですね。希望する時給の下限はありますか。"
+        }
+      ],
+      "search_attempts": [],
+      "cost_usd": 0.0713
+    }
+  ],
+  "stopped": "interrupted",
+  "ledger_total_usd": 3.470804,
+  "spent_usd": 0.0975
+}

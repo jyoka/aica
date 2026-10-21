@@ -106,6 +106,22 @@ def _usage(meter, marks: list[tuple[int, int]]) -> dict:
     return {"cost_usd": u["cost_usd"], "llm_calls": u["llm_calls"], "cache_hit_rate": u["cache_hit_rate"]}
 
 
+def _trace_size() -> int:
+    """keywords の検索の記録(DIP_KEYWORDS_TRACE、dip_mcp.logic._trace_keywords)の今の大きさ。"""
+    path = os.environ.get("DIP_KEYWORDS_TRACE")
+    return Path(path).stat().st_size if path and Path(path).is_file() else 0
+
+
+def _trace_since(offset: int) -> list[dict]:
+    """offset より後に足された keywords の検索の記録(この会話の分。シナリオは順に1本ずつ回す)。"""
+    path = os.environ.get("DIP_KEYWORDS_TRACE")
+    if not path or not Path(path).is_file():
+        return []
+    with open(path, encoding="utf-8") as f:
+        f.seek(offset)
+        return [json.loads(x) for x in f.read().splitlines() if x.strip()]
+
+
 def _wants_upload(sc: dict, r: dict, n_turns: int) -> bool:
     """履歴書を持つペルソナ(upload_resume)がアップロードするか: AI が履歴書の操作ボタンを出したら、そのとき。
     upload_by_turn のターンまでに出なければ、そこでアップロードする(アップロード後の1問を必ず見るため)。"""
@@ -129,6 +145,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
             raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
         push_facts = gate["facts"]
     cap = min(sc.get("max_turns", max_turns), max_turns)
+    trace_at = _trace_size()
     transcript, turns, user_msgs, seconds, marks = [], [], [], [], []
     upload = None
 
@@ -172,7 +189,9 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
               **_usage(meter, marks), "transcript": transcript,
               "tools": [[t["name"] for t in r["tools"]] for r in turns],
               # 評価器を直したあとでオフラインで再判定するための生の材料(ツールの args と result を含む。recheck)
-              "turn_log": turns, "user_msgs": user_msgs, "upload": upload}
+              "turn_log": turns, "user_msgs": user_msgs, "upload": upload,
+              # keywords の検索ごとの最高値 - 中央値と、意味の近さを使ったか(SIM_PEAK の余裕を見る。dip が記録する)
+              "keyword_searches": _trace_since(trace_at)}
     if use_judge:
         resume = sc.get("upload_resume") or sc.get("seed_resume")
         result["judge"] = await judge(client, JUDGE_MODEL[config.PROVIDER], transcript,
@@ -183,6 +202,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
+              "search_arg_violations": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -205,6 +225,7 @@ def to_run(r: dict, rep: int) -> dict:
     j = r.get("judge") or {}
     metrics = {k: r[k] for k in ("branch_within_3", "outcome_recorded", "outcome_as_expected", "track_ok")}
     metrics |= {"violations": len(r["violations"]), "fabrications": len(r["fabrications"]), "turns": r["turns"],
+                "search_arg_violations": len(r.get("search_arg_violations", [])),
                 "action_offers": len(r["action_offers"]),
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
@@ -236,6 +257,12 @@ def report(doc: dict) -> str:
         "",
     ]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"]["violations"]] or ["- なし"]
+    lines += ["", "## 検索の引数(避けたいこと・やりたいこと。違反とは別に数える)", ""]
+    lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("search_arg_violations", [])] or ["- なし"]
+    lines += ["", "## keywords の検索(最高値 - 中央値。SIM_PEAK 未満は部分一致だけ)", ""]
+    lines += [f"- **{tag(r)}** 「{k['keywords']}」 {k['peak']} → {'意味検索' if k['semantic'] else '部分一致だけ'}"
+              f"(候補 {k['candidates']} → {k['kept']} 件)"
+              for r in runs for k in r["detail"].get("keyword_searches", [])] or ["- なし"]
     lines += ["", "## 雇用区分の切り替え(set_search_track)", ""]
     for r in runs:
         for t in r["detail"].get("track_checks") or []:
@@ -477,7 +504,9 @@ if __name__ == "__main__":
 
     load_env()
     # dip の状態は評価ごとの一時ファイルに(開発中の data/state.json を汚さない)。MCP 子プロセスにも継承される。
-    os.environ["DIP_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
+    tmp = Path(tempfile.mkdtemp())
+    os.environ["DIP_STATE_PATH"] = str(tmp / "state.json")
+    os.environ["DIP_KEYWORDS_TRACE"] = str(tmp / "keywords.jsonl")
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="回すシナリオの ID(カンマ区切り)")
     ap.add_argument("--judge", action="store_true", help="相談の深さの LLM ジャッジも回す(安いモデル)")

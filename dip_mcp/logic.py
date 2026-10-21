@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import secrets
 from collections import Counter
@@ -389,12 +390,33 @@ def _keyword_filter(cands: list[BaitoJob], keywords: str,
     jobs は全求人(問い合わせの分けやすさを測る)。"""
     qvec = embedding.embed_query(keywords)
     every = embedding.similarities(qvec, jobs.values()) if qvec else {}
-    if not every or max(every.values()) - median(every.values()) < SIM_PEAK:
-        return [j for j in cands if _keyword_hit(j, keywords)], None, bool(every)
+    peak = max(every.values()) - median(every.values()) if every else None
+    if not every or peak < SIM_PEAK:
+        kept = [j for j in cands if _keyword_hit(j, keywords)]
+        _trace_keywords(keywords, peak, False, cands, kept)
+        return kept, None, bool(every)
     sims = {j.job_id: every[j.job_id] for j in cands if j.job_id in every}
     floor = max(SIM_FLOOR, max(sims.values(), default=0.0) * SIM_RELATIVE)
     near = {jid for jid, s in sorted(sims.items(), key=lambda x: -x[1])[:SIM_TOP] if s >= floor}
-    return [j for j in cands if j.job_id in near or _keyword_hit(j, keywords)], sims, False
+    kept = [j for j in cands if j.job_id in near or _keyword_hit(j, keywords)]
+    _trace_keywords(keywords, peak, True, cands, kept)
+    return kept, sims, False
+
+
+def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: list[BaitoJob],
+                    kept: list[BaitoJob]) -> None:
+    """評価(evals/run.py)だけが使う記録: 環境変数 DIP_KEYWORDS_TRACE のファイルに、keywords の検索1回を1行の JSON で足す
+    (SIM_PEAK の余裕を実際の会話で見るため。task 109)。peak は全求人の類似度の最高値 - 中央値(意味検索が使えなければ None)、
+    semantic は意味の近さを使ったか(False なら部分一致だけ)。ツールの結果は変えない(丸めるのは記録する値だけで、
+    SIM_PEAK の判定は丸める前の値で行う)。"""
+    path = os.environ.get("DIP_KEYWORDS_TRACE")
+    if not path:
+        return
+    hits = sum(1 for j in kept if _keyword_hit(j, keywords))
+    row = {"keywords": keywords, "peak": None if peak is None else round(peak, 3), "semantic": semantic,
+           "candidates": len(cands), "kept": len(kept), "word_hits": hits}
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob], at: datetime,
