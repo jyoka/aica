@@ -259,15 +259,11 @@ def delete_voice_draft(state: State, line_user_id: str, result_id: int) -> dict:
 
 
 def unsave_job(state: State, line_user_id: str, job_id: str) -> dict:
-    """保存をやめる。保存していた求人なら、次の本人のターンの前に AI へ知らせる(保存したままと思って話さないように)。
-    要約の保存は新しい順の 10 件までなので、それより多く保存している人は、載っていない求人でも取り消しを書く
-    (保存していなければ、次のバッチで何も起きない)。"""
+    """保存をやめる。保存していた求人なら、取り消しを書き、次の本人のターンの前に AI へ知らせる(保存したままと思って
+    話さないように)。要約の保存は全件なので、載っていない求人は保存していない。"""
     title = _job_title(logic.load_jobs(), job_id) or job_id
-    acts = behavior.view(state, line_user_id)
-    shown = job_id in {s["job_id"] for s in acts["saves"]}
-    if shown or acts["saves_total"] > len(acts["saves"]):
+    if job_id in {s["job_id"] for s in behavior.view(state, line_user_id)["saves"]}:
         behavior.record(state, line_user_id, "unsave", job_id)
-    if shown:
         state.update(line_user_id, lambda u: _note(u, "消した", f"求人「{title}」の保存"))
     return {"unsaved": job_id}
 

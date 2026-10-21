@@ -234,22 +234,69 @@ def test_an_unlinked_user_keeps_writes_only_on_the_conversation_side(state):
     assert logic.conversation_summary(state, "sim-new")["linked"] is False
 
 
-def test_unsaving_a_job_older_than_the_summary_shows_still_reaches_the_raw_events(state):
-    """要約の保存は新しい順の 10 件まで。それより古い保存も、取り消しは元データに書き、次のバッチで消える。"""
+def _linked_member(state: State, did: str, rows: list[tuple]) -> str:
+    """元データに会員 did とそのイベント(kind, 何時間前, job_id, data)を入れ、SIM_NOW で要約のバッチを回し、
+    固定の時計のユーザーをその会員につなぐ。つないだユーザーIDを返す。"""
     events, summaries = behavior.stores(state)
-    jobs = sorted(logic.load_jobs())[:summarize.SAVES + 2]
-    events.add_members([("D9001", SIM_NOW - timedelta(days=30))])
-    events.extend(("D9001", "save", SIM_NOW - timedelta(hours=len(jobs) - i), j, {}) for i, j in enumerate(jobs))
+    events.add_members([(did, SIM_NOW - timedelta(days=400))])
+    events.extend((did, kind, SIM_NOW - timedelta(hours=h), job, data) for kind, h, job, data in rows)
     summarize.run(events, summaries, SIM_NOW)
-    uid = "w-dddddddddddddddd:sim-new"  # 固定の時計のユーザーを、その会員につなぐ
+    uid = f"w-{did.lower():0>16}:sim-new"
     state.reset_user(uid, template="sim-new")
-    accounts.of(state).set_link(uid, "D9001")
-    oldest = jobs[0]
-    assert oldest not in [j["job_id"] for j in logic.saved_jobs(state, uid)]
-    profile.unsave_job(state, uid, oldest)
-    assert not state.user(uid).get("profile_changes")  # 見えていない保存なので、AI への知らせは出さない
-    summarize.run(events, summaries, SIM_NOW)
-    assert summaries.get("D9001")["saves_total"] == len(jobs) - 1
+    accounts.of(state).set_link(uid, did)
+    return uid
+
+
+def test_eleven_saves_all_show_on_the_screen_and_ten_go_to_the_agent(state):
+    """保存 11 件の会員: 画面(保存した求人、プロフィール)は 11 件。エージェントに渡しうる一覧は新しい順に 10 件と、ほかに 1 件。
+    いちばん古い保存も、取り消すと元データに書き、AI に知らせ、次のバッチで消える。"""
+    jobs = sorted(logic.load_jobs())[:11]
+    uid = _linked_member(state, "D9001", [("save", len(jobs) - i, j, {}) for i, j in enumerate(jobs)])
+    newest_first = jobs[::-1]
+    assert [j["job_id"] for j in logic.saved_jobs(state, uid)] == newest_first
+    assert [j["job_id"] for j in profile.view(state, uid)["saved_jobs"]] == newest_first
+    agent = summarize.for_agent(behavior.view(state, uid))
+    assert [s["job_id"] for s in agent["saves"]] == newest_first[:10] and agent["saves_more"] == 1
+
+    profile.unsave_job(state, uid, jobs[0])
+    assert jobs[0] not in [j["job_id"] for j in logic.saved_jobs(state, uid)]
+    assert [c["what"] for c in state.user(uid)["profile_changes"]] == [f"求人「{logic.load_jobs()[jobs[0]].title}」の保存"]
+    summarize.run(*behavior.stores(state), SIM_NOW)
+    assert behavior.stores(state)[1].get("D9001")["saves_total"] == 10
+    before = _event_count(state)
+    profile.unsave_job(state, uid, jobs[0])  # 保存していない求人の取り消しは書かない
+    assert _event_count(state) == before
+
+
+def test_a_member_with_more_than_30_applications_is_not_recommended_any_applied_job(state):
+    """応募 31 件以上の会員にも、応募済みの求人はすすめない(要約の応募済みの求人 ID は全件。90 日より前の応募も)。"""
+    jobs = logic.load_jobs()
+    applied = sorted(jobs)[:40]
+    uid = _linked_member(state, "D9002", [("apply", 24 * (i + 1), j, {"status": "応募済み"})
+                                          for i, j in enumerate(applied)])
+    r = logic.recommend(state, uid, limit=len(jobs))
+    assert r["total"] == len(jobs) - len(applied)
+    assert not {j["job_id"] for j in r["jobs"]} & set(applied)
+    oldest = jobs[applied[-1]]  # 40 日前に応募した求人。同じ職種で探しても出ない
+    assert oldest.job_id not in [j["job_id"] for j in logic.recommend(state, uid, job_type=oldest.job_type,
+                                                                      limit=len(jobs))["jobs"]]
+
+
+def test_the_status_of_an_application_older_than_the_five_the_agent_gets_is_found_by_job_id(state):
+    """応募 8 件の会員: エージェントに渡す一覧は新しい順に 5 件と、ほかに 3 件。6 件目より前に応募した求人の選考状況も、
+    job_id を渡せば引ける。"""
+    applied = sorted(logic.load_jobs())[:8]  # 古い順に応募した
+    uid = _linked_member(state, "D9003", [("apply", 24 * (8 - i), j, {"status": f"選考中{i}"})
+                                          for i, j in enumerate(applied)])
+    recent = logic.recent_applications(state, uid)
+    assert [a["job_id"] for a in recent[:5]] == applied[::-1][:5]
+    assert recent[5]["more"] == 3 and "ほかに 3 件" in recent[5]["note"] and len(recent) == 6
+    status = logic.application_status(state, uid)
+    assert [a["job_id"] for a in status["applications"]] == applied[::-1][:5] and status["more"] == 3
+    first = logic.application_status(state, uid, applied[0])
+    assert [(a["job_id"], a["status"]) for a in first["applications"]] == [(applied[0], "選考中0")]
+    assert "more" not in first
+    assert len(profile.view(state, uid)["applications"]) == 8  # プロフィールの応募の履歴は全件
 
 
 def test_summary_tells_as_of_when_the_behavior_was_summarized(state):

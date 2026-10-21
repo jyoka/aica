@@ -182,7 +182,7 @@ UNITS = {
     # 求人の給与は pay(下の _pay_amounts)。hourly_wage は pay に移す前(v1)の会話の記録を読むため
     "円": ({"hourly_wage", "min_wage"}, re.compile(r"(\d[\d,]*)\s*円")),
     "徒歩分": ({"walk_min"}, re.compile(r"徒歩\s*(\d+)\s*分")),
-    "件": ({"total", "total_now", "total_after", "count", "count_30d", "saves_30d", "saves_total", "days_left"},
+    "件": ({"total", "total_now", "total_after", "count", "count_30d", "saves_30d", "saves_total", "more", "days_left"},
           re.compile(r"(\d+)\s*件")),
 }
 RANGE_YEN = re.compile(r"(\d[\d,]*)\s*[〜~～-]\s*\d[\d,]*\s*円")  # 「1,200〜1,500円」の下限側

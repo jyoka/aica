@@ -77,7 +77,7 @@ def get_user_conversation_summary(line_user_id: UserId) -> dict:
 
 @mcp.tool()
 def get_user_recent_applications(line_user_id: UserId) -> list[dict]:
-    """90日以内の応募と、その選考状況。"""
+    """90日以内の応募と、その選考状況(新しい順に5件まで)。ほかにもあれば、最後の1件が more(ほかの件数)と note になる。"""
     return logic.recent_applications(state, line_user_id)
 
 
@@ -165,7 +165,8 @@ def answer_job_question(
 
 @mcp.tool()
 def get_application_status(line_user_id: UserId, job_id: str | None = None) -> dict:
-    """応募の選考状況と、連絡までの一般的な目安。as_of は選考状況をいつ時点の要約から読んだか。"""
+    """応募の選考状況と、連絡までの一般的な目安。as_of は選考状況をいつ時点の要約から読んだか。
+    job_id を渡すと、90日以内のその求人の応募を返す。渡さなければ新しい順に5件までで、ほかにもあれば more(ほかの件数)が付く。"""
     return logic.application_status(state, line_user_id, job_id)
 
 
