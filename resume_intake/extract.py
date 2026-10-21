@@ -8,12 +8,12 @@
 from __future__ import annotations
 
 import base64
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from resume_draft.pii import scrub_pii
+from resume_draft.schema import ResumeDraft, envelope
 from resume_intake import config
-from resume_intake.schema import ResumeDraft, envelope
 
 EXTRACT_SYSTEM = """あなたは履歴書・職務経歴書の読み取り係です。渡されたファイル(履歴書のPDFや写真)に
 書いてあることを、指定されたスキーマの JSON に書き写します。
@@ -34,15 +34,6 @@ EXTRACT_SYSTEM = """あなたは履歴書・職務経歴書の読み取り係で
 - 学歴・職歴の年月は書いてあるまま period に写す(例: 2020年4月〜2023年3月)。文字・記号も書いてあるままにする。
 - 「志望動機」「本人希望欄」は preferences(desired_work / conditions / notes)に振り分ける。
 - 職歴以外の経験(部活・委員会・家事・育児・ボランティア・趣味など)は other_experience に入れる。"""
-
-# 個人情報のセーフティネット。プロンプトで「書かない」を指示した上で、
-# 出力に混ざっても機械的に落とす(電話番号・メール・郵便番号)。voice-resume/drafter.py が元。
-# 電話番号を郵便番号より先に消す(逆だと 090-1234-5678 の前半が郵便番号として食われ、-5678 が残る)。
-_PII_PATTERNS = [
-    re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
-    re.compile(r"(?<!\d)0\d{1,4}[-()\s]?\d{1,4}[-()\s]?\d{3,4}(?!\d)"),
-    re.compile(r"〒?\s*(?<!\d)\d{3}-\d{4}(?!\d)"),
-]
 
 _MEDIA_TYPES = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 
@@ -85,20 +76,6 @@ def file_part(path: Path) -> dict:
     return content_part(path.name, path.read_bytes())
 
 
-def scrub_pii(value):
-    """文字列・リスト・辞書の中の電話番号/メール/郵便番号を機械的に消す。"""
-    if isinstance(value, str):
-        for pat in _PII_PATTERNS:
-            value = pat.sub("", value)
-        return value.strip()
-    if isinstance(value, list):
-        cleaned = [scrub_pii(v) for v in value]
-        return [v for v in cleaned if v != ""]
-    if isinstance(value, dict):
-        return {k: scrub_pii(v) for k, v in value.items()}
-    return value
-
-
 async def extract_draft(path: Path, client, *, model: str | None = None) -> tuple[ResumeDraft, Usage]:
     """履歴書ファイルから ResumeDraft を作る。client は AsyncOpenAI(またはテスト用スタブ)。"""
     return await _extract(file_part(path), client, model=model)
@@ -131,5 +108,5 @@ async def _extract(part: dict, client, *, model: str | None) -> tuple[ResumeDraf
 
 
 def finalize(draft: ResumeDraft) -> dict:
-    """保存用 JSON(envelope)にする。source は upload 固定。"""
+    """保存用 JSON(envelope)にする。source は upload 固定。書類の種類は決めないので format_version 1.0。"""
     return envelope(draft, source="upload")

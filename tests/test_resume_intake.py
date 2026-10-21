@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from resume_draft.schema import PERSONAL_KEYS, ResumeDraft
 from resume_intake.extract import extract_draft, file_part, finalize, scrub_pii
-from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 CLEAN = FIXTURES / "resume_clean_response.json"
@@ -91,7 +91,7 @@ def test_finalize_personal_always_empty():
     assert result["source"] == "upload"
     assert set(result["personal"]) == set(PERSONAL_KEYS)
     assert all(v == "" for v in result["personal"].values())
-    # created_at は日本時間(+09:00)で書く(docs/design/resume-draft-schema.md、voice-resume 側と同じ)
+    # created_at は日本時間(+09:00)で書く(docs/architecture/lld.md の 5.5、下書きと同じ)
     assert result["created_at"].endswith("+09:00")
 
 

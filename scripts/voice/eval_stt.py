@@ -33,8 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # isort: skip
 from livekit import rtc
 from openai import AsyncOpenAI
 
+from resume_draft.schema import JST
 from voice_resume import config
-from voice_resume.schema import JST
 from voice_resume.stt_eval import MISHEARD_2026_09_26, SCRIPT, score_transcripts
 
 RESULTS = config.RESULTS_DIR

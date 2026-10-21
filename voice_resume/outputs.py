@@ -1,6 +1,6 @@
 """面談の終わりに out/ へ書き出す成果物。
 
-- resume-draft-<ts>.json / .md: 下書き(履歴書か職務経歴書。形は docs/design/resume-draft-schema.md の format_version 1.1)
+- resume-draft-<ts>.json / .md: 下書き(履歴書か職務経歴書。形は docs/architecture/lld.md の 5.5 の format_version 1.1)
 - transcript-<ts>.json: 文字起こし
 - job-proposal-<ts>.json: 本人が言った希望(preferences)・検索に使った条件(recommend_args)・
   検索のためにゆるめた条件(relaxed)・検索の経緯(search_attempts)・提案した求人ID。
@@ -12,10 +12,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 
+from resume_draft.schema import DEFAULT_DOCUMENT_KIND, JST
 from voice_resume import config
 from voice_resume.drafter import build_draft, finalize
 from voice_resume.render import to_markdown
-from voice_resume.schema import DEFAULT_DOCUMENT_KIND, JST
 
 
 def history_transcript(chat_ctx) -> list[dict]:

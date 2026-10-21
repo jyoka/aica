@@ -20,7 +20,9 @@ import copy
 import json
 
 from dip_mcp import logic
-from dip_mcp.data import State, fold_pii, has_pii, now
+from dip_mcp.data import State, now
+from resume_draft.pii import fold_pii, has_pii
+from resume_draft.schema import document_kind_of
 
 # 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
 SECTIONS = (
@@ -58,7 +60,7 @@ def view(state: State, line_user_id: str) -> dict:
                  if k not in logic.FULLTIME_PREFERENCE_KEYS or track == "正社員" or k in prefs]
         sections.append({"id": sid, "title": title, "items": items})
     jobs = logic.load_jobs()
-    drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": logic.document_kind(r)}
+    drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": document_kind_of(r)}
               for r in user.get("voice_results", []) if r.get("draft_markdown")]
     return {
         "track": {"current": track, "choices": list(logic.TRACKS), "history": [
@@ -77,7 +79,7 @@ def view(state: State, line_user_id: str) -> dict:
 
 def _note(u: dict, action: str, what: str, value: str | None = None, undone: str | None = None) -> None:
     """次の本人のターンの前に AI へ渡す、変えたことの知らせ。undone は取り消した切り替えの区分(取り消しのときだけ)。"""
-    rec = ({"at": now().isoformat(), "action": action, "what": what} | ({"value": value} if value is not None else {})
+    rec = ({"at": now(u["line_user_id"]).isoformat(), "action": action, "what": what} | ({"value": value} if value is not None else {})
            | ({"undone": undone} if undone is not None else {}))
     u["profile_changes"] = [*u.get("profile_changes", []), rec][-MAX_CHANGES:]
 
@@ -98,7 +100,7 @@ def edit_item(state: State, line_user_id: str, key: str, value: str) -> dict:
         return {"error": err, "message": ERRORS[err]}
 
     def apply(u):
-        u.setdefault("preferences", {})[key] = {"value": value, "at": now().isoformat()}
+        u.setdefault("preferences", {})[key] = {"value": value, "at": now(line_user_id).isoformat()}
         _note(u, "直した", logic.PREFERENCE_KEYS[key], value)
 
     state.update(line_user_id, apply)
@@ -131,7 +133,7 @@ def edit_summary(state: State, line_user_id: str, text: str) -> dict:
         outcomes = u.setdefault("outcomes", [])
         rec = next((o for o in reversed(outcomes) if o.get("summary")), None)
         if rec is None:
-            outcomes.append({"at": now().isoformat(), "outcome": "consult", "reason": "本人がプロフィール画面で書いた",
+            outcomes.append({"at": now(line_user_id).isoformat(), "outcome": "consult", "reason": "本人がプロフィール画面で書いた",
                              "confidence": 1.0, "summary": text})
         else:
             rec["summary"] = text

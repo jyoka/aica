@@ -30,7 +30,7 @@ def measures_depth(case: str) -> bool:
 
 
 def load_resume(name: str) -> dict:
-    """ペルソナの架空の履歴書(読み取り結果の形。resume_intake.schema.envelope と同じ)。"""
+    """ペルソナの架空の履歴書(読み取り結果の形。resume_draft.schema.envelope と同じ)。"""
     return json.loads((PERSONAS / f"{name}.json").read_text(encoding="utf-8"))
 
 

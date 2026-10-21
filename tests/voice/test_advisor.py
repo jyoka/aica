@@ -6,9 +6,9 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+from resume_draft.schema import ResumeDraft
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor
-from voice_resume.schema import ResumeDraft
 from voice_resume.wages import (
     WageEntry,
     WageReference,

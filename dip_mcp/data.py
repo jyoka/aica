@@ -2,7 +2,8 @@
 
 本番では dipAIAG / バイトル API が持つもの。ここでは fixtures の架空データと、
 会話で変わる状態(会話結果・保存・フォームの続き・応募)を JSON ファイルで持つ。
-時刻はシミュレーション用に固定する(SIM_NOW)。シナリオの「2時間前に離脱」などを再現可能にするため。
+時刻(now)は、シナリオユーザーと評価のユーザーだけ固定する(SIM_NOW)。シナリオの「2時間前に離脱」などを再現可能にするため。
+本番のユーザーは実際の時刻(ADR-0004)。
 """
 
 from __future__ import annotations
@@ -11,10 +12,9 @@ import copy
 import fcntl
 import json
 import os
-import re
-from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from functools import cache
 from pathlib import Path
 from typing import Literal
 
@@ -25,58 +25,9 @@ FIXTURES = ROOT / "fixtures"
 JST = timezone(timedelta(hours=9))
 SIM_NOW = datetime.fromisoformat(os.environ.get("SIM_NOW", "2026-09-23T12:00:00+09:00"))
 
-# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)
+# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)。値に含まれる電話番号・メールアドレスの決まりは
+# resume_draft/pii.py(has_pii / redact_pii)
 PII_FIELDS = {"電話番号", "氏名", "住所", "メールアドレス", "生年月日"}
-# 項目名に関係なく、値に含まれていたら個人情報とみなすもの(電話番号・メールアドレス)。
-# 電話番号は、区切り(- や空白・括弧)のある形か、0 で始まる10〜11桁だけ。数字の途中の 0 から始まる並び
-# (「年収3000000円」「3,000,000円」の 000000)は電話番号ではないので、前後が数字か「カンマ+数字」のものは数えない
-# (「090-1234-5678,よろしく」のように、後ろのカンマに数字が続かなければ電話番号として捕まえる)。
-# カンマの決まりは区切りの無い形(0\d{9,10})だけに効かせる。区切りのある形は桁の区切りと紛れないので、
-# 「1,090-1234-5678」「090-1234-5678,1」のように数字とカンマに挟まれていても捕まえる。
-# 全角の数字・ハイフン(「０９０－１２３４－５６７８」「090ー1234ー5678」「090−1234−5678」)は、
-# 照合の前に fold_pii で半角にそろえる(文字数は変えない)。探すときは has_pii / redact_pii を使う。
-PII_VALUE = re.compile(
-    r"(?<!\d)(?:0\d{1,4}[-(\s]\d{1,4}[-)\s]\d{3,4}|0\d{1,4}-\d{6,8})(?!\d)"
-    r"|(?<!\d)(?<!\d,)0\d{9,10}(?!\d|,\d)"
-    # メールは、名前の部分の先頭からだけ照合する(長い文で位置ごとに照合し直して時間がかからないように)
-    r"|(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
-)
-# 全角の数字・記号と、ハイフンに見える文字(長音記号・マイナス・各種ダッシュ)を半角に。1文字を1文字に写す
-_PII_FOLD = str.maketrans(
-    {chr(0xFF10 + i): str(i) for i in range(10)}
-    | dict.fromkeys("－ーｰ−‐‑‒–—―", "-")
-    | {"（": "(", "）": ")", "＠": "@", "．": ".", "　": " ", "，": ","}
-)
-
-
-def fold_pii(text: str) -> str:
-    """個人情報の照合用に、全角の数字・ハイフンなどを半角にそろえる(文字数・位置は変えない)。"""
-    return text.translate(_PII_FOLD)
-
-
-def has_pii(text: str) -> bool:
-    """電話番号・メールアドレスらしい値を含むか(全角・長音記号のハイフンも含めて)。"""
-    return PII_VALUE.search(fold_pii(text)) is not None
-
-
-def redact_pii(text: str, repl: str = "[個人情報を削除]",
-               extra: Callable[[str], list[tuple[int, int]]] | None = None) -> str:
-    """電話番号・メールアドレス(と extra が返す範囲)を repl に置き換える。照合は fold_pii した文字で行い、
-    置き換えは元の文字列の同じ位置に対して行う(全角のまま残ったりしない)。"""
-    folded = fold_pii(text)
-    spans = [m.span() for m in PII_VALUE.finditer(folded)]
-    if extra is not None:
-        spans += extra(folded)
-    out, last = [], 0
-    for start, end in sorted(spans):
-        if start < last:  # 重なった分は前の置き換えに含める
-            last = max(last, end)
-            continue
-        out += [text[last:start], repl]
-        last = end
-    return "".join(out) + text[last:]
-
-
 # 雇用区分(ADR-0002)。求人には「未定」は付かない(未定は求職者の側の状態)
 EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
 PAY_KINDS = ("時給", "月給", "年収")
@@ -181,8 +132,24 @@ def annual_pay_mid(pay: Pay) -> int | None:
     return {"年収": mid, "月給": mid * 12}.get(pay.kind)
 
 
-def now() -> datetime:
-    return SIM_NOW
+def uses_sim_clock(line_user_id: str | None) -> bool:
+    """固定の時計 SIM_NOW を使うユーザーか(ADR-0004)。fixtures の初期状態から始まるユーザーだけ:
+    評価のユーザー(fixtures のユーザーそのもの、例 sim-new)と、開発者画面のシナリオユーザー
+    (「匿名ID:fixtures のユーザー」、例 w-…:sim-new)。ユーザーの無い呼び出し(評価の検索)も固定。
+    ほか(本番の匿名ユーザーID w-…)は実際の時刻。"""
+    if line_user_id is None:
+        return True
+    return (line_user_id.partition(":")[2] or line_user_id) in _fixture_user_ids()
+
+
+@cache
+def _fixture_user_ids() -> frozenset[str]:
+    return frozenset(load_users())
+
+
+def now(line_user_id: str | None) -> datetime:
+    """そのユーザーにとっての「今」。シナリオユーザーと評価のユーザーは SIM_NOW、本番のユーザーは実際の時刻(日本時間)。"""
+    return SIM_NOW if uses_sim_clock(line_user_id) else datetime.now(JST)
 
 
 def parse_ts(s: str) -> datetime:

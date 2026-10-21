@@ -36,12 +36,12 @@ from livekit.plugins import cartesia
 from livekit.plugins import openai as lk_openai
 from openai import AsyncOpenAI
 
+from resume_draft.schema import JST
 from voice_resume import config
 from voice_resume.agent import prepare_advisor
 from voice_resume.dip import DipMCP
 from voice_resume.flow import verify_flow
 from voice_resume.outputs import history_transcript
-from voice_resume.schema import JST
 from voice_resume.stt import create_stt
 
 RESULTS = config.RESULTS_DIR

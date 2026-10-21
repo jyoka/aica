@@ -20,7 +20,7 @@ from dip_mcp.data import State
 from evals.checks import conversation_checks, turn_violations
 from evals.scenarios import load_scenarios
 from line_runtime.runtime import _tool_payload
-from resume_intake.schema import ResumeDraft
+from resume_draft.schema import ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply, run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}

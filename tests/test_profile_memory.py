@@ -16,8 +16,9 @@ import asyncio
 import pytest
 
 from dip_mcp import logic
-from dip_mcp.data import PII_VALUE, State
+from dip_mcp.data import State
 from evals.checks import conversation_checks, reask_violations, turn_violations
+from resume_draft.pii import PII_VALUE
 from tests.test_handle import ScriptedModel, call, reply, run
 from voice_resume.advisor import ResumeAdvisor
 from voice_resume.agent import prepare_advisor

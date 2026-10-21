@@ -1,528 +1,168 @@
-# aica - LINE AI アシスタント(バイトル)の会話体験シミュレーター
+# aica
 
-## 出自
+**求職者と話して、アルバイト・パートから正社員まで、その人に合う仕事探しを相談と提案で支える AI エージェント。**
 
-旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、line-sim のコア
-(会話ランタイム `line_runtime/`・dip 側 MCP `dip_mcp/`・評価基盤 `evals/` + `evalkit/`・テスト・架空データ `fixtures/`)を
-履歴なしで移植したクリーンスタート。旧リポジトリの評価結果・作業ログ・アーカイブは持ってきていない。
-resume-intake(履歴書の読み取り)は task 63 で `resume_intake/` に、音声棚卸しアドバイザー(voice-resume)は
-task 62 で `voice_resume/` に移植した(下の「音声相談」)。
+- LINE 公式アカウントの AI アシスタント(バイトル)を手元で再現する検証環境(旧称 line-sim)から始まりました
+- LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)に分け、**エージェントは dip のツール(MCP)を通してだけ dip の事実を得る**という境界を守っています。
+  Web サーバーは dip の関数を直接呼びます([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-dip-tools.md))
+- 確かめたいのは「dip が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です
+- 求人、店舗、ユーザー、FAQ はすべて架空のデータです。社内資料の数値は含めていません
 
-LINE 公式アカウントの AI モード上で動くアルバイト探しアシスタントを、自分の手元で再現して試すためのもの。
-**LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)を MCP で分ける**という本番の境界をそのまま作り、
-「dip が書ける Prompt と Tool の中身だけで、狙った会話体験になるか」を確かめられるようにしている。
+旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、履歴なしで移植しました。旧リポジトリの評価結果、
+作業ログ、アーカイブは持ってきていません。履歴書の読み取り(`resume_intake/`)は task 63、音声相談(`voice_resume/`)は task 62 で移しました。
 
-求人・店舗・ユーザー・FAQ はすべて架空のデータ。社内資料の数値は含めていない。
+## しくみ
 
-## 構成
+```mermaid
+flowchart LR
+    seeker(["求職者<br/>ブラウザ"])
+    web["Web プロセス(line_runtime)<br/>Web サーバー + エージェント"]
+    dip["dip の MCP サーバー(dip_mcp)<br/>dip のツール、dip の Prompt、playbook"]
+    lk[("LiveKit Cloud")]
+    worker["音声ワーカー(voice_resume)<br/>音声アドバイザー"]
+    data[("data/<br/>dip の状態、会話")]
+    llm[("OpenAI / Anthropic")]
 
-```
-ブラウザ(本番 /: LINE 風トーク1画面 / 開発者 /dev: シナリオ起動 + dip 状態 + 処理の流れ)
-   │  イベント: トーク / 初回訪問・再訪(AI から挨拶) / dip からのプッシュ(許可されたものだけ)
-   ▼
-line_runtime  ── LINE 側(LY Runtime のスタンドイン)
-   │  汎用のエージェント(LangChain create_agent)。業務知識は持たない。
-   │  LINE 共通ルール + dip から受け取ったシナリオ(Prompt)で会話し、LINE 形式で返信
-   │  (吹き出し・クイックリプライ・求人カード・LIFF ボタン)
-   │  MCP(stdio。DIP_MCP_URL を設定すれば HTTP)
-   ▼
-dip_mcp  ── dip 側(baitoru-mcp のシミュレーション)
-      Tool:     get_user_conversation_summary / get_user_recent_applications / get_user_form_exit /
-                recommend_jobs / relax_conditions / answer_job_question / get_application_status /
-                resume_application_form / save_job / save_user_preferences / set_search_track /
-                record_conversation_outcome
-      Resource: baitoru://faq
-      Prompt:   baitoru_assistant(entry=A|visit|revisit|D)  会話の骨格・対話ルール・入口ごとの最初の1問
-      Logic:    push_trigger  プッシュしてよいか(未連携・直近の接触・根拠の事実)と、話しかける根拠を決める
-      データ:   fixtures/(架空の求人103件〔アルバイト・パート63件、正社員40件〕・求人ベクトル・掲載日・シナリオ用ユーザー5人・FAQ)、会話で変わる状態は data/state.json
+    seeker -- "トーク、履歴書" --> web
+    web -- "MCP" --> dip
+    web --> llm
+    seeker -- "音声" --> lk --> worker
+    worker -- "MCP" --> dip
+    worker -- "結果" --> web
+    dip --> data
+    web --> data
 ```
 
-dip 側のツールは LLM を使わない(速く・決定的に・事実だけを返す)。文面を作るのは LINE 側の LLM だけ。
-例外は `recommend_jobs` の keywords の意味検索(embedding)で、言い換え(「コーヒーが好き」「子どもに勉強を教えたい」)を部分一致の取りこぼしから救う。
-文章は作らず、求人側のベクトルは `scripts/gen_job_vectors.py` で前もって作って `fixtures/job_vectors.json` に保存するので、
-検索時の外部 API 呼び出しは問い合わせ文の embedding 1回だけ(同じ問い合わせはプロセス内で使い回す)。
-API が使えないときは従来の部分一致に戻る(検索は止めない)。
-embedding では分けられない言い換え・否定(「体を動かしたい」「人と話すのが苦手」「立ち仕事は避けたい」「接客はしたくない」)は、
-求人の属性(人と話す量 `talk_level`・体を使う量 `physical_level`、どちらも1〜3)の引数(`max_talk_level`・`min_physical_level` など)で絞る。
-正社員の「在宅」「土日祝休み」「残業少なめ」も、`remote`・`weekends_holidays`・`max_overtime_hours` の引数で絞る。
-どの言葉をどの引数にするかは会話の指示(`dip_mcp/prompts/baitoru_assistant.md`)にあり、避けたいことは keywords に入れない。
-求人の情報に無い希望(「人間関係が良い」「宇宙飛行士になりたい」)は、全求人の類似度の最高値が中央値から抜けない(`SIM_PEAK`)ので、
-意味の近さを使わず部分一致だけにする(当たらなければ0件で、relax_conditions が keywords を外す案を出す)。
-希望年収の下限 `min_annual_salary` は、求人の年収の幅の中央値(月給は12か月分)と比べ、指定したときは給与の高さを並びに加味する。
-モデル・次元・求人の文面・選び方の値は、正解つきの検索評価セット(`evals/search_eval_set.json`、43本。うち5本は無関係な問い合わせの負例)の
-上位3件の再現率で選ぶ(task 105 の 0.753 → task 111 で 0.869)。
-`./.venv/bin/python -m evals.search_eval` がオフラインで測る(記録した問い合わせのベクトル `fixtures/search_query_vectors.json` を使う)。
-既知の限界: 属性の値(103件)は求人の文面から人が付けた判断で、職種の中の違い(深夜で客の少ないコンビニなど)は文面に書いてあるときだけ反映している。
-`SIM_PEAK`(0.12)は評価セットで、無関係な問い合わせ(最大 0.113)と keywords で探す問い合わせ(最小 0.133)の間に置いた値で、余裕は小さい。
-API が使えないときの部分一致は、keywords の語がそのまま求人の文面か働き方・休日の言葉(「在宅勤務」「土日祝休み」など)に含まれるときだけ当たる(「在宅で」は当たらない)。
-求人カードは、dip のツールが返した求人だけをコードで描画する。
-モデルが選ぶのは出す求人の ID だけで、ツールが返していない ID はカードにならない。
-推薦の各求人には、本人の傾向との合い具合 `match_score`(内訳 `score_breakdown`)が付く(LLM を使わずに計算)。
-本人が会話で話した希望は `save_user_preferences` で dip に保存し、次の会話の要約(`stated_preferences`)で返す。プロフィールは LINE 側ではなく dip 側が持つ。
-いま探している雇用区分(アルバイト・パート / 正社員 / 未定)は、本人の発言を根拠に `set_search_track` で切り替えて dip に履歴ごと残し、要約の `search_track` で返す(初回は未定。ADR-0001)。
+- エージェントは業務の知識を持ちません。LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します
+- dip のツールは LLM を使わず、事実だけを返します。求人カードは、dip が返した求人だけをコードで描きます
+- 音声相談もトークと同じ雇用区分、playbook、プロフィールを使い、結果はトークに戻ります
 
-リッチメニューは既存運用のまま触らない前提。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、
-トーク内の選択肢(クイックリプライ)として出す(挨拶だけ・意図が不明なときの最初の1問。初回訪問の挨拶では「使い方」の代わりに「まず相談する」)。
-
-### こちらから話しかける(待つだけにしない)
-
-Web 公開のプロダクトなので、トークを開いたことをイベントにできる(LINE 公式アカウントの配信基盤は前提にしない)。
-こちらから話しかける入口は次の2つ。
-
-| 入口 | きっかけ | 送ってよいかの判断 |
-|---|---|---|
-| 挨拶(`visit` / `revisit`) | 初回訪問・トークを開き直した | 不要(必ず挨拶する) |
-| プッシュ(`form_exit`) | dip が検知した応募フォームの途中離脱 | dip の `push_trigger` が決める |
-
-`push_trigger` は、未連携・直近 3日以内に接触済み・話しかける根拠の事実がない、のどれかなら送らない。
-3日はシミュレーション用の仮の値。許可したら接触として記録し、根拠の事実(求人・残りの入力項目)を LINE 側に渡す。
-LINE 側は判断せず、受け取った事実を1文目で伝えてから1問聞く。
-再訪(`revisit`)の挨拶は、前に本人が話した希望があれば確認形の1問、無ければ90日以内の行動に1回だけ触れる1問から始める。
-
-返信は必ず選択肢で終える(締めくくりの返信にも「求人を探す / 応募履歴を確認 / 使い方」)。
-クイックリプライは、ボタンを押すか新しいメッセージが届くまで消えない(LINE の仕様)ので、次に開いた人が書くしかない状態を減らせる。
-ただしトークを開き直したときに表示が残るかはドキュメントに記載がなく、実機での確認が必要。
-
-## シナリオ
-
-シナリオごとの会話設計(きっかけ・1通目・最初の1問・分岐・出口・評価で確かめること)は
-[docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md)。
-
-画面で試すシナリオと評価で測るシナリオは同じ一覧(`evals/scenarios.json`、15 件)。どのシナリオも AI 側の1通目から始まる。
-1通目の出どころは、初回訪問・再訪の挨拶か、dip のプッシュのどちらか。
-シナリオを始めるたびに、そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まるため)。
-
-| 1通目 | シナリオ | ユーザー | その後 | 期待する出口 |
-|---|---|---|---|---|
-| 挨拶(初回訪問) | 初回訪問(新規ユーザー)(`F-follow-new`) | `sim-new` | メニュー → 求人を探す → 条件 → 提案 | 提案 |
-| プッシュ | 応募フォームの途中離脱(`B-exit`) | `sim-exit` | 入力が面倒 → 残りの項目の画面を案内 | 支援 |
-| プッシュ | 途中離脱で電話番号を書く(`pii`) | `sim-exit` | トークの電話番号を受け取らず画面へ | 支援 |
-| 挨拶(再訪) | 再訪(希望あり)(`R-revisit`) | `sim-new` + 前に話した希望 | 前の希望を確認 → 差分だけ答えて提案 | 提案・待つ |
-| 挨拶(再訪) | 再訪(行動履歴のみ)(`R-revisit-browsing`) | `sim-browsing` | 最近の閲覧に1回だけ触れる → 条件 → 提案 | 提案・待つ |
-| 挨拶(再訪) | 保存した求人について質問する(`Q-job-question`) | `sim-browsing` | 詳しく聞きたい → 制服・資料に無いこと | 相談・待つ・提案 |
-| 挨拶(初回訪問) | 探し方が分からない → 相談 → 提案(`C-consult-propose`) | `sim-new` | 「何から始めれば」→ playbook に沿って1問ずつ → 提案 | 提案 |
-| 挨拶(初回訪問) | 相談だけで終える(`C-consult-only`) | `sim-new` | まず相談する → 1問答える → 今はいい | 相談・待つ |
-| 挨拶(初回訪問) | 相談の途中で提案へ切替(`C-consult-switch`) | `sim-new` | まず相談する → 1問答える → 求人を見せて | 提案 |
-| 挨拶(再訪) | 再訪(区分と行動履歴、希望なし)(`R-revisit-track`) | `sim-browsing` + 前に記録した区分 | 区分と最近の閲覧を1問にまとめて確認 → 条件 → 提案 | 提案・待つ |
-| 挨拶(初回訪問) | 経歴の厚い人の転職相談(`T-career-fulltime`) | `sim-new`(架空の職務経歴書を会話中にアップロード) | 転職の相談 → 正社員に切り替え → 目的・やりたいこと → 提案 | 提案・相談 |
-| 挨拶(初回訪問) | 正社員だが副業でアルバイト(`T-side-job`) | `sim-new` + アップロード済みの職務経歴書 | 空いた時間にバイト → アルバイト・パートに切り替え(履歴書で決めつけない) | 提案・相談 |
-| 挨拶(初回訪問) | 学生の初めてのアルバイト(`T-student-first`) | `sim-new` | 何が向いているか分からない → 目的・不安 → 提案 | 提案・相談 |
-| 挨拶(初回訪問) | ブランクのある主婦・主夫のパート(`T-blank-parent`) | `sim-new` | 10年ぶり・扶養内・時間の制約・ブランクの不安 → 提案 | 提案・相談 |
-| 挨拶(初回訪問) | 途中で「やっぱり正社員で」(`T-switch-to-fulltime`) | `sim-new` | カフェのバイト → やっぱり正社員で → 提案 | 提案・相談 |
-
-シナリオ用ユーザー(`fixtures/users.json`):
-
-| ユーザー | 状況 |
-|---|---|
-| `sim-yoru` | 7月に新宿の居酒屋に応募(不採用)、最近は夜の飲食を閲覧 |
-| `sim-exit` | 2時間前にコンビニ夜勤の応募フォームで離脱(残り: 電話番号・希望開始日) |
-| `sim-applied` | 9/19に居酒屋へ応募、店舗からの連絡待ち |
-| `sim-browsing` | カフェ・アパレルを閲覧・保存、応募なし。保存したカフェは 9/25 で掲載終了 |
-| `sim-new` | dip ID 未連携 |
-
-時刻は 2026-09-23 12:00 に固定(`SIM_NOW` で変更可)。
-
-### 相談(playbook に沿って進める)
-
-別のエージェントやグラフではなく、dip の Prompt(`baitoru_assistant.md` の「相談」)の入口と、雇用区分ごとの playbook
-(`dip_mcp/playbooks/`、ADR-0001)で動く。playbook は dip のツール `get_counseling_playbook(track, channel)` で配る。
-
-- 入口: 初回挨拶の選択肢「まず相談する」か、会話中の迷いのサイン(「何から始めれば」「自分に合うのが分からない」)、
-  または本人が自分の状況や事情を話して探し始めたとき。条件だけを言ったときは相談に入らない。
-  入ったターンで今の区分の playbook を読み、区分が変わったターン(切り替え・取り消し)では新しい区分で読み直す。
-- playbook には「明らかにすること」と「掘り下げ方」だけを書き、次に何を聞くか(順番)は決めない。
-  - 正社員(`fulltime_chat.md`): 目的・転職の理由 / 強み(履歴書と会話から本人の言葉で)/ やりたいこと・避けたいこと /
-    条件(年収・勤務地・働き方・時期)/ 不安。条件に time_band は使わない。経歴の答えは experience に保存する
-  - アルバイト・パート(`parttime_chat.md`): 目的 / 生活の制約(時間帯・曜日・エリア)/ 興味・得意 / 経験 / 不安
-  - 未定(`undecided_chat.md`): まず区分を1問で確かめる(雇用区分の合図の決まり)
-  - 区分に共通(`common_chat.md`): 目的とやりたいことは最低1回掘り下げる。選択肢は履歴書と本人の発言から作り、一般論の例を
-    使わない。「分からない」には職種を並べず、掘り下げに戻る。目的とやりたいことを掘り下げ、探す条件が揃ったら、次の返信で
-    求人を見るかを聞く(目安は5、6問。調整2回目で3本が評価の8ターンの上限までに提案に届かなかったため)
-  - playbook と Prompt の例文は、評価のペルソナの発言・経歴と重ならない例にする(`tests/test_playbook.py` が確かめる)
-- 区分ごとの会話の決まり(`dip_mcp.logic.CONVERSATION_RULES`。playbook・Prompt・評価の形式判定が同じ値を使う):
-  アルバイト・パートと未定は v1 のまま(吹き出し80字、ユーザーの3回目の返信までに会話の段階に入る)。正社員は経歴や本人の言葉を
-  受け止めてから聞くので、吹き出し120字、6回目の返信までに緩める。相談の途中はどの区分もこの期限を適用しない。
-- 話した内容はプロフィール(`save_user_preferences`)に本人の言葉で保存し、そのまま求人提案の条件にする(言い直し不要)。
-- 「今はいい」なら提案なしで終える。途中で「求人を見せて」と言えば、その時点までの内容ですぐ提案に切り替える。
-- 音声の playbook(`*_voice.md`)は G で足す(それまで `channel=voice` はエラーを返す)。
-
-## マルチユーザー(匿名ユーザーID)
-
-複数の知人が同時に使っても混線しないよう、画面を開いたとき(`GET /`・`GET /dev`)だけ
-ブラウザごとに匿名ユーザーID `w-<16桁hex>` を発行し、Cookie(`aica_uid`。HttpOnly・SameSite=Lax)で保持する。
-API は ID を発行しない。認証・招待制はない(URL を知っている知人だけが使う前提)。
-
-- 本番のトーク画面(`/`)では、匿名ID そのもの(`w-…`)がユーザーID。fixtures のシナリオ用ユーザーは使わず、空の状態から始まる。
-  状態を初期に戻す操作は無い。
-- 開発者画面(`/dev`)でシナリオを始めると、そのブラウザ専用のユーザー `匿名ID:シナリオユーザー`(例 `w-…:sim-new`)を作り、
-  fixtures の初期状態を写して使う。会話履歴(LangGraph のチェックポイント)・プロフィールと行動履歴(dip の状態)・
-  費用台帳は、すべてこのユーザーIDでスコープされる。
-- ユーザーの分離の守り(task 99):
-  - ブラウザから呼ぶ経路はすべて、正しい形式の Cookie が必須(無い・形式が不正なら 401)。扱えるのは Cookie の匿名IDの
-    ユーザー(匿名ID そのもの、または `匿名ID:シナリオユーザー`)だけで、他人のユーザーIDを本文に入れても 403。
-    匿名IDを知られても、Cookie なしでは読めない・話せない・音声の結果を取れない・会話数の上限を迂回できない。
-  - 本人のデータを指す URL にユーザーIDを載せない(ブラウザの履歴・アクセスログ・Referer に残るため)。API はユーザーIDを
-    本文で受け取り(`/api/talk/history` と `/api/saved` は Cookie の本人だけ)、dip の画面(`/liff/resume`・`/liff/voice/draft`・
-    `/liff/apply`)は Cookie から本人を決める。開発者画面のシナリオユーザーなら、URL にはシナリオユーザーの名前
-    (`scenario_user=sim-exit`。fixtures の名前で秘密ではない)だけを付ける。
-  - 状態ファイルに書かれるユーザーは、Cookie を持つ本人が話したとき(と、開発者画面でシナリオを始めたとき)だけ。
-    Cookie 無しの `POST /api/talk/open` は 401 で、何も書かない。
-  - サーバー間の経路(音声ワーカー → `POST /api/voice/result`)は Cookie ではなく共有鍵 `AICA_INTERNAL_KEY`
-    (`Authorization: Bearer <鍵>`)で守る。鍵が無い・違う・サーバーに鍵が設定されていなければ 401。
-  - dip のツールの `line_user_id` は、LINE 側ランタイムが会話のユーザーに固定する(`line_runtime/agent.py` の
-    `PinUserMiddleware`)。LLM が別のユーザーIDを渡しても、他人の状態を読み書きしない。
-  - 評価(`evals/`)は HTTP を通さず `LineRuntime` を直接呼ぶので、Cookie は要らない。
-- 費用台帳: LLM の呼び出し1回ごとに `data/costs.jsonl` へ1行
-  (時刻・`user_id`・イベント・モデル・トークン・`cost_usd`)。料金表は `line_runtime/ledger.py` が正で、評価の計測(`evals/meter.py`)も同じ表を使う。
-
-### 会話数の上限と費用の集計
-
-API 費用の暴走を防ぐため、1日あたりのターン数(LLM を呼ぶ1往復。ユーザーの発言・挨拶・プッシュ・履歴書のアップロード・
-音声相談の開始それぞれ1回)に上限がある。上限は3つあり、匿名IDごと → IP ごと → 全体の順に確かめる。
-どれかで止めたら、どれにも数えない(止めたターンで LLM は呼ばない)。
-
-| 環境変数 | 既定 | 上限 |
-|---|---|---|
-| `LINE_SIM_DAILY_TURN_LIMIT` | 50 | 匿名IDごとのターン数。1人あたりの1日の費用の上限 |
-| `AICA_DAILY_TURN_LIMIT_PER_IP` | 150 | 同じ IP からのターンの合計(家族や同じ回線の数人分: 1人50ターン × 3人) |
-| `AICA_DAILY_NEW_IDS_PER_IP` | 20 | 同じ IP から1日に使える匿名IDの数。Cookie を作り直しても、状態ファイルにユーザーが増え続けない(会話のほか、シナリオの開始・プロフィールの書き換えも、超えると 429) |
-| `AICA_DAILY_TURN_LIMIT_TOTAL` | 1000 | その日の全ユーザーのターンの合計(本番モデルで1ターン約 $0.05 なので、1日約 $50 が天井) |
-| `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で1日に使える匿名IDの数。IP をいくつ持っていても、状態ファイルにユーザーが増え続けない(会話のほか、シナリオの開始・プロフィールの書き換えも、超えると 429)。1000ターンを1人3ターン強で分けられる人数を目安にした |
-| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値(プロキシが付けた値)から取る。無ければ接続元の IP |
-
-- どれも `.env` でも可。`0` 以下なら、その上限は無し。既定値は公開前の目安なので、使われ方を見て変えてよい。
-- 匿名IDの上限: 数える単位は人(ブラウザの匿名ID)。`匿名ID:シナリオユーザー` はシナリオを替えても同じ枠を使う。
-- IP ごとの上限: Cookie(匿名ID)を作り直して匿名IDごとの上限を迂回する道を閉じる。一度その IP から使われた匿名IDは、
-  その日は続けて使える(新しい匿名IDだけが数に空きを要る)。IPv6 は /64 を1つの IP として数える(家庭の回線でも
-  /64 以上をもらえるので、送信元のアドレスを替えて迂回できないように)。IPv4 と IPv4 射影アドレス(`::ffff:1.2.3.4`)は
-  1アドレスずつ(射影アドレスは元の IPv4 と同じ IP として数える)。
-- 全体の匿名IDの上限: その日に一度使われた匿名IDは続けて使える。その日に初めて使う匿名IDだけが数に空きを要る。
-- IP の取り方: 既定は接続元の IP で、`X-Forwarded-For` は見ない(本人が書き換えて上限を迂回できない)。
-  Render のようにプロキシの後ろに置くときは `AICA_TRUST_PROXY=1` にする(Render の Environment に設定)。
-  プロキシが付けた最後の値だけを使い、それより前の値(本人が書ける)は使わない。プロキシの後ろでこれを付けないと、
-  全員がプロキシの IP として数えられ、IP の上限ですぐ止まる。
-- 上限を超えると、LLM を呼ばずに「本日のご利用回数の上限に達した・明日また使える」という案内を返す(返信に `limited: true`)。
-  IP の上限は「この回線からの」、全体の上限は「本日はたくさんのご利用があり」と、どの上限か分かる文にする。
-  プッシュは dip に聞く前に送らないと決める。履歴書のアップロードと音声相談の開始は 429 と同じ案内。空の発言は数える前に 400 で断る。
-- 日付は日本時間で区切り、日付が変わると数え直す。当日の数(人ごと・IP ごと)は `data/quota.json` に保存する
-  (再起動しても消えない。IP は当日の分だけで、日付が変わると消える)。
-- 対象は Web の API(`/api/event`・`/api/event/stream`)だけ。評価(`evals.run`)は `LineRuntime` を直接使うので上限はかからない。
-
-費用台帳のユーザー別・日別(日本時間)の集計:
-
-```bash
-./.venv/bin/python -m line_runtime.ledger                      # data/costs.jsonl を人・日ごとに表で(合計行つき)
-./.venv/bin/python -m line_runtime.ledger --date 2026-09-27    # その日だけ
-./.venv/bin/python -m line_runtime.ledger --by-user-id --json  # シナリオユーザーごとに分けて JSON で
-```
+部品とデータの流れは [HLD](docs/architecture/hld.md) にあります。
 
 ## 動かし方
+
+必要なもの: Python 3.12、OpenAI の API キー。
 
 ```bash
 # リポジトリ直下で
 python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-# リポジトリ直下の .env に OPENAI_API_KEY=...(LINE_SIM_PROVIDER=anthropic なら ANTHROPIC_API_KEY=...)
-
-./.venv/bin/python -m line_runtime.server   # 本番のトーク http://127.0.0.1:8030/ ・開発者画面 http://127.0.0.1:8030/dev
-./.venv/bin/python -m pytest -q             # dip 側のオフラインテスト(MCP 往復を含む、LLM 不要)
-./.venv/bin/python -m evals.run             # シナリオ評価(模擬ユーザー × 15シナリオ、実 API を使うので費用がかかる。下の「評価」)
-./.venv/bin/python -m scripts.gen_jobs      # 架空のアルバイト求人を作り直す(fixtures/jobs.json。正社員の fulltime_jobs.json は手書き。後で gen_job_vectors も回す)
-./.venv/bin/python -m scripts.gen_job_vectors  # 求人ベクトルを作り直す(fixtures/job_vectors.json。求人データを変えたら)
+# リポジトリ直下の .env に OPENAI_API_KEY=... を書く(git には入らない)
+./.venv/bin/python -m line_runtime.server   # トーク画面 http://127.0.0.1:8030/ 、開発者画面 http://127.0.0.1:8030/dev
+./.venv/bin/python -m pytest -q             # テスト(実 API を呼ばない)
 ```
 
-画面は2つ。
+- 既定(`LINE_SIM_PROVIDER=openai`)では、`OPENAI_API_KEY` が無いと Web プロセスは起動の途中で止まります
+- トーク画面を開くと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
+  開発者画面は、シナリオを選ぶまで呼びません。話すとターンごとに呼びます
+- `LINE_SIM_PROVIDER=anthropic` にすると、エージェントは Anthropic のモデルになります(`ANTHROPIC_API_KEY` が要る)。
+  履歴書の読み取り、意味検索、音声相談は常に OpenAI です
 
-**本番のトーク画面 <http://127.0.0.1:8030/>**(求職者が使う。スマホ前提の1画面)
-- シナリオは選ばない。開くと `POST /api/talk/open` がこのブラウザの匿名ユーザー(匿名ID そのもの)について決める:
-  - 最後のやりとりから30分以内(再読み込み・タブの開き直し): 今の会話を続ける。画面は `GET /api/talk/history`
-    (Cookie の本人の会話)で吹き出し・求人カード・選択肢を描き直す。LLM は呼ばず、会話数も使わない。
-  - それ以外: dip の状態(前にトークを開いて挨拶が返った記録 `talk_opens`)から初回訪問(`visit`)か再訪(`revisit`)かを決め、
-    画面はそのイベントで `POST /api/event/stream` を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。
-    開いた記録は挨拶が返ったときに残す(挨拶が失敗・上限で返らなければ、次も初回訪問。挨拶は保存されたのに返す途中で接続が切れたときは、次に開いたとき保存された挨拶から記録を補う)。
-  - 画面は表示している会話の番号(`thread`)を発言に付けて送る。別のタブで新しい会話が始まった後に古いタブから送ると、
-    発言は新しい会話に入らず(LLM も会話数も使わない)、古いタブに「別の画面で新しい会話が始まりました」と出して最新の会話を描き直す。
-- 下のナビは3つ: トーク / 保存した求人(`GET /api/saved`。保存した求人をカードで一覧)/ プロフィール(下)。
-- わたしのプロフィール(task 95。中身は `dip_mcp/profile.py`): aica が覚えていること(雇用区分と切り替えの記録・目的・希望・経歴・
-  相談のまとめ・履歴書の読み取り結果・音声相談の下書き・保存した求人・応募した求人)を本人が見て、直して、消せる。空の項目は「まだありません」。
-  - `GET /api/profile` / `PUT・DELETE /api/profile/items/{key}`(stated_preferences の項目か `consultation_summary`)/
-    `PUT・DELETE .../track` / `DELETE .../resume` / `DELETE .../voice/{result_id}`(書き出したファイルも消す)/ `DELETE .../saved/{job_id}` /
-    `POST .../forget`(すべて消す)。パスにユーザーIDは無く、Cookie の本人の分だけを読む・変える(Cookie なし・不正は 401)。
-    履歴書・下書きの「見る」リンクも `/liff/resume?rid=…` / `/liff/voice/draft?rid=…`(ユーザーIDを載せない)。
-  - 手で直す値にも保存と同じ決まり(決まった項目だけ・電話番号・メール・住所らしい値と長すぎる値は 400)。
-  - 直す・消すと dip の状態がすぐ変わる(次に読む要約に出る)。会話の途中なら、変えたことを次の本人のターンの直前に
-    「[お知らせ: 本人が画面で…]」(トークの表示のボタンでの取り消しだけなら「本人がトークの表示のボタンで…」)として AI へ渡す(画面の履歴には出ない。dip の Prompt に扱いの決まり)。
-  - すべて消す: dip の状態と会話(チェックポイント)を消し、次に開くと初回訪問から始まる。会話数の上限の数と費用台帳は消さない。
-    会話は1つのトランザクションで消す(途中で失敗しても半分だけ消えることはなく、もう一度押せば消える)。
-    会話を消してから dip の状態を消すので、dip の状態を消すところで失敗しても、続きを開ける前の会話は残らない。
-    同じブラウザ(同じ Cookie の匿名ID)の `/dev` のシナリオ利用者「匿名ID:シナリオユーザー」の記録もまとめて消す(task 122)。
-  - 履歴書を消す(task 115): 今の会話を閉じる(閉じた会話は描き直せず、次の会話の文脈にも入らない)。
-    次に開くと30分以内でも新しい会話(再訪の挨拶)から始まり、古い会話を開いたままのタブの発言は stale になる。
-    LLM も会話数も使わない。消すものが無ければ閉じない。
-    閉じるとき、その人のそれまでの会話のチェックポイントもすべて消す(task 120。アップロードの要点がサーバーに残らない。
-    task 124: 先に空の会話を書いて今の会話にし、前の会話は1つのトランザクションで消す。番号はその空の会話から続く)。
-    閉じてから読み取り結果を消すので、途中で失敗しても、もう一度押せば閉じられる。会話で保存した内容(経験など)は残り、確認の文言でそう伝える(プロフィールの各項目から消せる)。
-  - 雇用区分の「記録ごと消す」は、切り替えの記録をすべて消して未定に戻す(確認つき)。直前の切り替えを元に戻す「取り消し」(下)とは別。
-- 雇用区分の切り替えの表示(task 96): 区分が切り替わったターンは、AI の返信の前に「正社員の相談に切り替えました [アルバイトで探す]」の
-  ような表示を出す。元は dip の記録(そのターンの `set_search_track` の `recorded`。返信の `track_switch`)で、返信文からは推測しない。
-  - ボタンは `POST /api/talk/track/undo`(`{"user_id": ..., "id": 切り替えの記録の id}`。Cookie の本人だけ)。直前の切り替えだけを取り消し、dip に取り消しとして
-    記録する(根拠は「(トークの切り替えの表示のボタンで、本人が取り消した)」。LLM も会話数も使わない)。後に別の切り替えがある・
-    取り消し済み・記録ごと消したときは 409。次の本人のターンの前に知らせを渡し、AI は要約を読み直して戻した区分で続ける。
-  - 再読み込みしても、表示の状態(取り消せる・取り消した)は dip の記録から描き直す。ヘッダーに今の区分(「正社員で相談中」など)を出す。
-- 音声相談のシート: 通話中に × を押すと確認を出す。結果が届く前に閉じた場合、次の発言・アップロードの前に履歴を読み直して結果を描く
-  (閉じてから2分を過ぎたら読み直しをやめる。あとで届いた結果は開き直せば出る)。
-- dip の状態・構成図・処理の流れ・シナリオ一覧は出さない。会話数の上限とユーザーの分離は本番の画面にも効く。
-- 履歴書と音声相談は会話の中から入る(task 91。ヘッダーの常設ボタンは無い):
-  - AI が経歴を聞く場面(相談の経験・経歴の1問など)で、返信の `actions` として [ファイルを選ぶ] [話して伝える(音声・約5分)] を
-    差し出す(`quick_replies` の「文字で話す」「今はいい」と並ぶ。押しても発言は送られない)。いつ出すかは dip の Prompt(「履歴書・音声の提案」)。
-  - 自分から使う人は、入力欄の左の「+」から「履歴書・職務経歴書を送る」「音声で相談する」に入れる(LINE と同じ置き場)。
-  - 詳しくは下の各節。
-- トークの部品(吹き出し・求人カード・返信の描画・ストリームの読み取り・待ちの表示・「+」メニュー・履歴書・音声)は
-  `line_runtime/static/talk-core.js`(と `talk-core.css`)にあり、本番の `/` と開発者画面の `/dev` が共通に使う。
-
-**開発者画面 <http://127.0.0.1:8030/dev>**(評価・説明用。3列。合言葉などの制限は無い)
-- 左: ① シナリオを選ぶ(1通目の出どころ = 挨拶(初回訪問・再訪)/ dip のプッシュ でまとめた一覧。押すとその1通目から始まる)→
-  ② dip から見た状態(状況・応募・保存・本人の希望・会話の結果)→ ③ やり直す(このシナリオを最初から)。
-  シナリオは `POST /api/scenarios/{id}/start` で始める(そのユーザーの dip の状態を初期に戻す)。
-- 中央: LINE のトークルーム。求人は Flex Message 風のカード(アルバイト・パートは時給・勤務時間、正社員は年収か月給の幅・働き方・休日、駅・おすすめの理由、「詳しく見る」「保存」)で出る。
-  LIFF のボタンを押すと dip の応募フォーム画面(モック)が開き、送信すると応募済みになる。
-- 右: システムの構成図と、このターンの処理の流れ。LINE 側 AI の LLM の呼び出し(時間・トークン・キャッシュから読めた分・呼んだツール)、
-  dip のツールの呼び出し(引数・結果の要約)、プッシュの判定を順に出し、構成図の動いている部分を光らせる。
-  画面は `POST /api/event/stream`(1行1件の JSON で途中経過を返す)を使う。`POST /api/event` は返信だけをまとめて返す。
-
-## 履歴書のアップロード(resume_intake)
-
-旧リポジトリの `resume-intake/`(`cda42fd`)を `resume_intake/` に移植し、トークからアップロードできるようにした(task 63)。
-履歴書(PDF / JPEG / PNG)を OpenAI API(構造化出力。既定 `gpt-6-sol`、`RESUME_INTAKE_MODEL` で差し替え可)で読み取り、
-[履歴書下書きの共通スキーマ](docs/design/resume-draft-schema.md)(format_version 1.0、`source: "upload"`。voice-resume と共通なので形は変えない)にする。
-
-```
-AI が差し出す [ファイルを選ぶ] か、入力欄の「+」→「履歴書・職務経歴書を送る」→ ファイルを選ぶ
-   → 本人側にファイルの吹き出し「履歴書(PDF)」(ファイル名は出さない)、AI 側は「入力中」
-   → POST /api/resume/upload(multipart、user_id は本文。10MB まで。会話数を1つ使う)
-   → resume_intake が読み取る(ファイルはディスクに置かずバイト列のまま)→ dip の状態にそのユーザーの最新1件として保存
-   → AI 側に読み取り結果の確認(要点だけ: 職歴・スキル・資格を最大3件ずつ、吹き出しは80字以内。`line_runtime/resume_confirm.py`)と「読み取り結果を見る」(GET /liff/resume?rid=<そのアップロードの番号>。全文。あとで別の履歴書をアップロードしたら、
-     古いリンクは新しい結果を開かずに置き換わったことを伝える)を出す
-   → 画面が POST /api/event/stream を event=resume_upload で呼ぶ(本人の1ターン。会話数を1つ使う)。LINE 側 AI には
-     「[イベント: 本人が履歴書(PDF)をアップロード]」と画面に出した確認が渡り、get_user_conversation_summary を呼び直して
-     uploaded_resume を見て、確認を繰り返さずに次の1問を返す
-```
-
-- アップロードは本人の1ターン。定型文を本人の発言として送ることはしない。再読み込みで描き直すときも、ファイルの吹き出し → 確認 → 次の1問 の順に出る
-  (会話にはファイルの表示名と確認の吹き出しだけを保存する)。
-
-- 個人情報: 氏名・生年月日・住所・電話・メールは保存しない。プロンプトで「書かない」を指示し、`personal` はコードで常に空欄、
-  文字列に混ざった電話番号・メール・郵便番号は読み取り直後(`scrub_pii`)と dip への保存時の2回、機械的に除く。
-  ファイル名(氏名が入りがち)も保存せず、トークにも出さない。
-- 読めないファイル(白紙・別書類・不鮮明)は「読み取れなかった」と理由を返すだけで保存しない(前に読み取れた結果を上書きしない)。
-  その場合も本人の1ターンとして resume_upload のイベントで会話を続け、AI が読み取れなかった前提で1問返す
-  (会話数は読めたときと同じく2つ。再読み込みしても、ファイルの吹き出し → 案内 → 1問 のまま残る)。
-- 開発者画面でシナリオを始め直すとそのユーザーの dip の状態が初期に戻るので、アップロードした結果も消える(本番の画面には初期に戻す操作は無い)。
-- 読み取り1回ごとに費用台帳へ `event: resume_upload` の行が付く。
-
-CLI とサンプル(架空の人物のみ。本物の履歴書はリポジトリに入れない):
+### 音声相談も使う
 
 ```bash
-./.venv/bin/python -m resume_intake.cli resume_intake/samples/01_clean.pdf   # 結果は data/resume_intake/ にも保存
-./.venv/bin/python -m resume_intake.run_samples                               # 実 API で正解(samples/expected/)と比較
-./.venv/bin/python resume_intake/samples/make_samples.py                      # サンプルを作り直す(reportlab / pillow が要る)
+# .env に足す: LIVEKIT_URL、LIVEKIT_API_KEY、LIVEKIT_API_SECRET、DEEPGRAM_API_KEY、CARTESIA_API_KEY、AICA_INTERNAL_KEY
+./.venv/bin/python -m voice_resume.agent download-files   # 初回だけ(VAD と turn detector のモデル)
+./.venv/bin/python -m line_runtime.server                 # 1 つ目のターミナル: Web プロセス
+./.venv/bin/python -m voice_resume.agent dev              # 2 つ目のターミナル: 音声ワーカー
 ```
 
-テストは `tests/test_resume_intake.py`(移植した読み取りのテスト)と `tests/test_resume_upload.py`(アップロード → 保存 →
-同じユーザーの会話からの参照)。どちらも OpenAI・LLM はスタブで、実 API は呼ばない。
+- 2 つのプロセスは、リポジトリ直下で同じ venv と同じ `.env` を使います
+- `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
 
-## 音声相談(voice-resume との連携)
+## 画面
 
-AI が差し出す [話して伝える(音声・約5分)] か、入力欄の「+」→「音声で相談する」から、音声アドバイザー(`voice_resume/`。詳しくは [voice_resume/README.md](voice_resume/README.md))と話せる
-(旧リポジトリの task 40 を task 62 で移植。task 92 で別タブをやめ、トークと同じ画面のシートで開くようにした)。
-音声はトークの上に重ねる通話中のシート(画面下から出る)で話し、タブはまたがない。シートにはマイクの許可・
-接続中 / 聞いています / あなたが話しています / 考えています / アドバイザーが話しています の状態と「面談を終える」がある。
-面談が終わるとシートが閉じ、同じトークに AI の返信として「音声で話した内容のまとめ」「求人カード」「履歴書の下書きを見る」
-(雇用区分が正社員の面談なら「職務経歴書の下書きを見る」)が続く
-(システム通知のラベルは出さない。会話に入るので再読み込みしても残り、次のテキストの会話はその続きになる)。
-音声もチャットと同じ雇用区分・playbook・保存の仕組みを使う(aica v2 の G): 音声アドバイザーは今の区分の音声版の playbook
-(`dip_mcp/playbooks/{区分}_voice.md`)で話し、本人の発話から `set_search_track` で区分を切り替え(未定なら最初に1問で確かめる)、
-話した希望と本人のこと(目的・強み・正社員の条件など)を `save_user_preferences` で、相談のまとめを `record_conversation_outcome` で残す。
-提案した求人・下書きと合わせて、同じユーザーの dip の状態(プロフィール)とトークに戻る。次のテキストの会話では、それを要約から読んで確認形で1回だけ触れ、聞き直さない。
-書類の呼び方は区分にそろえる(アルバイト・パート = 履歴書、正社員 = 職務経歴書。区分が未定のあいだは「+」メニューとアドバイザーが「履歴書など」と言う)。
-
-ユーザーの対応付けは匿名ユーザーID(上の「マルチユーザー」)。旧リポジトリの `line_user_id`(LINE のユーザー)の代わりに、
-トークで使っているユーザー(本番の画面は匿名ID `w-…`、開発者画面は `匿名ID:シナリオユーザー`(例 `w-…:sim-new`))をそのまま音声側へ渡し、
-dip の読み書き・結果の返送はすべてこの ID で行う(dip の MCP ツールの引数名は `line_user_id` のまま)。
-音声構成は旧リポジトリと同じ(LiveKit Cloud + Deepgram nova-3 + OpenAI gpt-6-sol + Cartesia sonic-3.5)。
-
-```
-トーク [話して伝える] / 「+」→「音声で相談する」→ 同じ画面に通話中のシートが開く
-   → POST /api/voice/start(line_runtime。user_id は本文。Cookie の匿名IDのユーザーでなければ 403、Cookie なしは 401。
-     会話数を1つ使い、上限なら 429)が LiveKit の接続トークン(有効期限5分)を発行し、participant metadata に user_id を載せる
-     (発行は voice_resume/livekit_token.py。LIVEKIT_* が無ければ会話数を使わずに 503)
-   → ブラウザ ⇔ LiveKit Cloud ⇔ 音声ワーカー。ワーカーは会話の前に get_user_conversation_summary を読み、今の雇用区分
-     (search_track)の音声版の playbook を get_counseling_playbook(track, "voice") で読む
-     (前に話した希望 stated_preferences と、トークでアップロードした履歴書 uploaded_resume の要点を指示に入れ、確認形で使う・聞き直さない)
-   → 会話中: 区分の切り替えを set_search_track で記録して playbook を入れ替える / recommend_jobs を今の区分とそのユーザーID で呼ぶ /
-     本人が言った希望と本人のことを save_user_preferences で保存
-   → 終わり(締めの挨拶か「面談を終える」): POST /api/voice/result(共有鍵 AICA_INTERNAL_KEY つき。下書きは2万字まで)で
-     話した希望・求人・下書き(document_kind つき)をこちらへ返し、結果を propose / consult と相談のまとめで記録する
-     → line_runtime が今の会話に AI の返信として続ける(LLM は呼ばない)。面談の途中で本人が「すべて消す」をしていたら、
-     その前に発行した部屋の結果は 410 で断り、ワーカーも記録しない
-   → シートは開いている間だけ POST /api/voice/wait(この面談の部屋の結果を最長25秒待って返すのを繰り返す)で待ち、
-     届いたら閉じて同じ返信(まとめ・求人カード・「履歴書の下書きを見る」か「職務経歴書の下書きを見る」= GET /liff/voice/draft)をトークに描く
-     (「面談を終える」から2分たっても届かなければ、× で閉じてよいと案内する。あとで届いた結果は会話に入り、開き直すと出る)
-```
-
-- 求人カードは、送られてきた `job_id` を dip の求人データと照合してコードで作り直す。dip に無い求人はトークに出ない
-  (LINE 側の「dip が返した求人だけをカードにする」決まりと同じ)。
-- 「話した内容のまとめ」は、音声で本人が話した希望(dip に保存したのと同じ項目。個人情報らしい値は捨てる)から
-  コードで作る(`line_runtime/voice_reply.py`。吹き出しは80字以内)。
-- 会話数: 音声相談を始めるとき(接続トークンの発行)に1つ使う。結果をトークに続けるときは使わない。
-- 会話結果の記録はコードが propose(求人を提案できた)/ consult(提案なし)だけを書く。
-  wait は音声側からは記録しない(断っていない人を wait と記録しない決まり)。
-- 画面の証跡: `voice_resume/results/talk-voice-sheet-20260929-*.png`(LiveKit のライブラリを代役にして、
-  結果の受け取りからトークへの描画までを通したもの。実際の音声は使っていない)。
-
-動かし方(2プロセス。すべてリポジトリ直下・同じ venv・同じ `.env`。会話ページは line_runtime が配る):
-
-```bash
-# リポジトリ直下の .env に(下の表の「音声相談」の必須の6つ + OPENAI_API_KEY)
-#   LIVEKIT_URL=wss://<project>.livekit.cloud
-#   LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...
-#   DEEPGRAM_API_KEY=...  CARTESIA_API_KEY=...  OPENAI_API_KEY=...
-#   AICA_INTERNAL_KEY=...(ワーカー → トークの結果の送信の共有鍵。任意の長いランダム文字列)
-./.venv/bin/python -m voice_resume.agent download-files     # 初回のみ(VAD / turn detector のモデル)
-
-# 1) トーク(line_runtime。音声相談のシートと接続トークンの発行もここ)
-./.venv/bin/python -m line_runtime.server                  # http://127.0.0.1:8030
-# 2) voice-resume のワーカー(LiveKit Cloud に接続して待受)
-./.venv/bin/python -m voice_resume.agent dev
-```
-
-オフラインテスト(実 API なし。台本(文字起こし)駆動の会話の流れ・検索引数・下書き、dip の MCP 結合、匿名ユーザーID のスコープ)は
-`./.venv/bin/python -m pytest tests/voice/`(`pytest -q` 全体にも含まれる)。実 API の E2E は `scripts/voice/e2e_audio_session.py`
-(費用がかかる。[voice_resume/README.md](voice_resume/README.md))。
-
-→ <http://127.0.0.1:8030>(本番のトーク)または <http://127.0.0.1:8030/dev> でシナリオを選ぶ → 入力欄の「+」→「音声で相談する」
-→ 同じ画面のシートで面談(マイク許可。イヤホン推奨)
-→ 面談が終わる(締めの挨拶か「面談を終える」)と、シートが閉じて同じトークにまとめ・求人カード・下書きのリンクが続く。
-開発者画面では、左の「dip から見た状態」の「本人の希望」「会話の結果」にも反映される。
-
-dip の MCP サーバーを別プロセスで動かす場合:
-
-```bash
-./.venv/bin/python -m dip_mcp.server --http 8020
-DIP_MCP_URL=http://127.0.0.1:8020/mcp ./.venv/bin/python -m line_runtime.server
-```
-
-| 環境変数 | 既定 | 用途 |
+| 画面 | URL | 中身 |
 |---|---|---|
-| `LINE_SIM_PROVIDER` | `openai` | LLM のプロバイダ(`openai` / `anthropic`)。下の既定モデルもこれで変わる |
-| `LINE_SIM_MODEL` | `gpt-6-sol`(anthropic なら `claude-opus-5`) | LINE 側エージェントのモデル |
-| `LINE_SIM_EFFORT` | `low` | 思考の深さ(OpenAI は reasoning effort) |
-| `DIP_MCP_URL` | なし(stdio) | dip MCP サーバーの URL |
-| `DIP_STATE_PATH` | `data/state.json` | dip 側のシミュレーション状態 |
-| `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シミュレーション上の現在時刻 |
-| `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りに使う OpenAI モデル(アップロードは常に OpenAI。`OPENAI_API_KEY` が要る) |
+| トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
+| 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
+| LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き |
 
-音声相談(voice_resume)で使うもの。キーはリポジトリ直下の `.env` に置く(`voice_resume/config.py` が読む。トークだけ試すなら不要):
+- ブラウザごとに匿名ユーザーIDを Cookie で発行します。認証はありません(URL を知っている知人だけが使う前提)
+- 1 日あたりのターン数に上限があります(下の「設定」)
+- シナリオは 15 件で、開発者画面と評価で同じ一覧(`evals/scenarios.json`)です
 
-| 環境変数 | 既定 | 用途 |
+画面の細かい動きは [LLD の 4.10](docs/architecture/lld.md#410-画面) にあります。
+
+## 主なコマンド
+
+`python` は `./.venv/bin/python` のことです。「実 API」の列が「使う」のコマンドは費用がかかります。
+
+| コマンド | すること | 実 API |
 |---|---|---|
-| `LIVEKIT_URL` | なし(必須) | LiveKit Cloud のプロジェクト URL(`wss://….livekit.cloud`)。トーク(line_runtime)とワーカーの両方が使う |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud の API キー。トーク(line_runtime)が部屋ごとの接続トークンを発行し、ワーカーが部屋に入る |
-| `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし(Deepgram nova-3、日本語) |
-| `CARTESIA_API_KEY` | なし(必須) | 読み上げ(Cartesia sonic-3.5、日本語ボイス) |
-| `OPENAI_API_KEY` | なし(必須) | 会話の LLM・下書き(履歴書・職務経歴書)・会話中の調べもの(gpt-6-sol)。トーク側と共通 |
-| `AICA_INTERNAL_KEY` | なし(必須) | サーバー間の経路の共有鍵。音声ワーカーが結果をトークへ送る `POST /api/voice/result` に付け、line_runtime が照合する(両方に同じ値。無ければ結果は 401 で届かない)。例: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 面談の結果(求人・下書き)を返すトーク(line_runtime)の URL |
-| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 面談ごとの下書き・文字起こし・求人提案の保存先 |
-| `VOICE_RESUME_*`(モデル・ボイス・ターン判定) | `voice_resume/config.py` | STT / LLM / TTS のモデル、ボイスと速さ、ターン判定の待ち時間 |
+| `python -m line_runtime.server` | Web プロセスを起動する(`127.0.0.1:8030`) | 挨拶と会話で使う |
+| `python -m voice_resume.agent dev` | 音声ワーカーを起動する | 使う |
+| `python -m dip_mcp.server --http 8020` | dip の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す | - |
+| `python -m pytest -q` | テスト | 使わない |
+| `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
+| `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
+| `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
+| `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
+| `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |
+| `python -m line_runtime.ledger [--date 2026-09-27] [--by-user-id] [--json]` | 費用台帳を人と日ごとに表で集計する(合計の行つき)。`--by-user-id` はシナリオユーザーを匿名ユーザーIDにまとめない | 使わない |
+| `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
+| `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
+| `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
 
-## 評価(evals/)
+評価の判定と回し方は [LLD の 4.8](docs/architecture/lld.md#48-評価の-1-シナリオevalsrunrun_scenario)、テストの仕組みは
+[LLD の 10 章](docs/architecture/lld.md#10-テストと評価の仕組み)にあります。
 
-`evals/scenarios.json` の15シナリオ(上の「シナリオ」。画面と同じ一覧)を、
-設定を与えた模擬ユーザー(LLM)と会話させ、次を採点する。
+## 設定
 
-- 機械判定(`evals/checks.py`): 1ターン1問、選択肢は最大4つで逃げ道を含む、吹き出し80字以内、求人は最大3件で理由つき、
-  ツールが返していない求人を出さない、個人情報をトーク経由で送らない、初回は質問で終える、
-  「今はいい/送らないで」の後に質問や求人を続けない、「求人を見せて」のターンで求人を探す、この会話で保存した項目を聞き直さない、最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)、断られていないのに wait を記録しない。
-  再訪(希望あり)は、1通目で前の希望に触れ、以後その項目を聞き直さない。再訪(行動履歴のみ)は、1通目で最近の行動に触れ、
-  触れるのは会話を通して1回だけ、1通目に求人カード・求人名・件数を並べず職種も1つだけ。
-  プッシュのシナリオは本番と同じく `push_trigger` を通してから始める。
-- 事実性(`fact_violations`、指標 `fabrications`): 返信に出てくる金額・日付・徒歩分数・件数・求人名が、この会話で
-  dip から来た情報(ツールの結果・プッシュの根拠の事実・dip の Prompt)かユーザーの発言にあるかをコードで照合する。
-  無ければ作り話として違反。数字は同じ単位の値とだけ照合する(徒歩の分数は walk_min、件数は total や件数のリストなど。ID や日付に含まれる数字は根拠にしない)。
-  dip の Prompt は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
-  その場で作った架空の求人名そのものは文字列では見分けにくいので、ここは実在の求人の出し間違いを捕まえる。
-  保存した希望(`save_user_preferences`)が本人の発言に出てこない場合も違反にする(本人が決めていない条件を記録しない)。
-  相談のシナリオ(`consult_mode`)では、初回の選択肢に「まず相談する」がある、相談の入口で playbook を読み、求人を出さずに
-  1問から始める、本人が切り上げる前に相談を締めない、相談で聞いた項目を保存する、目的を確かめる前に求人を出さない
-  (本人が自分から「求人を見せて」と言ったときを除く)、本人の発言にも履歴書にも無い職種を選択肢に2つ以上並べない、も見る。
-- playbook(`playbook_violations`・`dont_know_violations`): 区分が変わったターンで新しい区分の playbook を読み直したか。
-  「分からない」の直後の返信で、選択肢か候補を示す文に職種を2つ以上並べていないか(掘り下げに戻る)。
-- 雇用区分の切り替え(`track_expectations`、指標 `track_ok`): シナリオの `expect_tracks`(期待する区分と、期限のターン
-  `turn` か、期限を決める本人の発言 `on_said`)と、実際に区分が変わった `set_search_track` の呼び出しを突き合わせる。
-  期限までに期待の区分(ok)/ 切り替えなし(missing)/ 違う区分(wrong_track)/ 期限より後(late)/ 期待していない切り替え
-  (unexpected)を区別する。模擬ユーザーが期待の発言をしなかった回(no_trigger)はエージェントの判定に数えない。
-  区分つきの再訪(`expect_track_in_greeting`)は、挨拶の1問に記録された区分を入れ、区分を聞き直さない。
-  会話の途中の履歴書のアップロード(`upload_resume`: AI が履歴書の操作を出したら、無ければ `upload_by_turn` でアップロード)の後は、
-  質問1つで、画面の確認をくり返さず、履歴書だけで区分を切り替えない。履歴書・音声の提案(actions)が出たターンも記録する(`action_offers`)。
-- 形式の決まりは雇用区分ごと(`FORMAT_RULES`: 1ターンの質問の数・吹き出しの字数・分岐の期限)。そのターンの返信を書いたときの区分の値で判定する。
-  値は dip の `CONVERSATION_RULES`(playbook と Prompt と同じ): アルバイト・パートと未定は 1問・80字・3ターン、正社員は 1問・120字・6ターン。
-- KPI: 期限までに分岐(提案/相談/支援/待つ)へ到達した割合(指標名は前の結果と比べられるよう `branch_within_3` のまま。
-  相談のシナリオは規則を緩めているので測らない)、会話結果を記録した割合、期待どおりの出口の割合。
-- 費用と効率(エージェント側の呼び出しだけ): `cost_usd`、`llm_calls`、`cache_hit_rate`(入力のうちプロンプトキャッシュから読めた割合。
-  読めた分は 0.1 倍の料金。シナリオとユーザーIDを会話の途中で変えないのは、この割合を保つため)。
-- LLM ジャッジ(`--judge` のときだけ、`evals/judge.py`): 相談の深さの4項目(目的を聞いたか / 目的かやりたいことを1回以上掘り下げたか /
-  選択肢が本人の履歴書・発言から作られているか / 提案理由が本人の話とつながっているか)を、満たした・満たさない・該当なしと
-  根拠の発言(会話ログからの引用)で出す(指標 `depth_purpose`・`depth_dig`・`depth_options`・`depth_reasons`)。
-  引用が会話ログに本当にあるか(`quoted`)はコードで確かめる。ほかにトーンと設計の狙いとの一致(1〜5)。作り話はコード(上)で見る。
-  深さの4項目は相談・ペルソナのシナリオ(`scenarios.json` の `measure_depth`)でだけ数える(ほかは None)。目的を聞いたかの
-  「満たした」は、根拠(ジャッジが引用した発言)がアシスタントの発言で、本人の発言の直後にあり、その本人の発言と内容語
-  (漢字・カタカナ、またはひらがな混じりの語幹の2文字)を1つ以上共有するときだけ数え、そうでなければ指標では満たさないに数える
-  (`purpose_evidence`)。区分の切り替えの一言「正社員のお仕事で考えますね」の語(区分・仕事・考え)は内容語に数えない。
-  目的かどうかの中身はジャッジが見て、この判定は根拠が本人の話と関係のない発言でないかだけを見る。
-  ジャッジの点数は1回ごとに揺れるので、1つの会話を `--judge-samples` 回(既定2)判定してまとめる(tone・design_fit は平均、
-  深さはどの回も満たしたときだけ満たした)。判定の方法を変えたら、基準も `--rejudge` してから比べる。
+API キーなどの秘密は、リポジトリ直下の `.env` に書きます(すでにある環境変数は上書きしません)。
 
-2026-09-27 に CRM 機能(プッシュ配信・休眠掘り起こし・配信停止/抑制)の削除に合わせて、シナリオを 12 件から
-新規ユーザー系の 5 件に再編した(jyoka/tasks#56。入口も follow / crm_reply から visit / revisit に変わった)。
-続けて再訪の2振る舞いを分けて測るため、`R-revisit-browsing`(再訪・行動履歴のみ)を足して 6 件にした(jyoka/tasks#57)。
-入口 A の Prompt は本番の入口として残している。シナリオ集合が変わったので、それより前の結果とは evalkit の diff で直接比べない
-(新しい集合の基準を最初に1回計測し、以後の回帰比較の起点にする)。
+**`.env` で効くのは、下の表で「`.env` 可」としたものだけです。** ほかは起動のときに読むので、コマンドの前に環境変数として渡します
+(例: `SIM_NOW=2026-10-01T09:00:00+09:00 ./.venv/bin/python -m line_runtime.server`)。理由は
+[review-2026-10.md の R21](docs/architecture/review-2026-10.md#r21-設定の一部が-env-では効かない)にあります。
 
-既定は各シナリオ1回。変更の前後を比べるときは `--repeat 2` などで繰り返す(1回だけだとばらつきと区別がつかない)。集計は 95% 区間つきで出す。
-LLM ジャッジは既定でオフ(`--judge` で有効)。結果は1回ごとに書き出すので、途中で止めてもそこまでの結果は残る。
+| 環境変数 | 既定 | 用途 | `.env` |
+|---|---|---|---|
+| `OPENAI_API_KEY` | なし(必須) | エージェント、履歴書の読み取り、意味検索、音声アドバイザー、下書き | 可 |
+| `ANTHROPIC_API_KEY` | なし | `LINE_SIM_PROVIDER=anthropic` のとき | 可 |
+| `LINE_SIM_PROVIDER` | `openai` | LLM のプロバイダ(`openai`、`anthropic`)。エージェント、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
+| `LINE_SIM_MODEL` | `gpt-6-sol`(anthropic なら `claude-opus-5`) | エージェントのモデル | 不可 |
+| `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
+| `LINE_SIM_PORT` | `8030` | Web サーバーのポート | 不可 |
+| `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
+| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
+| `DIP_STATE_PATH` | `data/state.json` | dip の状態 | 不可 |
+| `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
+| `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りのモデル | 不可 |
 
-費用(PRD `docs/prd/aica-v2-fulltime.md` の実 API の予算 $5):
+ターン数の上限です。`0` 以下にすると、その上限はありません。既定値の理由は [LLD の 5.3](docs/architecture/lld.md#53-費用台帳とターン数) にあります。
 
-- エージェントは本番のモデル(`LINE_SIM_MODEL`、既定 gpt-6-sol)。模擬ユーザーとジャッジは安いモデル(`evals/run.py` の
-  `SIM_MODEL`・`JUDGE_MODEL`: gpt-6-luna、anthropic なら Haiku 4.5)。
-- `--only T-side-job,B-exit` でシナリオを絞る(カンマ区切り。知らない ID は費用を使う前にエラー)。
-- `--max-turns 8`(既定)で1会話のエージェントのターンを抑える(シナリオの `max_turns` が小さければそちら)。
-- 費用台帳 `evals/budget.jsonl`(リポジトリに入れる。別の worktree のタスクへ累計を引き継ぐため)に、シナリオ1回ごとの費用
-  (エージェント・模擬ユーザー・ジャッジの合計)を足し、実行のたびに累計を出す。シナリオを始める前に累計が **$4** に達していたら
-  止まる(終了コード 2)。続けるかはユーザーと決める。`./.venv/bin/python -m evals.budget` で累計と実行ごとの内訳。
-  dip の MCP の子プロセスが呼ぶ embedding(求人の意味検索)は計測の外(1回 1k トークン未満で、1円にも届かない)。
-  実行を途中で止めても(Ctrl-C)、その回に払った分は台帳に載り(`interrupted: true`)、結果の json に `stopped: "interrupted"` を書く。
-  **SIGKILL(`kill -9`)やプロセスの異常終了は防げない**ので、そのときは払った分(OpenAI の使用量画面などで確かめる)を
-  `{"at": "...", "run": "sim-...", "cost_usd": 0.05, "note": "kill したので手で足した"}` の形で台帳に手で1行足す。
-  台帳は `.gitattributes` で `merge=union` にしてあるので、別のブランチで足した行はマージで両方残る。
-- 基準の計測(2026-09-29、全15シナリオ × 2回の予定が途中で止まり 26 回、$1.2628): `evals/baseline/`。
-  2回目の T-side-job、T-student-first、T-blank-parent、T-switch-to-fulltime の4本が欠けている。
-- 結果の `detail` にはターンごとの生の返信(`turn_log`。dip のツールの args と result を含む)・本人の発言・アップロードを残すので、
-  評価器(`evals/checks.py`)を直したあとは `evals.run.recheck(detail)` で実 API を使わずに機械判定をやり直せる
-  (`evals/baseline/` の 2026-09-29 の結果は保存を始める前のもので、再判定できない)。
-- ジャッジの指示(`evals/judge.py`)を直したあとは `./.venv/bin/python -m evals.run --rejudge 結果.json` で、保存済みの会話を
-  ジャッジだけで判定し直す(エージェントと模擬ユーザーは呼ばない。費用はジャッジの分だけ台帳に載り、$4 の停止も同じ)。
-  結果は `evals/results/<元の名前>-rejudge-<日時>.{json,md}` に別ファイルで書き、md に元の判定との差(深さの4項目と design_fit)を出す。
-  2026-09-30 に基準の会話をジャッジの指示の直し(「考えます」のあとの1問・自分から話した目的)のあとで判定し直した結果も `evals/baseline/` にある。
-- 完了時の計測(H、2026-10-04、全15シナリオ × 2回の予定が1周目の15回で止まった、$1.0948): `evals/baseline/sim-20261004-113109.*`。
-  「電話はしたくない」と音声でコールセンターを外す流れの小さな計測(`./.venv/bin/python -m evals.probe`、同じ台帳と $4 の停止)の
-  結果 `probe-20261004-*.*` も同じ場所にある。
-実行エラーになった回は失敗として数えず、件数を別に出す。
+| 環境変数 | 既定 | 上限 | `.env` |
+|---|---|---|---|
+| `LINE_SIM_DAILY_TURN_LIMIT` | 50 | 匿名ユーザーIDごとのターン数 | 可 |
+| `AICA_DAILY_TURN_LIMIT_PER_IP` | 150 | 同じ IP からのターン数の合計 | 可 |
+| `AICA_DAILY_NEW_IDS_PER_IP` | 20 | 同じ IP から 1 日に使える匿名ユーザーIDの数 | 可 |
+| `AICA_DAILY_TURN_LIMIT_TOTAL` | 1000 | 全体のターン数の合計 | 可 |
+| `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で 1 日に使える匿名ユーザーIDの数 | 可 |
+| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くときに使う | 可 |
 
-結果は `evals/results/sim-*.md`(集計 + 会話ログ)と `sim-*.json`(evalkit 形式)。変更の前後を比べるには:
+音声相談で使うものです。トークだけを試すなら要りません。
 
-```bash
-python3 evalkit/aggregate.py diff evals/results/sim-前.json evals/results/sim-後.json
-```
+| 環境変数 | 既定 | 用途 | `.env` |
+|---|---|---|---|
+| `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud(URL は `wss://<project>.livekit.cloud`)。Web プロセスが部屋の接続トークンを発行し、音声ワーカーが部屋に入る | 可 |
+| `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
+| `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
+| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
+| `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
+| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
+| `VOICE_RESUME_*`(モデル、ボイス、ターンの判定) | [LLD の 7.1](docs/architecture/lld.md#71-音声の部品の設定) | STT、LLM、読み上げの設定 | 不可 |
 
-差がノイズ幅(95%)を超えた指標だけ「改善/悪化」と判定し、超えないものは「差なし」と扱う(2回ずつでは、ばらつきの判断は弱い)。
+## 文書
+
+| 知りたいこと | 文書 |
+|---|---|
+| 全体の図、部品、データの流れ、信頼の境界、用語 | [docs/architecture/hld.md](docs/architecture/hld.md)(HLD) |
+| モジュール、HTTP の口、dip のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](docs/architecture/lld.md)(LLD) |
+| 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](docs/architecture/review-2026-10.md) |
+| 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
+| シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md) |
+| aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](docs/prd/aica-v2-fulltime.md)(PRD) |
+| 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う |
+| イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
+| 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
+| 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |

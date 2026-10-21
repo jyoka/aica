@@ -114,3 +114,21 @@ def test_keyword_searches_are_traced_only_when_the_eval_asks(state, monkeypatch,
     assert near["kept"] == plain["total"] and near["candidates"] == len(load_jobs())
     assert offline == {"keywords": "まかない", "peak": None, "semantic": False, "candidates": len(load_jobs()),
                        "kept": offline["word_hits"], "word_hits": offline["word_hits"]} and offline["kept"] >= 1
+
+
+def test_sim_peak_is_judged_on_the_unrounded_gap(state, monkeypatch, tmp_path):
+    """SIM_PEAK の判定は丸める前の最高値 - 中央値で行う。差が 0.1197 なら記録の peak は丸めて 0.12 になるが、
+    検索は部分一致だけのまま(意味が近いだけの求人を足さない)。記録を取るかどうかでも結果は変わらない。"""
+    jobs = load_jobs()
+    ids = sorted(jobs)
+    gap = logic.SIM_PEAK - 0.0003
+    monkeypatch.setattr(embedding, "embed_query", lambda q: [1.0])
+    monkeypatch.setattr(embedding, "similarities",
+                        lambda qvec, js: {jid: (0.3 + gap if jid == ids[0] else 0.3) for jid in ids})
+    plain = logic.recommend(state, None, keywords="zzz無関係な語zzz")
+    assert plain["total"] == 0
+    trace = tmp_path / "keywords.jsonl"
+    monkeypatch.setenv("DIP_KEYWORDS_TRACE", str(trace))
+    assert logic.recommend(state, None, keywords="zzz無関係な語zzz") == plain
+    row = json.loads(trace.read_text(encoding="utf-8"))
+    assert row["peak"] == round(gap, 3) == logic.SIM_PEAK and not row["semantic"] and row["kept"] == 0

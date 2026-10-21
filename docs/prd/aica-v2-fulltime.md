@@ -118,7 +118,7 @@ UX の刷新(本番はトーク1画面、履歴書・音声を会話の中へ、
 - 同じブラウザ(同じ Cookie の匿名ID)の `/dev` のシナリオ利用者「匿名ID:シナリオユーザー」(例 `匿名ID:sim-new`。`/dev` のトークから入った音声相談の記録もここに入る)も、本人の記録なのでまとめて消す。評価シナリオ(`evals/scenarios.py` の `load_scenarios`)にあるシナリオユーザーごとに、上と同じ消し方(dip の状態・会話・読み取れなかった直前のアップロード(メモリ上の `unread_uploads`)・音声の下書きのファイル)をする。別のブラウザのシナリオ利用者は消せない(jyoka/tasks#122)。本番の `/` の音声相談は匿名ID そのもの(`w-…`)に入り、上の消し方で消える
 
 ### 音声の下書き
-- 履歴書下書きのスキーマ(`docs/design/resume-draft-schema.md`)は1つのまま、任意項目 `document_kind`(履歴書 / 職務経歴書)を足して format_version 1.1 にする。任意項目なので、履歴書の読み取り(resume-intake)と保存はそのまま動く
+- 履歴書下書きのスキーマ(`docs/design/resume-draft-schema.md`。今は [LLD の 5.5](../architecture/lld.md#55-resume-draft))は1つのまま、任意項目 `document_kind`(履歴書 / 職務経歴書)を足して format_version 1.1 にする。任意項目なので、履歴書の読み取り(resume-intake)と保存はそのまま動く
 - 正社員: 職歴ごとの成果と数字(規模・期間・結果)を掘り下げ、職務要約を整えて職務経歴書として出す。アルバイト: 今までどおり履歴書。未定: 最初に1問で区分を確かめる
 - 「下書きを見る」の表示を、書類の種類に合わせて見出しと並びを変える
 
@@ -145,7 +145,7 @@ UX の刷新(本番はトーク1画面、履歴書・音声を会話の中へ、
 | D | 保存項目の拡張と相談のまとめ(新項目・正社員の条件・相談のまとめ・個人情報の防御・聞き直し判定の拡張。#61 を吸収) | dip_mcp/logic.py・server.py、evals/checks.py | C(同じ logic と要約を触る) |
 | E | 評価の仕組みとペルソナ(ペルソナ約5本・区分の機械判定・深さのジャッジ項目・安いモデル・ターン上限・--only・費用の累計と $4 での停止)と**基準の計測**(全14本×2) | evals/ | A、C、D |
 | F | チャットの playbook(正社員・アルバイト・未定の chat 版・get_counseling_playbook・Prompt の相談モード節の置き換え・区分ごとの会話の決まり)と、playbook の調整(5本×最大5回) | dip_mcp/playbooks、prompts、evals/checks.py | E |
-| G | 音声の playbook と下書き(voice 版 playbook・音声が set_search_track / get_counseling_playbook / save を使う・document_kind と format_version 1.1・下書きの表示) | voice_resume/、docs/design/resume-draft-schema.md | F、#92(音声の配信が line_runtime 配下に移ってから) |
+| G | 音声の playbook と下書き(voice 版 playbook・音声が set_search_track / get_counseling_playbook / save を使う・document_kind と format_version 1.1・下書きの表示) | voice_resume/、docs/design/resume-draft-schema.md(今は LLD の 5.5) | F、#92(音声の配信が line_runtime 配下に移ってから) |
 | H | 完了時の計測(全14本×2、基準と比較、PRD の完了判定)。jyoka/tasks#65 を置き換える | evals/ | B、F、G |
 
 UX 側で、この PRD の実装を待つもの(登録済み):

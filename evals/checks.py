@@ -9,9 +9,10 @@ import json
 import re
 from decimal import Decimal
 
-from dip_mcp.data import PII_VALUE as DIP_PII_VALUE
-from dip_mcp.data import ROOT, fold_pii, has_pii, load_jobs
+from dip_mcp.data import ROOT, load_jobs
 from dip_mcp.logic import CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
+from resume_draft.pii import PII_VALUE as DIP_PII_VALUE
+from resume_draft.pii import fold_pii, has_pii
 
 QUICK_MAX = 4
 JOBS_MAX = 3
@@ -29,7 +30,7 @@ QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
-# 年収の桁表記(「年収3000000円」)は電話番号に数えない(dip_mcp/data.py の PII_VALUE)。
+# 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
 # 全角の数字・ハイフン(「０９０－１２３４－５６７８」「090ー1234ー5678」)も dip と同じく半角にそろえてから見る(pii)
 PII_VALUE = re.compile(DIP_PII_VALUE.pattern + r"|@")
 

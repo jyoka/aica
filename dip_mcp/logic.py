@@ -15,6 +15,7 @@ import os
 import re
 import secrets
 from collections import Counter
+from datetime import datetime
 from statistics import median
 from urllib.parse import urlencode
 
@@ -30,18 +31,20 @@ from dip_mcp.data import (
     Pay,
     State,
     annual_pay_mid,
-    fold_pii,
-    has_pii,
     load_job_faq,
     load_jobs,
     load_listings,
     now,
     parse_ts,
     pay_text,
-    redact_pii,
 )
-from resume_intake.extract import scrub_pii
-from resume_intake.schema import PERSONAL_KEYS, ResumeDraft
+from resume_draft.pii import fold_pii, has_pii, redact_pii, scrub_pii
+from resume_draft.schema import (
+    DEFAULT_DOCUMENT_KIND,
+    DOCUMENT_KINDS,
+    PERSONAL_KEYS,
+    ResumeDraft,
+)
 
 HISTORY_DAYS = 90
 MAX_JOBS = 3
@@ -62,20 +65,20 @@ def _md(ts: str) -> str:
     return f"{d.month}/{d.day}"
 
 
-def _days_ago(ts: str) -> int:
-    """暦日で数える(9/19 → 9/23 は4日)。"""
-    return (now().date() - parse_ts(ts).astimezone(now().tzinfo).date()).days
+def _days_ago(ts: str, at: datetime) -> int:
+    """at(そのユーザーの今。data.now)から暦日で数える(9/19 → 9/23 は4日)。"""
+    return (at.date() - parse_ts(ts).astimezone(at.tzinfo).date()).days
 
 
-def _recent(items: list[dict], key: str, days: int = HISTORY_DAYS) -> list[dict]:
-    return [i for i in items if _days_ago(i[key]) <= days]
+def _recent(items: list[dict], key: str, at: datetime, days: int = HISTORY_DAYS) -> list[dict]:
+    return [i for i in items if _days_ago(i[key], at) <= days]
 
 
-def preferences(user: dict, jobs: dict[str, BaitoJob]) -> dict:
-    """直近の応募・閲覧・保存から、エリア・時間帯・職種の傾向を数える(多い順)。"""
-    refs = [a["job_id"] for a in _recent(user.get("applications", []), "applied_at")]
-    refs += [v["job_id"] for v in _recent(user.get("views", []), "at", 30)]
-    refs += [s["job_id"] for s in _recent(user.get("saves", []), "at", 30)]
+def preferences(user: dict, jobs: dict[str, BaitoJob], at: datetime) -> dict:
+    """直近の応募・閲覧・保存から、エリア・時間帯・職種の傾向を数える(多い順)。at はそのユーザーの今。"""
+    refs = [a["job_id"] for a in _recent(user.get("applications", []), "applied_at", at)]
+    refs += [v["job_id"] for v in _recent(user.get("views", []), "at", at, 30)]
+    refs += [s["job_id"] for s in _recent(user.get("saves", []), "at", at, 30)]
     js = [jobs[r] for r in refs if r in jobs]
     top = lambda c: [k for k, _ in c.most_common(2)]
     return {
@@ -119,11 +122,11 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
                         + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE}
-    jobs = load_jobs()
-    apps = sorted(_recent(user.get("applications", []), "applied_at"), key=lambda a: a["applied_at"], reverse=True)
-    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"]) <= 7]
-    views = _recent(user.get("views", []), "at", 30)
-    saves = _recent(user.get("saves", []), "at", 30)
+    jobs, at = load_jobs(), now(line_user_id)
+    apps = sorted(_recent(user.get("applications", []), "applied_at", at), key=lambda a: a["applied_at"], reverse=True)
+    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"], at) <= 7]
+    views = _recent(user.get("views", []), "at", at, 30)
+    saves = _recent(user.get("saves", []), "at", at, 30)
     contacts = sorted(user.get("contacts", []), key=lambda c: c["at"], reverse=True)
 
     last_app = None
@@ -131,13 +134,13 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         a = apps[0]
         j = jobs.get(a["job_id"])
         last_app = {"job_id": a["job_id"], "title": j.title if j else "", "job_type": j.job_type if j else "",
-                    "area": j.area if j else "", "applied": _md(a["applied_at"]), "days_ago": _days_ago(a["applied_at"]),
+                    "area": j.area if j else "", "applied": _md(a["applied_at"]), "days_ago": _days_ago(a["applied_at"], at),
                     "status": a["status"]}
     form_exit = None
     if exits:
         e = exits[-1]
         j = jobs.get(e["job_id"])
-        hours = int((now() - parse_ts(e["exited_at"])).total_seconds() // 3600)
+        hours = int((at - parse_ts(e["exited_at"])).total_seconds() // 3600)
         form_exit = {"job_id": e["job_id"], "title": j.title if j else "", "hours_ago": hours,
                      "remaining": e["remaining"]}
 
@@ -159,7 +162,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "recent_views": {"count_30d": len(views), "by_job_type": dict(Counter(
             jobs[v["job_id"]].job_type for v in views if v["job_id"] in jobs))},
         "saves_30d": len(saves),
-        "tendency": preferences(user, jobs),
+        "tendency": preferences(user, jobs, at),
         "last_contact": ({"channel": contacts[0]["channel"], "when": _md(contacts[0]["at"]),
                           "message": contacts[0]["message"]} if contacts else None),
         **_profile_summary(user),
@@ -170,18 +173,18 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
 
 
 def recent_applications(state: State, line_user_id: str) -> list[dict]:
-    user, jobs = state.user(line_user_id), load_jobs()
+    user, jobs, at = state.user(line_user_id), load_jobs(), now(line_user_id)
     out = []
-    for a in sorted(_recent(user.get("applications", []), "applied_at"), key=lambda a: a["applied_at"], reverse=True):
+    for a in sorted(_recent(user.get("applications", []), "applied_at", at), key=lambda a: a["applied_at"], reverse=True):
         j = jobs.get(a["job_id"])
         out.append({"job_id": a["job_id"], "title": j.title if j else "", "applied": _md(a["applied_at"]),
-                    "days_ago": _days_ago(a["applied_at"]), "status": a["status"]})
+                    "days_ago": _days_ago(a["applied_at"], at), "status": a["status"]})
     return out
 
 
 def form_exit(state: State, line_user_id: str) -> dict | None:
-    user, jobs = state.user(line_user_id), load_jobs()
-    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"]) <= 7]
+    user, jobs, at = state.user(line_user_id), load_jobs(), now(line_user_id)
+    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"], at) <= 7]
     if not exits:
         return None
     e = exits[-1]
@@ -387,7 +390,7 @@ def _keyword_filter(cands: list[BaitoJob], keywords: str,
     jobs は全求人(問い合わせの分けやすさを測る)。"""
     qvec = embedding.embed_query(keywords)
     every = embedding.similarities(qvec, jobs.values()) if qvec else {}
-    peak = round(max(every.values()) - median(every.values()), 3) if every else None
+    peak = max(every.values()) - median(every.values()) if every else None
     if not every or peak < SIM_PEAK:
         kept = [j for j in cands if _keyword_hit(j, keywords)]
         _trace_keywords(keywords, peak, False, cands, kept)
@@ -404,18 +407,19 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
                     kept: list[BaitoJob]) -> None:
     """評価(evals/run.py)だけが使う記録: 環境変数 DIP_KEYWORDS_TRACE のファイルに、keywords の検索1回を1行の JSON で足す
     (SIM_PEAK の余裕を実際の会話で見るため。task 109)。peak は全求人の類似度の最高値 - 中央値(意味検索が使えなければ None)、
-    semantic は意味の近さを使ったか(False なら部分一致だけ)。ツールの結果は変えない。"""
+    semantic は意味の近さを使ったか(False なら部分一致だけ)。ツールの結果は変えない(丸めるのは記録する値だけで、
+    SIM_PEAK の判定は丸める前の値で行う)。"""
     path = os.environ.get("DIP_KEYWORDS_TRACE")
     if not path:
         return
     hits = sum(1 for j in kept if _keyword_hit(j, keywords))
-    row = {"keywords": keywords, "peak": peak, "semantic": semantic, "candidates": len(cands), "kept": len(kept),
-           "word_hits": hits}
+    row = {"keywords": keywords, "peak": None if peak is None else round(peak, 3), "semantic": semantic,
+           "candidates": len(cands), "kept": len(kept), "word_hits": hits}
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob],
+def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob], at: datetime,
              filters: dict | None = None) -> list[str]:
     """推薦理由。指定された条件か、90日以内の本人の行動に基づく事実だけを並べる。
     属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。"""
@@ -425,7 +429,7 @@ def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[st
         reasons.append(TALK_REASONS[job.talk_level])
     if f.get("max_physical_level") or f.get("min_physical_level"):
         reasons.append(PHYSICAL_REASONS[job.physical_level])
-    for a in _recent(user.get("applications", []), "applied_at"):
+    for a in _recent(user.get("applications", []), "applied_at", at):
         past = jobs.get(a["job_id"])
         if past and past.job_type == job.job_type and past.job_id != job.job_id:
             d = parse_ts(a["applied_at"])
@@ -527,15 +531,18 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     if err := _area_error(area, jobs):
         return err
     areas = _area_set(area)
+    at = now(line_user_id)
     pool = jobs
     if posted_within_days is not None:  # 候補だけを新着に絞る
-        listings = load_listings()
+        # 掲載開始の日付は fixtures のシミュレーションの値で、SIM_NOW から見て書いてある。誰が探しても SIM_NOW から数える
+        listings, listed_at = load_listings(), now(None)
         pool = {k: j for k, j in jobs.items()
-                if "posted_at" in listings.get(k, {}) and _days_ago(listings[k]["posted_at"]) <= posted_within_days}
+                if "posted_at" in listings.get(k, {})
+                and _days_ago(listings[k]["posted_at"], listed_at) <= posted_within_days}
     user = state.user(line_user_id) if line_user_id else {}
     applied = {a["job_id"] for a in user.get("applications", [])}
     exclude = set(exclude_ids or []) | applied  # 応募済みの求人は出さない
-    tend = preferences(user, jobs) if user.get("dip_id") else {"job_type": [], "area": [], "time_band": []}
+    tend = preferences(user, jobs, at) if user.get("dip_id") else {"job_type": [], "area": [], "time_band": []}
     cands = [j for j in pool.values() if j.job_id not in exclude
              and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
     sims, unmatched = None, False
@@ -551,7 +558,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
             b["salary"] = _salary_score(j.pay, min_annual_salary)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs, filters))
+    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs, at, filters))
            | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
     out = {"total": len(hits), "jobs": top}
@@ -659,7 +666,7 @@ def answer_material(question: str, job_id: str | None = None) -> dict:
             for t in facts:
                 hits.append({"source": "求人の説明", "a": t, "score": score(t)})
             out["job"] = job.model_dump()
-            out["card"] = job_card(job, _reasons(job, None, None, None, {}, jobs))
+            out["card"] = job_card(job, _reasons(job, None, None, None, {}, jobs, now(None)))
     for f in json.loads((FIXTURES / "faq.json").read_text(encoding="utf-8")):
         hits.append({"source": "全体の FAQ", "id": f["id"], "q": f["q"], "a": f["a"], "score": score(f["q"] + f["a"])})
     # その求人の答え(案件の FAQ・求人の説明)を、全体の FAQ より先に並べる(全体の FAQ は一般論で、求人と食い違うことがある)
@@ -718,14 +725,14 @@ def submit_application(state: State, line_user_id: str, job_id: str) -> None:
     def apply(u):
         u["form_exits"] = [e for e in u.get("form_exits", []) if e["job_id"] != job_id]
         u.setdefault("applications", []).append(
-            {"job_id": job_id, "applied_at": now().isoformat(), "status": "応募済み(店舗からの連絡待ち)"})
+            {"job_id": job_id, "applied_at": now(line_user_id).isoformat(), "status": "応募済み(店舗からの連絡待ち)"})
     state.update(line_user_id, apply)
 
 
 def save_job(state: State, line_user_id: str, job_id: str) -> dict:
     def apply(u):
         if job_id not in {s["job_id"] for s in u.get("saves", [])}:
-            u.setdefault("saves", []).append({"job_id": job_id, "at": now().isoformat()})
+            u.setdefault("saves", []).append({"job_id": job_id, "at": now(line_user_id).isoformat()})
     u = state.update(line_user_id, apply)
     return {"saved": job_id, "saves_total": len(u["saves"])}
 
@@ -750,7 +757,7 @@ def record_talk_open(state: State, line_user_id: str) -> None:
     """トーク画面を開いて挨拶が返ったことを記録する(次からは再訪)。挨拶が失敗・上限で返らなかったときは呼ばない
     (呼ぶと、次に開いたとき会ってもいない相手に「おかえりなさい」と言ってしまう)。"""
     state.update(line_user_id, lambda u: u.__setitem__(
-        "talk_opens", [*u.get("talk_opens", []), now().isoformat()][-20:]))  # 判定に要るのは有無だけなので短く保つ
+        "talk_opens", [*u.get("talk_opens", []), now(line_user_id).isoformat()][-20:]))  # 判定に要るのは有無だけなので短く保つ
 
 
 # ----------------------------- 本人が話した希望と、本人について(プロフィール) -----------------------------
@@ -825,7 +832,7 @@ def save_preferences(state: State, line_user_id: str, preferences: dict[str, str
     def apply(u):
         prefs = u.setdefault("preferences", {})
         for k, v in keep.items():
-            prefs[k] = {"value": v, "at": now().isoformat()}
+            prefs[k] = {"value": v, "at": now(line_user_id).isoformat()}
 
     state.update(line_user_id, apply)
     out = {"saved": list(keep), "rejected": rejected}
@@ -888,7 +895,7 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
             result.update({"track": current, "changed": False})
             return
         # id はトークの切り替えの表示がどの記録かを指す(記録ごと消した・すべて消した後の記録と取り違えないよう、番号ではなく乱数)
-        rec = {"id": secrets.token_hex(6), "at": now().isoformat(), "from": current, "track": track, "evidence": evidence,
+        rec = {"id": secrets.token_hex(6), "at": now(line_user_id).isoformat(), "from": current, "track": track, "evidence": evidence,
                "undo": undo}
         u["track_history"] = [*history, rec]
         result.update({"track": track, "changed": True, "recorded": rec})
@@ -938,10 +945,6 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
 # ----------------------------- 音声相談の結果(トークへ戻す) -----------------------------
 
 
-# 音声の下書きの書類の種類(docs/design/resume-draft-schema.md の document_kind。voice_resume/schema.py と同期)。
-# 種類の無い結果(format_version 1.0 の頃の下書き)は履歴書
-DOCUMENT_KINDS = ("履歴書", "職務経歴書")
-DEFAULT_DOCUMENT_KIND = "履歴書"
 VOICE_ROOMS_KEPT = 20  # 覚えておく音声相談の部屋の数(「すべて消す」の前に始めた面談の結果を見分けるため)
 
 
@@ -971,7 +974,7 @@ def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None
     prefs = {k: str(v).strip() for k, v in (preferences or {}).items()
              if str(v).strip() and _preference_error(k, v) is None}
     kind = document_kind if document_kind in DOCUMENT_KINDS else DEFAULT_DOCUMENT_KIND
-    rec = {"at": now().isoformat(), "cards": cards, "draft_markdown": str(draft_markdown or ""),
+    rec = {"at": now(line_user_id).isoformat(), "cards": cards, "draft_markdown": str(draft_markdown or ""),
            "files": [str(f) for f in (files or [])], "preferences": prefs, "room": room or None,
            "document_kind": kind}
     result = {}
@@ -1015,12 +1018,6 @@ def voice_result(state: State, line_user_id: str, result_id: int) -> dict | None
     return None
 
 
-def document_kind(rec: dict | None) -> str:
-    """音声相談の結果(または下書きの JSON)の書類の種類。種類の無い 1.0 の頃のものは履歴書。"""
-    kind = (rec or {}).get("document_kind")
-    return kind if kind in DOCUMENT_KINDS else DEFAULT_DOCUMENT_KIND
-
-
 def record_voice_room(state: State, line_user_id: str, room: str) -> None:
     """音声相談の部屋を発行したことを覚える(「すべて消す」の後に、その前に始めた面談の結果を受け取らないため)。"""
     state.update(line_user_id, lambda u: u.__setitem__(
@@ -1036,7 +1033,7 @@ def voice_room_forgotten(state: State, line_user_id: str, room: str | None) -> b
 
 
 def save_resume_upload(state: State, line_user_id: str, result: dict, file: str = "") -> dict:
-    """履歴書の読み取り結果(resume_intake.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
+    """履歴書の読み取り結果(resume_draft.schema.envelope の形)を、そのユーザーの最新の1件として保存する。
     id はそのユーザーのアップロードの通し番号(トークの「読み取り結果を見る」が、どのアップロードの結果かを指す)。
     番号は resume_upload_seq から振る: プロフィール画面で読み取り結果を消しても番号は戻らないので、
     消す前のターンのリンクが、あとのアップロードを開くことはない。
@@ -1047,7 +1044,7 @@ def save_resume_upload(state: State, line_user_id: str, result: dict, file: str 
     """
     resume = ResumeDraft.model_validate(scrub_pii(result.get("resume") or {})).model_dump()
     rec = {"format_version": str(result.get("format_version", "")), "source": "upload",
-           "created_at": str(result.get("created_at", "")), "uploaded_at": now().isoformat(),
+           "created_at": str(result.get("created_at", "")), "uploaded_at": now(line_user_id).isoformat(),
            "file": file, "personal": {k: "" for k in PERSONAL_KEYS}, "resume": resume}
 
     def apply(u):
@@ -1116,7 +1113,7 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
     # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、区切りまでの語ごと消す)。
     # 氏名はコードでは見分けられないので消せない: ツールの説明で書かないよう指示し(dip_mcp/server.py)、評価で見る
     reason = redact_pii(reason, extra=address_spans)
-    rec = {"at": now().isoformat(), "outcome": outcome, "reason": reason,
+    rec = {"at": now(line_user_id).isoformat(), "outcome": outcome, "reason": reason,
            "confidence": max(0.0, min(1.0, confidence))}
     if summary:
         rec["summary"] = redact_pii(summary, extra=address_spans)
@@ -1152,7 +1149,7 @@ def push_trigger(state: State, line_user_id: str, trigger: str) -> dict:
     user = state.user(line_user_id)
     if not user.get("dip_id"):
         return _deny("dip ID と未連携なので行動イベントがない")
-    recent = [c for c in user.get("contacts", []) if _days_ago(c["at"]) < PUSH_INTERVAL_DAYS]
+    recent = [c for c in user.get("contacts", []) if _days_ago(c["at"], now(line_user_id)) < PUSH_INTERVAL_DAYS]
     if recent:
         return _deny(f"{PUSH_INTERVAL_DAYS}日以内に接触済み({_md(recent[-1]['at'])} {recent[-1]['channel']})")
 
@@ -1164,5 +1161,5 @@ def push_trigger(state: State, line_user_id: str, trigger: str) -> dict:
         return _deny(f"{trigger} の根拠になる事実がない")
 
     state.update(line_user_id, lambda u: u.setdefault("contacts", []).append(
-        {"at": now().isoformat(), "channel": "LINE AI通知", "message": trigger}))
+        {"at": now(line_user_id).isoformat(), "channel": "LINE AI通知", "message": trigger}))
     return {"allowed": True, "trigger": trigger, "facts": facts}
