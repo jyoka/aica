@@ -4,7 +4,8 @@
                                             [--as-of 2026-09-23T12:00:00+09:00]
 
 要約に入れるのは、今の dip のツールが使っている事実だけ(閲覧・応募・保存・離脱・接触と傾向)と、訪問。
-エージェントに渡すのは要約だけになる前提で、リストの件数と文字の長さに上限を置き、1 行が SUMMARY_MAX_CHARS を超えない(ADR-0005)。
+応募と保存と応募済みの求人 ID は全件入れる(画面と、ツールの中の絞り込みは全件を使う)。件数で切るのは、エージェントに渡すとき
+(for_agent と、ツールの戻り値の一覧)だけ。長さの上限 SUMMARY_MAX_CHARS は、1 行ではなくエージェントに渡しうる分(for_agent)にかける。
 期間の判定(90 日、30 日、7 日)は as_of から数える。要約を読む側は、自分の「今」でもう一度絞ってよい。
 as_of は時刻と、取り込んだイベントの最後の番号(through_seq)の組。バッチの後に足したイベントは、次のバッチまで要約に入らない。
 """
@@ -28,15 +29,16 @@ from dip_mcp.events import EVENTS_PATH, EventStore, aware_time, iso
 
 SUMMARIES_PATH = ROOT / "data" / "dip_summaries.db"
 
-# 要約の長さの上限。件数で切り、自由な文字列(選考の状態、接触の文、フォームの項目名)は字数で切る
+# 要約の長さの上限。自由な文字列(選考の状態、接触の文、フォームの項目名)は字数で切る。閲覧の一覧は件数で切る。
+# 応募と保存と応募済みの求人 ID は全件(期間は応募が 90 日、保存と応募済みは期間なし)
 RECENT_VIEWS = 5
-APPLICATIONS = 5
-APPLIED_JOB_IDS = 30
-SAVES = 10
 FORM_FIELDS = 8
 FIELD_MAX = 12
 TEXT_MAX = 30
-SUMMARY_MAX_CHARS = 3500
+SUMMARY_MAX_CHARS = 3500  # エージェントに渡しうる分(for_agent)の JSON の字数
+# エージェントに渡す一覧の件数(新しい順)。ツールの戻り値のうち、会話の文脈になる一覧だけをここで切る
+AGENT_APPLICATIONS = 5
+AGENT_SAVES = 10
 # 期間(logic と同じ日数)。応募と閲覧の一覧は 90 日(HISTORY_DAYS)、閲覧と保存と訪問の数は 30 日、離脱は 7 日
 RECENT_DAYS = 30
 FORM_EXIT_DAYS = 7
@@ -122,9 +124,9 @@ def build_summary(dip_id: str, events: list[dict], as_of: datetime, through_seq:
         "views_30d": {"count": len(views_30d), "by_job_type": dict(Counter(
             jobs[v["job_id"]].job_type for v in views_30d if v["job_id"] in jobs))},
         "applications": [{"job_id": a["job_id"], "applied_at": a["applied_at"], "status": _clip(a["status"]),
-                          "status_at": a["status_at"]} for a in apps[:APPLICATIONS]],
-        "applied_job_ids": applied[:APPLIED_JOB_IDS],
-        "saves": [{"job_id": s["job_id"], "at": s["at"]} for s in reversed(u["saves"])][:SAVES],
+                          "status_at": a["status_at"]} for a in apps],
+        "applied_job_ids": applied,
+        "saves": [{"job_id": s["job_id"], "at": s["at"]} for s in reversed(u["saves"])],
         "saves_30d": len(_recent(u["saves"], "at", as_of, RECENT_DAYS)),
         "saves_total": len(u["saves"]),
         "form_exit": ({"job_id": exit_["job_id"], "exited_at": exit_["exited_at"],
@@ -141,12 +143,28 @@ def empty_summary(dip_id: str | None) -> dict:
     return build_summary(dip_id, [], now(None), 0, {}) | {"as_of": None}
 
 
+def head(items: list, n: int) -> tuple[list, int]:
+    """新しい順の一覧の、エージェントに渡す先頭 n 件と、渡さない件数(「ほかに N 件」)。"""
+    return items[:n], max(0, len(items) - n)
+
+
+def for_agent(summary: dict) -> dict:
+    """要約のうち、エージェントに渡しうる分。応募と保存の一覧は新しい順に AGENT_APPLICATIONS 件・AGENT_SAVES 件で切り、
+    渡さない件数を applications_more・saves_more に置く。applied_job_ids はツールの中の絞り込み(推薦から外す)にだけ使うので入れない。
+    要約の長さの上限(SUMMARY_MAX_CHARS)はこれにかける。ツールの戻り値は、この形の一部を同じ件数で切って作る。"""
+    out = {k: v for k, v in summary.items() if k != "applied_job_ids"}
+    out["applications"], out["applications_more"] = head(summary["applications"], AGENT_APPLICATIONS)
+    out["saves"], out["saves_more"] = head(summary["saves"], AGENT_SAVES)
+    return out
+
+
 def dumps(summary: dict) -> str:
-    """要約の 1 行(JSON)。上限を超えたら止める(件数と字数で切っているので、超えるのは上限の決め方の誤り)。"""
-    text = json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
-    if len(text) > SUMMARY_MAX_CHARS:
-        raise ValueError(f"{summary['dip_id']} の要約が {len(text)} 字で、上限 {SUMMARY_MAX_CHARS} 字を超えた")
-    return text
+    """要約の 1 行(JSON)。エージェントに渡しうる分(for_agent)が上限を超えたら止める(一覧は件数で、自由な文字列は字数で
+    切っているので、超えるのは上限の決め方の誤り)。1 行そのものは、応募と保存の数だけ長くなる。"""
+    agent = json.dumps(for_agent(summary), ensure_ascii=False, separators=(",", ":"))
+    if len(agent) > SUMMARY_MAX_CHARS:
+        raise ValueError(f"{summary['dip_id']} のエージェントに渡す要約が {len(agent)} 字で、上限 {SUMMARY_MAX_CHARS} 字を超えた")
+    return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
 
 
 class SummaryStore:
@@ -171,9 +189,15 @@ class SummaryStore:
         return json.loads(row[0]) if row else None
 
     def lengths(self) -> list[int]:
-        """各行の要約の字数(上限の確かめ用)。"""
+        """各行の要約の字数。"""
         with closing(sqlite3.connect(self.path)) as db:
             return [len(r[0]) for r in db.execute("SELECT summary FROM summaries")]
+
+    def agent_lengths(self) -> list[int]:
+        """各行の、エージェントに渡しうる分(for_agent)の字数(上限 SUMMARY_MAX_CHARS の確かめ用)。"""
+        with closing(sqlite3.connect(self.path)) as db:
+            return [len(json.dumps(for_agent(json.loads(r[0])), ensure_ascii=False, separators=(",", ":")))
+                    for r in db.execute("SELECT summary FROM summaries")]
 
 
 def run(events: EventStore, summaries: SummaryStore, as_of: datetime | None = None) -> dict:
