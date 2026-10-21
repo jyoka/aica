@@ -19,12 +19,14 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic, profile
+from dip_mcp.data import JST
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -129,6 +131,7 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         assert p["saved_jobs"] == [] and p["applications"] == []
 
         # 覚えたことが出る: 区分(いつ・どの発言で)・目的・希望・経歴・相談のまとめ・履歴書・下書き・保存・応募
+        before = datetime.now(JST)  # 本番のユーザーは実際の時刻で記録する(ADR-0004)
         logic.set_search_track(remembered.state, uid, "正社員", "転職を考えています")
         logic.save_preferences(remembered.state, uid, {"purpose": "転職", "area": "渋谷", "skills": "Excel",
                                                        "min_annual_salary": "500万円以上"})
@@ -145,8 +148,10 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         assert items["purpose"] == "転職" and items["area"] == "渋谷" and items["skills"] == "Excel"
         assert items["min_annual_salary"] == "500万円以上" and "work_style" in items  # 正社員なら条件も出す
         assert p["track"]["current"] == "正社員"
-        assert p["track"]["history"][0] == {"when": "9/23", "from": "未定", "track": "正社員",
-                                                 "evidence": "転職を考えています", "undo": False}
+        after = datetime.now(JST)  # 日本時間の 0 時をまたいでも、記録した日は before か after の日になる
+        changed = p["track"]["history"][0]
+        assert changed.pop("when") in {f"{before.month}/{before.day}", f"{after.month}/{after.day}"}
+        assert changed == {"from": "未定", "track": "正社員", "evidence": "転職を考えています", "undo": False}
         assert p["consultation_summary"]["text"].startswith("転職で渋谷")
         assert p["resume"]["view_url"] == "/liff/resume?rid=0" and p["resume"]["highlights"]
         assert FILENAME not in json.dumps(p, ensure_ascii=False)  # ファイル名は出さない(保存もしていない)

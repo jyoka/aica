@@ -2,7 +2,8 @@
 
 本番では dipAIAG / バイトル API が持つもの。ここでは fixtures の架空データと、
 会話で変わる状態(会話結果・保存・フォームの続き・応募)を JSON ファイルで持つ。
-時刻はシミュレーション用に固定する(SIM_NOW)。シナリオの「2時間前に離脱」などを再現可能にするため。
+時刻(now)は、シナリオユーザーと評価のユーザーだけ固定する(SIM_NOW)。シナリオの「2時間前に離脱」などを再現可能にするため。
+本番のユーザーは実際の時刻(ADR-0004)。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from functools import cache
 from pathlib import Path
 from typing import Literal
 
@@ -130,8 +132,24 @@ def annual_pay_mid(pay: Pay) -> int | None:
     return {"年収": mid, "月給": mid * 12}.get(pay.kind)
 
 
-def now() -> datetime:
-    return SIM_NOW
+def uses_sim_clock(line_user_id: str | None) -> bool:
+    """固定の時計 SIM_NOW を使うユーザーか(ADR-0004)。fixtures の初期状態から始まるユーザーだけ:
+    評価のユーザー(fixtures のユーザーそのもの、例 sim-new)と、開発者画面のシナリオユーザー
+    (「匿名ID:fixtures のユーザー」、例 w-…:sim-new)。ユーザーの無い呼び出し(評価の検索)も固定。
+    ほか(本番の匿名ユーザーID w-…)は実際の時刻。"""
+    if line_user_id is None:
+        return True
+    return (line_user_id.partition(":")[2] or line_user_id) in _fixture_user_ids()
+
+
+@cache
+def _fixture_user_ids() -> frozenset[str]:
+    return frozenset(load_users())
+
+
+def now(line_user_id: str | None) -> datetime:
+    """そのユーザーにとっての「今」。シナリオユーザーと評価のユーザーは SIM_NOW、本番のユーザーは実際の時刻(日本時間)。"""
+    return SIM_NOW if uses_sim_clock(line_user_id) else datetime.now(JST)
 
 
 def parse_ts(s: str) -> datetime:
