@@ -203,9 +203,14 @@ FUYO_MAN = {103, 106, 123, 130, 150, 160}
 # 「月28万円の求人」)は目安に数えない
 ESTIMATE_HEAD = re.compile(r"(月|週)に?(約|およそ|だいたい|大体)?$")
 ESTIMATE_WORDS = re.compile(r"約|およそ|だいたい|大体|くらい|ぐらい|ほど|程度|前後|目安|なら|だと")
-# 求人を指す語(「こちらは月に約30万円です」「1件目は月に約25万円」)がある文も、求人の給与の主張として照合する
-PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人|こちら|そちら|あちら"
-                            r"|(この|その|あの)(お)?仕事|(この|その|あの)(会社|お店|店舗|職場)|件目|つ目")
+PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人")
+# 求人を指す語(「こちらは月に約30万円です」「1件目は月に約25万円」)がある文も、求人の給与の主張として照合する。
+# ただし同じ文に本人の働き方(週の日数・時間)があれば計算の目安(「こちらは週3日・1日5時間なら月に約7万円です」)。
+# 働き方の数は、本人が言った数のときだけ目安とみなす(作った勤務条件「こちらは週5日・1日8時間勤務で月に約30万円です」は主張)。
+# 「つ目」は求人を指す。ただし「1つ目の目標は月に約7万円ですね」のような、求人でない語が続くときは除く
+JOB_POINTER = re.compile(r"こちら|そちら|あちら|(この|その|あの)(お)?仕事|(この|その|あの)(会社|お店|店舗|職場)|件目"
+                         r"|つ目(?!の(目標|理由|条件|希望|質問|ご質問|ポイント|点|不安|悩み|方法|案|ステップ))")
+WORK_BASIS = re.compile(r"週に?\s*(\d+)\s*日|(\d+)\s*時間")
 _KANJI_DIGIT = {c: i for i, c in enumerate("〇一二三四五六七八九")}
 _KANJI_UNIT = {"十": 10, "百": 100, "千": 1000}
 # 算用数字が混じった言い方(「1千万」「3千円」「1千2百万」)も1つの数として読む(「1千万」を「11000万」にしない)
@@ -266,13 +271,20 @@ def _pay_kind(text: str, pos: int) -> str | None:
     return "月給" if hits[-1].group(0) == "月収" else hits[-1].group(0)
 
 
-def _not_a_claim(text: str, pos: int, value: Decimal) -> bool:
+def _users_work_basis(sentence: str, said_nums: set[int]) -> bool:
+    """文に働き方(週の日数・時間)があり、その数がすべて本人の言った数か。"""
+    basis = [_int(n) for m in WORK_BASIS.finditer(sentence) for n in m.groups() if n]
+    return bool(basis) and set(basis) <= said_nums
+
+
+def _not_a_claim(text: str, pos: int, value: Decimal, said_nums: set[int]) -> bool:
     """扶養の「壁」の一般知識と、月・週の収入の計算の目安は、dip の事実の主張として照合しない。"""
     sentence = _sentence_at(text, pos)
     if FUYO_CONTEXT.search(sentence) and value in FUYO_MAN:
         return True
     return (bool(ESTIMATE_HEAD.search(text[max(0, pos - 6):pos])) and bool(ESTIMATE_WORDS.search(sentence))
-            and not PAY_FACT_WORDS.search(sentence))
+            and not PAY_FACT_WORDS.search(sentence)
+            and not (JOB_POINTER.search(sentence) and not _users_work_basis(sentence, said_nums)))
 
 
 def _numbers(text: str) -> set[int]:
@@ -376,7 +388,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
         for n, pos in _man_claims(text):
             kind = _pay_kind(text, pos)
             allowed = known_man | (by_kind.get(kind, set()) if kind else any_kind)
-            if n not in allowed and not _not_a_claim(text, pos, n):
+            if n not in allowed and not _not_a_claim(text, pos, n, said_nums):
                 bad.append(n)
         for n in dict.fromkeys(bad):
             out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
@@ -889,10 +901,13 @@ def upload_violations(turns: list[dict], upload: dict | None) -> list[str]:
 
 # ----- 避けたいこと・やりたいことと検索の引数(task 111 のレビュー・task 126 の後続。task 109) -----
 # keywords に入った避けたいこと(「接客はしたくない」を keywords に入れると、意味の近さで飲食ホールが上位に来る)。
-# 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし)を見る。「経験なし」「少ない」は避けたいことではない。
+# 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし・〜がない・〜のない)を見る。
+# 「経験なし」「資格なし」「免許なし」「スキルなし」(求められない条件)と「少ない」は避けたいことではない。
+# 「分からないことは教えてもらえる」の「分からない」も、本人のことで避けたいことではない。
 # 「まかない(付き)」は食事の補助で、dip の keywords の説明が例に挙げている(dip_mcp/server.py)
-AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<![がの])(?<!少)(さ|し|(?<!ま)か|た|わ|ら)ない"
-                               r"|(?<!経験)(?<!経験が)(なし|無し)")
+_NOT_REQUIRED = "".join(f"(?<!{w})(?<!{w}[がのは])" for w in ("経験", "資格", "免許", "スキル"))
+AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<!少)(さ|し|(?<!ま)か|た|わ|(?<!分か)(?<!わか)ら)ない"
+                               rf"|{_NOT_REQUIRED}([がの](ない|無い)|なし|無し)")
 # 本人の言葉 -> 当てるべき属性の引数(dip の Prompt「避けたいこと・やりたいことから絞り込みの引数を埋める」と同じ対応)。
 # max_* は値がそれ以下、min_* はそれ以上なら当てたとみなす
 ATTRIBUTE_SAYINGS = (
