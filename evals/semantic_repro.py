@@ -82,7 +82,7 @@ def main(tag: str) -> None:
         "substring_zero_hits": sum(c["substring"]["total"] == 0 for c in doc["cases"]),
         "embedding_zero_hits": sum(c["embedding"]["total"] == 0 for c in doc["cases"]),
     }
-    out = HERE / "results" / f"semantic-repro-{tag}-{datetime.now():%Y%m%d-%H%M%S}.json"
+    out = HERE / "results" / f"semantic-repro-{tag}-{datetime.now():%Y%m%d-%H%M%S}.json"  # run.py と同じ(ローカル時刻のファイル名)
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=2))
     print(f"-> {out}  {json.dumps(doc['summary'])}")
 
