@@ -9,13 +9,14 @@ import hashlib
 import hmac
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 
 from dip_mcp import data
 from dip_mcp.data import State, load_jobs
@@ -24,7 +25,7 @@ from line_runtime.fake_line import FakeLinePlatform
 from line_runtime.line_channel import LINE_ID, LineApi, line_user, to_messages
 from line_runtime.quota import JST
 from tests.test_handle import call, reply
-from tests.test_revisit import Greeter, greet, propose
+from tests.test_revisit import Greeter, _tool_result, greet, propose
 
 SECRET = "offline-test-channel-secret"
 ID_KEY = "offline-test-aica-id-key-0123456789abcdef"  # LINE のユーザーIDを作る鍵(32 バイト以上)
@@ -327,6 +328,93 @@ def test_other_events_are_ignored_with_200(tmp_path, monkeypatch):
                        [_event("postback", event_id="01P")]):
             assert _post(client, events).status_code == 200
     assert len(model.script) == 1 and fake.calls == []
+
+
+# ----------------------------- 会話の区切り(Web と同じ 30 分) -----------------------------
+
+
+def _later(monkeypatch, server, minutes: int) -> None:
+    """時刻を進める(最後のやりとり = チェックポイントの保存時刻 は実時刻なので、今を先へずらす。test_talk_page と同じ)。"""
+    monkeypatch.setattr(server, "clock", lambda: datetime.now(UTC) + timedelta(minutes=minutes))
+
+
+def _answer(seen: list[dict]):
+    """そのターンにモデルが受け取った会話(本人側の入力と入口)を覚えて、決まった返事をする。"""
+    def answer(messages) -> AIMessage:
+        seen.append({"said": [m.content for m in messages if m.type == "human"],
+                     "entry_a": "入口A(トーク)" in messages[0].content})
+        return reply(["承知しました。"], quick_replies=["求人を探す"])
+    return answer
+
+
+def test_text_continues_within_30_minutes_and_starts_a_new_conversation_after(tmp_path, monkeypatch):
+    """Web のトーク画面を開いたときと同じ決まり(server.talk_continues): 最後のやりとりから 29 分なら同じ会話、
+    31 分なら新しい会話。新しい会話は本人の発言から始まり(入口A)、前の会話はモデルに渡らない。"""
+    uid = line_user(RAW_USER)
+    seen: list[dict] = []
+    model = Greeter(script=[greet, _answer(seen), _answer(seen)])
+    server, fake = _server(tmp_path, monkeypatch, model)
+    with TestClient(server.app) as client:
+        rt = server.app.state.rt
+        _post(client, [_event("follow", event_id="01F1")])
+        assert client.portal.call(rt.current_thread, uid) == 1
+        _later(monkeypatch, server, 29)
+        _post(client, [_event("message", text="29分後", event_id="01M1", token="reply-token-2")])
+        assert client.portal.call(rt.current_thread, uid) == 1
+        _later(monkeypatch, server, 31)
+        _post(client, [_event("message", text="31分後", event_id="01M2", token="reply-token-3")])
+        assert client.portal.call(rt.current_thread, uid) == 2
+
+    assert model.script == []
+    assert seen[0]["said"][-1] == "29分後" and len(seen[0]["said"]) == 2  # 友だち追加の挨拶の会話の続き
+    assert seen[1] == {"said": ["31分後"], "entry_a": True}  # 新しい会話: 前の会話は渡らない
+    assert [b["messages"][0]["text"] for p, b in fake.sent()][1:] == ["承知しました。"] * 2  # 挨拶は挟まない
+
+
+def test_first_text_without_follow_starts_a_conversation_and_the_next_one_continues_it(tmp_path, monkeypatch):
+    """返信のある会話がまだ無ければ新しい会話を始め、すぐ後の発言はその会話に続く。"""
+    uid = line_user(RAW_USER)
+    seen: list[dict] = []
+    model = Greeter(script=[_answer(seen), _answer(seen)])
+    server, _ = _server(tmp_path, monkeypatch, model)
+    with TestClient(server.app) as client:
+        _post(client, [_event("message", text="はじめまして", event_id="01M1")])
+        _post(client, [_event("message", text="続き", event_id="01M2", token="reply-token-2")])
+        assert client.portal.call(server.app.state.rt.current_thread, uid) == 1
+    assert [s["said"] for s in seen] == [["はじめまして"], ["はじめまして", "続き"]]
+
+
+def test_new_conversation_after_30_minutes_still_gets_saved_preferences_and_the_consultation_summary(
+        tmp_path, monkeypatch):
+    """前の会話で保存した希望と相談のまとめは、31 分後に始まった新しい会話でも dip の要約からエージェントに渡る。"""
+    uid = line_user(RAW_USER)
+    note = "渋谷で日中のカフェを探している。次は週の日数を確かめる。"
+    got: dict = {}
+
+    def read_summary(messages) -> AIMessage:
+        got["said"] = [m.content for m in messages if m.type == "human"]
+        got["summary"] = _tool_result(messages, "get_user_conversation_summary")
+        return reply(["前回は渋谷・日中のカフェでしたね。週に何日働けますか?"], quick_replies=["週2日", "週3日以上"])
+
+    first_turn = AIMessage(content="", tool_calls=[
+        {"name": "save_user_preferences", "id": "save", "type": "tool_call",
+         "args": {"line_user_id": uid, "preferences": {"area": "渋谷", "time_band": "日中", "job_type": "カフェ"}}},
+        {"name": "record_conversation_outcome", "id": "out", "type": "tool_call",
+         "args": {"line_user_id": uid, "outcome": "consult", "reason": "希望を聞いた", "confidence": 0.7, "summary": note}}])
+    model = Greeter(script=[first_turn, reply(["承知しました。"]),
+                            call("get_user_conversation_summary", {"line_user_id": uid}, "sum"), read_summary])
+    server, _ = _server(tmp_path, monkeypatch, model)
+    with TestClient(server.app) as client:
+        _post(client, [_event("message", text="渋谷で日中のカフェ", event_id="01M1")])
+        _later(monkeypatch, server, 31)
+        _post(client, [_event("message", text="また探したい", event_id="01M2", token="reply-token-2")])
+        assert client.portal.call(server.app.state.rt.current_thread, uid) == 2
+
+    assert model.script == []
+    assert got["said"] == ["また探したい"]  # 新しい会話(前の会話の発言は渡らない)
+    prefs = {k: v["value"] for k, v in got["summary"]["stated_preferences"].items()}
+    assert prefs == {"area": "渋谷", "time_band": "日中", "job_type": "カフェ"}
+    assert got["summary"]["consultation_summary"]["text"] == note
 
 
 # ----------------------------- ユーザーIDの鍵 -----------------------------

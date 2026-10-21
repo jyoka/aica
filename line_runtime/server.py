@@ -193,13 +193,19 @@ def _profile_writer(request: Request) -> str:
     return user_id
 
 
-# 本番のトーク画面: 最後のやりとりからこの時間内に開き直したら(再読み込み・タブの開き直し)、今の会話を続ける
+# 最後のやりとりからこの時間内なら、今の会話を続ける(本番のトーク画面の開き直し・LINE の発言。talk_continues)
 TALK_RESUME_WINDOW = timedelta(minutes=30)
 
 
 def clock() -> datetime:
     """今の時刻(テストで差し替える)。会話の最後のやりとり(チェックポイントの保存時刻、UTC)と比べる。"""
     return datetime.now(UTC)
+
+
+def talk_continues(conv: dict) -> bool:
+    """今の会話(LineRuntime.conversation の結果)を続けるか: 最後のやりとりから TALK_RESUME_WINDOW 以内なら続ける。
+    返信の無い会話(last_at が None)は続けない。Web のトーク画面を開いたときと、LINE のテキストのメッセージで同じ決まりを使う。"""
+    return conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW
 
 
 class EventIn(BaseModel):
@@ -282,7 +288,7 @@ async def talk_open(request: Request):
         # 挨拶は保存されたが、画面に返す途中で接続が切れて記録できなかった: 会った相手なので記録を補う
         logic.record_talk_open(state, uid)
     track = logic.search_track(state.user(uid))  # ヘッダーの「正社員で相談中」
-    if conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW:
+    if talk_continues(conv):
         return {"user": uid, "event": None, "thread": conv["thread"], "search_track": track}
     return {"user": uid, "event": logic.talk_entry(state, uid), "thread": conv["thread"], "search_track": track}
 
@@ -548,12 +554,19 @@ def _unlink(uid: str) -> str | None:
 
 async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
+    テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
+    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。"""
-    deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=app.state.rt, unread_uploads=app.state.unread_uploads,
-                         ip=None)
-    event, text = (logic.talk_entry(state, uid), None) if kind == "follow" else ("message", e["message"].get("text"))
+    rt = app.state.rt
+    deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=rt, unread_uploads=app.state.unread_uploads, ip=None)
+    if kind == "follow":
+        event, text, new = logic.talk_entry(state, uid), None, False
+    else:
+        async with rt.user_lock(uid):  # 進行中のターンと交差しないように(talk_open と同じ)
+            conv = await rt.conversation(uid)
+        event, text, new = "message", e["message"].get("text"), not talk_continues(conv)
     try:
-        t = turn.accept(deps, uid, event, text, None)
+        t = turn.accept(deps, uid, event, text, None, new_conversation=new)
     except turn.BadTurn:
         return None
     try:
