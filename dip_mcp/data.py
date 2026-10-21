@@ -1,7 +1,8 @@
 """dip 側のデータ(シミュレーション)。求人(アルバイト・パートと正社員)・ユーザー状態・会話結果の保存。
 
 本番では dipAIAG / バイトル API が持つもの。ここでは fixtures の架空データと、
-会話で変わる状態(会話結果・保存・フォームの続き・応募)を JSON ファイルで持つ。
+会話で変わる状態(会話結果・希望・区分など)を JSON ファイルで持つ。本人の行動(閲覧・応募・保存・離脱・接触)は
+ここには持たず、元データ(dip_mcp/events.py)と 1 人 1 行の要約(dip_mcp/summarize.py)にある(ADR-0005、ADR-0006)。
 時刻(now)は、シナリオユーザーと評価のユーザーだけ固定する(SIM_NOW)。シナリオの「2時間前に離脱」などを再現可能にするため。
 本番のユーザーは実際の時刻(ADR-0004)。
 """
@@ -189,6 +190,8 @@ class State:
     MCP サーバー(子プロセス)と LIFF 画面(Web プロセス)が同じファイルを読み書きするため、
     メモリに持たず毎回ファイルから読む(シミュレーション規模なので十分速い)。
     path を変えれば評価の実行ごとに独立した状態で走らせられる。reset() で初期状態に戻す。
+    行動の元データと要約は同じディレクトリに置く(dip_mcp/behavior.py)。元データは追記だけなので reset() では消さないが、
+    会話の側から書いた分(1 人の dict の dip_writes)が消えるので、読める行動は要約の時点に戻る。
     """
 
     def __init__(self, path: Path | None = None) -> None:
@@ -251,5 +254,4 @@ class State:
 
 
 def _new_user(line_user_id: str) -> dict:
-    return {"line_user_id": line_user_id, "dip_id": None, "label": "未連携の新規", "applications": [], "views": [],
-            "saves": [], "form_exits": [], "contacts": [], "outcomes": []}
+    return {"line_user_id": line_user_id, "dip_id": None, "label": "未連携の新規", "outcomes": []}

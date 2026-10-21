@@ -12,8 +12,8 @@ from datetime import timedelta
 
 import pytest
 
-from dip_mcp import logic, summarize
-from dip_mcp.data import SIM_NOW, State, load_jobs, load_users
+from dip_mcp import summarize
+from dip_mcp.data import SIM_NOW, load_jobs, load_users
 from dip_mcp.events import KINDS, EventStore, load_scenario_events
 from scripts import gen_dip_events
 
@@ -54,7 +54,8 @@ def test_generator_makes_1000_members_for_6_months_and_the_batch_rebuilds_them_a
     assert len(members) == 1000
     times = [r[2] for r in rows]
     assert min(times) >= (SIM_NOW - timedelta(days=180)).isoformat() and max(times) <= SIM_NOW.isoformat()
-    assert {r[3] for r in rows} == set(KINDS) - {"unsave"}  # 保存の取り消しは画面の操作で、生成器は作らない
+    # 保存の取り消しとフォームの残りの項目への答えは、画面とトークの操作で書く。生成器は作らない
+    assert {r[3] for r in rows} == set(KINDS) - {"unsave", "form_fill"}
 
     summaries = summarize.SummaryStore(tmp_path / "summaries.db")
     r = summarize.run(events, summaries, SIM_NOW)
@@ -77,43 +78,8 @@ def test_generator_makes_1000_members_for_6_months_and_the_batch_rebuilds_them_a
 # ----------------------------- シナリオのユーザー -----------------------------
 
 
-@pytest.mark.parametrize("line_user_id", sorted(load_users()))
-def test_scenario_summary_has_the_same_facts_as_logic_on_users_json(scenario, tmp_path, line_user_id):
-    """元データから作った要約の事実が、今の users.json から logic が出すものと同じ。"""
-    _, summaries = scenario
-    state = State(tmp_path / "state.json")
-    state.reset()
-    user = state.user(line_user_id)
-    if not user["dip_id"]:  # 未連携の人は会員にいないので、要約も無い
-        assert logic.conversation_summary(state, line_user_id)["linked"] is False
-        assert len(summaries.lengths()) == 4
-        return
-    s = summaries.get(user["dip_id"])
-    conv = logic.conversation_summary(state, line_user_id)
-    assert s["as_of"] == SIM_NOW.isoformat()
-
-    # 閲覧
-    assert s["views_30d"] == {"count": conv["recent_views"]["count_30d"],
-                              "by_job_type": conv["recent_views"]["by_job_type"]}
-    assert s["recent_views"] == sorted(user["views"], key=lambda v: v["at"], reverse=True)[:summarize.RECENT_VIEWS]
-    # 応募
-    assert [{"job_id": a["job_id"], "applied": logic._md(a["applied_at"]),
-             "days_ago": logic._days_ago(a["applied_at"], SIM_NOW), "status": a["status"]}
-            for a in s["applications"]] == [{k: a[k] for k in ("job_id", "applied", "days_ago", "status")}
-                                            for a in logic.recent_applications(state, line_user_id)]
-    assert set(s["applied_job_ids"]) == {a["job_id"] for a in user["applications"]}
-    # 保存
-    assert [(x["job_id"], logic._md(x["at"])) for x in s["saves"]] == [
-        (j["job_id"], j["saved_at"]) for j in logic.saved_jobs(state, line_user_id)]
-    assert s["saves_30d"] == conv["saves_30d"]
-    # 離脱
-    e = logic.form_exit(state, line_user_id)
-    assert s["form_exit"] == (
-        {"job_id": e["job_id"], "exited_at": e["exited_at"], "completed": e["completed_fields"],
-         "remaining": e["remaining_fields"]} if e else None)
-    # 傾向と接触
-    assert s["tendency"] == conv["tendency"]
-    assert s["last_contact"] is None and conv["last_contact"] is None
+# 要約から読むツールの結果が、users.json に行動を持っていたとき(main)と同じことは、
+# tests/test_dip_summary_read.py の test_tools_return_the_same_as_main_except_as_of で確かめる
 
 
 def test_scenario_members_are_the_linked_users_of_users_json(scenario):
@@ -168,6 +134,8 @@ def test_fold_applies_unsave_status_changes_and_apply_after_a_form_exit(tmp_path
     events.extend([
         ("D1", "save", t(50), "a001", {}), ("D1", "save", t(49), "a002", {}), ("D1", "unsave", t(48), "a001", {}),
         ("D1", "form_exit", t(40), "a003", {"completed": ["氏名"], "remaining": ["電話番号"]}),
+        ("D1", "form_exit", t(39), "a002", {"completed": [], "remaining": ["年齢", "希望開始日", "電話番号"]}),
+        ("D1", "form_fill", t(38), "a002", {"fields": ["希望開始日", "知らない項目"]}),
         ("D1", "apply", t(30), "a003", {"status": gen_dip_events.APPLIED}),
         ("D1", "status", t(20), "a003", {"status": "採用"}),
         ("D1", "form_exit", t(10), "a001", {"completed": [], "remaining": ["氏名"]}),
@@ -179,9 +147,18 @@ def test_fold_applies_unsave_status_changes_and_apply_after_a_form_exit(tmp_path
     s = summaries.get("D1")
     assert [x["job_id"] for x in s["saves"]] == ["a002"]
     assert s["form_exit"]["job_id"] == "a001"  # 応募したフォームの離脱は消え、残った離脱のうち最後のもの
+    assert s["saves_total"] == 1
+    assert fold_exits(events)["a002"] == {"completed": ["希望開始日"], "remaining": ["年齢", "電話番号"]}
     assert [(a["job_id"], a["status"], a["status_at"]) for a in s["applications"]] == [
         ("a003", "採用", t(20).isoformat())]
     assert s["last_contact"] == {"at": t(9).isoformat(), "channel": "LINE AI通知", "message": "form_exit"}
+
+
+def fold_exits(events: EventStore) -> dict:
+    """元データをたたんだ離脱(job_id → 入力済みと残りの項目)。"""
+    (_, evs), = events.scan(events.last_seq(), SIM_NOW.isoformat())
+    return {x["job_id"]: {"completed": x["completed"], "remaining": x["remaining"]}
+            for x in summarize.fold(evs)["form_exits"]}
 
 
 def test_summary_stays_under_the_length_cap_for_a_heavy_member(tmp_path):

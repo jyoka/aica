@@ -21,9 +21,10 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
+# logic の属性はバッチを回すときに引く(logic → behavior → summarize の順に読み込まれても循環しないように)
+from dip_mcp import logic
 from dip_mcp.data import JST, ROOT, BaitoJob, load_jobs, now
 from dip_mcp.events import EVENTS_PATH, EventStore, aware_time, iso
-from dip_mcp.logic import HISTORY_DAYS, _days_ago, _recent, preferences
 
 SUMMARIES_PATH = ROOT / "data" / "dip_summaries.db"
 
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS summaries (
 
 def fold(events: Iterable[dict]) -> dict:
     """時刻の順のイベントを、今の dip の状態のユーザーと同じ形(applications、views、saves、form_exits、contacts)と
-    訪問の時刻(visits)にたたむ。保存の取り消し、応募したフォームの離脱の消し込み、選考の状態の変化をここで反映する。"""
+    訪問の時刻(visits)にたたむ。保存の取り消し、フォームの残りの項目への答え、応募したフォームの離脱の消し込み、
+    選考の状態の変化をここで反映する。"""
     u = {"visits": [], "views": [], "applications": [], "saves": [], "form_exits": [], "contacts": []}
     for e in events:
         kind, job_id, at, d = e["kind"], e["job_id"], e["at"], e["data"]
@@ -69,6 +71,12 @@ def fold(events: Iterable[dict]) -> dict:
             u["form_exits"] = [x for x in u["form_exits"] if x["job_id"] != job_id]
             u["form_exits"].append({"job_id": job_id, "exited_at": at, "completed": list(d.get("completed", [])),
                                     "remaining": list(d.get("remaining", []))})
+        elif kind == "form_fill":
+            for x in u["form_exits"]:
+                if x["job_id"] == job_id:
+                    filled = [f for f in d.get("fields", []) if f in x["remaining"]]
+                    x["completed"] += filled
+                    x["remaining"] = [f for f in x["remaining"] if f not in filled]
         elif kind == "apply":
             u["form_exits"] = [x for x in u["form_exits"] if x["job_id"] != job_id]
             u["applications"].append({"job_id": job_id, "applied_at": at, "status": d.get("status", ""),
@@ -94,9 +102,10 @@ def _fields(names: list[str]) -> list[str]:
 def build_summary(dip_id: str, events: list[dict], as_of: datetime, through_seq: int,
                   jobs: dict[str, BaitoJob]) -> dict:
     """1 人の状況の要約。events は as_of までの、時刻の順のイベント。"""
+    _days_ago, _recent = logic._days_ago, logic._recent
     u = fold(events)
     views_30d = _recent(u["views"], "at", as_of, RECENT_DAYS)
-    apps = sorted(_recent(u["applications"], "applied_at", as_of, HISTORY_DAYS),
+    apps = sorted(_recent(u["applications"], "applied_at", as_of, logic.HISTORY_DAYS),
                   key=lambda a: a["applied_at"], reverse=True)
     exits = [x for x in u["form_exits"] if _days_ago(x["exited_at"], as_of) <= FORM_EXIT_DAYS]
     exit_ = exits[-1] if exits else None  # dip のツールが使うのは最後の離脱だけ
@@ -109,7 +118,7 @@ def build_summary(dip_id: str, events: list[dict], as_of: datetime, through_seq:
         "last_visit": u["visits"][-1] if u["visits"] else None,
         "visits_30d": sum(1 for v in u["visits"] if _days_ago(v, as_of) <= RECENT_DAYS),
         "recent_views": [{"job_id": v["job_id"], "at": v["at"]}
-                         for v in reversed(_recent(u["views"], "at", as_of, HISTORY_DAYS))][:RECENT_VIEWS],
+                         for v in reversed(_recent(u["views"], "at", as_of, logic.HISTORY_DAYS))][:RECENT_VIEWS],
         "views_30d": {"count": len(views_30d), "by_job_type": dict(Counter(
             jobs[v["job_id"]].job_type for v in views_30d if v["job_id"] in jobs))},
         "applications": [{"job_id": a["job_id"], "applied_at": a["applied_at"], "status": _clip(a["status"]),
@@ -117,13 +126,19 @@ def build_summary(dip_id: str, events: list[dict], as_of: datetime, through_seq:
         "applied_job_ids": applied[:APPLIED_JOB_IDS],
         "saves": [{"job_id": s["job_id"], "at": s["at"]} for s in reversed(u["saves"])][:SAVES],
         "saves_30d": len(_recent(u["saves"], "at", as_of, RECENT_DAYS)),
+        "saves_total": len(u["saves"]),
         "form_exit": ({"job_id": exit_["job_id"], "exited_at": exit_["exited_at"],
                        "completed": _fields(exit_["completed"]), "remaining": _fields(exit_["remaining"])}
                       if exit_ else None),
         "last_contact": ({"at": contact["at"], "channel": _clip(contact["channel"]),
                           "message": _clip(contact["message"])} if contact else None),
-        "tendency": preferences(u, jobs, as_of),
+        "tendency": logic.preferences(u, jobs, as_of),
     }
+
+
+def empty_summary(dip_id: str | None) -> dict:
+    """要約の行が無い人(dip と連携していない人、バッチの後に会員になった人)の、行動の無い要約。as_of は None。"""
+    return build_summary(dip_id, [], now(None), 0, {}) | {"as_of": None}
 
 
 def dumps(summary: dict) -> str:

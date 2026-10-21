@@ -27,6 +27,7 @@ KINDS = {
     "save": "求人の保存",
     "unsave": "保存の取り消し",
     "form_exit": "応募フォームの離脱。data: completed(入力済みの項目名)、remaining(残りの項目名)。値は持たない",
+    "form_fill": "離脱した応募フォームの残りの項目に、トークで答えた。data: fields(答えた項目名)。値は持たない",
     "apply": "応募。data: status(応募したときの選考の状態)",
     "status": "選考の状態の変化。data: status",
     "inquiry": "本人から求人への問い合わせ。data: topic",

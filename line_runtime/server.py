@@ -56,7 +56,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from dip_mcp import logic, profile
+from dip_mcp import behavior, logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config, line_channel, turn
@@ -391,13 +391,13 @@ class UserIn(BaseModel):
 
 @app.post("/api/dip")
 async def dip_view(body: UserIn, request: Request):
-    """dip 側から見たユーザー状態(デバッグ用): 要約と記録された会話結果。"""
+    """dip 側から見たユーザー状態(デバッグ用): 要約と記録された会話結果。保存・応募・最後の接触は、dip のツールと同じく
+    行動の要約に、この会話で書いた分を重ねたもの(dip_mcp.behavior.view。新しい順)。"""
     user_id = body.user_id
     _require_own(request, user_id)
-    u = state.user(user_id)
+    u, b = state.user(user_id), behavior.view(state, user_id)
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
-            "saves": u.get("saves", []), "applications": u.get("applications", []),
-            "last_contact": (u.get("contacts") or [None])[-1]}
+            "saves": b["saves"], "applications": b["applications"], "last_contact": b["last_contact"]}
 
 
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------

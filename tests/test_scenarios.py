@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dip_mcp import logic
+from dip_mcp import behavior, logic
 from dip_mcp.data import State
 from evals.scenarios import load_scenarios, prepare
 from line_runtime.runtime import EVENTS
@@ -57,7 +57,7 @@ def test_reset_user_leaves_other_users_alone(state):
     logic.save_preferences(state, "sim-new", {"area": "渋谷"})
     state.reset_user("sim-exit")
     state.reset_user("sim-unknown")  # fixtures に無い人でも落ちない
-    assert state.user("sim-exit")["contacts"] == []
+    assert behavior.view(state, "sim-exit")["last_contact"] is None  # 会話の側から書いた接触は読めなくなる
     assert logic.stated_preferences(state.user("sim-new"))  # ほかの人の状態は残る
 
 

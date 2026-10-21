@@ -128,7 +128,7 @@ def test_another_users_id_in_the_body_or_url_reads_and_speaks_nothing(app, monke
         assert me.post("/liff/apply", data={"job": "X" * 10000}).status_code == 404
         assert me.get("/liff/voice/draft?rid=0&scenario_user=../w-0123456789abcdef").status_code == 400
         assert me.get("/liff/voice/draft?rid=0&scenario_user=made-up").status_code == 400  # シナリオに無い名前
-        assert app.state.user(victim)["form_exits"]  # 被害者の応募フォームは確定されていない
+        assert logic.form_exit(app.state, victim)  # 被害者の応募フォームは確定されていない
         assert app.state.path.read_bytes() == before  # 何も書いていない
         assert logic.saved_jobs(app.state, OTHER)[0]["job_id"] == "a003"
         # プロフィール: 他人の匿名IDをクエリや本文で名乗っても、読む・直す・消すのは Cookie の本人の分だけ
@@ -308,10 +308,10 @@ def test_dip_tools_are_pinned_to_the_conversation_user(tmp_path):
     r = asyncio.run(go())
     results = {t["name"]: t["result"] for t in r["tools"]}
     assert not results["get_user_recent_applications"]  # 被害者の応募は読めない(自分には応募が無いので空)
-    assert before["applications"]
+    assert logic.recent_applications(state, victim)
     assert state.user(victim) == before  # 被害者の状態は変わらない
     mine = state.user(me)
-    assert [s["job_id"] for s in mine["saves"]] == ["a003"] and mine["outcomes"][0]["outcome"] == "consult"
+    assert [s["job_id"] for s in logic.saved_jobs(state, me)] == ["a003"] and mine["outcomes"][0]["outcome"] == "consult"
     assert model.script == []
 
 

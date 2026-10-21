@@ -2,6 +2,8 @@
 
 設計書の原則をここで守る:
 - 要約で返し、生ログは渡さない。閲覧は件数と傾向だけ(求人名を列挙しない)。
+- 本人の行動は、会員 1 人 1 行の状況の要約(と、この会話で書いた分)だけから読む(dip_mcp/behavior.py、ADR-0006)。
+  行動の元データは読まない。書くときは元データにイベントとして追記する。
 - 履歴は 90 日以内のものだけ。要約は「仮説」として返す(断定しない材料)。
 - 推薦は最大3件、各件に事実に基づく理由を付ける。
 - 個人情報の項目はトークで受け取らず、LIFF 画面へ回す。
@@ -19,7 +21,7 @@ from datetime import datetime
 from statistics import median
 from urllib.parse import urlencode
 
-from dip_mcp import embedding
+from dip_mcp import behavior, embedding
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -75,7 +77,8 @@ def _recent(items: list[dict], key: str, at: datetime, days: int = HISTORY_DAYS)
 
 
 def preferences(user: dict, jobs: dict[str, BaitoJob], at: datetime) -> dict:
-    """直近の応募・閲覧・保存から、エリア・時間帯・職種の傾向を数える(多い順)。at はそのユーザーの今。"""
+    """直近の応募・閲覧・保存から、エリア・時間帯・職種の傾向を数える(多い順)。at は数える時点。
+    要約のバッチ(summarize.build_summary)が元データをたたんだ形(user)から数え、要約の tendency に入れる。"""
     refs = [a["job_id"] for a in _recent(user.get("applications", []), "applied_at", at)]
     refs += [v["job_id"] for v in _recent(user.get("views", []), "at", at, 30)]
     refs += [s["job_id"] for s in _recent(user.get("saves", []), "at", at, 30)]
@@ -117,17 +120,15 @@ def _profile_summary(user: dict) -> dict:
 
 def conversation_summary(state: State, line_user_id: str) -> dict:
     user = state.user(line_user_id)
-    if not user.get("dip_id"):
+    if not behavior.dip_id(state, line_user_id):
         return {"linked": False, "segment": "unlinked", **_track_summary(user), **_profile_summary(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
                         + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE}
-    jobs, at = load_jobs(), now(line_user_id)
-    apps = sorted(_recent(user.get("applications", []), "applied_at", at), key=lambda a: a["applied_at"], reverse=True)
-    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"], at) <= 7]
-    views = _recent(user.get("views", []), "at", at, 30)
-    saves = _recent(user.get("saves", []), "at", at, 30)
-    contacts = sorted(user.get("contacts", []), key=lambda c: c["at"], reverse=True)
+    jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
+    apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
+    exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
+    contact = b["last_contact"]
 
     last_app = None
     if apps:
@@ -148,7 +149,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         segment = "form_exit"
     elif last_app and last_app["days_ago"] <= 14 and "連絡待ち" in last_app["status"]:
         segment = "applied_waiting"
-    elif (views or saves) and not (last_app and last_app["days_ago"] <= 30):
+    elif (b["views_30d"]["count"] or b["saves_30d"]) and not (last_app and last_app["days_ago"] <= 30):
         segment = "browsing"
     else:
         segment = "active"
@@ -156,15 +157,15 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
     return {
         "linked": True,
         "segment": segment,
+        "as_of": b["as_of"],
         **_track_summary(user),
         "last_application": last_app,
         "form_exit": form_exit,
-        "recent_views": {"count_30d": len(views), "by_job_type": dict(Counter(
-            jobs[v["job_id"]].job_type for v in views if v["job_id"] in jobs))},
-        "saves_30d": len(saves),
-        "tendency": preferences(user, jobs, at),
-        "last_contact": ({"channel": contacts[0]["channel"], "when": _md(contacts[0]["at"]),
-                          "message": contacts[0]["message"]} if contacts else None),
+        "recent_views": {"count_30d": b["views_30d"]["count"], "by_job_type": b["views_30d"]["by_job_type"]},
+        "saves_30d": b["saves_30d"],
+        "tendency": b["tendency"],
+        "last_contact": ({"channel": contact["channel"], "when": _md(contact["at"]),
+                          "message": contact["message"]} if contact else None),
         **_profile_summary(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
@@ -173,9 +174,9 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
 
 
 def recent_applications(state: State, line_user_id: str) -> list[dict]:
-    user, jobs, at = state.user(line_user_id), load_jobs(), now(line_user_id)
+    jobs, at = load_jobs(), now(line_user_id)
     out = []
-    for a in sorted(_recent(user.get("applications", []), "applied_at", at), key=lambda a: a["applied_at"], reverse=True):
+    for a in _recent(behavior.view(state, line_user_id)["applications"], "applied_at", at):
         j = jobs.get(a["job_id"])
         out.append({"job_id": a["job_id"], "title": j.title if j else "", "applied": _md(a["applied_at"]),
                     "days_ago": _days_ago(a["applied_at"], at), "status": a["status"]})
@@ -183,11 +184,10 @@ def recent_applications(state: State, line_user_id: str) -> list[dict]:
 
 
 def form_exit(state: State, line_user_id: str) -> dict | None:
-    user, jobs, at = state.user(line_user_id), load_jobs(), now(line_user_id)
-    exits = [e for e in user.get("form_exits", []) if _days_ago(e["exited_at"], at) <= 7]
-    if not exits:
+    jobs, at = load_jobs(), now(line_user_id)
+    e = behavior.view(state, line_user_id)["form_exit"]  # 要約に載る離脱は最後の 1 件
+    if not e or _days_ago(e["exited_at"], at) > 7:
         return None
-    e = exits[-1]
     j = jobs.get(e["job_id"])
     return {"job_id": e["job_id"], "title": j.title if j else "", "exited_at": e["exited_at"],
             "completed_fields": list(e["completed"]), "remaining_fields": e["remaining"],
@@ -419,9 +419,9 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[str, BaitoJob], at: datetime,
+def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[str, BaitoJob], at: datetime,
              filters: dict | None = None) -> list[str]:
-    """推薦理由。指定された条件か、90日以内の本人の行動に基づく事実だけを並べる。
+    """推薦理由。指定された条件か、90日以内の本人の行動(acts は behavior.view の形)に基づく事実だけを並べる。
     属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。"""
     f = filters or {}
     reasons = []
@@ -429,7 +429,7 @@ def _reasons(job: BaitoJob, area, time_band, job_type, user: dict, jobs: dict[st
         reasons.append(TALK_REASONS[job.talk_level])
     if f.get("max_physical_level") or f.get("min_physical_level"):
         reasons.append(PHYSICAL_REASONS[job.physical_level])
-    for a in _recent(user.get("applications", []), "applied_at", at):
+    for a in reversed(_recent(acts.get("applications", []), "applied_at", at)):  # 古い応募から
         past = jobs.get(a["job_id"])
         if past and past.job_type == job.job_type and past.job_id != job.job_id:
             d = parse_ts(a["applied_at"])
@@ -539,10 +539,9 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
         pool = {k: j for k, j in jobs.items()
                 if "posted_at" in listings.get(k, {})
                 and _days_ago(listings[k]["posted_at"], listed_at) <= posted_within_days}
-    user = state.user(line_user_id) if line_user_id else {}
-    applied = {a["job_id"] for a in user.get("applications", [])}
-    exclude = set(exclude_ids or []) | applied  # 応募済みの求人は出さない
-    tend = preferences(user, jobs, at) if user.get("dip_id") else {"job_type": [], "area": [], "time_band": []}
+    acts = behavior.view(state, line_user_id)
+    exclude = set(exclude_ids or []) | set(acts["applied_job_ids"])  # 応募済みの求人は出さない(要約の新しい順の 30 件)
+    tend = acts["tendency"] if behavior.dip_id(state, line_user_id) else {"job_type": [], "area": [], "time_band": []}
     cands = [j for j in pool.values() if j.job_id not in exclude
              and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
     sims, unmatched = None, False
@@ -558,7 +557,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
             b["salary"] = _salary_score(j.pay, min_annual_salary)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    top = [job_card(j, _reasons(j, area, time_band, job_type, user, jobs, at, filters))
+    top = [job_card(j, _reasons(j, area, time_band, job_type, acts, jobs, at, filters))
            | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
     out = {"total": len(hits), "jobs": top}
@@ -684,63 +683,55 @@ def answer_material(question: str, job_id: str | None = None) -> dict:
 
 
 def application_status(state: State, line_user_id: str, job_id: str | None = None) -> dict:
+    """as_of は選考の状態をいつ時点の要約から読んだか(連携していない人は None)。"""
     apps = recent_applications(state, line_user_id)
     if job_id:
         apps = [a for a in apps if a["job_id"] == job_id]
     faq = {f["id"]: f["a"] for f in json.loads((FIXTURES / "faq.json").read_text(encoding="utf-8"))}
-    return {"applications": apps, "reference": faq["faq-contact"]}
+    return {"applications": apps, "as_of": behavior.view(state, line_user_id)["as_of"], "reference": faq["faq-contact"]}
 
 
 # ----------------------------- 手続き(フォームの続き) -----------------------------
 
 def resume_form(state: State, line_user_id: str, job_id: str, answers: dict[str, str]) -> dict:
     """トークで受け取れる項目(個人情報以外)だけを反映し、残りは LIFF 画面の URL を返す。
-    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレスが含まれていれば受け取らない。"""
+    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレスが含まれていれば受け取らない。
+    反映は、答えた項目名を元データに form_fill のイベントで書く(値は持たない。シミュレーションなので値を使う先が無い)。"""
     rejected = [k for k, v in answers.items() if k in PII_FIELDS or has_pii(str(v))]
-    result = {}
-
-    def apply(u):
-        for e in u.get("form_exits", []):
-            if e["job_id"] != job_id:
-                continue
-            for k, v in answers.items():
-                if k in e["remaining"] and k not in rejected:
-                    e["completed"][k] = v
-                    e["remaining"].remove(k)
-            result["remaining"] = list(e["remaining"])
-
-    state.update(line_user_id, apply)
-    if "remaining" not in result:
+    e = behavior.view(state, line_user_id)["form_exit"]
+    if not e or e["job_id"] != job_id:
         return {"error": f"{job_id} の入力途中の応募フォームはありません"}
-    out = {"job_id": job_id, "remaining_fields": result["remaining"],
+    filled = [k for k in answers if k in e["remaining"] and k not in rejected]
+    if filled:
+        behavior.record(state, line_user_id, "form_fill", job_id, fields=filled)
+    remaining = [f for f in e["remaining"] if f not in filled]
+    out = {"job_id": job_id, "remaining_fields": remaining,
            "rejected_pii": rejected,
            "note": "個人情報はトークで受け取らない。LIFF 画面の URL をボタンで案内する。" if rejected else ""}
-    if result["remaining"]:
+    if remaining:
         out["liff_url"] = liff_url(LIFF_BASE, line_user_id, job=job_id)
     return out
 
 
 def submit_application(state: State, line_user_id: str, job_id: str) -> None:
-    """LIFF 画面で残りの項目が入力されたら応募を確定する(トークではなく LIFF から呼ばれる)。"""
-    def apply(u):
-        u["form_exits"] = [e for e in u.get("form_exits", []) if e["job_id"] != job_id]
-        u.setdefault("applications", []).append(
-            {"job_id": job_id, "applied_at": now(line_user_id).isoformat(), "status": "応募済み(店舗からの連絡待ち)"})
-    state.update(line_user_id, apply)
+    """LIFF 画面で残りの項目が入力されたら応募を確定する(トークではなく LIFF から呼ばれる)。元データに apply を書く
+    (その求人の離脱は、要約でも重ねた分でも消える)。"""
+    behavior.record(state, line_user_id, "apply", job_id, status="応募済み(店舗からの連絡待ち)")
 
 
 def save_job(state: State, line_user_id: str, job_id: str) -> dict:
-    def apply(u):
-        if job_id not in {s["job_id"] for s in u.get("saves", [])}:
-            u.setdefault("saves", []).append({"job_id": job_id, "at": now(line_user_id).isoformat()})
-    u = state.update(line_user_id, apply)
-    return {"saved": job_id, "saves_total": len(u["saves"])}
+    """保存を元データに書く。要約は次のバッチまで変わらないが、この会話で書いた分を重ねて読むので、すぐ後の
+    saved_jobs・要約・プロフィールに出る。もう保存してあれば書かない。"""
+    if job_id not in {s["job_id"] for s in behavior.view(state, line_user_id)["saves"]}:
+        behavior.record(state, line_user_id, "save", job_id)
+    return {"saved": job_id, "saves_total": behavior.view(state, line_user_id)["saves_total"]}
 
 
 def saved_jobs(state: State, line_user_id: str) -> list[dict]:
-    """保存した求人を新しい順に、求人カードの形で(本番のトーク画面の「保存した求人」)。掲載が無くなった求人は出さない。"""
+    """保存した求人を新しい順に、求人カードの形で(本番のトーク画面の「保存した求人」)。掲載が無くなった求人は出さない。
+    要約に載るのは新しい順に 10 件(summarize.SAVES)と、この会話で保存した分。"""
     jobs = load_jobs()
-    saves = sorted(state.user(line_user_id).get("saves", []), key=lambda s: s["at"], reverse=True)
+    saves = behavior.view(state, line_user_id)["saves"]
     return [job_card(jobs[s["job_id"]], []) | {"saved_at": _md(s["at"])} for s in saves if s["job_id"] in jobs]
 
 
@@ -1146,12 +1137,11 @@ def push_trigger(state: State, line_user_id: str, trigger: str) -> dict:
     許可したら接触として記録する(次の頻度判定と、会話中の summary の last_contact に使われる)。"""
     if trigger not in PUSH_TRIGGERS:
         return _deny(f"trigger は {PUSH_TRIGGERS} のいずれか")
-    user = state.user(line_user_id)
-    if not user.get("dip_id"):
+    if not behavior.dip_id(state, line_user_id):
         return _deny("dip ID と未連携なので行動イベントがない")
-    recent = [c for c in user.get("contacts", []) if _days_ago(c["at"], now(line_user_id)) < PUSH_INTERVAL_DAYS]
-    if recent:
-        return _deny(f"{PUSH_INTERVAL_DAYS}日以内に接触済み({_md(recent[-1]['at'])} {recent[-1]['channel']})")
+    last = behavior.view(state, line_user_id)["last_contact"]  # 間隔の判定に要るのは最後の接触だけ
+    if last and _days_ago(last["at"], now(line_user_id)) < PUSH_INTERVAL_DAYS:
+        return _deny(f"{PUSH_INTERVAL_DAYS}日以内に接触済み({_md(last['at'])} {last['channel']})")
 
     facts = None
     e = form_exit(state, line_user_id)
@@ -1160,6 +1150,5 @@ def push_trigger(state: State, line_user_id: str, trigger: str) -> dict:
     if facts is None:
         return _deny(f"{trigger} の根拠になる事実がない")
 
-    state.update(line_user_id, lambda u: u.setdefault("contacts", []).append(
-        {"at": now(line_user_id).isoformat(), "channel": "LINE AI通知", "message": trigger}))
+    behavior.record(state, line_user_id, "contact", channel="LINE AI通知", message=trigger)
     return {"allowed": True, "trigger": trigger, "facts": facts}

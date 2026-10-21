@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from dip_mcp import behavior, logic
 from dip_mcp.data import State
 from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, greet
@@ -120,7 +121,8 @@ def test_production_user_is_the_anonymous_id_itself_and_starts_empty(app):
         opened = client.post("/api/talk/open").json()
     assert opened["user"] == uid and re.fullmatch(r"w-[0-9a-f]{16}", uid)  # 「匿名ID:sim-…」ではない
     u = app.state.user(uid)
-    assert u["dip_id"] is None and u["views"] == u["saves"] == u["applications"] == u["outcomes"] == []
+    assert u["dip_id"] is None and u["outcomes"] == [] and not u.get(behavior.WRITES)
+    assert logic.saved_jobs(app.state, uid) == [] and behavior.view(app.state, uid)["applications"] == []
     assert not u.get("talk_opens")  # 開いた記録は挨拶が返ったときに残す(ここでは挨拶を呼んでいない)
 
 
