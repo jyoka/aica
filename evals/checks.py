@@ -742,6 +742,30 @@ def purpose_violations(turns: list[dict], user_msgs: list[str | None]) -> list[s
     return []
 
 
+# 求人を見るかを聞く問い(playbook の「この内容で求人を見ますか?」「この条件で探してみますか?」)。
+# 疑問詞のある問い(「どんな求人を探していますか?」)は希望を聞くヒアリングで、求人を見るかの問いではない。
+# 「求人を見る前に、もう1つ伺ってもいいですか?」のように、読点をまたいで別のことを聞く問いも数えない。
+# 動詞と「ますか」の間は活用と補助の言い方(探し・てみ・ご覧になり・お送りし など)だけに絞る。
+# 「求人を探すのに不安はありますか?」「求人の見つけ方は分かりますか?」のような問いを数えないため
+OFFER_JOBS = re.compile(r"(求人|(この|その)(内容|条件)で)[^。!！?？、]{0,8}?(ご覧に|見|探|紹介|送|出し)"
+                        r"(し|り|せ|りし|せし|なり)?(てみ)?(ますか|ませんか|ましょうか)[?？]")
+SEARCH_TOOLS = {"recommend_jobs", "relax_conditions"}
+
+
+def jobs_offer_turn(turns: list[dict]) -> int | None:
+    """求人を見るかを聞いた(OFFER_JOBS の問い)か、求人を探した(recommend_jobs / relax_conditions・求人カード)
+    最初のターン(1始まり)。どちらも無ければ None。相談のペルソナの期待(sc["expect_offer_by"])に使う:
+    相談の決まり(5、6問で求人を見るかを聞く)に従うと、ターン上限までに結果の記録へ届かないことがあるので、
+    結果の記録ではなく、期限のターンまでに求人を見るかを聞いたか(または探したか)で見る(task 133)。"""
+    for i, r in enumerate(turns):
+        if r["cards"] or SEARCH_TOOLS & {t["name"] for t in r["tools"]}:
+            return i + 1
+        asks = [s for b in r["bubbles"] for s in re.split(r"(?<=[。!！?？\n])", b)]
+        if any(OFFER_JOBS.search(s) and not WH_WORD.search(s) for s in asks):
+            return i + 1
+    return None
+
+
 # ----------------------------- 雇用区分の切り替え(set_search_track の呼び出しで判定) -----------------------------
 
 # 挨拶で区分に触れたとみなす言い方(区分つきの再訪)
@@ -1063,6 +1087,13 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         track_ok = None  # 期待が無いか、模擬ユーザーが期待の発言をしなかった
     else:
         track_ok = all(r["status"] == "ok" for r in judged)
+    offer_turn = jobs_offer_turn(turns)
+    # 期待どおりの出口: 相談のペルソナ(expect_offer_by)は、期限のターンまでに求人を見るかを聞いた(または探した)か。
+    # ほかのシナリオは、記録した結果が期待の結果(expect_outcome)のどれかか
+    if sc.get("expect_offer_by"):
+        as_expected = offer_turn is not None and offer_turn <= sc["expect_offer_by"]
+    else:
+        as_expected = bool(set(outcomes) & set(sc["expect_outcome"]))
     return {
         "turns": len(turns),
         "branch_turn": branch_turn,
@@ -1075,7 +1106,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "action_offers": action_offers(turns),
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
-        "outcome_as_expected": bool(set(outcomes) & set(sc["expect_outcome"])),
+        "outcome_as_expected": as_expected,
+        "offer_turn": offer_turn,
         "violations": violations + fabrications,
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),
