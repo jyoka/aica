@@ -26,14 +26,17 @@ def _v(said: list[str], turns: list[dict]) -> list[str]:
 # ----------------------------- (1) keywords に避けたいこと -----------------------------
 
 
-@pytest.mark.parametrize("kw", ["接客はしたくない", "立ち仕事を避けたい", "人と話さない", "電話対応なし", "力仕事以外"])
+@pytest.mark.parametrize("kw", ["接客はしたくない", "立ち仕事を避けたい", "人と話さない", "電話対応なし", "力仕事以外",
+                                "ノルマがない", "残業のない職場"])  # 「〜がない」「〜のない」も避けたいこと(task 130)
 def test_avoids_put_into_keywords_are_flagged(kw):
     v = _v(["探しています"], [turn(["こんにちは"]), turn(["探しますね。"], {"keywords": kw})])
     assert any("keywords に避けたいこと" in x and kw in x for x in v)
 
 
 @pytest.mark.parametrize("kw", ["コーヒー", "黙々と作業", "経験なし", "未経験", "残業少ない", "子どもに勉強を教える",
-                                "人間関係が良い", "まかない付き", "まかない アットホームな職場"])
+                                "人間関係が良い", "まかない付き", "まかない アットホームな職場",
+                                # 求められない条件と本人のことは、避けたいことではない(task 130)
+                                "資格なし", "免許なし", "スキルなし", "経験がない", "分からないことは教えてもらえる"])
 def test_wants_and_plain_conditions_in_keywords_are_not_flagged(kw):
     assert _v(["探しています"], [turn(["こんにちは"]), turn(["探しますね。"], {"keywords": kw})]) == []
 

@@ -122,3 +122,64 @@ def test_report_tells_why_the_run_stopped(stopped, note):
     head = probe.report({"at": "2026-10-04 11:44", "results": [], "stopped": stopped,
                          "spent_usd": 0.1, "ledger_total_usd": 3.4})
     assert head.splitlines()[2] == f"- この実行の費用: $0.1000、費用台帳の累計: $3.4000{note}"
+
+
+# ----------------------------- 中断した回も結果に残す(task 130) -----------------------------
+
+
+def test_interrupted_chat_probe_is_kept_in_the_json_and_the_md(tmp_path, monkeypatch):
+    # H では Ctrl-C で止めた回が台帳にだけ残り、json と md から消えて、自動レビューが回数を取り違えた。
+    # 止めた回も {"id", "interrupted": true} で results に残し、md に「中断」と出す(実 API もランタイムも使わない)
+    import json
+
+    from evals import budget, run
+
+    class FakeRuntime:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    async def interrupted_scenario(*a, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(probe, "HERE", tmp_path)
+    monkeypatch.setattr(run.llm, "client", lambda: None)
+    monkeypatch.setattr(run, "run_scenario", interrupted_scenario)
+    monkeypatch.setattr("line_runtime.runtime.LineRuntime", FakeRuntime)
+    monkeypatch.setattr("evals.meter.Meter.install", lambda self: self)
+    ledger = tmp_path / "budget.jsonl"
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(probe.main("P-chat-phone", ledger))
+    out = next((tmp_path / "results").glob("probe-*.json"))
+    doc = json.loads(out.read_text())
+    assert doc["stopped"] == "interrupted"
+    assert [(r["id"], r["channel"], r.get("interrupted")) for r in doc["results"]] == [("P-chat-phone", "chat", True)]
+    md = out.with_suffix(".md").read_text()
+    assert "## P-chat-phone(chat)" in md and "- 中断: この回は途中で止めた" in md
+    assert budget.rows(ledger)[0]["interrupted"] is True  # 台帳と結果で回数がそろう
+
+
+def test_interrupted_voice_probe_is_kept_in_the_results(app, tmp_path, monkeypatch):  # noqa: F811
+    from livekit.plugins import openai as lk_openai
+
+    from evals import run
+    from voice_resume import config
+
+    monkeypatch.setattr(config, "OUT_DIR", tmp_path / "out")
+    model = _scripted_llm([("say", "こんにちは。どんなお仕事を探していますか?")])
+    monkeypatch.setattr(lk_openai, "LLM", lambda **_kw: model)
+
+    async def interrupted_user(*_a, **_kw):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(run, "sim_reply", interrupted_user)
+    ledger, results = tmp_path / "budget.jsonl", []
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(probe.run_voice([probe.VOICE_PROBES[0]], ledger, results, lambda: None))
+    (r,) = results
+    assert r["id"] == probe.VOICE_PROBES[0]["id"] and r["interrupted"] is True and "cost_usd" in r
+    assert "- 中断: この回は途中で止めた" in probe.report({"at": "x", "results": results, "stopped": "interrupted"})

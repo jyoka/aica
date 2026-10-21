@@ -202,9 +202,14 @@ FUYO_MAN = {103, 106, 123, 130, 150, 160}
 # 「月28万円の求人」)は目安に数えない
 ESTIMATE_HEAD = re.compile(r"(月|週)に?(約|およそ|だいたい|大体)?$")
 ESTIMATE_WORDS = re.compile(r"約|およそ|だいたい|大体|くらい|ぐらい|ほど|程度|前後|目安|なら|だと")
-# 求人を指す語(「こちらは月に約30万円です」「1件目は月に約25万円」)がある文も、求人の給与の主張として照合する
-PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人|こちら|そちら|あちら"
-                            r"|(この|その|あの)(お)?仕事|(この|その|あの)(会社|お店|店舗|職場)|件目|つ目")
+PAY_FACT_WORDS = re.compile(r"月給|月収|手当|交通費|支給|給与|給料|賞与|ボーナス|求人")
+# 求人を指す語(「こちらは月に約30万円です」「1件目は月に約25万円」)がある文も、求人の給与の主張として照合する。
+# ただし同じ文に本人の働き方(週の日数・時間)があれば計算の目安(「こちらは週3日・1日5時間なら月に約7万円です」)。
+# 働き方の数は、本人が言った数のときだけ目安とみなす(作った勤務条件「こちらは週5日・1日8時間勤務で月に約30万円です」は主張)。
+# 「つ目」は求人を指す。ただし「1つ目の目標は月に約7万円ですね」のような、求人でない語が続くときは除く
+JOB_POINTER = re.compile(r"こちら|そちら|あちら|(この|その|あの)(お)?仕事|(この|その|あの)(会社|お店|店舗|職場)|件目"
+                         r"|つ目(?!の(目標|理由|条件|希望|質問|ご質問|ポイント|点|不安|悩み|方法|案|ステップ))")
+WORK_BASIS = re.compile(r"週に?\s*(\d+)\s*日|(\d+)\s*時間")
 _KANJI_DIGIT = {c: i for i, c in enumerate("〇一二三四五六七八九")}
 _KANJI_UNIT = {"十": 10, "百": 100, "千": 1000}
 # 算用数字が混じった言い方(「1千万」「3千円」「1千2百万」)も1つの数として読む(「1千万」を「11000万」にしない)
@@ -265,13 +270,20 @@ def _pay_kind(text: str, pos: int) -> str | None:
     return "月給" if hits[-1].group(0) == "月収" else hits[-1].group(0)
 
 
-def _not_a_claim(text: str, pos: int, value: Decimal) -> bool:
+def _users_work_basis(sentence: str, said_nums: set[int]) -> bool:
+    """文に働き方(週の日数・時間)があり、その数がすべて本人の言った数か。"""
+    basis = [_int(n) for m in WORK_BASIS.finditer(sentence) for n in m.groups() if n]
+    return bool(basis) and set(basis) <= said_nums
+
+
+def _not_a_claim(text: str, pos: int, value: Decimal, said_nums: set[int]) -> bool:
     """扶養の「壁」の一般知識と、月・週の収入の計算の目安は、dip の事実の主張として照合しない。"""
     sentence = _sentence_at(text, pos)
     if FUYO_CONTEXT.search(sentence) and value in FUYO_MAN:
         return True
     return (bool(ESTIMATE_HEAD.search(text[max(0, pos - 6):pos])) and bool(ESTIMATE_WORDS.search(sentence))
-            and not PAY_FACT_WORDS.search(sentence))
+            and not PAY_FACT_WORDS.search(sentence)
+            and not (JOB_POINTER.search(sentence) and not _users_work_basis(sentence, said_nums)))
 
 
 def _numbers(text: str) -> set[int]:
@@ -375,7 +387,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
         for n, pos in _man_claims(text):
             kind = _pay_kind(text, pos)
             allowed = known_man | (by_kind.get(kind, set()) if kind else any_kind)
-            if n not in allowed and not _not_a_claim(text, pos, n):
+            if n not in allowed and not _not_a_claim(text, pos, n, said_nums):
                 bad.append(n)
         for n in dict.fromkeys(bad):
             out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
@@ -460,15 +472,33 @@ def _split_words(v: str) -> list[str]:
     return [w for w in re.split(r"[とや・、,/\s]+|または|および", v) if w]
 
 
-def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
-    """保存した希望が、本人の発言か、前に保存済みの希望(要約の stated_preferences)に基づくか。
-    数字(時給・日数)は数字で、自由記述の項目(FREE_TEXT_KEYS)は内容語の大半で、それ以外は
-    「渋谷と原宿」のような並びを区切って語ごとに照合する。"""
+# 削ると意味が逆になる語(否定・避けたいこと)
+NEGATION_WORDS = ("ません", "ない", "無理", "避け", "苦手", "嫌", "NG", "以外")
+
+
+def _is_subsequence(v: str, sentence: str) -> bool:
+    it = iter(sentence)
+    return all(c in it for c in v)
+
+
+def _trimmed_from_a_sentence(v: str, said: str) -> bool:
+    """値が発言の1文から一部を削っただけで、否定・避けたい語を削っていないか(意味を保った言い換え)。"""
+    return any(_is_subsequence(v, s) and not any(w in s and w not in v for w in NEGATION_WORDS)
+               for s in re.split(r"[。\n!?！？]", said) if s)
+
+
+def _saved_preference_checks(turns: list[dict], user_msgs: list[str]) -> tuple[list[str], list[str]]:
+    """保存した希望を照合して、(作り話, 言葉のままでない保存) を返す。
+    数字(時給・日数)は数字で、自由記述の項目(FREE_TEXT_KEYS)は内容語で、それ以外は
+    「渋谷と原宿」のような並びを区切って語ごとに照合する。それ以外の項目で語が発言のままでなくても、内容語がすべて
+    発言の1文から一部を削っただけの値は作り話ではなく、言葉のままの決まりの違反(「平日は19時以降か、土日なら働けます」
+    →「平日か土日なら働けます」)。ただし否定・避けたい語を削った値(「土日は働けませんが…」→「土日なら働けます」)は
+    意味が逆になるので作り話。"""
     prior = [str(p["value"]) for r in turns for t in r["tools"] if t["name"] == "get_user_conversation_summary"
              and isinstance(t["result"], dict) for p in (t["result"].get("stated_preferences") or {}).values()]
     said = _arabic("\n".join([m or "" for m in user_msgs] + prior))
     said_nums = _numbers(said)
-    out = []
+    made_up, reworded = [], []
     for i, r in enumerate(turns):
         for t in r["tools"]:
             if t["name"] != "save_user_preferences":
@@ -486,9 +516,22 @@ def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
                     ok = _free_text_ok(v, said, k)
                 else:
                     ok = all(w in said for w in _split_words(v))
+                    if not ok and _trimmed_from_a_sentence(v, said):
+                        reworded.append(f"T{i + 1}: 本人の言葉のままでない希望を保存した: {k}={v}")
+                        continue
                 if not ok:
-                    out.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
-    return out
+                    made_up.append(f"T{i + 1}: 本人が言っていない希望を保存した: {k}={v}")
+    return made_up, reworded
+
+
+def preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
+    """保存した希望が、本人の発言か、前に保存済みの希望(要約の stated_preferences)に基づくか(作り話だけ)。"""
+    return _saved_preference_checks(turns, user_msgs)[0]
+
+
+def reworded_preference_violations(turns: list[dict], user_msgs: list[str]) -> list[str]:
+    """本人の言葉を言い換えて保存した希望(内容語は発言にある。作り話には数えない)。"""
+    return _saved_preference_checks(turns, user_msgs)[1]
 
 
 def _question_part(b: str) -> str:
@@ -848,10 +891,13 @@ def upload_violations(turns: list[dict], upload: dict | None) -> list[str]:
 
 # ----- 避けたいこと・やりたいことと検索の引数(task 111 のレビュー・task 126 の後続。task 109) -----
 # keywords に入った避けたいこと(「接客はしたくない」を keywords に入れると、意味の近さで飲食ホールが上位に来る)。
-# 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし)を見る。「経験なし」「少ない」は避けたいことではない。
+# 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし・〜がない・〜のない)を見る。
+# 「経験なし」「資格なし」「免許なし」「スキルなし」(求められない条件)と「少ない」は避けたいことではない。
+# 「分からないことは教えてもらえる」の「分からない」も、本人のことで避けたいことではない。
 # 「まかない(付き)」は食事の補助で、dip の keywords の説明が例に挙げている(dip_mcp/server.py)
-AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<![がの])(?<!少)(さ|し|(?<!ま)か|た|わ|ら)ない"
-                               r"|(?<!経験)(?<!経験が)(なし|無し)")
+_NOT_REQUIRED = "".join(f"(?<!{w})(?<!{w}[がのは])" for w in ("経験", "資格", "免許", "スキル"))
+AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<!少)(さ|し|(?<!ま)か|た|わ|(?<!分か)(?<!わか)ら)ない"
+                               rf"|{_NOT_REQUIRED}([がの](ない|無い)|なし|無し)")
 # 本人の言葉 -> 当てるべき属性の引数(dip の Prompt「避けたいこと・やりたいことから絞り込みの引数を埋める」と同じ対応)。
 # max_* は値がそれ以下、min_* はそれ以上なら当てたとみなす
 ATTRIBUTE_SAYINGS = (
@@ -947,6 +993,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         violations += greeting_track_violations(sc, turns)
     violations += upload_violations(turns, upload)
     violations += playbook_violations(turns) + dont_know_violations(turns, user_msgs)
+    violations += reworded_preference_violations(turns, user_msgs)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")

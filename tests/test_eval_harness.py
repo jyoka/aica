@@ -98,6 +98,14 @@ def test_judge_prompt_counts_a_purpose_the_user_told_and_the_assistant_took_up()
     assert "目的と関係のない前の発言を引かない" in rule
 
 
+def test_judge_prompt_leaves_the_track_question_and_relaxing_out_of_options_personal():
+    # 区分の問い(PRD のストーリー3)と0件の後の条件の緩め方は、本人由来の選択肢かどうか(ストーリー8)の対象ではない。
+    # C-consult-only・C-consult-switch で、区分の問いの選択肢を「本人由来でない」として満たさないにした(task 130)
+    rule = _rule("options_personal")
+    assert "雇用区分を聞く問いの選択肢(正社員 / アルバイト・パート / まだ決めていない)" in rule
+    assert "求人が0件だった後の条件の緩め方の選択肢" in rule and "この項目の対象にしない" in rule
+
+
 # ----------------------------- ジャッジだけで判定し直す(--rejudge) -----------------------------
 
 BASELINE = Path(__file__).resolve().parent.parent / "evals" / "baseline" / "sim-20260929-100418.json"

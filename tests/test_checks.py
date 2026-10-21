@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from evals.checks import fact_violations, preference_violations
+from evals.checks import (
+    conversation_checks,
+    fact_violations,
+    preference_violations,
+    reworded_preference_violations,
+)
 
 
 def turn(bubbles, tools=()):
@@ -541,3 +546,51 @@ def test_confirming_a_saved_value_by_its_word_and_digging_into_wants_are_not_rea
     assert _reask("勤務地はどこがいいですか?", {"area": "渋谷あたり"}, "はい")
     assert _reask("勤務地は新宿で探しますか?", {"area": "渋谷あたり"}, "はい")
     assert _reask("どんな仕事を探していますか?", {"job_type": "販売・サービス"}, "はい")
+
+
+# ----------------------------- task 130: H のレビューからの評価器の誤判定 -----------------------------
+
+
+def test_estimates_with_a_job_pointer_or_a_numbered_goal_are_not_pay_claims():
+    """本人の働き方(週の日数・時間)で計算した文の目安と、「1つ目の目標」は求人の給与の主張ではない(H のレビュー)。"""
+    said = ["週3日、1日5時間くらいで働きたい。週2日・4時間でもいいです"]
+    for line in ("こちらは週3日・1日5時間なら月に約7万円です。", "1つ目の目標は月に約7万円ですね。",
+                 "このお仕事だと、週に2日・4時間で月に約3万円くらいです。"):
+        assert fact_violations([turn([line], [SUMMARY])], said, None) == [], line
+    # 求人の事実を作った文は、今までどおり作り話(正例)。本人が言っていない勤務条件を添えても、目安にはならない
+    for line in ("こちらは月に約30万円です。", "1つ目のお仕事は月に約30万円です。", "2件目は月に約30万円です。",
+                 "週3日の求人で、月給約30万円です。", "こちらは週5日・1日8時間勤務で月に約30万円です。",
+                 "この仕事は1日8時間で月に約30万円です。", "こちらは週3日・1日8時間で月に約30万円です。",
+                 "2つ目は月に約30万円です。"):
+        v = fact_violations([turn([line], [SUMMARY])], ["週3日で働きたい"], None)
+        assert any("30万円" in x for x in v), line
+
+
+def test_saved_preference_reworded_from_what_was_said_is_not_a_fabrication():
+    """H の T-side-job T5: 「平日は19時以降か、土日なら働けます」を「平日か土日なら働けます」と保存した。
+    内容語はすべて発言にあるので作り話ではなく、言葉のままの決まりの違反に数える。"""
+    said = ["平日は19時以降か、土日なら働けます。深夜は避けたいです。"]
+    t = _saved({"time_band": "平日は19時以降", "days_per_week": "平日か土日なら働けます"})
+    assert preference_violations([t], said) == []
+    assert reworded_preference_violations([t], said) == ["T1: 本人の言葉のままでない希望を保存した: days_per_week=平日か土日なら働けます"]
+    r = conversation_checks({"expect_outcome": ["propose"]}, [t], said)
+    assert r["fabrications"] == [] and any("言葉のままでない" in v for v in r["violations"])
+    # 発言に無い語を足したら、今までどおり作り話(言葉のままの違反には数えない)
+    t = _saved({"days_per_week": "平日か日曜なら働けます"})
+    assert preference_violations([t], said) == ["T1: 本人が言っていない希望を保存した: days_per_week=平日か日曜なら働けます"]
+    assert reworded_preference_violations([t], said) == []
+    # 言葉のまま保存したら、どちらにも数えない
+    t = _saved({"days_per_week": "土日なら働けます"})
+    assert preference_violations([t], said) == [] and reworded_preference_violations([t], said) == []
+
+
+def test_saved_preference_that_drops_a_negation_or_mixes_sentences_is_a_fabrication():
+    """意味が逆になる保存は、言葉のままの違反ではなく作り話(task 130 のレビュー)。"""
+    for said, prefs in (("土日は働けません。平日なら働けます。", {"days_per_week": "土日なら働けます"}),
+                        ("土日は働けませんが、平日なら働けます。", {"days_per_week": "土日なら働けます"}),
+                        ("渋谷は遠いので避けたいです。新宿がいいです", {"area": "渋谷がいい"}),
+                        ("接客は苦手です。事務がいいです", {"job_type": "接客がいい"})):
+        t = _saved(prefs)
+        k, v = next(iter(prefs.items()))
+        assert preference_violations([t], [said]) == [f"T1: 本人が言っていない希望を保存した: {k}={v}"], said
+        assert reworded_preference_violations([t], [said]) == [], said

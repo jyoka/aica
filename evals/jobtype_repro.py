@@ -60,7 +60,7 @@ async def main(n: int, tag: str) -> None:
 
     meter = Meter().install()
     doc = {"tag": tag, "model": config.MODEL, "effort": config.EFFORT, "script": CASE, "runs": []}
-    out = HERE / "results" / f"jobtype-repro-{tag}-{datetime.now():%Y%m%d-%H%M%S}.json"  # noqa: DTZ005  run.py と同じ(ローカル時刻のファイル名)
+    out = HERE / "results" / f"jobtype-repro-{tag}-{datetime.now():%Y%m%d-%H%M%S}.json"
     async with LineRuntime(in_memory=True) as rt:
         for i in range(n):
             try:

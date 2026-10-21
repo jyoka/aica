@@ -90,6 +90,12 @@ BACK_PROMISE = re.compile(r"(さっき|先ほど|前|最初)の[^。]{0,12}(も|
 BACK_REQUEST = re.compile(r"(さっき|先ほど|前|最初)の[^。]{0,8}(求人|お仕事|仕事)?[^。]{0,6}(戻|がいい|が気にな|にしたい)")
 
 
+def interrupted(p: dict, channel: str, cost_usd: float | None = None) -> dict:
+    """Ctrl-C などで途中で止めた回の結果(台帳にだけ残って、json と md から消えないように)。"""
+    return {"id": p["id"], "channel": channel, "title": p.get("title", ""), "interrupted": True} | (
+        {} if cost_usd is None else {"cost_usd": round(cost_usd, 4)})
+
+
 def _questions(texts: list[str]) -> list[str]:
     return [s for t in texts for s in re.split(r"(?<=[?？])", t) if s.strip().endswith(("?", "？"))]
 
@@ -134,11 +140,15 @@ async def run_chat(probes: list[dict], ledger: Path, results: list[dict], save) 
         async def run_one(p: dict, _rep: int) -> None:
             sc = {"user": "sim-new", "event": "visit", "expect_outcome": ["propose", "consult"],
                   "max_turns": CHAT_MAX_TURNS} | p
+            before = meter.summary()["cost_usd"]
             try:
                 r = await run_scenario(rt, client, meter, sc, use_judge=False, max_turns=CHAT_MAX_TURNS)
             except Exception as e:  # noqa: BLE001  1本の失敗で全体を止めない
                 results.append({"id": p["id"], "channel": "chat", "error": f"{type(e).__name__}: {e}"})
                 return
+            except BaseException:  # Ctrl-C(KeyboardInterrupt・CancelledError)。止めた回も結果に残して上げ直す
+                results.append(interrupted(p, "chat", meter.summary()["cost_usd"] - before))
+                raise
             results.append({"id": p["id"], "channel": "chat", "title": p["title"],
                             "observation": chat_observation(sc, r), "cost_usd": r["cost_usd"],
                             "violations": r["violations"], "transcript": r["transcript"], "turn_log": r["turn_log"]})
@@ -273,9 +283,9 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
         uid = f"probe-{p['id']}"
         prepare(State(), {"user": "sim-new"}, user=uid)  # 区分は未定・希望なしから
         dip = DipMCP()
-        await dip.start()
         session = None
         try:
+            await dip.start()
             advisor, greeting = await prepare_advisor(dip, uid)
             poster = _NoPoster()
             advisor._talk_poster = poster
@@ -306,6 +316,10 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
                 obs["talk_level_as_expected"] = obs["talk_level"] == p.get("expect_talk_level")
         except Exception as e:  # noqa: BLE001
             results.append({"id": p["id"], "channel": "voice", "error": f"{type(e).__name__}: {e}"})
+        except BaseException:  # Ctrl-C。止めた回も結果に残す(費用は下の finally で入れる)
+            if not (results and results[-1]["id"] == p["id"]):
+                results.append(interrupted(p, "voice"))
+            raise
         finally:
             if session is not None:
                 cost = _voice_cost(session)
@@ -333,6 +347,9 @@ def report(doc: dict) -> str:
         lines.append(f"## {r['id']}({r['channel']}): {r.get('title', '')}")
         if "error" in r:
             lines += [f"- エラー: {r['error']}", ""]
+            continue
+        if r.get("interrupted"):
+            lines += ["- 中断: この回は途中で止めた(観察なし)", f"- 費用: ${r.get('cost_usd', 0):.4f}", ""]
             continue
         lines += [f"- {k}: {json.dumps(v, ensure_ascii=False)}" for k, v in r["observation"].items()]
         lines.append(f"- 費用: ${r.get('cost_usd', 0):.4f}")
