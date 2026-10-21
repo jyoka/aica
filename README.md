@@ -16,6 +16,8 @@
 ```mermaid
 flowchart LR
     seeker(["求職者<br/>ブラウザ"])
+    lineu(["求職者<br/>LINE アプリ"])
+    lineapi[("LINE プラットフォーム")]
     web["Web プロセス(line_runtime)<br/>Web サーバー + エージェント"]
     dip["dip の MCP サーバー(dip_mcp)<br/>dip のツール、dip の Prompt、playbook"]
     lk[("LiveKit Cloud")]
@@ -24,6 +26,7 @@ flowchart LR
     llm[("OpenAI / Anthropic")]
 
     seeker -- "トーク、履歴書" --> web
+    lineu -- "トーク" --> lineapi -- "webhook" --> web
     web -- "MCP" --> dip
     web --> llm
     seeker -- "音声" --> lk --> worker
@@ -36,6 +39,7 @@ flowchart LR
 - エージェントは業務の知識を持ちません。LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します
 - dip のツールは LLM を使わず、事実だけを返します。求人カードは、dip が返した求人だけをコードで描きます
 - 音声相談もトークと同じ雇用区分、playbook、プロフィールを使い、結果はトークに戻ります
+- 求職者と話すチャネルは、Web のトーク画面(LINE 風の画面)と LINE 公式アカウントの 2 つです。LINE は設定したときだけ開きます(下の「LINE で試す」)
 
 部品とデータの流れは [HLD](docs/architecture/hld.md) にあります。
 
@@ -70,6 +74,40 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
 
+### LINE で試す
+
+LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶だけです
+(履歴書のファイルと音声相談は、LINE ではまだ使えません。エージェントがそれを勧めたときは、文で書くよう案内します)。
+設定(`LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN`)が無ければ `POST /line/webhook` は 404 で、ほかは何も変わりません。
+
+人がする操作です。LINE のアカウントと、トンネルのツール(ここでは cloudflared)が要ります。
+
+1. LINE 公式アカウントを作る。[LINE Official Account Manager](https://manager.line.biz/) でアカウントを作り、
+   「設定」→「Messaging API」で Messaging API を使うようにする(プロバイダーを選ぶか作る)
+2. 同じ画面の「応答設定」で、「Webhook」をオン、「応答メッセージ」と「あいさつメッセージ」をオフにする。
+   オンのままだと、LINE の自動の返事とエージェントの返事が両方届きます
+3. [LINE Developers コンソール](https://developers.line.biz/console/) で、そのプロバイダーのチャネルを開く
+   - 「チャネル基本設定」のチャネルシークレットを `.env` の `LINE_CHANNEL_SECRET` に書く
+   - 「Messaging API設定」でチャネルアクセストークン(長期)を発行し、`.env` の `LINE_CHANNEL_ACCESS_TOKEN` に書く
+4. 手元の Web サーバーを、トンネルで https に出す(cloudflared は `brew install cloudflared` で入れる)
+
+   ```bash
+   ./.venv/bin/python -m line_runtime.server                 # 1 つ目のターミナル
+   cloudflared tunnel --url http://127.0.0.1:8030            # 2 つ目のターミナル。https://<ランダム>.trycloudflare.com が出る
+   ```
+
+5. 出た URL を `.env` の `AICA_PUBLIC_URL` に書き(例 `AICA_PUBLIC_URL=https://xxxx.trycloudflare.com`)、Web サーバーを起動し直す
+6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://xxxx.trycloudflare.com/line/webhook` にし、
+   「Webhookの利用」をオンにして「検証」を押す(成功と出れば、署名とつながりが合っています)
+7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します
+
+- cloudflared の一時のトンネル(`--url`)は、起動するたびに URL が変わります。そのたびに 5 と 6 をやり直します
+- トンネルを開いている間は、URL を知っている人は誰でも Web のトーク画面と開発者画面も開けます(費用がかかります)。試し終わったら止めます
+- 返信には LINE の返信トークを使います。間に合わなかったときだけ push で返し、push は LINE 公式アカウントの月のメッセージ数に数えられます
+- 求人カードのボタンと LIFF 画面へのリンクは、LINE の中のブラウザで `AICA_PUBLIC_URL` の画面を開きます。LIFF 画面は Cookie で
+  本人を決めるので、LINE のユーザーの画面にはなりません(今は LINE でこのリンクが出る流れはありません。[HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api))
+- ターン数の上限は LINE のユーザーごとと全体で数えます。IP ごとの上限は LINE にはかかりません
+
 ## 画面
 
 | 画面 | URL | 中身 |
@@ -77,6 +115,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
 | 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
 | LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き |
+| LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
 
 - ブラウザごとに匿名ユーザーIDを Cookie で発行します。認証はありません(URL を知っている知人だけが使う前提)
 - 1 日あたりのターン数に上限があります(下の「設定」)
@@ -139,6 +178,14 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `AICA_DAILY_TURN_LIMIT_TOTAL` | 1000 | 全体のターン数の合計 | 可 |
 | `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で 1 日に使える匿名ユーザーIDの数 | 可 |
 | `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くときに使う | 可 |
+
+LINE 公式アカウントで使うものです。LINE で試さないなら要りません。
+
+| 環境変数 | 既定 | 用途 | `.env` |
+|---|---|---|---|
+| `LINE_CHANNEL_SECRET` | なし | チャネルシークレット。webhook の署名(`X-Line-Signature`)を確かめる。`LINE_CHANNEL_ACCESS_TOKEN` と両方あるときだけ `POST /line/webhook` を開く(無ければ 404) | 可 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push に使う | 可 |
+| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(トンネルの https の URL)。LINE で出す LIFF 画面へのリンクの前に付ける。無ければリンクを出さない | 可 |
 
 音声相談で使うものです。トークだけを試すなら要りません。
 

@@ -5,6 +5,7 @@ aica が何でできていて、データがどこを流れるかの全体図で
 
 - 2026-10-11 の main(`7521952`)のコードから書き起こしました。コードと食い違ったら、コードが正です。
   4.7 の時計は、2026-10-12 の決定を実装した後のコード(jyoka/tasks#175)に合わせました
+- LINE 公式アカウントのチャネル(4.8)は、2026-10-21 のユーザーの依頼で足しました(jyoka/tasks#177)
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -29,11 +30,14 @@ aica は、LINE 公式アカウントの AI アシスタント(バイトル)を�
 新しい機能をどちら側に置くかは 1.1 で決めます。
 
 いまは知人に試してもらう本番のトーク画面(`/`)と、評価と説明のための開発者画面(`/dev`)の両方を持っています。
+求職者と話すチャネルは 2 つです。Web のトーク画面(LINE 風の画面)と、LINE 公式アカウント(Messaging API の webhook、4.8)です。
+LINE のチャネルは、設定(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)があるときだけ開きます。
 
 範囲外:
 
 - 本物の求人、応募、選考(求人、店舗、ユーザー、FAQ はすべて架空のデータ)
-- LINE Messaging API への接続(LINE 風の画面で代わりにする)
+- LINE での、ファイルの受け取り、音声相談、プッシュ。LINE で扱うのは、テキストの会話と友だち追加の挨拶です(4.8)。
+  ファイルの受け取りは、LINE の後続のタスク(3 つのうちの 2 つ目)で足します
 - 認証と招待(URL を知っている知人だけが使う前提)
 - 公開(Render への配置は人の作業で、まだ始めていない。jyoka/tasks#64)
 - 複数台、複数プロセスでの配置
@@ -99,6 +103,8 @@ dip の Prompt か playbook に書きます。今のコードには、この線�
 ```mermaid
 flowchart LR
     seeker(["求職者<br/>ブラウザ"])
+    lineu(["求職者<br/>LINE アプリ"])
+    lineapi[("LINE プラットフォーム<br/>Messaging API")]
     op(["運営者<br/>ターミナル"])
     aica["aica<br/>手元の Mac で動く 2 つのプロセス"]
     openai[("OpenAI<br/>LLM、embedding、web 検索")]
@@ -109,6 +115,9 @@ flowchart LR
     cdn[("jsDelivr<br/>LiveKit の JS")]
 
     seeker -- "トーク、履歴書、プロフィール" --> aica
+    lineu -- "トーク" --> lineapi
+    lineapi -- "webhook(署名つき)" --> aica
+    aica -- "入力中の表示、返信、push" --> lineapi
     seeker -- "音声(WebRTC)" --> livekit
     seeker -. "JS を読む" .-> cdn
     livekit -- "音声" --> aica
@@ -145,6 +154,7 @@ flowchart TB
 
     subgraph web["Web プロセス: python -m line_runtime.server"]
         server["Web サーバー<br/>line_runtime/server.py(FastAPI)"]
+        linech["LINE のチャネル<br/>line_channel.py"]
         turn["受け付けとターン<br/>turn.py"]
         quota["ターン数の上限<br/>quota.py"]
         rt["LineRuntime<br/>runtime.py"]
@@ -181,6 +191,7 @@ flowchart TB
     devp --> core
     core -- "HTTP、NDJSON" --> server
     server --> turn
+    server -- "POST /line/webhook" --> linech
     turn --> quota
     turn --> rt
     turn -- "直接読み書き" --> logic
@@ -213,6 +224,7 @@ flowchart TB
 |---|---|---|
 | 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ | 何も持たない。Cookie の匿名ユーザーIDだけ |
 | Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
+| LINE のチャネル(`line_runtime/line_channel.py`) | webhook の署名の確かめ、LINE の userId から LINE のユーザーIDを作る、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し。FastAPI に依存しない | `data/line_events.json`(受けた webhook のイベントの ID) |
 | 受け付けとターン(`line_runtime/turn.py`) | イベントの受け付け(検証、ターン数の上限、プッシュの判定、stale、知らせ)と、LineRuntime を呼んだ後の記録。`POST /api/event` と `POST /api/event/stream` が共通に使う。FastAPI に依存しない | dip の状態(開いた記録、知らせの渡し終わり、`push_trigger` が残す接触)、`quota.json` |
 | LineRuntime(`line_runtime/runtime.py`) | 1 ターンを進める。会話の番号、ユーザーごとの排他、返信の描画(`render`) | 会話(チェックポイント)、費用台帳 |
 | エージェント(`agent.py`) | LINE の共通ルールと dip の Prompt で会話し、`LineReply` を返す | 何も書かない。dip のツールを呼ぶだけ |
@@ -463,6 +475,7 @@ flowchart LR
 | `data/line_checkpoints.db` | 会話(LangGraph のチェックポイント)。本人の発言、ツールの結果、返信 | LineRuntime | 「すべて消す」、履歴書を消したとき。それ以外は消さない |
 | `data/costs.jsonl` | 費用台帳。LLM の呼び出し 1 回 1 行(user_id つき) | LineRuntime、Web サーバー(履歴書の読み取り) | 消さない |
 | `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す |
+| `data/line_events.json` | 受けた LINE の webhook のイベントの ID(直近 2,000 件)。ユーザーは分からない | Web サーバー(LINE のチャネル) | 古いものから消える |
 | `data/voice-resume/` | 相談ごとの下書き、文字起こし、求人の提案 | 音声ワーカー | プロフィールで下書きを消したとき、「すべて消す」 |
 | `evals/results/`、`evals/budget.jsonl` | 評価の結果と予算台帳 | 評価 | 結果は git に入れない。予算台帳は git に入れる |
 
@@ -478,7 +491,7 @@ flowchart LR
 | どこで | 使う「今」 | 効くところ |
 |---|---|---|
 | LINE 側(Web サーバー、ターン数の上限、費用台帳) | 実際の時刻 | 会話を続ける 30 分、ターン数の日付、費用台帳の時刻。シナリオユーザーでも同じ |
-| dip 側の、本番のユーザー(匿名ユーザーID `w-…`) | 実際の時刻 | dip の状態に書く時刻(応募、保存、希望、区分の切り替え、トークを開いた記録、履歴書、音声相談の結果、会話の段階の結果、接触)と、90 日、30 日、3 日の判定 |
+| dip 側の、本番のユーザー(匿名ユーザーID `w-…`、LINE のユーザーID `l-…`) | 実際の時刻 | dip の状態に書く時刻(応募、保存、希望、区分の切り替え、トークを開いた記録、履歴書、音声相談の結果、会話の段階の結果、接触)と、90 日、30 日、3 日の判定 |
 | dip 側の、シナリオユーザーと評価のユーザー | 固定の時計 `SIM_NOW`(既定 2026-09-23 12:00) | 同上 |
 
 - `SIM_NOW` は、評価と開発者画面のシナリオユーザーにだけ効かせます。本番のユーザーには効きません
@@ -492,13 +505,55 @@ flowchart LR
   偽なら実際の時刻(日本時間)を返します。dip の状態に書く時刻と、期間の判定(`logic._days_ago`)は、すべてこの値を使います
 - 固定の時計を使うのは、fixtures の初期状態から始まるユーザーです。ユーザーIDが fixtures のユーザー(評価のユーザー)か、
   `:` の後ろが fixtures のユーザー(シナリオユーザー)なら固定の時計です。ユーザーの無い呼び出し(評価の検索)も固定です。
-  ほかのユーザー(本番の匿名ユーザーID)は実際の時刻です
+  ほかのユーザー(本番の匿名ユーザーIDと LINE のユーザーID)は実際の時刻です
 - `State` ごとには替えません。Web サーバーの 1 つの `State` に、本番のユーザーとシナリオユーザーが同居するからです
 - 例外は新着の絞り込み(`posted_within_days`)です。誰が探しても `SIM_NOW` から数えます。求人の掲載開始の日付は
   fixtures のシミュレーションの値で、`SIM_NOW` から見て書いてあるからです(実際の時刻から数えると、本番のユーザーには新着がいつも 0 件になります)
 - 実装の前に本番のユーザーについて保存した記録は、`SIM_NOW` の時刻のまま残します。書き換える処理は作りません
 - LINE 側は、すでに実際の時刻です(`server.clock`、`quota.py`、`ledger.py`)
 - Web プロセスと dip の子プロセスで `SIM_NOW` が分かれる問題(R21)は、シナリオユーザーと評価の中だけに残ります
+
+### 4.8 LINE のトーク(Messaging API)
+
+LINE 公式アカウントは、Web のトーク画面に並ぶ 2 つ目のチャネルです。LINE プラットフォームが `POST /line/webhook` に
+イベントを送り、Web サーバーは Web のトークと同じターンの処理(`turn.py`)で返信を作って、Messaging API で返します。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者(LINE アプリ)
+    participant L as LINE プラットフォーム
+    participant S as Web サーバー
+    participant C as LINE のチャネル(line_channel.py)
+    participant T as 受け付けとターン(turn.py)
+
+    U->>L: 書く、友だち追加する
+    L->>S: POST /line/webhook(X-Line-Signature)
+    S->>C: 設定が無ければ 404。署名を確かめる(合わなければ 400)
+    S->>C: 受けたことのある webhookEventId は捨てる
+    S-->>L: 200(すぐ返す)
+    Note over S: ここから先は応答の後に進める
+    S->>L: 入力中の表示
+    S->>C: userId から LINE のユーザーID l-… を作る
+    S->>T: accept → reply_of(テキストは message、友だち追加は dip が決める visit か revisit)
+    T-->>S: 返信(render の結果)
+    S->>C: LINE のメッセージにする(5 つまで)
+    S->>L: 返信トークで返す。断られたら push
+    L-->>U: テキスト、求人カード、クイックリプライ
+```
+
+- 答えるのは、1 対 1 のトークのテキストのメッセージと、友だち追加(`follow`)だけです。ほかのイベントは 200 で無視します
+- LINE のユーザーIDは `l-<16桁hex>` です。LINE の userId のハッシュから作ります。匿名ユーザーID(`w-…`)とも、
+  シナリオユーザーとも重なりません。LINE の userId そのものは保存しません。返信と push の宛先にだけ、処理の間メモリで使います
+- LINE のユーザーは本番のユーザーです。dip の時計は実際の時刻です(4.7)
+- ターン数は、LINE のユーザーごとと全体で数えます。IP ごとには数えません。どの人の webhook も LINE のサーバーから届くからです
+- 会話は Web と同じく、友だち追加の挨拶で新しい会話を始め、テキストのメッセージは今の会話に続けます。
+  Web のトーク画面の「30 分で新しい会話」は、LINE にはまだありません
+- 返信の形は Web と同じ `render` の結果です。求人カードは dip のツールが返した求人だけで、Flex Message の carousel で送ります。
+  LIFF 画面のボタンは、公開 URL(`AICA_PUBLIC_URL`)の後ろにパスを付けたリンクにします。操作(ファイルを選ぶ、話して伝える)は、
+  LINE ではまだ使えないので、文で案内します
+- LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません。今のところ
+  LINE でボタンが出るのは、応募フォームの続き(プッシュの後)と履歴書、下書きの画面で、どれも LINE ではまだ起きない流れです
 
 ## 5. 責任の分担
 
@@ -556,6 +611,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 本人のデータを指す URL にユーザーIDを載せません。LIFF 画面は Cookie から本人を決めます
 - エージェントが呼ぶ dip のツールの `line_user_id` は、会話のユーザーに固定します(`agent.py` の `PinUserMiddleware`)
 - 評価は Web サーバーを通らないので、Cookie を使いません
+- LINE の webhook は、Cookie ではなく署名(`X-Line-Signature`。チャネルシークレットで本文の HMAC-SHA256 を取った値の base64)で
+  守ります。署名が無い、違うときは 400 で、エージェントを動かしません。LINE のユーザーIDは LINE の userId からだけ作るので、
+  ブラウザから LINE のユーザーを名乗ることはできません(Cookie の形は `w-…` だけ)
 
 ### API キーと内部の鍵
 
@@ -563,6 +621,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   リポジトリ直下の `.env` に置きます。git には入れません
 - dip の MCP サーバーの子プロセスは、親の環境変数をすべて受け取ります
 - ブラウザに渡すのは、LiveKit の部屋ごとの接続トークン(有効期限 5 分)だけです
+- LINE のチャネルシークレットとチャネルアクセストークン(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)も `.env` に置きます
 - 音声ワーカーから Web サーバーへの `POST /api/voice/result` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
   (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
 
@@ -577,8 +636,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 
 ### 費用
 
-- 1 日あたりのターン数に、匿名ユーザーIDごと、IP ごと、全体の上限があります(`line_runtime/quota.py`)。対象は Web の API だけで、
-  評価にはかかりません
+- 1 日あたりのターン数に、匿名ユーザーIDごと、IP ごと、全体の上限があります(`line_runtime/quota.py`)。対象は Web の API と
+  LINE の webhook で、評価にはかかりません。LINE のユーザーは、LINE のユーザーIDごとと全体で数えます(4.8)
+- LINE の返信トークで返せなかったときの push は、LINE 公式アカウントの月のメッセージ数に数えられます
 - 音声相談は始めるときにターンを 1 つ数えます
 
 ## 7. 配置
@@ -613,6 +673,8 @@ flowchart TB
 - Web プロセスは 1 つだけを前提にしています。ターンの排他、音声相談の待ち合わせ、読み取れなかったアップロードは
   プロセスのメモリにあります
 - Web サーバーは `127.0.0.1` で待ち受けます。プロキシの後ろに置くときだけ `AICA_TRUST_PROXY=1` にします
+- LINE で試すときは、トンネル(cloudflared など)で手元の Web サーバーを https で公開し、その URL を LINE Developers の
+  Webhook URL と `AICA_PUBLIC_URL` に設定します(手順は README)。トンネルの URL を知っていれば、誰でも Web のトーク画面も開けます
 - 公開の形(Render の 1 コンテナ)は決まっていますが、配置の設定はまだリポジトリにありません
 
 ## 8. 品質の目標
@@ -641,6 +703,7 @@ flowchart TB
 | 評価のシナリオ | `evals/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
+| LINE で答えるイベント、LINE のメッセージの形 | `server._line_kind`、`line_channel.to_messages` | 返信の形は `render` と同じ |
 | Resume Draft の形 | [LLD の 5.5](lld.md#55-resume-draft) | `resume_draft/schema.py`、`tests/fixtures/resume_draft_schema.json` |
 
 ## 10. 用語
@@ -674,6 +737,7 @@ flowchart TB
 |---|---|---|
 | トーク | トーク画面での文字の会話 | チャット画面 |
 | チャット、音声 | チャネルの名前。トークの会話はチャット、音声相談は音声 | テキスト会話 |
+| LINE のチャネル | LINE 公式アカウント(Messaging API)での会話。Web のトーク画面に並ぶ 2 つ目の入り口 | LINE 連携 |
 | トーク画面 | 本番の画面 `/`。トーク、保存した求人、プロフィール | 本番画面 |
 | 音声相談のシート | トーク画面の上に重ねる通話中の画面 | 通話画面 |
 | 開発者画面 | `/dev`。シナリオの起動、dip から見た状態、処理の流れ | デモ画面 |
@@ -700,6 +764,8 @@ flowchart TB
 | 目的 | その仕事探しで本人が得たいもの | 動機づけ |
 | 職種 | 求人の仕事の種類。雇用区分ごとの一覧 | ジャンル、カテゴリ |
 | 匿名ユーザーID | Cookie `aica_uid` の `w-<16桁hex>`。本番のトーク画面のユーザーID | LINE ユーザーID |
+| LINE のユーザーID | LINE 公式アカウントで話すユーザーの ID `l-<16桁hex>`。LINE の userId のハッシュから作る(4.8) | - |
+| LINE の userId | LINE プラットフォームが付ける ID(`U` + 32 桁)。aica は保存しない | - |
 | シナリオユーザー | 開発者画面のユーザー。ID は `<匿名ユーザーID>:<fixtures のユーザー>`(例 `w-…:sim-new`)。`fixtures/users.json` の初期状態を写す | - |
 
 ### 書類
