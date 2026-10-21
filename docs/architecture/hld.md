@@ -4,7 +4,8 @@ aica が何でできていて、データがどこを流れるかの全体図で
 手を入れるかを決めます。
 
 - 2026-10-11 の main(`7521952`)のコードから書き起こしました。コードと食い違ったら、コードが正です。
-  4.7 の時計は、2026-10-12 の決定を実装した後のコード(jyoka/tasks#175)に合わせました
+  4.7 の時計は、2026-10-12 の決定を実装した後のコード(jyoka/tasks#175)に合わせました。
+  4.8 の行動データと状況の要約は、task 180 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -465,6 +466,8 @@ flowchart LR
 | `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す |
 | `data/voice-resume/` | 相談ごとの下書き、文字起こし、求人の提案 | 音声ワーカー | プロフィールで下書きを消したとき、「すべて消す」 |
 | `evals/results/`、`evals/budget.jsonl` | 評価の結果と予算台帳 | 評価 | 結果は git に入れない。予算台帳は git に入れる |
+| `data/dip_events.db` | dip の行動の元データ: 会員とイベントのログ(4.8)。シミュレーションのデータ | 生成器(`python -m scripts.gen_dip_events`) | 生成器の `--replace` で作り直すとき。イベントは追記だけ |
+| `data/dip_summaries.db` | 状況の要約: 会員 1 人 1 行(4.8) | 要約のバッチ(`python -m dip_mcp.summarize`) | バッチのたびに全員分を置き換える |
 
 `data/` と `evals/results/` は `.gitignore` に入っています。
 
@@ -499,6 +502,45 @@ flowchart LR
 - 実装の前に本番のユーザーについて保存した記録は、`SIM_NOW` の時刻のまま残します。書き換える処理は作りません
 - LINE 側は、すでに実際の時刻です(`server.clock`、`quota.py`、`ledger.py`)
 - Web プロセスと dip の子プロセスで `SIM_NOW` が分かれる問題(R21)は、シナリオユーザーと評価の中だけに残ります
+
+### 4.8 dip の行動データと状況の要約
+
+dip の行動データは、行動の元データと状況の要約に分けて持ちます(2026-10-21 に決定、[ADR-0005](../adr/0005-separate-event-log-and-member-summary.md))。
+元データは dip の会員(`dip_id` が鍵)と行動のイベントのログで、追記だけです。要約のバッチが元データから全員分の要約を作り直し、
+dip のツールは要約だけを読みます。エージェントに渡るのは要約から作った事実だけで、生のログは渡りません。
+
+```mermaid
+flowchart LR
+    gen["生成器<br/>scripts/gen_dip_events.py"]
+    sc["シナリオのユーザー<br/>fixtures/dip_events.json"]
+    ev[("行動の元データ<br/>data/dip_events.db<br/>会員とイベント(追記だけ)")]
+    batch["要約のバッチ<br/>python -m dip_mcp.summarize"]
+    sum[("状況の要約<br/>data/dip_summaries.db<br/>1 人 1 行、as_of つき")]
+    mcp["dip の MCP サーバー<br/>dip のツール"]
+    agent["エージェント、音声アドバイザー"]
+
+    gen --> ev
+    sc --> ev
+    ev --> batch
+    batch --> sum
+    sum -. "2/2 で読み先にする" .-> mcp
+    mcp --> agent
+```
+
+- イベントは、訪問、閲覧、保存(と取り消し)、応募フォームの離脱、応募、選考の状態の変化、問い合わせ、dip から本人への接触です
+- 要約は 1 人 1 行で、訪問(直近の日時と 30 日の回数)、直近の閲覧、応募と選考の状態、保存、離脱、接触、職種・エリア・時間帯の傾向を持ちます。
+  件数と字数に上限があり、1 行は 3,500 字までです。中身は [LLD の 5.8](lld.md#58-dip-の行動の元データと状況の要約)にあります
+- 要約は `as_of`(どの時刻までのイベントで作ったか)と `through_seq`(取り込んだイベントの最後の番号)を持ちます。バッチの後に足したイベントは、
+  次のバッチまで要約に入りません
+- 元データはシミュレーションのデータで、生成器が作ります(既定は 1,000 人 × 6 か月、乱数の種を固定)。シナリオの 4 人
+  (`fixtures/users.json` で dip ID のある人)も同じイベントの形で入ります。生成器とバッチの時刻は `SIM_NOW` から見て作ります
+
+**今のコード**
+
+- 元データ、生成器、要約のバッチまでがあります(task 180)。dip のツールは、まだ `data/state.json` の dict を読みます(4.6)。
+  ツールの読み先を要約に変えるのは別のタスク(2/2)です
+- シナリオの 4 人では、元データから作った要約の事実(閲覧、応募、保存、離脱、傾向)が、今の `users.json` から `logic` が出すものと同じです
+  (`tests/test_dip_events.py`)
 
 ## 5. 責任の分担
 
@@ -638,6 +680,7 @@ flowchart TB
 | playbook | `dip_mcp/playbooks/{区分}_{チャネル}.md` | `logic.PLAYBOOK_FILES` |
 | 雇用区分 | `logic.TRACKS`、`CONVERSATION_RULES`、`PLAYBOOK_FILES` | `voice_resume/jobs.py` の写し、評価の `FORMAT_RULES` |
 | 求人 | `fixtures/*.json` | `python -m scripts.gen_job_vectors` でベクトルを作り直す(ADR-0002) |
+| 行動のイベントの種類 | `dip_mcp/events.py` の `KINDS` | 要約に入れるなら `dip_mcp/summarize.py` の `fold` と `build_summary`、生成器(4.8) |
 | 評価のシナリオ | `evals/scenarios.json`(開発者画面にも出る) | 期待の値、`evals/checks.py` |
 | LLM のプロバイダ | `agent.build_model`、`line_runtime/llm.py` | `ledger.PRICES` の料金表 |
 | 画面 | `line_runtime/static/talk-core.js`(`/` と `/dev` で共通) | 返信の形は `render` と同じ |
@@ -664,6 +707,9 @@ flowchart TB
 | dip のツール | dip の MCP サーバーが公開するツール(3.1) | Tool |
 | dip の Prompt | 入口ごとの会話の骨格とルール(`baitoru_assistant.md` と `entries.json`)。エージェントの指示に入る | 対話シナリオ、シナリオ |
 | dip の要約 | `get_user_conversation_summary` の結果 | サマリー |
+| 行動の元データ | dip の会員と行動のイベントのログ(`data/dip_events.db`)。追記だけ(4.8) | 生ログ、アクセスログ(本番の dip のものを指すときだけ使う) |
+| 状況の要約 | 会員 1 人 1 行の、直近の状況の要約(`data/dip_summaries.db`)。要約のバッチが作る(4.8) | 行動サマリー、dip の要約(ツールの結果と区別する) |
+| 要約のバッチ | 元データから全員分の状況の要約を作り直す処理(`python -m dip_mcp.summarize`) | 集計ジョブ |
 | playbook | 雇用区分とチャネルごとの、相談の進め方の指針 | 台本、シナリオ、ステージ指針 |
 | 会話の決まり | 雇用区分ごとの質問の数、吹き出しの字数、期限(`CONVERSATION_RULES`) | 形式ルール |
 | LIFF 画面 | dip の画面のモック(`/liff/*`)。応募フォーム、読み取り結果、下書き | LIFF ページ |

@@ -157,6 +157,8 @@ classDiagram
 | `profile.py` | プロフィール画面の中身と、知らせ | `view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
+| `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
+| `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`SUMMARIES_PATH` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
 
@@ -290,6 +292,7 @@ classDiagram
 |---|---|
 | `gen_jobs.py`、`gen_job_faq.py` | 架空の求人と求人ごとの FAQ を LLM で作る |
 | `gen_job_vectors.py` | 求人のベクトル(`fixtures/job_vectors.json`)を作り直す。求人を変えたら回す |
+| `gen_dip_events.py` | dip の行動の元データ(`data/dip_events.db`)を、乱数の種を固定して作る。LLM は使わない(5.8) |
 | `voice/e2e_audio_session.py` | 音声の E2E(10 章) |
 | `voice/live_room_smoke.py` | LiveKit の部屋の実経路の確かめ |
 | `voice/eval_stt.py`、`voice/eval_hearing.py`、`voice/tool_call_probe.py` | STT の比較、ヒアリングの深さ、ツールを同じターンで呼ぶかの計測(実 API) |
@@ -976,6 +979,8 @@ sequenceDiagram
 | `data/resume_intake/` | `resume_intake.cli`、`run_samples` | 人 | 読み取り結果の JSON と比較の Markdown |
 | `evals/results/` | `evals.run` | `evalkit`、人 | 5.6。git に入れない |
 | `evals/budget.jsonl` | `budget.record`(追記) | `budget.check`、`python -m evals.budget` | JSON Lines(5.6)。git に入れる |
+| `data/dip_events.db` | `scripts/gen_dip_events.py`、`EventStore.append`(追記だけ) | 要約のバッチ | SQLite(5.8) |
+| `data/dip_summaries.db` | 要約のバッチ(`SummaryStore.replace_all`) | `SummaryStore.get`(2/2 で dip のツール) | SQLite(5.8) |
 | `fixtures/*.json` | 人、`scripts/gen_*.py` | dip、評価 | 5.7 |
 | `voice_resume/data/wage_reference.json` | `scripts/voice/update_wage_reference.py` | `wages.load_reference` | `WageReference` |
 
@@ -1221,9 +1226,76 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 | `listings.json` | 掲載の開始と終了の日付 |
 | `faq.json`、`job_faq.json` | 全体の FAQ と、求人ごとの Q&A |
 | `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章) |
+| `dip_events.json` | シナリオのユーザーのうち dip ID のある 4 人の、行動の元データ(会員とイベント。5.8) |
 
 求人は 103 件で、アルバイト・パートが 63 件(`jobs.json` 60 件、`anchor_jobs.json` 3 件)、正社員が 40 件(`fulltime_jobs.json`)です。
 `jobs.json` は `python -m scripts.gen_jobs` で作り直せます。`fulltime_jobs.json` は手書きです。求人を変えたら `python -m scripts.gen_job_vectors` を回します。
+
+### 5.8 dip の行動の元データと状況の要約
+
+HLD の 4.8 の中身です。決定は [ADR-0005](../adr/0005-separate-event-log-and-member-summary.md) にあります。
+
+1. 生成器とシナリオのユーザー(`fixtures/dip_events.json`)が、行動の元データ(`data/dip_events.db`)に会員とイベントを書く(追記だけ)
+2. 要約のバッチ(`python -m dip_mcp.summarize`)が、元データから全員分の状況の要約を作り直し、`data/dip_summaries.db` を置き換える(1 人 1 行)
+3. dip のツールが要約を読む(2/2。今は `data/state.json` を読む)
+
+**行動の元データ(`data/dip_events.db`、`dip_mcp/events.py`)**
+
+| 表 | 列 | 決まり |
+|---|---|---|
+| `members` | `dip_id`(主キー)、`registered_at` | dip の会員。LINE のユーザーIDは持たない(連携は dip の状態の `dip_id`) |
+| `events` | `seq`(番号、増えるだけ)、`dip_id`、`at`、`kind`、`job_id`、`data`(JSON) | 追記だけ。UPDATE と DELETE はトリガーで止まる。`at` は日本時間の ISO 8601(秒まで) |
+
+| `kind` | 意味 | `job_id` | `data` |
+|---|---|---|---|
+| `visit` | サイトへの訪問 | なし | なし |
+| `view` | 求人の閲覧 | あり | なし |
+| `save`、`unsave` | 求人の保存と、その取り消し | あり | なし |
+| `form_exit` | 応募フォームの離脱 | あり | `completed`、`remaining`(項目名だけ。入力した値は持たない) |
+| `apply` | 応募 | あり | `status`(応募したときの選考の状態) |
+| `status` | 選考の状態の変化 | あり | `status` |
+| `inquiry` | 本人から求人への問い合わせ | あり | `topic` |
+| `contact` | dip から本人への接触(今の `contacts`。プッシュの記録) | なし | `channel`、`message` |
+
+**生成器(`python -m scripts.gen_dip_events`)**
+
+- `--members`(既定 1000)× `--months`(既定 6、1 か月 = 30 日)の会員とイベントを、`--end`(既定 `SIM_NOW`)までの期間で作ります。
+  `--seed`(既定 0)が同じなら同じデータです。人ごとの乱数は種と人の番号から作るので、人数を変えても同じ番号の人は同じ行動です
+- 求人は `data.load_jobs`(fixtures の 103 件)です。人ごとに、見る雇用区分、好きな職種・エリア・勤務の時間帯、サイトを開く時刻の山、
+  週の訪問の回数、1 回の閲覧の数、保存・応募・離脱・問い合わせのしやすさを決めます。半分の人は応募しません
+- 既定でシナリオの 4 人(`fixtures/dip_events.json`)も入れます(`--no-scenarios` で外す)。会員の番号は `D100000` から(シナリオは `D1001` など)
+- イベントは追記だけなので、ファイルがあれば止まります。作り直すときは `--replace` でファイルごと消します
+- 1,000 人 × 6 か月で、イベントは約 13 万件、手元の Mac で約 1.2 秒です
+
+**要約のバッチ(`python -m dip_mcp.summarize`)**
+
+- 始めたときのイベントの最後の番号を `through_seq` にし、番号が `through_seq` 以下で時刻が `--as-of`(既定 `SIM_NOW`)以下のイベントから、
+  全会員の要約を作ります。イベントの無い会員も 1 行作ります
+- `SummaryStore.replace_all` が 1 つのトランザクションで全員分を置き換えます。読む側は前の版か次の版のどちらかを見ます
+- 1,000 人(イベント約 13 万件)で約 0.5 秒です
+- `--as-of` と生成器の `--end` は、タイムゾーンつきの時刻だけを受けます。タイムゾーンが無いと、何も書かずに引数のエラーにします。
+  マシンの現地時刻として読むと、TZ によって要約に入るイベントが変わるためです(`events.aware_time`。`run` も同じ時刻を `ValueError` にします)
+
+要約の 1 行(`summaries` の表。列は `dip_id`、`as_of`、`through_seq`、`summary`(JSON))の中身です。期間は `as_of` から暦日で数えます。
+
+| キー | 中身 | 今の dip のツールのどこに当たるか |
+|---|---|---|
+| `as_of`、`through_seq` | どの時刻までの、何番までのイベントで作ったか | - |
+| `last_visit`、`visits_30d` | 直近の訪問の日時、30 日の訪問の回数 | (今のツールは使わない) |
+| `recent_views` | 90 日の閲覧の新しい順 5 件 `{job_id, at}` | - |
+| `views_30d` | 30 日の閲覧の数と職種ごとの数 `{count, by_job_type}` | `conversation_summary` の `recent_views` |
+| `applications` | 90 日の応募の新しい順 5 件 `{job_id, applied_at, status, status_at}` | `recent_applications`、`last_application` |
+| `applied_job_ids` | 応募した求人(期間なし)の新しい順 30 件 | `recommend` で応募済みを外す |
+| `saves`、`saves_30d` | 保存している求人の新しい順 10 件 `{job_id, at}` と、30 日の保存の数 | `saved_jobs`、`saves_30d` |
+| `form_exit` | 7 日以内の最後の離脱 `{job_id, exited_at, completed, remaining}`。後で応募した求人の離脱は消える | `form_exit`、`push_trigger` |
+| `last_contact` | 最後の接触 `{at, channel, message}` | `last_contact`、`push_trigger` の間隔 |
+| `tendency` | 職種・エリア・時間帯の傾向(`logic.preferences` と同じ数え方。90 日の応募、30 日の閲覧と保存) | `tendency`、`recommend` の並び |
+
+- 長さの上限: 件数は上の表のとおりです。選考の状態と接触の文は 30 字、フォームの項目名は 12 字で 8 つまでに切ります。
+  1 行は JSON で `SUMMARY_MAX_CHARS`(3,500 字)を超えません。超えたらバッチは止まります(上限の決め方の誤りなので)。
+  生成した 1,000 人では最大 2,249 字、平均 920 字です
+- 求人名などは持たず、求人IDだけです。求人の中身は読む側が `load_jobs` で引きます
+- 問い合わせ(`inquiry`)は今のツールが使わないので、要約に入りません
 
 ## 6. 並行と排他
 
@@ -1357,6 +1429,11 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
     違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
 18. 本番のユーザーの dip の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
+19. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
+    (`::test_generator_makes_the_same_data_from_the_same_seed`)。シナリオのユーザーの要約の事実は、`users.json` から `logic` が出すものと同じです
+    (`::test_scenario_summary_has_the_same_facts_as_logic_on_users_json`)。バッチの後に足したイベントは次のバッチまで要約に入りません
+    (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
+    (`::test_summary_stays_under_the_length_cap_for_a_heavy_member`)
 
 ## 10. テストと評価の仕組み
 
