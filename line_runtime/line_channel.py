@@ -322,12 +322,16 @@ def _labeled(items: list[str]) -> list[str]:
     return [x.strip() for x in items if isinstance(x, str) and x.strip()]
 
 
+ARCADE_PATH = "/liff/arcade"  # レジュメ・アーケードの画面(LINE には出さない)
+
+
 def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト。actions はその後ろに案内の文として足す
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
-      へのリンク。どちらも無ければ出さない
+      へのリンク。どちらも無ければ出さない。ゲーム(/liff/arcade…)は出さない(LIFF URL が無く、公開 URL の画面を
+      LINE で開いても本人にならない。HLD の 4.8)
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
@@ -337,7 +341,8 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
     buttons = [{"label": b["label"].strip(), "url": b["url"]} for b in reply.get("buttons") or []
-               if str(b.get("url", "")).startswith("/liff/") and _labeled([b.get("label")])]
+               if str(b.get("url", "")).startswith("/liff/") and not str(b["url"]).startswith(ARCADE_PATH)
+               and _labeled([b.get("label")])]
     if not base.startswith(("https://", "http://")):  # 公開 URL が無ければ、LIFF URL にできるボタンだけ出す
         dropped = [b for b in buttons if not liff_url_of(b["url"])]
         if dropped:

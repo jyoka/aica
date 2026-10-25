@@ -126,3 +126,25 @@ test('職務経歴書の Markdown は氏名と連絡先を空欄で出す', () =
     '',
   ].join('\n'));
 });
+
+test('自己PR(履歴書のとき)があれば、職務要約の後に出す', () => {
+  const md = J.resumeMarkdown({ summary: '接客を3年。', selfPr: 'お客様の顔と名前を覚えるのが得意です。', experience: [], skills: [] });
+  assert.ok(md.includes('## 職務要約\n接客を3年。\n\n## 自己PR\nお客様の顔と名前を覚えるのが得意です。\n\n## 職務経歴'));
+  assert.ok(!J.resumeMarkdown({ summary: 'x', experience: [] }).includes('## 自己PR'));
+});
+
+test('AI を使わない自己PR は、本人の行だけから です・ます調で作る', () => {
+  const pr = J.selfPrOffline({ lines: ['昼の注文の取り方を変更 [+X% ← 数字を入れる]', '新人2人にレジの手順を指導。', '3つ目の行'], strengths: ['伝える力'] });
+  assert.ok(pr.startsWith('これまでの仕事では、「昼の注文の取り方を変更 [+X% ← 数字を入れる]」や「新人2人にレジの手順を指導」に'));
+  assert.ok(!pr.includes('3つ目') && pr.includes('特に伝える力を強みにしています。') && pr.endsWith('取り組みます。'));
+  assert.equal(J.selfPrOffline({ lines: ['[ここに実績を2〜3行書く]'] }), J.SELF_PR_PLACEHOLDER);  // 行が無ければ見える空欄
+});
+
+test('書類の種類に合わせて、Markdown の自己PR の節を足し外しする', () => {
+  const md = J.resumeMarkdown({ summary: '接客を3年。', experience: [{ company: 'A', bullets: ['x'] }], skills: ['レジ'] });
+  const withPr = J.withSelfPr(md, 'お客様の名前を覚えるのが得意です。');
+  assert.ok(withPr.includes('## 職務要約\n接客を3年。\n\n## 自己PR\nお客様の名前を覚えるのが得意です。\n\n## 職務経歴'));
+  assert.equal(J.withSelfPr(withPr, '別の文'), withPr);  // 本人が書いた節はそのまま
+  assert.equal(J.withSelfPr(withPr, ''), md);
+  assert.equal(J.withSelfPr(md, ''), md);
+});
