@@ -481,24 +481,32 @@ def _whole_word(word: str, text: str) -> bool:
     return re.search(rf"(?<!{_WORD_CHAR}){re.escape(word)}(?!{_WORD_CHAR})", text) is not None
 
 
+def _starts_word(word: str, text: str) -> bool:
+    """text に word が語の頭から出てくるか(後ろは続いてもよい)。避けたいことを見るのに使う。「飲食店はもう嫌」の「飲食」、
+    「コンビニムリ」の「コンビニ」は数え、「アパレル販売」の「販売」は数えない(付けない側に倒しつつ、別の職種は止めない)。"""
+    return re.search(rf"(?<!{_WORD_CHAR}){re.escape(word)}", text) is not None
+
+
 def _keyword_reason(job: BaitoJob, keywords: str | None, said: dict[str, str] | None) -> str | None:
     """本人の話とこの求人のつながりを、決まった形の1文で返す。迷ったら付けない(None)。
     求人の職種の語彙の語(reason_vocab)が、本人の前向きの項目(REASON_SOURCES)と keywords の両方に語の全体であるときだけ。
-    避けたいこと・不安の項目(REASON_NEVER)にその語か、その語と重なる語彙の語があれば付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
+    避けたいこと・不安の項目(REASON_NEVER)にこの求人の語彙の語が1つでも語の頭から出てくれば(_starts_word)、この求人には付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
     長い語を先に見る(「アパレル販売」が当たれば「アパレル販売のご経験」にする)。意味が近いだけで選ばれた求人(職種の語が keywords に無い)には付けない。"""
     if not keywords or not said:
         return None
     never = " ".join(str(said.get(k) or "") for k in REASON_NEVER)
+    vocab = sorted(reason_vocab(job.job_type), key=len, reverse=True)
+    # 当てる語ごとではなく求人ごとに見る。当てる語と重ならない語(「販売」を当てるときのアパレル)が避けたいことにあっても、
+    # 本人が避けたいと言った職種の求人なので付けない(5 回目の自動レビュー)。スーパー・販売の求人は、避けたいことの
+    # 「アパレル販売」の「販売」が語の頭にならないので止めない。語の全体でなく語の頭で見るのは、「飲食店はもう嫌」の
+    # 飲食で飲食ホールの求人を止めるため(5 回目の自動レビューの残るリスク)
+    if any(_starts_word(v, never) for v in vocab):
+        return None
     for key, form in REASON_SOURCES.items():
         text = str(said.get(key) or "")
         if key == "experience" and any(m in text for m in NO_EXPERIENCE):
             continue
-        vocab = sorted(reason_vocab(job.job_type), key=len, reverse=True)
         for w in vocab:
-            # 重なる語が避けたいことにあれば、長い語・短い語のどちらでも付けない(「アパレル販売」を当てるときのアパレル、
-            # 「販売」を当てるときのアパレル販売)。語彙はこの求人の職種の語だけなので、スーパー・販売の「販売」は止めない
-            if any(_whole_word(v, never) for v in vocab if v in w or w in v):
-                continue
             if _whole_word(w, keywords) and _whole_word(w, text):
                 return form.format(w)
     return None
@@ -509,7 +517,8 @@ def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[st
     """推薦理由。指定された条件か、90日以内の本人の行動(acts は behavior.view の形)に基づく事実だけを並べる。
     属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。
     本人が話したやりたいこと・経験(said)と keywords に、この求人の職種の語があれば(_keyword_reason)、その次に置く
-    (条件の一致だけでは、本人のやりたいことや経験とのつながりが伝わらない。task 229)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
+    (条件の一致だけでは、本人のやりたいことや経験とのつながりが伝わらない。task 229)。属性の理由が2つあるときは1つ目の次に置き、
+    2つ目は出ない(このカードの目的は本人の話をカードに出すこと)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
     f = filters or {}
     reasons = []
     if f.get("max_talk_level") or f.get("min_talk_level"):

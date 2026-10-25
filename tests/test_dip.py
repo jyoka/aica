@@ -288,6 +288,12 @@ def test_keyword_reason_is_a_fixed_sentence_with_a_word_of_the_vocab(job_id, key
     # 短い語を当てるとき、それを含む職種の名前の全体が避けたいことにあっても付けない(task 229 の 4 回目の自動レビュー)
     ("b0605", "販売", {"wants": "販売の仕事", "avoids": "アパレル販売はもうやりたくない"}),
     ("b0101", "ホール", {"experience": "ホールを2年", "avoids": "飲食ホールはもう嫌"}),
+    # 当てる語と重ならない語(販売を当てるときのアパレル)が避けたいことにあっても、その職種の求人には付けない(5 回目)
+    ("b0605", "販売", {"wants": "販売の仕事", "avoids": "アパレルはもう嫌"}),
+    ("b0101", "飲食 キッチン", {"wants": "飲食で働きたい", "avoids": "ホールは苦手"}),
+    # 避けたいことの語が長い語の頭にあるとき(飲食店の飲食、コンビニムリのコンビニ)も付けない
+    ("b0101", "ホール", {"experience": "ホールを2年", "avoids": "飲食店はもう嫌"}),
+    ("a002", "コンビニ", {"wants": "コンビニ", "concerns": "コンビニムリかも"}),
 ])
 def test_keyword_reason_is_none_unless_a_vocab_word_was_said_and_searched(job_id, keywords, said):
     assert _reason(job_id, keywords, **said) is None
@@ -324,6 +330,26 @@ def test_attribute_reason_stays_first_and_the_users_words_come_next(state):
     reasons = logic._reasons(job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
                              {"max_talk_level": 3}, "カフェ", {"wants": "カフェ"})
     assert reasons == [logic.TALK_REASONS[job.talk_level], "カフェの仕事をしたいというお話に合います"]
+
+
+def test_users_words_take_the_place_of_the_second_attribute_reason(state):
+    # 属性の理由が2つあるときも、本人の話は1つ目の次。2つまでの制限で消えるのは2つ目の属性の理由
+    job, jobs = logic.load_jobs()["a003"], logic.load_jobs()
+    args = (job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
+            {"max_talk_level": 3, "max_physical_level": 2})
+    assert logic._reasons(*args) == [logic.TALK_REASONS[job.talk_level], logic.PHYSICAL_REASONS[job.physical_level]]
+    assert logic._reasons(*args, "カフェ", {"wants": "カフェ"}) == [
+        logic.TALK_REASONS[job.talk_level], "カフェの仕事をしたいというお話に合います"]
+
+
+def test_no_story_reason_on_a_job_type_the_user_wants_to_avoid(state, offline_keywords):
+    # 5 回目の自動レビューの E2E: 避けたいことに職種の一部の語(アパレル)があり、別の語(販売)で探した
+    logic.save_preferences(state, "u-avoid", {"wants": "販売の仕事", "avoids": "アパレルはもう嫌"})
+    cards = logic.recommend(state, "u-avoid", keywords="販売", limit=10)["jobs"]
+    story = "販売の仕事をしたいというお話に合います"
+    assert {c["job_type"] for c in cards} >= {"アパレル販売", "スーパー・販売"}, cards
+    for c in cards:
+        assert (story in c["reasons"]) == (c["job_type"] == "スーパー・販売"), c
 
 
 # ----------------------------- 支援・記録 -----------------------------
