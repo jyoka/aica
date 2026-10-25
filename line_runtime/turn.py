@@ -1,6 +1,6 @@
 """イベントの受け付けとターンの決まり(task 163)。POST /api/event(JSON)と POST /api/event/stream(NDJSON)が共通に使う。
 
-受け付け(accept): イベントの種類、空の発言、アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn。
+受け付け(accept): イベントの種類、空の発言・長すぎる発言(MAX_TEXT_CHARS)、アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn。
 ターン(run): プッシュの判定 → stale の照合 → 会話数を 1 つ数える → 知らせ → LineRuntime → 開いた記録、の順に進め、
 行(dict)を順に出す。Web サーバーは Cookie の照合と、HTTP(reply_of)と NDJSON への書き出しだけを受け持つ。
 評価が後で同じ手順を呼べるように、FastAPI には依存させない(docs/design/consolidate-resume-draft-and-event-turn.md)。
@@ -18,6 +18,10 @@ from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
 
 LIMIT_REASON = "本日の会話数の上限に達している"
+# 1つの発言の長さの上限(字数)。LINE のテキストメッセージの上限と同じ(LINE からはこれより長い発言は届かない)。
+# Web のトーク画面は LINE 風の1行の入力欄で、履歴書はファイルで受け取るので、ふつうの発言は届かない長さ。
+# 発言は会話の記録に残り、以降のターンで毎回モデルに送り直すので、1ターンの入力の費用もここで縛る
+MAX_TEXT_CHARS = 5000
 
 
 class BadTurn(ValueError):
@@ -57,13 +61,15 @@ class Turn:
 
 def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: int | None,
            new_conversation: bool = False) -> Turn:
-    """LLM も会話数も使わない検証: イベント、空の発言、アップロードの事実。だめなら BadTurn。
+    """LLM も会話数も使わない検証: イベント、空の発言・長すぎる発言、アップロードの事実。だめなら BadTurn。
     new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。"""
     if event not in EVENTS:
         raise BadTurn(f"event は {list(EVENTS)} のいずれか")
     entry, kind = EVENTS[event]
     if kind == "user" and not (text or "").strip():  # 空の発言は会話数を使う前に断る(上限の1回分を無駄にしない)
         raise BadTurn(f"{event} には空でない text が必要です")
+    if kind == "user" and len(text) > MAX_TEXT_CHARS:  # 長すぎる発言も、会話数を使う前・LLM を呼ぶ前に断る
+        raise BadTurn(f"{event} の text は {MAX_TEXT_CHARS} 字までです")
     facts = upload_facts(deps, user_id) if kind == "upload" else None
     return Turn(user_id=user_id, event=event, text=text, thread=thread, entry=entry, kind=kind, facts=facts,
                 new_conversation=new_conversation)

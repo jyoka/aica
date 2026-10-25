@@ -9,12 +9,12 @@ from __future__ import annotations
 from typing import Literal, NotRequired
 
 from langchain.agents import AgentState, create_agent
-from langchain.agents.middleware import AgentMiddleware, ModelRequest
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain.agents.structured_output import ProviderStrategy
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
@@ -95,6 +95,39 @@ class PinUserMiddleware(AgentMiddleware):
         return await handler(request.override(tool_call=call))
 
 
+# 1ターン(本人の入力1つ)にモデルを呼べる回数。評価の記録(evals/baseline の sim-*)では、1ターンのツールの呼び出しは
+# 多くて5回(モデルは多くて6回)、平均すると1ターンにモデルを2回ほど呼ぶ。ふつうの会話は止めず、止まらないときの費用に
+# 天井をかける(1回の出力は最大 16000 トークンなので、1ターンの出力も 16 万トークンまで)
+MAX_MODEL_CALLS_PER_TURN = 10
+LAST_CALL_NOTE = ("\n# このターンの残り\nこのターンにモデルを呼べるのは、これが最後です。ツールは呼ばず、"
+                  "ここまでに分かったことで返信を返してください。\n")
+TURN_LIMIT_REPLY = LineReply(bubbles=["すみません、うまくまとめられませんでした。", "もう一度、短く聞いていただけますか?"])
+
+
+class TurnCallLimitMiddleware(AgentMiddleware):
+    """1ターンのモデルの呼び出しを max_calls 回までにする(ツールを呼び続けて止まらないときの費用の天井)。
+    数えるのは、最後の本人の入力より後の AI メッセージ(モデルの呼び出し1回で1つ増える。会話の記録から数えるので、
+    ターンをまたいで持ち越さない)。最後の1回にはツールを呼ばずに返信するよう添え書きし、それでもツールを呼んだら
+    モデルを呼ばずに TURN_LIMIT_REPLY でターンを終える(ふつうの返信と同じ形なので、画面にも会話の記録にもそのまま残る。
+    LLM を呼んでいない印に additional_kwargs の turn_limit を付ける)。
+    添え書きはシナリオの後に足すので、ScenarioMiddleware の内側に置く。"""
+
+    def __init__(self, max_calls: int = MAX_MODEL_CALLS_PER_TURN) -> None:
+        super().__init__()
+        self.max_calls = max_calls
+
+    async def awrap_model_call(self, request: ModelRequest, handler):
+        msgs = request.state.get("messages", [])
+        last_human = max((i for i, m in enumerate(msgs) if m.type == "human"), default=-1)
+        done = sum(1 for m in msgs[last_human + 1:] if m.type == "ai")
+        if done >= self.max_calls:
+            msg = AIMessage(TURN_LIMIT_REPLY.model_dump_json(), additional_kwargs={"turn_limit": True})
+            return ModelResponse(result=[msg], structured_response=TURN_LIMIT_REPLY)
+        if done == self.max_calls - 1:
+            request = request.override(system_message=SystemMessage(f"{request.system_message.content}{LAST_CALL_NOTE}"))
+        return await handler(request)
+
+
 def build_model(model: str | None = None, effort: str | None = None) -> BaseChatModel:
     if config.PROVIDER == "openai":
         # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動
@@ -109,9 +142,10 @@ def build_agent(tools, scenarios: dict[str, str], model=None, checkpointer=None)
         model or build_model(),
         tools,
         # シナリオを差し込んでから(外側)、キャッシュ指定を付ける(内側)。OpenAI のモデルには何もしない。
+        # 1ターンのモデルの呼び出しの回数に上限をかける(シナリオの後に最後の1回の添え書きを足す)。
         # ツールの line_user_id は会話のユーザーに固定する(LLM の渡す値は信じない)
-        middleware=[ScenarioMiddleware(scenarios), AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
-                    PinUserMiddleware()],
+        middleware=[ScenarioMiddleware(scenarios), TurnCallLimitMiddleware(),
+                    AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"), PinUserMiddleware()],
         response_format=ProviderStrategy(LineReply),
         state_schema=LineState,
         checkpointer=checkpointer,
