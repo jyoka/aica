@@ -18,7 +18,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 履歴書を送る前に消すもの | ファイル名を送らない。写真と個人欄は、送る前に本人に隠してもらう案内と同意で扱う。次の段階で、PDF にテキストがあるときは画像を外してテキストだけを送る(3.2) | 氏名と住所はコードでは確実に見分けられない。画像の上で消すのは書式に左右される |
 | トークの本文 | 電話、メール、住所らしい所を、会話に入れる前に伏せる(3.2) | aica はこれらを使わない。LLM にも会話の保存にも要らない |
 | system prompt の LINE のユーザーID | 外す(3.2) | `PinUserMiddleware` がツールの `line_user_id` を固定しているので、LLM が知る必要がない |
-| 外部サービスの保持 | OpenAI の `store` を切る。Deepgram の改善プログラムから外れる。LiveKit の録音を切る(3.2) | どれも 1 行の設定で、各社に残る量が減る |
+| 外部サービスの保持 | OpenAI の `store` を切る。Deepgram の改善プログラムから外れる。LiveKit の録音を切り、有料プランにする。Cartesia の扱いを確かめる。本番の STT は Deepgram に固定する(3.2) | 設定とプランで、各社に残る量と学習への利用が減る |
 | 保存する期間 | 会話は最後のやりとりから 30 日。使われなくなったユーザーは最後の利用から 180 日。費用台帳の ID は 90 日(3.3) | 30 分で会話は切れ、次の会話は要約から始まる。古い会話は機能に使っていない |
 | 音声相談のファイル | 本番では `data/voice-resume/` に書き出さない(3.3) | 同じ下書きは dip の状態にある。文字起こしは下書きを作った後は使わない |
 | 消し方 | 毎日 1 回の掃除で期間を過ぎたものを消し、SQLite は VACUUM する(3.3) | 消した行がファイルの空き領域に残らないように |
@@ -38,6 +38,8 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 - 連携先の求人サービス(今の dip はシミュレーション)を本物にするか。本物にするなら、アカウント連携は第三者提供になり、連携のときに同意が要る
 - 保存期間の数(30 日、180 日、90 日)。理由は 3.3 にあるが、使われ方を見て変えてよい
 - OpenAI の Zero Data Retention を申し込むか(審査と追加の条件がある。7 章)
+- LiveKit Cloud を有料プランにするか。無料プランのままなら、ポリシーに改善への利用を書く(3.2「音声」)
+- Cartesia の学習と保持の扱いを確かめた結果、そのまま使うか(3.2「音声」)
 - 法律の確認を誰に頼むか(弁護士など)
 
 ## 1. 前提
@@ -67,9 +69,9 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 5 | LINE のトークの本文 | LINE プラットフォーム(本人が LINE で送る)、OpenAI か Anthropic | 4 と同じ | 4 と同じ | `line_runtime/server.py:481-496`、`:555-575` |
 | 6 | LINE の userId(LINE が付ける本人の ID) | LINE(返信と push の宛先) | しない。処理の間だけメモリ | - | `line_runtime/server.py:481-485`、`line_runtime/line_channel.py:5-7` |
 | 7 | aica のユーザーID(`w-…`、`l-…`) | LLM(system prompt)、LiveKit Cloud(参加者の identity と metadata) | `data/` のすべてのファイルのキー | ユーザーのデータが残る間 | `line_runtime/agent.py:72-75`、`voice_resume/livekit_token.py:43-48`、`line_runtime/line_channel.py:100-105` |
-| 8 | Cookie `aica_uid` | - | 本人のブラウザ | 400 日 | `line_runtime/server.py:97-114` |
+| 8 | Cookie `aica_uid` | - | 本人のブラウザ | 最初の発行から 400 日。発行のときにしか書かないので、使い続けても延びない | `line_runtime/server.py:97-114` |
 | 9 | IP アドレス | - | `data/quota.json`(その日の分)、uvicorn のアクセスログ(標準出力。公開後はホスティングのログ) | `quota.json` は日付が変わるまで。ログはホスティングの決まり(不明) | `line_runtime/quota.py:19`、`:133-137`、`line_runtime/server.py:171`、`:1077` |
-| 10 | 声(音声そのもの) | LiveKit Cloud(WebRTC で中継)、Deepgram(文字起こし) | しない | LiveKit Cloud の Agent Observability が有効なら、録音と文字起こしが LiveKit Cloud に 30 日残る(7 章。このプロジェクトで有効かは不明) | `voice_resume/agent.py:105-132`、`voice_resume/stt.py:37-43` |
+| 10 | 声(音声そのもの) | LiveKit Cloud(WebRTC で中継)、Deepgram(文字起こし。既定)、OpenAI(文字起こし。`VOICE_RESUME_STT_PROVIDER=openai` のときだけ) | しない | LiveKit Cloud の Agent Observability が有効なら、録音と文字起こしが LiveKit Cloud に 30 日残る(7 章。このプロジェクトで有効かは不明) | `voice_resume/agent.py:105-132`、`voice_resume/stt.py:21-33`、`:37-43`、`voice_resume/config.py:27` |
 | 11 | 音声の文字起こし | OpenAI(音声アドバイザーの会話で毎ターン、相談の終わりの下書き) | `data/voice-resume/transcript-<時刻>.json` | 下書きを消す、「すべて消す」まで。トークに届かなかった相談(410 以外)のファイルは、dip の状態から指されず消えない | `voice_resume/agent.py:107`、`voice_resume/drafter.py:31-40`、`voice_resume/outputs.py:62-77`、`voice_resume/advisor.py:689-690` |
 | 12 | 音声アドバイザーが話す文(本人の話をくり返すことがある) | Cartesia(読み上げ) | しない | - | `voice_resume/agent.py:108-114` |
 | 13 | 会話中の調べものの問い(会社名、エリアなど) | OpenAI の web 検索 | しない | - | `voice_resume/advisor.py:423-472`、`:726-744` |
@@ -86,6 +88,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 24 | 将来: LLM への全リクエスト | Cloudflare AI Gateway | - | 3.5 の決まりで、本文は残さない | - |
 | 25 | 応募フォームの続きの入力値(`/liff/apply`)。残りの項目名が「氏名」「電話番号」などのことがあり、その欄が必須の入力になる | - | しない。受け取って捨て、応募の確定だけを書く | - | `line_runtime/server.py:1033-1047`、`:1051-1059` |
 
+`data/dip_summaries.db`(`dip_mcp/summarize.py:30`)は、#18 の元データ(`data/dip_events.db`)からバッチで作る会員ごとの要約です。#18 の元データと同じ扱いにします(連携した人の行動だけが入る)。
 LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付ける乱数で、ユーザーが分からないので個人情報に入れません(`line_runtime/line_channel.py:108-112`)。
 評価の会話(`evals/results/`)は架空のペルソナで、本番のユーザーは通らないので対象外です。
 
@@ -93,7 +96,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 
 | サービス | 送るもの(2.1 の #) | 事業者の国 | 学習に使うか | 先方での保持 | 減らせる設定 | 今の設定 |
 |---|---|---|---|---|---|---|
-| OpenAI | 1、2、3、4、5、7、11、13、14〜16、21、22 | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
+| OpenAI | 1、2、3、4、5、7、10(`VOICE_RESUME_STT_PROVIDER=openai` のときだけ)、11、13、14〜16、21、22 | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
 | Anthropic | 4、5、7、14〜16、22(`LINE_SIM_PROVIDER=anthropic` のときだけ) | 米国 | 商用 API は既定で使わない(要確認) | 既定で 30 日以内に消す。違反と判定された会話は最長 2 年 | Zero Data Retention の契約 | 既定 |
 | Deepgram | 10 | 米国 | 改善プログラム(Model Improvement Program)に既定で入る。外れると割引がなくなる | 不明 | リクエストに `mip_opt_out=true` | 指定していない |
 | Cartesia | 12 | 米国 | 不明 | 不明。Zero Data Retention はエンタープライズの契約だけ | Zero Data Retention | 既定 |
@@ -164,7 +167,13 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 - **推奨**
   - Deepgram: `mip_opt_out=true` を付ける。割引がなくなる分の費用は、LLD の 7.2 の見積もりに足す
   - LiveKit: `session.start(..., record=False)` を付ける(`voice_resume/agent.py:132`)。LiveKit Cloud のプロジェクトの設定でも録音を切る
-  - Cartesia: 既定のまま。読み上げるのはアドバイザーの文で、本人の文そのものではないため。Zero Data Retention はエンタープライズの契約が要る
+  - LiveKit のプラン: **公開では有料プランにする。** 2.2 のとおり、無料プランでは、匿名化したデータを turn detector の改善に長く残すことがあります。
+    無料プランのままでは、3.1 の原則 3(学習に使わせない)を満たせず、ポリシーの「学習に使わない設定で送る」とも食い違います。
+    無料プランのまま公開するなら、ポリシー 5 の LiveKit の行に「匿名化したうえで、LiveKit のモデルの改善に使われることがある」と書きます。どちらにするかは人が決めます(「人が決めること」)
+  - Cartesia: 送る文はアドバイザーの文ですが、本人の話をくり返すことがあります(2.1 の #12)。**公開の前に、Cartesia の規約で、API で受けた文を学習に使うかと保持の期間を確かめる。**
+    学習に使わないと確かめられたら既定のまま使います。使う、または分からないなら、ポリシー 5 にそう書くか、Zero Data Retention(エンタープライズの契約)か別の読み上げに替えるかを人が決めます
+  - STT の提供元: **本番では Deepgram に固定する(`VOICE_RESUME_STT_PROVIDER=deepgram`、既定のまま)。** `openai` にすると声そのものが OpenAI に届きます(2.1 の #10)。
+    `openai` に替えるなら、ポリシー 5 の OpenAI の「送る情報」に「声」を足し、音声相談の同意の文言も直します
 - LiveKit の参加者の metadata の `user_id` は、匿名ユーザーIDのままにします。名前ではなく、ワーカーがどのユーザーかを知るのに要るためです
 
 #### OpenAI の呼び出し全般
@@ -193,12 +202,18 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | 音声相談のファイル(`data/voice-resume/`) | 下書きを作るまでの入力。運営者の調べもの | 本番では書き出さない | 書き出しを設定で止める(既定は止める。開発のときだけ書く) |
 | 費用台帳(`data/costs.jsonl`) | 費用を人ごと、日ごとに数える | ユーザーIDは 90 日。過ぎたら日ごとの合計だけ残す | 掃除が 90 日を過ぎた行を日ごとの合計の行に置き換える |
 | ターン数(`data/quota.json`) | その日の上限 | 今のまま(日付が変わると数え直す) | - |
-| Cookie `aica_uid` | 同じブラウザを同じ人として扱う | 180 日(ユーザーの期間に合わせる) | `ANON_COOKIE_MAX_AGE` を変える |
+| Cookie `aica_uid` | 同じブラウザを同じ人として扱う | 最後に画面を開いた日から 180 日(ユーザーの期間に合わせる) | `ANON_COOKIE_MAX_AGE` を 180 日にし、画面を開くたびに同じ ID で Cookie を書き直して期限を延ばす(下の注) |
 | 連携の表(`data/dip_accounts.db`) | 連携している間、dip の会員を引く | 連携の間。ユーザーを消すときに外す | 今のまま(`State.reset_user` が外す) |
 | アクセスログ、アプリのログ | 障害と不正利用の調べ | ホスティングの保持に任せ、30 日以内の設定にする | ホスティングの設定(Render の保持は要確認) |
 | バックアップ | 壊れたときの戻し | 7 日 | 消したものも、バックアップから 7 日以内に消える、とポリシーに書く |
 
 - 「最後の利用」は、ターン、プロフィールの操作、音声相談の結果のどれかの最後の時刻です。dip の状態に `last_seen_at` を足して記録します
+- Cookie の期限は、定数を変えるだけでは「最後の利用から」になりません
+  - 今の `_issue` は、Cookie が無いときにしか `set_cookie` を呼びません(`line_runtime/server.py:107-115`)。なので期限は「最初の発行から」数えます
+  - 定数だけを 180 日にすると、毎日使う人でも 181 日目に Cookie が切れ、新しい `w-…` になります。前の希望とまとめは引き継げず、古い ID のデータは本人が開けないまま、さらに 180 日残ります
+  - **推奨: `_issue` は、Cookie があって形式が正しいときも、同じ ID で `set_cookie` を呼び直す。** 呼ぶのは画面を開いたとき(`GET /` と `GET /dev`)です。API は今のまま書き直しません
+  - 理由: トーク画面は開いたまま何日も使うことは少なく、使うたびにまず `GET /` を通ります。画面を開いた時刻で延ばせば、「最後の利用から 180 日」とほぼ同じになります。API の応答ごとに書き直すより、変える所が 1 か所で済みます
+  - ずれ: 画面を開いたまま 180 日を超えて使い続けると、その間に期限が来ます。現実には起きにくいので受け入れます
 - 期間の数の理由
   - 30 日(会話): 会話は 30 分空くと切れ、次の会話は dip の要約から始まります(HLD の 4.8)。古い会話は機能に使っていません。
     それでも、問い合わせや不正利用の調べに 1 か月は要ると見ました
@@ -213,11 +228,17 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 
 #### 消し方
 
-- 掃除を 1 つのモジュールにまとめ、CLI(`python -m line_runtime.purge`)と、Web プロセスの起動時と 1 日 1 回の定期実行の両方から呼ぶ
+- 掃除を 1 つのモジュールにまとめ、いつも Web プロセスの中で走らせる。呼ぶのは、Web プロセスの起動時と 1 日 1 回の定期実行と、手で走らせる CLI(`python -m line_runtime.purge`)
 - ユーザーを消すときは、`server.profile_forget` と同じ順番にする。会話を消してから dip の状態を消し、音声のファイルを消す。
   ターンの排他(`user_lock`)の中で行う
+- CLI の扱い: `user_lock` は Web プロセスのメモリの `asyncio.Lock` です(`line_runtime/runtime.py:123`、`:190`)。会話の番号のキャッシュ `_threads`(`:124`)と、未読のアップロード `app.state.unread_uploads`(`line_runtime/server.py:811`)も Web プロセスにあります。別プロセスの CLI はどれも触れません。
+  CLI が自分で消すと、進んでいるターンが、消す前に読んだ要約を新しいチェックポイントに書き、dip の状態も作り直します。消したはずの内容が残ります
+  - 案 a: CLI は Web プロセスを止めているときだけ使う。定期の掃除は Web プロセスの中だけで行う
+  - 案 b: CLI は Web プロセスの内部の口(例 `POST /api/internal/purge`)を呼ぶだけにする。口は `AICA_INTERNAL_KEY` で守る(`_require_internal`、`line_runtime/server.py:158`)。消す処理は Web プロセスの中で `user_lock` を取って行う(推奨)
+  - 案 b にしたのは、本番の Web プロセスは止めずに動き続けるので、案 a では CLI を使える時がほぼ無いからです。消す道も 1 本になり、`_threads` と `unread_uploads` の片付けも `profile_forget` と同じ所でできます
 - SQLite は消した後に VACUUM する。しないと、消した行がファイルの空き領域に残る
 - `state.json` は書くたびに全体を書き直すので、消した値はファイルに残らない(`dip_mcp/data.py:213-217`)
+  - ただし、ファイルを置き換えた後も、ディスクの空きブロックには古い中身が残りえます。VACUUM の後の SQLite も同じです。Render のディスクが暗号化されているかを、6 章の Render の確認と一緒に見ます
 - 掃除のログは件数だけを出す(「会話 12 件、ユーザー 3 人を消した」)
 
 #### 「すべて消す」の後に残るもの
@@ -246,7 +267,9 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | `voice_resume/agent.py:79-81` | 前回の希望(`stated`)の値を INFO で出す | 「あり / なし」と項目の数にする(ほかの項目と同じ形) |
 | `line_runtime/server.py:575` | LINE のターンが失敗したときに `_error_text(err)`(例外の文)を出す | 型名だけにする(`line_channel.py:299` と同じ形) |
 | `voice_resume/advisor.py:143`、`:390`、`:614`、`:639`、`:663`、`:690`、`:700`、`:742`、`:763`、`:772`、`voice_resume/agent.py:71`、`:78`、`:94` | `%s` で例外の文を出す | 型名だけにする |
-| `voice_resume/advisor.py:515` | `logger.exception` でトレースバックを出す | 残す。トレースバックは局所変数の値を出さない |
+| `voice_resume/advisor.py:515` | `logger.exception` でトレースバックを出す。トレースバックの最後の行は例外の文で、下書きを作る `responses.parse`(`voice_resume/drafter.py:32-40`)の `ValidationError` なら、モデルの出力の前後(`input_value='…'`)が入る | 型名だけにする(`logger.error("下書きの保存に失敗: %s", type(exc).__name__)` の形)。トレースバックが要るなら、例外の文を出さない形にする |
+| `voice_resume/advisor.py:516` | 例外の文(`{exc}`)をツールの結果として LLM に返す。会話の履歴にも残る | 決まった文だけを返す(「下書きの保存に失敗しました。その旨を伝えて謝ってください。」)。例外の文は LLM にも渡さない |
+| `line_runtime/server.py:492` | `log.exception` で LINE のイベントの失敗のトレースバックを出す。最後の行の例外の文に、LLM の API のエラーの文が入りうる(上の推測と同じ) | 型名だけにする(`line_channel.py:299` と同じ形) |
 | livekit-agents と OpenAI の SDK のログ | 本番で INFO のまま(`voice_resume/agent.py:156`) | 本番では `livekit`、`openai`、`httpx` のロガーを WARNING にする。livekit-agents が INFO で発話を出すかは確かめていない |
 | uvicorn のアクセスログ | IP とパスとクエリを出す(`/dip/login?linkToken=…` を含む) | 残す。値は 10 分で切れる linkToken と番号だけ。保持はホスティングで 30 日以内にする |
 
@@ -393,12 +416,12 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 | # | タイトル | 1 行 |
 |---|---|---|
 | 1 | aica 個人情報: ログに値を出さない | 3.4 の表の所を直し、本番で SDK のロガーを WARNING にし、目印の値がログに出ないテストを足す |
-| 2 | aica 個人情報: 外部サービスに残る量を減らす | OpenAI の `store=False`(2 ターン以上の会話で確かめる)、Deepgram の `mip_opt_out=true`、LiveKit の `record=False`、履歴書のファイル名を送らない |
+| 2 | aica 個人情報: 外部サービスに残る量を減らす | OpenAI の `store=False`(2 ターン以上の会話で確かめる)、Deepgram の `mip_opt_out=true`、LiveKit の `record=False`、履歴書のファイル名を送らない。本番の STT は Deepgram に固定し、README の設定に書く |
 | 3 | aica 個人情報: 送る前に伏せる | トークの発言と調べものの問いの電話、メール、住所らしい所を伏せ、system prompt からユーザーIDを外す |
 | 4 | aica 個人情報: 住所の決まりを 1 か所にする | `ADDRESS_LIKE` を `resume_draft/pii.py` に移し、`resume_form` と雇用区分の根拠にも効かせる |
 | 5 | aica 個人情報: 音声相談の途中で消したら、その後の書き込みを断る | 音声ワーカーの dip の書き込みに部屋を付け、dip が消した部屋の書き込みを断る(3.8 の案 A) |
 | 6 | aica 個人情報: 音声相談のファイルを本番で書き出さない | `data/voice-resume/` への書き出しを設定で止め、既定を止めるにする |
-| 7 | aica 個人情報: 期間で消す | `last_seen_at` を記録し、会話 30 日、ユーザー 180 日、費用台帳の ID 90 日で消す掃除(CLI、起動時、1 日 1 回)と VACUUM、Cookie を 180 日に |
+| 7 | aica 個人情報: 期間で消す | `last_seen_at` を記録し、会話 30 日、ユーザー 180 日、費用台帳の ID 90 日で消す掃除と VACUUM。掃除は Web プロセスの中で `user_lock` を取って行い(起動時、1 日 1 回)、CLI は `AICA_INTERNAL_KEY` で守った内部の口を呼ぶだけにする(3.3 の案 b)。Cookie は 180 日にし、画面を開くたびに同じ ID で書き直して期限を延ばす(3.3 の注) |
 | 8 | aica 個人情報: 同意を取る | Web の最初、LINE の友だち追加、履歴書、音声の同意の画面と、版つきの同意の記録。文言と版は 11 で決めたものを使う |
 | 9 | aica 個人情報: LINE で見る、消す | LINE のコマンド「データを見る」「データを消す」と、`unfollow` の扱い |
 | 10 | aica 個人情報: 書き出すと、消した後の費用台帳 | プロフィール画面の「データを書き出す」と、「すべて消す」で費用台帳のユーザーIDを外す |
@@ -413,8 +436,9 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 - 外部サービスの保持(7 章)は公開文書で確かめただけです。契約、プラン、プロジェクトの設定は見ていません
 - OpenAI の Responses API の `store` の既定値は、データの扱いのページでは明記されていません。API リファレンスでは既定が有効とされます(このメモでは確かめきれていない)
 - このプロジェクトの LiveKit Cloud で Agent Observability が有効か、どのプランか、データの地域がどこかは見ていません
+- Cartesia が API で受けた文を学習に使うか、どれだけ保持するかは、公開文書で見つけられていません(2.2 で「不明」)
 - livekit-agents が INFO で発話の文を出すかは確かめていません
-- Render のログ、ディスク、バックアップの保持は確かめていません
+- Render のログ、ディスク、バックアップの保持と、ディスクの暗号化は確かめていません
 - LINE の Messaging API で、LINE 側にメッセージがどれだけ残るかは確かめていません
 - API のエラーの文に送った本文が入るかは、確かめていない推測です
 - 法律の扱い(海外の事業者への委託の同意、要配慮個人情報、18 歳未満、電気通信事業法の外部送信の決まりが当たるか)は、人の確認が要ります
