@@ -111,7 +111,7 @@ REASK = {
                                r"|(入社|転職|勤務開始|開始|働き始め)(の|る)?(時期|タイミング)"),
 }
 # 相談で分かった本人のこと(目的・強み・やりたいこと・避けたいこと・不安)は、保存した後に掘り下げてよい
-# (playbook の決まり: 目的とやりたいことは1回は掘り下げる)。掘り下げ・追加を求める問いは聞き直しに数えない
+# (playbook の決まり: 掘り下げは1つの項目に1回まで)。掘り下げ・追加を求める問いは聞き直しに数えない
 PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")
 # 提案した求人や特定の条件・面接・応募について聞く問い(「この求人について不安な点はありますか?」
 # 「シフトについて気になることはありますか?」)は、保存した不安の聞き直しではない。
@@ -712,8 +712,11 @@ _STARTING = (rf"({_WORK}(を|で|に|として)?(始め|探(?!せな|さな)|目
 PURPOSE_STARTED = rf"{_STARTING}[^。!！?？]{{0,8}}と思ったのは|どんな変化から|得たいこと"
 # 目的を聞く問い(白紙の問いの REASK["purpose"] に、きっかけ・理由などの言い方を足す)
 PURPOSE_ASK = re.compile(REASK["purpose"].pattern + r"|きっかけ|目的|理由|なぜ|どうして|何のため|" + PURPOSE_STARTED)
-# 本人が「分からない」「まだ決めていない」と言った(職種を並べず、掘り下げに戻る場面)
-DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|決まって(い)?ない|決めて(い)?ない|思いつかない|ピンと(こ|来)ない")
+# 本人が「分からない」「まだ決めていない」と言った(職種を並べず、掘り下げに戻る場面)。丁寧形(「分かりません」
+# 「思いつきません」)とくだけた形(「わかんない」)も数える。模擬ユーザーは丁寧形で答えることが多い
+DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|(分か|わか)(りません|んない)|決まって(い)?(ない|ません)"
+                       r"|決めて(い)?(ない|ません)|思い(つ|付)(かない|かなく|きません)|浮かば(ない|なく)|浮かびません"
+                       r"|ピンと(こ|来)(ない|ません)")
 # 職種を候補として並べる文(提案・比較の言い方)。経歴を受け止める平叙文(「カフェと事務のご経験があるんですね。」)は数えない
 SUGGESTING = re.compile(r"向いて|合いそう|近そう|おすすめ|候補|考えられ|いかが|どれ|どちら")
 
@@ -832,15 +835,141 @@ SEARCH_TOOLS = {"recommend_jobs", "relax_conditions"}
 def jobs_offer_turn(turns: list[dict]) -> int | None:
     """求人を見るかを聞いた(OFFER_JOBS の問い)か、求人を探した(recommend_jobs / relax_conditions・求人カード)
     最初のターン(1始まり)。どちらも無ければ None。相談のペルソナの期待(sc["expect_offer_by"])に使う:
-    相談の決まり(5、6問で求人を見るかを聞く)に従うと、ターン上限までに結果の記録へ届かないことがあるので、
+    相談の決まり(task 133 のときは5、6問、task 225 から4問目までに求人を見るかを聞く)に従うと、ターン上限までに結果の記録へ届かないことがあるので、
     結果の記録ではなく、期限のターンまでに求人を見るかを聞いたか(または探したか)で見る(task 133)。"""
-    for i, r in enumerate(turns):
-        if r["cards"] or SEARCH_TOOLS & {t["name"] for t in r["tools"]}:
-            return i + 1
-        asks = [s for b in r["bubbles"] for s in re.split(r"(?<=[。!！?？\n])", b)]
-        if any(OFFER_JOBS.search(s) and not WH_WORD.search(s) for s in asks):
-            return i + 1
-    return None
+    return next((i + 1 for i, r in enumerate(turns) if offers_jobs(r)), None)
+
+
+def offers_jobs(r: dict) -> bool:
+    """そのターンで求人を探した(求人カード・recommend_jobs・relax_conditions)か、求人を見るかを聞いた(OFFER_JOBS の問い)。"""
+    if r["cards"] or SEARCH_TOOLS & {t["name"] for t in r["tools"]}:
+        return True
+    asks = [s for b in r["bubbles"] for s in re.split(r"(?<=[。!！?？\n])", b)]
+    return any(OFFER_JOBS.search(s) and not WH_WORD.search(s) for s in asks)
+
+
+# ----------------------------- 相談の問いの数(会話の改善 C (4/10)、jyoka/tasks#225) -----------------------------
+
+# 相談に入ってから、何問目までに求人を見るかを聞くか(playbook の「相談の問いは4問まで」。求人を見るかの問いも数える)
+CONSULT_QUESTIONS_MAX = 4
+# 相談を本人が切り上げた発言(ここで数えるのをやめる)。CONSULT_CUTOFF の「やめ」は「本業はやめない」にも当たるので使わない
+CONSULT_STOP = re.compile(r"今はいい|送らないで|また今度")
+# 答えに詰まった発言(「分からない」「特にない」「思いつかない」、中身の無い「それ以外」)。2回続いたら掘り下げをやめる
+STUCK = re.compile(DONT_KNOW.pattern + r"|特に(ない|無い|なし|ありません|これといって)|特にこだわり(は|が)?(ない|無い|ありません)"
+                   r"|^それ以外(かな|です)?[。.!！]?$")
+# 探す条件を聞く問い(エリアは asks_area)。条件はまとめて1問で聞いてよい
+CONDITION_KEYS = ("time_band", "days_per_week", "min_wage", "min_annual_salary", "work_style", "start_timing")
+# 時間帯・曜日・日数のよくある聞き方(「平日の夜と土日、どちらが」「週何回」「勤務時間」「1日何時間」)も数える。正規表現は目安
+CONDITION_WORDS = re.compile(r"時間帯|曜日|働ける(日|時間|の)|シフト|勤務地|年収|平日|土日|週末|週(に)?何(日|回)|勤務時間|何時間")
+
+
+def asks_conditions(r: dict) -> bool:
+    """その返信の問いが、探す条件(エリア・時間帯・曜日・日数・時給・年収・働き方・時期)を聞いているか。"""
+    q = "".join(_question_part(b) for b in r["bubbles"])
+    return asks_area(r) or bool(CONDITION_WORDS.search(q)) or any(REASK[k].search(q) for k in CONDITION_KEYS)
+
+
+def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | None:
+    """相談に入ってから、求人を見るかを聞く(または探す)までに聞いた問いを数える。
+    入口は、T1 の後で最初に、本人の発言に相談の合図(CONSULT_SIGN)があった・playbook を読んだ・入口の1文(CONSULT_OPENING)を
+    伝えたターン。求人を見るかを聞いた直後の「もう少し相談したい」は入口に数えない(本人が続けたいと言えば続けてよい)。
+    数えるのは問いのある返信(1ターン1問)。本人が切り上げたら
+    (今はいい・お礼・「求人を見せて」)、そこで数えるのをやめる。
+    返り値: start は入口のターン、asked は求人を見るかの問いより前の問いのターン、offer は求人を見るかを聞いた・探したターン
+    (どれも1始まり)、offer_at はそれが相談の何問目か(聞いていなければ None)。相談に入っていなければ None。"""
+    def said(k: int) -> str:
+        return (user_msgs[k] if k < len(user_msgs) else None) or ""
+
+    start = next((i for i in range(1, len(turns))
+                  if (CONSULT_SIGN.search(said(i)) and not offers_jobs(turns[i - 1])) or playbook_reads(turns[i])
+                  or any(CONSULT_OPENING.search(b) for b in turns[i]["bubbles"])), None)
+    if start is None:
+        return None
+    asked, offer = [], None
+    for k in range(start, len(turns)):
+        m = said(k)
+        if k > start and (CONSULT_STOP.search(m) or thanks_goodbye(m) or asks_for_jobs(m)):
+            break
+        if offers_jobs(turns[k]):
+            offer = k
+            break
+        if _questions(turns[k]["bubbles"]):
+            asked.append(k)
+    return {"start": start + 1, "asked": [k + 1 for k in asked], "offer": None if offer is None else offer + 1,
+            "offer_at": None if offer is None else len(asked) + 1}
+
+
+def consult_length_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """相談の長さ(playbook の区分に共通の決まり):
+    (1) 4問目までに求人を見るかを聞く。求人を見るかを聞かずに4問を聞いたら違反(4問目のターン)。
+    (2) 「分からない」「特にない」が2回続いたら、掘り下げをやめて、条件の1問か求人を見るかの問いへ進む。"""
+    q = consult_questions(turns, user_msgs)
+    if q is None:
+        return []
+    out = []
+    if len(q["asked"]) >= CONSULT_QUESTIONS_MAX:
+        out.append(f"T{q['asked'][CONSULT_QUESTIONS_MAX - 1]}: 相談で求人を見るかを聞かずに{CONSULT_QUESTIONS_MAX}問を聞いた"
+                   f"({CONSULT_QUESTIONS_MAX}問目までに聞く)")
+    end = q["offer"] or (q["asked"][-1] if q["asked"] else q["start"])
+    for i in range(q["start"], min(end, len(turns))):  # 添字 i の返信は、本人の i 回目の発言への返事
+        prev, m = user_msgs[i - 1] if i - 1 < len(user_msgs) else None, user_msgs[i] if i < len(user_msgs) else None
+        if i - 1 < q["start"] or not (prev and m and STUCK.search(prev.strip()) and STUCK.search(m.strip())):
+            continue
+        r = turns[i]
+        if _questions(r["bubbles"]) and not (offers_jobs(r) or asks_conditions(r)):
+            out.append(f"T{i + 1}: 「分からない」「特にない」が2回続いたのに、掘り下げを続けた(条件の1問か、求人を見るかの問いへ進む)")
+            break
+    return out
+
+
+# 事情を話して探し始めた人に、探す前に聞いてよい問いの数(条件はまとめて1問で聞いてよく、条件の問いは2問まで)
+SITUATION_QUESTIONS_MAX = 2
+# 探す条件の問いとみなす言い方(asks_conditions に加えて。区分の確かめ「アルバイトで探しますか、正社員ですか?」と、扶養の範囲)。
+# 「パートでどんなことを実現したいですか?」は区分の確かめではない
+SITUATION_CONDITION_WORDS = re.compile(r"扶養|(アルバイト|バイト|パート|正社員)(・パート)?(で(探|よろし|いい)|か[、,]|と(正社員|アルバイト|バイト|パート))")
+
+
+def asks_situation_conditions(r: dict) -> bool:
+    """事情を話して探し始めた人に、探す前に聞いてよい問いか: 探す条件(asks_conditions)、区分・扶養(SITUATION_CONDITION_WORDS)、
+    区分の確かめ(Prompt の「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」。
+    greeting_track_violations と同じく、問いに「どちら」「どっち」があり、両方の区分の語がある)。"""
+    q = "".join(_question_part(b) for b in r["bubbles"])
+    return (asks_conditions(r) or bool(SITUATION_CONDITION_WORDS.search(q))
+            or bool(re.search(r"どちら|どっち", q) and all(w.search(q) for w in TRACK_WORDS.values())))
+
+
+def situation_start_violations(sc: dict, turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """事情を話して探し始めた人(sc["expect_no_consult"]。例: 「本業の後の空いた時間でバイトを探したい」)の判定
+    (利用者の決定、2026-10-25、その読み方 2026-10-26。Prompt の「相談」の入口): 相談の掘り下げに入らず、足りない探す条件だけを
+    聞いて、早く探す。条件はまとめて1問で聞いてよく、条件の問いは2問まで(#221 の T-side-job の、時間帯 → エリア → T4 で提案は合格)。
+    (1) 相談に入った(consult_questions が入口を見つけた)ら違反。(2) 探すまでに、探す条件(asks_situation_conditions: 条件か区分・扶養)
+    でない問いを聞いたら違反(最初のターン)。(3) 本人の最初の発言から探すまでに3問目を聞いたら違反(3問目のターン)。
+    本人が切り上げたら(今はいい・お礼)、そこで見るのをやめる。アルバイト・パートで探す人のシナリオに付ける
+    (正社員は、探す前に経歴と目的の1問も聞くので(2)が合わない)。"""
+    if not sc.get("expect_no_consult"):
+        return []
+    out = []
+    if (q := consult_questions(turns, user_msgs)) is not None:
+        out.append(f"T{q['start']}: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)")
+    first = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m), None)
+    if first is None:
+        return out
+    asked = []
+    for k in range(first, len(turns)):
+        m = (user_msgs[k] if k < len(user_msgs) else None) or ""
+        if k > first and (CONSULT_STOP.search(m) or thanks_goodbye(m)):
+            break
+        if turns[k]["cards"] or SEARCH_TOOLS & {t["name"] for t in turns[k]["tools"]}:
+            break
+        if _questions(turns[k]["bubbles"]):
+            asked.append(k)
+    other = next((k for k in asked if not asks_situation_conditions(turns[k])), None)
+    if other is not None:
+        out.append(f"T{other + 1}: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)")
+    if len(asked) > SITUATION_QUESTIONS_MAX:
+        out.append(f"T{asked[SITUATION_QUESTIONS_MAX] + 1}: 事情を話して探し始めた人に、探す前に{SITUATION_QUESTIONS_MAX + 1}問目を聞いた"
+                   f"(条件の問いは{SITUATION_QUESTIONS_MAX}問まで)")
+    return out
 
 
 # ----------------------------- 雇用区分の切り替え(set_search_track の呼び出しで判定) -----------------------------
@@ -1560,6 +1689,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
                                    sc.get("seed_preferences") if sc.get("expect_uses_preferences") else None)
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
+    violations += consult_length_violations(turns, user_msgs)
+    violations += situation_start_violations(sc, turns, user_msgs)
     violations += thanks_close_violations(turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
@@ -1600,6 +1731,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,
         "offer_turn": offer_turn,
+        # 相談に入ってから求人を見るかを聞くまでの問い(consult_questions。相談に入っていなければ None)
+        "consult_questions": consult_questions(turns, user_msgs),
         "violations": violations + fabrications,
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),

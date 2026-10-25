@@ -584,8 +584,9 @@ def test_depth_is_counted_only_on_consult_and_persona_scenarios():
     for case in ("B-exit", "pii", "F-follow-new", "R-revisit", "Q-job-question"):
         assert set(depth_of(case, j).values()) == {None}, case
     measured = {sc["id"] for sc in SCENARIOS.values() if sc.get("measure_depth")}
-    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime", "T-side-job",
-                        "T-student-first", "T-blank-parent", "T-switch-to-fulltime"}
+    # T-side-job と T-blank-parent は相談に入れないので測らない(task 225)
+    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime",
+                        "T-student-first", "T-switch-to-fulltime"}
 
 
 def test_keyword_trace_is_split_per_conversation(tmp_path, monkeypatch):
