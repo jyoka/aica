@@ -12,6 +12,9 @@ POST /line/webhook(line_runtime.server)が使う部品。FastAPI には依存し
 - 送信: LineApi(入力中の表示・返信・push・linkToken の発行)。HTTP は httpx(すでに入っている依存。LINE の SDK は足さない)。
 - アカウント連携(task 182): 決まった文(LINK_TEXT / UNLINK_TEXT。リッチメニューのボタンが送る文)で始める・解除する。
   dip のログインの画面へのボタン(link_messages)と、dip がログインの後に本人を送る LINE の画面の URL(account_link_url)。
+- LIFF(task 203): LINE のアプリで開く LIFF 画面の本人。LIFF の ID トークンを LINE ログインの検証の API で確かめ(LineLogin)、
+  sub からトークと同じ line_user の ID を作る。確かめた本人は署名つきの Cookie の値(liff_session)で覚える。
+  LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID の両方があるときだけ使う(liff_configured)。LINE のボタンは LIFF URL になる(liff_url_of)。
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import logging
 import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Self
 from urllib.parse import quote, urlencode
@@ -91,10 +95,12 @@ def id_key() -> bytes:
 
 
 def check_id_key() -> None:
-    """起動のときに呼ぶ。LINE の設定(シークレットとトークン)があるのに鍵が無い・短ければ IdKeyError で止める。
-    LINE の設定が無ければ、鍵は要らない(何もしない)。"""
-    if configured():
+    """起動のときに呼ぶ。LINE の設定(シークレットとトークン)か LIFF の設定があるのに鍵が無い・短ければ IdKeyError で止める。
+    どちらの設定も無ければ、鍵は要らない(何もしない)。"""
+    if configured() or liff_configured():
         id_key()
+    elif liff_id() or login_channel_id():
+        log.warning("%s と %s の片方しか無いので、LIFF を使いません", LIFF_ID_ENV, LOGIN_CHANNEL_ENV)
 
 
 def line_user(user_id: str, key: bytes | None = None) -> str:
@@ -103,6 +109,108 @@ def line_user(user_id: str, key: bytes | None = None) -> str:
     鍵を知らなければ、userId を知っていても l-… を作れない(データが漏れても誰のものか突き止められない)。
     チャネルシークレットは鍵に使わない(作り直すと全員の ID が変わる)。鍵を変えると全員の ID が変わり、前のデータとつながらない。"""
     return "l-" + hmac.new(key or id_key(), user_id.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+# ----------------------------- LIFF(LINE のアプリで開く画面の本人) -----------------------------
+# LINE のアプリで開いた LIFF 画面(/liff/line/…)は、LIFF SDK の ID トークンを LINE の検証の API で確かめ、その sub(LINE の userId)から
+# トークと同じ line_user の ID を作る。確かめた本人は、署名つきの Cookie(liff_session)で 1 時間だけ覚える。
+
+LIFF_ID_ENV = "LINE_LIFF_ID"
+LOGIN_CHANNEL_ENV = "LINE_LOGIN_CHANNEL_ID"  # LIFF アプリを置いた LINE ログインのチャネルの ID(ID トークンの aud)
+LIFF_URL = "https://liff.line.me"
+LIFF_PREFIX = "/liff/line"  # LIFF アプリのエンドポイント URL のパス。LINE のアプリで開く画面は、すべてこの下
+VERIFY_PATH = "/oauth2/v2.1/verify"
+ID_TOKEN_ISSUER = "https://access.line.me"
+RAW_LINE_ID = re.compile(r"U[0-9a-f]{32}")  # LINE の userId の形
+MAX_ID_TOKEN_CHARS = 4096
+LIFF_SESSION_SECONDS = 3600
+LIFF_PAGES = ("/liff/apply", "/liff/resume", "/liff/voice/draft")  # LIFF_PREFIX の下にもある画面(line_runtime.server)
+
+
+def liff_id() -> str:
+    return os.environ.get(LIFF_ID_ENV, "").strip()
+
+
+def login_channel_id() -> str:
+    return os.environ.get(LOGIN_CHANNEL_ENV, "").strip()
+
+
+def liff_configured() -> bool:
+    """LIFF ID と LINE ログインのチャネル ID の両方があるときだけ LIFF を使う(無ければ /liff/line/… と
+    POST /api/liff/session は 404、LINE のボタンは今までどおり AICA_PUBLIC_URL の画面を開く)。"""
+    return bool(liff_id() and login_channel_id())
+
+
+def liff_url_of(path: str) -> str | None:
+    """LIFF 画面のパス(/liff/…)を、LINE のアプリで開く LIFF URL(https://liff.line.me/<LIFF ID>/…)にする。
+    LINE はエンドポイント URL(…/liff/line)の後ろに …の部分を付けて開く(/liff/apply?job=x → /liff/line/apply?job=x)。
+    LIFF の設定が無い、または LIFF_PREFIX の下に無い画面(レジュメ・アーケードなど)なら None。"""
+    if not liff_configured() or path.partition("?")[0] not in LIFF_PAGES:
+        return None
+    return f"{LIFF_URL}/{liff_id()}/{path.removeprefix('/liff/')}"
+
+
+class LineLogin:
+    """LINE ログインの API(ID トークンの検証)。transport はテストで偽物の LINE に差し替える。"""
+
+    def __init__(self, channel_id: str, base_url: str = API_BASE, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self.channel_id = channel_id
+        self._base_url, self._transport = base_url, transport
+
+    async def verify(self, id_token: str, now: float | None = None) -> str | None:
+        """ID トークンを LINE に確かめてもらい(署名・発行元・aud・期限)、本人の LINE の userId(sub)を返す。
+        確かめられなければ None。LINE の答えも鵜呑みにせず、発行元・aud・期限・sub の形をもう一度見る。
+        トークンと userId はログに出さない。"""
+        if not self.channel_id or not id_token or len(id_token) > MAX_ID_TOKEN_CHARS:
+            return None
+        try:
+            async with httpx.AsyncClient(base_url=self._base_url, transport=self._transport, timeout=10.0) as c:
+                r = await c.post(VERIFY_PATH, data={"id_token": id_token, "client_id": self.channel_id})
+        except httpx.HTTPError as e:
+            log.warning("LINE の ID トークンの検証を呼べませんでした: %s", type(e).__name__)
+            return None
+        try:
+            claims = r.json()
+        except ValueError:
+            claims = None
+        if not isinstance(claims, dict):
+            claims = {}
+        if not r.is_success:
+            log.warning("LINE が ID トークンを断りました(%d): %s", r.status_code, str(claims.get("error_description", ""))[:80])
+            return None
+        sub, exp = claims.get("sub"), claims.get("exp")
+        now = time.time() if now is None else now
+        if (claims.get("iss") != ID_TOKEN_ISSUER or str(claims.get("aud")) != self.channel_id
+                or not isinstance(exp, int | float) or exp <= now or not isinstance(sub, str) or not RAW_LINE_ID.fullmatch(sub)):
+            log.warning("LINE の検証の答えが、このチャネルの有効な ID トークンではありません")
+            return None
+        return sub
+
+
+def _session_key() -> bytes:
+    """LIFF の Cookie の署名の鍵。AICA_ID_KEY から用途を分けて作る(ID を作る HMAC と同じ値にしない)。"""
+    return hmac.new(id_key(), b"aica-liff-session", hashlib.sha256).digest()
+
+
+def _session_sig(body: str) -> str:
+    return hmac.new(_session_key(), body.encode(), hashlib.sha256).hexdigest()
+
+
+def liff_session(user: str, now: float | None = None) -> str:
+    """LIFF で確かめた本人(l-…)を覚える Cookie の値「l-….<期限の UNIX 秒>.<署名>」。"""
+    body = f"{user}.{int((time.time() if now is None else now) + LIFF_SESSION_SECONDS)}"
+    return f"{body}.{_session_sig(body)}"
+
+
+def liff_session_user(value: str | None, now: float | None = None) -> str | None:
+    """Cookie の値から本人(l-…)。形が違う・署名が合わない・期限切れなら None。"""
+    user, _, rest = (value or "").partition(".")
+    exp, _, sig = rest.partition(".")
+    if not LINE_ID.fullmatch(user) or not exp.isdigit() or not sig:
+        return None
+    if not hmac.compare_digest(sig.encode(), _session_sig(f"{user}.{exp}").encode()):
+        return None
+    return user if int(exp) > (time.time() if now is None else now) else None
 
 
 class SeenEvents:
@@ -191,12 +299,16 @@ def _cards_message(cards: list[dict]) -> dict:
 
 
 def _buttons_message(buttons: list[dict], base: str) -> dict:
-    """LIFF 画面のボタン(/liff/...)を、公開 URL へのリンクのボタンにする。"""
+    """LIFF 画面のボタン(/liff/...)を、リンクのボタンにする。LIFF URL にできれば LIFF URL(LINE のアプリの中で、
+    トークの本人として開く)、できなければ公開 URL(base)の画面。"""
+    def uri(url: str) -> str:
+        return liff_url_of(url) or base + url
+
     return {"type": "flex", "altText": _clip("リンク: " + "、".join(b["label"] for b in buttons), 400),
             "contents": {"type": "bubble", "size": "kilo", "body": {
                 "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
                     {"type": "button", "style": "link", "height": "sm",
-                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": base + b["url"]}}
+                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": uri(b["url"])}}
                     for b in buttons]}}}
 
 
@@ -214,7 +326,8 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト。actions はその後ろに案内の文として足す
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
-    - buttons(/liff/…)→ 公開 URL(base_url。既定は AICA_PUBLIC_URL)へのリンク。公開 URL が無ければ出さない
+    - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
+      へのリンク。どちらも無ければ出さない
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
@@ -225,11 +338,14 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
         flex.append(_cards_message(reply["cards"]))
     buttons = [{"label": b["label"].strip(), "url": b["url"]} for b in reply.get("buttons") or []
                if str(b.get("url", "")).startswith("/liff/") and _labeled([b.get("label")])]
-    if buttons and base.startswith(("https://", "http://")):
+    if not base.startswith(("https://", "http://")):  # 公開 URL が無ければ、LIFF URL にできるボタンだけ出す
+        dropped = [b for b in buttons if not liff_url_of(b["url"])]
+        if dropped:
+            log.warning("%s が無い(か http(s):// で始まらない)ので、LIFF 画面のボタン %d 個を LINE に出しません",
+                        PUBLIC_URL_ENV, len(dropped))
+        buttons = [b for b in buttons if b not in dropped]
+    if buttons:
         flex.append(_buttons_message(buttons, base))
-    elif buttons:
-        log.warning("%s が無い(か http(s):// で始まらない)ので、LIFF 画面のボタン %d 個を LINE に出しません",
-                    PUBLIC_URL_ENV, len(buttons))
     room = MAX_MESSAGES - len(flex)
     if len(texts) > room:
         texts = [*texts[: room - 1], "\n\n".join(texts[room - 1:])]

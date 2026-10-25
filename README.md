@@ -83,12 +83,13 @@ Render のサービスを作る手順と、運営者がする操作は [docs/dep
 
 ### LINE で試す
 
-LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶と、アカウント連携(下の「アカウント連携を試す」)だけです
+LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶と、アカウント連携(下の「アカウント連携を試す」)と、
+LIFF 画面を LINE の本人として開くこと(下の「LINE で LIFF 画面を開く」)だけです
 (履歴書のファイルと音声相談は、LINE ではまだ使えません。エージェントがそれを勧めたときは、文で書くよう案内します)。
 設定(`LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN`)が無ければ `POST /line/webhook` は 404 で、ほかは何も変わりません。
 設定があるときは、LINE のユーザーIDを作る鍵 `AICA_ID_KEY` も要ります(下の 3)。
 
-人がする操作です。LINE のアカウントと、トンネルのツール(ここでは cloudflared)が要ります。
+人がする操作です。LINE のアカウントと、手元を https で出すツール(開発中は Tailscale Funnel。cloudflared でもよい)が要ります。
 
 1. LINE 公式アカウントを作る。[LINE Official Account Manager](https://manager.line.biz/) でアカウントを作り、
    「設定」→「Messaging API」で Messaging API を使うようにする(プロバイダーを選ぶか作る)
@@ -105,30 +106,71 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
 
      **鍵を変えると、LINE のユーザー全員の ID が変わり、それまでのデータ(会話、プロフィール、アカウント連携)とつながらなくなります**。
      一度決めたら変えず、なくさないように控えておきます([ADR-0008](docs/adr/0008-keyed-line-user-id.md))
-4. 手元の Web サーバーを、トンネルで https に出す(cloudflared は `brew install cloudflared` で入れる)
+4. 手元の Web サーバーを、Tailscale Funnel で https に出す。URL は `https://<マシン名>.<tailnet>.ts.net` で、起動し直しても変わりません
 
    ```bash
    ./.venv/bin/python -m line_runtime.server                 # 1 つ目のターミナル
-   cloudflared tunnel --url http://127.0.0.1:8030            # 2 つ目のターミナル。https://<ランダム>.trycloudflare.com が出る
+   tailscale funnel 8030                                     # 2 つ目のターミナル。https://<マシン名>.<tailnet>.ts.net が出る
    ```
 
-5. 出た URL を `.env` の `AICA_PUBLIC_URL` に書き(例 `AICA_PUBLIC_URL=https://xxxx.trycloudflare.com`)、
+   - 初めてのときは、tailnet で HTTPS の証明書と Funnel を使えるようにする必要があります。`tailscale funnel` が出す案内の
+     リンクから、管理画面で許可します([Tailscale Funnel](https://tailscale.com/kb/1223/funnel))
+   - cloudflared の一時のトンネル(`cloudflared tunnel --url http://127.0.0.1:8030`)でも試せます。ただし起動するたびに
+     URL が変わるので、そのたびに 5 と 6 と、下の「LINE で LIFF 画面を開く」のエンドポイント URL をやり直します
+5. 出た URL を `.env` の `AICA_PUBLIC_URL` に書き(例 `AICA_PUBLIC_URL=https://mymac.tail1234.ts.net`)、
    `.env` に `AICA_TRUST_PROXY=1` も書いて、Web サーバーを起動し直す。
-   トンネル越しの接続元は全員 `127.0.0.1` なので、これが無いと全員が 1 つの IP として数えられます。
+   Funnel 越しの接続元は全員 `127.0.0.1` なので、これが無いと全員が 1 つの IP として数えられます。
    1 人が Cookie を替えて匿名ユーザーIDを 20 個使うと、ほかの新しい Web の利用者はその日ずっと 429 になります(下の「設定」のターン数の上限)
-6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://xxxx.trycloudflare.com/line/webhook` にし、
+6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://<マシン名>.<tailnet>.ts.net/line/webhook` にし、
    「Webhookの利用」をオンにして「検証」を押す(成功と出れば、署名とつながりが合っています)
 7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します
 
-- cloudflared の一時のトンネル(`--url`)は、起動するたびに URL が変わります。そのたびに 5 と 6 をやり直します
-- トンネルを開いている間は、URL を知っている人は誰でも Web のトーク画面と開発者画面も開けます(費用がかかります)。試し終わったら止めます
+- Funnel を開いている間は、URL を知っている人は誰でも Web のトーク画面と開発者画面も開けます(費用がかかります)。
+  試し終わったら止めます(`tailscale funnel 8030` を Ctrl+C。`--bg` で動かしたときは `tailscale funnel reset`)
 - 返信には LINE の返信トークを使います。間に合わなかったときだけ push で返し、push は LINE 公式アカウントの月のメッセージ数に数えられます
-- 求人カードのボタンと LIFF 画面へのリンクは、LINE の中のブラウザで `AICA_PUBLIC_URL` の画面を開きます。LIFF 画面は Cookie で
-  本人を決めるので、LINE のユーザーの画面にはなりません(今は LINE でこのリンクが出る流れはありません。[HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api))
+- 求人カードのボタンと LIFF 画面へのリンクは、LIFF の設定(下の「LINE で LIFF 画面を開く」)があれば LIFF アプリとして開き、
+  トークの本人の画面になります。無ければ LINE の中のブラウザで `AICA_PUBLIC_URL` の画面を開き、Cookie で本人を決めるので、
+  LINE のユーザーの画面にはなりません([HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api))
 - ターン数の上限は LINE のユーザーごとと全体で数えます。IP ごとの上限は LINE にはかかりません
-- `AICA_TRUST_PROXY=1` のとき、IP は `X-Forwarded-For` の最後の値です。Cloudflare は本人が送った値の最後に、Cloudflare へつないだ接続元を足します
-  ([Cloudflare の HTTP ヘッダー](https://developers.cloudflare.com/fundamentals/reference/http-headers/))。
-  本人が書いた値は見ないので、書き換えても IP の上限を迂回できません。トンネルを止めて手元だけで使うときは、`.env` から消してかまいません
+- `AICA_TRUST_PROXY=1` のとき、IP は `X-Forwarded-For` の最後の値です。本人が書いた値は見ないので、書き換えても IP の上限を迂回できません。
+  手元だけで使うときは、`.env` から消してかまいません
+  - Tailscale Funnel: 本人が送った `X-Forwarded-For` は捨て、Funnel につないだ本人の IP を 1 つだけ入れて渡します。
+    最後の値(1 つだけの値)が本人の IP なので、`AICA_TRUST_PROXY=1` の数え方と合います。tailnet の中から(Funnel でなく)開いたときは、
+    その端末の tailnet の IP(`100.x.y.z`)になります。Tailscale のソース(`ipn/ipnlocal/serve.go` の `addProxyForwardedHeaders`、
+    2026-10-25 の main)で確かめました。実機の Funnel では測っていません
+  - cloudflared: Cloudflare は本人が送った値の最後に、Cloudflare へつないだ接続元を足します
+    ([Cloudflare の HTTP ヘッダー](https://developers.cloudflare.com/fundamentals/reference/http-headers/))。最後の値が本人の IP なので、同じく合います
+  - どちらも、Web サーバーが `127.0.0.1` だけで待ち受けている(`python -m line_runtime.server` の既定)ので、プロキシを通らずに
+    `X-Forwarded-For` を書いて直接つなぐことはできません。`AICA_TRUST_PROXY=1` のまま外から直接つなげる形で動かさないでください
+
+### LINE で LIFF 画面を開く
+
+LINE のトークに出るボタン(応募フォームの続き、履歴書の読み取り結果、下書き)を、本物の LIFF アプリとして開けます。
+LINE のアプリで開くと、LIFF の ID トークンで本人を確かめ、トークと同じ本人(LINE のユーザーID `l-…`)の画面になります。
+設定(`LINE_LIFF_ID` と `LINE_LOGIN_CHANNEL_ID`)が無ければ今までどおりで、起動も止めません。流れは [HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api) にあります。
+
+人がする操作です。上の「LINE で試す」の 1 から 6 が済んでいる前提です。
+
+1. [LINE Developers コンソール](https://developers.line.biz/console/) で、**Messaging API のチャネルと同じプロバイダー**を開き、
+   「新規チャネル作成」で「LINE ログイン」のチャネルを作る(アプリタイプは「ウェブアプリ」)。
+   **LINE の userId はプロバイダーごとに違います**。別のプロバイダーに作ると、同じ人でもトークの本人とは別の人になります
+2. そのチャネルの「チャネル基本設定」のチャネル ID を `.env` の `LINE_LOGIN_CHANNEL_ID` に書く(ID トークンの `aud` と照らします)
+3. 同じチャネルの「LIFF」タブで LIFF アプリを追加する
+   - エンドポイント URL: `https://<マシン名>.<tailnet>.ts.net/liff/line`(公開 URL の後ろに `/liff/line`)
+   - Scope: `openid` に印を付ける(ID トークンに要ります。`profile` などは要りません)
+   - サイズは `Full` か `Tall`。友だち追加オプションはオフでかまいません
+4. できた LIFF ID(`1234567890-AbcdEfgh` の形)を `.env` の `LINE_LIFF_ID` に書き、Web サーバーを起動し直す
+5. LINE ログインのチャネルが「開発中」の間は、そのチャネルの管理者とテスターしかログインできません。知人に試してもらうときは「公開済み」にします
+
+- LIFF アプリ 1 つにエンドポイント URL は 1 つです。開発用(Tailscale Funnel の URL)と公開用(Render の URL、jyoka/tasks#64)で、
+  同じ LINE ログインのチャネルに LIFF アプリを 2 つ作り、それぞれの環境の `LINE_LIFF_ID` に書きます。`LINE_LOGIN_CHANNEL_ID` は同じです
+- LINE のボタンは `https://liff.line.me/<LIFF ID>/apply?job=…` の形になり、LINE はエンドポイント URL の後ろにその先を付けて
+  `/liff/line/apply?job=…` を開きます。この下の画面は Cookie の匿名ユーザーIDを見ません。
+  `/liff/line` の下にあるのは応募フォームの続き、履歴書の読み取り結果、下書きの 3 つです。ほかの `/liff/…`(レジュメ・アーケード)は今までどおり公開 URL を開きます
+- 確かめた本人は、署名つきの Cookie で覚えます。ブラウザ(LINE の中のブラウザ)を閉じるまでで、長くても 1 時間です。
+  過ぎたら、開いたときにもう一度 ID トークンで確かめます。1 時間を過ぎてから応募フォームを送ると、入力は残らず、開き直しになります
+- ID トークンを確かめられない(LINE が断った、期限切れ、別のチャネルのトークン)ときは「本人を確かめられませんでした」と出して止まり、
+  ほかの人の画面にはなりません
 
 ### アカウント連携を試す
 
@@ -160,7 +202,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 |---|---|---|
 | トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
 | 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
-| LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き |
+| LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き。Web のブラウザでは Cookie の匿名ユーザー、LINE のアプリでは `/liff/line/*`(LIFF の ID トークンで確かめた LINE のユーザー。上の「LINE で LIFF 画面を開く」) |
 | レジュメ・アーケード | `/liff/arcade` | 遊びながら職務経歴書を作るゲームのハブ。サーバーを起動して `http://127.0.0.1:8030/liff/arcade` を開く。今は AI を使わない簡易分析だけ。ハブに出ない 6 本は開発者画面の左からリンクする |
 | dip のログイン | `/dip/login` | dip の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
 | LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
@@ -232,7 +274,7 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `AICA_DAILY_NEW_IDS_PER_IP` | 20 | 同じ IP から 1 日に使える匿名ユーザーIDの数 | 可 |
 | `AICA_DAILY_TURN_LIMIT_TOTAL` | 1000 | 全体のターン数の合計 | 可 |
 | `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で 1 日に使える匿名ユーザーIDの数 | 可 |
-| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くとき(Render、cloudflared のトンネル)に使う。無いと全員がプロキシの IP として数えられる | 可 |
+| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くとき(Render、Tailscale Funnel、cloudflared のトンネル)に使う。無いと全員がプロキシの IP として数えられる | 可 |
 
 LINE 公式アカウントで使うものです。LINE で試さないなら要りません。
 
@@ -240,8 +282,10 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 |---|---|---|---|
 | `LINE_CHANNEL_SECRET` | なし | チャネルシークレット。webhook の署名(`X-Line-Signature`)を確かめる。`LINE_CHANNEL_ACCESS_TOKEN` と両方あるときだけ `POST /line/webhook` を開く(無ければ 404) | 可 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push、アカウント連携の linkToken の発行に使う | 可 |
-| `AICA_ID_KEY` | なし(LINE の 2 つがあるときは必須) | LINE のユーザーID(`l-…`)を作る HMAC-SHA256 の鍵。32 バイト以上(例 `python -c "import secrets; print(secrets.token_hex(32))"`)。LINE の 2 つがあるのに無い、短いときは起動で止まる。変えると全員の ID が変わり、それまでのデータとつながらない([ADR-0008](docs/adr/0008-keyed-line-user-id.md)) | 可 |
-| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(トンネルの https の URL)。LINE で出す LIFF 画面と dip のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
+| `AICA_ID_KEY` | なし(LINE の 2 つか LIFF の 2 つがあるときは必須) | LINE のユーザーID(`l-…`)を作る HMAC-SHA256 の鍵。LIFF の本人の Cookie の署名の鍵も、ここから作る。32 バイト以上(例 `python -c "import secrets; print(secrets.token_hex(32))"`)。LINE の 2 つか LIFF の 2 つがあるのに無い、短いときは起動で止まる。変えると全員の ID が変わり、それまでのデータとつながらない([ADR-0008](docs/adr/0008-keyed-line-user-id.md)) | 可 |
+| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(Tailscale Funnel かトンネルの https の URL)。LINE で出す LIFF 画面(LIFF の設定が無いとき)と dip のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
+| `LINE_LIFF_ID` | なし | LIFF アプリの LIFF ID。`LINE_LOGIN_CHANNEL_ID` と両方あるときだけ、LINE のボタンを LIFF アプリで開き、`/liff/line/…` の画面と `POST /api/liff/session` を開く(無ければ 404 で、ほかは今までどおり)。そのときは `AICA_ID_KEY` も要る(無い、短いときは起動で止まる) | 可 |
+| `LINE_LOGIN_CHANNEL_ID` | なし | LIFF アプリを置いた LINE ログインのチャネルの ID。LIFF の ID トークンを LINE に確かめてもらうときの `client_id`(`aud`) | 可 |
 
 音声相談で使うものです。トークだけを試すなら要りません。
 

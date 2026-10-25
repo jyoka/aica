@@ -39,8 +39,11 @@ QUOTA_ENVS = ("LINE_SIM_DAILY_TURN_LIMIT", "AICA_DAILY_TURN_LIMIT_PER_IP", "AICA
 
 @pytest.fixture(autouse=True)
 def line_id_key(monkeypatch):
-    """LINE のユーザーIDを作る鍵。LINE の設定があるときは起動に要る(test_account_link も import して使う)。"""
+    """LINE のユーザーIDを作る鍵。LINE の設定があるときは起動に要る(test_account_link も import して使う)。
+    LIFF の設定は外す(ここのテストは LIFF を使わない。手元の環境変数でボタンの URL が変わらないように)。"""
     monkeypatch.setenv(line_channel.ID_KEY_ENV, ID_KEY)
+    monkeypatch.delenv(line_channel.LIFF_ID_ENV, raising=False)
+    monkeypatch.delenv(line_channel.LOGIN_CHANNEL_ENV, raising=False)
 
 
 class FakeLine:
