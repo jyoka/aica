@@ -850,9 +850,22 @@ def talk_entry(state: State, line_user_id: str) -> str:
 
 def record_talk_open(state: State, line_user_id: str) -> None:
     """トーク画面を開いて挨拶が返ったことを記録する(次からは再訪)。挨拶が失敗・上限で返らなかったときは呼ばない
-    (呼ぶと、次に開いたとき会ってもいない相手に「おかえりなさい」と言ってしまう)。"""
-    state.update(line_user_id, lambda u: u.__setitem__(
-        "talk_opens", [*u.get("talk_opens", []), now(line_user_id).isoformat()][-20:]))  # 判定に要るのは有無だけなので短く保つ
+    (呼ぶと、次に開いたとき会ってもいない相手に「おかえりなさい」と言ってしまう)。待っている挨拶(await_greeting)も済んだ。"""
+    def opened(u: dict) -> None:
+        u["talk_opens"] = [*u.get("talk_opens", []), now(line_user_id).isoformat()][-20:]  # 判定に要るのは有無だけなので短く保つ
+        u.pop("greeting_due", None)
+
+    state.update(line_user_id, opened)
+
+
+def await_greeting(state: State, line_user_id: str) -> None:
+    """LINE で使い始める同意をした: 挨拶が返る(record_talk_open)までは、次のターンを挨拶から始める(task 232)。"""
+    state.update(line_user_id, lambda u: u.__setitem__("greeting_due", True))
+
+
+def greeting_due(state: State, line_user_id: str) -> bool:
+    """同意の後の挨拶がまだ返っていないか(await_greeting の後、record_talk_open の前)。"""
+    return bool(state.user(line_user_id).get("greeting_due"))
 
 
 # ----------------------------- 本人が話した希望と、本人について(プロフィール) -----------------------------
