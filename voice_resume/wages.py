@@ -59,6 +59,7 @@ async def fetch_reference(client, model: str, today: str) -> WageReference:
         input=("全国と東京都の、アルバイト・パートの平均時給を web で調べてください。"
                "できるだけ新しい、同じ1つの調査の数字を使い、調査の名前・時期・情報源のサイト名と URL も返してください。"),
         text_format=WageReference,
+        store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
     )
     ref = resp.output_parsed
     ref.source = re.sub(r"\s*\(?\[[^\]]*\]\([^)]*\)\)?|https?://\S+", "", ref.source).strip()  # 読み上げないリンクを消す

@@ -24,3 +24,6 @@ services:
       # Web プロセスと音声ワーカー(同じコンテナ)が同じ値を読む
       - key: AICA_INTERNAL_KEY
         generateValue: true
+      # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
+      - key: VOICE_RESUME_STT_PROVIDER
+        value: deepgram

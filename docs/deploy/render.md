@@ -120,6 +120,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | エージェント、履歴書の読み取り、意味検索 |
 | `AICA_TRUST_PROXY` | `1` | Blueprint | IP を `X-Forwarded-For` の最後の値から取る(Render のプロキシの後ろ) |
 | `AICA_INTERNAL_KEY` | 乱数 | Blueprint(`generateValue`) | 音声ワーカーが結果を返すときの共有鍵 |
+| `VOICE_RESUME_STT_PROVIDER` | `deepgram` | Blueprint | 本番の文字起こしを Deepgram に固定する。変えない(`openai` にすると声そのものが OpenAI に届く。[privacy.md](../design/privacy.md) の 3.2) |
 | `AICA_SECURE_COOKIE` | `1` | `Dockerfile` | 匿名ユーザーIDの Cookie に `Secure` を付ける |
 | `PORT` | `10000` | Render | `scripts/container_start.sh` が `LINE_SIM_PORT` にする |
 

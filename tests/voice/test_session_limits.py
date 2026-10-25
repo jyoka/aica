@@ -78,8 +78,9 @@ class FakeSession(rtc.EventEmitter):
         self.closed = False
         FakeSession.instances.append(self)
 
-    async def start(self, agent, room) -> None:
+    async def start(self, agent, room, record=None) -> None:
         self.agent, self.room, self.started = agent, room, True
+        self.record = record
 
     def generate_reply(self, *, instructions=None, allow_interruptions=None, **_kw) -> FakeHandle:
         if self.closed:
@@ -236,6 +237,18 @@ def end_replies(session: FakeSession) -> list[FakeHandle]:
 
 def time_up_replies(session: FakeSession) -> list[FakeHandle]:
     return [h for h in session.replies if "時間の上限" in (h.instructions or "")]
+
+
+def test_session_keeps_nothing_on_livekit_and_openai(agent_mod):
+    """LiveKit Cloud に録音・文字起こし・ログを残さず(record=False)、会話の LLM も OpenAI に応答を残さない(store=False)。
+    record を渡さないと、LiveKit Cloud のプロジェクトの設定に従う(docs/design/privacy.md の 3.2)。"""
+
+    async def scenario(loop):
+        _ctx, session = await start_session(agent_mod)
+        assert session.started and session.record is False
+        assert session.kwargs["llm"].store is False
+
+    run_on_fake_clock(scenario)
 
 
 def test_session_closes_at_the_time_limit(agent_mod):
