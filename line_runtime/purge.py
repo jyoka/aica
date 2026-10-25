@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--url", default=DEFAULT_URL, help=f"Web プロセスの URL(既定 {DEFAULT_URL})")
     args = ap.parse_args(argv)
     config.load_env()
-    key = os.environ.get("AICA_INTERNAL_KEY", "")
+    key = os.environ.get("AICA_INTERNAL_KEY", "").strip()  # 前後の空白は除く(Web プロセスと同じ)
     if not key:
         print("AICA_INTERNAL_KEY がありません(Web プロセスと同じ値を .env か環境変数に)", file=sys.stderr)
         return 2

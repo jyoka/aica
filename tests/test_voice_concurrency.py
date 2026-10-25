@@ -16,7 +16,7 @@ from dip_mcp.data import State
 
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
            "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
-INTERNAL_KEY = "offline-test-internal-key"
+INTERNAL_KEY = "offline-test-internal-key-offline-test"
 # load_env が .env から読む鍵。先にダミー値を入れておけば、.env があっても本物の値は入らない(setdefault)
 DUMMY_KEYS = {**LIVEKIT, "OPENAI_API_KEY": "offline-test", "ANTHROPIC_API_KEY": "offline-test",
               "DEEPGRAM_API_KEY": "offline-test", "CARTESIA_API_KEY": "offline-test",

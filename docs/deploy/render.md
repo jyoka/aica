@@ -50,7 +50,8 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
 - `AICA_TRUST_PROXY=1` と `AICA_INTERNAL_KEY`(乱数)は Blueprint が入れます。`AICA_INTERNAL_KEY` は同じコンテナの Web プロセスと
-  音声ワーカーが同じ値を読むので、そろえる手間はありません
+  音声ワーカーが同じ値を読むので、そろえる手間はありません。音声相談の設定(`LIVEKIT_*`)があるのに `AICA_INTERNAL_KEY` が無い、
+  短い(32 文字未満)ときは、Web プロセスも音声ワーカーも起動で止まります。ダッシュボードで作るときは、忘れずに長い乱数を入れます
 - Blueprint を使わずにダッシュボードで作るときは、下の「環境変数」の表と、Health Check Path `/healthz`、
   ディスクの Mount Path `/app/data` を同じに設定します。Docker Command は空のままにします(`Dockerfile` の CMD を使う)
 
