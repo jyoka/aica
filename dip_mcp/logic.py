@@ -445,133 +445,61 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-# 理由に引く本人の言葉の語。どの求人の文面にもある語(職名の「〜スタッフ」、待遇の「シフト自由」「未経験OK」など)と、
-# それだけでは意味の無い語(「未経験OK」の「OK」、「店長を目指したい」の「目指」)は、本人の話と求人をつなぐ印にならないので引かない
-_REASON_FILLER = {"仕事", "お仕事", "経験", "ご経験", "未経験", "職場", "環境", "希望", "求人", "勤務", "時間", "アルバイト", "バイト",
-                  "パート", "正社員", "スタッフ", "お店", "シフト", "時給", "作業", "以上", "以内", "可能", "OK", "目指", "挑戦"}
-# 本人の言葉1文の中の内容語。漢字の続き(頭の「お」「ご」も含める: お客様)、カタカナの続き、英字の語。数字は引かない
-_REASON_RUN = re.compile(r"[おご][一-龥々]+|[一-龥々]{2,}|[ァ-ヴー]{2,}|[A-Za-z][A-Za-z0-9+#]+")
-# 理由の材料にするのは、本人が話した前向きの項目(save_preferences の経験・やりたいこと・目的)だけ。避けたいこと・不安の項目は
-# 材料にせず、そこにある語は他の項目にあっても引かない(「同じ」と書くと意味が逆になる)
-REASON_SOURCES = ("experience", "wants", "purpose")
-REASON_NEVER = ("avoids", "concerns")
-# 材料にしてよい文の終わり方(許可リスト)。迷ったら付けない: 一覧に無い終わり方(「〜ません」「〜なかった」「〜ほしい」)の文は、
-# 否定の一覧(_REASON_CAUTION)に無い言い方でも使わない。許すのは、願い(〜たい)、目的(〜たくて、〜ため)、した経験(〜ました、
-# 〜ていた)、好き、名詞で終わる短い言葉(「カフェのホールを2年」「接客経験」)だけ。文末の「です」は外して見る
-_REASON_ENDS = re.compile(r"(たい|たくて|たいから|たいので|たいと思う|たいと思います|たいと思っています|ため|ために|"
-                          r"ました|ていた|でいた|てた|でた|働いた|好き)$")
-_REASON_NOUN_END = re.compile(r"[一-龥々ァ-ヴー]$")  # 名詞で終わる。英字(「深夜NG」)と数字では終わらせない
-# 否定・不満・条件らしい語。許した終わり方の文でも、これが1つでもあれば使わず、中の語も引かない。一覧は目安で、
-# 漏れの多い終わり方の否定(「〜ません」「〜なかった」)は終わり方の許可リストで落ちる
-_REASON_CAUTION = re.compile(
-    r"ない|なく|なし|無し|なかっ|ません|ず(?:に|$)|せず|無理|違|以外|嫌|いや|苦|辛|つら|きつ|しんど|大変|疲|悩|怖|失敗|不|無|非|禁|"
-    r"避け|回避|遠慮|勘弁|パス|心配|気にな|困|変わ|減|やめ|辞め|離れ|逃げ|抜け|卒業|NG|ng|ダメ|だめ|ちょっと|控え|"
-    r"休み|だけ|まで|なら|たら|れば|けど|でも|ても|以上|以下|未満|しか")
+# 理由に入れる本人の話は、決まった語彙(職種の名前の語)だけで作る(task 229)。本人の文の一部を引用すると、否定の文
+# (「夜勤ムリ」「飲食未経験」)から逆の意味や意味の無い理由ができる。日本語の否定を正規表現で見分けきることはできないので、
+# 本人の文は、語彙の語が語の全体で出てくるかだけを見る(2026-10-26 に監督役が決めた。jyoka/tasks#229 のコメント)。
+# 語彙は職種の名前を「・」と文字の種類(漢字・カタカナ・英字)の境で切った語。どの職種にもまたがる広い語は入れない
+_REASON_VOCAB_SKIP = {"スタッフ", "オフィス", "管理", "サービス", "技術"}
+# 本人の前向きの項目と、理由の決まった形。やりたいことを経験より先に見る(経験の項目には「未経験」も入る)
+REASON_SOURCES = {"wants": "{}の仕事をしたいというお話に合います", "experience": "{}のご経験を活かせます"}
+REASON_NEVER = ("avoids", "concerns")  # ここに語彙の語があれば、前向きの項目にあっても理由にしない(どちらの意味か決められない)
+# 経験の項目にこの印が1つでもあれば、経験の項目を丸ごと使わない。Prompt の決まりで、未経験の人の経験には「未経験」が入る
+# (「カフェは未経験」)。「ご経験を活かせます」は経験があると言い切るので、否定や初めての印(「働いたことはない」「初めて」)も見る。
+# 句に分けて見ると、否定が別の句にあるとき(「飲食 未経験」)に残った句(「飲食」)へ付くので、値の全体で見る(付けない側に倒す)。
+# 一覧から漏れた言い方(「カフェはこれから」)には付く。18 章の残るリスクに書いた
+NO_EXPERIENCE = ("未経験", "経験な", "経験無", "ない", "無い", "なく", "なし", "ナシ", "なかっ", "ません",
+                 "初めて", "はじめて", "初心者", "ゼロ", "まだ")
+_SCRIPT_RUN = re.compile(r"[一-龥々]+|[ァ-ヴー]+|[A-Za-z]+")
+_WORD_CHAR = r"[一-龥々ァ-ヴーA-Za-z]"
 
 
-def _reason_usable(sentence: str) -> bool:
-    """本人の言葉1文(か keywords の1語)を理由の材料にしてよいか。迷ったら使わない。
-    「は」のある文は使わない(「夜勤はパスしたい」「接客は勘弁してほしい」: 「Xは」は避けたいことや比べる話に多い)。
-    終わり方が許可リスト(_REASON_ENDS)か名詞でなければ使わない。名詞で終わる文は「が」があれば使わない(「夜勤が苦痛」)。"""
-    if "は" in sentence or _REASON_CAUTION.search(sentence):
-        return False
-    bare = sentence.removesuffix("です")
-    return bool(_REASON_ENDS.search(bare)) or (bool(_REASON_NOUN_END.search(bare)) and "が" not in bare)
+def reason_vocab(job_type: str) -> list[str]:
+    """職種の名前から、理由に使う語彙の語(「飲食ホール」→ 飲食・ホール、「イベントスタッフ」→ イベント、「企画・PM」→ 企画・PM)。"""
+    for w in _REASON_VOCAB_SKIP:
+        job_type = job_type.replace(w, "・")
+    return [w for w in _SCRIPT_RUN.findall(job_type) if len(w) >= 2]
 
 
-REASON_QUOTE_MAX = 24  # 理由に引用する本人の言葉の長さ。長い言葉は引用せず、当たった語だけを書く(カードの1行に収める)
-REASON_DESCRIPTION_MIN = 3  # 3字より短い語(「管理」)は、仕事内容の長い文のどこかにあるだけでは、つながりにならない
-
-
-def _reason_words(sentence: str) -> list[str]:
-    """本人の言葉1文から、求人の文面と照らす語を長い順の候補で返す。文そのもの、内容語、漢字の続きの短い部分
-    (「接客経験」の「接客」)の順。カタカナの続きは切らない(「カフェ」の「フェ」で当てない)。
-    数字を含む文そのもの(「週2日」「2年」。求人の「経験2年以上」は本人の2年とは別のこと)は候補にしない。"""
-    out = [] if re.search(r"[0-9０-９]", sentence) else [sentence]
-    for m in _REASON_RUN.finditer(sentence):
-        w = m.group()
-        bare = w[1:] if w[0] in "おご" else w
-        out += [w, bare]
-        if re.fullmatch(r"[一-龥々]+", bare) and bare not in _REASON_FILLER:  # 「未経験」の「未経」は引かない
-            out += [bare[i:i + n] for n in range(len(bare) - 1, 1, -1) for i in range(len(bare) - n + 1)]
-    return [w for w in dict.fromkeys(out) if len(w) >= 2 and w not in _REASON_FILLER]
-
-
-# 当たった語のすぐ後ろ(語の続きの漢字・カタカナは飛ばす)。を・が・も の後は、許した動詞か数字で続くときだけ使う
-# (「店長を目指したい」「ホールを2年」はよく、「深夜帯を外したい」は使わない)。ほかの助詞(から、より)の後も使わない
-_REASON_AFTER_OK = re.compile(r"[にでとのや、・]|$")
-_REASON_OBJECT_OK = re.compile(r"[をがも](?:[0-9０-９]|目指|活か|生か|学|身につけ|続け|やり|やっ|し|す|伸ば|磨|増や|使|担当|任|覚え|"
-                               r"頑張|がんば|勉強|楽し|手伝|支え|好き)")
-
-
-def _reason_role_ok(sentence: str, word: str) -> bool:
-    """本人の文の中で、語 word が前向きの役で出てくるか(「店長になりたい」「カフェのホールを2年」)。迷ったら使わない。"""
-    m = re.search(rf"{re.escape(word)}[一-龥々ァ-ヴー]*", sentence)
-    if m is None:
-        return False
-    rest = sentence[m.end():]
-    return bool(_REASON_AFTER_OK.match(rest) or _REASON_OBJECT_OK.match(rest))
-
-
-def _reason_hit(word: str, text: str, short_ok: bool, qualified: bool) -> bool:
-    """求人の文面 text に、本人の語 word が同じ意味で出てくるか。3字以上の語はそのまま探す。2字の語は short_ok のとき
-    (仕事内容の長い文でなければ)だけ探す。本人が語に修飾を付けて話したとき(qualified: 「スタッフの管理」)は、求人の
-    長い語の後ろ半分(「在庫管理」「プロジェクト管理」の「管理」)を別のものとして当てない。修飾の無い語(「店長になりたい」)は、
-    求人の「カフェ店長」にも当てる。"""
-    if len(word) >= REASON_DESCRIPTION_MIN:
-        return word in text
-    if not short_ok:
-        return False
-    return re.search(rf"(?<![一-龥々ァ-ヴー]){re.escape(word)}" if qualified else re.escape(word), text) is not None
-
-
-def _said_sentences(text: str) -> list[str]:
-    """本人の言葉を1文ずつに分ける(句点は付けない)。"""
-    return [s.strip() for s in re.split(r"[。．！？!?\n]+", text) if s.strip()]
+def _whole_word(word: str, text: str) -> bool:
+    """text に word が語の全体で出てくるか。前後が漢字・カタカナ・英字なら、長い語の一部なので数えない
+    (「飲食未経験」の「飲食」、「コンビニムリ」の「コンビニ」は数えない)。"""
+    return re.search(rf"(?<!{_WORD_CHAR}){re.escape(word)}(?!{_WORD_CHAR})", text) is not None
 
 
 def _keyword_reason(job: BaitoJob, keywords: str | None, said: dict[str, str] | None) -> str | None:
-    """本人が話した前向きの項目(said の経験・やりたいこと・目的。REASON_SOURCES)の語のうち、keywords で探した語で、
-    この求人の文面に実際にあるものを1つ理由にする。迷ったら付けない: 当たった語が無い、項目が保存されていない、
-    keywords に無い(意味が近いだけで選ばれた)ときは None。終わり方が許可リストに無い文、「は」のある文、否定・条件らしい
-    語のある文(_reason_usable)と、当たった語の後ろが前向きの役でない文(_reason_role_ok)は使わない。その文か避けたいこと・不安の項目(REASON_NEVER)にある語を1つでも含む文も使わない(どちらの意味か決められない)。
-    求人の中身(職名・必須と歓迎の経験)にある語を、待遇(perks)・仕事内容の文にある語より先に選ぶ。職種(job_type)は
-    「事務・管理」のような広い分類なので照らさない。仕事内容の文では、文そのものか3字以上の語だけを当てる(_reason_hit)。
-    エリア・駅の名前は、エリアの理由と重なるので引かない。"""
+    """本人の話とこの求人のつながりを、決まった形の1文で返す。迷ったら付けない(None)。
+    求人の職種の語彙の語(reason_vocab)が、本人の前向きの項目(REASON_SOURCES)と keywords の両方に語の全体であるときだけ。
+    避けたいこと・不安の項目(REASON_NEVER)にその語があれば付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
+    意味が近いだけで選ばれた求人(職種の語が keywords に無い)には付けない。"""
     if not keywords or not said:
         return None
-    sentences = [s for k in REASON_SOURCES for s in _said_sentences(str(said.get(k) or ""))]
-    tokens = keywords.split()
-    blocked = " ".join([*(str(said.get(k) or "") for k in REASON_NEVER),
-                        *(t for t in sentences + tokens if not _reason_usable(t))])
-    searched = " ".join(t for t in tokens if _reason_usable(t))
-    places = {job.area, job.station.removesuffix("駅"), *AREAS}
-    fields = [" ".join([job.title, *job.required_experience, *job.preferred_experience]), " ".join(job.perks), job.description]
-    best = None  # (文面の順, -語の長さ, 文の順, 語, 文)
-    usable = [s for s in sentences if _reason_usable(s) and not any(w in blocked for w in _reason_words(s))]
-    for k, sentence in enumerate(usable):
-        for w in _reason_words(sentence):
-            if w in places or w not in searched or not _reason_role_ok(sentence, w):
-                continue
-            qualified = sentence.find(w) > 0
-            rank = next((n for n, text in enumerate(fields)
-                         if _reason_hit(w, text, short_ok=n < 2 or w == sentence, qualified=qualified)), None)
-            if rank is not None and (best is None or (rank, -len(w), k) < best[:3]):
-                best = (rank, -len(w), k, w, sentence)
-    if best is None:
-        return None
-    word, sentence = best[3], best[4]
-    if sentence == word or len(sentence) > REASON_QUOTE_MAX:
-        return f"お話と同じ「{word}」"
-    return f"お話の「{sentence}」と同じ「{word}」"
+    never = " ".join(str(said.get(k) or "") for k in REASON_NEVER)
+    for key, form in REASON_SOURCES.items():
+        text = str(said.get(key) or "")
+        if key == "experience" and any(m in text for m in NO_EXPERIENCE):
+            continue
+        for w in reason_vocab(job.job_type):
+            if _whole_word(w, keywords) and not _whole_word(w, never) and _whole_word(w, text):
+                return form.format(w)
+    return None
 
 
 def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[str, BaitoJob], at: datetime,
              filters: dict | None = None, keywords: str | None = None, said: dict[str, str] | None = None) -> list[str]:
     """推薦理由。指定された条件か、90日以内の本人の行動(acts は behavior.view の形)に基づく事実だけを並べる。
     属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。
-    本人が話した経験・やりたいこと・目的(said)の語が keywords で求人の文面に当たったら(_keyword_reason)、その次に置く
-    (条件の一致だけでは、本人の目的や経験とのつながりが伝わらない。task 229)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
+    本人が話したやりたいこと・経験(said)と keywords に、この求人の職種の語があれば(_keyword_reason)、その次に置く
+    (条件の一致だけでは、本人のやりたいことや経験とのつながりが伝わらない。task 229)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
     f = filters or {}
     reasons = []
     if f.get("max_talk_level") or f.get("min_talk_level"):

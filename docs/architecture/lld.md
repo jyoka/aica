@@ -225,7 +225,7 @@ classDiagram
 | 見出し | 主な関数と定数 |
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
-| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`_reason_usable`、`_reason_role_ok`、`_reason_hit`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
+| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
@@ -999,7 +999,7 @@ flowchart TB
     near["部分一致 または 意味が近い(SIM_FLOOR、SIM_RELATIVE、SIM_TOP)"]
     part["部分一致だけ(_keyword_hit)"]
     score["match_breakdown + keywords(SIM_WEIGHT × 類似度)+ salary"]
-    top["点の高い順に最大 3 件、job_card + 理由(_reasons。本人の経験・やりたいこと・目的の語が keywords で文面に当たれば _keyword_reason)"]
+    top["点の高い順に最大 3 件、job_card + 理由(_reasons。本人のやりたいこと・経験と keywords に職種の語があれば _keyword_reason)"]
 
     args --> err
     err -- "はい" --> errout
@@ -1015,11 +1015,11 @@ flowchart TB
 - 両方の区分の求人が残ったら(`mixed`)、時間帯の傾向は点にしません
 - `keywords` で 0 件になり、意味検索は使えたが求人を分けられなかったときは、引数で探し直すための `keywords_note` を返します
 - 理由は 2 つまでです。属性で絞った理由、keywords の本人の言葉、過去の応募、時間帯、駅かエリア、職種、正社員の働き方、待遇の順に並べます。
-  本人の言葉は、保存した前向きの項目(経験・やりたいこと・目的)の文の語のうち、keywords で探し、求人の文面(職名・必須と歓迎の経験、待遇、仕事内容の順)に実際にある語だけです(`_keyword_reason`)。
-  避けたいこと・不安の項目、keywords だけにある言葉は材料にしません。意味が近いだけで選ばれた求人にも付けません。
-  使う文は許可リストで決めます(`_reason_usable`、`_reason_role_ok`)。終わり方が許した形(「〜たい」「〜ました」「〜ていた」、名詞など)で、「は」が無く、当たった語の後ろが許した助詞か動詞の文だけです。
-  どの求人にもある語、数字、否定・条件らしい語(`_REASON_CAUTION`)のある文と、避けたいこと・不安と同じ語を含む文、仕事内容の文の 2 字の語、
-  修飾つきで話した 2 字の語が求人の長い語の後ろ半分にあるだけのもの(「在庫管理」の「管理」)も使いません(`_reason_hit`)。理由は [line-sim-scenarios.md の 18 章](../design/line-sim-scenarios.md) です
+  本人の話の理由は、決まった語彙と決まった形の 1 文だけで作ります(`_keyword_reason`)。本人の文の一部は引用しません。
+  語彙は求人の職種の名前の語です(`reason_vocab`。「飲食ホール」→ 飲食・ホール。広い語のスタッフ・管理などは除く)。
+  その求人の職種の語が、保存したやりたいこと・経験と keywords の両方に語の全体であるときだけ、「カフェの仕事をしたいというお話に合います」「カフェのご経験を活かせます」を付けます。
+  語の全体は、前後が漢字・カタカナ・英字でないことです(「飲食未経験」の「飲食」は数えない)。避けたいこと・不安にある語と、経験の項目のどこかに「未経験」や否定・初めての印(`NO_EXPERIENCE`)があれば、経験の項目は丸ごと使いません。
+  意味が近いだけで選ばれた求人にも付けません。理由は [line-sim-scenarios.md の 18 章](../design/line-sim-scenarios.md) です
 - `relax` は条件を 1 つずつ外した件数を数え、増えるものを多い順に 3 つ返します。雇用区分と `exclude_ids` は外す候補にしません
 
 keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
