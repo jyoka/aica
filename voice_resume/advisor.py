@@ -712,7 +712,7 @@ class ResumeAdvisor(Agent):
             self.forgotten = True
             _remove_files(self.finalized["files"])
         except Exception as exc:  # noqa: BLE001 - トークへ戻せなくても下書きは保存済み
-            logger.warning("LINE のトークへの結果送信に失敗: %s", type(exc).__name__)
+            logger.error("LINE のトークへの結果送信に失敗(まとめと下書きはトークに届かない): %s", post_failure(exc))
 
     async def _zero_hit_reply(self, args: dict) -> str:
         """0件のとき: dip の relax_conditions(読み取りだけ)で、どの条件を外すと何件になるかを調べる。
@@ -835,12 +835,21 @@ def _default_client():
     return AsyncOpenAI()
 
 
+def post_failure(exc: Exception) -> str:
+    """トークへの送信(_post_json)の失敗を、ログに書く形にする。例外の型と HTTP の状態だけで、送った中身は書かない
+    (docs/design/privacy.md)。401 は、Web サーバーと鍵(AICA_INTERNAL_KEY)が合わないか、片方に無い。"""
+    status = getattr(exc, "status", None)
+    if status == 401:
+        return f"{type(exc).__name__}(401。Web サーバーと AICA_INTERNAL_KEY が合わない)"
+    return f"{type(exc).__name__}({status})" if isinstance(status, int) else type(exc).__name__
+
+
 async def _post_json(url: str, payload: dict) -> dict:
     """line_runtime へ JSON を POST し、返ってきた JSON を返す(結果をトークへ戻す)。aiohttp は livekit-agents の依存。
     サーバー間の経路なので、共有鍵(環境変数 AICA_INTERNAL_KEY。line_runtime と同じ値)を付ける。"""
     import aiohttp
 
-    headers = {"Authorization": f"Bearer {os.environ.get('AICA_INTERNAL_KEY', '')}"}
+    headers = {"Authorization": f"Bearer {os.environ.get('AICA_INTERNAL_KEY', '').strip()}"}  # 前後の空白は除く(サーバーと同じ)
     async with (
         aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
         session.post(url, json=payload, headers=headers) as resp,

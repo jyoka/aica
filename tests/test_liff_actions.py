@@ -45,7 +45,7 @@ from tests.test_talk_actions import FAKE_LIVEKIT, Advisor
 LIFF_ID = "2000000000-OfflineT"
 CHANNEL = "2000000000"
 ID_KEY = "offline-test-aica-id-key-0123456789abcdef"
-INTERNAL_KEY = "offline-test-internal-key"
+INTERNAL_KEY = "offline-test-internal-key-offline-test"
 WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}  # 音声ワーカー(サーバー間の経路)の共有鍵
 LIFF_ENVS = ("LINE_LIFF_ID", "LINE_LIFF_CHANNEL_ID", "LINE_LOGIN_CHANNEL_ID")
 LIVEKIT_ENV = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
@@ -67,7 +67,7 @@ def test_line_offers_liff_buttons_instead_of_refusing_right_after_recommending(t
     _no_liff(monkeypatch)  # 前の名前(LINE_LOGIN_CHANNEL_ID)のチャネル ID でも LIFF を使う
     server, fake = _server(tmp_path, monkeypatch, Greeter(script=[propose]),
                            LINE_LIFF_ID=LIFF_ID, LINE_LOGIN_CHANNEL_ID=CHANNEL, AICA_ID_KEY=ID_KEY,
-                           **LIVEKIT_ENV)
+                           AICA_INTERNAL_KEY=INTERNAL_KEY, **LIVEKIT_ENV)
     with TestClient(server.app) as client:
         assert _post(client, [_event("message", text="まず相談する")]).status_code == 200
 

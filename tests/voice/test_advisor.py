@@ -673,6 +673,31 @@ def test_by_default_a_failed_talk_delivery_is_not_told_as_saved(tmp_path, monkey
     assert "保存した" not in dip.outcome_calls[0]["reason"] and "残っていない" in dip.outcome_calls[0]["reason"]
 
 
+def test_a_rejected_talk_delivery_is_logged_as_an_error_without_the_contents(tmp_path, monkeypatch, caplog):
+    """トークが結果を 401 で断った(Web サーバーと AICA_INTERNAL_KEY が合わない)ら、ワーカーのログにエラーを 1 行出す。
+    送った中身(会話の文、下書き、希望)は書かない(docs/design/privacy.md)。task 218。"""
+    import aiohttp
+    from multidict import CIMultiDict, CIMultiDictProxy
+    from yarl import URL
+
+    url = URL(f"{config.TALK_URL}/api/voice/result")
+    info = aiohttp.RequestInfo(url, "POST", CIMultiDictProxy(CIMultiDict()), url)
+    rejected = aiohttp.ClientResponseError(info, (), status=401, message="Unauthorized")
+    monkeypatch.setattr(config, "WRITE_FILES", False)
+    dip = FakeDip()
+    advisor = _talk_advisor(dip, poster=_FakePoster(error=rejected), tmp_out=tmp_path, monkeypatch=monkeypatch)
+    asyncio.run(advisor.propose_jobs(job_type="カフェ"))
+    advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
+    caplog.set_level("INFO", logger="voice-resume")
+    asyncio.run(advisor.finalize_interview())
+    assert advisor.delivered_to_talk is False
+    (line,) = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert "結果送信に失敗" in line.getMessage() and "401" in line.getMessage()
+    assert "AICA_INTERNAL_KEY" in line.getMessage()  # どの鍵を確かめればよいか
+    for secret in ("カフェ", "コンビニ", "時給", advisor.finalized["markdown"][:20]):
+        assert secret not in caplog.text
+
+
 def test_stated_preferences_enter_the_instructions_and_forbid_reasking():
     """前に話した希望があるユーザーでは、指示に希望が入り「聞き直さない」が明記される。"""
     stated = {"job_type": {"value": "カフェ", "saved": "9/23"}, "area": {"value": "渋谷", "saved": "9/23"}}
