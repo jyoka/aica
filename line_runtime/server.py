@@ -991,8 +991,8 @@ async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kin
         return await _line_link_start(api, line_uid, uid)
     if kind == "unlink":
         return line_channel.texts(line_channel.UNLINKED_TEXT if _unlink(uid) else line_channel.NOT_LINKED_TEXT)
-    reply, visit_greeting = await _line_turn(uid, kind, e)
-    return line_channel.to_messages(reply, visit_greeting=visit_greeting) if reply is not None else None
+    reply, greeting = await _line_turn(uid, kind, e)
+    return line_channel.to_messages(reply, greeting=greeting) if reply is not None else None
 
 
 def _line_consent_ask(stale: bool = False) -> list[dict]:
@@ -1014,8 +1014,8 @@ async def _line_consent(uid: str, e: dict) -> list[dict] | None:
         return None
     if not consent.record(state, uid, "terms", line_channel.consent_postback(str(e["postback"]["data"])) or ""):
         return _line_consent_ask(stale=True)
-    reply, visit_greeting = await _line_turn(uid, "follow", e)
-    return line_channel.to_messages(reply, visit_greeting=visit_greeting) if reply is not None else None
+    reply, greeting = await _line_turn(uid, "follow", e)
+    return line_channel.to_messages(reply, greeting=greeting) if reply is not None else None
 
 
 async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -> list[dict]:
@@ -1090,15 +1090,15 @@ def _unlink(uid: str) -> str | None:
     return gone
 
 
-async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, bool]:
+async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | None]:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
     続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
     エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。
-    返すのは (返信, そのターンが初回訪問の挨拶か)。後の方は line_channel.to_messages の visit_greeting に渡す(ターンの種類が
-    greet で入口が visit のときだけ。同じ会話の後のターンは、会話の入口が visit でも挨拶ではない)。"""
+    返すのは (返信, そのターンが挨拶なら入口(visit / revisit)、でなければ None)。後の方は line_channel.to_messages の greeting
+    に渡す(ターンの種類が greet のときだけ。同じ会話の後のターンは、会話の入口が visit や revisit でも挨拶ではない)。"""
     rt = app.state.rt
     deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=rt, unread_uploads=app.state.unread_uploads, ip=None)
     if kind == "follow":
@@ -1112,15 +1112,15 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, bool]:
         t = turn.accept(deps, uid, event, text, None, new_conversation=new, channel="line",
                         features=line_channel.liff_features())
     except turn.BadTurn:
-        return None, False
+        return None, None
     try:
         reply = await turn.reply_of(deps, t)
     except (turn.BadTurn, turn.TurnFailed) as err:
         line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, type(err.__cause__ or err).__name__)
-        return {"bubbles": [line_channel.FAILED_TEXT]}, False
+        return {"bubbles": [line_channel.FAILED_TEXT]}, None
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
-    return reply, t.kind == "greet" and t.entry == "visit"
+    return reply, t.entry if t.kind == "greet" and t.entry in line_channel.GREETING_HEADINGS else None
 
 
 # ----------------------------- dip のログイン(アカウント連携。dip の画面の偽物) -----------------------------

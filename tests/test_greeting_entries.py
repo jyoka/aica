@@ -1,11 +1,13 @@
 """挨拶で 3 つの入口(音声相談・履歴書の読み込み・ゲーム)へ案内する(会話の改善 (2/3)、task 220)。実 LLM・実 LINE は呼ばない。
 
-- 評価の判定(evals/checks.py の greeting_entry_violations): 初回訪問は窓口で使える入口を全部、再訪は summary に合わせて 1 つだけ
+- 評価の判定(evals/checks.py の greeting_entry_violations): 初回訪問も再訪も窓口で使える入口を全部ボタンで出す。再訪で文で
+  勧めるのは summary に合わせて 1 つだけ。全部を並べるのは 1 つの会話で 1 回だけ(会話の改善 D (3/3)、task 234)
 - dip の Prompt: 入口V と入口R が、挨拶の入口の決まりを指している
 - LINE の友だち追加の挨拶: 入口は LIFF 画面へのボタンになり、使えないもの(LiveKit が無いときの音声)は出ない。文字の選択肢も残る
 - 再訪(ゲームの下書きに空欄): 要約を読んでから、下書きの続きだけを勧める
 - 挨拶の言い方と並び(会話の改善 C (6/10)、task 227。evals/checks.py の greeting_wording_violations): 連絡した言い方をしない、
   問いが最後、再訪は行動履歴を言い切らない・「今回も」は前に話した人だけ・勧めは問いと別の吹き出し・合計の字数
+- LINE の挨拶の通数(task 231、task 234): 初回訪問も再訪も 2 通まで(line_channel.to_messages で数える)
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from evals.checks import (
     available_entries,
     conversation_checks,
     greeting_entry_violations,
+    greeting_mentions,
     greeting_offers,
     greeting_wording_violations,
     line_greeting_violations,
@@ -38,7 +41,7 @@ from tests.test_liff_actions import (
     _heading,
 )
 from tests.test_line_webhook import REPLY, TestClient, _event, _post, _server
-from tests.test_revisit import ARCADE_BUTTON, VISIT_MENU, Greeter, greet
+from tests.test_revisit import ARCADE_BUTTON, OFFER_TEXT, VISIT_MENU, Greeter, greet
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 VISIT = {"event": "visit", "expect_outcome": ["propose"]}
@@ -75,19 +78,71 @@ def test_the_draft_page_button_is_not_the_game_entry():
     assert greeting_offers(turn(buttons=[draft])) == []
 
 
-def test_revisit_offers_at_most_one_entry_and_the_one_the_summary_calls_for():
+# 再訪の挨拶(Prompt の「再訪の挨拶の並び」の例): 勧めの1文が先、確認の1問が最後
+WELCOME_RESUME = "おかえりなさい。履歴書を読み込むと、経歴を一から書かずに探せます。"
+CONFIRM = "前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?"
+REVISIT_ALL = ALL | {"bubbles": [WELCOME_RESUME, CONFIRM], "quick_replies": ["はい", "ほかの条件で探す", "今はいい"]}
+
+
+def test_revisit_shows_every_usable_entry_and_recommends_one_in_words():
+    """task 234: 再訪の挨拶も、窓口で使える入口を全部ボタンで出す。文で勧めるのは summary に合う 1 つだけで、ほかはボタンだけ。"""
     sc = REVISIT | {"expect_greeting_offer": "resume_upload"}
-    assert greeting_entry_violations(sc, [turn(["resume_upload"])]) == []
-    assert greeting_entry_violations(sc, [ALL])[0].startswith("T1: 再訪の挨拶で入口を3つ勧めた(1つだけ)")
-    assert greeting_entry_violations(sc, [turn(["voice_consult"])]) == [
+    assert greeting_offers(REVISIT_ALL) == ["voice_consult", "resume_upload", "arcade"]
+    assert greeting_mentions(REVISIT_ALL) == ["resume_upload"]
+    assert greeting_entry_violations(sc, [REVISIT_ALL]) == []
+    # 前の決まり(#220、#227)の、勧める 1 つだけのボタン: 前に使った人がほかの 2 つに気づけない
+    assert greeting_entry_violations(sc, [REVISIT_ALL | {"actions": ["resume_upload"], "buttons": []}]) == [
+        "T1: 再訪の挨拶に、使える入口が出ていない: ['voice_consult', 'arcade']"]
+    # 3 つを文で並べた(ボタンがあるので、文は勧めの 1 つだけ)
+    listed = REVISIT_ALL | {"bubbles": ["おかえりなさい。履歴書の読み込み、音声での相談、ゲームも使えます。", CONFIRM]}
+    assert greeting_entry_violations(sc, [listed]) == [
+        "T1: 再訪の挨拶で入口を文で3つ並べた(勧めは1つだけ。ほかはボタンだけ): ['voice_consult', 'resume_upload', 'arcade']",
+        "T1: 再訪の挨拶で勧めた入口が ['voice_consult', 'resume_upload', 'arcade'](summary からは resume_upload)"]
+    voice = REVISIT_ALL | {"bubbles": ["おかえりなさい。下の「音声で相談する」から、話して相談もできます(約5分)。", CONFIRM]}
+    assert greeting_entry_violations(sc, [voice]) == [
         "T1: 再訪の挨拶で勧めた入口が ['voice_consult'](summary からは resume_upload)"]
-    assert greeting_entry_violations(sc, [turn()]) == ["T1: 再訪の挨拶で勧めた入口が なし(summary からは resume_upload)"]
+    plain = REVISIT_ALL | {"bubbles": [f"おかえりなさい。{CONFIRM}"]}
+    assert greeting_entry_violations(sc, [plain]) == ["T1: 再訪の挨拶で勧めた入口が なし(summary からは resume_upload)"]
+    # 確認の1問の中の履歴書は勧めではない。勧めるものが無い人には、文で勧めずボタンだけでよい
+    asked = REVISIT_ALL | {"bubbles": ["おかえりなさい。", "前回読み込んだ職務経歴書のとおり、経理の正社員で探しますか?"]}
+    assert greeting_mentions(asked) == [] and greeting_entry_violations(REVISIT, [asked]) == []
+    # 問いの吹き出しの、問いでない文も勧めではない(勧めは問いの吹き出しより前に置く)
+    recalled = REVISIT_ALL | {"bubbles": ["おかえりなさい。", "前回読み込んだ履歴書では事務でした。今回も事務で探しますか?"]}
+    assert greeting_mentions(recalled) == []
+    # 前の Prompt の例「遊びながら書類を作れます。」もゲームの勧めに数える
+    assert greeting_mentions(REVISIT_ALL | {"bubbles": ["おかえりなさい。遊びながら書類を作れます。", CONFIRM]}) == ["arcade"]
     # 期待の入口が LINE で使えない(LIFF が無い)なら、何を勧めたかは問わない(使えないものを出したら違反)
     assert greeting_entry_violations(sc, [turn()], "line", ()) == []
     assert greeting_entry_violations(sc, [turn(["resume_upload"])], "line", ()) == [
         "T1: 窓口で使えない入口を出した: ['resume_upload']"]
+    # LINE で LiveKit が無い: 履歴書とゲームのボタンが全部。音声を出したら違反
+    line = ("resume_upload", "arcade")
+    assert greeting_entry_violations(sc, [REVISIT_ALL | {"actions": ["resume_upload"]}], "line", line) == []
+    assert greeting_entry_violations(sc, [REVISIT_ALL], "line", line) == ["T1: 窓口で使えない入口を出した: ['voice_consult']"]
+    # 下書きの続き: 勧めの文(ゲームの語があっても下書きの続きに数える)と「空欄を埋める」
     blanks = REVISIT | {"expect_greeting_offer": "blanks"}
-    assert greeting_entry_violations(blanks, [turn(quick_replies=["空欄を埋める", "求人を探す", "今はいい"])]) == []
+    draft = ALL | {"bubbles": ["おかえりなさい。ゲームで作った下書きに、数字の空欄が残っています。", "今日は何から進めますか?"],
+                   "quick_replies": ["空欄を埋める", "求人を探す", "今はいい"]}
+    assert greeting_mentions(draft) == ["blanks"] and greeting_entry_violations(blanks, [draft]) == []
+    assert greeting_entry_violations(blanks, [draft | {"quick_replies": ["求人を探す", "今はいい"]}]) == [
+        "T1: 下書きの続きを勧めたのに、選択肢に「空欄を埋める」が無い"]
+
+
+def test_the_entries_are_lined_up_only_once_in_a_conversation():
+    """task 234: 3 つの入口を並べるのは、1 つの会話で挨拶の 1 回だけ。経験を聞く1問の履歴書と音声(ゲームなし)は数えない。"""
+    again = ALL | {"bubbles": ["これまでにどんなお仕事をしましたか?"]}
+    assert greeting_entry_violations(REVISIT, [REVISIT_ALL, again]) == ["T2: 入口を全部並べるのは1つの会話で1回だけ(T1 で並べた)"]
+    assert greeting_entry_violations(VISIT, [ALL, again]) == ["T2: 入口を全部並べるのは1つの会話で1回だけ(T1 で並べた)"]
+    experience = turn(["voice_consult", "resume_upload"]) | {"bubbles": ["これまでにどんなお仕事をしましたか?"]}
+    assert greeting_entry_violations(REVISIT, [REVISIT_ALL, experience]) == []
+    # LINE で LiveKit が無いと、使える入口は 2 つ(履歴書とゲーム)。2 回目に 2 つとも並べたら違反
+    line = ("resume_upload", "arcade")
+    two = turn(["resume_upload"], [ARCADE_BUTTON])
+    assert greeting_entry_violations(VISIT, [two, two], "line", line) == ["T2: 入口を全部並べるのは1つの会話で1回だけ(T1 で並べた)"]
+    assert greeting_entry_violations(VISIT, [two, turn(["resume_upload"])], "line", line) == []
+    # ゲームの使えない窓口では、経験を聞く1問の履歴書と音声だけで全部になるので数えない
+    no_game = ("voice_consult", "resume_upload")
+    assert greeting_entry_violations(REVISIT, [experience, experience], "line", no_game) == []
 
 
 def test_conversation_checks_report_the_greeting_offers_and_ask_for_the_new_menu():
@@ -237,21 +292,40 @@ OLD_BODY = "お仕事探しの相談や求人のご提案ができます。音�
 def test_line_greeting_is_counted_through_to_messages_and_must_be_two_messages():
     """LINE の通数は line_channel.to_messages をオフラインで通して数える(LIFF の設定の代わりに使えたものを渡す)。"""
     good = FIRST | {"bubbles": [BODY, QUESTION]}
-    assert line_message_counts([good], FEATURES, visit=True) == [2]
+    assert line_message_counts([good], FEATURES, greeting="visit") == [2]
     assert line_greeting_violations(VISIT, [good], "line", FEATURES) == []
     three = FIRST | {"bubbles": [BODY, "ゲームは、遊びながら下書きを作れます。", "どれから始めますか?"]}
-    assert line_message_counts([three], FEATURES, visit=True) == [3]
+    assert line_message_counts([three], FEATURES, greeting="visit") == [3]
     assert line_greeting_violations(VISIT, [three], "line", FEATURES) == ["T1: 初回訪問の挨拶が LINE で 3 通(2 通まで)"]
     # 入口のボタンが無い LINE(LIFF の設定が無い)では、吹き出しがそのまま数になる。使えない操作を付けたら断りの文も数える
-    assert line_message_counts([turn() | {"bubbles": three["bubbles"]}], (), visit=True) == [3]
-    assert line_message_counts([three], (), visit=True) == [5]
-    # Web の窓口と再訪は数えない(再訪の挨拶は別の決まり)
+    assert line_message_counts([turn() | {"bubbles": three["bubbles"]}], (), greeting="visit") == [3]
+    assert line_message_counts([three], (), greeting="visit") == [5]
+    # Web の窓口は数えない
     assert line_greeting_violations(VISIT, [three], "web", FEATURES) == []
-    assert line_greeting_violations(REVISIT, [three], "line", FEATURES) == []
     # 挨拶のターンでない返信は、同じ吹き出しとボタンでも見出しにしない(吹き出しの数 + ボタンの 1 通)。
     # 初回訪問で始まった会話の 2 ターン目(entry は visit のまま)も、再訪で始まった会話の 1 ターン目も
-    assert line_message_counts([good, good], FEATURES, visit=True) == [2, 3]
+    assert line_message_counts([good, good], FEATURES, greeting="visit") == [2, 3]
     assert line_message_counts([good | {"entry": "revisit"}], FEATURES) == [3]
+
+
+def test_line_revisit_greeting_is_two_messages_with_the_offer_over_the_buttons():
+    """task 234: 再訪の挨拶も LINE で 2 通。挨拶と勧めの1文が入口のボタンの見出しになり、確認の1問は最後に文字の選択肢と残る。
+    前の組み立て(挨拶、問い、見出しの無いボタンの箱)だと 3 通になる。"""
+    r = REVISIT_ALL | {"entry": "revisit"}
+    assert line_message_counts([r], FEATURES, greeting="revisit") == [2]
+    assert line_greeting_violations(REVISIT, [r], "line", FEATURES) == []
+    assert line_message_counts([r], FEATURES) == [3]  # 挨拶のターンとして組まなければ(前の組み立て)
+    # 吹き出しが 3 つなら 3 通で違反。勧めの無い 1 つの吹き出しは、問いとボタンの 2 通
+    three = r | {"bubbles": ["おかえりなさい。", WELCOME_RESUME.removeprefix("おかえりなさい。"), CONFIRM]}
+    assert line_greeting_violations(REVISIT, [three], "line", FEATURES) == ["T1: 再訪の挨拶が LINE で 3 通(2 通まで)"]
+    assert line_message_counts([r | {"bubbles": [f"おかえりなさい。{CONFIRM}"]}], FEATURES, greeting="revisit") == [2]
+    # ゲームのボタンの文言はリッチメニューと同じ。ほかの入口の名前を本文に求めない(文で勧めるのは 1 つだけ)
+    renamed = r | {"buttons": [{"label": "書類ゲーム", "url": "/liff/arcade"}]}
+    assert line_greeting_violations(REVISIT, [renamed], "line", FEATURES) == [
+        "T1: ゲームのボタンの文言が「書類ゲーム」(「ゲームで書類を作る」)"]
+    rep = conversation_checks(SCENARIOS["R-revisit-track"], [r], [None], channel="line", features=FEATURES)
+    assert rep["line_messages"] == [2] and rep["greeting_mentions"] == ["resume_upload"]
+    assert not [v for v in rep["violations"] if "入口" in v or "通(" in v]
 
 
 def test_line_greeting_must_name_the_entries_with_the_button_words():
@@ -286,7 +360,11 @@ def test_entries_point_to_the_greeting_rules():
     for p in (visit, revisit):
         assert "## 挨拶で3つの入口を案内する(初回訪問・再訪)" in p
     assert "「求人を探す / まず相談する / 今はいい」の3つ" in visit and "窓口で使えるものを全部" in visit
-    assert "入口を1つだけ勧める" in revisit and "3つ全部は並べない" in revisit
+    # task 234: 再訪も入口を全部ボタンで出し、文で勧めるのは1つだけ。全部を並べるのは1つの会話で1回だけ
+    assert "窓口で使える入口を全部ボタンで添え" in revisit and "ほかの入口はボタンだけにし、文で並べない" in revisit
+    assert "再訪: 初回訪問と同じく、使える入口を全部ボタンで出す" in revisit
+    assert "同じ会話の2回目からの返信には、3つを並べない" in revisit
+    assert "3つ全部は並べない" not in revisit
     # 「なぜ今連絡したか」はプッシュだけ。挨拶は「おかえりなさい」の側で、勧めを先、問いを最後
     assert "「おかえりなさい。」で始め" in revisit and "勧めを先、確認の1問を最後に置く" in revisit
     assert "- プッシュ(入口D)は、こちらから連絡する。最初の吹き出しで「なぜ今連絡したか」" in revisit
@@ -374,6 +452,36 @@ def test_line_follow_greeting_arrives_as_two_messages_through_the_webhook(tmp_pa
     assert _heading(second["messages"][2]) is None and second["messages"][2]["altText"] == "リンク: 音声で相談する、履歴書を読み込む"
 
 
+@pytest.mark.parametrize("voice", [True, False], ids=["with-livekit", "without-livekit"])
+def test_line_refollow_revisit_greeting_shows_the_entries_in_two_messages(tmp_path, monkeypatch, voice):
+    """task 234: 友だち追加し直し(再訪)の挨拶も、webhook → ターン → to_messages で、LINE で使える入口を全部 LIFF 画面への
+    ボタンで出し、2 通に収まる: 挨拶と勧めの1文を見出しにしたボタンの箱と、確認の1問(文字の選択肢つき)。
+    ボタンの文言はリッチメニュー(scripts.line_rich_menu)と同じ。LiveKit が無ければ音声のボタンは出ない。"""
+    from scripts import line_rich_menu
+
+    _no_liff(monkeypatch)
+    server, fake = _server(tmp_path, monkeypatch, Greeter(script=[greet, greet, greet]), AICA_ID_KEY=ID_KEY,
+                           LINE_LIFF_ID=LIFF_ID, LINE_LIFF_CHANNEL_ID=CHANNEL, AICA_INTERNAL_KEY=INTERNAL_KEY,
+                           **(LIVEKIT_ENV if voice else {}))
+    with TestClient(server.app) as client:
+        _post(client, [_event("follow", event_id="01F1")])
+        _post(client, [_event("follow", event_id="01F2", token="reply-token-2")])
+    (_, _), (path, body) = fake.sent()
+    assert path == REPLY
+    assert [m["type"] for m in body["messages"]] == ["flex", "text"]  # 2 通(task 231 の上限)
+    flex, question = body["messages"]
+    assert _heading(flex) == f"おかえりなさい。{OFFER_TEXT['resume_upload']}"  # 勧めの1文はボタンのすぐ上
+    links = [(b["action"]["label"], b["action"]["uri"]) for b in flex["contents"]["body"]["contents"]]
+    labels = ["ゲームで書類を作る", *(["音声で相談する"] if voice else []), "履歴書を読み込む"]
+    assert [lb for lb, _ in links] == labels
+    assert all(uri.startswith(f"https://liff.line.me/{LIFF_ID}/") for _, uri in links)
+    menu = {i.label for i in line_rich_menu.items() if i.key != "jobs"}
+    assert set(labels) == menu  # リッチメニューと同じ名前、同じ入口
+    assert question["text"].endswith("?") and "quickReply" not in flex
+    quick = [i["action"]["label"] for i in question["quickReply"]["items"]]
+    assert "今はいい" in quick and not set(quick) & set(labels)  # 入口の名前を選択肢に重ねない
+
+
 def test_line_follow_without_liff_greets_with_text_choices_only(tmp_path, monkeypatch):
     _no_liff(monkeypatch)
     server, fake = _server(tmp_path, monkeypatch, Greeter(script=[greet]), AICA_ID_KEY=ID_KEY)
@@ -394,7 +502,9 @@ def test_revisit_with_a_draft_offers_only_to_fill_the_blanks(tmp_path):
     (t1,) = run(Greeter(script=[greet, greet]), [(uid, "revisit", None)], tmp_path)
     summary = t1["tools"][0]["result"]
     assert summary["arcade_draft"]["blank_lines"] and summary["uploaded_resume"]  # 経歴は分かり、下書きに空欄がある
-    assert t1["actions"] == [] and t1["buttons"] == [] and "空欄を埋める" in t1["quick_replies"]
+    # 入口は全部ボタンで出し(task 234)、文で勧めるのは下書きの続きだけ
+    assert t1["actions"] == ["voice_consult", "resume_upload"] and [b["url"] for b in t1["buttons"]] == [summary["arcade_url"]]
+    assert greeting_mentions(t1) == ["blanks"] and "空欄を埋める" in t1["quick_replies"]
     assert "今はいい" in t1["quick_replies"] and len(t1["quick_replies"]) <= 4
     assert greeting_entry_violations(sc, [t1]) == []
     assert arcade.drafts(State(tmp_path / "state.json"), uid)  # 種の下書きは dip に保存された
