@@ -229,10 +229,10 @@ dip の関数はどれも、1 つ目の引数に `State` を受け取ります�
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `extract.py` | 履歴書のファイルから Resume Draft を作る。OpenAI の Responses API の構造化出力。形と `scrub_pii` は `resume_draft`(1.8) | `EXTRACT_SYSTEM`、`media_type`、`content_part`、`extract_bytes`、`extract_draft`、`finalize`、`Usage` |
+| `extract.py` | 履歴書のファイルから Resume Draft を作る。OpenAI の Responses API の構造化出力。テキストのある PDF はローカルでテキストを取り出す(pypdf)。形と `scrub_pii` は `resume_draft`(1.8) | `EXTRACT_SYSTEM`、`media_type`、`pdf_text`、`content_part`、`extract_bytes`、`extract_draft`、`finalize`、`Usage` |
 | `config.py` | モデル、上限、出力先 | `MODEL`(既定 `gpt-6-sol`)、`MAX_UPLOAD_BYTES`(10MB)、`OUT_DIR` |
 | `cli.py`、`run_samples.py` | 運営者が手で回す読み取りと、サンプルの正解との比較(実 API) | - |
-| `samples/` | 架空の履歴書 4 つと正解 3 つ | - |
+| `samples/` | 架空の履歴書 5 つと正解 4 つ(05 は JIS 風の表と顔写真の PDF) | - |
 
 `client` を引数で受け取るので、テストは `responses.parse` を持つスタブを渡します。Web サーバーは `server.resume_client` で
 `AsyncOpenAI` を作ります。
@@ -708,7 +708,8 @@ sequenceDiagram
 HLD の 4.2 の詳しい手順です。
 
 1. `resume_upload` は拡張子(`media_type`)、空、大きさ(`MAX_UPLOAD_BYTES`)、会話の番号を確かめてから `try_take` します
-2. `extract_bytes` がファイルを Responses API の `input_file`(PDF)か `input_image` にして読み取り、出力に `scrub_pii` をかけます。
+2. `extract_bytes` がファイルを Responses API の content part にして読み取り、出力に `scrub_pii` をかけます(下の表)。
+   PDF の解析は CPU を使うので、`asyncio.to_thread` でイベントループの外で行います。
    使ったトークンは `Ledger.record(user_id, "resume_upload", ...)` で費用台帳に書きます
 3. 読み取れた項目が無ければ(`unconfirmed` を除いて空)、dip に保存せず、`app.state.unread_uploads` に事実を置きます
 4. 読み取れたら `logic.save_resume_upload` が、`personal` を空にし、もう一度 `scrub_pii` をかけ、`resume_upload_seq` から番号を振って
@@ -717,6 +718,44 @@ HLD の 4.2 の詳しい手順です。
    `unread_uploads` から事実を作ります(画面からは受け取りません)
 6. 入力の文(`event_input`)は、画面に出した確認をくり返さずに読み取り結果を見て続けるよう指示します。エージェントは dip の要約
    (`get_user_conversation_summary`)を呼び直して `uploaded_resume` を見て、次の 1 問を返します
+
+`content_part` が送る形です([privacy.md](../design/privacy.md) の 3.2 の案 B)。
+
+| ファイル | 送るもの | 決め方 |
+|---|---|---|
+| テキストのある PDF | `input_text`。`PDF_TEXT_HEADER` と、ページごとのテキスト(pypdf の `layout` で取り出し、行末の空白と続く空行を詰める) | `pdf_text` が文字列を返したとき |
+| それ以外の PDF | `input_file`(`filename` は `resume.pdf`) | `pdf_text` が None のとき |
+| JPEG、PNG | `input_image` | 拡張子 |
+
+`pdf_text` は、次のどれかがあれば None を返し、ファイルをそのまま送ります。テキストだけでは書いた中身が欠けるか、
+手元の解析に手間がかかりすぎるためです。迷うときは、ファイルをそのまま送る側(前の送り方)に倒します。
+
+- 読めない PDF(壊れている、開くのにパスワードが要る)。編集の制限だけのパスワードなら、テキストを取り出せるのでテキストだけを送ります
+- 大きすぎる PDF。`MAX_PDF_PAGES`(10)より多いページ、`MAX_PDF_TEXT_CHARS`(取り出したテキストで 4 万字)、
+  `MAX_PDF_CONTENT_BYTES`(1MB)を超える描画の命令です。作り込んだ PDF で、Web サーバーの CPU とメモリを使わせないためです。
+  描画の命令は、テキストを取り出す前に `_scan` が次の 2 つで確かめます
+  - 展開: pypdf の展開の上限(`apply_configuration` で、この呼び出しの間だけ)を 1 本 1MB に下げ、展開しながら止めます。
+    ページと、そこから届く Form XObject(入れ子も、呼ばれていないものも)の展開した大きさの合計も 1MB までです
+  - 解析: pypdf は Form を呼ぶたびに解析し直すので、Form の中身を呼んだ回数だけ足した大きさ(`_expanded`)も 1MB までです。
+    `MAX_FORM_DEPTH`(8)より深い入れ子と、自分を呼ぶ Form も、ファイルを送ります
+  - 測った結果: 手元の Mac で、50MB に展開される命令(ファイルは約 50KB)と、10MB に展開される Form は 0.1 秒以内に None を返し、
+    Python が確保するメモリは数 MB です。上限に近い正しい PDF(線を引く命令で 950KB)は、取り出しまでして約 7 秒かかります。
+    アップロードは読み取りの前に会話数を 1 つ使うので、くり返しはその上限で抑えます
+- リンク以外の注釈。閲覧アプリで書き込んだ文字(FreeText)、フォームの入力欄(Widget)、貼った画像(Stamp)、手書き(Ink)、図形など
+- ページの面積(CropBox)の `MAX_PAGE_IMAGE_SHARE`(1 割)以上を覆う画像。OCR の文字を重ねたスキャンで手書きを OCR の文字に
+  置き換えないため、職歴の表などを画像で貼った PDF でその中身を落とさないためです。顔写真の欄(30×40mm)は A4 の 2% ほどです。
+  ページの画像と BI … EI の画像は面積を数え、Form XObject の中に画像があるページは面積を数えずにファイルを送ります
+- 空白を除いて `MIN_PAGE_CHARS`(50 字)に満たないページ。スキャンしたページ、スキャンアプリの透かしだけのページ、
+  文字を図形にした PDF です。「以上」だけの最後のページがあっても、ファイルを送ります
+- 読めない字(結合文字、私用領域、制御文字、置き換え文字)が `MAX_BAD_CHAR_SHARE`(1 割)以上のページ。ToUnicode の壊れたフォントの PDF です
+- ToUnicode の無い Type0 のフォント(`/Encoding` が `/Identity-H`、`/Identity-V`、埋め込みの CMap)。pypdf はグリフの番号を
+  そのまま字にするので、ASCII や別の漢字が出て、読めない字の割合では見分けられません。ページと Form XObject のフォントを見ます。
+  `UniJIS-UCS2-H` のような Unicode に引ける CMap(サンプルの 01)は、テキストだけを送ります
+- `layout` で取り出せない字があるページ。pypdf の `layout` は Form XObject の中のテキストを取り出しません。
+  面積を測るときの取り出し(`layout` ではない)の字が、`layout` の字に全部あるかを比べます
+
+`PDF_TEXT_HEADER` は、表の「年」「月」の列の数字を「2020年4月」の形で書くよう添えます。テキストでは列の見出しと数字が離れ、
+`period` が「2017  4」になったためです(10 章の「履歴書の読み取り」)。
 
 ### 4.4 音声相談(音声ワーカーの中)
 
@@ -1755,7 +1794,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | 呼び出し | 呼ぶところ | API とモデル | いつ | 台帳 |
 |---|---|---|---|---|
 | エージェント | `LineRuntime._turn` | OpenAI Responses `gpt-6-sol`(既定)か Anthropic `claude-opus-5` | ターンごとに 1 回以上(ツールを呼ぶたび) | 費用台帳 |
-| 履歴書の読み取り | `resume_intake.extract._extract` | OpenAI Responses `gpt-6-sol`(`RESUME_INTAKE_MODEL`) | アップロードごとに 1 回 | 費用台帳 |
+| 履歴書の読み取り | `resume_intake.extract._extract` | OpenAI Responses `gpt-6-sol`(`RESUME_INTAKE_MODEL`)。テキストのある PDF はテキストだけ(4.3) | アップロードごとに 1 回 | 費用台帳 |
 | 意味検索の問い合わせ | `dip_mcp.embedding._api_embed`(dip の子プロセス) | OpenAI Embeddings `text-embedding-3-large`、1024 次元、1 回 5 秒で打ち切り、1 回だけ再試行 | `recommend_jobs` の keywords ごとに 1 回(同じ文はプロセスの中で 512 件まで覚える) | なし(R19) |
 | 求人のベクトル | `scripts/gen_job_vectors.py` | 同上 | 人が回す | なし |
 | 音声の文字起こし | `voice_resume.stt.create_stt` | Deepgram `nova-3`(ストリーミング) | 相談の間ずっと | なし(R6) |
@@ -1888,7 +1927,11 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
    (`tests/test_isolation.py::test_one_address_rule_for_preferences_summary_form_and_track`)。
    全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)。
    読み取りと下書きは、同じ LLM の出力から同じ形の Resume Draft を出し、全角で書いた電話、メール、郵便番号も消します。
-   envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)
+   envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)。
+   テキストのある PDF は、テキストだけを送り、画像とファイルを送りません。テキストだけでは中身が欠ける PDF は、ファイルをそのまま送ります
+   (`tests/test_resume_upload.py::test_upload_of_text_pdf_sends_only_its_text`、
+   `tests/test_resume_intake.py::test_pdf_without_usable_text_is_sent_as_file`、`::test_pdf_too_large_to_parse_is_sent_as_file`、
+   `::test_crafted_pdf_is_rejected_cheaply`)
 10. 音声の写し(職種、エリア、雇用区分、希望の項目)は dip と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
 11. 会話の決まりの値は playbook、dip の Prompt、評価の形式の判定で同じです
     (`tests/test_playbook.py::test_conversation_rules_match_between_playbooks_prompt_and_eval_format_checks`)
@@ -1981,10 +2024,22 @@ python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.j
 ```bash
 ./.venv/bin/python -m resume_intake.cli resume_intake/samples/01_clean.pdf   # 結果は data/resume_intake/ にも保存
 ./.venv/bin/python -m resume_intake.run_samples                               # サンプルを読み取り、正解(samples/expected/)と比べる
+./.venv/bin/python -m resume_intake.run_samples --compare                     # PDF はテキストだけと、ファイルのまま(前の送り方)の両方で読んで並べる
 ./.venv/bin/python resume_intake/samples/make_samples.py                      # サンプルを作り直す(reportlab と pillow が要る。API は使わない)
 ```
 
 - サンプルは架空の人物だけです。本物の履歴書はリポジトリに入れません
+- `--compare` の費用は、2026-10-25 の 1 回で $0.07(6 回の呼び出し)でした。そのときの結果です(`gpt-6-sol`。完全一致の項目の数 / 9)
+
+  | サンプル | テキストだけ | ファイルのまま | 入力のトークン(テキスト / ファイル) |
+  |---|---|---|---|
+  | 01_clean.pdf | 7 | 5 | 3093 / 3078 |
+  | 05_table_photo.pdf | 6 | 8 | 2990 / 4997 |
+
+  - 01 の差は、ファイルのままだと職務要約と自己PR に改行が残ったことだけです
+  - 05 は、テキストだけだと表の年月が「2017  4」になりました。`PDF_TEXT_HEADER` に年と月を付ける指示を足しました。
+    足した後の読み取りは、まだ実 API で確かめていません
+  - 両方に共通の不一致(職務の分け方、希望の文末)は、正解の書き方とモデルの写し方の違いで、送り方の差ではありません
 - pytest では `tests/test_resume_intake.py`(読み取り)と `tests/test_resume_upload.py`(アップロード、保存、同じユーザーの会話からの参照)が、
   OpenAI をスタブにして確かめます
 

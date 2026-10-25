@@ -1,0 +1,38 @@
+{
+  "job_summary": "",
+  "self_pr": "",
+  "education": [
+    {"period": "2017年4月〜2020年3月", "school": "みほん県立南高等学校", "status": "卒業"},
+    {"period": "2020年4月〜2022年3月", "school": "みほん情報専門学校 情報処理科", "status": "卒業"}
+  ],
+  "work_history": [
+    {
+      "period": "2022年4月〜2025年6月",
+      "organization": "株式会社みほんシステム",
+      "employment_type": "正社員",
+      "role": "ヘルプデスク",
+      "duties": ["社内からの問い合わせ対応", "パソコンの設定"],
+      "achievements": []
+    },
+    {
+      "period": "2025年8月〜現在",
+      "organization": "みほん家電 東町店",
+      "employment_type": "契約社員",
+      "role": "販売スタッフ",
+      "duties": ["パソコン売り場での接客と説明"],
+      "achievements": []
+    }
+  ],
+  "other_experience": [],
+  "skills": [],
+  "certifications": [
+    {"name": "基本情報技術者試験", "acquired": "2021年11月"},
+    {"name": "普通自動車第一種運転免許", "acquired": "2023年2月"}
+  ],
+  "preferences": {
+    "desired_work": ["IT のサポートの仕事"],
+    "conditions": ["土日も勤務できます"],
+    "notes": []
+  },
+  "unconfirmed": []
+}
