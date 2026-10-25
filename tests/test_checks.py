@@ -639,7 +639,7 @@ def test_hesitating_think_may_still_ask_one_question():
 
     asked = {**turn(["どのあたりで迷っていますか?"]), "quick_replies": ["時給", "シフト", "今はいい"]}
     for m in ("うーん、考えます", "ちょっと迷うので考えます", "ありがとう、でも時給で迷うので考えます", "考えます",
-              "ありがとう、考えます。制服はありますか？"):
+              "ありがとう、考えます。制服はありますか？", "ありがとう、考えます。求人を見せて"):
         assert not thanks_and_think(m), m
         assert thanks_close_violations([PROPOSED, asked], [None, m]) == [], m
     for m in ("ありがとう、考えます", "ありがとう、考えます。", "ありがとうございます。検討してみます",
@@ -652,6 +652,29 @@ def test_hesitating_think_may_still_ask_one_question():
     # 事情の説明や、考えた後の返事は「考えます」ではない
     for m in ("ありがとう、転職を考えていて", "ありがとう、考えました。応募します"):
         assert not thanks_and_think(m), m
+
+
+def test_thanks_close_offers_voice_consult_only_once_per_conversation():
+    """締めの音声相談の入口は、履歴書・音声の提案の決まり(1つの会話で1回だけ・断られた後は出さない)に従う。
+    T1 の挨拶の入口の案内は数えない。"""
+    from evals.checks import thanks_close_violations
+
+    greeting = {**turn(["はじめまして。"]), "quick_replies": ["求人を探す", "まず相談する"],
+                "actions": ["voice_consult", "resume_upload"]}
+    experience = {**turn(["これまでどんなお仕事をされてきましたか?"]), "quick_replies": ["文字で話す", "今はいい"],
+                  "actions": ["resume_upload", "voice_consult"]}
+    written = _closing(["ありがとうございます。"], [("record_conversation_outcome", {"recorded": True})])
+    voice = {**_closing(["承知しました。", "話して相談したいときは、音声相談も使えます(約5分)。"],
+                        [("record_conversation_outcome", {"recorded": True})]), "actions": ["voice_consult"]}
+    said = [None, "まず相談する", "文字で話す", "ありがとう、考えます"]
+    v = thanks_close_violations([greeting, experience, written, voice], said)
+    assert v == ["T4: お礼つきの「考えます」の締めで、T2 に出した履歴書・音声の提案をもう一度出した(1つの会話で1回だけ)"]
+    # 挨拶の入口の案内だけなら、締めで音声相談を案内してよい
+    assert thanks_close_violations([greeting, written, voice], [None, "まず相談する", "ありがとう、考えます"]) == []
+    # 締めの actions は音声相談だけ
+    upload = {**voice, "actions": ["resume_upload"]}
+    assert any("音声相談以外" in x for x in thanks_close_violations([greeting, written, upload],
+                                                                [None, "まず相談する", "ありがとう、考えます"]))
 
 
 def test_hesitating_think_does_not_end_a_consultation():

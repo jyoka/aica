@@ -144,13 +144,16 @@ def thanks_goodbye(m: str) -> bool:
 
 
 def thanks_and_think(m: str) -> bool:
-    """お礼つきの「考えます」(「ありがとう、考えます」)。迷いの問いを返さず、短く締める発言。"""
-    return thanks_goodbye(m) and bool(THINK_IT_OVER.search(m))
+    """お礼つきの「考えます」(「ありがとう、考えます」)。迷いの問いを返さず、短く締める発言。
+    求人を頼んでいる発言(「ありがとう、考えます。求人を見せて」)は締めではない。"""
+    return thanks_goodbye(m) and bool(THINK_IT_OVER.search(m)) and not asks_for_jobs(m)
 
 
 def thanks_close_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
     """お礼つきの「考えます」への返信は、問いを返さず(迷いの候補を聞かない)、吹き出し2つまでで締め、求人を出さない。
     出口(record_conversation_outcome)は、そのターンまでに記録している(提案したターンの記録でよい)。
+    締めの actions は音声相談(voice_consult)だけで、この会話でまだ履歴書・音声の提案を出していないときだけ
+    (「1つの会話で1回だけ」。T1 の挨拶の入口の案内は数えない)。
     迷いを言っている「考えます」(「うーん、考えます」)は対象にしない(1問聞いてよい)。"""
     out = []
     for i, m in enumerate(user_msgs[:len(turns)]):
@@ -163,6 +166,13 @@ def thanks_close_violations(turns: list[dict], user_msgs: list[str | None]) -> l
             out.append(f"T{i + 1}: お礼つきの「考えます」の締めが吹き出し{len(r['bubbles'])}つ(2つまで)")
         if r["cards"]:
             out.append(f"T{i + 1}: お礼つきの「考えます」の後に求人を出した")
+        actions = r.get("actions") or []
+        if extra := [a for a in actions if a != "voice_consult"]:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めに音声相談以外の actions を付けた: {extra}")
+        offered = next((j for j in range(1, i) if set(turns[j].get("actions") or []) & set(ENTRY_ACTIONS)), None)
+        if "voice_consult" in actions and offered is not None:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めで、T{offered + 1} に出した履歴書・音声の提案をもう一度出した"
+                       "(1つの会話で1回だけ)")
         if not any(t["name"] == "record_conversation_outcome" for x in turns[:i + 1] for t in x["tools"]):
             out.append(f"T{i + 1}: お礼つきの「考えます」で締めたのに、出口(record_conversation_outcome)を記録していない")
     return out
