@@ -24,7 +24,7 @@ from dip_mcp import server as dip_server
 from dip_mcp.data import State, load_jobs
 from line_runtime import turn
 from line_runtime.agent import PINNED_USER
-from resume_draft.pii import REDACTED, redact_personal
+from resume_draft.pii import REDACTED, personal_value, redact_personal
 from tests.test_arcade import _free_port, browser  # noqa: F401  browser はフィクスチャ
 from tests.test_dip_summary_read import TOOL_ARGS
 from tests.test_handle import ScriptedModel, call, reply, run
@@ -103,6 +103,21 @@ def test_station_names_with_chome_are_kept_but_addresses_are_not():
                  "新宿三丁目２番に住んでいます"):
         t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
         assert t.text == REDACTED and t.redacted, text
+    # 丁目と番地の間に「の」や空白、読点が入っても、番地まで丸ごと伏せる(駅の名前に見えても住所)
+    for text in ("新宿三丁目の5-1に住む", "新宿三丁目 5-1に住む", "新宿三丁目、5-1", "新宿三丁目の５番地",
+                 "渋谷区神南1丁目 2-3に住む", "新宿三丁目の一番地", "新宿三丁目一番地", "新宿三丁目の十一番に住む"):
+        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        assert t.text == REDACTED and t.redacted, text
+        assert personal_value(text), text
+    # 駅の名前の後ろに番地でないものが続くときは伏せない
+    # 「一番」(いちばん)と、人数や年代などの幅も番地ではない
+    for text in ("新宿三丁目から徒歩5分", "新宿三丁目の飲食ホールが気になります", "新宿三丁目の5番出口で",
+                 "新宿三丁目、2号店で働きたい", "新宿三丁目の 3-6か月の短期",
+                 "新宿三丁目の一番近くで探したい", "新宿三丁目、一番人気の求人を見せて", "新宿三丁目 一番時給が高いのは？",
+                 "新宿三丁目一番近い店", "新宿三丁目の1番人気", "新宿三丁目、3-4人で働く職場",
+                 "新宿三丁目の 10-20代が多い職場", "新宿三丁目、2-3名の募集", "新宿三丁目の 1-2回の面接"):
+        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        assert t.text == text and not t.redacted, text
 
 
 def test_every_job_station_is_kept_with_or_without_eki():

@@ -65,8 +65,17 @@ SCRUB_PATTERNS = [
 
 # 駅の名前の前にこれが付いていたら、もっと長い地名の一部(「西新宿三丁目」)なので駅の名前とみなさない
 _NAME_CHAR = re.compile(r"[\u3005\u30a0-\u30ff\u4e00-\u9fff]")
-# 駅の名前の後ろにこれが続いたら番地(「新宿三丁目5-1」「新宿三丁目5番」)なので駅の名前とみなさない
-_NUMBER_CHAR = re.compile(r"[\d\-一二三四五六七八九十〇番]")
+# 駅の名前の後ろにこれが続いたら番地(「新宿三丁目5-1」「新宿三丁目5番」)なので駅の名前とみなさない。
+# 「一番」(いちばん。「新宿三丁目一番近い」)は番地ではない(「一番地」は番地)
+_NUMBER_CHAR = re.compile(r"(?!一番(?!地))[\d\-一二三四五六七八九十〇番]")
+# 数の幅の後ろに続く単位。これが続く「3-6か月」「3-4人」「10-20代」は幅で、番地ではない
+_RANGE_UNIT = r"万千円かカヵヶケ年月日時分歳才%％人名代回件社位割倍週本個枚点"
+# 丁目の後ろに区切り(空白・読点・カンマ・「の」)を挟んで続く番地(「新宿三丁目の5-1」「新宿三丁目 5番地」「新宿三丁目、2号」)。
+# 照合は fold_pii の後。「5番目」「5番出口」「1番人気」「2号店」と、幅(「3-6か月」「3-4人」)と、「一番」(「一番近く」)は番地ではない
+_LOT_AFTER = re.compile(
+    rf"[\s、,の]+(?:\d+-\d+(?![-\d{_RANGE_UNIT}])"
+    r"|(?!一番(?!地))[\d一二三四五六七八九十〇]+(?:番地|番(?![目出線人])|号(?![店館機線車])))"
+)
 
 
 @cache
@@ -81,11 +90,11 @@ def _choume_stations() -> tuple[str, ...]:
 
 def _is_station_choume(text: str, m: re.Match) -> bool:
     """ADDRESS_LIKE の「丁目」の当たりが、求人の最寄り駅の名前そのものか。前に地名の文字が付かず
-    (「西新宿三丁目」は住所)、後ろに番地が続かない(「新宿三丁目5-1」は住所)ときだけ駅の名前とみなす。"""
+    (「西新宿三丁目」は住所)、後ろに番地が続かない(「新宿三丁目5-1」「新宿三丁目の5-1」は住所)ときだけ駅の名前とみなす。"""
     if m.group() != "丁目":
         return False
     end = m.end()
-    if end < len(text) and _NUMBER_CHAR.match(text[end]):
+    if _NUMBER_CHAR.match(text, end) or _LOT_AFTER.match(text, end):
         return False
     for name in _choume_stations():
         start = end - len(name)
@@ -116,7 +125,8 @@ def personal_value(text: str) -> bool:
 
 def address_spans(text: str) -> list[tuple[int, int]]:
     """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所(求人の最寄り駅の名前を除く)を含む、区切り(空白・句読点・括弧)までの語
-    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
+    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。区切りの後ろに番地が続けば(_LOT_AFTER。
+    「新宿三丁目 5-1に住む」)、その語まで広げる。正規表現で前後の語まで取ると長い文で
     時間がかかるので、当たった所から区切りまで広げる。"""
     def sep(ch: str) -> bool:
         return ch.isspace() or ch in _WORD_SEP
@@ -130,6 +140,10 @@ def address_spans(text: str) -> list[tuple[int, int]]:
             start -= 1
         while end < len(text) and not sep(text[end]):
             end += 1
+        while lot := _LOT_AFTER.match(text, end):
+            end = lot.end()
+            while end < len(text) and not sep(text[end]):
+                end += 1
         spans.append((start, end))
     return spans
 
