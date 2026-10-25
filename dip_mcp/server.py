@@ -26,6 +26,9 @@ mcp = FastMCP("baitoru-mcp", instructions="バイトルの求人・ユーザー�
 state = State()
 
 UserId = Annotated[str, Field(description="LINE のユーザーID")]
+# 音声相談の部屋(引数名は logic.VOICE_ROOM_ARG)。書き込むツールに音声ワーカーだけが渡す
+# (「すべて消す」の前に始めた部屋の書き込みを断る。logic._room_forgotten)。トークの AI には見せない(line_runtime.runtime が外す)
+VoiceRoom = Annotated[str | None, Field(description="音声相談の部屋の名前(音声ワーカーだけが渡す)")]
 JobType = Annotated[str | None, Field(description=(
     "職種。雇用区分ごとの一覧から1つをそのまま選ぶ。"
     f"アルバイト・パート: {' / '.join(logic.JOB_TYPES)}。正社員: {' / '.join(logic.FULLTIME_JOB_TYPES)}。"
@@ -204,12 +207,13 @@ def save_user_preferences(
                     "experience はこれまで何をしてきたか(職歴・未経験など)、skills は本人が「できる」と言った作業、"
                     "certifications は持っている資格・免許、strengths は本人が強みとして話したこと。"
                     "同じ発言を複数の項目に重複して入れない。こちらの解釈・評価・言い換えは入れない")],
+    room: VoiceRoom = None,
 ) -> dict:
     """本人が会話で話した希望と、相談で分かった本人のこと(目的・強み・やりたいこと・避けたいこと・不安、
     正社員の条件)を保存する。チャットと音声で共有され、次の会話では get_user_conversation_summary の
     stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
     保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
-    return logic.save_preferences(state, line_user_id, preferences)
+    return logic.save_preferences(state, line_user_id, preferences, room)
 
 
 @mcp.tool()
@@ -222,11 +226,12 @@ def set_search_track(
         "切り替えの根拠になった本人の発言そのまま(要約・言い換えをしない)。"
         "履歴書の内容や行動履歴は根拠にしない。取り消しのときは、取り消しを求めた本人の発言"))],
     undo: Annotated[bool, Field(description="直前の切り替えの取り消しなら true")] = False,
+    room: VoiceRoom = None,
 ) -> dict:
     """本人の発話から判断した雇用区分(アルバイト・パート / 正社員 / 未定)に切り替え、履歴(いつ・どの区分へ・根拠・
     取り消しか)を記録する。今の区分は get_user_conversation_summary の search_track に出る(初回は未定)。
     今と同じ区分なら記録しない。弱い・混在した合図では呼ばず、先に1問で確かめる。"""
-    return logic.set_search_track(state, line_user_id, track, evidence, undo)
+    return logic.set_search_track(state, line_user_id, track, evidence, undo, room)
 
 
 @mcp.tool()
@@ -261,12 +266,13 @@ def record_conversation_outcome(
         "こちらの解釈・評価・推測・性格の見立て、本人が言っていない希望、氏名・住所・連絡先は書かない。"
         "例: 経験を活かせる仕事を探している。法人営業を5年。残業の少なさを気にしている。"
         "次に確かめること: 希望の勤務地と、正社員かアルバイトか"))] = None,
+    room: VoiceRoom = None,
 ) -> dict:
     """会話の結果を記録する。ユーザーが断っていないのに wait を記録してはいけない。
     相談で話を聞いたときは、summary に相談のまとめ(200字以内。本人の発言に基づく事実と次に確かめることだけ)を残す。
     まとめは get_user_conversation_summary の consultation_summary に出て、チャットと音声で引き継がれる。
     200字を超えると記録されない(短く書き直して呼び直す)。"""
-    return logic.record_outcome(state, line_user_id, outcome, reason, confidence, summary)
+    return logic.record_outcome(state, line_user_id, outcome, reason, confidence, summary, room)
 
 
 @mcp.resource("baitoru://faq", mime_type="application/json")

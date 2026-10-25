@@ -290,20 +290,23 @@ def forget_all(state: State, line_user_id: str) -> dict:
     users = [line_user_id, *sorted(u for u in state.user_ids() if u.startswith(f"{line_user_id}:"))]
     files: list[str] = []
     for uid in users:
-        before = state.user(uid)
+        # 持ち越す値は、行を戻すのと同じロックの中で書き戻す(間に、消す前の部屋の書き込みが通らないように)
+        before = state.reset_user(uid, keep=_kept_on_forget)
         files += [f for r in before.get("voice_results", []) for f in r.get("files") or []]
-        kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
-        if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
-            kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
-        if "voice_results" in before:
-            kept["voice_result_seq"] = logic._next_voice_id(before)
-        rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
-        if rooms:
-            kept["forgotten_voice_rooms"] = rooms
-        state.reset_user(uid)
-        if kept:
-            state.update(uid, lambda u, kept=kept: u.update(kept))
     return {"forgotten": True, "files": files, "users": users}
+
+
+def _kept_on_forget(before: dict) -> dict:
+    """「すべて消す」の後も持ち越す値(消す前の 1 人の dict から)。"""
+    kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
+    if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
+        kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
+    if "voice_results" in before:
+        kept["voice_result_seq"] = logic._next_voice_id(before)
+    rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
+    if rooms:
+        kept["forgotten_voice_rooms"] = rooms
+    return kept
 
 
 # ----------------------------- 会話の途中で直したときの知らせ -----------------------------

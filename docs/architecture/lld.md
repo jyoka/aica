@@ -268,9 +268,9 @@ classDiagram
         get_counseling_playbook(track, channel)
         recommend_jobs(**args)
         relax_conditions(**args)
-        set_search_track(user_id, track, evidence)
-        save_user_preferences(user_id, preferences)
-        record_conversation_outcome(user_id, outcome, ...)
+        set_search_track(user_id, track, evidence, room)
+        save_user_preferences(user_id, preferences, room)
+        record_conversation_outcome(user_id, outcome, ..., room)
         aclose()
     }
     ResumeAdvisor --> DipMCP
@@ -280,6 +280,7 @@ classDiagram
   LLM が別のユーザーを指す道はありません
 - `_user_id` が None(metadata の無い参加者)のときは、dip を読むだけで書きません。`relax_conditions` には固定の `ANON_USER_ID` を渡します
 - `DipMCP.record_conversation_outcome` は `propose` と `consult` 以外を `ValueError` で断ります
+- `ResumeAdvisor` は dip に書くとき(雇用区分、希望、会話の段階の結果)、この通話の部屋の名前(`_room_name`)を `room` に付けます(4.6)
 
 ### 1.5 evals
 
@@ -487,6 +488,9 @@ flowchart LR
 - `record_outcome` は、`wait` の理由に `REFUSAL_WORDS` の断りの言葉が無ければ記録しません。相談のまとめが 200 字を超えても記録しません。
   理由とまとめからは電話、メール、住所らしい所を消します(`redact_pii`、`address_spans`)
 - `set_search_track` は根拠の発言が空なら記録しません。根拠からは電話とメールを消し、200 字で切ります
+- `save_user_preferences`、`set_search_track`、`record_conversation_outcome` は、音声ワーカーだけが渡す `room`(音声相談の部屋)を
+  受け取ります。その部屋が `forgotten_voice_rooms` にあれば、何も書かずに `error`(`FORGOTTEN_ROOM_ERROR`)を返します(4.6)。
+  トークのエージェントには `room` を見せません(`runtime.chat_tools` がツールの引数から外す)
 
 Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
@@ -658,7 +662,7 @@ sequenceDiagram
     E->>A: ResumeAdvisor を作る(区分、playbook、希望、相談のまとめ、履歴書)
     E->>K: AgentSession.start、挨拶(greeting_instructions)
     loop 相談の間
-        A->>D: set_search_track、save_user_preferences、recommend_jobs、relax_conditions
+        A->>D: set_search_track、save_user_preferences(部屋つき)、recommend_jobs、relax_conditions
         A->>O: web_research、research_company(本人が聞いたとき)
     end
     A->>O: finalize_interview から write_outputs、build_draft(下書き)
@@ -668,7 +672,7 @@ sequenceDiagram
     alt 410(すべて消した後)
         A->>F: 書いたファイルを消す
     else 届いたか、ほかの失敗
-        A->>D: record_conversation_outcome(propose か consult、相談のまとめ)
+        A->>D: record_conversation_outcome(propose か consult、相談のまとめ、部屋つき)
     end
 ```
 
@@ -678,7 +682,8 @@ sequenceDiagram
   (今の区分で使う、dip に保存できる項目だけ)、`room` です
 - Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
   `LineRuntime.add_voice_result` で今の会話に足し、待っているシート(`voice_ready` の `Condition`)に知らせます
-- トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)
+- トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)。ただし、通話の途中で
+  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)
 
 ### 4.5 音声アドバイザーの決まり
 
@@ -741,12 +746,17 @@ sequenceDiagram
 
 - 会話を消してから dip の状態を消します。途中で失敗しても、もう一度押せばやり直せます
 - `forget_all` は `resume_upload_seq`、`voice_result_seq` を残します。古いリンクの番号が、消した後の新しい結果を開かないためです。
-  消す前に発行した部屋は `forgotten_voice_rooms` に移し、後から届いた結果を 410 で断ります
-- 音声相談の途中で消したときに止まるのは、相談の終わりの処理だけです。ワーカーが結果を送って 410 を受けたときは、
-  会話の段階の結果と相談のまとめを記録せず、書き出したファイルも消します(`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。
-  410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、記録もファイルも残ります(8 章、R20)。また、消した後も通話が続く間に
-  `set_search_track` と `save_user_preferences` で保存した雇用区分と本人が話した希望は、dip の状態に残ります。
-  `DipMCP` と dip のツールは消した部屋を見ず、消した部屋を見るのは `server.voice_result_in`(`logic.voice_room_forgotten`)だけだからです(R7)
+  消す前に発行した部屋は `forgotten_voice_rooms` に移し、後から届いた結果を 410 で断ります。持ち越す値は、1 人の行を初期に戻すのと
+  同じロックの中で書き戻します(`State.reset_user` の `keep`)
+- 音声相談の途中で消したとき(`docs/design/privacy.md` の 3.8 の案 A):
+  - 消した後も通話は続きます。ワーカーの dip への書き込み(`set_search_track`、`save_user_preferences`、`record_conversation_outcome`)には
+    部屋の名前が付き、dip はその部屋が `forgotten_voice_rooms` にあれば何も書かずに断ります。判定は書き込みと同じ `state.update` の中
+    (状態のファイルのロックの中)で行うので、「すべて消す」と書き込みが同時に来ても、間に合わない時間がありません(`logic._room_forgotten`)
+  - 断られたら、アドバイザーは保存できなかったとだけ扱い、会話は続けます(今の保存の失敗と同じ。区分は切り替えません)
+  - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルも消します
+    (`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、ファイルが
+    残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
+  - トークのツールは部屋を渡さないので、今までどおり書けます。消した後に始めた部屋の書き込みも通ります
 - 履歴書を消す(`profile_resume_delete`)ときは、`close_conversation` で空の会話 n+1 を書いてから、それまでの会話をすべて消し、
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
 - 閉じた会話は描き直せず、次の会話の文脈にも入りません。次にトーク画面を開くと、30 分以内でも新しい会話(再訪の挨拶)から始まります。
@@ -1688,7 +1698,7 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 | 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
 | 下書きの保存の失敗 | LLM に謝らせる。トークへは送らない | `finalize_interview` |
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
-| 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20) | 同上 |
+| 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20。「すべて消す」の前の部屋なら dip が断る) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
 | LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
 | LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
@@ -1769,6 +1779,11 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     古い接続トークンで終わった部屋に入り直しても、その人に別の部屋があれば、ワーカーは相談を始めずにジョブを止めます。本人が抜けて
     セッションが閉じたら、ジョブも終えます。音声ワーカーは `dev` でも同時に `VOICE_RESUME_MAX_JOBS` 個までしか受けません
     (`tests/test_voice_concurrency.py`)。記録は Web プロセスのメモリだけで、再起動の前から続いているジョブは数えません
+25. 音声相談の途中で「すべて消す」をしたら、その通話のその後の雇用区分と希望は dip が断り、状態に残りません。会話は続きます
+    (`tests/test_voice_track.py::test_writes_after_forget_all_in_the_same_call_are_refused`)。会話の段階の結果も断り、部屋を付けない
+    トークの書き込みと、消した後に始めた部屋の書き込みは通ります(`::test_dip_refuses_every_write_of_a_forgotten_room`)。
+    「すべて消す」が行を戻した直後に届いた書き込みも断ります(`::test_a_write_that_lands_while_forget_all_is_running_is_refused`)。
+    トークのエージェントには部屋の引数を見せません(`::test_the_chat_ai_does_not_see_the_room_argument`)
 
 ## 10. テストと評価の仕組み
 

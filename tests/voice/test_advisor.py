@@ -58,12 +58,13 @@ class FakeDip:
             raise self.relax_error
         return self.relax_result
 
-    async def save_user_preferences(self, user_id: str, preferences: dict) -> dict:
+    async def save_user_preferences(self, user_id: str, preferences: dict, room: str | None = None) -> dict:
         self.save_calls.append({"line_user_id": user_id, "preferences": preferences})
         return {"saved": list(preferences), "rejected": []}
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None,
+        room: str | None = None,
     ) -> dict:
         if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")

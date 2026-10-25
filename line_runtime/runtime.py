@@ -27,7 +27,7 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from dip_mcp.logic import liff_url
+from dip_mcp.logic import VOICE_ROOM_ARG, liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.ledger import Ledger
@@ -114,6 +114,16 @@ def dip_connection() -> dict:
             "cwd": str(config.ROOT), "env": dict(os.environ)}
 
 
+def chat_tools(tools: list) -> list:
+    """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。"""
+    for tool in tools:
+        schema = tool.args_schema
+        if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
+            props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
+            tool.args_schema = schema | {"properties": props}
+    return tools
+
+
 class LineRuntime:
     def __init__(self, model=None, in_memory: bool = False, ledger: Ledger | None = None) -> None:
         self._model = model
@@ -130,7 +140,7 @@ class LineRuntime:
     async def __aenter__(self) -> Self:
         client = MultiServerMCPClient({"dip": dip_connection()})
         session = await self._stack.enter_async_context(client.session("dip"))
-        self.tools = await load_mcp_tools(session)
+        self.tools = chat_tools(await load_mcp_tools(session))
         scenarios = {}
         for entry in EVENTS.values():
             msgs = await load_mcp_prompt(session, "baitoru_assistant", arguments={"entry": entry[0]})
