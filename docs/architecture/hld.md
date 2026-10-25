@@ -9,7 +9,8 @@ aica が何でできていて、データがどこを流れるかの全体図で
 - 4.9 の行動データと状況の要約は、task 180 で足しました。ツールが要約を読むところは task 181 で足しました
 - 4.10 の LINE のアカウント連携は、2026-10-21 のユーザーの依頼で、task 182 で足しました
 - 4.8 の LINE の会話の区切り(30 分空いたら新しい会話)は、2026-10-21 のユーザーの決定で、task 184 で足しました
-- 4.11 のレジュメ・アーケード(ゲームの LIFF 画面)は、[PRD](../prd/resume-arcade.md) の (2/3) として task 187 で足しました
+- 4.11 のレジュメ・アーケード(ゲームの LIFF 画面)は、[PRD](../prd/resume-arcade.md) の (2/3) として task 187 で足しました。
+  ゲームの AI と下書きの保存(`resume_arcade/`、`resume_lines/`、`dip_mcp/arcade.py`)は (3/3) として task 188 で足しました
 - 4.8 の LIFF 画面を LINE の本人で開く(LIFF の ID トークン)は、2026-10-25 のユーザーの方針で、task 203 で足しました
 - 4.8 の LIFF の中でマイクを試す画面は、2026-10-25 のユーザーの方針で、task 205 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
@@ -72,6 +73,8 @@ LINE のチャネルは、設定(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TO
   - 履歴書のアップロード。読み取れたときは、dip に保存した読み取り結果から LINE 側が作った確認の吹き出し
     (`resume_confirm.resume_bubbles`)です。読み取れなかったときは、Web サーバーの読み取り結果から作った案内で、
     dip には保存しません
+  - ゲーム(レジュメ・アーケード)で保存した下書きの知らせ。dip に保存した下書きの記録(`arcade.save_draft` の結果)から
+    LINE 側が作った返信(`arcade_reply.arcade_reply`)です。下書きの中身は、エージェントは dip の要約の `arcade_draft` で読みます
 
 dip の事実ではない外の情報は、境界の外です。音声アドバイザーの `web_research`、`research_company`(web 検索)と
 `wage_average`(`data/wage_reference.json` の時給の相場)がこれにあたります。求人やユーザーの状況のように dip が
@@ -92,8 +95,9 @@ dip の事実ではない外の情報は、境界の外です。音声アドバ�
 - LINE 側は、dip の事実を描いたり照合したりはします(求人カード、`CARD_KEYS`)。ただし、求人、ユーザーの状況、業務の規則を
   自分で作ってエージェントに渡すことはしません
 - dip のツールの中身は、Web サーバーと評価が呼ぶ dip の関数と同じものにします。ツールと関数で決まりを二重に持ちません
-- LLM を使うが、会話でも業務の規則でもない部品(履歴書の読み取り `resume_intake/`)は、どちら側にも入れない独立の
-  パッケージにします。読み取った結果を保存してよいかの決まりは dip の関数に置きます
+- LLM を使うが、会話でも業務の規則でもない部品(履歴書の読み取り `resume_intake/`、ゲームの AI `resume_arcade/`)は、
+  どちら側にも入れない独立のパッケージにします。結果を保存してよいかの決まりは dip の関数に置きます
+  (`logic.save_resume_upload`、`arcade.save_draft`)
 
 イベントの入力の文言(`line_runtime/runtime.py` の `event_input`、`voice_event`)は LINE 側に置きます。書いてよいのは、
 何が起きたかと、画面に出したものを繰り返さないための指示までです。何を聞くか、雇用区分の扱いのような会話の決まりは、
@@ -160,7 +164,7 @@ flowchart TB
         devp["開発者画面 /dev<br/>dev.html"]
         core["トークの部品<br/>talk-core.js、talk-core.css"]
         liff["LIFF 画面<br/>/liff/apply、/liff/resume、/liff/voice/draft<br/>LINE のアプリで開く /liff/line/…<br/>dip のログイン /dip/login"]
-        arcade["レジュメ・アーケード(LIFF 画面)<br/>/liff/arcade、/liff/arcade/{game}<br/>static/arcade/(共通部品 arcade-ja.js)"]
+        arcade["レジュメ・アーケード(LIFF 画面)<br/>/liff/arcade、/liff/arcade/{game}、/liff/arcade/draft<br/>static/arcade/(共通部品 arcade-ja.js、arcade-ai.js)"]
     end
 
     subgraph web["Web プロセス: python -m line_runtime.server"]
@@ -173,11 +177,12 @@ flowchart TB
         agent["エージェント<br/>agent.py(LangChain create_agent)"]
         ledger["費用台帳<br/>ledger.py"]
         intake["履歴書の読み取り<br/>resume_intake/"]
+        arcadeai["ゲームの AI と書類の写し<br/>resume_arcade/(決まりは resume_lines/)"]
     end
 
     subgraph dip["dip 側: python -m dip_mcp.server(子プロセス)"]
         mcp["dip の MCP サーバー<br/>dip_mcp/server.py"]
-        logic["業務ロジック<br/>logic.py、profile.py、embedding.py"]
+        logic["業務ロジック<br/>logic.py、profile.py、arcade.py、embedding.py"]
         accts["会員のログインと連携の表<br/>accounts.py"]
         content["dip の Prompt と playbook<br/>prompts/、playbooks/"]
     end
@@ -215,6 +220,8 @@ flowchart TB
     server -- "直接読み書き" --> logic
     server --> liff
     server --> arcade
+    arcade -- "POST /api/arcade/…" --> server
+    server --> arcadeai
     rt --> agent
     rt --> ledger
     agent -- "MCP(stdio か HTTP)" --> mcp
@@ -242,7 +249,7 @@ flowchart TB
 | 部品 | 役割 | 書いてよいもの |
 |---|---|---|
 | 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ、レジュメ・アーケードのゲーム(4.11) | 何も持たない。Cookie の匿名ユーザーIDだけ。ゲームの答えと進み具合は、そのブラウザの localStorage だけに置く |
-| Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
+| Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り、ゲームの AI と下書きの API(4.11) | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り、ゲームの AI)。`data/voice-resume/` の下書きを消す |
 | LINE のチャネル(`line_runtime/line_channel.py`) | webhook の署名の確かめ、LINE の userId から LINE のユーザーIDを作る、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し(linkToken の発行を含む)、アカウント連携の文とボタン。FastAPI に依存しない | `data/line_events.json`(受けた webhook のイベントの ID) |
 | 偽物の LINE(`line_runtime/fake_line.py`) | アカウント連携の LINE の役(linkToken の発行、accountLink の画面、webhook のイベント)。テストと、開発者画面から試す Web の匿名ユーザーの連携で使う | 何も書かない(出した linkToken はメモリだけ) |
 | 会員のログインと連携の表(`dip_mcp/accounts.py`) | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.10)。LLM を使わない | `data/dip_accounts.db` |
@@ -251,6 +258,8 @@ flowchart TB
 | エージェント(`agent.py`) | LINE の共通ルールと dip の Prompt で会話し、`LineReply` を返す | 何も書かない。dip のツールを呼ぶだけ |
 | dip の MCP サーバー(`dip_mcp/`) | 求人、ユーザーの状況、プロフィール、雇用区分、playbook、会話の結果。LLM を使わない | dip の状態 |
 | 履歴書の読み取り(`resume_intake/`) | 履歴書のファイルを Resume Draft にする | 何も書かない(CLI とサンプルの検証だけ `data/resume_intake/` に書く) |
+| ゲームの AI(`resume_arcade/`) | ゲームの段ごとの指示の文と出力の形、LLM の呼び出し、事実の確かめ、書類の Markdown を Resume Draft に写す(4.11) | 何も書かない |
+| 書類の行の決まり(`resume_lines/`) | 数字の検出(日付は数えない)、数字の空欄、事実の確かめ。ほかのパッケージに依存しない | 何も書かない |
 | 音声ワーカー(`voice_resume/`) | LiveKit の部屋で音声アドバイザーと話す。下書きを作り、結果をトークへ返す | dip の状態(dip のツール経由)、`data/voice-resume/` |
 | 評価(`evals/`、`evalkit/`) | 模擬ユーザーと会話させて採点し、集計する | 一時ファイルの dip の状態、`evals/results/`、予算台帳 |
 
@@ -261,7 +270,7 @@ flowchart TB
 
 | ツール | 役割 |
 |---|---|
-| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
+| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書、ゲームで作った下書きの要点(`arcade_draft`。空欄のある行を 5 行まで)、ゲームの URL(`arcade_url`。Web のユーザーだけ)。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
 | `get_user_recent_applications`、`get_application_status` | 応募と選考の状況(`get_application_status` は `as_of` つき) |
 | `get_user_form_exit`、`resume_application_form` | 途中の応募フォームの続き。個人情報の項目はトークで受け取らず、LIFF 画面へ回す |
 | `recommend_jobs` | 条件に合う求人を最大 3 件、理由と `match_score` つきで返す |
@@ -292,6 +301,8 @@ flowchart LR
     rd["resume_draft"]
     ev["evals"]
     sc["scripts"]
+    ra["resume_arcade"]
+    rl["resume_lines"]
 
     lr -- "logic、profile、State を直接使う" --> dm
     lr -- "scenarios(開発者画面)" --> ev
@@ -302,6 +313,11 @@ flowchart LR
     vr -- "ResumeDraft、envelope、scrub_pii" --> rd
     lr -- "document_kind_of" --> rd
     ev -- "has_pii" --> rd
+    lr -- "stages、draft" --> ra
+    ra -- "llm、config" --> lr
+    ra -- "envelope、redact_pii、scrub_pii" --> rd
+    ra -- "check_numbers、quote_in" --> rl
+    dm -- "placeholder_count" --> rl
     sc -- "JST" --> rd
     ri -. "CLI とサンプルの検証だけ load_env" .-> lr
     vr -. "子プロセスとして起動するだけ" .-> dm
@@ -313,6 +329,8 @@ flowchart LR
 ```
 
 - `voice_resume` は `dip_mcp` を import しません。職種、エリア、雇用区分の一覧は写しを持ち、テストで同期を確かめます
+- `dip_mcp` は `resume_arcade` と `line_runtime` を import しません。ゲームの書類の行の決まり(数字の空欄)は、依存の無い
+  `resume_lines` を `dip_mcp` と `resume_arcade` の両方が使います
 - Resume Draft の形と個人情報の決まりは `resume_draft` の 1 か所にあり、読み取り、下書き、dip の保存が同じものを使います。
   `resume_draft` はほかのパッケージに依存しません
 - 境界の決定は [ADR-0003](../adr/0003-agent-gets-facts-only-through-dip-tools.md) にあります
@@ -432,8 +450,10 @@ sequenceDiagram
     P->>S: POST /api/voice/start(ターンを 1 つ数える)
     S-->>P: 部屋の接続トークン(5 分)と since
     P->>K: 部屋に入る(metadata に user_id)
-    K->>W: 相談を始める
-    W->>D: 子プロセスを起動し、dip の要約と音声の playbook を読む
+    K->>W: 相談を始める(同時に受けるのは VOICE_RESUME_MAX_JOBS まで)
+    W->>D: 子プロセスを起動する
+    W->>S: POST /api/voice/session joined(内部の鍵つき。終わるまで、その人は次の部屋を開けない。別の部屋があればジョブを止める)
+    W->>D: dip の要約と音声の playbook を読む
     loop 相談の間
         U->>K: 話す
         K->>W: 音声(Deepgram で文字にする)
@@ -444,6 +464,7 @@ sequenceDiagram
     W->>S: POST /api/voice/result(内部の鍵つき)
     S->>S: 求人を dip の求人データで作り直し、今の会話にエージェントの返信として足す
     W->>D: record_conversation_outcome(propose か consult と、相談のまとめ)
+    W->>S: 本人が抜けてセッションが閉じたら(時間の上限で閉じたときは部屋を消してから)ジョブを終え、POST /api/voice/session ended
     loop シートが開いている間
         P->>S: POST /api/voice/wait(最長 25 秒)
     end
@@ -495,10 +516,10 @@ flowchart LR
 
 | 場所 | 中身 | 書く部品 | 消えるとき |
 |---|---|---|---|
-| `data/state.json` | dip の状態: ユーザーごとのプロフィール、雇用区分の履歴、会話の段階の結果、履歴書の読み取り結果、音声相談の結果、会話の中で dip に書いた行動のイベント(`dip_writes`。要約に入るまで重ねて読む分) | Web サーバー、dip の MCP サーバー(Web の子プロセスと、音声相談ごとの子プロセス) | プロフィールの「すべて消す」、開発者画面のシナリオの開始 |
+| `data/state.json` | dip の状態: ユーザーごとのプロフィール、雇用区分の履歴、会話の段階の結果、履歴書の読み取り結果、音声相談の結果、ゲームで作った下書き(ゲームごとに最新の 1 件)と遊びの記録(ゲームごとに最新の 1 件。新しい `start` で置き換わる。答えの中身は持たない)、会話の中で dip に書いた行動のイベント(`dip_writes`。要約に入るまで重ねて読む分) | Web サーバー、dip の MCP サーバー(Web の子プロセスと、音声相談ごとの子プロセス) | プロフィールの「すべて消す」、開発者画面のシナリオの開始 |
 | `data/line_checkpoints.db` | 会話(LangGraph のチェックポイント)。本人の発言、ツールの結果、返信 | LineRuntime | 「すべて消す」、履歴書を消したとき。それ以外は消さない |
-| `data/costs.jsonl` | 費用台帳。LLM の呼び出し 1 回 1 行(user_id つき) | LineRuntime、Web サーバー(履歴書の読み取り) | 消さない |
-| `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す |
+| `data/costs.jsonl` | 費用台帳。LLM の呼び出し 1 回 1 行(user_id つき。ゲームは `event` が `arcade:<game>:<段>`) | LineRuntime、Web サーバー(履歴書の読み取り、ゲームの AI) | 消さない |
+| `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID、AI つきで始めたゲームの回数(人ごと)。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す。「すべて消す」では消えない |
 | `data/line_events.json` | 受けた LINE の webhook のイベントの ID(直近 2,000 件)。ユーザーは分からない | Web サーバー(LINE のチャネル) | 古いものから消える |
 | `data/voice-resume/` | 相談ごとの下書き、文字起こし、求人の提案 | 音声ワーカー | プロフィールで下書きを消したとき、「すべて消す」 |
 | `evals/results/`、`evals/budget.jsonl` | 評価の結果と予算台帳 | 評価 | 結果は git に入れない。予算台帳は git に入れる |
@@ -588,7 +609,8 @@ sequenceDiagram
   LIFF 画面のボタンは、LIFF の設定があれば LIFF URL(下)、無ければ公開 URL(`AICA_PUBLIC_URL`)の後ろにパスを付けたリンクにします。
   操作(ファイルを選ぶ、話して伝える)は、LINE ではまだ使えないので、文で案内します
 - 今のところ LINE でボタンが出るのは、応募フォームの続き(プッシュの後)と履歴書、下書きの画面で、どれも LINE ではまだ起きない流れです。
-  レジュメ・アーケードのボタンは、まだエージェントが出しません([PRD](../prd/resume-arcade.md) の (3/3))。`/liff/line/` の下にゲームの画面もまだありません
+  レジュメ・アーケードのボタンは LINE に出しません。エージェントは LINE のユーザーにゲームの URL を出さず(4.11)、
+  `/liff/line/` の下にゲームの画面もまだないので、公開 URL の画面を開いても本人にならないためです
 
 LIFF 画面を LINE の本人で開く(task 203):
 
@@ -748,15 +770,63 @@ sequenceDiagram
 ### 4.11 レジュメ・アーケード
 
 ドット絵のゲームで、遊びながら職務経歴書を作る LIFF 画面です。決めたことと続きの作業は
-[PRD](../prd/resume-arcade.md) にあります。今は AI を使わない簡易分析だけで動き、サーバーには何も送りません。
+[PRD](../prd/resume-arcade.md) にあります。
 
 - ハブ(`GET /liff/arcade`)と 8 本のゲーム(`GET /liff/arcade/{game}`、`game` はファイル名)を、`line_runtime/static/arcade/` の
-  HTML のまま返します。知らない名前は 404 です。ハブに出すのは、案内の部品がそろった 2 本(あなたという事件、仕事の収穫)だけです。
-  残りの 6 本は開発者画面からだけリンクします
+  HTML のまま返します。知らない名前は 404 です。ハブに出すのは、案内の部品がそろい、AI と保存がつながった 2 本(あなたという事件、
+  仕事の収穫)だけです。残りの 6 本は開発者画面からだけリンクし、AI を使わず、本人のデータも読み書きしません
 - 日本語の答えの判定(数字の検出、字数のあいまいさ、言い切り、数字の空欄、職務経歴書の Markdown)は、共通部品
-  `arcade-ja.js`(`GET /static/arcade/arcade-ja.js`)に 1 つだけ置き、2 本が使います。残りの 6 本は、まだ自分の写しを持ちます
-- 本人のデータを読み書きしないので、本人を決めません(Cookie を発行も要求もしない)。答えと進み具合は、そのブラウザの localStorage だけに残ります
+  `arcade-ja.js` に 1 つだけ置き、2 本が使います。AI と保存の API を呼ぶ部品は `arcade-ai.js` です
+- ゲームの画面は Cookie を発行も要求もしません。2 本は、ほかの LIFF 画面と同じく Cookie の匿名ユーザーIDの本人として API を呼びます。
+  トーク画面を開いていない(Cookie が無い)ときは、簡易分析で最後まで遊べて、保存のボタンを出しません
 - 氏名と連絡先は聞きません。書類には `[氏名]` と `[メール] · [電話] · [居住地] · [リンク]` の空欄が残り、本人が後で書きます
+
+AI の呼び出しと保存の流れです。画面は LLM を直接呼ばず、指示の文も送りません。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者
+    participant G as ゲームの画面
+    participant S as Web サーバー
+    participant D as dip の関数(arcade.py)
+    participant A as resume_arcade
+    participant L as LLM(LINE_SIM_PROVIDER)
+
+    U->>G: 自分の事件(畑)を始める(端末に遊びの番号が無いときだけ)
+    G->>S: POST /api/arcade/start(Cookie)
+    S->>S: AI を使えるか(止める設定、API キー、1 日の回数)。使えるならターンを 1 つ数える
+    S->>D: 遊びの記録を置く(同じゲームの前の記録を置き換える)
+    S-->>G: 遊びの番号、AI を使えるか、書類の種類、履歴書の職歴
+    loop 段ごと(証人の質問と反応、水やり、まとめ)
+        G->>S: POST /api/arcade/ai(番号、段、本人の答えか書類の行)
+        S->>D: 番号と回数を確かめ、1 つ数える(だめなら LLM を呼ばずに簡易分析で続けると返す)
+        S->>A: 電話とメールを伏せて、段の指示を組み立てる
+        A->>L: 構造化出力で呼ぶ(反応は安いモデル、まとめは LINE_SIM_MODEL)
+        A->>A: 本人の言葉に無い数字を空欄に、無い引用を捨てる
+        S->>S: 費用台帳に 1 行
+        S-->>G: 結果(だめなら ok: false。画面はその段を簡易分析で続ける)
+    end
+    U->>G: プロフィールに保存
+    G->>S: POST /api/arcade/save(番号、書類の Markdown)
+    S->>A: Markdown を Resume Draft に写す(source: arcade)
+    S->>D: 下書きとして保存(scrub_pii、ゲームごとに最新の 1 件、通し番号)
+    S->>S: 今の会話があれば「下書きができました」を足す(LLM を呼ばない)
+    S-->>G: 下書きを見る URL(/liff/arcade/draft?rid=…)
+```
+
+- 費用の上限: 1 回の遊びの反応は 50 回まで(`AICA_ARCADE_REACTIONS_PER_PLAY`)、まとめは 2 回(証拠のまとめは最後のまとめの
+  1 回を残す)、1 人 1 日の AI つきの遊びは 3 回(`AICA_ARCADE_DAILY_AI_PLAYS`)。ターン数の上限を超えていたら AI なしで始めます。
+  `AICA_ARCADE_AI=0` で AI を止めます。答えは 600 字、まとめで送る書類の行は 1 行 120 字、引用 40 字、1 職場 6 行、合計 4,000 字まで
+- 遊びの番号: 無い、ほかの人の、置き換えられた、「すべて消す」の前の番号では、`/ai` は LLM を呼ばず、`/save` は 403 です。
+  始めてから 24 時間を過ぎたら `/ai` は簡易分析を返しますが、保存はできます
+- 書類の種類は雇用区分で決めます(正社員は職務経歴書、アルバイト・パートは履歴書)。未定なら保存のときに本人が選びます。
+  ゲームは雇用区分を変えません。履歴書なら書類に自己PR が入ります。未定のときも最後のまとめは自己PR を書いておくので、
+  本人が後で選び直しても AI を呼び直しません。AI を使わない簡易分析でも、本人の行から簡易の自己PR を作ります
+- エージェントは、下書きを dip の要約の `arcade_draft` で読み、ボタンにするゲームの URL は要約の `arcade_url` だけを使います。
+  LINE のユーザーには `arcade_url` を載せず、LINE のメッセージも `/liff/arcade` のボタンを出しません(4.8)
+- 下書きは、プロフィールの「ゲームで作った下書き」から見て、直して(`/liff/arcade/draft`)、消せます。「すべて消す」で消え、
+  通し番号は持ち越すので、古いリンクが新しい下書きを開くことはありません
 
 ## 5. 責任の分担
 
@@ -800,7 +870,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書と下書きの `personal`(氏名、住所、電話、メール、生年月日)は、何が来ても空で保存します
 - 希望とプロフィールの値は、決まった項目だけを受け付け、電話、メール、住所らしい値は保存しません(`logic.save_preferences`)
 - 履歴書のファイル本体とファイル名は保存しません
-- レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。答えはそのブラウザの localStorage にだけ残り、サーバーには送りません(4.11)
+- レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。進み具合と答えはそのブラウザの localStorage に残ります。AI の段では
+  答え(まとめでは書類の行)が Web サーバーを通って LLM のプロバイダに送られますが、サーバーには保存せず、ログにも出しません。
+  送る前に電話とメールを伏せます(`redact_pii`)。保存するのは本人が保存した書類だけで、`scrub_pii` をかけます(4.11)
 - 本人がトークに書いた文は、そのまま会話に保存し、LLM のプロバイダに送ります。個人情報が書かれても消しません
 - 音声相談の文字起こしは `data/voice-resume/` に保存します
 - 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`(トークの発言、希望、相談の記録)と、
@@ -835,7 +907,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も `.env` に置きます。漏れると、userId を知っている人が `l-…` を作れます。
   LIFF の本人の Cookie の署名の鍵もここから作るので、漏れると LIFF 画面で誰にでもなれます
 - LIFF ID と LINE ログインのチャネル ID(`LINE_LIFF_ID`、`LINE_LOGIN_CHANNEL_ID`)は秘密ではありませんが、ほかの LINE の設定と同じく `.env` に置きます
-- 音声ワーカーから Web サーバーへの `POST /api/voice/result` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
+- 音声ワーカーから Web サーバーへの `POST /api/voice/result` と `POST /api/voice/session` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
   (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
 
 ### LLM の出力と外のデータ
@@ -854,6 +926,8 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   LINE の webhook で、評価にはかかりません。LINE のユーザーは、LINE のユーザーIDごとと全体で数えます(4.8)
 - LINE の返信トークで返せなかったときの push は、LINE 公式アカウントの月のメッセージ数に数えられます
 - 音声相談は始めるときにターンを 1 つ数えます
+- レジュメ・アーケードのゲームは、AI つきで始めるときにターンを 1 つ数え、1 回の遊びと 1 人 1 日の回数にも上限があります(4.11)。
+  2026-10-25 に実 API(OpenAI)で 1 回遊んだ費用は $0.016(証人 2 人と最後のまとめ)でした
 
 ## 7. 配置
 
@@ -959,6 +1033,7 @@ flowchart TB
 | ゲーム | レジュメ・アーケードの 1 本のゲームの LIFF 画面(`/liff/arcade/{game}`) | 筐体(ハブの中の言い方としてだけ使う) |
 | ハブ | ゲームを選ぶ LIFF 画面(`/liff/arcade`) | トップ |
 | 簡易分析 | AI を使わずに、ブラウザの中の判定でゲームを進める形。画面には「オフライン：AIを使わない簡易分析」と出す | オフラインモード |
+| 遊びの番号 | ゲームの 1 回の遊び(`POST /api/arcade/start` が返す乱数)。AI の回数と保存をこれに結びつける | セッション |
 
 ### 会話
 
@@ -1004,7 +1079,7 @@ flowchart TB
 | Resume Draft | 履歴書と職務経歴書の共通の形(`ResumeDraft` と envelope)。[LLD の 5.5](lld.md#55-resume-draft) | 履歴書 JSON |
 | 書類の種類 | Resume Draft の `document_kind`。履歴書か職務経歴書 | - |
 | 読み取り結果 | アップロードした履歴書から作った Resume Draft | 解析結果 |
-| 下書き | 音声相談から作った Resume Draft と、その Markdown | ドラフト |
+| 下書き | 音声相談か、レジュメ・アーケードのゲームで作った Resume Draft と、その Markdown | ドラフト |
 | 書類の行 | 本人の 1 つの答えから作った、職務経歴書の 1 行(レジュメ・アーケード) | 戦利品、証拠(ゲームの中の言い方としてだけ使う) |
 | 数字の空欄 | `[+X% ← 数字を入れる]` などの、本人が後で埋める欄 | プレースホルダー |
 

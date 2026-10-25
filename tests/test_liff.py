@@ -246,11 +246,14 @@ def test_line_buttons_open_the_liff_url_that_lands_on_the_liff_pages(liff):
         assert _client(server).get(line_channel.LIFF_PREFIX + page.removeprefix("/liff"),
                                    params={"rid": 1, "job": "a001"}).status_code == 200
 
-    # /liff/line の下に無い画面(レジュメ・アーケード)は、今までどおり公開 URL。公開 URL も無ければ出さない
+    # /liff/line の下に無い画面は、今までどおり公開 URL。公開 URL も無ければ出さない
+    other = {"bubbles": ["はい"], "buttons": [{"label": "ほかの画面", "url": "/liff/other"}]}
+    (_, flex) = to_messages(other, "https://aica.example.test")
+    assert flex["contents"]["body"]["contents"][0]["action"]["uri"] == "https://aica.example.test/liff/other"
+    assert [m["type"] for m in to_messages(other, "")] == ["text"]
+    # レジュメ・アーケードは、LIFF の設定と公開 URL があっても LINE に出さない(HLD の 4.8)
     arcade = {"bubbles": ["はい"], "buttons": [{"label": "ゲーム", "url": "/liff/arcade"}]}
-    (_, flex) = to_messages(arcade, "https://aica.example.test")
-    assert flex["contents"]["body"]["contents"][0]["action"]["uri"] == "https://aica.example.test/liff/arcade"
-    assert [m["type"] for m in to_messages(arcade, "")] == ["text"]
+    assert [m["type"] for m in to_messages(arcade, "https://aica.example.test")] == ["text"]
 
 
 def test_without_liff_settings_nothing_changes(liff, monkeypatch):

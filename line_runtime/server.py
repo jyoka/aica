@@ -18,7 +18,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 - ブラウザから呼ぶ経路は、正しい形式の Cookie が必須(無い・不正なら 401)。扱えるのは Cookie の匿名IDのユーザーだけ
   (他人のユーザーIDを本文に入れても 403)。ID を名乗るだけでは読めない・話せない・会話数の上限も迂回できない。
 - 本人のデータを指す URL にユーザーIDを載せない。API はユーザーIDを本文で受け取り、画面(LIFF)は Cookie から本人を決める。
-- サーバー間の経路(音声ワーカー → POST /api/voice/result)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
+- サーバー間の経路(音声ワーカー → POST /api/voice/result と /api/voice/session)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
 
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
 丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
@@ -34,6 +34,10 @@ LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント�
 accountLink の画面に送る。LINE から accountLink の webhook が来たら、nonce から会員を引いて連携の表に書く(dip_mcp.accounts)。
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
+
+レジュメ・アーケード(task 187、188。docs/prd/resume-arcade.md): ゲームの画面(/liff/arcade…)は Cookie を発行も要求もしない。
+ハブに出す 2 本は、AI と下書きの API(/api/arcade/start、/ai、/save)を Cookie の本人として呼ぶ。画面は指示の文を送らず、
+LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(dip_mcp.arcade)と人ごとの 1 日の回数。
 
 LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID があるときだけ、/liff/line/… を開く(無ければ 404)。
 ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
@@ -79,12 +83,13 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from dip_mcp import accounts, behavior, logic, profile
+from dip_mcp import accounts, arcade, behavior, logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, line_channel, turn
+from line_runtime import config, fake_line, line_channel, llm, turn
+from line_runtime.arcade_reply import arcade_reply
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -97,6 +102,10 @@ from line_runtime.resume_confirm import INTRO as RESUME_INTRO
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
+from line_runtime.voice_rooms import JOIN_WINDOW, ActiveVoiceRooms
+from resume_arcade import draft as arcade_draft
+from resume_arcade import schemas as arcade_schemas
+from resume_arcade import stages as arcade_stages
 from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -241,6 +250,7 @@ async def lifespan(app: FastAPI):
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
+    app.state.voice_rooms = ActiveVoiceRooms()  # 人 → 終わっていない音声相談の部屋(同時に 1 つまで)
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
@@ -287,13 +297,14 @@ async def shared_static(name: str):
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
-# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。いまは AI を使わない簡易分析だけで、
-# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。ゲームの名前はファイル名と同じ。
+# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。ゲームの名前はファイル名と同じ。
+# 画面そのものは Cookie を発行も要求もしない(本人のデータを読み書きしない)。ハブに出す 2 本は、AI と保存の API(/api/arcade/…。
+# 下の「レジュメ・アーケードの AI と下書き」)を、ほかの LIFF 画面と同じく Cookie の匿名IDの本人として呼ぶ。
 ARCADE = STATIC / "arcade"
-ARCADE_SHIPPED = ("the-case-of-you", "harvest-of-work")  # ハブに出す(案内の部品がそろったもの)
-ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする
+ARCADE_SHIPPED = arcade.GAMES  # ハブに出す(案内の部品がそろい、AI と保存がつながったもの)
+ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする(AI を使わず、本人のデータも読み書きしない)
     "career-quest", "dungeon-of-past-jobs", "career-pet", "career-fighter", "deck-of-deeds", "star-log")
-ARCADE_STATIC = {"arcade-ja.js"}  # ゲームが共通に使う部品(日本語の答えの判定)
+ARCADE_STATIC = {"arcade-ja.js", "arcade-ai.js"}  # ゲームが共通に使う部品(日本語の答えの判定、AI と保存の API を呼ぶ部品)
 
 
 @app.get("/static/arcade/{name}")
@@ -308,6 +319,54 @@ async def arcade_static(name: str):
 async def liff_arcade():
     """レジュメ・アーケードのハブ(ゲームを選ぶ画面)。"""
     return FileResponse(ARCADE / "resume-arcade.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade/draft", response_class=HTMLResponse)
+async def liff_arcade_draft(rid: int, request: Request, scenario_user: str | None = None):
+    """ゲームで作った下書きを見て、直す画面(トークの「下書きを見る」、プロフィールのリンク先)。本人は Cookie から決める。
+    rid はその下書きの番号: ゲームごとに最新の 1 件だけを持つので、あとで同じゲームで作り直したか消した下書きのリンクは開かない。
+    「draft」はゲームの名前に使わない(このルートを {game} より先に登録する)。"""
+    user = _page_user(request, scenario_user)
+    rec = arcade.draft(state, user, rid)
+    if rec is None:
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。同じゲームで作り直したか、消した"
+                                  "下書きです。最新の下書きは、プロフィールから開けます。</p>"), status_code=404)
+    return _page(f"{rec['document_kind']}の下書き", _arcade_draft_html(rec, scenario_user))
+
+
+@app.post("/liff/arcade/draft", response_class=HTMLResponse)
+async def liff_arcade_draft_edit(request: Request, rid: int = Form(...),
+                                 markdown: str = Form("", max_length=arcade_draft.MARKDOWN_MAX),
+                                 scenario_user: str = Form("")):
+    """下書きの画面で本人が直した書類を保存する(保存と同じ決まり: scrub_pii、長さの上限、Resume Draft の形)。"""
+    user = _page_user(request, scenario_user or None)
+    _admit(request, user)
+    rec = arcade.draft(state, user, rid)
+    if rec is None or not markdown.strip():
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+    out = profile.edit_arcade_draft(state, user, rid, arcade_draft.to_envelope(markdown, rec["document_kind"]))
+    if "error" in out:
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+    return _page(f"{out['document_kind']}の下書き", "<p class='job'>保存しました。</p>" + _arcade_draft_html(out, scenario_user))
+
+
+def _arcade_draft_html(rec: dict, scenario_user: str | None) -> str:
+    """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
+    todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
+    return (f"<p>ゲーム({escape(arcade.GAME_NAMES.get(rec['game'], rec['game']))})で、あなたの答えから作った"
+            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない数字です。"
+            "氏名と連絡先は保存していません。内容は必ずご自身で確認・修正してください。</p>"
+            + (f"<h3 style='font-size:14px;margin:14px 0 4px'>確かめたい点</h3><ul style='font-size:13px'>{todo}</ul>"
+               if todo else "")
+            + "<pre id='draft-md' style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;"
+              f"font-size:13px'>{escape(rec['markdown'])}</pre>"
+            "<form method='post' action='/liff/arcade/draft'>"
+            f"<input type='hidden' name='rid' value='{rec['id']}'>"
+            f"<input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
+            "<label for='draft-edit'>書類を直す(数字の空欄を埋める、行を書き換える)</label>"
+            "<textarea id='draft-edit' name='markdown' rows='16' style='width:100%;box-sizing:border-box;font-size:14px;"
+            f"padding:8px;border:1px solid #ccd;border-radius:8px'>{escape(rec['markdown'])}</textarea>"
+            "<button>直した内容を保存する</button></form>")
 
 
 @app.get("/liff/arcade/{game}")
@@ -477,6 +536,156 @@ async def dip_view(body: UserIn, request: Request):
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": b["saves"], "applications": b["applications"], "last_contact": b["last_contact"],
             "dip_id": behavior.dip_id(state, user_id)}
+
+
+# ----------------------------- レジュメ・アーケードの AI と下書き -----------------------------
+# ゲームの画面(ハブに出す 2 本)が呼ぶ。画面は LLM を直接呼ばない。送るのはゲームの名前、段、本人の答え(まとめの段では書類の行)
+# だけで、指示の文と出力の形はサーバー(resume_arcade)が持つ。本人は、ほかの LIFF 画面と同じく Cookie の匿名ID
+# (開発者画面のシナリオなら scenario_user を付けた「匿名ID:シナリオユーザー」)。Cookie が無ければ 401。
+# - start: 遊びの番号を返す(1 人 1 ゲームにつき最新の 1 件。dip_mcp.arcade)。AI を使えるときだけターンを 1 つ数える
+# - ai: 有効な番号の遊びで、回数が残っていれば 1 回 LLM を呼ぶ。だめなら LLM を呼ばずに「簡易分析で続ける」を返す
+#   (ok: false。ターンも費用台帳も増えない)。画面はその段を端末の簡単な判定で続ける
+# - save: 本人の有効な番号の遊びの書類を、下書きとして dip に保存し、今の会話に「下書きができました」を足す(LLM は呼ばない)
+# 答えの全文はログに出さない(有無と長さだけ)。
+
+ARCADE_AI_ENV = "AICA_ARCADE_AI"  # 0 にすると AI を止める(すべて簡易分析)
+ARCADE_DAILY_ENV = "AICA_ARCADE_DAILY_AI_PLAYS"
+DEFAULT_ARCADE_DAILY = 3  # 1 人 1 日の AI つきの遊び
+ARCADE_DAILY_KIND = "arcade_ai_play"
+PROVIDER_KEYS = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+
+
+def arcade_client():
+    """ゲームの AI に使う LLM のクライアント(LINE_SIM_PROVIDER。テストでは台本のスタブに差し替える)。"""
+    return llm.client()
+
+
+def _arcade_daily_limit() -> int:
+    raw = os.environ.get(ARCADE_DAILY_ENV, "").strip()
+    return int(raw) if raw else DEFAULT_ARCADE_DAILY
+
+
+def _arcade_ai_off_reason(user: str) -> str | None:
+    """AI つきで始められない理由(止めている、API キーが無い、1 日の回数を使い切った)。始められれば None。"""
+    if os.environ.get(ARCADE_AI_ENV, "1").strip() == "0":
+        return "disabled"
+    if not os.environ.get(PROVIDER_KEYS.get(config.PROVIDER, ""), "").strip():
+        return "no_key"
+    limit = _arcade_daily_limit()
+    if 0 < limit <= app.state.quota.daily_used(ARCADE_DAILY_KIND, user):
+        return "daily_limit"
+    return None
+
+
+class ArcadeStartIn(BaseModel):
+    game: str
+    scenario_user: str | None = None
+
+
+class ArcadeAiIn(BaseModel):
+    game: str
+    play: str = Field("", max_length=64)
+    stage: str
+    data: dict = {}
+    scenario_user: str | None = None
+
+
+class ArcadeSaveIn(BaseModel):
+    game: str
+    play: str = Field("", max_length=64)
+    markdown: str = Field(max_length=arcade_draft.MARKDOWN_MAX)
+    document_kind: str | None = None  # 雇用区分が未定のときだけ、本人が選んだ書類の種類
+    scenario_user: str | None = None
+
+
+def _arcade_game(game: str) -> str:
+    if game not in arcade.GAMES:
+        raise HTTPException(404, "このゲームは AI と保存につながっていません")
+    return game
+
+
+def _resume_jobs(user: str) -> list[dict]:
+    """履歴書の読み取り結果の職歴(勤務先、役職、期間)。ゲームの職場の初期値にする(4 つまで)。"""
+    rec = logic.resume_upload(state, user)
+    jobs = (rec or {}).get("resume", {}).get("work_history") or []
+    return [{"company": w["organization"], "title": w["role"], "dates": w["period"]} for w in jobs
+            if w.get("organization")][:arcade_schemas.JOBS_MAX]
+
+
+@app.post("/api/arcade/start")
+async def arcade_start(body: ArcadeStartIn, request: Request):
+    """遊びを始める: 遊びの番号を返す(同じゲームの前の番号は無効になる)。ターン数の上限、1 日の AI つきの遊びの上限、
+    AI を止める設定、API キーが無いときは、断らずに AI なし(ai: false)の番号を返す(簡易分析で始め、保存はできる)。
+    Cookie が無い(トーク画面を開かずにゲームを開いた)ときも 401 にせず、番号なし(play: None)を返す(画面は簡易分析で
+    遊べて、保存のボタンを出さない。ゲームを開くたびにブラウザのコンソールに 401 を出さないため)。"""
+    game = _arcade_game(body.game)
+    if _anon(request) is None:
+        return {"play": None, "ai": False, "reason": "no_user", "track": None, "document_kind": None, "jobs": []}
+    user = _page_user(request, body.scenario_user)
+    _admit(request, user)
+    reason = _arcade_ai_off_reason(user)
+    if reason is None:
+        if app.state.quota.try_take(user, _client_ip(request)) is not None:
+            reason = "turn_limit"
+        elif not app.state.quota.take_daily(ARCADE_DAILY_KIND, user, _arcade_daily_limit()):
+            app.state.quota.refund(user, _client_ip(request))
+            reason = "daily_limit"
+    rec = arcade.start_play(state, user, game, ai=reason is None)
+    return {"play": rec["id"], "ai": rec["ai"], "reason": reason, "track": logic.search_track(state.user(user)),
+            "document_kind": arcade.document_kind(state, user), "jobs": _resume_jobs(user)}
+
+
+def _offline(reason: str) -> dict:
+    return {"ok": False, "offline": True, "reason": reason}
+
+
+@app.post("/api/arcade/ai")
+async def arcade_ai(body: ArcadeAiIn, request: Request):
+    """ゲームの段を 1 回、AI で進める。だめなとき(番号が無い・ほかの人の番号・AI なしの遊び・24 時間を過ぎた・回数を使い切った・
+    まとめの行が多すぎる・形が違う・LLM が失敗した)は ok: false で、画面はその段を簡易分析で続ける。"""
+    user = _page_user(request, body.scenario_user)
+    st = arcade_stages.stage(body.game, body.stage)
+    if st is None:
+        return _offline("unknown_stage")
+    try:
+        d = arcade_stages.prepare(st, body.data)
+    except ValidationError:
+        return _offline("bad_input")
+    if st.kind == "summary" and arcade_stages.summary_chars(d) > arcade_schemas.SUMMARY_MAX:
+        return _offline("too_long")
+    why = arcade.use_ai(state, user, body.game, body.play, st.kind, keep=st.keep)
+    if why is not None:
+        return _offline(why)
+    try:
+        out = await arcade_stages.run(arcade_client(), st, d)
+    except Exception as e:  # noqa: BLE001  API のエラーでも、画面は簡易分析で続ける
+        line_channel.log.warning("ゲームの AI が失敗しました(%s %s:%s): %s", user, body.game, body.stage, type(e).__name__)
+        return _offline("error")
+    app.state.rt.ledger.record(user, f"arcade:{body.game}:{body.stage}", out.model, out.usage)
+    arcade.record_replaced(state, user, out.replaced)
+    return {"ok": True, "result": out.result, "replaced": out.replaced}
+
+
+@app.post("/api/arcade/save")
+async def arcade_save(body: ArcadeSaveIn, request: Request):
+    """できた書類を下書きとして保存する(そのゲームの前の下書きを置き換える)。本人の有効な遊びの番号が要る(無い・ほかの人の
+    番号なら 403)。書類の種類は雇用区分で決め、未定なら本人が選んだもの(選んでいなければ 400)。雇用区分は変えない。
+    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。"""
+    game = _arcade_game(body.game)
+    user = _page_user(request, body.scenario_user)
+    if arcade.play(state, user, game, body.play) is None:
+        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+    kind = arcade.document_kind(state, user, body.document_kind)
+    if kind is None:
+        raise HTTPException(400, "職務経歴書にするか、履歴書の自己PRにするかを選んでください")
+    if not body.markdown.strip():
+        raise HTTPException(400, "書類が空です")
+    rec = arcade.save_draft(state, user, game, body.play, arcade_draft.to_envelope(body.markdown, kind))
+    if rec is None:
+        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+    talk = await app.state.rt.add_arcade_result(user, arcade_reply(user, rec))
+    return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": kind,
+            "blanks": arcade.blanks(rec), "talk": talk}
 
 
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
@@ -752,6 +961,9 @@ def _profile_view(user_id: str) -> dict:
         "highlights": [x for b in resume_bubbles(rec["resume"]) for x in b.removeprefix(RESUME_INTRO).split("\n") if x]}
     for d in v["voice_drafts"]:
         d["view_url"] = logic.liff_url("/liff/voice/draft", user_id, rid=d["id"])
+    for d in v["arcade_drafts"]:
+        d["view_url"] = arcade.draft_url(user_id, d["id"])
+    v["arcade_url"] = arcade.game_url(user_id)  # 「ゲームで書類を作る」(ハブ)
     return v
 
 
@@ -842,6 +1054,13 @@ async def profile_voice_delete(result_id: int, request: Request):
     return _profile_view(user_id)
 
 
+@app.delete("/api/profile/arcade/{draft_id}")
+async def profile_arcade_delete(draft_id: int, request: Request):
+    user_id = _profile_writer(request)
+    _checked(profile.delete_arcade_draft(state, user_id, draft_id))
+    return _profile_view(user_id)
+
+
 @app.delete("/api/profile/saved/{job_id}")
 async def profile_unsave(job_id: str, request: Request):
     user_id = _profile_writer(request)
@@ -881,6 +1100,9 @@ async def profile_forget(request: Request):
 # (サーバー間の経路なので共有鍵 AICA_INTERNAL_KEY で守る)、ここがそれを今の会話に AI の返信として続ける。
 # シートは開いている間だけ POST /api/voice/wait で待ち、届いたら閉じて同じ返信をトークに描く(常時の問い合わせはしない)。
 # ユーザーIDは本文で受け取り、URL には載せない。
+# 1 人が開ける部屋は同時に 1 つまで(部屋ごとにワーカーのジョブと dip MCP の子プロセスができる。line_runtime.voice_rooms)。
+# ワーカーは本人が部屋に入ったとき・ジョブを終えたときに POST /api/voice/session で知らせる(共有鍵つき)。
+# 結果(/api/voice/result)が届いただけでは部屋を終わりにしない(結果を送らせた後も、接続したままジョブを持ち続けられるので)。
 
 VOICE_WAIT_MAX = 30.0  # 1回の待ちの上限(秒)。シートはこれを繰り返す
 DRAFT_MAX = 20_000  # 下書き(履歴書・職務経歴書)の長さの上限(字)。普通の下書きは数千字
@@ -906,6 +1128,17 @@ class VoiceResultIn(BaseModel):
     document_kind: str | None = None  # 下書きの書類(履歴書 / 職務経歴書)。無いときは履歴書
 
 
+class VoiceSessionIn(BaseModel):
+    """voice-resume のワーカーが知らせる、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)。"""
+    user_id: str
+    room: str
+    state: Literal["joined", "ended"]
+
+
+VOICE_BUSY_MESSAGE = ("前の音声相談がまだ終わっていません。前の通話を閉じてから、もう一度お試しください"
+                      f"(つながらないまま閉じたときは、{round(JOIN_WINDOW.total_seconds() / 60)} 分ほどで開けます)。")
+
+
 def _voice_ready(user_id: str) -> asyncio.Condition:
     """そのユーザーの音声相談の結果が届いたことを、待っているシートへ知らせる。"""
     return app.state.voice_ready.setdefault(user_id, asyncio.Condition())
@@ -916,17 +1149,23 @@ async def voice_start(body: UserIn, request: Request):
     """音声相談のシートを開いた: LiveKit の部屋に入る接続トークンを発行する(本人のブラウザにだけ)。
     音声セッションも実 API を使うので、会話数を1ターン使う(上限なら発行せず 429)。トークンの有効期限は数分
     (同じトークンで入り直して、会話数を使わずに音声セッションを重ねられないように)。
-    since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。"""
+    since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。
+    その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があれば、会話数を使わずに 409
+    (1 人が同時にいくつも部屋を開いて、ワーカーのジョブを持ち続けられないように)。"""
     user_id = body.user_id
     _require_own(request, user_id)
     from voice_resume.livekit_token import configured, issue_token
 
     if not configured():  # 会話数を使う前に断る
         raise HTTPException(503, "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)")
+    rooms = app.state.voice_rooms
+    if rooms.open_room(user_id) is not None:  # 確かめてから記録するまで await を挟まない(同時の呼び出しも 1 つだけ通る)
+        raise HTTPException(409, VOICE_BUSY_MESSAGE)
     limited = app.state.quota.try_take(user_id, _client_ip(request))
     if limited is not None:
         raise HTTPException(429, limited)
     token = issue_token(user_id)
+    rooms.issue(user_id, token["room"])
     logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
     return token | {"since": logic.voice_result_count(state, user_id)}
 
@@ -975,6 +1214,19 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     async with cond:
         cond.notify_all()
     return out
+
+
+@app.post("/api/voice/session")
+async def voice_session(body: VoiceSessionIn, request: Request):
+    """音声ワーカーが、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)を知らせる(サーバー間の経路。共有鍵で守る)。
+    joined の部屋は、終わりの知らせが届くまで、その人の終わっていない部屋として数える(line_runtime.voice_rooms)。
+    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。"""
+    _require_internal(request)
+    rooms = app.state.voice_rooms
+    if body.state == "joined":
+        return {"allowed": rooms.joined(body.user_id, body.room)}
+    rooms.release(body.user_id, body.room)
+    return {"allowed": True}
 
 
 @app.get("/liff/voice/draft", response_class=HTMLResponse)

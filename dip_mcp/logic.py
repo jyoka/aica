@@ -21,7 +21,7 @@ from datetime import datetime
 from statistics import median
 from urllib.parse import urlencode
 
-from dip_mcp import behavior, embedding, summarize
+from dip_mcp import arcade, behavior, embedding, summarize
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -112,10 +112,19 @@ def _track_summary(user: dict) -> dict:
     return {"search_track": search_track(user), "track_history": track_history(user)}
 
 
+ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。"
+               "blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。"
+               "arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う"
+               "(URL を作らない。arcade_url が無ければボタンを出さない)。")
+
+
 def _profile_summary(user: dict) -> dict:
-    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書)。"""
-    return {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
-            "uploaded_resume": uploaded_resume(user)}
+    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
+    ゲームの URL は Web のユーザーにだけ載せる(LINE で開いても本人にならないため。arcade.game_url)。"""
+    out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
+           "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
+    url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
+    return out | ({"arcade_url": url} if url else {})
 
 
 def conversation_summary(state: State, line_user_id: str) -> dict:
@@ -124,7 +133,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         return {"linked": False, "segment": "unlinked", **_track_summary(user), **_profile_summary(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -169,7 +178,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         **_profile_summary(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE,
     }
 
 
