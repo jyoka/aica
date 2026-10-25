@@ -225,7 +225,7 @@ classDiagram
 | 見出し | 主な関数と定数 |
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
-| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
+| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
@@ -999,7 +999,7 @@ flowchart TB
     near["部分一致 または 意味が近い(SIM_FLOOR、SIM_RELATIVE、SIM_TOP)"]
     part["部分一致だけ(_keyword_hit)"]
     score["match_breakdown + keywords(SIM_WEIGHT × 類似度)+ salary"]
-    top["点の高い順に最大 3 件、job_card + 理由(_reasons)"]
+    top["点の高い順に最大 3 件、job_card + 理由(_reasons。本人のやりたいこと・経験と keywords に職種の語があれば _keyword_reason)"]
 
     args --> err
     err -- "はい" --> errout
@@ -1014,6 +1014,12 @@ flowchart TB
 - 本人の傾向(`preferences`)は dip ID と連携したユーザーだけです。90 日以内の応募と、30 日以内の閲覧と保存から数えます
 - 両方の区分の求人が残ったら(`mixed`)、時間帯の傾向は点にしません
 - `keywords` で 0 件になり、意味検索は使えたが求人を分けられなかったときは、引数で探し直すための `keywords_note` を返します
+- 理由は 2 つまでです。属性で絞った理由(2 つあるときは 1 つ目)、keywords の本人の言葉、属性の 2 つ目、過去の応募、時間帯、駅かエリア、職種、正社員の働き方、待遇の順に並べます。
+  本人の話の理由は、決まった語彙と決まった形の 1 文だけで作ります(`_keyword_reason`)。本人の文の一部は引用しません。
+  語彙は求人の職種の名前の語です(`reason_vocab`。「飲食ホール」→ 飲食ホール・飲食・ホール。「・」で切った部分の全体も入れ、切った語のうち広い語のスタッフ・管理などは除く)。長い語から当てます。
+  その求人の職種の語が、保存したやりたいこと・経験と keywords の両方に語の全体であるときだけ、「カフェの仕事をしたいというお話に合います」「カフェのご経験を活かせます」を付けます。
+  語の全体は、前後が漢字・カタカナ・英字でないことです(「飲食未経験」の「飲食」は数えない)。避けたいこと・不安は求人ごとに見ます。その求人の職種の語彙の語が 1 つでも語の頭から出てくれば、その求人には付けません(避けたいこと「アパレルはもう嫌」なら、アパレル販売の求人に「販売」でも付けない。「飲食店はもう嫌」の「飲食」も数える)。経験の項目のどこかに「未経験」や否定・初めての印(`NO_EXPERIENCE`)があれば、経験の項目は丸ごと使いません。
+  意味が近いだけで選ばれた求人にも付けません。理由は [line-sim-scenarios.md の 20 章](../design/line-sim-scenarios.md) です
 - `relax` は条件を 1 つずつ外した件数を数え、増えるものを多い順に 3 つ返します。雇用区分と `exclude_ids` は外す候補にしません
 
 keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
@@ -1086,7 +1092,7 @@ sequenceDiagram
 
 | 判定 | 中身 |
 |---|---|
-| 形式 | 1 ターン 1 問。選択肢は最大 4 つで、問いの選択肢は逃げ道の「今はいい」を含む(入口 D は「やめた」でもよい)。逃げ道だけの選択肢(`escape_only`)、「今はいい」のほかの「それ以外」「特にない」「思いつかない」、「文字で話す」は違反。吹き出しの字数。求人は最大 3 件で理由つき。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい。問いで終える返信もよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
+| 形式 | 1 ターン 1 問。選択肢は最大 4 つで、問いの選択肢は逃げ道の「今はいい」を含む(入口 D は「やめた」でもよい)。逃げ道だけの選択肢(`escape_only`)、「今はいい」のほかの「それ以外」「特にない」「思いつかない」、「文字で話す」は違反。吹き出しの字数。求人は最大 3 件で理由つき。求人カードを出したターンの吹き出しで、カードの理由を繰り返さない(`reason_echo_violations`。条件が希望に合うという言い方か、8 字以上の理由をそのまま書いた)。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい。問いで終える返信もよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
 | 会話の進め方 | ツールが返していない求人を出さない。個人情報をトーク経由でツールに渡さない。「今はいい」「送らないで」の後に質問や求人を続けない。「求人を見せて」のターンで求人を探す。この会話で保存した項目を聞き直さない。断られていないのに wait を記録しない。エリアが分からないまま `recommend_jobs` を呼ばない(`area_violations`。分かっていたエリアを `area` に入れなかったのも違反。本人がエリアを問わない(在宅を外す言い方の「リモートは無理」は数えない)・在宅で探す・前にエリアつきで探した後に `relax_conditions` の案内か本人の言葉で広げた、は除く) |
 | 再訪 | 希望ありは、1 通目で前の希望に触れ、以後その項目を聞き直さない。行動履歴のみは、1 通目で最近の行動に触れ、触れるのは会話を通して 1 回だけ。1 通目に求人カード、求人名、件数を並べず、職種も 1 つだけ |
 | 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`) | 初回訪問は、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)が 1 通目に全部ある。選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、1 通目の入口が 1 つまでで、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを勧める(期待の入口がその窓口で使えなければ問わない)。どちらも窓口で使えないものを出したら違反。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |

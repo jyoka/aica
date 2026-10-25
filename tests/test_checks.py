@@ -971,6 +971,52 @@ def test_hesitating_think_does_not_end_a_consultation():
     assert not any("切り上げる前" in x for x in consult_violations(sc, turns, [*said, "ありがとう、考えます"]))
 
 
+# ----------------------------- 吹き出しでカードの理由を繰り返さない(task 229) -----------------------------
+
+
+def _carded(bubble, reasons=("日中の勤務(10:00〜19:00(4時間〜))", "渋谷エリア")):
+    return {**turn([bubble]), "quick_replies": ["応募したい", "今はいい"],
+            "cards": [{"job_id": "a003", "title": "カフェホール 渋谷道玄坂", "reasons": list(reasons)}]}
+
+
+@pytest.mark.parametrize("bubble", [
+    "渋谷・日中のカフェで1件見つかりました。勤務時間とエリアがご希望に合っています。",  # #221 の R-revisit-browsing T2
+    "勤務時間と場所がご希望に合う求人です。",
+    "日中の勤務(10:00〜19:00(4時間〜))の求人です。",  # カードの理由をそのまま書いた
+    "勤務時間がご希望に合っているから選びました。",  # 「から」は問いではない
+    "時間が合わないかもしれませんが、エリアはご希望に合っています。",  # 否定の後に、合う形がもう1つある
+])
+def test_bubble_repeating_the_card_reasons_is_a_violation(bubble):
+    from evals.checks import reason_echo_violations
+
+    assert reason_echo_violations([_carded(bubble)]) == [f"T1: 吹き出しでカードの理由を繰り返した: {bubble!r}"]
+    assert reason_echo_violations([_carded(bubble)])[0] in conversation_checks(
+        {"expect_outcome": ["propose"]}, [_carded(bubble)], [None])["violations"]
+
+
+@pytest.mark.parametrize("bubble", [
+    "渋谷・日中で3件あります。",  # 件数と条件の一言(Prompt の例)
+    "渋谷エリアで1件あります。",  # 短い理由(渋谷エリア)は件数の一言にも出る
+    "料理に関わる仕事がしたいというお話から、キッチンのある3件です。",  # 本人の話につなげる一言
+    "本業の後とのお話でしたが、居酒屋の求人は終わりが翌1:00です。",  # 事情と勤務時間に1文で触れる
+    # 合わないかもしれない、合うかを確かめる1文(5 回目の自動レビュー)。カードの理由は合うとしか言わない
+    "本業の後とのお話でしたが、勤務時間がご希望と合わないかもしれません。",
+    "シフトが本業の後というお話に沿うか、画面で確かめてください。",
+    "勤務時間がご希望に合いませんが、ほかの条件は合っています。",
+])
+def test_count_line_and_story_line_are_not_repeating_the_reasons(bubble):
+    from evals.checks import reason_echo_violations
+
+    assert reason_echo_violations([_carded(bubble)]) == []
+
+
+def test_reason_words_without_cards_are_not_judged():
+    from evals.checks import reason_echo_violations
+
+    # カードを出していないターン(条件を確かめる問い)は見ない
+    assert reason_echo_violations([turn(["勤務時間とエリアがご希望に合う求人を探しますか？"])]) == []
+
+
 # ----------------------------- 同じ問いと決まり文句(会話の改善 C (9/10)、task 230) -----------------------------
 
 BASELINE_221 = Path(__file__).resolve().parent.parent / "evals" / "baseline" / "sim-20261025-230120.json"
