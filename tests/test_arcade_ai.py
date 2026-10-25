@@ -526,10 +526,13 @@ def test_forget_all_removes_drafts_and_plays_and_old_links_never_open_new_drafts
 # ----------------------------- LINE -----------------------------
 
 
-def test_line_users_get_no_game_url_and_no_game_buttons(tmp_path):
-    """LINE のユーザーには、dip の要約にゲームの URL が無く、LINE のメッセージにも /liff/arcade のボタンが出ない。"""
+def test_line_users_get_no_game_url_and_no_game_buttons(tmp_path, monkeypatch):
+    """LINE のユーザーには、dip の要約にゲームの URL が無く、LIFF の設定が無ければ LINE のメッセージにも /liff/arcade のボタンが出ない
+    (LIFF の設定があるときは tests/test_liff.py と tests/test_liff_actions.py)。"""
     from dip_mcp.data import State
 
+    for k in (line_channel.LIFF_ID_ENV, line_channel.LIFF_CHANNEL_ENV, line_channel.LOGIN_CHANNEL_ENV):
+        monkeypatch.delenv(k, raising=False)
     st = State(tmp_path / "state.json")
     st.reset()
     line_uid = line_channel.line_user("U" + "0" * 32, b"k" * 32)
