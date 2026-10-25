@@ -44,6 +44,7 @@ def line_id_key(monkeypatch):
     monkeypatch.setenv(line_channel.ID_KEY_ENV, ID_KEY)
     monkeypatch.delenv(line_channel.LIFF_ID_ENV, raising=False)
     monkeypatch.delenv(line_channel.LOGIN_CHANNEL_ENV, raising=False)
+    monkeypatch.delenv(line_channel.LIFF_CHANNEL_ENV, raising=False)
 
 
 class FakeLine:

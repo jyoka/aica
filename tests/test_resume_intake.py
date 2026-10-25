@@ -33,11 +33,12 @@ def fixture_draft() -> ResumeDraft:
 
 
 def test_file_part_pdf(tmp_path):
-    f = tmp_path / "resume.pdf"
+    f = tmp_path / "みほん花子_履歴書.pdf"  # 架空の氏名。ファイル名には氏名が入りがち
     f.write_bytes(b"%PDF-1.4 dummy")
     part = file_part(f)
     assert part["type"] == "input_file"
-    assert part["filename"] == "resume.pdf"
+    assert part["filename"] == "resume.pdf"  # 本人のファイル名は送らず、形式だけの固定の名前にする
+    assert "みほん花子" not in json.dumps(part, ensure_ascii=False)
     assert part["file_data"].startswith("data:application/pdf;base64,")
 
 
@@ -66,6 +67,7 @@ def test_extract_sends_file_and_returns_draft(tmp_path):
     parts = call["input"][0]["content"]
     assert parts[0]["type"] == "input_image"
     assert call["text_format"] is ResumeDraft
+    assert call["store"] is False  # OpenAI に応答を残さない
     assert draft.education[0].school == "みほん県立第一高等学校"
     assert usage.input_tokens == 1000
     assert usage.cost_usd == pytest.approx((1000 * 2.0 + 500 * 10.0) / 1_000_000)

@@ -229,7 +229,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
-        llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT),
+        # Chat Completions の既定も残さないが、OpenAI に応答を残さないことを明示する(docs/design/privacy.md の 3.2)
+        llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT, store=False),
         tts=cartesia.TTS(
             model=config.TTS_MODEL,
             voice=config.TTS_VOICE,
@@ -259,7 +260,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い。
     # 時間切れで guard が閉じているときは何もしない(guard が部屋を消してからジョブを終える)
     session.on("close", lambda _ev: guard.closing_down or ctx.shutdown(reason="agent session closed"))
-    await session.start(agent=advisor, room=ctx.room)
+    # LiveKit Cloud に録音、文字起こし、ログを残さない(Agent Observability。docs/design/privacy.md の 3.2)。
+    # 指定しないとプロジェクトの設定に従う
+    await session.start(agent=advisor, room=ctx.room, record=False)
     guard.start()
 
     # 画面の「面談を終える」ボタン → 下書きを保存して締める(返答は 1 回だけ)

@@ -57,12 +57,15 @@ class Turn:
     kind: str  # EVENTS の種別(user・upload・greet・push)
     facts: dict | None  # アップロードの事実。プッシュの事実は run が足す
     new_conversation: bool = False  # 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いた)
+    channel: str = "web"  # 今の窓口(line_runtime.agent.CHANNELS)
+    features: tuple[str, ...] = ()  # LINE のトークから LIFF 画面で使えるもの(line_channel.liff_features)
 
 
 def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: int | None,
-           new_conversation: bool = False) -> Turn:
+           new_conversation: bool = False, channel: str = "web", features: tuple[str, ...] = ()) -> Turn:
     """LLM も会話数も使わない検証: イベント、空の発言・長すぎる発言、アップロードの事実。だめなら BadTurn。
-    new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。"""
+    new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。
+    channel・features: 今の窓口と、そこで使えるもの(エージェントに伝える)。"""
     if event not in EVENTS:
         raise BadTurn(f"event は {list(EVENTS)} のいずれか")
     entry, kind = EVENTS[event]
@@ -72,7 +75,7 @@ def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: i
         raise BadTurn(f"{event} の text は {MAX_TEXT_CHARS} 字までです")
     facts = upload_facts(deps, user_id) if kind == "upload" else None
     return Turn(user_id=user_id, event=event, text=text, thread=thread, entry=entry, kind=kind, facts=facts,
-                new_conversation=new_conversation)
+                new_conversation=new_conversation, channel=channel, features=tuple(features))
 
 
 async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
@@ -105,7 +108,7 @@ async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
     changes, notice = profile_notice(deps.state, turn)
     try:
         events = deps.rt.handle_stream(turn.user_id, turn.event, turn.text, facts, talk_thread=turn.thread, notice=notice,
-                                       new_conversation=turn.new_conversation)
+                                       new_conversation=turn.new_conversation, channel=turn.channel, features=turn.features)
         while (ev := await _next(events)) is not None:
             if ev["kind"] == "reply":
                 record_open(deps, turn, ev, changes)
