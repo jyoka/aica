@@ -445,16 +445,88 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+# 理由に入れる本人の話は、決まった語彙(職種の名前の語)だけで作る(task 229)。本人の文の一部を引用すると、否定の文
+# (「夜勤ムリ」「飲食未経験」)から逆の意味や意味の無い理由ができる。日本語の否定を正規表現で見分けきることはできないので、
+# 本人の文は、語彙の語が語の全体で出てくるかだけを見る(2026-10-26 に監督役が決めた。jyoka/tasks#229 のコメント)。
+# 語彙は職種の名前を「・」と文字の種類(漢字・カタカナ・英字)の境で切った語。どの職種にもまたがる広い語は入れない。
+# 「・」で切った部分の全体(「アパレル販売」「オフィス事務」「イベントスタッフ」)も入れる。本人は職種の名前をそのまま
+# 話すことが多く、切った語だけでは「アパレル販売を2年」のどの語も語の全体にならない(3 回目の自動レビュー)
+_REASON_VOCAB_SKIP = {"スタッフ", "オフィス", "管理", "サービス", "技術"}
+# 本人の前向きの項目と、理由の決まった形。やりたいことを経験より先に見る(経験の項目には「未経験」も入る)
+REASON_SOURCES = {"wants": "{}の仕事をしたいというお話に合います", "experience": "{}のご経験を活かせます"}
+REASON_NEVER = ("avoids", "concerns")  # ここに語彙の語があれば、前向きの項目にあっても理由にしない(どちらの意味か決められない)
+# 経験の項目にこの印が1つでもあれば、経験の項目を丸ごと使わない。Prompt の決まりで、未経験の人の経験には「未経験」が入る
+# (「カフェは未経験」)。「ご経験を活かせます」は経験があると言い切るので、否定や初めての印(「働いたことはない」「初めて」)も見る。
+# 句に分けて見ると、否定が別の句にあるとき(「飲食 未経験」)に残った句(「飲食」)へ付くので、値の全体で見る(付けない側に倒す)。
+# 一覧から漏れた言い方(「カフェはこれから」)には付く。20 章の残るリスクに書いた
+NO_EXPERIENCE = ("未経験", "経験な", "経験無", "ない", "無い", "なく", "なし", "ナシ", "なかっ", "ません",
+                 "初めて", "はじめて", "初心者", "ゼロ", "まだ")
+_SCRIPT_RUN = re.compile(r"[一-龥々]+|[ァ-ヴー]+|[A-Za-z]+")
+_WORD_CHAR = r"[一-龥々ァ-ヴーA-Za-z]"
+
+
+def reason_vocab(job_type: str) -> list[str]:
+    """職種の名前から、理由に使う語彙の語(「飲食ホール」→ 飲食ホール・飲食・ホール、「イベントスタッフ」→ イベントスタッフ・イベント、
+    「企画・PM」→ 企画・PM)。「・」で切った部分の全体を先に置く。広い語だけの部分(「事務・管理」の管理)は入れない。"""
+    whole = [p for p in job_type.split("・") if p not in _REASON_VOCAB_SKIP]
+    for w in _REASON_VOCAB_SKIP:
+        job_type = job_type.replace(w, "・")
+    words = [w for w in _SCRIPT_RUN.findall(job_type) if len(w) >= 2]
+    return [p for p in whole if p not in words] + words
+
+
+def _whole_word(word: str, text: str) -> bool:
+    """text に word が語の全体で出てくるか。前後が漢字・カタカナ・英字なら、長い語の一部なので数えない
+    (「飲食未経験」の「飲食」、「コンビニムリ」の「コンビニ」は数えない)。"""
+    return re.search(rf"(?<!{_WORD_CHAR}){re.escape(word)}(?!{_WORD_CHAR})", text) is not None
+
+
+def _starts_word(word: str, text: str) -> bool:
+    """text に word が語の頭から出てくるか(後ろは続いてもよい)。避けたいことを見るのに使う。「飲食店はもう嫌」の「飲食」、
+    「コンビニムリ」の「コンビニ」は数え、「アパレル販売」の「販売」は数えない(付けない側に倒しつつ、別の職種は止めない)。"""
+    return re.search(rf"(?<!{_WORD_CHAR}){re.escape(word)}", text) is not None
+
+
+def _keyword_reason(job: BaitoJob, keywords: str | None, said: dict[str, str] | None) -> str | None:
+    """本人の話とこの求人のつながりを、決まった形の1文で返す。迷ったら付けない(None)。
+    求人の職種の語彙の語(reason_vocab)が、本人の前向きの項目(REASON_SOURCES)と keywords の両方に語の全体であるときだけ。
+    避けたいこと・不安の項目(REASON_NEVER)にこの求人の語彙の語が1つでも語の頭から出てくれば(_starts_word)、この求人には付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
+    長い語を先に見る(「アパレル販売」が当たれば「アパレル販売のご経験」にする)。意味が近いだけで選ばれた求人(職種の語が keywords に無い)には付けない。"""
+    if not keywords or not said:
+        return None
+    never = " ".join(str(said.get(k) or "") for k in REASON_NEVER)
+    vocab = sorted(reason_vocab(job.job_type), key=len, reverse=True)
+    # 当てる語ごとではなく求人ごとに見る。当てる語と重ならない語(「販売」を当てるときのアパレル)が避けたいことにあっても、
+    # 本人が避けたいと言った職種の求人なので付けない(5 回目の自動レビュー)。スーパー・販売の求人は、避けたいことの
+    # 「アパレル販売」の「販売」が語の頭にならないので止めない。語の全体でなく語の頭で見るのは、「飲食店はもう嫌」の
+    # 飲食で飲食ホールの求人を止めるため(5 回目の自動レビューの残るリスク)
+    if any(_starts_word(v, never) for v in vocab):
+        return None
+    for key, form in REASON_SOURCES.items():
+        text = str(said.get(key) or "")
+        if key == "experience" and any(m in text for m in NO_EXPERIENCE):
+            continue
+        for w in vocab:
+            if _whole_word(w, keywords) and _whole_word(w, text):
+                return form.format(w)
+    return None
+
+
 def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[str, BaitoJob], at: datetime,
-             filters: dict | None = None) -> list[str]:
+             filters: dict | None = None, keywords: str | None = None, said: dict[str, str] | None = None) -> list[str]:
     """推薦理由。指定された条件か、90日以内の本人の行動(acts は behavior.view の形)に基づく事実だけを並べる。
-    属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。"""
+    属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。
+    本人が話したやりたいこと・経験(said)と keywords に、この求人の職種の語があれば(_keyword_reason)、その次に置く
+    (条件の一致だけでは、本人のやりたいことや経験とのつながりが伝わらない。task 229)。属性の理由が2つあるときは1つ目の次に置き、
+    2つ目は出ない(このカードの目的は本人の話をカードに出すこと)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
     f = filters or {}
     reasons = []
     if f.get("max_talk_level") or f.get("min_talk_level"):
         reasons.append(TALK_REASONS[job.talk_level])
     if f.get("max_physical_level") or f.get("min_physical_level"):
         reasons.append(PHYSICAL_REASONS[job.physical_level])
+    if story := _keyword_reason(job, keywords, said):
+        reasons.insert(min(1, len(reasons)), story)
     for a in reversed(_recent(acts.get("applications", []), "applied_at", at)):  # 古い応募から
         past = jobs.get(a["job_id"])
         if past and past.job_type == job.job_type and past.job_id != job.job_id:
@@ -583,7 +655,8 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
             b["salary"] = _salary_score(j.pay, min_annual_salary)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    top = [job_card(j, _reasons(j, area, time_band, job_type, acts, jobs, at, filters))
+    said = {k: v["value"] for k, v in (state.user(line_user_id).get("preferences") or {}).items()} if line_user_id else {}
+    top = [job_card(j, _reasons(j, area, time_band, job_type, acts, jobs, at, filters, keywords, said))
            | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
     out = {"total": len(hits), "jobs": top}
