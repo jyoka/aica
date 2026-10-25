@@ -684,10 +684,21 @@ def test_area_named_in_the_answer_is_not_left_open():
     assert area_violations(turns, said) == ["T4: 分かっているエリア(池袋)を recommend_jobs の area に入れずに探した"]
 
 
-@pytest.mark.parametrize("said3", ["在宅じゃなくて、カフェで働きたい", "リモートでなくていいです"])
+@pytest.mark.parametrize("said3", ["在宅じゃなくて、カフェで働きたい", "リモートでなくていいです",
+                                   "リモートは無理なので、カフェで働きたい", "在宅ワークはしたくないです。カフェで",
+                                   "リモートの仕事は興味ないです、カフェがいい"])
 def test_ruling_out_remote_does_not_leave_the_area_open(said3):
     turns, said = follow_new([rec(job_type="カフェ")], said3)
     assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+
+
+@pytest.mark.parametrize(("said3", "area"), [("リモートは無理なので、渋谷のカフェで働きたい", "渋谷"),
+                                             ("在宅は苦手です。池袋のカフェで", "池袋"),
+                                             ("リモートが週2日あるとよいです。場所は渋谷で", "渋谷")])
+def test_remote_words_with_an_area_do_not_leave_the_area_open(said3, area):
+    # 地名のある発言は、在宅・リモートの言い方があっても、エリアが分かっている
+    turns, said = follow_new([rec(job_type="カフェ")], said3)
+    assert area_violations(turns, said) == [f"T4: 分かっているエリア({area})を recommend_jobs の area に入れずに探した"]
 
 
 def test_dropping_the_area_without_widening_after_an_area_search_is_a_violation():

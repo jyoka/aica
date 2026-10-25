@@ -1064,9 +1064,11 @@ AREA_ASK = re.compile(REASK["area"].pattern + r"|エリア|最寄り|どこで|(
                       r"|(どの|どこの?)(辺り?|あたり)で[、,]")
 # 本人がエリアを問わないと言った(このときはエリアなしで探してよい)。在宅・リモートの仕事はエリアが要らない
 _NO_PREFERENCE = r"問わ|こだわ(ら|りませ|りは?(な|無|ありませ))|特に(な|無)"
-# 「在宅じゃなくて」「リモートでなくていい」は在宅を外す言い方なので数えない
-AREA_ANY = re.compile(rf"どこでも|(エリア|場所|勤務地|地域|駅)[^。!！?？]{{0,6}}({_NO_PREFERENCE})"
-                      r"|(在宅|リモート)(?!\s*(じゃ|では|でな))")
+AREA_ANY = re.compile(rf"どこでも|(エリア|場所|勤務地|地域|駅)[^。!！?？]{{0,6}}({_NO_PREFERENCE})")
+# 在宅・リモートで働きたいという言い方。「在宅じゃなくて」「リモートは無理なので」「在宅ワークはしたくない」のように
+# 在宅を外す言い方は数えない。同じ発言に地名があれば(「リモートは週2日、場所は渋谷」)、エリアは分かっている(_area_open)
+AREA_REMOTE = re.compile(r"(在宅|リモート)(?![^。!！?？、,]{0,8}(じゃ|では|でな|無理|苦手|したくな|興味(な|無|は?ありませ)"
+                         r"|嫌|いや|不要|いらな|だめ|ダメ))")
 # エリアの問いへの「特にないです」「問いません」も、エリアを問わない答え。ただし地名のある答え(「渋谷で。仕事内容は
 # 特にこだわりません」)は、エリアの後に別の条件を問わないと言ったものなので数えない
 AREA_ANY_REPLY = re.compile(rf"{_NO_PREFERENCE}|どこでも")
@@ -1118,14 +1120,15 @@ def _known_area(turns: list[dict], user_msgs: list[str | None], i: int) -> str |
 
 
 def _area_open(turns: list[dict], user_msgs: list[str | None], i: int) -> bool:
-    """T(i+1) の時点で、本人がエリアを問わないと言っているか(「どこでもいい」、エリアの問いへの「特にないです」)。
+    """T(i+1) の時点で、本人がエリアを問わないと言っているか(「どこでもいい」、在宅で働きたい、エリアの問いへの「特にないです」)。
     後で地名を言い直したら(「やっぱり池袋で」)、エリアは決まったものとして、問わない言い方は打ち消す。"""
     open_ = False
     for k, m in enumerate(user_msgs[:i + 1]):
         if not m:
             continue
         named = bool(_said_areas([m]))
-        if AREA_ANY.search(m) or (k > 0 and not named and asks_area(turns[k - 1]) and AREA_ANY_REPLY.search(m)):
+        if AREA_ANY.search(m) or (not named and AREA_REMOTE.search(m)) \
+                or (k > 0 and not named and asks_area(turns[k - 1]) and AREA_ANY_REPLY.search(m)):
             open_ = True
         elif named:
             open_ = False
