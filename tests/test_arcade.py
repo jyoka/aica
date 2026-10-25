@@ -60,7 +60,7 @@ def test_hub_and_eight_games_are_plain_html_pages_without_claude_ai(client):
 
 
 def test_unknown_games_and_files_are_404(client):
-    for path in ["/liff/arcade/draft", "/liff/arcade/resume-arcade", "/liff/arcade/nope", "/liff/arcade/the-case-of-you.html",
+    for path in ["/liff/arcade/resume-arcade", "/liff/arcade/nope", "/liff/arcade/the-case-of-you.html",
                  "/liff/arcade/..%2Fserver.py", "/static/arcade/nope.js", "/static/arcade/the-case-of-you.html"]:
         assert client.get(path).status_code == 404, path
 

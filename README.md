@@ -73,6 +73,9 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - 2 つのプロセスは、リポジトリ直下で同じ venv と同じ `.env` を使います
 - `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
+- 1 人が開ける音声相談は同時に 1 つまでです(Web プロセスを再起動した直後は、再起動の前から続いている相談を数えません)。
+  音声ワーカーが同時に受ける相談は `VOICE_RESUME_MAX_JOBS`(既定 4)までです。
+  ワーカーは、相談がなくても同じ数のプロセスを温めておきます(`dev` でも。1 つ約 200MB)
 
 ### Render で公開する
 
@@ -85,10 +88,11 @@ Render のサービスを作る手順と、運営者がする操作は [docs/dep
 
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。トークで使えるのは、テキストの会話と、友だち追加の挨拶と、
 アカウント連携(下の「アカウント連携を試す」)です。履歴書の読み込みと音声相談は、LIFF の設定(下の「LINE で LIFF 画面を開く」)があれば、トークのボタンから LIFF 画面で使えます。
-結果は LINE のトークに届きます。レジュメ・アーケードも LIFF 画面で開けます(エージェントがそのボタンを出すのは、
-[PRD](docs/prd/resume-arcade.md) の (3/3) で URL を渡してからです)。
+結果は LINE のトークに届きます。レジュメ・アーケードも LIFF 画面で開けますが、今は dip が LINE のユーザーにゲームの URL を渡さないので、
+エージェントはそのボタンを出しません([PRD](docs/prd/resume-arcade.md) の「LINE のとき」)。
 トークに直接送ったファイルと写真は読みません。LIFF の設定が無いときは、エージェントにも「LINE では使えない」と伝え、
 それでも勧めたときは文で書くよう案内します。
+LIFF の中でマイクが使えるかは、下の「LINE の中でマイクが使えるかを確かめる」の手順で実機で確かめます。
 設定(`LINE_CHANNEL_SECRET` と `LINE_CHANNEL_ACCESS_TOKEN`)が無ければ `POST /line/webhook` は 404 で、ほかは何も変わりません。
 設定があるときは、LINE のユーザーIDを作る鍵 `AICA_ID_KEY` も要ります(下の 3)。
 
@@ -181,7 +185,7 @@ LINE のトークに出るボタン(履歴書の読み込み、音声相談、�
   |---|---|---|
   | 音声相談 | `/voice` | Web と同じ音声相談のシート。終わると、まとめと求人と下書きのボタンが LINE のトークに届く |
   | 履歴書の読み込み | `/resume/upload` | ファイル(PDF / JPEG / PNG)を選んで読み取る。確認とエージェントの次の 1 問が LINE のトークに届く |
-  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム |
+  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム。AI と保存の API は Cookie の匿名ユーザーIDの本人で呼ぶので、LIFF の中では簡易分析で遊べて、保存はできない |
   | 応募フォームの続き、読み取り結果、下書き | `/apply?job=…`、`/resume?rid=…`、`/voice/draft?rid=…` | Web と同じ画面 |
 - トークに届けるのは push です(LINE 公式アカウントの月のメッセージ数に数えられます)。宛先の LINE の userId は、操作を始めるときに
   ID トークンからもらい、届けるまでメモリにだけ置きます。面談の途中で Web サーバーを起動し直すと、そのまとめはトークに届きません(会話には入ります)
@@ -189,6 +193,39 @@ LINE のトークに出るボタン(履歴書の読み込み、音声相談、�
   過ぎたら、開いたときにもう一度 ID トークンで確かめます。1 時間を過ぎてから応募フォームを送ると、入力は残らず、開き直しになります
 - ID トークンを確かめられない(LINE が断った、期限切れ、別のチャネルのトークン)ときは「本人を確かめられませんでした」と出して止まり、
   ほかの人の画面にはなりません
+
+### LINE の中でマイクが使えるかを確かめる
+
+音声相談を LINE から使えるかを決めるために、LIFF の画面の中でマイク(`getUserMedia`)と通話の部品(WebRTC、LiveKit)が
+使えるかを、人が実機で確かめます。上の「LINE で LIFF 画面を開く」が済んでいる前提です。画面は `/liff/line/mic-check` です。
+
+- 声は送らず、残しません。サーバーに送るのは結果(使えたか、エラーの名前、音の大きさの最大、OS、LINE の版、LIFF SDK の版、
+  画面のサイズ、ブラウザの User-Agent)だけで、本人(LINE のユーザーID)と IP は書きません
+- 通話の部品は手元で試すだけで、どこにもつなぎません(LiveKit の部屋にも入りません)。本物の音声相談がつながるかは、この確認の後です
+
+人がする操作です。iPhone と Android の両方で、1 から 5 をします。
+
+1. Web サーバーと Tailscale Funnel を起動しておく(上の「LINE で試す」の 4)
+2. 自分だけのトークルーム(Keep メモなど)に `https://liff.line.me/<LIFF ID>/mic-check` を送り、LINE のアプリの中でそのリンクを押す。
+   LIFF の画面「マイクの確認」が開きます。aica の公式アカウントとのトークに送ると、エージェントが返事をします(費用がかかる)
+3. 「マイクを試す」を押し、マイクの許可を求められたら許可して、5 秒ほど声を出す。画面の結果を見ます
+   - 「マイク」: 使えた / 断られた / エラー(と、エラーの名前) / この画面には無い
+   - 「音の大きさ」: 声を出したのに 0.01 未満なら、許可されても音が届いていません
+   - 「通話の部品(WebRTC)」と「LiveKit」: 使える、対応している、なら音声相談の部品は動きます
+   - 「OS」「LINE のアプリの中」「LINE の版」「LIFF SDK の版」「画面のサイズ」
+   - 「LIFF の初期化: 5 秒より遅れて終わった」が出たら、通信が遅く、サーバーのログの行は OS などが空のままです。画面の結果を正として報告します
+4. 断られたときは、端末の設定(iPhone は「設定」→「LINE」→「マイク」、Android は「設定」→「アプリ」→「LINE」→「権限」)で許可してから、
+   LIFF の画面を閉じて 2 から試し直す。許可しても使えないかも見ます
+5. 「外のブラウザで同じ確認を開く」を押し、開いた外のブラウザ(iPhone は Safari、Android は Chrome など)で 3 をもう一度する。
+   LIFF の中で使えなかったときの逃げ道が使えるかを確かめます
+
+報告すること(端末ごと、LIFF の中と外のブラウザのそれぞれ):
+
+- 端末と OS の版(例: iPhone 15、iOS 18.1)、画面の結果のスクリーンショット
+- マイクの許可を求める表示が出たか、出たのは LINE のものか OS のものか、許可したか
+- サーバーのログの 1 行(Web サーバーの 1 つ目のターミナルに `LIFF のマイクの確認: {…}` と出ます。Render では Logs の画面)
+
+ログの行は 1 回の確認につき 1 行です。1 日に 500 行を超えると、その日はもう書きません(本人を確かめない口なので、ログをあふれさせない)。
 
 ### アカウント連携を試す
 
@@ -221,7 +258,8 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
 | 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
 | LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き。Web のブラウザでは Cookie の匿名ユーザー、LINE のアプリでは `/liff/line/*`(LIFF の ID トークンで確かめた LINE のユーザー。音声相談と履歴書の読み込みの画面もある。上の「LINE で LIFF 画面を開く」) |
-| レジュメ・アーケード | `/liff/arcade` | 遊びながら職務経歴書を作るゲームのハブ。サーバーを起動して `http://127.0.0.1:8030/liff/arcade` を開く。今は AI を使わない簡易分析だけ。ハブに出ない 6 本は開発者画面の左からリンクする |
+| マイクの確認 | `/liff/line/mic-check` | LINE の LIFF の中でマイクと通話の部品が使えるかを試す。本人を決めない。LIFF の設定があるときだけ(上の「LINE の中でマイクが使えるかを確かめる」) |
+| レジュメ・アーケード | `/liff/arcade` | 遊びながら職務経歴書を作るゲームのハブ。先にトーク画面(`/`)を開いてから `http://127.0.0.1:8030/liff/arcade` を開くと、ハブの 2 本は AI(`LINE_SIM_PROVIDER` のプロバイダ)で遊べて、できた書類をプロフィールに保存できる。API キーが無い、上限に達した、AI が失敗したときは簡易分析で続く。プロフィールの「ゲームで作った下書き」からも入れる。ハブに出ない 6 本は開発者画面の左からリンクする(AI なし) |
 | dip のログイン | `/dip/login` | dip の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
 | LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
 
@@ -294,6 +332,15 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で 1 日に使える匿名ユーザーIDの数 | 可 |
 | `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くとき(Render、Tailscale Funnel、cloudflared のトンネル)に使う。無いと全員がプロキシの IP として数えられる | 可 |
 
+レジュメ・アーケードのゲームの AI の上限です([HLD の 4.11](docs/architecture/hld.md#411-レジュメアーケード))。AI つきで始めるとき、ターンを 1 つ数えます。
+
+| 環境変数 | 既定 | 上限と用途 | `.env` |
+|---|---|---|---|
+| `AICA_ARCADE_AI` | `1` | `0` にするとゲームの AI を止める(すべて簡易分析。保存はできる) | 可 |
+| `AICA_ARCADE_DAILY_AI_PLAYS` | 3 | 匿名ユーザーIDごとに、1 日に AI つきで始められる遊びの数。超えたら AI なしで始める | 可 |
+| `AICA_ARCADE_REACTIONS_PER_PLAY` | 50 | 1 回の遊びのゲームの中の反応の数。最後のまとめの 2 回は別に取っておく | 可 |
+| `AICA_ARCADE_QUICK_MODEL` | `gpt-6-luna`(anthropic なら `claude-haiku-4-5`) | ゲームの中の反応のモデル。最後のまとめは `LINE_SIM_MODEL` | 可 |
+
 LINE 公式アカウントで使うものです。LINE で試さないなら要りません。
 
 | 環境変数 | 既定 | 用途 | `.env` |
@@ -313,11 +360,13 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
-| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
+| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
 | `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
+| `VOICE_RESUME_MAX_JOBS` | 4 | 音声ワーカーが同時に受ける相談の数。超えた部屋にはアドバイザーが入らない(`dev` でも) | 不可 |
+| `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | 2000 | 相談 1 つのプロセスのメモリの上限(MB)。超えたらその相談を止める。0 で上限なし | 不可 |
 | `VOICE_RESUME_*`(モデル、ボイス、ターンの判定) | [LLD の 7.1](docs/architecture/lld.md#71-音声の部品の設定) | STT、LLM、読み上げの設定 | 不可 |
 
 ## 文書
@@ -334,5 +383,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](docs/adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](docs/adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
+| 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](docs/design/privacy.md) |
+| 利用規約とプライバシーポリシーの下書き(公開前に人が確認する) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](docs/deploy/render.md) |

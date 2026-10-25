@@ -5,6 +5,7 @@
 - 検証が失敗・期限切れ・別のチャネルの aud なら本人にならず、Cookie の匿名ユーザーにも切り替えない
 - LIFF の設定が無ければ /liff/line/… は 404 で、ほかは今までどおり
 - 画面(LIFF SDK を読む殻)をブラウザで動かす(Playwright。LIFF SDK は偽物に差し替える)
+- LIFF の中でマイクを試す画面(task 205): 許可・拒否・エラーを偽物の getUserMedia で動かし、ログには結果の 1 行だけが残る
 """
 
 from __future__ import annotations
@@ -245,6 +246,11 @@ def test_line_buttons_open_the_liff_url_that_lands_on_the_liff_pages(liff):
         assert _client(server).get(line_channel.LIFF_PREFIX + page.removeprefix("/liff"),
                                    params={"rid": 1, "job": "a001"}).status_code == 200
 
+    # /liff/line の下に無い画面は、今までどおり公開 URL。公開 URL も無ければ出さない
+    other = {"bubbles": ["はい"], "buttons": [{"label": "ほかの画面", "url": "/liff/other"}]}
+    (_, flex) = to_messages(other, "https://aica.example.test")
+    assert flex["contents"]["body"]["contents"][0]["action"]["uri"] == "https://aica.example.test/liff/other"
+    assert [m["type"] for m in to_messages(other, "")] == ["text"]
     # レジュメ・アーケードも /liff/line の下にある(task 204)。公開 URL があっても LIFF URL で開く
     arcade = {"bubbles": ["はい"], "buttons": [{"label": "ゲーム", "url": "/liff/arcade/harvest-of-work"}]}
     for base in ("https://aica.example.test", ""):
@@ -356,6 +362,226 @@ def test_the_liff_page_in_a_browser(served, browser, token, logged_in, shown):
             page.get_by_text(server.LIFF_FAILED_TEXT).wait_for()
         assert "匿名ユーザーのスキル" not in page.content()
         assert re.search(r"/liff/line/resume\?rid=\d+$", page.url)
+        assert errors == []
+    finally:
+        context.close()
+
+
+# ----------------------------- LIFF の中でマイクを試す画面(task 205) -----------------------------
+
+MIC_LOGGER = "line_runtime.mic_check"
+MIC_RESULT = {"mic": "allowed", "level": 0.42, "webrtc": "ok", "candidates": 2, "livekit": "supported", "os": "ios",
+              "in_client": True, "line_version": "14.19.0", "liff_version": "2.27.0", "view_type": "full",
+              "secure_context": True, "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Line/14.19.0"}
+
+
+def _mic_lines(caplog) -> list[dict]:
+    prefix = "LIFF のマイクの確認: "
+    return [json.loads(r.getMessage().removeprefix(prefix)) for r in caplog.records if r.name == MIC_LOGGER]
+
+
+def test_the_mic_check_log_keeps_one_result_line_and_nothing_else(liff, caplog):
+    server, _ = liff
+    caplog.set_level("INFO", logger=MIC_LOGGER)
+    client = _client(server)
+    page = client.get("/liff/line/mic-check")
+    assert page.status_code == 200 and server.LIFF_SDK in page.text and "/static/mic-check.js" in page.text
+    assert LIFF_ID in page.text and server.ANON_COOKIE not in page.headers.get("set-cookie", "")
+    assert client.get("/static/mic-check.js").status_code == 200
+
+    assert client.post("/api/liff/mic-check", json=MIC_RESULT).json() == {"ok": True}
+    (line,) = _mic_lines(caplog)
+    assert line["mic"] == "allowed" and line["level"] == 0.42 and line["os"] == "ios" and line["line_version"] == "14.19.0"
+    assert WEB_USER not in json.dumps(line) and "testclient" not in json.dumps(line)  # 本人も接続元も書かない
+
+    # 声やその文字起こしを載せる項目は無い(決まった項目の外は 422 で、ログにも書かない)
+    for extra in ({"audio": "UklGRiQAAABXQVZF"}, {"transcript": "こんにちは、田中です"}, {"user_id": WEB_USER}):
+        assert client.post("/api/liff/mic-check", json=MIC_RESULT | extra).status_code == 422
+    for bad in ({"mic": "maybe"}, {"mic_error": "<script>"}, {"level": 2}, {"line_version": "1 2"},
+                {"user_agent": "x" * 301}):
+        assert client.post("/api/liff/mic-check", json=MIC_RESULT | bad).status_code == 422
+    # ほかのサイトのフォーム(事前の確認が要らない送り方)からは書かせない
+    r = client.post("/api/liff/mic-check", content=json.dumps(MIC_RESULT), headers={"content-type": "text/plain"})
+    assert r.status_code in (415, 422)
+    assert len(_mic_lines(caplog)) == 1
+
+
+def test_the_mic_check_log_has_a_daily_limit(liff, monkeypatch, caplog):
+    server, _ = liff
+    caplog.set_level("INFO", logger=MIC_LOGGER)
+    monkeypatch.setattr(server, "MIC_CHECK_DAILY_LIMIT", 2)
+    monkeypatch.setattr(server, "_mic_checks", {})
+    client = _client(server)
+    assert [client.post("/api/liff/mic-check", json=MIC_RESULT).status_code for _ in range(3)] == [200, 200, 429]
+    assert len(_mic_lines(caplog)) == 2
+
+
+def test_without_liff_settings_there_is_no_mic_check(liff, monkeypatch):
+    server, _ = liff
+    monkeypatch.delenv(line_channel.LIFF_ID_ENV)
+    client = _client(server)
+    assert client.get("/liff/line/mic-check").status_code == 404
+    assert client.post("/api/liff/mic-check", json=MIC_RESULT).status_code == 404
+
+
+FAKE_LIVEKIT = "window.LivekitClient = { isBrowserSupported: () => true };"
+
+
+def _fake_mic_sdk(in_client: bool, init_error: str = "", init_waits: bool = False) -> str:
+    """LIFF SDK の偽物(マイクを試す画面が使う分)。openWindow で開いた先を window.__opened に残す。
+    init_error なら、init は本物の LiffError と同じく code つきのエラーで失敗する。
+    init_waits なら、init はテストが window.__finishInit() を呼ぶまで終わらない(通信が遅いとき)。"""
+    if init_error:
+        init = f"async () => {{ const e = new Error('init'); e.code = {json.dumps(init_error)}; throw e; }}"
+    elif init_waits:
+        init = "() => new Promise((resolve) => { window.__finishInit = resolve; })"
+    else:
+        init = "async () => {}"
+    return f"""window.liff = {{
+  init: {init},
+  getOS: () => "ios", isInClient: () => {json.dumps(in_client)}, getLineVersion: () => {json.dumps("14.19.0" if in_client else None)},
+  getVersion: () => "2.27.0", getContext: () => ({{ viewType: "full" }}),
+  openWindow: (p) => {{ window.__opened = p; }},
+}};"""
+
+
+# 偽物の getUserMedia。allowed は発振器の音(本物のマイクは使わない)、ほかは本物と同じ名前の DOMException で断る
+FAKE_MEDIA = {
+    "allowed": """navigator.mediaDevices.getUserMedia = async () => {
+  const ctx = new AudioContext(); const osc = ctx.createOscillator(); const dst = ctx.createMediaStreamDestination();
+  osc.connect(dst); osc.start(); return dst.stream;
+};""",
+    "denied": 'navigator.mediaDevices.getUserMedia = async () => { throw new DOMException("denied", "NotAllowedError"); };',
+    "error": 'navigator.mediaDevices.getUserMedia = async () => { throw new DOMException("no mic", "NotFoundError"); };',
+    "unsupported": 'Object.defineProperty(navigator, "mediaDevices", { value: undefined });',
+}
+
+
+@pytest.mark.parametrize("case, mic_error, shown", [
+    ("allowed", "", "マイク: 使えた"),
+    ("denied", "NotAllowedError", "マイク: 断られた(NotAllowedError)"),
+    ("error", "NotFoundError", "マイク: エラー(NotFoundError)"),
+    ("unsupported", "", "マイク: この画面には無い"),
+])
+def test_the_mic_check_page_in_a_browser(served, browser, caplog, case, mic_error, shown):
+    """LIFF の中でマイクを試す画面を、偽物の LIFF SDK と偽物の getUserMedia で動かす。許可・拒否・エラーとエラーの名前、
+    音の大きさ、LIFF の環境が画面に出て、サーバーには結果の 1 回だけを送る(ほかに何も送らない)。"""
+    server, _, base = served
+    caplog.set_level("INFO", logger=MIC_LOGGER)
+    context = browser.new_context()
+    context.add_init_script(FAKE_MEDIA[case])
+    context.route(server.LIFF_SDK, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                               body=_fake_mic_sdk(in_client=True)))
+    context.route(server.LIVEKIT_CLIENT, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                                     body=FAKE_LIVEKIT))
+    page = context.new_page()
+    errors: list[str] = []
+    posts: list[tuple[str, str]] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("request", lambda r: posts.append((r.url, r.post_data or "")) if r.method != "GET" else None)
+    page.set_default_timeout(20_000)
+    try:
+        page.goto(f"{base}/liff/line/mic-check")
+        page.get_by_text("LINE の版: 14.19.0").wait_for()
+        page.click("#mic-start")
+        page.wait_for_selector(f"#mic-status[data-done='{case}']")
+        result = page.inner_text("#mic-result")
+        assert shown in result and "OS: ios" in result and "通話の部品(WebRTC): 使える" in result
+        assert "LiveKit: 対応している" in result and "記録しました" in page.inner_text("#mic-status")
+
+        (url, data), = posts  # サーバーに送るのは結果の 1 回だけ
+        assert url == f"{base}/api/liff/mic-check"
+        sent = json.loads(data)
+        assert set(sent) <= set(server.MicCheckIn.model_fields)
+        (line,) = _mic_lines(caplog)
+        assert line == server.MicCheckIn(**sent).model_dump()
+        assert line["mic"] == case and line["mic_error"] == mic_error and line["webrtc"] == "ok"
+        assert line["in_client"] is True and line["os"] == "ios" and line["view_type"] == "full"
+        if case == "allowed":
+            assert line["level"] > 0.01 and line["audio_state"] == "running"  # 発振器の音が届いた
+
+        # LINE のアプリの中なら、外のブラウザで同じ確認を開ける
+        page.click("#mic-external")
+        assert page.evaluate("window.__opened") == {"url": f"{base}/liff/line/mic-check", "external": True}
+        assert errors == []
+    finally:
+        context.close()
+
+
+def test_the_mic_check_page_outside_line_has_no_external_button(served, browser):
+    server, _, base = served
+    context = browser.new_context()
+    context.route(server.LIFF_SDK, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                               body=_fake_mic_sdk(in_client=False)))
+    page = context.new_page()
+    try:
+        page.goto(f"{base}/liff/line/mic-check")
+        page.get_by_text("LINE のアプリの中: いいえ").wait_for()
+        assert "LINE の版: 不明" in page.inner_text("#mic-result")
+        assert page.is_hidden("#mic-external")
+    finally:
+        context.close()
+
+
+def test_the_mic_check_still_runs_when_liff_init_fails(served, browser, caplog):
+    """liff.init が失敗しても(LIFF の設定の誤りなど)、マイクは試せて、失敗のコードを記録する。openWindow は使えないので
+    外のブラウザのボタンは出さない。LiveKit の部品を読み込めなければ、そう記録する。"""
+    server, _, base = served
+    caplog.set_level("INFO", logger=MIC_LOGGER)
+    context = browser.new_context()
+    context.add_init_script(FAKE_MEDIA["denied"])
+    context.route(server.LIFF_SDK, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                               body=_fake_mic_sdk(in_client=True, init_error="INIT_FAILED")))
+    context.route(server.LIVEKIT_CLIENT, lambda route: route.abort())
+    page = context.new_page()
+    page.set_default_timeout(20_000)
+    try:
+        page.goto(f"{base}/liff/line/mic-check")
+        page.get_by_text("LIFF の初期化のエラー: INIT_FAILED").wait_for()
+        assert page.is_hidden("#mic-external")
+        page.click("#mic-start")
+        page.wait_for_selector("#mic-status[data-done='denied']")
+        assert "LiveKit: 読み込めなかった" in page.inner_text("#mic-result")
+        (line,) = _mic_lines(caplog)
+        assert line["liff_error"] == "INIT_FAILED" and line["mic"] == "denied" and line["livekit"] == "not_loaded"
+    finally:
+        context.close()
+
+
+def test_the_mic_check_result_stays_when_liff_init_finishes_late(served, browser, caplog):
+    """liff.init が待つ上限(WAIT_MS)より遅れて終わっても、出ていたマイクの結果を画面から消さない。押したときの Timeout は
+    消して遅れたと出し、LIFF の環境と外のブラウザのボタンを後から正しくする。サーバーには押したときの結果の 1 回だけを送る。"""
+    server, _, base = served
+    caplog.set_level("INFO", logger=MIC_LOGGER)
+    context = browser.new_context()
+    context.add_init_script(FAKE_MEDIA["denied"])
+    context.route(server.LIFF_SDK, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                               body=_fake_mic_sdk(in_client=True, init_waits=True)))
+    context.route(server.LIVEKIT_CLIENT, lambda route: route.fulfill(status=200, content_type="text/javascript",
+                                                                     body=FAKE_LIVEKIT))
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.set_default_timeout(20_000)
+    try:
+        page.goto(f"{base}/liff/line/mic-check")
+        page.wait_for_function("typeof window.__finishInit === 'function'")
+        page.click("#mic-start")
+        page.wait_for_selector("#mic-status[data-done='denied']")
+        result = page.inner_text("#mic-result")
+        assert "マイク: 断られた(NotAllowedError)" in result and "LIFF の初期化のエラー: Timeout" in result
+        assert page.is_hidden("#mic-external")
+
+        page.evaluate("window.__finishInit()")
+        page.get_by_text("LINE の版: 14.19.0").wait_for()
+        result = page.inner_text("#mic-result")
+        assert "マイク: 断られた(NotAllowedError)" in result and "通話の部品(WebRTC): 使える" in result
+        assert "LiveKit: 対応している" in result and "LINE のアプリの中: はい" in result
+        assert "Timeout" not in result and "遅れて終わった(サーバーの記録は、終わる前の値)" in result
+        assert page.is_visible("#mic-external")
+
+        (line,) = _mic_lines(caplog)
+        assert line["liff_error"] == "Timeout" and line["mic"] == "denied" and line["os"] == ""
         assert errors == []
     finally:
         context.close()

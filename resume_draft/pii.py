@@ -1,6 +1,8 @@
 """個人情報の決まり。読み取り(resume_intake)、下書き(voice_resume)、dip(dip_mcp)が同じものを使う。
 
 - 探す: has_pii / redact_pii(PII_VALUE。電話番号とメールアドレス)。トークの発言、相談の記録、保存する値の照合に使う
+- 住所: ADDRESS_LIKE / address_spans(住所らしい所)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
+  文の中で伏せるのは redact_personal(同じ 3 つ)で決める。dip の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
 - 消す: scrub_pii(SCRUB_PATTERNS。電話番号、メール、郵便番号)。Resume Draft の文字列から機械的に落とす
 どちらも照合の前に fold_pii で全角の数字・ハイフンなどを半角にそろえる(1文字を1文字に写すので、位置は元の文字列と同じ)。
 """
@@ -31,6 +33,17 @@ _PII_FOLD = str.maketrans(
     | {"（": "(", "）": ")", "＠": "@", "．": ".", "　": " ", "，": ","}
 )
 
+# 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
+# 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
+# 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える。
+# 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)
+ADDRESS_LIKE = re.compile(
+    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
+    r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
+    r"|丁目|番地"
+)
+_WORD_SEP = set("、。,.!?！？「」()（）")
+
 # Resume Draft から消すもの(メール、電話番号、郵便番号)。プロンプトで「書かない」を指示した上で、
 # 出力に混ざっても機械的に落とすセーフティネット。PII_VALUE より広く取る(区切りが空白1つの電話番号、郵便番号も消す)。
 # 電話番号を郵便番号より先に消す(逆だと 090-1234-5678 の前半が郵便番号として食われ、-5678 が残る)。
@@ -51,6 +64,31 @@ def has_pii(text: str) -> bool:
     return PII_VALUE.search(fold_pii(text)) is not None
 
 
+def personal_value(text: str) -> bool:
+    """本人の値として受け取らない、個人情報らしい値か(電話番号・メールアドレス・住所らしい所を含む)。"""
+    return has_pii(text) or ADDRESS_LIKE.search(fold_pii(text)) is not None
+
+
+def address_spans(text: str) -> list[tuple[int, int]]:
+    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所を含む、区切り(空白・句読点・括弧)までの語
+    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
+    時間がかかるので、当たった所から区切りまで広げる。"""
+    def sep(ch: str) -> bool:
+        return ch.isspace() or ch in _WORD_SEP
+
+    spans: list[tuple[int, int]] = []
+    for m in ADDRESS_LIKE.finditer(text):
+        start, end = m.span()
+        if spans and start < spans[-1][1]:  # 前の語に含まれている
+            continue
+        while start > 0 and not sep(text[start - 1]):
+            start -= 1
+        while end < len(text) and not sep(text[end]):
+            end += 1
+        spans.append((start, end))
+    return spans
+
+
 def redact_pii(text: str, repl: str = "[個人情報を削除]",
                extra: Callable[[str], list[tuple[int, int]]] | None = None) -> str:
     """電話番号・メールアドレス(と extra が返す範囲)を repl に置き換える。照合は fold_pii した文字で行い、
@@ -67,6 +105,11 @@ def redact_pii(text: str, repl: str = "[個人情報を削除]",
         out += [text[last:start], repl]
         last = end
     return "".join(out) + text[last:]
+
+
+def redact_personal(text: str, repl: str = "[個人情報を削除]") -> str:
+    """電話番号・メールアドレス・住所らしい所(区切りまでの語ごと)を repl に置き換える(personal_value と同じ範囲)。"""
+    return redact_pii(text, repl, extra=address_spans)
 
 
 def scrub_pii(value):

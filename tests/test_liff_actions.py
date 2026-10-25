@@ -292,7 +292,7 @@ def test_a_resume_read_in_liff_continues_the_users_line_talk(line_liff, tmp_path
 
 def test_voice_results_are_not_pushed_without_messaging_api_or_after_the_room_expired(line_liff, monkeypatch):
     """LIFF はあるが Messaging API の設定が無い: 結果は会話に入るが push しない。始めてから 1 時間を過ぎた部屋の結果も push しない
-    (宛先はもう忘れている)。"""
+    (宛先はもう忘れている)。前の部屋が終わるまでは、次の部屋を開けない(409)。"""
     server, fake, _, _ = line_liff
     uid = line_user(RAW_USER)
     with _liff_client(server) as client:
@@ -313,6 +313,11 @@ def test_voice_results_are_not_pushed_without_messaging_api_or_after_the_room_ex
             m.delenv("LINE_CHANNEL_ACCESS_TOKEN")
             out = result(room)
         assert out["line"] is False and out["talk"] is True and _pushes(fake) == []
+        # 前の部屋が終わるまでは、LIFF からも次の部屋を開けない(Web の /api/voice/start と同じ。task 202)
+        r = client.post("/api/liff/voice/start", json={"user_id": uid, "id_token": "good"})
+        assert r.status_code == 409 and r.json()["detail"] == server.VOICE_BUSY_MESSAGE
+        assert TestClient(server.app).post("/api/voice/session", headers=WORKER,
+                                           json={"user_id": uid, "room": room, "state": "ended"}).json() == {"allowed": True}
 
         room = start()
         later = time.monotonic() + server.LINE_VOICE_ROOM_SECONDS + 1

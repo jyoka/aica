@@ -90,10 +90,16 @@ def results(mkdir=tempfile.mkdtemp) -> dict:
     return {uid: {"reads": reads(_fresh(mkdir), uid), "writes": writes(uid, mkdir)} for uid in sorted(load_users())}
 
 
+# main の後に足した、行動の読み方と関係ない項目(task 188 のゲームの下書きとゲームの URL)。比べない
+LATER = ("arcade_draft", "arcade_url", "arcade_drafts")
+
+
 def _plain(x, drop: tuple[str, ...] = ("as_of",)):
-    """JSON に通した形(タプルをリストに)から、比べない鍵を落とす。"""
+    """JSON に通した形(タプルをリストに)から、比べない鍵(と LATER)を落とす。要約の note からは、後で足した説明
+    (logic.ARCADE_NOTE)を外す。"""
     if isinstance(x, dict):
-        return {k: _plain(v, drop) for k, v in x.items() if k not in drop}
+        return {k: (v.removesuffix(logic.ARCADE_NOTE) if k == "note" and isinstance(v, str) else _plain(v, drop))
+                for k, v in x.items() if k not in drop + LATER}
     if isinstance(x, list):
         return [_plain(v, drop) for v in x]
     return x
