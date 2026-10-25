@@ -165,21 +165,32 @@ def offline_keywords(monkeypatch):
 
 
 def test_reasons_quote_the_users_words_that_the_job_contains(state, offline_keywords):
-    # 経験「カフェでホールを2年」と希望「カフェ」で探した。渋谷のカフェホール(a003)の職名に「カフェ」がある
-    r = logic.recommend(state, None, area="渋谷", keywords="カフェでホールを2年 カフェ")
+    # 経験「カフェでホールを2年」を保存し、経験と希望「カフェ」で探した。渋谷のカフェホール(a003)の職名に「カフェ」がある
+    logic.save_preferences(state, "u-story", {"experience": "カフェでホールを2年", "job_type": "カフェ"})
+    r = logic.recommend(state, "u-story", area="渋谷", keywords="カフェでホールを2年 カフェ")
     card = next(j for j in r["jobs"] if j["job_id"] == "a003")
     assert card["reasons"] == ["お話の「カフェでホールを2年」と同じ「カフェ」", "渋谷エリア"]
+
+
+def test_reasons_use_only_what_the_user_said_about_themselves(state, offline_keywords):
+    # 同じ keywords でも、経験・やりたいこと・目的として保存された言葉が無ければ(条件の職種だけなら)今までどおり
+    logic.save_preferences(state, "u-cond", {"job_type": "カフェ"})
+    for uid in ("u-cond", None):
+        card = next(j for j in logic.recommend(state, uid, area="渋谷", keywords="カフェでホールを2年 カフェ")["jobs"]
+                    if j["job_id"] == "a003")
+        assert not any(x.startswith("お話") for x in card["reasons"])
 
 
 def test_reasons_stay_as_before_when_no_word_of_the_user_is_in_the_job(state, offline_keywords, monkeypatch):
     # 意味が近いだけで選ばれた求人(b0701 の倉庫。「もくもくと働きたい」は文面に無い)には、本人の話とのつながりを作らない
     monkeypatch.setattr(offline_keywords, "_api_embed",
                         lambda *a, **kw: offline_keywords._vectors()["jobs"]["b0701"]["v"])
-    r = logic.recommend(state, None, keywords="もくもくと働きたい")
-    jobs, acts = logic.load_jobs(), behavior.view(state, None)
+    logic.save_preferences(state, "u-quiet", {"wants": "もくもくと働きたい"})
+    r = logic.recommend(state, "u-quiet", keywords="もくもくと働きたい")
+    jobs, acts = logic.load_jobs(), behavior.view(state, "u-quiet")
     assert r["jobs"][0]["job_id"] == "b0701"
     for card in r["jobs"]:
-        assert card["reasons"] == logic._reasons(jobs[card["job_id"]], None, None, None, acts, jobs, logic.now(None))
+        assert card["reasons"] == logic._reasons(jobs[card["job_id"]], None, None, None, acts, jobs, logic.now("u-quiet"))
         assert not any(x.startswith("お話") for x in card["reasons"])
 
 
@@ -189,48 +200,125 @@ def test_reasons_without_keywords_are_unchanged(state):
     assert not any(x.startswith("お話") for j in r["jobs"] for x in j["reasons"])
 
 
-@pytest.mark.parametrize(("job_id", "keywords", "reason"), [
-    ("a003", "カフェ", "お話と同じ「カフェ」"),  # 言葉そのものが当たったら、同じ語を2回書かない
-    ("a003", "渋谷のカフェ", "お話の「渋谷のカフェ」と同じ「カフェ」"),  # 地名はエリアの理由と重なるので引かない
-    ("b0101", "高校の文化祭で模擬店の接客 居酒屋", "お話と同じ「居酒屋」"),  # 言葉の中の語(「接客」)が文面に無ければ次の言葉
-    ("b0305", "まかない 店長になりたい", "お話の「店長になりたい」と同じ「店長」"),  # 職名にある語(修飾の無い「店長」は「カフェ店長」にも)
-    ("b0101", "販売の仕事で経験を積んでいずれ居酒屋の店長になりたい", "お話と同じ「居酒屋」"),  # 長い言葉は引用しない
-    ("f1004", "在庫管理の経験", "お話の「在庫管理の経験」と同じ「在庫管理」"),  # 長い語が当たれば、その語を書く
-    ("b0505", "お客様と話したい", "お話の「お客様と話したい」と同じ「お客様」"),  # 仕事内容の文でも3字以上の語は当てる
+def _reason(job_id, keywords, **said):
+    return logic._keyword_reason(logic.load_jobs()[job_id], keywords, said)
+
+
+@pytest.mark.parametrize(("job_id", "said", "reason"), [
+    ("a003", {"wants": "カフェ"}, "お話と同じ「カフェ」"),  # 言葉そのものが当たったら、同じ語を2回書かない
+    ("a003", {"wants": "渋谷のカフェ"}, "お話の「渋谷のカフェ」と同じ「カフェ」"),  # 地名はエリアの理由と重なるので引かない
+    ("b0101", {"experience": "高校の文化祭で模擬店の接客", "wants": "居酒屋"}, "お話と同じ「居酒屋」"),  # 文の中の語が無ければ次の文
+    ("b0305", {"wants": "まかない付き。店長になりたい"}, "お話の「店長になりたい」と同じ「店長」"),  # 修飾の無い「店長」は「カフェ店長」にも
+    ("b0101", {"wants": "販売の仕事で経験を積んでいずれ居酒屋の店長になりたい"}, "お話と同じ「居酒屋」"),  # 長い文は引用しない
+    ("f1004", {"experience": "在庫管理の経験"}, "お話の「在庫管理の経験」と同じ「在庫管理」"),  # 長い語が当たれば、その語を書く
+    ("b0505", {"purpose": "お客様と話したい"}, "お話の「お客様と話したい」と同じ「お客様」"),  # 仕事内容の文でも3字以上の語は当てる
 ])
-def test_keyword_reason_picks_one_fact_from_the_users_words(job_id, keywords, reason):
-    assert logic._keyword_reason(logic.load_jobs()[job_id], keywords) == reason
+def test_keyword_reason_picks_one_fact_from_the_users_words(job_id, said, reason):
+    # 材料は前向きの項目の文。keywords にその文を入れて探したときだけ理由になる
+    assert _reason(job_id, " ".join(said.values()).replace("。", " "), **said) == reason
+
+
+@pytest.mark.parametrize(("sentence", "usable"), [
+    ("カフェ", True), ("カフェのホールを2年", True), ("在庫管理の経験", True), ("店長になりたい", True),
+    ("お店の運営やスタッフの管理に挑戦してみたいです", True), ("カフェのホールを2年やっていました", True),
+    ("収入を増やしたくて", True), ("カフェで2年働いた", True), ("カフェが好きです", True),
+    # 終わり方が許可リストに無い文は、否定の語が一覧に無くても使わない
+    ("接客をしたことがない人です", False), ("ホールに立ったことがありません", False), ("夜勤が苦手かも", False),
+    ("接客は勘弁してほしい", False), ("夜勤が苦痛", False), ("深夜NG", False), ("カフェで働きたいの", False), ("接客をせずに働きたい", False),
+])
+def test_reason_usable_lets_only_positive_endings_through(sentence, usable):
+    assert logic._reason_usable(sentence) is usable
+
+
+@pytest.mark.parametrize(("sentence", "word", "ok"), [
+    ("店長を目指したい", "店長", True), ("カフェのホールを2年", "ホール", True), ("お客様と話したい", "お客様", True),
+    ("お店の運営やスタッフの管理に挑戦してみたい", "管理", True), ("カフェで働きたい", "カフェ", True),
+    ("深夜帯を外したい", "深夜", False), ("夜勤から解放されたい", "夜勤", False), ("接客を卒業したい", "接客", False),
+])
+def test_reason_role_ok_needs_a_positive_role_after_the_word(sentence, word, ok):
+    assert logic._reason_role_ok(sentence, word) is ok
 
 
 @pytest.mark.parametrize("keywords", ["仕事 経験", "宇宙飛行士になりたい", "週2日", None, ""])
 def test_keyword_reason_is_none_without_a_real_word_hit(keywords):
     # どの求人にもある語(仕事・経験)、文面に無い語、数字だけでは理由にしない
-    assert logic._keyword_reason(logic.load_jobs()["b0101"], keywords) is None
+    assert _reason("b0101", keywords, wants=keywords or "") is None
 
 
-@pytest.mark.parametrize(("job_id", "keywords", "in_text"), [
-    ("b0502", "週2日", "週2日"),  # 数字の言葉は、求人の文面にそのままあっても引かない
-    ("f0202", "カフェのホールを2年", "2年"),  # 求人の「経験2年以上」は本人の2年とは別のこと
-    ("b0705", "本業とは違う", "本業"),  # 本人は「本業とは違う」仕事がしたい。「同じ」ではない
-    ("b1105", "アルバイトのままだと収入が安定しない", "収入"),  # 困りごとの中の語
-    ("b0101", "シフトによって収入が変わる", "シフト"),  # 困りごと。「シフト」はどの求人の待遇にもある語でもある
-    ("b0101", "未経験", "未経験"),  # 7割の求人の待遇にある「未経験OK」
-    ("f0101", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 仕事内容の文の2字の語(「経費の管理サービス」)
-    ("f0401", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 職種の分類「事務・管理」
-    ("f1004", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 職名の「在庫管理」はスタッフの管理とは別のもの
-    ("b0902", "店長を目指したい", "目指"),  # 「目指せる」の一部
+@pytest.mark.parametrize(("job_id", "said"), [
+    ("a003", {}),  # 保存した項目が無い(keywords だけ)
+    ("a003", {"job_type": "カフェ", "area": "渋谷"}),  # 条件の項目は本人の目的・経験ではない
+    ("a003", {"experience": "居酒屋のホール"}),  # 「カフェ」は前向きの項目に無い
 ])
-def test_keyword_reason_does_not_make_up_a_link_from_a_word_in_the_text(job_id, keywords, in_text):
-    # 本人の言葉の一部が求人の文面にあっても、意味のつながらない一致は理由にしない(task 229 のレビューで見つかった例)
+def test_keyword_reason_needs_a_positive_item_that_was_also_searched(job_id, said):
+    assert _reason(job_id, "カフェ", **said) is None
+    # 前向きの項目にあっても、keywords で探していない語は引かない
+    assert _reason("a003", "居酒屋", wants="カフェで働きたい") is None
+
+
+@pytest.mark.parametrize(("job_id", "said", "in_text"), [
+    # 避けたいことを話した人の求人に「同じ」を付けない(task 229 の自動レビューの例)。避けたいことは項目ごと材料にしない
+    ("a002", {"avoids": "夜勤なし"}, "夜勤"),
+    ("b0105", {"avoids": "深夜はNG"}, "深夜"),
+    ("b0302", {"avoids": "早朝は無理"}, "早朝"),
+    ("b1102", {"avoids": "力仕事はちょっと"}, "力仕事"),
+    ("b0103", {"avoids": "土日は休みたい"}, "土日"),
+    # 前向きの項目に紛れても、否定・条件らしい語のある文は使わない
+    ("a002", {"wants": "夜勤なし"}, "夜勤"),
+    ("b0105", {"wants": "深夜はNGで"}, "深夜"),
+    ("b0302", {"wants": "早朝は無理"}, "早朝"),
+    ("b1102", {"wants": "力仕事はちょっと"}, "力仕事"),
+    ("b0103", {"wants": "土日は休みたい"}, "土日"),
+    # 避けたいこと・不安にある語を含む文は、経験の文でも使わない(どちらの意味か決められない)
+    ("a002", {"experience": "コンビニの夜勤を1年", "avoids": "夜勤"}, "夜勤"),
+    ("a002", {"experience": "コンビニの夜勤を1年", "concerns": "夜勤がきつかった"}, "夜勤"),
+    # 否定・困りごとの文の語は、別の前向きの文にあっても引かない
+    ("b0705", {"wants": "本業とは違う人と話す仕事", "experience": "本業は経理"}, "本業"),
+    ("b1105", {"purpose": "アルバイトのままだと収入が安定しない"}, "収入"),
+    ("b0101", {"purpose": "シフトによって収入が変わる"}, "シフト"),
+    ("b0502", {"wants": "週2日"}, "週2日"),  # 数字の言葉は、求人の文面にそのままあっても引かない
+    ("f0202", {"experience": "カフェのホールを2年"}, "2年"),  # 求人の「経験2年以上」は本人の2年とは別のこと
+    ("b0101", {"experience": "未経験"}, "未経験"),  # 7割の求人の待遇にある「未経験OK」
+    ("f0101", {"wants": "お店の運営やスタッフの管理に挑戦してみたい"}, "管理"),  # 仕事内容の文の2字の語
+    ("f0401", {"wants": "お店の運営やスタッフの管理に挑戦してみたい"}, "管理"),  # 職種の分類「事務・管理」
+    ("f1004", {"wants": "お店の運営やスタッフの管理に挑戦してみたい"}, "管理"),  # 職名の「在庫管理」はスタッフの管理とは別
+    ("b0902", {"wants": "店長を目指したい"}, "目指"),  # 「目指せる」の一部
+    # 否定の一覧に頼らない: 終わり方が許可リストに無い文(〜ません、〜なかった)と「は」のある文は使わない(task 229 の自動レビューの例)
+    ("b0505", {"experience": "接客はしたことがありません"}, "接客"),
+    ("b0505", {"experience": "接客したことがありません"}, "接客"),
+    ("b0505", {"experience": "接客できません"}, "接客"),
+    ("a001", {"experience": "居酒屋のホールは向いてなかった"}, "居酒屋"),
+    ("a001", {"experience": "居酒屋で働いたけど合わなかった"}, "居酒屋"),
+    ("f0503", {"experience": "飲食で1年働いたが合わなかった"}, "飲食"),
+    ("a002", {"wants": "夜勤はパスしたい"}, "夜勤"),
+    ("a002", {"wants": "夜勤をパスしたい"}, "夜勤"),
+    ("b0505", {"wants": "接客は勘弁してほしい"}, "接客"),
+    ("b0505", {"wants": "接客を減らしてほしい"}, "接客"),
+    ("a002", {"wants": "夜勤不可"}, "夜勤"),
+    ("a002", {"wants": "夜勤NG"}, "夜勤"),
+    ("a002", {"experience": "夜勤が苦痛です"}, "夜勤"),
+    # 許した終わり方の文でも、語の後ろが許した動詞でなければ使わない(避ける動詞の一覧に頼らない)
+    ("a002", {"wants": "深夜帯を外したい"}, "深夜帯"),
+    ("a002", {"wants": "深夜から解放されたい"}, "深夜"),
+])
+def test_keyword_reason_does_not_make_up_a_link_from_a_word_in_the_text(job_id, said, in_text):
+    # 本人の言葉の一部が求人の文面にあっても、意味のつながらない一致や逆の意味の一致は理由にしない。
+    # keywords に避けたいことの言葉が入っても(Prompt では入れない決まり)付けない
     job = logic.load_jobs()[job_id]
-    assert in_text in " ".join([job.title, job.job_type, *job.required_experience, *job.perks, job.description])
-    assert logic._keyword_reason(job, keywords) is None
+    assert in_text in " ".join([job.title, job.job_type, *job.required_experience, *job.preferred_experience,
+                                *job.perks, job.description])
+    keywords = " ".join([*said.values(), in_text])
+    assert logic._keyword_reason(job, keywords, said) is None
 
 
 def test_keyword_reason_on_all_jobs_for_a_career_change_story():
-    # T-switch-to-fulltime の実 API の keywords。理由が付くのは、カフェ・ホール・店長・運営など本人の話と同じものの求人だけ
+    # T-switch-to-fulltime の実 API の keywords と保存された項目。理由が付くのは、カフェ・ホール・店長・運営の求人だけ。
+    # 目的は困りごと(「収入が安定しない」)なので材料にならず、そこにある「アルバイト」「収入」は引かない
     keywords = "カフェのホールを2年 お店の運営やスタッフの管理に挑戦してみたい 店長を目指したい アルバイトのままだと収入が安定しない"
-    reasons = {jid: logic._keyword_reason(j, keywords) for jid, j in logic.load_jobs().items()}
+    said = {"experience": "カフェのホールを2年やっていました",
+            "wants": "店長を目指したい。お店の運営やスタッフの管理に挑戦してみたいです。",
+            "purpose": "アルバイトのままだと収入が安定しないからです。シフトによって収入が変わるときです。"}
+    reasons = {jid: logic._keyword_reason(j, keywords, said) for jid, j in logic.load_jobs().items()}
     words = {r.rsplit("「", 1)[1].rstrip("」") for r in reasons.values() if r}
     assert words == {"カフェ", "ホール", "店長", "運営", "管理"}
     assert [jid for jid, r in reasons.items() if r and r.endswith("「管理」")] == ["f1001"]  # 物流センターの管理者候補
@@ -239,7 +327,7 @@ def test_keyword_reason_on_all_jobs_for_a_career_change_story():
 def test_attribute_reason_stays_first_and_the_users_words_come_next(state):
     job, jobs = logic.load_jobs()["a003"], logic.load_jobs()
     reasons = logic._reasons(job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
-                             {"max_talk_level": 3}, "カフェ")
+                             {"max_talk_level": 3}, "カフェ", {"wants": "カフェ"})
     assert reasons == [logic.TALK_REASONS[job.talk_level], "お話と同じ「カフェ」"]
 
 
