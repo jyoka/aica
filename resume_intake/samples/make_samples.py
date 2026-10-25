@@ -1,9 +1,10 @@
-"""架空のサンプル履歴書を4種類作る(本物の履歴書はリポジトリに入れない)。
+"""架空のサンプル履歴書を5種類作る(本物の履歴書はリポジトリに入れない)。
 
   01_clean.pdf      きれいな PDF(テキスト埋め込み・項目多め)
   02_photo.jpg      スマホで撮った写真風(傾き・ノイズ・影・低めの JPEG 品質)
   03_sparse.png     項目が少ない(学歴と本人希望だけ)
   04_unreadable.jpg ほぼ読めない(強いぼかし。読めないときの挙動の確認用)
+  05_table_photo.pdf JIS 風の表の PDF(テキスト埋め込み・顔写真の欄に架空の画像。テキストだけを送るときの比べ用)
 
 人物・住所・電話・メールはすべて架空。生成にだけ reportlab / pillow を使う(requirements.txt には入れていない)。実行:
     ./.venv/bin/pip install reportlab pillow
@@ -17,6 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
@@ -88,6 +90,87 @@ SPARSE_LINES = [
     ("p", "土日に働けるお店を探しています。"),
 ]
 
+# JIS 風の表の履歴書(05_table_photo.pdf)。年 / 月 / 学歴・職歴 の 3 列
+TABLE_PERSONAL = [
+    ("ふりがな", "すずき はると"),
+    ("氏名", "鈴木 陽翔"),
+    ("生年月日", "2001年7月3日生(満25歳)"),
+    ("現住所", "〒000-0000 みほん県みほん市東町7-8-9"),
+    ("電話", "070-2222-3333"),
+]
+TABLE_HISTORY = [
+    ("", "", "学歴"),
+    ("2017", "4", "みほん県立南高等学校 入学"),
+    ("2020", "3", "みほん県立南高等学校 卒業"),
+    ("2020", "4", "みほん情報専門学校 情報処理科 入学"),
+    ("2022", "3", "みほん情報専門学校 情報処理科 卒業"),
+    ("", "", "職歴"),
+    ("2022", "4", "株式会社みほんシステム 入社(正社員) ヘルプデスク"),
+    ("", "", "  社内からの問い合わせ対応、パソコンの設定"),
+    ("2025", "6", "株式会社みほんシステム 退社"),
+    ("2025", "8", "みほん家電 東町店 入社(契約社員) 販売スタッフ"),
+    ("", "", "  パソコン売り場での接客と説明"),
+    ("", "", "現在に至る"),
+    ("", "", "以上"),
+]
+TABLE_LICENSES = [
+    ("2021", "11", "基本情報技術者試験 合格"),
+    ("2023", "2", "普通自動車第一種運転免許 取得"),
+]
+TABLE_WISH = "IT のサポートの仕事を希望します。土日も勤務できます。"
+
+
+def make_table_pdf(out: Path) -> None:
+    """JIS 風の表の履歴書。顔写真の欄に架空の画像(人の形の影)を置く。テキストは PDF に埋め込む。"""
+    pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+    c = canvas.Canvas(str(out), pagesize=A4)
+    _, height = A4
+    font = "HeiseiKakuGo-W5"
+    left, right = 40, 555
+    c.setFont(font, 20)
+    c.drawString(left, height - 60, "履 歴 書")
+    c.setFont(font, 9)
+    c.drawString(left + 120, height - 58, "2026年10月1日現在")
+    # 顔写真(架空。灰色の背景に人の形の影)
+    photo = Image.new("RGB", (300, 400), (200, 205, 210))
+    d = ImageDraw.Draw(photo)
+    d.ellipse((95, 70, 205, 190), fill=(90, 90, 100))
+    d.ellipse((40, 200, 260, 460), fill=(90, 90, 100))
+    c.drawImage(ImageReader(photo), right - 90, height - 190, width=90, height=120)
+    # 個人欄
+    y = height - 80
+    c.setFont(font, 10)
+    for label, value in TABLE_PERSONAL:
+        c.rect(left, y - 22, right - left - 100, 22)
+        c.drawString(left + 6, y - 15, label)
+        c.drawString(left + 80, y - 15, value)
+        y -= 22
+    # 学歴・職歴の表
+
+    def table(y: float, title: str, rows: list[tuple[str, str, str]]) -> float:
+        c.rect(left, y - 20, right - left, 20)
+        c.drawString(left + 10, y - 14, "年")
+        c.drawString(left + 60, y - 14, "月")
+        c.drawString(left + 200, y - 14, title)
+        y -= 20
+        for year, month, text in rows:
+            c.rect(left, y - 20, 45, 20)
+            c.rect(left + 45, y - 20, 35, 20)
+            c.rect(left + 80, y - 20, right - left - 80, 20)
+            c.drawString(left + 8, y - 14, year)
+            c.drawString(left + 55, y - 14, month)
+            x = left + 250 if text in ("学歴", "職歴") else left + 90
+            c.drawString(x, y - 14, text)
+            y -= 20
+        return y
+
+    y = table(y - 30, "学歴・職歴", TABLE_HISTORY)
+    y = table(y - 20, "免許・資格", TABLE_LICENSES)
+    c.rect(left, y - 80, right - left, 70)
+    c.drawString(left + 6, y - 24, "本人希望記入欄")
+    c.drawString(left + 6, y - 44, TABLE_WISH)
+    c.save()
+
 
 def make_pdf(lines: list[tuple[str, str]], out: Path) -> None:
     pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
@@ -153,4 +236,5 @@ if __name__ == "__main__":
     make_photo(PHOTO_LINES, HERE / "02_photo.jpg")
     make_png(SPARSE_LINES, HERE / "03_sparse.png")
     make_unreadable(PHOTO_LINES, HERE / "04_unreadable.jpg")
+    make_table_pdf(HERE / "05_table_photo.pdf")
     print("wrote:", *[p.name for p in sorted(HERE.glob("0*"))])

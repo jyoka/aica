@@ -9,6 +9,9 @@ fastapi>=0.115
 # 履歴書の読み取り(resume_intake。Responses API の構造化出力 responses.parse)
 openai>=1.99
 pydantic>=2.8
+# テキストのある履歴書の PDF から、ローカルでテキストを取り出す(画像を OpenAI に送らない。docs/design/privacy.md の 3.2)。
+# 解析の上限を呼び出しの間だけ下げる apply_configuration を使う(6.21 で確かめた)
+pypdf>=6.21
 uvicorn>=0.30
 # LINE の Messaging API の呼び出し(line_runtime/line_channel.py)。openai と fastapi のテストが使うので、もとから入っている
 httpx>=0.27
