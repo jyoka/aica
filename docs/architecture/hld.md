@@ -250,7 +250,7 @@ flowchart TB
 | エージェント(`agent.py`) | LINE の共通ルールと dip の Prompt で会話し、`LineReply` を返す | 何も書かない。dip のツールを呼ぶだけ |
 | dip の MCP サーバー(`dip_mcp/`) | 求人、ユーザーの状況、プロフィール、雇用区分、playbook、会話の結果。LLM を使わない | dip の状態 |
 | 履歴書の読み取り(`resume_intake/`) | 履歴書のファイルを Resume Draft にする | 何も書かない(CLI とサンプルの検証だけ `data/resume_intake/` に書く) |
-| 音声ワーカー(`voice_resume/`) | LiveKit の部屋で音声アドバイザーと話す。下書きを作り、結果をトークへ返す | dip の状態(dip のツール経由)、`data/voice-resume/` |
+| 音声ワーカー(`voice_resume/`) | LiveKit の部屋で音声アドバイザーと話す。下書きを作り、結果をトークへ返す | dip の状態(dip のツール経由)。`data/voice-resume/` は開発で `VOICE_RESUME_WRITE_FILES=1` のときだけ |
 | 評価(`evals/`、`evalkit/`) | 模擬ユーザーと会話させて採点し、集計する | 一時ファイルの dip の状態、`evals/results/`、予算台帳 |
 
 ### 3.1 dip のツール(MCP)
@@ -441,7 +441,7 @@ sequenceDiagram
         W->>D: set_search_track、save_user_preferences、recommend_jobs
         W-->>U: 読み上げ(Cartesia)
     end
-    W->>W: 文字起こしから下書きを作り、data/voice-resume/ に書く
+    W->>W: 文字起こしから下書きを作る(data/voice-resume/ に書くのは開発のときだけ)
     W->>S: POST /api/voice/result(内部の鍵つき)
     S->>S: 求人を dip の求人データで作り直し、今の会話にエージェントの返信として足す
     W->>D: record_conversation_outcome(propose か consult と、相談のまとめ)
@@ -456,8 +456,10 @@ sequenceDiagram
 - 結果をトークに足すときは LLM を呼ばず、ターンも数えません(`LineRuntime.add_voice_result`、`voice_reply.py`)
 - 音声側から待つ(wait)は記録しません。断っていない人を wait にしない決まりのためです
 - 相談の途中で本人が「すべて消す」をしていたら、その前の部屋の結果は 410 で断ります。ワーカーは会話の段階の結果を
-  記録せず、書き出したファイルも消します
-- Web サーバーは、プロフィールで下書きを消すとき、ワーカーが書いたファイルをパスで消します(`server.py` の `_remove_voice_files`)
+  記録せず、書き出したファイルがあれば消します
+- 下書きは、トークが受け取った結果として dip の状態(`voice_results`)に入ります。既定では `data/voice-resume/` にファイルを
+  書き出しません。書き出すのは開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです([privacy.md](../design/privacy.md) の 3.3)
+- Web サーバーは、プロフィールで下書きを消すとき、ワーカーが書いたファイルがあればパスで消します(`server.py` の `_remove_voice_files`)
 - 下書きの書類は雇用区分で決まります。正社員なら職務経歴書、それ以外は履歴書です
 
 ### 4.4 プロフィールを直す、消す
@@ -502,7 +504,7 @@ flowchart LR
 | `data/costs.jsonl` | 費用台帳。LLM の呼び出し 1 回 1 行(user_id つき) | LineRuntime、Web サーバー(履歴書の読み取り) | 消さない |
 | `data/quota.json` | その日のターン数(人ごと、IP ごと)と、その日に使われた匿名ユーザーID。全体の数はここから数える | ターン数の上限 | 日付が変わると数え直す |
 | `data/line_events.json` | 受けた LINE の webhook のイベントの ID(直近 2,000 件)。ユーザーは分からない | Web サーバー(LINE のチャネル) | 古いものから消える |
-| `data/voice-resume/` | 相談ごとの下書き、文字起こし、求人の提案 | 音声ワーカー | プロフィールで下書きを消したとき、「すべて消す」 |
+| `data/voice-resume/` | 相談ごとの下書き、文字起こし、求人の提案。本番では書かない(既定)。書くのは開発で `VOICE_RESUME_WRITE_FILES=1` のときだけ。下書きは本番でも `data/state.json` の音声相談の結果に入る | 音声ワーカー(開発のときだけ) | プロフィールで下書きを消したとき、「すべて消す」 |
 | `evals/results/`、`evals/budget.jsonl` | 評価の結果と予算台帳 | 評価 | 結果は git に入れない。予算台帳は git に入れる |
 | `data/dip_events.db` | dip の行動の元データ: 会員とイベントのログ(4.9)。シミュレーションのデータ | 生成器(`python -m scripts.gen_dip_events`)、dip のツール(会話の中の保存、フォームの答え、応募、接触の追記)、最初に要約が無いときの準備(シナリオのユーザー) | 生成器の `--replace` で作り直すとき。イベントは追記だけ |
 | `data/dip_summaries.db` | 状況の要約: 会員 1 人 1 行(4.9) | 要約のバッチ(`python -m dip_mcp.summarize`)、最初に要約が無いときの準備 | バッチのたびに全員分を置き換える |
@@ -797,7 +799,8 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書のファイル本体とファイル名は保存しません
 - レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。答えはそのブラウザの localStorage にだけ残り、サーバーには送りません(4.11)
 - 本人がトークに書いた文は、そのまま会話に保存し、LLM のプロバイダに送ります。個人情報が書かれても消しません
-- 音声相談の文字起こしは `data/voice-resume/` に保存します
+- 音声相談の文字起こしは、本番ではファイルに残しません。下書きを作る間だけ音声ワーカーのメモリにあります。
+  `data/voice-resume/` に書き出すのは、開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです
 - 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`(トークの発言、希望、相談の記録)と、
   Resume Draft から電話、メール、郵便番号を消す `scrub_pii`(読み取り結果、下書き、dip への保存)があります。
   どちらも全角の数字やハイフンを `fold_pii` でそろえてから照合します

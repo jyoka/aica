@@ -179,7 +179,7 @@ LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKi
 |---|---|---|
 | `/app/data/line_checkpoints.db` | 会話 | 本人が「すべて消す」。履歴書を消すと、その前の会話も消える |
 | `/app/data/state.json`、`dip_*.db` | プロフィール(希望、経歴、履歴書の読み取り結果、保存した求人、応募) | 本人が消す、「すべて消す」 |
-| `/app/data/voice-resume/` | 音声相談の下書きと文字起こし | 本人が下書きを消す、「すべて消す」 |
+| `/app/data/voice-resume/` | 本番では書かない。`VOICE_RESUME_WRITE_FILES` を付けないと、音声相談の下書きと文字起こしをファイルに書き出さない(下書きは `state.json` に入る) | - |
 | `/app/data/costs.jsonl` | 匿名ユーザーIDごとの費用 | 消さない(上限を逃れられないように) |
 | `/app/data/quota.json` | 当日のターン数と、当日の接続元の IP | 日付(日本時間)が変わった後、最初にターンかプロフィールの書き込みがあったときに書き直されて消える(それまではファイルに残る) |
 | Render のアクセスログ | 要求のパス、時刻、接続元など | Render の保存の期間による(不明。Render の設定と規約で確かめる) |

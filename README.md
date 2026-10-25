@@ -300,7 +300,8 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
 | `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
-| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
+| `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは dip の状態に入り、トークに届く([privacy.md](docs/design/privacy.md) の 3.3) | 不可 |
+| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | `VOICE_RESUME_WRITE_FILES=1` のときの、下書き、文字起こし、求人の提案の置き場 | 不可 |
 | `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
 | `VOICE_RESUME_MAX_JOBS` | 4 | 音声ワーカーが同時に受ける相談の数。超えた部屋にはアドバイザーが入らない(`dev` でも) | 不可 |
