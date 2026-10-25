@@ -18,7 +18,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
 - ブラウザから呼ぶ経路は、正しい形式の Cookie が必須(無い・不正なら 401)。扱えるのは Cookie の匿名IDのユーザーだけ
   (他人のユーザーIDを本文に入れても 403)。ID を名乗るだけでは読めない・話せない・会話数の上限も迂回できない。
 - 本人のデータを指す URL にユーザーIDを載せない。API はユーザーIDを本文で受け取り、画面(LIFF)は Cookie から本人を決める。
-- サーバー間の経路(音声ワーカー → POST /api/voice/result)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
+- サーバー間の経路(音声ワーカー → POST /api/voice/result と /api/voice/session)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
 
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
 丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
@@ -48,7 +48,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import (
@@ -86,6 +86,7 @@ from line_runtime.resume_confirm import INTRO as RESUME_INTRO
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
+from line_runtime.voice_rooms import JOIN_WINDOW, ActiveVoiceRooms
 from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -224,6 +225,7 @@ async def lifespan(app: FastAPI):
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
+    app.state.voice_rooms = ActiveVoiceRooms()  # 人 → 終わっていない音声相談の部屋(同時に 1 つまで)
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
@@ -820,6 +822,9 @@ async def profile_forget(request: Request):
 # (サーバー間の経路なので共有鍵 AICA_INTERNAL_KEY で守る)、ここがそれを今の会話に AI の返信として続ける。
 # シートは開いている間だけ POST /api/voice/wait で待ち、届いたら閉じて同じ返信をトークに描く(常時の問い合わせはしない)。
 # ユーザーIDは本文で受け取り、URL には載せない。
+# 1 人が開ける部屋は同時に 1 つまで(部屋ごとにワーカーのジョブと dip MCP の子プロセスができる。line_runtime.voice_rooms)。
+# ワーカーは本人が部屋に入ったとき・ジョブを終えたときに POST /api/voice/session で知らせる(共有鍵つき)。
+# 結果(/api/voice/result)が届いただけでは部屋を終わりにしない(結果を送らせた後も、接続したままジョブを持ち続けられるので)。
 
 VOICE_WAIT_MAX = 30.0  # 1回の待ちの上限(秒)。シートはこれを繰り返す
 DRAFT_MAX = 20_000  # 下書き(履歴書・職務経歴書)の長さの上限(字)。普通の下書きは数千字
@@ -845,6 +850,17 @@ class VoiceResultIn(BaseModel):
     document_kind: str | None = None  # 下書きの書類(履歴書 / 職務経歴書)。無いときは履歴書
 
 
+class VoiceSessionIn(BaseModel):
+    """voice-resume のワーカーが知らせる、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)。"""
+    user_id: str
+    room: str
+    state: Literal["joined", "ended"]
+
+
+VOICE_BUSY_MESSAGE = ("前の音声相談がまだ終わっていません。前の通話を閉じてから、もう一度お試しください"
+                      f"(つながらないまま閉じたときは、{round(JOIN_WINDOW.total_seconds() / 60)} 分ほどで開けます)。")
+
+
 def _voice_ready(user_id: str) -> asyncio.Condition:
     """そのユーザーの音声相談の結果が届いたことを、待っているシートへ知らせる。"""
     return app.state.voice_ready.setdefault(user_id, asyncio.Condition())
@@ -855,17 +871,23 @@ async def voice_start(body: UserIn, request: Request):
     """音声相談のシートを開いた: LiveKit の部屋に入る接続トークンを発行する(本人のブラウザにだけ)。
     音声セッションも実 API を使うので、会話数を1ターン使う(上限なら発行せず 429)。トークンの有効期限は数分
     (同じトークンで入り直して、会話数を使わずに音声セッションを重ねられないように)。
-    since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。"""
+    since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。
+    その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があれば、会話数を使わずに 409
+    (1 人が同時にいくつも部屋を開いて、ワーカーのジョブを持ち続けられないように)。"""
     user_id = body.user_id
     _require_own(request, user_id)
     from voice_resume.livekit_token import configured, issue_token
 
     if not configured():  # 会話数を使う前に断る
         raise HTTPException(503, "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)")
+    rooms = app.state.voice_rooms
+    if rooms.open_room(user_id) is not None:  # 確かめてから記録するまで await を挟まない(同時の呼び出しも 1 つだけ通る)
+        raise HTTPException(409, VOICE_BUSY_MESSAGE)
     limited = app.state.quota.try_take(user_id, _client_ip(request))
     if limited is not None:
         raise HTTPException(429, limited)
     token = issue_token(user_id)
+    rooms.issue(user_id, token["room"])
     logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
     return token | {"since": logic.voice_result_count(state, user_id)}
 
@@ -910,6 +932,19 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     async with cond:
         cond.notify_all()
     return out
+
+
+@app.post("/api/voice/session")
+async def voice_session(body: VoiceSessionIn, request: Request):
+    """音声ワーカーが、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)を知らせる(サーバー間の経路。共有鍵で守る)。
+    joined の部屋は、終わりの知らせが届くまで、その人の終わっていない部屋として数える(line_runtime.voice_rooms)。
+    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。"""
+    _require_internal(request)
+    rooms = app.state.voice_rooms
+    if body.state == "joined":
+        return {"allowed": rooms.joined(body.user_id, body.room)}
+    rooms.release(body.user_id, body.room)
+    return {"allowed": True}
 
 
 @app.get("/liff/voice/draft", response_class=HTMLResponse)

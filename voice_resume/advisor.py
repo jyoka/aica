@@ -796,8 +796,8 @@ def _default_client():
     return AsyncOpenAI()
 
 
-async def _post_json(url: str, payload: dict) -> None:
-    """line_runtime へ JSON を POST する(結果をトークへ戻す)。aiohttp は livekit-agents の依存。
+async def _post_json(url: str, payload: dict) -> dict:
+    """line_runtime へ JSON を POST し、返ってきた JSON を返す(結果をトークへ戻す)。aiohttp は livekit-agents の依存。
     サーバー間の経路なので、共有鍵(環境変数 AICA_INTERNAL_KEY。line_runtime と同じ値)を付ける。"""
     import aiohttp
 
@@ -809,3 +809,4 @@ async def _post_json(url: str, payload: dict) -> None:
         if resp.status == 410:  # 面談の途中で本人が「すべて消す」をした(line_runtime.server の voice_result_in)
             raise TalkForgotten()
         resp.raise_for_status()
+        return await resp.json(content_type=None) or {}

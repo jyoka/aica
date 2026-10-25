@@ -424,8 +424,10 @@ sequenceDiagram
     P->>S: POST /api/voice/start(ターンを 1 つ数える)
     S-->>P: 部屋の接続トークン(5 分)と since
     P->>K: 部屋に入る(metadata に user_id)
-    K->>W: 相談を始める
-    W->>D: 子プロセスを起動し、dip の要約と音声の playbook を読む
+    K->>W: 相談を始める(同時に受けるのは VOICE_RESUME_MAX_JOBS まで)
+    W->>D: 子プロセスを起動する
+    W->>S: POST /api/voice/session joined(内部の鍵つき。終わるまで、その人は次の部屋を開けない。別の部屋があればジョブを止める)
+    W->>D: dip の要約と音声の playbook を読む
     loop 相談の間
         U->>K: 話す
         K->>W: 音声(Deepgram で文字にする)
@@ -436,6 +438,7 @@ sequenceDiagram
     W->>S: POST /api/voice/result(内部の鍵つき)
     S->>S: 求人を dip の求人データで作り直し、今の会話にエージェントの返信として足す
     W->>D: record_conversation_outcome(propose か consult と、相談のまとめ)
+    W->>S: 本人が抜けてセッションが閉じたらジョブを終え、POST /api/voice/session ended
     loop シートが開いている間
         P->>S: POST /api/voice/wait(最長 25 秒)
     end
@@ -760,7 +763,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - ブラウザに渡すのは、LiveKit の部屋ごとの接続トークン(有効期限 5 分)だけです
 - LINE のチャネルシークレットとチャネルアクセストークン(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)も `.env` に置きます
 - LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も `.env` に置きます。漏れると、userId を知っている人が `l-…` を作れます
-- 音声ワーカーから Web サーバーへの `POST /api/voice/result` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
+- 音声ワーカーから Web サーバーへの `POST /api/voice/result` と `POST /api/voice/session` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
   (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
 
 ### LLM の出力と外のデータ
