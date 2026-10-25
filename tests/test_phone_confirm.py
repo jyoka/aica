@@ -115,7 +115,9 @@ def test_chat_confirms_service_with_one_question_before_setting_the_talk_level(t
                                                "reason": "電話を避けたい人に求人を提案", "confidence": 0.8})),
         lambda msgs: reply(["電話の少ない求人です。"], job_ids=_cards_without_call_centers(msgs), quick_replies=CLOSING),
     ])
-    said = [f"{time_band or ''}{'で' if time_band else ''}アルバイトを探しています。電話はしたくないです", answer]
+    # 場所を問わない人(task 224: エリアが分からないまま探すのは、本人がエリアを問わないと言ったときだけ)
+    said = [f"{time_band or ''}{'で' if time_band else ''}アルバイトを探しています。場所はどこでもいいです。電話はしたくないです",
+            answer]
     turns = run(model, [(uid, "message", m) for m in said], tmp_path)
 
     assert CONFIRM in model.systems[0]  # 1問で確かめる指示が LINE 側エージェントに届いている

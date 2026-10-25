@@ -178,7 +178,8 @@ SEARCH_SC = {"expect_outcome": ["propose"]}
 def search_script(h: bool) -> tuple[list, list]:
     """「求人を探す」から条件で探す(相談に入らない)。h=True は H の呼び方: アルバイト・パートへの切り替えで playbook を読み、
     絞り込みでは勤務地と時間帯を1つずつ聞いて、そのたびに探し直す。"""
-    said = [None, "求人を探す", "アルバイト・パート", "カフェで探したいです", "勤務地や時間帯で絞る"]
+    # 場所を問わない人(task 224: エリアが分からないまま探すのは、本人がエリアを問わないと言ったときだけ)
+    said = [None, "求人を探す", "アルバイト・パート", "カフェで探したいです。場所はどこでもいいです", "勤務地や時間帯で絞る"]
     said += ["渋谷です", "日中です"] if h else ["渋谷で、日中がいいです"]
     switch = ("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": "アルバイト・パート"})
 
