@@ -226,6 +226,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
               "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
               "consult_offer_at": "down", "greeting_line_messages": "down", "escape_only_options": "down",
+              "echo_acks": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -256,6 +257,8 @@ def to_run(r: dict, rep: int) -> dict:
                 "consult_offer_at": (r.get("consult_questions") or {}).get("offer_at"),
                 # 問いの選択肢が逃げ道だけ(「それ以外 / 今はいい」など)のターンの数(違反の内数。0 が決まり)
                 "escape_only_options": len(r.get("escape_only_turns", [])),
+                # 受け止めの「〜ですね」の文がある吹き出しの数(続けて使うと違反。#221 では 113 吹き出しのうち 24 個)
+                "echo_acks": r.get("echo_ack_bubbles"),
                 # 初回訪問の挨拶が LINE で何通か(LINE の初回訪問だけ。ほかは None)
                 "greeting_line_messages": r["line_messages"][0] if r.get("line_messages")
                 and (r.get("turn_log") or [{}])[0].get("entry") == "visit" else None,
@@ -269,6 +272,7 @@ STOPPED_NOTE = {True: "(上限に達したので途中で止めた)", "budget": 
 
 
 def report(doc: dict) -> str:
+    from evals.checks import SHARED_SENTENCE_MIN_CONVS, shared_sentences
     from evals.judge import DEPTH_LABELS
 
     runs = [r for r in doc["runs"] if r["status"] == "ok"]
@@ -300,6 +304,8 @@ def report(doc: dict) -> str:
     lines += [f"- **{tag(r)}** 入口 T{q['start']}、問い {'・'.join(f'T{k}' for k in q['asked']) or 'なし'}、"
               + (f"求人を見るかを聞いた・探した T{q['offer']}({q['offer_at']}問目)" if q["offer"] else "求人を見るかを聞いていない")
               for r in runs if (q := r["detail"].get("consult_questions"))] or ["- なし(相談に入った会話が無い)"]
+    lines += ["", f"## 複数の会話で同じ文({SHARED_SENTENCE_MIN_CONVS} 件以上。挨拶の T1、問い、Prompt が文言を決めている文は除く)", ""]
+    lines += [f"- {n} 件: 「{x}」" for x, n in shared_sentences([r["detail"].get("turn_log") or [] for r in runs]).items()] or ["- なし"]
     lines += ["", "## 模擬ユーザーが設定の指示文を発言にした(評価の崩れ。エージェントの違反ではない)", ""]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("sim_leaks", [])] or ["- なし"]
     lines += ["", "## keywords の検索(最高値 - 中央値。SIM_PEAK 未満は部分一致だけ)", ""]

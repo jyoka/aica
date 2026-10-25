@@ -103,18 +103,18 @@ def consult_script(h: bool) -> list:
     return [
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
         switch_and_read(UID, BAITO, CONSULT_SAID[1]),
-        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+        reply(["アルバイトで何から始めるか、一緒に整理しましょう。",
                "今回、バイトを探そうと思ったきっかけは何ですか?"], quick_replies=[]),
         call(*save({"purpose": "生活費の足し"})),
         reply(["生活費の足しにしたいのですね。", "そう思ったのは、どんな変化からですか?"], quick_replies=[]),
         *([call(*save({"purpose": PURPOSE}))] if h else []),
-        reply(["家賃の分を自分で払いたいのですね。", "やってみたいことや、好きなことはありますか?"],
+        reply(["家賃の分を払うためのバイトで、やってみたいことや、好きなことはありますか?"],
               quick_replies=[]),
         # 直した決まり: 掘り下げの答え(目的)は、次に保存するターンで新しい項目と1回の save にまとめる
         call(*save({"wants": "パン屋で働いてみたい"})) if h else call(*save({"wants": "パン屋で働いてみたい", "purpose": PURPOSE})),
         reply(["パン屋で働いてみたいのですね。", "パン屋のどんなところに惹かれますか?"], quick_replies=[]),
         *([call(*save({"wants": WANTS}))] if h else []),
-        reply(["お客さんに渡すところなのですね。", "働ける時間帯とエリアはどのあたりですか?"],
+        reply(["働ける時間帯とエリアはどのあたりですか?"],
               quick_replies=["平日の夕方", "今はいい"]),
         *([call(*save({"time_band": "夕方", "area": "池袋"}), "s1"), call(*save({"time_band": "平日の夕方"}), "s2")] if h
           else [call(*save({"time_band": "平日の夕方", "area": "池袋", "wants": WANTS}))]),
@@ -197,7 +197,7 @@ def search_script(h: bool) -> tuple[list, list]:
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
         reply([TRACK_Q], quick_replies=TRACK_REPLIES),
         switch_and_read(UID, BAITO, "アルバイト・パート") if h else call(*switch),
-        reply(["アルバイト・パートのお仕事で考えますね。", "どんなお仕事で探しますか?"], quick_replies=["カフェ", "今はいい"]),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", "どんなお仕事で探しますか?"], quick_replies=["カフェ", "今はいい"]),
         search({"job_type": "カフェ"}, job_type="カフェ"),
         lambda msgs: reply(["カフェのお仕事です。"], job_ids=returned_jobs(msgs), quick_replies=NARROW),
     ]
@@ -297,7 +297,7 @@ def _rec(**cond):
 def test_what_is_not_counted_as_an_overlap():
     said = [None, "まず相談する", "生活費のため", "やっぱり渋谷じゃなくて新宿で", "渋谷か池袋で、カフェを"]
     turns = [t(["どうしますか?"], quick_replies=MENU),
-             t(["いくつか伺いながら一緒に整理します。きっかけは?"], [_switch(BAITO), _read(BAITO), _save({"area": "渋谷"})]),
+             t(["何から始めるか、一緒に整理しましょう。きっかけは?"], [_switch(BAITO), _read(BAITO), _save({"area": "渋谷"})]),
              t(["生活費ですね。例えば?"], [_save({"purpose": "生活費のため"})]),
              # 言い直した条件を保存し直すのは、掘り下げの答えではない
              t(["新宿ですね。時間帯は?"], [_save({"area": "新宿"})]),
@@ -322,7 +322,7 @@ def test_playbook_reread_is_required_in_a_consult_or_on_switching_to_fulltime():
     # 相談に入っていたら(本人の合図・入口の1文・前に読んだ playbook)、アルバイト・パートへの切り替えでも読む
     v = playbook_violations(turns, [None, "まず相談する", "アルバイト・パート", "やっぱり正社員で"])
     assert v == ["T3: 区分を「アルバイト・パート」に切り替えたのに、同じターンで playbook を読み直していない"], v
-    opened = [turns[0], t(["いくつか伺いながら一緒に整理します。どちらで探しますか?"]), *turns[2:]]
+    opened = [turns[0], t(["何から始めるか、一緒に整理しましょう。どちらで探しますか?"]), *turns[2:]]
     assert playbook_violations(opened, said) == [
         "T3: 区分を「アルバイト・パート」に切り替えたのに、同じターンで playbook を読み直していない"]
     # 相談に入らずに正社員へ切り替えて正社員の playbook を読んだ後は、アルバイト・パートへの切り替え・取り消しでも読み直す

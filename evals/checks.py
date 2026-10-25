@@ -115,7 +115,13 @@ REASK = {
     # 本人に強みを言ってもらう問いだけ(「(ご自身の)強みを活かせる求人を探しますか?」は強みを使った次の問い)
     "strengths": re.compile(r"強み(は|って|として)(何|なん|どこ|どんな|どういう|どの)|強みを(教えて|聞かせて|挙げ|ひとつ|一つ)"
                             r"|(どんな|どのような)強み|(ご自身の|あなたの)強み(?!を(活か|生か))"),
-    "wants": re.compile(r"(やりたい|やってみたい|挑戦したい|してみたい)(こと|お?仕事)|興味(の|が)ある(こと|お?仕事)"),
+    # 「してみたい仕事」の語順だけでなく、「どんな仕事をしてみたいですか」「どんなことに取り組んでみたいですか」の語順と言い換えも
+    # 数える(#221 の T-switch-to-fulltime T7・T8。本人は U4 で「販売の仕事で店長を目指したい」と言っていた)
+    "wants": re.compile(r"(やりたい|やってみたい|挑戦したい|してみたい|取り組(み|んでみ)たい|携わ(り|ってみ)たい)(こと|お?仕事)"
+                        r"|興味(の|が)ある(こと|お?仕事)"
+                        r"|(どんな|どのような|どういう)(お?仕事|こと|作業|業務)(を|に|が|なら)?"
+                        r"(して|やって|挑戦して|取り組んで|携わって)?(みたい|したい|やりたい|取り組みたい|携わりたい|挑戦したい|就きたい)"
+                        r"|(どんな|どのような|どういう)(お?仕事|こと|分野)に興味"),
     "avoids": re.compile(r"(避けたい|やりたくない|したくない|苦手な)(こと|お?仕事|作業)"),
     "concerns": re.compile(r"(不安|心配)(な|に思う|に感じる)?(こと|点)|(不安|心配)(は|が)(あり|ござい)"
                            r"|気になる(こと|点)(は|が|って)"),
@@ -152,8 +158,11 @@ WIDEN = re.compile(r"広げ|広く|変え|加え|追加|ゆるめ|緩め|外し"
 NARROW = re.compile(r"(避け|以外|除い|除く|外し|難し|厳し|無理|控え)[^、。?？]*(なら|のであれば|とすると|だと|場合)")
 # 求人を提案したターンと、その後この数のターンまでは、不安(concerns)の問いを提案への問いとみなす
 PROPOSAL_FOLLOW_TURNS = 2
+# 本人の言葉を引いて「〜というのは」と、すぐ中身を聞く形(「店長を目指したいというのは、どんな仕事をしてみたいからですか?」)も掘り下げ。
+# 「〜というのは分かりました、では…」のように、引いた後に別の文が挟まる問いは数えない
 PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|たとえば|どんな場面|どういう(こと|意味|点|ところ)"
-                               r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに")
+                               r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに"
+                               r"|というのは[、,]?(例えば|たとえば|どんな|どういう|どのよう|なぜ|どうして|何)")
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
 
@@ -614,8 +623,11 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
     (「年収の下限は500万円のままでよいですか?」)。求人を提案したターン(recommend_jobs・カード)とその後
     PROPOSAL_FOLLOW_TURNS ターンは、不安(concerns)の問いを提案への問いとみなして数えない(それより後は数える。
     1通目で求人を出す再訪でも、会話全体が免除にはならない)。相談で分かった本人のこと(PROFILE_KEYS)への掘り下げ・追加の問い
-    (「それはなぜですか?」「具体的にはどんな場面ですか?」「他に不安なことはありますか?」)は聞き直しではない。"""
+    (「それはなぜですか?」「具体的にはどんな場面ですか?」「他に不安なことはありますか?」)は聞き直しではない。
+    本人のこと(PROFILE_KEYS)は、前の値に言い足した値で保存し直したターンでも、前に保存していれば聞き直しに数える
+    (前の値を含まない値への言い直しは、今までどおりそのターンは聞いてよい)。"""
     saved = {k: 0 for k in seeded or {}}
+    first_saved = dict(saved)  # 最初に保存したターン(本人のこと PROFILE_KEYS は、前の値に言い足して保存し直したターンも聞き直しに数える)
     known = {k: [str(v)] for k, v in (seeded or {}).items()}
     out = []
     proposed_at = None
@@ -629,6 +641,10 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
         for t in r["tools"]:
             if t["name"] == "save_user_preferences":
                 for k, v in (t["args"].get("preferences") or {}).items():
+                    # 前の値を含まない値(「やっぱり販売じゃなくていい」の後の別のやりたいこと)は、言い足しではなく言い直しなので
+                    # 最初の保存から数え直す(言い直したターンは、何をしたいかを聞いてよい)
+                    if k not in first_saved or not any(old in str(v) for old in known.get(k, [])):
+                        first_saved[k] = i
                     if str(v) in known.get(k, []):
                         saved.setdefault(k, i)
                     else:
@@ -639,6 +655,10 @@ def reask_violations(turns: list[dict], user_msgs: list[str | None] = (), seeded
                 continue
             q = _question_part(b)
             for k, at in saved.items():
+                # 本人のことは、言い足した答え(前の値を含む値)を保存し直したターンに同じ項目を白紙で聞くのも聞き直し
+                # (#221 の T-switch-to-fulltime T8: U8「販売の仕事がしたいです」で wants を「店長を目指したい。販売の仕事がしたいです。」に
+                # 保存し直し、同じ返信で「どんなことに取り組んでみたいですか?」)
+                at = first_saved.get(k, at) if k in PROFILE_KEYS else at
                 m = REASK[k].search(q) if at < i and k in REASK else None
                 if m and k in PROFILE_KEYS and PROFILE_FOLLOW_UP.search(q):
                     continue
@@ -759,7 +779,7 @@ def playbook_reads(r: dict) -> list[str]:
             and not (isinstance(t.get("result"), dict) and "error" in t["result"])]
 
 
-# 相談の入口で伝える1文(Prompt の「いくつか伺いながら一緒に整理します」)。相談に入ったかを返信から見る手がかり
+# 相談の入口で伝える1文(Prompt の例「何から始めるか、一緒に整理しましょう。」)。相談に入ったかを返信から見る手がかり
 CONSULT_OPENING = re.compile(r"一緒に整理")
 
 
@@ -1672,6 +1692,66 @@ def action_offers(turns: list[dict]) -> list[dict]:
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
 
 
+# ----------------------------- 受け止めの「〜ですね」と決まり文句(会話の改善 C (9/10)) -----------------------------
+
+# 受け止めの1文: 「〜ですね」「〜なんですね」で終わる平叙文(「夜からですね。」「本や音楽が好きなんですね。」)。履歴書の確認形
+# (「施工管理を6年されていたんですね。」)と相づち(「いいですね。」)も、同じ形が続くので数える(Prompt にもそう書いた)。
+# 疑問符の付く確認の問いは数えない。#221 では 113 吹き出しのうち 24 個にあった
+ECHO_ACK = re.compile(r"ですね[。!！]?$")
+# 相談の入りと区分の切り替えの決まり文句(Prompt の前の例をそのまま使った文)。区分の文は、区分と「で考えますね」だけの文
+# (本人の言葉も次の問いも入っていない)を数える。「正社員で、販売の店長を目指せるお仕事を考えますね。」は数えない
+STOCK_PHRASES = {
+    "相談の入り": re.compile(r"いくつか(お?(伺|うかが)い|お?聞き)(し)?ながら、?一緒に整理(します|しましょう|していきます)"),
+    "区分の切り替え": re.compile(r"((では|じゃあ|それでは|了解です|承知しました|かしこまりました|分かりました|わかりました)[、,]?)?"
+                          r"(アルバイト・パート|アルバイト|パート|バイト|正社員)(の(お)?仕事)?で(考え|探し)(ていき)?ますね[。!！]?"),
+}
+# 複数の会話で同じ文を数えるときに除く、Prompt が文言を決めている文(履歴書の提案・締めの入口・下書きの画面の案内)
+PRESCRIBED_SENTENCE = re.compile(r"読み込むと早いです|「保存」を押しておくと|見返せます|音声相談も使えます|下書きの画面で")
+SHARED_SENTENCE_MIN_LEN = 12  # これより短い文(「承知しました。」「ありがとうございます。」など)は数えない
+SHARED_SENTENCE_MIN_CONVS = 3
+
+
+def echo_acks(r: dict) -> list[str]:
+    """その返信の、受け止めの「〜ですね」の文(ECHO_ACK)。"""
+    return [x for b in r["bubbles"] for x in _sentences(b) if ECHO_ACK.search(x.strip()) and not _questions([x])]
+
+
+def echo_streak_violations(turns: list[dict]) -> list[str]:
+    """受け止めの「〜ですね」を続けて使わない(playbook の「区分に共通の決まり」)。前の返信にも受け止めの文があれば違反。
+    求人を見るかを聞く返信(offers_jobs)の「〜ですね」は、playbook が決めている聞いた内容のまとめなので、どちらの側でも数えない。"""
+    acked = [bool(echo_acks(r)) and not offers_jobs(r) for r in turns]
+    return [f"T{i + 1}: 受け止めの「〜ですね」を続けて使った(T{i} に続けて): {echo_acks(r)[0]}"
+            for i, r in enumerate(turns) if i and acked[i] and acked[i - 1]]
+
+
+def stock_phrase_violations(turns: list[dict]) -> list[str]:
+    """相談の入りと区分の切り替えを、決まり文句のまま言わない(Prompt の「雇用区分」と「相談」)。区分の文は、区分を切り替えた
+    ターン(set_search_track を呼んだ)で文全体が決まり文句のとき(fullmatch)、相談の入りは文の中にあるとき数える。"""
+    out = []
+    for i, r in enumerate(turns):
+        switched = any(t["name"] == "set_search_track" for t in r["tools"])
+        for x in (x.strip() for b in r["bubbles"] for x in _sentences(b)):
+            kind = next((k for k, p in STOCK_PHRASES.items()
+                         if (p.fullmatch(x) and switched if k == "区分の切り替え" else p.search(x))), None)
+            if kind:
+                out.append(f"T{i + 1}: {kind}の決まり文句をそのまま使った: {x}")
+    return out
+
+
+def shared_sentences(conversations: list[list[dict]], min_convs: int = SHARED_SENTENCE_MIN_CONVS) -> dict[str, int]:
+    """複数の会話で、同じ文をそのまま使った数(文 -> 会話の数。min_convs 件以上の会話に出た文だけ)。挨拶の T1、問いの文
+    (「この内容で求人を見ますか?」は playbook の問い)、短い文(SHARED_SENTENCE_MIN_LEN 字未満)、Prompt が文言を決めている文
+    (PRESCRIBED_SENTENCE)は数えない。
+    1つの評価の実行(シナリオ全部)で見る(#221 では「いくつか伺いながら、一緒に整理します。」が 6 件の会話に出た)。"""
+    seen: dict[str, set[int]] = {}
+    for n, turns in enumerate(conversations):
+        for r in turns[1:]:
+            for x in (x.strip() for b in r["bubbles"] for x in _sentences(b)):
+                if len(x) >= SHARED_SENTENCE_MIN_LEN and not _questions([x]) and not PRESCRIBED_SENTENCE.search(x):
+                    seen.setdefault(x, set()).add(n)
+    return dict(sorted(((x, len(c)) for x, c in seen.items() if len(c) >= min_convs), key=lambda kv: -kv[1]))
+
+
 def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts: dict | None = None,
                         upload: dict | None = None, channel: str = "web",
                         features: list[str] | tuple[str, ...] = ()) -> dict:
@@ -1725,6 +1805,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     violations += consult_length_violations(turns, user_msgs)
     violations += situation_start_violations(sc, turns, user_msgs)
     violations += thanks_close_violations(turns, user_msgs)
+    violations += echo_streak_violations(turns) + stock_phrase_violations(turns)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
@@ -1768,6 +1849,9 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "consult_questions": consult_questions(turns, user_msgs),
         # 問いの選択肢が逃げ道だけのターン(違反にも数える。#221 では 87 ターン中 28 ターン)
         "escape_only_turns": [i + 1 for i, r in enumerate(turns) if escape_only(r)],
+        # 受け止めの「〜ですね」の文がある吹き出しの数と、吹き出しの数(#221 では 113 個のうち 24 個)。続けて使うと違反
+        "echo_ack_bubbles": sum(1 for r in turns for b in r["bubbles"] if echo_acks({"bubbles": [b]})),
+        "bubbles": sum(len(r["bubbles"]) for r in turns),
         "violations": violations + fabrications,
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),

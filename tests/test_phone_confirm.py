@@ -109,7 +109,7 @@ def test_chat_confirms_service_with_one_question_before_setting_the_talk_level(t
     model = ConsultModel(script=[
         switch_and_read(uid, BAITO, "アルバイトを探しています",
                         ("save_user_preferences", {"line_user_id": uid, "preferences": {"avoids": "電話"}})),
-        reply(["アルバイト・パートのお仕事で考えますね。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         calls(("recommend_jobs", search),
               ("record_conversation_outcome", {"line_user_id": uid, "outcome": "propose",
                                                "reason": "電話を避けたい人に求人を提案", "confidence": 0.8})),
