@@ -164,7 +164,8 @@ const GAMES = [
 const wall = document.getElementById("wall");
 const screens = [];
 for (const g of GAMES.filter((x) => x.shipped)) {
-  const url = "/liff/arcade/" + g.slug;
+  /* LINE のアプリで開いたハブ(/liff/line/arcade。LIFF の本人がある)からは、ゲームも LIFF の本人のまま開く(task 204) */
+  const url = location.pathname.startsWith("/liff/line/") ? "/liff/line/arcade/" + g.slug : "/liff/arcade/" + g.slug;
   const a = document.createElement("a");
   a.className = "cab";
   a.style.setProperty("--c", g.c);

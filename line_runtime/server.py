@@ -35,19 +35,37 @@ accountLink の画面に送る。LINE から accountLink の webhook が来た�
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 
-LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID があるときだけ、/liff/line/… を開く(無ければ 404)。
+レジュメ・アーケード(task 187、188。docs/prd/resume-arcade.md): ゲームの画面(/liff/arcade…)は Cookie を発行も要求もしない。
+ハブに出す 2 本は、AI と下書きの API(/api/arcade/start、/ai、/save)を Cookie の本人として呼ぶ。画面は指示の文を送らず、
+LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(dip_mcp.arcade)と人ごとの 1 日の回数。
+
+LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID とチャネル ID があるときだけ、/liff/line/… を開く(無ければ 404)。
 ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
 (POST /api/liff/session が確かめて、署名つきの Cookie aica_liff を返す)。Web のブラウザの /liff/… は今までどおり Cookie の匿名ユーザーID。
+チャネル ID の名前は LINE_LIFF_CHANNEL_ID(前の名前 LINE_LOGIN_CHANNEL_ID も読む。task 204)。
+
+LINE のトークから LIFF 画面で使う操作(task 204): 返信の actions は LINE では LIFF 画面へのボタンになり、音声相談(/liff/line/voice)、
+履歴書の読み込み(/liff/line/resume/upload)、レジュメ・アーケード(/liff/line/arcade)を LINE の本人として開く。音声相談の結果と、
+履歴書の確認と続きの返事は、その本人の LINE のトークに push で届く。push の宛先(LINE の userId)は、操作を始めるときに LIFF の
+ID トークンをもう一度確かめて受け取り、届けるまでメモリにだけ置く(保存しない)。ゲームの AI と下書きの API は今も Cookie の
+匿名ユーザーIDの本人で呼ぶので、LIFF の中のゲームは AI なしの簡易分析で遊べて、保存はできない(dip も LINE のユーザーには
+ゲームの URL を渡さない。dip_mcp.arcade.game_url)。
+
+LIFF の中でマイクを試す画面(task 205): /liff/line/mic-check。LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と
+WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エラー名、音の大きさ、LIFF の環境)だけを POST /api/liff/mic-check が
+ログに 1 行書く。声もその文字起こしも送らない・残さない。本人を決めない(本人のデータを読み書きしない)。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -74,12 +92,13 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from dip_mcp import accounts, behavior, logic, profile
+from dip_mcp import accounts, arcade, behavior, logic, profile
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, line_channel, turn
+from line_runtime import config, fake_line, line_channel, llm, turn
+from line_runtime.arcade_reply import arcade_reply
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -93,6 +112,9 @@ from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
 from line_runtime.voice_rooms import JOIN_WINDOW, ActiveVoiceRooms
+from resume_arcade import draft as arcade_draft
+from resume_arcade import schemas as arcade_schemas
+from resume_arcade import stages as arcade_stages
 from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
 from resume_intake.extract import extract_bytes, finalize, media_type
@@ -241,6 +263,7 @@ async def lifespan(app: FastAPI):
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
+    app.state.line_voice_rooms = {}  # LIFF から始めた音声相談の部屋 → (LINE の userId, 始めた時刻)。結果を push する宛先。メモリだけ
     app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
@@ -273,23 +296,25 @@ async def dev(request: Request):
 
 
 SHARED_STATIC = {"talk-core.js", "talk-core.css"}  # / と /dev が共通に使うトークの部品
+LIFF_STATIC = {"mic-check.js"}  # LIFF の中でマイクを試す画面(/liff/line/mic-check)
 
 
 @app.get("/static/{name}")
 async def shared_static(name: str):
-    """トークルームの共通部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)。"""
-    if name not in SHARED_STATIC:
+    """トークルームの共通部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)と、マイクを試す画面の部品。"""
+    if name not in SHARED_STATIC | LIFF_STATIC:
         raise HTTPException(404)
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
-# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。いまは AI を使わない簡易分析だけで、
-# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。ゲームの名前はファイル名と同じ。
+# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。ゲームの名前はファイル名と同じ。
+# 画面そのものは Cookie を発行も要求もしない(本人のデータを読み書きしない)。ハブに出す 2 本は、AI と保存の API(/api/arcade/…。
+# 下の「レジュメ・アーケードの AI と下書き」)を、ほかの LIFF 画面と同じく Cookie の匿名IDの本人として呼ぶ。
 ARCADE = STATIC / "arcade"
-ARCADE_SHIPPED = ("the-case-of-you", "harvest-of-work")  # ハブに出す(案内の部品がそろったもの)
-ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする
+ARCADE_SHIPPED = arcade.GAMES  # ハブに出す(案内の部品がそろい、AI と保存がつながったもの)
+ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする(AI を使わず、本人のデータも読み書きしない)
     "career-quest", "dungeon-of-past-jobs", "career-pet", "career-fighter", "deck-of-deeds", "star-log")
-ARCADE_STATIC = {"arcade-ja.js"}  # ゲームが共通に使う部品(日本語の答えの判定)
+ARCADE_STATIC = {"arcade-ja.js", "arcade-ai.js"}  # ゲームが共通に使う部品(日本語の答えの判定、AI と保存の API を呼ぶ部品)
 
 
 @app.get("/static/arcade/{name}")
@@ -304,6 +329,54 @@ async def arcade_static(name: str):
 async def liff_arcade():
     """レジュメ・アーケードのハブ(ゲームを選ぶ画面)。"""
     return FileResponse(ARCADE / "resume-arcade.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade/draft", response_class=HTMLResponse)
+async def liff_arcade_draft(rid: int, request: Request, scenario_user: str | None = None):
+    """ゲームで作った下書きを見て、直す画面(トークの「下書きを見る」、プロフィールのリンク先)。本人は Cookie から決める。
+    rid はその下書きの番号: ゲームごとに最新の 1 件だけを持つので、あとで同じゲームで作り直したか消した下書きのリンクは開かない。
+    「draft」はゲームの名前に使わない(このルートを {game} より先に登録する)。"""
+    user = _page_user(request, scenario_user)
+    rec = arcade.draft(state, user, rid)
+    if rec is None:
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。同じゲームで作り直したか、消した"
+                                  "下書きです。最新の下書きは、プロフィールから開けます。</p>"), status_code=404)
+    return _page(f"{rec['document_kind']}の下書き", _arcade_draft_html(rec, scenario_user))
+
+
+@app.post("/liff/arcade/draft", response_class=HTMLResponse)
+async def liff_arcade_draft_edit(request: Request, rid: int = Form(...),
+                                 markdown: str = Form("", max_length=arcade_draft.MARKDOWN_MAX),
+                                 scenario_user: str = Form("")):
+    """下書きの画面で本人が直した書類を保存する(保存と同じ決まり: scrub_pii、長さの上限、Resume Draft の形)。"""
+    user = _page_user(request, scenario_user or None)
+    _admit(request, user)
+    rec = arcade.draft(state, user, rid)
+    if rec is None or not markdown.strip():
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+    out = profile.edit_arcade_draft(state, user, rid, arcade_draft.to_envelope(markdown, rec["document_kind"]))
+    if "error" in out:
+        return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
+    return _page(f"{out['document_kind']}の下書き", "<p class='job'>保存しました。</p>" + _arcade_draft_html(out, scenario_user))
+
+
+def _arcade_draft_html(rec: dict, scenario_user: str | None) -> str:
+    """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
+    todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
+    return (f"<p>ゲーム({escape(arcade.GAME_NAMES.get(rec['game'], rec['game']))})で、あなたの答えから作った"
+            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない数字です。"
+            "氏名と連絡先は保存していません。内容は必ずご自身で確認・修正してください。</p>"
+            + (f"<h3 style='font-size:14px;margin:14px 0 4px'>確かめたい点</h3><ul style='font-size:13px'>{todo}</ul>"
+               if todo else "")
+            + "<pre id='draft-md' style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;"
+              f"font-size:13px'>{escape(rec['markdown'])}</pre>"
+            "<form method='post' action='/liff/arcade/draft'>"
+            f"<input type='hidden' name='rid' value='{rec['id']}'>"
+            f"<input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
+            "<label for='draft-edit'>書類を直す(数字の空欄を埋める、行を書き換える)</label>"
+            "<textarea id='draft-edit' name='markdown' rows='16' style='width:100%;box-sizing:border-box;font-size:14px;"
+            f"padding:8px;border:1px solid #ccd;border-radius:8px'>{escape(rec['markdown'])}</textarea>"
+            "<button>直した内容を保存する</button></form>")
 
 
 @app.get("/liff/arcade/{game}")
@@ -475,6 +548,156 @@ async def dip_view(body: UserIn, request: Request):
             "dip_id": behavior.dip_id(state, user_id)}
 
 
+# ----------------------------- レジュメ・アーケードの AI と下書き -----------------------------
+# ゲームの画面(ハブに出す 2 本)が呼ぶ。画面は LLM を直接呼ばない。送るのはゲームの名前、段、本人の答え(まとめの段では書類の行)
+# だけで、指示の文と出力の形はサーバー(resume_arcade)が持つ。本人は、ほかの LIFF 画面と同じく Cookie の匿名ID
+# (開発者画面のシナリオなら scenario_user を付けた「匿名ID:シナリオユーザー」)。Cookie が無ければ 401。
+# - start: 遊びの番号を返す(1 人 1 ゲームにつき最新の 1 件。dip_mcp.arcade)。AI を使えるときだけターンを 1 つ数える
+# - ai: 有効な番号の遊びで、回数が残っていれば 1 回 LLM を呼ぶ。だめなら LLM を呼ばずに「簡易分析で続ける」を返す
+#   (ok: false。ターンも費用台帳も増えない)。画面はその段を端末の簡単な判定で続ける
+# - save: 本人の有効な番号の遊びの書類を、下書きとして dip に保存し、今の会話に「下書きができました」を足す(LLM は呼ばない)
+# 答えの全文はログに出さない(有無と長さだけ)。
+
+ARCADE_AI_ENV = "AICA_ARCADE_AI"  # 0 にすると AI を止める(すべて簡易分析)
+ARCADE_DAILY_ENV = "AICA_ARCADE_DAILY_AI_PLAYS"
+DEFAULT_ARCADE_DAILY = 3  # 1 人 1 日の AI つきの遊び
+ARCADE_DAILY_KIND = "arcade_ai_play"
+PROVIDER_KEYS = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+
+
+def arcade_client():
+    """ゲームの AI に使う LLM のクライアント(LINE_SIM_PROVIDER。テストでは台本のスタブに差し替える)。"""
+    return llm.client()
+
+
+def _arcade_daily_limit() -> int:
+    raw = os.environ.get(ARCADE_DAILY_ENV, "").strip()
+    return int(raw) if raw else DEFAULT_ARCADE_DAILY
+
+
+def _arcade_ai_off_reason(user: str) -> str | None:
+    """AI つきで始められない理由(止めている、API キーが無い、1 日の回数を使い切った)。始められれば None。"""
+    if os.environ.get(ARCADE_AI_ENV, "1").strip() == "0":
+        return "disabled"
+    if not os.environ.get(PROVIDER_KEYS.get(config.PROVIDER, ""), "").strip():
+        return "no_key"
+    limit = _arcade_daily_limit()
+    if 0 < limit <= app.state.quota.daily_used(ARCADE_DAILY_KIND, user):
+        return "daily_limit"
+    return None
+
+
+class ArcadeStartIn(BaseModel):
+    game: str
+    scenario_user: str | None = None
+
+
+class ArcadeAiIn(BaseModel):
+    game: str
+    play: str = Field("", max_length=64)
+    stage: str
+    data: dict = {}
+    scenario_user: str | None = None
+
+
+class ArcadeSaveIn(BaseModel):
+    game: str
+    play: str = Field("", max_length=64)
+    markdown: str = Field(max_length=arcade_draft.MARKDOWN_MAX)
+    document_kind: str | None = None  # 雇用区分が未定のときだけ、本人が選んだ書類の種類
+    scenario_user: str | None = None
+
+
+def _arcade_game(game: str) -> str:
+    if game not in arcade.GAMES:
+        raise HTTPException(404, "このゲームは AI と保存につながっていません")
+    return game
+
+
+def _resume_jobs(user: str) -> list[dict]:
+    """履歴書の読み取り結果の職歴(勤務先、役職、期間)。ゲームの職場の初期値にする(4 つまで)。"""
+    rec = logic.resume_upload(state, user)
+    jobs = (rec or {}).get("resume", {}).get("work_history") or []
+    return [{"company": w["organization"], "title": w["role"], "dates": w["period"]} for w in jobs
+            if w.get("organization")][:arcade_schemas.JOBS_MAX]
+
+
+@app.post("/api/arcade/start")
+async def arcade_start(body: ArcadeStartIn, request: Request):
+    """遊びを始める: 遊びの番号を返す(同じゲームの前の番号は無効になる)。ターン数の上限、1 日の AI つきの遊びの上限、
+    AI を止める設定、API キーが無いときは、断らずに AI なし(ai: false)の番号を返す(簡易分析で始め、保存はできる)。
+    Cookie が無い(トーク画面を開かずにゲームを開いた)ときも 401 にせず、番号なし(play: None)を返す(画面は簡易分析で
+    遊べて、保存のボタンを出さない。ゲームを開くたびにブラウザのコンソールに 401 を出さないため)。"""
+    game = _arcade_game(body.game)
+    if _anon(request) is None:
+        return {"play": None, "ai": False, "reason": "no_user", "track": None, "document_kind": None, "jobs": []}
+    user = _page_user(request, body.scenario_user)
+    _admit(request, user)
+    reason = _arcade_ai_off_reason(user)
+    if reason is None:
+        if app.state.quota.try_take(user, _client_ip(request)) is not None:
+            reason = "turn_limit"
+        elif not app.state.quota.take_daily(ARCADE_DAILY_KIND, user, _arcade_daily_limit()):
+            app.state.quota.refund(user, _client_ip(request))
+            reason = "daily_limit"
+    rec = arcade.start_play(state, user, game, ai=reason is None)
+    return {"play": rec["id"], "ai": rec["ai"], "reason": reason, "track": logic.search_track(state.user(user)),
+            "document_kind": arcade.document_kind(state, user), "jobs": _resume_jobs(user)}
+
+
+def _offline(reason: str) -> dict:
+    return {"ok": False, "offline": True, "reason": reason}
+
+
+@app.post("/api/arcade/ai")
+async def arcade_ai(body: ArcadeAiIn, request: Request):
+    """ゲームの段を 1 回、AI で進める。だめなとき(番号が無い・ほかの人の番号・AI なしの遊び・24 時間を過ぎた・回数を使い切った・
+    まとめの行が多すぎる・形が違う・LLM が失敗した)は ok: false で、画面はその段を簡易分析で続ける。"""
+    user = _page_user(request, body.scenario_user)
+    st = arcade_stages.stage(body.game, body.stage)
+    if st is None:
+        return _offline("unknown_stage")
+    try:
+        d = arcade_stages.prepare(st, body.data)
+    except ValidationError:
+        return _offline("bad_input")
+    if st.kind == "summary" and arcade_stages.summary_chars(d) > arcade_schemas.SUMMARY_MAX:
+        return _offline("too_long")
+    why = arcade.use_ai(state, user, body.game, body.play, st.kind, keep=st.keep)
+    if why is not None:
+        return _offline(why)
+    try:
+        out = await arcade_stages.run(arcade_client(), st, d)
+    except Exception as e:  # noqa: BLE001  API のエラーでも、画面は簡易分析で続ける
+        line_channel.log.warning("ゲームの AI が失敗しました(%s %s:%s): %s", user, body.game, body.stage, type(e).__name__)
+        return _offline("error")
+    app.state.rt.ledger.record(user, f"arcade:{body.game}:{body.stage}", out.model, out.usage)
+    arcade.record_replaced(state, user, out.replaced)
+    return {"ok": True, "result": out.result, "replaced": out.replaced}
+
+
+@app.post("/api/arcade/save")
+async def arcade_save(body: ArcadeSaveIn, request: Request):
+    """できた書類を下書きとして保存する(そのゲームの前の下書きを置き換える)。本人の有効な遊びの番号が要る(無い・ほかの人の
+    番号なら 403)。書類の種類は雇用区分で決め、未定なら本人が選んだもの(選んでいなければ 400)。雇用区分は変えない。
+    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。"""
+    game = _arcade_game(body.game)
+    user = _page_user(request, body.scenario_user)
+    if arcade.play(state, user, game, body.play) is None:
+        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+    kind = arcade.document_kind(state, user, body.document_kind)
+    if kind is None:
+        raise HTTPException(400, "職務経歴書にするか、履歴書の自己PRにするかを選んでください")
+    if not body.markdown.strip():
+        raise HTTPException(400, "書類が空です")
+    rec = arcade.save_draft(state, user, game, body.play, arcade_draft.to_envelope(body.markdown, kind))
+    if rec is None:
+        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+    talk = await app.state.rt.add_arcade_result(user, arcade_reply(user, rec))
+    return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": kind,
+            "blanks": arcade.blanks(rec), "talk": talk}
+
+
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
 # 2 つ目のチャネル。ユーザーは LINE の userId から作った「l-<ハッシュ>」(line_channel.line_user。userId は保存しない)。
 # 本番のユーザーなので dip の時計は実際の時刻(data.uses_sim_clock に当たらない)。会話数は LINE のユーザーごとと全体で数え、
@@ -613,6 +836,8 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
     続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。
+    upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
+    エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。"""
     rt = app.state.rt
     deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=rt, unread_uploads=app.state.unread_uploads, ip=None)
@@ -621,9 +846,11 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     else:
         async with rt.user_lock(uid):  # 進行中のターンと交差しないように(talk_open と同じ)
             conv = await rt.conversation(uid)
-        event, text, new = "message", e["message"].get("text"), not talk_continues(conv)
+        event, text = ("resume_upload", None) if kind == "upload" else ("message", e["message"].get("text"))
+        new = not talk_continues(conv)
     try:
-        t = turn.accept(deps, uid, event, text, None, new_conversation=new)
+        t = turn.accept(deps, uid, event, text, None, new_conversation=new, channel="line",
+                        features=line_channel.liff_features())
     except turn.BadTurn:
         return None
     try:
@@ -748,6 +975,9 @@ def _profile_view(user_id: str) -> dict:
         "highlights": [x for b in resume_bubbles(rec["resume"]) for x in b.removeprefix(RESUME_INTRO).split("\n") if x]}
     for d in v["voice_drafts"]:
         d["view_url"] = logic.liff_url("/liff/voice/draft", user_id, rid=d["id"])
+    for d in v["arcade_drafts"]:
+        d["view_url"] = arcade.draft_url(user_id, d["id"])
+    v["arcade_url"] = arcade.game_url(user_id)  # 「ゲームで書類を作る」(ハブ)
     return v
 
 
@@ -835,6 +1065,13 @@ async def profile_resume_delete(request: Request):
 async def profile_voice_delete(result_id: int, request: Request):
     user_id = _profile_writer(request)
     _remove_voice_files(_checked(profile.delete_voice_draft(state, user_id, result_id))["files"])
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/arcade/{draft_id}")
+async def profile_arcade_delete(draft_id: int, request: Request):
+    user_id = _profile_writer(request)
+    _checked(profile.delete_arcade_draft(state, user_id, draft_id))
     return _profile_view(user_id)
 
 
@@ -929,16 +1166,31 @@ async def voice_start(body: UserIn, request: Request):
     since は、このシートが待つ結果の番号(開く前に届いていた結果は受け取らない)。
     その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があれば、会話数を使わずに 409
     (1 人が同時にいくつも部屋を開いて、ワーカーのジョブを持ち続けられないように)。"""
-    user_id = body.user_id
-    _require_own(request, user_id)
-    from voice_resume.livekit_token import configured, issue_token
+    _require_own(request, body.user_id)
+    _voice_ready_or_503()
+    return _voice_token(body.user_id, _client_ip(request))
 
-    if not configured():  # 会話数を使う前に断る
-        raise HTTPException(503, "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)")
+
+VOICE_NOT_READY = "音声相談の準備ができていません(LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET)"
+
+
+def _voice_ready_or_503() -> None:
+    """LiveKit の設定が無ければ 503(会話数を使う前に断る)。"""
+    from voice_resume.livekit_token import configured
+
+    if not configured():
+        raise HTTPException(503, VOICE_NOT_READY)
+
+
+def _voice_token(user_id: str, ip: str | None) -> dict:
+    """終わっていない部屋があれば会話数を使わずに 409。会話数を 1 つ使い(上限なら 429)、LiveKit の部屋の接続トークンを発行する。
+    Web と LIFF 画面で共通。"""
+    from voice_resume.livekit_token import issue_token
+
     rooms = app.state.voice_rooms
     if rooms.open_room(user_id) is not None:  # 確かめてから記録するまで await を挟まない(同時の呼び出しも 1 つだけ通る)
         raise HTTPException(409, VOICE_BUSY_MESSAGE)
-    limited = app.state.quota.try_take(user_id, _client_ip(request))
+    limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:
         raise HTTPException(429, limited)
     token = issue_token(user_id)
@@ -952,8 +1204,13 @@ async def voice_wait(body: VoiceWaitIn, request: Request):
     """音声相談のシートが開いている間だけ呼ぶ: since 番以降に届いた、この部屋(room。/start が返す)の結果を
     最大 timeout 秒待って返す(届かなければ空)。results は今の会話に続けた返信と同じ形(画面は renderReply で描く)。
     next は次に待つときの since(この部屋でない結果も読み飛ばす。そちらは会話に入っているので再読み込みで出る)。"""
-    user_id, since, room = body.user_id, body.since, body.room
-    _require_own(request, user_id)
+    _require_own(request, body.user_id)
+    return await _voice_wait(body.user_id, body)
+
+
+async def _voice_wait(user_id: str, body: VoiceWaitIn) -> dict:
+    """since 番以降に届いた、この部屋の結果を最大 timeout 秒待って返す(Web と LIFF 画面で共通)。"""
+    since, room = body.since, body.room
     # NaN(本文の `NaN` は json.loads が通す)は max/min の丸めをすり抜けて wait_for → loop.call_at に届き、プロセスで共有する
     # タイマーの山の順序を壊すので断る。モデルの検証にしないのは、既定の 422 が入力の nan を JSON にできず 500 になるため
     if math.isnan(body.timeout):
@@ -972,21 +1229,29 @@ async def voice_wait(body: VoiceWaitIn, request: Request):
 
 
 @app.post("/api/voice/result")
-async def voice_result_in(body: VoiceResultIn, request: Request):
+async def voice_result_in(body: VoiceResultIn, request: Request, background: BackgroundTasks):
     """音声アドバイザーの結果(話した希望・提案した求人・履歴書か職務経歴書の下書き)を預かり、今の会話に AI の返信として
     続ける(再読み込みしても残る)。待っているシートがあれば知らせる。
     呼ぶのは voice-resume のワーカー(サーバー間の経路)。Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る
     (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。
     面談の途中で本人が「すべて消す」をしていたら(その前に発行した部屋の結果)、預からずに 410 を返す
-    (消した後に dip の記録を作り直さない。ワーカーは 410 を見て、会話の結果も記録しない)。"""
+    (消した後に dip の記録を作り直さない。ワーカーは 410 を見て、会話の結果も記録しない)。
+    LINE の LIFF 画面から始めた面談(部屋が line_voice_rooms にある)なら、同じ返信をその本人の LINE のトークに push する
+    (応答の後に送る。out["line"] は送ることにしたか)。"""
     _require_internal(request)
     if logic.voice_room_forgotten(state, body.user_id, body.room):
+        _line_voice_to(body.room)  # 届けない宛先は忘れる
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
     track = logic.search_track(state.user(body.user_id))  # 音声で区分が切り替わっていれば、次のターンの AI に伝える
-    out["talk"] = await app.state.rt.add_voice_result(body.user_id, voice_reply(body.user_id, rec, track))
+    reply = voice_reply(body.user_id, rec, track)
+    out["talk"] = await app.state.rt.add_voice_result(body.user_id, reply)
+    to = _line_voice_to(body.room)  # 記録してから取り出す(途中で落ちてワーカーが送り直しても、宛先が残る)
+    out["line"] = to is not None and line_channel.line_user(to[0]) == body.user_id and line_channel.configured()
+    if out["line"]:
+        background.add_task(_line_push, body.user_id, to[0], reply)
     cond = _voice_ready(body.user_id)
     async with cond:
         cond.notify_all()
@@ -1044,6 +1309,11 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
     /api/event/stream の resume_upload で会話を続ける(定型文を本人の発言として送らない)。
     thread: 本番のトーク画面が表示している会話の番号。別のタブで会話が替わっていたら、読み取らず会話数も使わずに 409。"""
     _require_own(request, user_id)
+    return await _read_resume(user_id, file, _client_ip(request), thread)
+
+
+async def _read_resume(user_id: str, file: UploadFile, ip: str | None, thread: int | None = None) -> dict:
+    """履歴書を読み取って dip に保存し、トークに出す確認を返す(Web のトークと LIFF 画面で共通)。会話数を 1 つ使う。"""
     name = file.filename or ""
     try:
         label = RESUME_LABEL[media_type(name)]
@@ -1056,7 +1326,7 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
         raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
     if thread is not None and await app.state.rt.current_thread(user_id) != thread:
         raise HTTPException(409, "別の画面で新しい会話が始まっています")
-    limited = app.state.quota.try_take(user_id, _client_ip(request))
+    limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
         raise HTTPException(429, limited)
     try:
@@ -1295,6 +1565,340 @@ async def liff_line_submit(request: Request, job: str = Form(...)):
     """LINE のアプリで開いた応募フォームの送信。本人の Cookie が無い・期限切れなら 401(確定しない)。"""
     user = _liff_page_user(request)
     return _liff_unauthorized("応募フォーム") if user is None else _apply_submit(user, job)
+
+
+# ----------------------------- LINE のトークから LIFF 画面で使う操作(task 204) -----------------------------
+# 返信の actions は、LINE では LIFF 画面へのボタンになる(line_channel.LIFF_ACTIONS)。画面は LIFF の本人(Cookie aica_liff)で開き、
+# 操作を始める API(音声相談の開始・履歴書の読み込み)は、LIFF の ID トークンをもう一度確かめて、結果を push する LINE の宛先(sub)を
+# 受け取る。sub は届けるまでメモリにだけ置き、保存もログもしない。結果はその本人の LINE のトークに push で届く。
+
+LINE_VOICE_ROOM_SECONDS = 3600  # LIFF から始めた音声相談の部屋の宛先を覚えておく長さ(面談は長くて 10 分。結果が来なければ忘れる)
+LIFF_SENT_TEXT = "まとめを LINE のトークに送りました。トークに戻って続きを話せます。"
+LIFF_LATER_TEXT = "まとめができたら、LINE のトークに届きます。トークに戻ってお待ちください。"
+LIFF_SHOWN_TEXT = "まとめをこの画面に出しました。"  # Messaging API の設定が無い(LINE のトークには送れない)
+LIFF_NOT_STARTED_TEXT = "音声相談を始められませんでした。もう一度お試しください。"
+LIFF_IN_TALK_TEXT = "求人のくわしい話は、LINE のトークで聞けます。"
+
+
+class LiffVoiceStartIn(BaseModel):
+    user_id: str
+    id_token: str = Field(..., max_length=line_channel.MAX_ID_TOKEN_CHARS)
+
+
+def _liff_api_user(request: Request, user_id: str) -> str:
+    """LIFF 画面から呼ぶ API の本人(Cookie aica_liff の l-…)。Cookie が無い・期限切れなら 401、本文のユーザーが違えば 403。
+    LIFF の設定が無ければ 404。"""
+    user = _liff_page_user(request)
+    if user is None:
+        raise HTTPException(401, LIFF_FAILED_TEXT)
+    if user_id != user:
+        raise HTTPException(403, "この LINE のユーザーではありません")
+    return user
+
+
+async def _liff_sub(user: str, id_token: str) -> str:
+    """LIFF の ID トークンを LINE に確かめてもらい、本人(user)の LINE の userId(push の宛先)を返す。
+    確かめられない・別の人のトークンなら 401。"""
+    sub = await line_login().verify(id_token)
+    if sub is None or line_channel.line_user(sub) != user:
+        raise HTTPException(401, LIFF_FAILED_TEXT)
+    return sub
+
+
+def _joined(first: dict, then: dict | None) -> dict:
+    """2 つの返信を、1 回の push で送る 1 つの返信にする(先の吹き出しとボタンの後に、続きの返信)。"""
+    then = then or {}
+    return {"bubbles": [*first.get("bubbles", []), *then.get("bubbles", [])], "cards": then.get("cards") or [],
+            "buttons": [*first.get("buttons", []), *then.get("buttons", [])], "actions": then.get("actions") or [],
+            "quick_replies": then.get("quick_replies") or []}
+
+
+async def _line_push(uid: str, to: str, reply: dict) -> None:
+    """返信(render の形)を、LINE のトークに push する。その人の webhook のイベントと同じ順番待ちに並ぶ。"""
+    async with app.state.line_locks[uid], line_api() as api:
+        if await api.push(to, line_channel.to_messages(reply)) != line_channel.OK:
+            line_channel.log.warning("LINE のトークに結果を届けられませんでした(%s)", uid)
+
+
+async def _line_upload_turn(uid: str, to: str, shown: dict) -> None:
+    """LIFF 画面で読み込んだ履歴書の続き: 読み取り結果の確認(shown)と、エージェントの続きの返事(resume_upload のターン)を、
+    1 回の push で LINE のトークに届ける。ターンが受け付けられなければ確認だけ届ける。"""
+    async with app.state.line_locks[uid], line_api() as api:
+        await api.loading(to)
+        try:
+            reply = await _line_turn(uid, "upload", {})
+        except Exception:  # noqa: BLE001  確認だけでも届ける
+            line_channel.log.exception("履歴書の続きのターンを進められませんでした(%s)", uid)
+            reply = {"bubbles": [line_channel.FAILED_TEXT]}
+        if await api.push(to, line_channel.to_messages(_joined(shown, reply))) != line_channel.OK:
+            line_channel.log.warning("LINE のトークに履歴書の続きを届けられませんでした(%s)", uid)
+
+
+@app.post("/api/liff/voice/start")
+async def liff_voice_start(body: LiffVoiceStartIn, request: Request):
+    """LIFF 画面(/liff/line/voice)の音声相談を始める: Web の /api/voice/start と同じく接続トークンを発行し(会話数を 1 つ使う)、
+    部屋 → LINE の宛先を覚える(面談の結果を、その本人の LINE のトークに push するため)。"""
+    user = _liff_api_user(request, body.user_id)
+    _voice_ready_or_503()
+    to = await _liff_sub(user, body.id_token)
+    token = _voice_token(user, None)  # LINE のユーザーは IP ごとには数えない
+    _forget_old_voice_rooms()
+    app.state.line_voice_rooms[token["room"]] = (to, time.monotonic())
+    return token
+
+
+def _forget_old_voice_rooms() -> None:
+    """LINE_VOICE_ROOM_SECONDS より前に始めた音声相談の部屋の宛先を忘れる(結果が来なかった面談の LINE の userId を持ち続けない)。"""
+    rooms, now = app.state.line_voice_rooms, time.monotonic()
+    for room in [r for r, (_, at) in rooms.items() if now - at > LINE_VOICE_ROOM_SECONDS]:
+        del rooms[room]
+
+
+def _line_voice_to(room: str | None) -> tuple[str, float] | None:
+    """LIFF から始めた音声相談の部屋の宛先を取り出す(取り出したら忘れる。古いものは先に忘れる)。無ければ None。"""
+    _forget_old_voice_rooms()
+    return app.state.line_voice_rooms.pop(room, None) if room else None
+
+
+def _liff_reply(r: dict) -> dict:
+    """LIFF 画面に描く返信: ボタン(/liff/…)を LIFF の本人のまま開く /liff/line/… にする(Web の画面は Cookie の匿名ユーザーなので開けない)。"""
+    return r | {"buttons": [b | {"url": line_channel.LIFF_PREFIX + b["url"].removeprefix("/liff")} for b in r.get("buttons", [])]}
+
+
+@app.post("/api/liff/voice/wait")
+async def liff_voice_wait(body: VoiceWaitIn, request: Request):
+    """LIFF 画面の音声相談のシートが開いている間だけ呼ぶ(Web の /api/voice/wait と同じ)。"""
+    out = await _voice_wait(_liff_api_user(request, body.user_id), body)
+    return out | {"results": [_liff_reply(r) for r in out["results"]]}
+
+
+@app.post("/api/liff/resume/upload")
+async def liff_resume_upload(background: BackgroundTasks, request: Request, user_id: Annotated[str, Form()],
+                             id_token: Annotated[str, Form(max_length=line_channel.MAX_ID_TOKEN_CHARS)],
+                             file: Annotated[UploadFile, File()]):
+    """LIFF 画面(/liff/line/resume/upload)から履歴書を読み込む: Web の /api/resume/upload と同じく読み取って保存し(会話数を 1 つ使う)、
+    応答の後に、確認とエージェントの続きの返事(resume_upload のターン。会話数をもう 1 つ使う)を、その本人の LINE のトークに push する。
+    画面には確認だけを返す(talk: LINE のトークに続きを送るか。Messaging API の設定が無ければ送らない)。"""
+    user = _liff_api_user(request, user_id)
+    to = await _liff_sub(user, id_token)
+    out = await _read_resume(user, file, None)
+    view = line_channel.liff_url_of(out["view_url"]) if out["view_url"] else None
+    talk = line_channel.configured()
+    if talk:
+        shown = {"bubbles": out["bubbles"], "buttons": [{"label": "読み取り結果を見る", "url": out["view_url"]}] if view else []}
+        background.add_task(_line_upload_turn, user, to, shown)
+    else:
+        line_channel.log.warning("LINE の設定が無いので、履歴書の続きを LINE のトークに送りません")
+    return {"empty": out["empty"], "bubbles": out["bubbles"], "file": out["file"], "view_url": view, "talk": talk}
+
+
+def _liff_conf(user: str, **extra: str) -> str:
+    """LIFF 画面の script に渡す値(LIFF ID・本人の aica のユーザーID・文言)。LINE の userId は載せない。"""
+    conf = {"liffId": line_channel.liff_id(), "user": user, "failed": LIFF_FAILED_TEXT} | extra
+    return json.dumps(conf, ensure_ascii=False).replace("<", "\\u003c")
+
+
+LIFF_SDK_MISSING = "LINE の画面の部品を読み込めませんでした。通信を確かめて、もう一度開いてください。"
+TALK_VARS = """:root { --room: #8fa9d3; --head: #2f3a4f; --me: #95e05b; --bot: #fff; --text: #1a1d23; --sub: #5f6775; --faint: #8a93a3;
+  --chip: #1f5fd1; --chip-line: #c9d6ee; --ok: #06c755; --ok-dark: #05a346; --ok-soft: #e7f8ee; --bg: #e4e8ef; --line: #e3e7ee; --soft: #f3f5f8; }"""
+
+
+def _liff_voice_page(user: str) -> HTMLResponse:
+    """LINE のアプリで開く音声相談の画面。Web のトークと同じ音声相談のシート(talk-core.js)を、LIFF の API で開く。
+    面談のまとめは、この画面と LINE のトークの両方に出る(トークへは /api/voice/result が push する)。"""
+    talk = line_channel.configured()  # LINE のトークにも届くか(Messaging API の設定があるか)
+    conf = _liff_conf(user, sent=LIFF_SENT_TEXT if talk else LIFF_SHOWN_TEXT, later=LIFF_LATER_TEXT if talk else "",
+                      notStarted=LIFF_NOT_STARTED_TEXT, inTalk=LIFF_IN_TALK_TEXT, sdk=LIFF_SDK_MISSING)
+    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>音声で相談</title>
+<link rel="stylesheet" href="/static/talk-core.css">
+<style>{TALK_VARS}
+body{{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:var(--room);color:var(--text)}}
+header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{padding:16px;max-width:480px;margin:auto}}
+.intro{{background:#fff;border-radius:10px;padding:12px;font-size:14px;line-height:1.6}}
+.go{{width:100%;margin:12px 0;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}
+.go[hidden]{{display:none}}#liff-status{{color:#fff;font-size:13px}}
+#log{{display:flex;flex-direction:column;gap:6px}}.row{{display:flex;gap:8px;align-items:flex-end}}
+.avatar{{width:32px;height:32px;border-radius:50%;background:#fff;color:#d0021b;font-weight:800;display:flex;align-items:center;justify-content:center}}
+.col{{display:flex;flex-direction:column;gap:4px;max-width:80%}}.who,.time{{font-size:11px;color:#fff}}
+.bubble{{background:#fff;padding:8px 12px;border-radius:16px;font-size:14.5px;white-space:pre-wrap}}
+.liff a{{display:block;background:#fff;border-radius:10px;padding:10px;color:var(--chip);margin-left:40px}}
+.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}</style>
+</head><body><header>🎤 音声で相談(LINE)</header><main>
+<p class="intro">アドバイザーと話しながら、希望と経験を5分ほどで伺います。終わると、話した内容のまとめと求人が LINE のトークに届きます。
+氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。</p>
+<button class="go" id="voice-open" type="button" disabled>音声相談を始める</button>
+<p id="liff-status"></p><div id="log"></div><form id="talk-form" hidden></form>
+<button class="go" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
+</main>
+<script src="{LIFF_SDK}" charset="utf-8"></script>
+<script src="/static/talk-core.js"></script>
+<script>
+(async () => {{
+  const conf = {conf};
+  const status = document.getElementById("liff-status"), open = document.getElementById("voice-open");
+  const back = document.getElementById("liff-back");
+  if (!window.liff) {{ status.textContent = conf.sdk; return; }}
+  try {{ await liff.init({{ liffId: conf.liffId }}); }} catch (e) {{ status.textContent = conf.failed; return; }}
+  const talk = createTalk({{
+    log: document.getElementById("log"), form: document.getElementById("talk-form"),
+    getUser: () => conf.user, isBusy: () => false, setBusy: () => {{}}, fire: async () => {{}},
+    send: () => {{ status.textContent = conf.inTalk; }},  // 求人カードと選択肢のボタン: 続きはトークで
+    voiceApi: {{ start: "/api/liff/voice/start", wait: "/api/liff/voice/wait", extra: () => ({{ id_token: liff.getIDToken() }}) }},
+    onVoiceClosed: (done, started) => {{
+      if (!started) {{ status.textContent = conf.notStarted; return; }}  // 始められなかった: もう一度押せる
+      talk.disableChips(); status.textContent = done ? conf.sent : conf.later; open.hidden = true; back.hidden = false;
+    }},
+  }});
+  open.disabled = false;
+  open.onclick = () => talk.openVoice();
+  back.onclick = () => liff.closeWindow();
+}})();
+</script></body></html>"""
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+def _liff_upload_page(user: str) -> HTMLResponse:
+    """LINE のアプリで開く履歴書の読み込みの画面。読み取った確認をここに出し、続きは LINE のトークに届く。"""
+    conf = _liff_conf(user, sdk=LIFF_SDK_MISSING, reading="読み取っています。そのままお待ちください…",
+                      pick="ファイルを選んでください。", sent="続きを LINE のトークに送ります。トークに戻ってください。",
+                      done="読み取りました。")
+    mb = resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)
+    body = f"""<p>履歴書か職務経歴書のファイル(PDF / JPEG / PNG、{mb}MB まで)を選ぶと、読み取った内容で LINE のトークの相談を続けます。
+氏名・住所・電話番号・メールアドレスは保存しません。</p>
+<input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+<button id="resume-send" type="button" disabled>読み込む</button>
+<p id="liff-status"></p><div id="resume-result"></div>
+<button id="liff-back" type="button" hidden>LINE のトークに戻る</button>
+<script src="{LIFF_SDK}" charset="utf-8"></script>
+<script>
+(async () => {{
+  const conf = {conf};
+  const status = document.getElementById("liff-status"), send = document.getElementById("resume-send");
+  const input = document.getElementById("resume-file"), result = document.getElementById("resume-result");
+  const back = document.getElementById("liff-back");
+  if (!window.liff) {{ status.textContent = conf.sdk; return; }}
+  try {{ await liff.init({{ liffId: conf.liffId }}); }} catch (e) {{ status.textContent = conf.failed; return; }}
+  back.onclick = () => liff.closeWindow();
+  send.disabled = false;
+  send.onclick = async () => {{
+    const f = input.files[0];
+    if (!f) {{ status.textContent = conf.pick; return; }}
+    send.disabled = true; status.textContent = conf.reading;
+    const fd = new FormData();
+    fd.append("user_id", conf.user); fd.append("id_token", liff.getIDToken() || ""); fd.append("file", f);
+    try {{
+      const r = await fetch("/api/liff/resume/upload", {{ method: "POST", body: fd, credentials: "same-origin" }});
+      let d = null; try {{ d = await r.json(); }} catch (_) {{}}
+      if (!r.ok) {{ status.textContent = (d && typeof d.detail === "string" && d.detail) || conf.failed; send.disabled = false; return; }}
+      result.replaceChildren(...d.bubbles.map((b) => {{ const p = document.createElement("p"); p.className = "job"; p.textContent = b; return p; }}));
+      status.textContent = d.talk ? conf.sent : conf.done;
+      input.hidden = send.hidden = true; back.hidden = false;
+    }} catch (e) {{ status.textContent = conf.failed; send.disabled = false; }}
+  }};
+}})();
+</script>"""
+    return HTMLResponse(_page("履歴書を読み込む", body), headers={"Cache-Control": "no-store"})
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/voice", response_class=HTMLResponse)
+async def liff_line_voice(request: Request):
+    user = _liff_page_user(request)
+    return _liff_shell("音声で相談") if user is None else _liff_voice_page(user)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/resume/upload", response_class=HTMLResponse)
+async def liff_line_resume_upload(request: Request):
+    user = _liff_page_user(request)
+    return _liff_shell("履歴書を読み込む") if user is None else _liff_upload_page(user)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/arcade")
+async def liff_line_arcade(request: Request):
+    """LINE のアプリで開くレジュメ・アーケードのハブ(LIFF の本人を確かめてから。ゲームへのリンクも /liff/line/arcade/… になる)。"""
+    return _liff_shell("レジュメ・アーケード") if _liff_page_user(request) is None else await liff_arcade()
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/arcade/{{game}}")
+async def liff_line_arcade_game(game: str, request: Request):
+    return _liff_shell("レジュメ・アーケード") if _liff_page_user(request) is None else await liff_arcade_game(game)
+
+
+# ----------------------------- LIFF の中でマイクを試す画面(/liff/line/mic-check、task 205) -----------------------------
+# LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と WebRTC が使えるかを、人が実機で確かめる。
+# 画面(static/mic-check.js)はマイクの許可を求め、使えたか・断られたか・エラー名、音の入力の大きさ、LIFF の環境を出し、
+# 結果だけを POST /api/liff/mic-check に送る。声もその文字起こしも送らない(受け口は決まった項目の外を 422 で断る)。
+# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。LIFF の設定が無ければ 404。
+
+mic_log = logging.getLogger("line_runtime.mic_check")
+mic_log.setLevel(logging.INFO)
+if not mic_log.handlers:  # Web サーバーはログの設定をしない(WARNING より下は出ない)ので、この 1 行だけは標準エラーに出す
+    _mic_handler = logging.StreamHandler()
+    _mic_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    mic_log.addHandler(_mic_handler)
+LIVEKIT_CLIENT = "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"  # 音声相談と同じ(talk-core.js)
+MIC_CHECK_DAILY_LIMIT = 500  # 1 日にログに書く数の上限(本人を決めない口なので、ログをあふれさせない)
+_mic_checks: dict[str, int] = {}
+_ErrorName = Annotated[str, Field(max_length=40, pattern=r"^[A-Za-z0-9_]*$")]  # エラーの名前(NotAllowedError、LIFF の INIT_FAILED や 400 など)
+_Version = Annotated[str, Field(max_length=32, pattern=r"^[0-9A-Za-z._-]*$")]
+
+
+class MicCheckIn(BaseModel):
+    """マイクを試した結果。決まった項目だけを受ける(ほかの項目があれば 422。声や文字起こしを載せる場所を作らない)。"""
+    model_config = ConfigDict(extra="forbid")
+
+    mic: Literal["allowed", "denied", "error", "unsupported"]
+    mic_error: _ErrorName = ""
+    level: float = Field(0, ge=0, le=1)  # 試した間の音の入力の大きさの最大(0 から 1)
+    audio_state: Literal["running", "suspended", "closed", "interrupted", ""] = ""  # 音を測った AudioContext の状態
+    webrtc: Literal["ok", "error", "unsupported"]
+    webrtc_error: _ErrorName = ""
+    candidates: int = Field(0, ge=0, le=99)  # 手元の ICE の候補の数(外の STUN/TURN は使わない)
+    livekit: Literal["supported", "unsupported", "not_loaded"]
+    os: Literal["ios", "android", "web", ""] = ""  # liff.getOS()
+    in_client: bool | None = None  # liff.isInClient()
+    line_version: _Version = ""  # liff.getLineVersion()
+    liff_version: _Version = ""  # liff.getVersion()
+    view_type: Literal["compact", "tall", "full", "frame", "full-flex", ""] = ""  # liff.getContext().viewType
+    liff_error: _ErrorName = ""  # liff.init が失敗したときのエラーの名前
+    secure_context: bool
+    user_agent: str = Field("", max_length=300)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/mic-check", response_class=HTMLResponse)
+async def liff_line_mic_check():
+    """LIFF の中でマイクを試す画面。LINE では https://liff.line.me/<LIFF ID>/mic-check で開く。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    conf = json.dumps({"liffId": line_channel.liff_id(), "livekitClient": LIVEKIT_CLIENT}).replace("<", "\\u003c")
+    body = f"""<p>音声相談で使うマイクと通話の部品が、この画面で使えるかを確かめます。声は送らず、残しません。
+送るのは結果(使えたか、エラーの名前、音の大きさ、LINE の版など)だけです。</p>
+<button type="button" id="mic-start">マイクを試す</button>
+<p id="mic-status" aria-live="polite">「マイクを試す」を押すと、マイクの許可を求めます。5 秒ほど声を出してください。</p>
+<meter id="mic-level" min="0" max="1" value="0" style="width:100%;height:24px"></meter>
+<pre id="mic-result" style="white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px"></pre>
+<p id="mic-external-wrap" hidden><button type="button" id="mic-external">外のブラウザで同じ確認を開く</button></p>
+<script>window.MIC_CHECK = {conf};</script>
+<script src="{LIFF_SDK}" charset="utf-8"></script>
+<script src="/static/mic-check.js"></script>"""
+    return HTMLResponse(_page("マイクの確認", body), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/liff/mic-check")
+async def liff_mic_check_log(body: MicCheckIn, request: Request):
+    """マイクを試した結果を、サーバーのログに 1 行だけ書く(本人、IP は書かない)。JSON の本文だけ(ほかのサイトのフォームから書かせない)。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(415, "JSON で送ってください")
+    day = datetime.now(UTC).date().isoformat()
+    if _mic_checks.get(day, 0) >= MIC_CHECK_DAILY_LIMIT:
+        raise HTTPException(429, "今日はこれ以上記録できません")
+    if day not in _mic_checks:  # 前の日の数は捨てる
+        _mic_checks.clear()
+    _mic_checks[day] = _mic_checks.get(day, 0) + 1
+    mic_log.info("LIFF のマイクの確認: %s", json.dumps(body.model_dump(), ensure_ascii=False))
+    return {"ok": True}
 
 
 def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:

@@ -751,6 +751,7 @@ class ResumeAdvisor(Agent):
                 # 音声の会話で待たせないよう軽くする(実測: 既定 約16秒 → この設定で 約7秒)
                 tools=[{"type": "web_search", "search_context_size": "low"}],
                 reasoning={"effort": "none"},
+                store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
                 input=(
                     "次のことを web で調べ、日本語の話し言葉(です・ます調)で2〜3文にまとめてください。"
                     "記号・箇条書き・URL は使わず、最後に主な情報源のサイト名を一言添えてください。"

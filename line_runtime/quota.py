@@ -120,21 +120,23 @@ class DailyQuota:
         self.clock = clock
         self._lock = threading.Lock()
         # counts: 人 → ターン数。ips: IP → {人 → その IP からのターン数}(キーの数がその IP から使われた匿名IDの数)
-        self._day, self._counts, self._ips = "", {}, {}
+        # extra: 数えるもの → {人 → 回数}(ターンとは別の 1 日の回数。例: AI つきのゲームの遊び。take_daily)
+        self._day, self._counts, self._ips, self._extra = "", {}, {}, {}
         if self.path and self.path.is_file():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             self._day, self._counts, self._ips = saved.get("day", ""), saved.get("counts", {}), saved.get("ips", {})
+            self._extra = saved.get("extra", {})
 
     def _roll(self) -> None:
         d = today(self.clock())
         if d != self._day:  # 日付が変わったら数え直す
-            self._day, self._counts, self._ips = d, {}, {}
+            self._day, self._counts, self._ips, self._extra = d, {}, {}, {}
 
     def _save(self) -> None:
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps({"day": self._day, "counts": self._counts, "ips": self._ips},
-                                            ensure_ascii=False), encoding="utf-8")
+            self.path.write_text(json.dumps({"day": self._day, "counts": self._counts, "ips": self._ips,
+                                             "extra": self._extra}, ensure_ascii=False), encoding="utf-8")
 
     def _people(self) -> set[str]:
         """その日に使われた匿名ID(ターンを使った人と、どこかの IP から使われた人)。ロックの中で呼ぶ。"""
@@ -220,6 +222,24 @@ class DailyQuota:
                 ids[key] = ids.get(key, 0) + 1
             self._save()
             return None
+
+    def daily_used(self, kind: str, user_id: str) -> int:
+        with self._lock:
+            self._roll()
+            return self._extra.get(kind, {}).get(person(user_id), 0)
+
+    def take_daily(self, kind: str, user_id: str, limit: int) -> bool:
+        """ターンとは別の 1 日の回数(kind ごと、人ごと)を 1 つ使う。limit に達していたら使わずに False。0 以下なら上限なし。
+        「すべて消す」でも消えない(dip の状態ではなくここに置くので、消して数え直させない)。"""
+        with self._lock:
+            self._roll()
+            counts = self._extra.setdefault(kind, {})
+            key = person(user_id)
+            if _over(limit, counts.get(key, 0)):
+                return False
+            counts[key] = counts.get(key, 0) + 1
+            self._save()
+            return True
 
     def take(self, user_id: str, ip: str | None = None) -> bool:
         """1ターン分を使う。上限に達していたら使わずに False(呼び出し側は LLM を呼ばない)。"""

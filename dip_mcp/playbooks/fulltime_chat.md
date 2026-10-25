@@ -31,3 +31,7 @@
 
 ## 提案に進むとき
 - recommend_jobs に employment_type=正社員と、分かっている条件(area・job_type・min_annual_salary、働き方・休日の remote・weekends_holidays・max_overtime_hours)を渡し、目的・やりたいこと・経歴を keywords に本人の言葉で入れる。避けたいことと、人と話す量・体を使う量で言えるやりたいこと(「人と話すのが苦手」「体を動かしたい」など)は keywords に入れず、属性の引数(max_talk_level・min_physical_level など)で渡す(Prompt の「避けたいこと・やりたいことから絞り込みの引数を埋める」)。
+
+## ゲームで書類を作る
+- 出す場面: 本人が職務経歴書を作りたいと言ったとき、または応募の準備の話になり、summary に arcade_draft が無いとき。1回だけ、ゲームのボタンを出す(Prompt の「ゲームで書類を作る」。何を聞くかはゲームが決めるので、ここでは決めない)。
+- arcade_draft があれば、ボタンは出さない。blank_lines があれば、その数字を1つ聞くか、求人の提案に進む(本人の話に合わせてどちらか1つ)。

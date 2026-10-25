@@ -44,6 +44,7 @@ def test_the_image_and_the_blueprint_match_the_code():
     env = {e["key"]: e for e in svc["envVars"]}
     assert env["AICA_TRUST_PROXY"]["value"] == "1"
     assert env["OPENAI_API_KEY"] == {"key": "OPENAI_API_KEY", "sync": False}  # 値はリポジトリに書かない
+    assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
     # 状態と出力の既定の置き場はすべてリポジトリ直下の data/。image では /app/data で、そこにディスクをつなぐ
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "WORKDIR /app\n" in dockerfile and "AICA_SECURE_COOKIE=1" in dockerfile

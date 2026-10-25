@@ -36,6 +36,8 @@ EXTRACT_SYSTEM = """あなたは履歴書・職務経歴書の読み取り係で
 - 職歴以外の経験(部活・委員会・家事・育児・ボランティア・趣味など)は other_experience に入れる。"""
 
 _MEDIA_TYPES = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
+# OpenAI に渡す PDF のファイル名。本人のファイル名(氏名が入りがち)は送らず、形式だけの固定の名前にする
+SENT_PDF_NAME = "resume.pdf"
 
 
 @dataclass
@@ -62,11 +64,12 @@ def media_type(filename: str) -> str:
 
 
 def content_part(filename: str, data: bytes) -> dict:
-    """ファイルの中身を Responses API の content part(input_file / input_image)にする。"""
+    """ファイルの中身を Responses API の content part(input_file / input_image)にする。
+    filename は形式を決めるのにだけ使い、送らない(PDF の filename は SENT_PDF_NAME)。"""
     mt = media_type(filename)
     b64 = base64.b64encode(data).decode("ascii")
     if mt == "application/pdf":
-        return {"type": "input_file", "filename": Path(filename).name, "file_data": f"data:{mt};base64,{b64}"}
+        return {"type": "input_file", "filename": SENT_PDF_NAME, "file_data": f"data:{mt};base64,{b64}"}
     return {"type": "input_image", "image_url": f"data:{mt};base64,{b64}"}
 
 
@@ -97,6 +100,7 @@ async def _extract(part: dict, client, *, model: str | None) -> tuple[ResumeDraf
         input=[{"role": "user", "content": content}],
         text_format=ResumeDraft,
         max_output_tokens=4096,
+        store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
     )
     draft = resp.output_parsed or ResumeDraft()
     draft = ResumeDraft.model_validate(scrub_pii(draft.model_dump()))

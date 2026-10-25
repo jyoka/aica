@@ -14,7 +14,11 @@ POST /line/webhook(line_runtime.server)が使う部品。FastAPI には依存し
   dip のログインの画面へのボタン(link_messages)と、dip がログインの後に本人を送る LINE の画面の URL(account_link_url)。
 - LIFF(task 203): LINE のアプリで開く LIFF 画面の本人。LIFF の ID トークンを LINE ログインの検証の API で確かめ(LineLogin)、
   sub からトークと同じ line_user の ID を作る。確かめた本人は署名つきの Cookie の値(liff_session)で覚える。
-  LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID の両方があるときだけ使う(liff_configured)。LINE のボタンは LIFF URL になる(liff_url_of)。
+  LINE_LIFF_ID と LINE_LIFF_CHANNEL_ID(前の名前 LINE_LOGIN_CHANNEL_ID も読む)の両方があるときだけ使う(liff_configured)。
+  LINE のボタンは LIFF URL になる(liff_url_of)。
+- LIFF で使う操作(task 204): 返信の actions(履歴書を選ぶ・音声相談を始める)は、LIFF で開けるなら LIFF 画面へのボタン
+  (LIFF_ACTIONS)、開けなければ今までどおり断りの文(ACTION_NOTES)。レジュメ・アーケードのボタンは LIFF で開けるときだけ出す。
+  LINE で使えるもの(liff_features)はエージェントにも伝える(line_runtime.agent の窓口)。
 """
 
 from __future__ import annotations
@@ -100,7 +104,7 @@ def check_id_key() -> None:
     if configured() or liff_configured():
         id_key()
     elif liff_id() or login_channel_id():
-        log.warning("%s と %s の片方しか無いので、LIFF を使いません", LIFF_ID_ENV, LOGIN_CHANNEL_ENV)
+        log.warning("%s と %s の片方しか無いので、LIFF を使いません", LIFF_ID_ENV, LIFF_CHANNEL_ENV)
 
 
 def line_user(user_id: str, key: bytes | None = None) -> str:
@@ -116,7 +120,10 @@ def line_user(user_id: str, key: bytes | None = None) -> str:
 # トークと同じ line_user の ID を作る。確かめた本人は、署名つきの Cookie(liff_session)で 1 時間だけ覚える。
 
 LIFF_ID_ENV = "LINE_LIFF_ID"
-LOGIN_CHANNEL_ENV = "LINE_LOGIN_CHANNEL_ID"  # LIFF アプリを置いた LINE ログインのチャネルの ID(ID トークンの aud)
+# LIFF アプリを置いたチャネルの ID(ID トークンの aud)。LINE ミニアプリのチャネルなら、その環境(開発中・審査用・公開済み)のチャネルの ID。
+# 前は LINE ログインのチャネルだけを考えて LINE_LOGIN_CHANNEL_ID と呼んでいた。前の名前も読む(新しい名前が先)
+LIFF_CHANNEL_ENV = "LINE_LIFF_CHANNEL_ID"
+LOGIN_CHANNEL_ENV = "LINE_LOGIN_CHANNEL_ID"
 LIFF_URL = "https://liff.line.me"
 LIFF_PREFIX = "/liff/line"  # LIFF アプリのエンドポイント URL のパス。LINE のアプリで開く画面は、すべてこの下
 VERIFY_PATH = "/oauth2/v2.1/verify"
@@ -125,6 +132,13 @@ RAW_LINE_ID = re.compile(r"U[0-9a-f]{32}")  # LINE の userId の形
 MAX_ID_TOKEN_CHARS = 4096
 LIFF_SESSION_SECONDS = 3600
 LIFF_PAGES = ("/liff/apply", "/liff/resume", "/liff/voice/draft")  # LIFF_PREFIX の下にもある画面(line_runtime.server)
+ARCADE_PATH = "/liff/arcade"  # レジュメ・アーケード(ハブと各ゲーム)。LIFF_PREFIX の下にもある。LIFF で開けなければ LINE に出さない
+# 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり
+LIFF_ACTIONS = {
+    "resume_upload": ("📄 履歴書・職務経歴書を送る", "resume/upload"),
+    "voice_consult": ("🎤 音声で相談する(約5分)", "voice"),
+}
+LIVEKIT_ENVS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")  # 音声相談に要る(voice_resume.livekit_token と同じ)
 
 
 def liff_id() -> str:
@@ -132,22 +146,50 @@ def liff_id() -> str:
 
 
 def login_channel_id() -> str:
-    return os.environ.get(LOGIN_CHANNEL_ENV, "").strip()
+    """LIFF アプリを置いたチャネルの ID(LINE_LIFF_CHANNEL_ID。無ければ前の名前の LINE_LOGIN_CHANNEL_ID)。"""
+    new, old = os.environ.get(LIFF_CHANNEL_ENV, "").strip(), os.environ.get(LOGIN_CHANNEL_ENV, "").strip()
+    if new and old and new != old:
+        log.warning("%s と %s が違うので、%s を使います", LIFF_CHANNEL_ENV, LOGIN_CHANNEL_ENV, LIFF_CHANNEL_ENV)
+    return new or old
 
 
 def liff_configured() -> bool:
-    """LIFF ID と LINE ログインのチャネル ID の両方があるときだけ LIFF を使う(無ければ /liff/line/… と
-    POST /api/liff/session は 404、LINE のボタンは今までどおり AICA_PUBLIC_URL の画面を開く)。"""
+    """LIFF ID とチャネル ID の両方があるときだけ LIFF を使う(無ければ /liff/line/… と
+    POST /api/liff/… は 404、LINE のボタンは今までどおり AICA_PUBLIC_URL の画面を開く)。"""
     return bool(liff_id() and login_channel_id())
+
+
+def voice_configured() -> bool:
+    """音声相談(LiveKit)の設定があるか。"""
+    return all(os.environ.get(k) for k in LIVEKIT_ENVS)
+
+
+def liff_features() -> tuple[str, ...]:
+    """LINE のトークから LIFF 画面で使えるもの: resume_upload(履歴書を読み込む)、voice_consult(音声相談。LiveKit の
+    設定も要る)、arcade(レジュメ・アーケード)。LIFF の設定が無ければ空(どれも LINE では使えない)。"""
+    if not liff_configured():
+        return ()
+    return ("resume_upload",) + (("voice_consult",) if voice_configured() else ()) + ("arcade",)
+
+
+def _is_arcade(path: str) -> bool:
+    p = path.partition("?")[0]
+    return p == ARCADE_PATH or p.startswith(ARCADE_PATH + "/")
+
+
+def liff_page_url(subpath: str) -> str:
+    """LIFF_PREFIX の下の画面(subpath。例 "voice")を開く LIFF URL(https://liff.line.me/<LIFF ID>/<subpath>)。
+    LINE はエンドポイント URL(…/liff/line)の後ろに subpath を付けて開く。LINE ミニアプリの LIFF ID でも、この形で開ける。"""
+    return f"{LIFF_URL}/{liff_id()}/{subpath}"
 
 
 def liff_url_of(path: str) -> str | None:
     """LIFF 画面のパス(/liff/…)を、LINE のアプリで開く LIFF URL(https://liff.line.me/<LIFF ID>/…)にする。
     LINE はエンドポイント URL(…/liff/line)の後ろに …の部分を付けて開く(/liff/apply?job=x → /liff/line/apply?job=x)。
-    LIFF の設定が無い、または LIFF_PREFIX の下に無い画面(レジュメ・アーケードなど)なら None。"""
-    if not liff_configured() or path.partition("?")[0] not in LIFF_PAGES:
+    LIFF の設定が無い、または LIFF_PREFIX の下に無い画面なら None。"""
+    if not liff_configured() or (path.partition("?")[0] not in LIFF_PAGES and not _is_arcade(path)):
         return None
-    return f"{LIFF_URL}/{liff_id()}/{path.removeprefix('/liff/')}"
+    return liff_page_url(path.removeprefix("/liff/"))
 
 
 class LineLogin:
@@ -247,7 +289,8 @@ class SeenEvents:
 
 # ----------------------------- 返信を LINE のメッセージにする -----------------------------
 
-# actions(Web の画面の「ファイルを選ぶ」「話して伝える」)は、LINE ではまだ使えないので文で案内する
+# actions(Web の画面の「ファイルを選ぶ」「話して伝える」)を LIFF で開けないときは、文で案内する(守り。エージェントには
+# LINE で使えないと伝えてあるので、ふつうは付かない)
 ACTION_NOTES = {
     "resume_upload": "履歴書・職務経歴書のファイルは、LINE ではまだ受け取れません。経歴や希望は、このトークに文で書いて教えてください。",
     "voice_consult": "音声での相談は、LINE ではまだ使えません。このトークに文で書いて教えてください。",
@@ -298,18 +341,14 @@ def _cards_message(cards: list[dict]) -> dict:
             "contents": {"type": "carousel", "contents": [_card_bubble(c) for c in cards[:12]]}}
 
 
-def _buttons_message(buttons: list[dict], base: str) -> dict:
-    """LIFF 画面のボタン(/liff/...)を、リンクのボタンにする。LIFF URL にできれば LIFF URL(LINE のアプリの中で、
-    トークの本人として開く)、できなければ公開 URL(base)の画面。"""
-    def uri(url: str) -> str:
-        return liff_url_of(url) or base + url
-
-    return {"type": "flex", "altText": _clip("リンク: " + "、".join(b["label"] for b in buttons), 400),
+def _buttons_message(links: list[dict]) -> dict:
+    """リンク({label, uri})をボタンの並んだ Flex にする。"""
+    return {"type": "flex", "altText": _clip("リンク: " + "、".join(b["label"] for b in links), 400),
             "contents": {"type": "bubble", "size": "kilo", "body": {
                 "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
                     {"type": "button", "style": "link", "height": "sm",
-                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": uri(b["url"])}}
-                    for b in buttons]}}}
+                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": b["uri"]}}
+                    for b in links]}}}
 
 
 def _quick_reply(labels: list[str]) -> dict:
@@ -324,28 +363,36 @@ def _labeled(items: list[str]) -> list[str]:
 
 def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
-    - bubbles → テキスト。actions はその後ろに案内の文として足す
+    - bubbles → テキスト
+    - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
-      へのリンク。どちらも無ければ出さない
+      へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
+    features = liff_features()
+    actions = [a for a in dict.fromkeys(reply.get("actions") or []) if a in LIFF_ACTIONS]
     texts = _labeled(reply.get("bubbles") or [])
-    texts += [ACTION_NOTES[a] for a in reply.get("actions") or [] if a in ACTION_NOTES]
+    texts += [ACTION_NOTES[a] for a in actions if a not in features]
     flex = []
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
     buttons = [{"label": b["label"].strip(), "url": b["url"]} for b in reply.get("buttons") or []
                if str(b.get("url", "")).startswith("/liff/") and _labeled([b.get("label")])]
+    if arcade := [b for b in buttons if _is_arcade(b["url"]) and "arcade" not in features]:
+        log.warning("LIFF の設定が無いので、レジュメ・アーケードのボタン %d 個を LINE に出しません", len(arcade))
+        buttons = [b for b in buttons if b not in arcade]
     if not base.startswith(("https://", "http://")):  # 公開 URL が無ければ、LIFF URL にできるボタンだけ出す
         dropped = [b for b in buttons if not liff_url_of(b["url"])]
         if dropped:
             log.warning("%s が無い(か http(s):// で始まらない)ので、LIFF 画面のボタン %d 個を LINE に出しません",
                         PUBLIC_URL_ENV, len(dropped))
         buttons = [b for b in buttons if b not in dropped]
-    if buttons:
-        flex.append(_buttons_message(buttons, base))
+    links = [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
+    links += [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
+    if links:
+        flex.append(_buttons_message(links))
     room = MAX_MESSAGES - len(flex)
     if len(texts) > room:
         texts = [*texts[: room - 1], "\n\n".join(texts[room - 1:])]

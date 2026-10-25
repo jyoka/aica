@@ -99,6 +99,18 @@ def test_set_search_track_rejects_unknown_track_missing_evidence_and_strips_cont
     assert "090" not in h["evidence"] and "[個人情報を削除]" in h["evidence"]
 
 
+def test_set_search_track_strips_addresses_from_the_evidence(tmp_path):
+    """根拠の発言も、希望の保存・まとめと同じ住所の決まりで伏せる(住所らしい所は、区切りまでの語ごと)。"""
+    state = State(tmp_path / "state.json")
+    r = logic.set_search_track(state, UID, "正社員", "渋谷区神南1-2-3に住んでいて、正社員で探したい")
+    assert r["recorded"]["evidence"] == "[個人情報を削除]、正社員で探したい"
+    (h,) = logic.conversation_summary(state, UID)["track_history"]
+    assert "神南" not in h["evidence"] and "1-2-3" not in h["evidence"]
+    # 住所でない数字の幅は伏せない
+    r = logic.set_search_track(state, UID, "アルバイト・パート", "週3-4日、時給1200-1500円でバイトしたい")
+    assert r["recorded"]["evidence"] == "週3-4日、時給1200-1500円でバイトしたい"
+
+
 def test_undo_returns_to_the_previous_track_and_is_recorded(tmp_path):
     state = State(tmp_path / "state.json")
     assert "error" in logic.set_search_track(state, UID, "未定", "取り消し", undo=True)  # 取り消すものが無い
