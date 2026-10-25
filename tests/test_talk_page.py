@@ -19,7 +19,10 @@ import pytest
 from dip_mcp import behavior, logic
 from dip_mcp.data import State
 from tests.test_handle import call, reply
-from tests.test_revisit import Greeter, greet
+from tests.test_revisit import OFFER_TEXT, Greeter, greet
+
+# 台本の再訪の挨拶(新しい匿名ユーザー: 経歴が分からないので、履歴書の読み込みを勧めの1文で勧める)
+REVISIT_GREETING = f"おかえりなさい。{OFFER_TEXT['resume_upload']}"
 
 INTERNAL_KEY = "offline-test-internal-key-offline-test"
 WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}
@@ -106,7 +109,7 @@ def test_first_open_greets_as_a_first_visit_and_reopening_greets_as_a_revisit(ap
         opened, again = open_talk(client)
         assert without_consent(opened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["entry"] == "revisit" and [t["name"] for t in again["tools"]] == ["get_user_conversation_summary"]
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        assert again["bubbles"] == [REVISIT_GREETING, "何をしますか?"] and again["thread"] == 2
 
         # 別のブラウザ(Cookie なし)は別の匿名ユーザーの初回訪問
         client.cookies.clear()  # 別ブラウザ相当(ターンを進めるので lifespan と同じクライアントを使う)
@@ -232,7 +235,7 @@ def test_opening_after_30_minutes_starts_a_new_conversation_with_the_revisit_gre
         app.later(31)
         reopened, again = open_talk(client)
         assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        assert again["bubbles"] == [REVISIT_GREETING, "何をしますか?"] and again["thread"] == 2
         hist = client.get("/api/talk/history").json()  # 描き直すのは新しい会話だけ
         assert hist["thread"] == 2 and len(hist["turns"]) == 1
     assert model.script == []
@@ -376,7 +379,7 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
         app.later(31)
         reopened, again = open_talk(client)
         assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        assert again["bubbles"] == [REVISIT_GREETING, "何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
 
@@ -451,7 +454,7 @@ def test_a_first_greeting_cut_off_by_a_real_disconnect_still_counts_as_opened(ap
         app.later(31)
         reopened, again = open_talk(client)
         assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        assert again["bubbles"] == [REVISIT_GREETING, "何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
 
@@ -476,7 +479,7 @@ def test_a_greeting_cut_off_before_its_wording_changed_still_counts_as_opened(ap
         app.later(31)
         reopened, again = open_talk(client)
         assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
-        assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
+        assert again["bubbles"] == [REVISIT_GREETING, "何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
 

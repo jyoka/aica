@@ -66,7 +66,8 @@ WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エ
 
 本人の同意(task 214。docs/design/privacy.md の 3.6、line_runtime.consent): 同意の前は LLM を呼ばず、状態にも書かない。
 Web は最初にトークを開いたとき(/api/talk/open が consent を返し、画面が同意の画面を出して POST /api/consent)、LINE は友だち追加と
-同意の前の発言に要点と「同意して始める」のクイックリプライ(postback)を返し、押したら挨拶する。履歴書と音声相談は、使う直前に
+同意の前の発言に要点と「同意して始める」のクイックリプライ(postback)を返し、押したら挨拶する(挨拶が返るまでは、次の発言も
+挨拶から始める。task 232)。履歴書と音声相談は、使う直前に
 もう一度示して同意を取る(Web は /api/consent、LIFF 画面は /api/liff/consent)。ターン、履歴書の読み取り、音声相談のトークン、
 ゲームの AI、プロフィールに足す・直す口、雇用区分の取り消し、シナリオと連携の開始は、同意がまだなら断る(turn.NeedsConsent、
 _require_consent、_profile_writer)。消す口(プロフィールの各項目、「すべて消す」、LINE の「データを消す」)と見る口は同意の前もできる。
@@ -909,7 +910,7 @@ def _line_kind(e: dict) -> str | None:
     """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
     解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
     「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)、使い始める同意のクイックリプライ
-    (postback。consent)。ほかは None(無視する)。
+    (postback。consent。ボタンと同じ「同意して始める」の文も consent)。ほかは None(無視する)。
     standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
     友だち解除(unfollow)も None: 受けても消さない(docs/design/privacy.md の 3.7。期間で消す掃除に任せる)。"""
     src = e.get("source") or {}
@@ -918,6 +919,8 @@ def _line_kind(e: dict) -> str | None:
     msg = e.get("message") or {}
     if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
         text = str(msg["text"])
+        if text.strip() == consent.texts("line")["terms"]["button"]:  # 「同意して始める」を文で送った: 発言にしない
+            return "consent"
         return line_channel.link_command(text) or line_channel.data_command(text) or "message"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
@@ -991,8 +994,8 @@ async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kin
         return await _line_link_start(api, line_uid, uid)
     if kind == "unlink":
         return line_channel.texts(line_channel.UNLINKED_TEXT if _unlink(uid) else line_channel.NOT_LINKED_TEXT)
-    reply, visit_greeting = await _line_turn(uid, kind, e)
-    return line_channel.to_messages(reply, visit_greeting=visit_greeting) if reply is not None else None
+    reply, greeting = await _line_turn(uid, kind, e)
+    return line_channel.to_messages(reply, greeting=greeting) if reply is not None else None
 
 
 def _line_consent_ask(stale: bool = False) -> list[dict]:
@@ -1008,14 +1011,30 @@ def _line_consent_ask(stale: bool = False) -> list[dict]:
 
 
 async def _line_consent(uid: str, e: dict) -> list[dict] | None:
-    """「同意して始める」が押された: 示した版で記録し、友だち追加と同じ挨拶のターンを始める。もう同意していれば何もしない
-    (二度押し)。示した版が今の版と違えば記録せず、今の版で示し直す。"""
-    if not consent.needed(state, uid, "terms"):
+    """「同意して始める」が押された(postback)、またはその文が送られた: 友だち追加と同じ挨拶のターンを始める。
+    同意の前は、postback の示した版で記録してから挨拶する。挨拶が返るまでは、次の発言も挨拶から始める(logic.await_greeting)。
+    示した版が今の版と違えば記録せず、今の版で示し直す。文では同意にならず、同意の要点を示し直す(postback だけ)。
+    もう同意していても、前のボタンを押し直した、文を送ったなら挨拶する(task 232。入口 A の会話にしない)。ただし挨拶が返った
+    直後の二度押し(今の会話が挨拶だけで続いている)には何も返さない。"""
+    if consent.needed(state, uid, "terms"):
+        shown = line_channel.consent_postback(str((e.get("postback") or {}).get("data") or ""))
+        if shown is None:
+            return _line_consent_ask()
+        if not consent.record(state, uid, "terms", shown):
+            return _line_consent_ask(stale=True)
+        logic.await_greeting(state, uid)
+    elif not logic.greeting_due(state, uid) and await _just_greeted(uid):
         return None
-    if not consent.record(state, uid, "terms", line_channel.consent_postback(str(e["postback"]["data"])) or ""):
-        return _line_consent_ask(stale=True)
-    reply, visit_greeting = await _line_turn(uid, "follow", e)
-    return line_channel.to_messages(reply, visit_greeting=visit_greeting) if reply is not None else None
+    reply, greeting = await _line_turn(uid, "follow", e)
+    return line_channel.to_messages(reply, greeting=greeting) if reply is not None else None
+
+
+async def _just_greeted(uid: str) -> bool:
+    """今の会話が、返った挨拶だけで続いているか(その後に本人が何も送っていない)。"""
+    rt = app.state.rt
+    async with rt.user_lock(uid):
+        conv = await rt.conversation(uid)
+    return conv["greeted"] and len(conv["turns"]) == 1 and talk_continues(conv)
 
 
 async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -> list[dict]:
@@ -1090,37 +1109,41 @@ def _unlink(uid: str) -> str | None:
     return gone
 
 
-async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, bool]:
+async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | None]:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
-    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。
+    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。ただし LINE で同意した後の
+    挨拶がまだ返っていなければ(logic.greeting_due)、新しい会話は発言ではなく挨拶から始める(書いた文は会話に入れない。task 232)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
     エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。
-    返すのは (返信, そのターンが初回訪問の挨拶か)。後の方は line_channel.to_messages の visit_greeting に渡す(ターンの種類が
-    greet で入口が visit のときだけ。同じ会話の後のターンは、会話の入口が visit でも挨拶ではない)。"""
+    返すのは (返信, そのターンが挨拶なら入口(visit / revisit)、でなければ None)。後の方は line_channel.to_messages の greeting
+    に渡す(ターンの種類が greet のときだけ。同じ会話の後のターンは、会話の入口が visit や revisit でも挨拶ではない)。"""
     rt = app.state.rt
     deps = turn.TurnDeps(state=state, quota=app.state.quota, rt=rt, unread_uploads=app.state.unread_uploads, ip=None)
+    if kind != "follow":
+        async with rt.user_lock(uid):  # 進行中のターンと交差しないように(talk_open と同じ)
+            conv = await rt.conversation(uid)
+        if kind == "message" and not talk_continues(conv) and logic.greeting_due(state, uid):
+            kind = "follow"  # 同意の後の挨拶がまだ返っていない(失敗した): 発言から始めず(入口 A にせず)、挨拶から始める
     if kind == "follow":
         event, text, new = logic.talk_entry(state, uid), None, False
     else:
-        async with rt.user_lock(uid):  # 進行中のターンと交差しないように(talk_open と同じ)
-            conv = await rt.conversation(uid)
         event, text = ("resume_upload", None) if kind == "upload" else ("message", e["message"].get("text"))
         new = not talk_continues(conv)
     try:
         t = turn.accept(deps, uid, event, text, None, new_conversation=new, channel="line",
                         features=line_channel.liff_features())
     except turn.BadTurn:
-        return None, False
+        return None, None
     try:
         reply = await turn.reply_of(deps, t)
     except (turn.BadTurn, turn.TurnFailed) as err:
         line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, type(err.__cause__ or err).__name__)
-        return {"bubbles": [line_channel.FAILED_TEXT]}, False
+        return {"bubbles": [line_channel.FAILED_TEXT]}, None
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
-    return reply, t.kind == "greet" and t.entry == "visit"
+    return reply, t.entry if t.kind == "greet" and t.entry in line_channel.GREETING_HEADINGS else None
 
 
 # ----------------------------- dip のログイン(アカウント連携。dip の画面の偽物) -----------------------------

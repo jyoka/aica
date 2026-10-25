@@ -1498,7 +1498,9 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
     本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
-    保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです
+    保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです。
+    ただし新しい会話を始めるときに、同意の後の挨拶がまだ返っていなければ(`logic.greeting_due`)、テキストは友だち追加と同じ
+    挨拶のターンにします(下の「同意」)
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
     `logic.record_talk_open` で記録します(ブロックを解いてもう一度友だち追加すると再訪)
   - ターンの途中の失敗(`BadTurn`、`TurnFailed`、ほかの例外)と、LINE のメッセージにする途中の失敗は `FAILED_TEXT` を返します
@@ -1517,10 +1519,11 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
-- 初回訪問の挨拶のターン(引数 `visit_greeting`)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出しをボタンの Flex の見出し(`header`)と `altText` にします。
-  問いとその答えの入口のボタンが 1 つのメッセージになり、挨拶が 2 通になります。ほかの返信(再訪の挨拶、同じ会話の後のターンの経験を聞く 1 問など)は見出しにしません。
-  問いの答えがボタンではないからです。挨拶のターンかどうかは `server._line_turn` が受け付けたターンの種類(`greet`)と入口(`visit`)で決めて渡します。
-  `render` の `entry` は会話の入口で、同じ会話の後のターンでも `visit` のままなので使いません(`docs/design/line-sim-scenarios.md` の 12 章)
+- 挨拶のターン(引数 `greeting` が `visit` か `revisit`)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、吹き出しの 1 つをボタンの Flex の見出し(`header`)と `altText` にします(`GREETING_HEADINGS`)。
+  初回訪問は最後の吹き出し(問い)を見出しにし、問いとその答えの入口のボタンが 1 つのメッセージになります。再訪は最初の吹き出し(挨拶と勧めの 1 文)を見出しにして
+  ボタンの Flex を先に置き、確認の 1 問を最後のメッセージに残します(確認の 1 問の答えはボタンではないため)。どちらも挨拶が 2 通になります。
+  ほかの返信(同じ会話の後のターンの経験を聞く 1 問など)は見出しにしません。挨拶のターンかどうかは `server._line_turn` が受け付けたターンの種類(`greet`)と入口で決めて渡します。
+  `render` の `entry` は会話の入口で、同じ会話の後のターンでも同じなので使いません(`docs/design/line-sim-scenarios.md` の 12 章)
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
 - 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
@@ -1534,8 +1537,17 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   クイックリプライ「同意して始める」を付けます(`consent_messages`)。postback のデータは `aica-consent=<版の tag>` で、押した文がトークに出ます
 - 同意の前のテキストと「アカウント連携」にも同じものを返します。発言はターンに流さず、会話にも dip の状態にも残しません。
   「同意して始める」と文で送っても同意になりません(postback だけ)。「データを見る」「データを消す」「連携解除」は同意の前もできます
-- 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を
-  返します。版が違えば記録せず、`consent.STALE` を前に付けて示し直します。もう同意していれば何も返しません(二度押し)
+- 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、`logic.await_greeting` で挨拶を待つ印
+  (`greeting_due`)を付けてから、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を返します。版が違えば記録せず、
+  `consent.STALE` を前に付けて示し直します
+- 挨拶が返ったら(`_line_turn` の `record_talk_open`)、印を外します。挨拶が失敗した(LLM の例外で `FAILED_TEXT`)、上限で返らなかった
+  ときは印が残り、次のテキストは本人の発言のターンにせず、挨拶のターン(`follow`)にします(`_line_turn`。書いた文は会話に入れません)。
+  入口 A の会話にしないためです(task 232)。今の会話に続けるとき(30 分以内に返信のある会話。リッチメニューから履歴書を読み込んだ後など)は、
+  会話を切らないよう、今までどおり発言のターンにします
+- 「同意して始める」と同じ文のテキスト(前後の空白は除く)は、`_line_kind` が `consent` にします。会話に本人の発言として入れません。
+  同意の前は同意の要点を示し直し、同意の後は postback と同じに扱います
+- もう同意している人の `consent`(前のボタンの押し直し、その文)には、挨拶のターンを返します(dip が決める初回訪問か再訪)。
+  ただし印が無く、今の会話が返った挨拶だけで続いているとき(`_just_greeted`。挨拶の直後の二度押し)は、何も返しません
 - LIFF 画面の履歴書と音声は、使う直前に同意を取ります。履歴書の画面は、同意がまだなら同意の文と「同意してファイルを選ぶ」を出し、
   ファイルを選ぶ欄を隠します。押すと `POST /api/liff/consent` で記録して欄を出します。音声相談の画面は `talk-core.js` の `ask` で、
   シートを開く前に同意の画面を出します(`consentApi: "/api/liff/consent"`)。どちらも、使い始める同意がまだなら、LINE のトークで
@@ -1755,6 +1767,7 @@ sequenceDiagram
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
+| `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |
 | `resume_upload`、`resume_upload_seq` | 最新の読み取り結果(5.5 の envelope に `id`、`uploaded_at`、`file` を足した形)と次の番号 | `save_resume_upload` |
 | `voice_results`、`voice_result_seq` | `{id, at, cards, draft_markdown, files, preferences, room, document_kind}` と次の番号 | `record_voice_result` |
 | `voice_rooms`、`forgotten_voice_rooms` | 発行した部屋と、「すべて消す」の前の部屋(それぞれ直近 20) | `record_voice_room`、`forget_all` |
@@ -2426,6 +2439,10 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 30. 同意の前は LLM を呼ばず、状態に書きません。Web は挨拶の前に同意の画面を出し、ターンは 403 です
     (`tests/test_consent.py::test_web_talk_asks_before_the_greeting_and_calls_no_llm_until_agreed`)。LINE は友だち追加と最初の発言の前に
     「同意して始める」の postback を返し、押したら挨拶します(`::test_line_asks_on_follow_and_before_the_first_message_then_greets_after_the_button`)。
+    同意の後の挨拶が失敗しても、次に押す、その文を送る、何か書く、のどれでも挨拶から始まり、入口 A にしません
+    (`::test_line_greets_after_the_consent_even_when_the_first_greeting_failed`、
+    `::test_line_revisit_greets_when_the_consent_text_arrives_after_a_failed_greeting`)。同意した後に前のボタンを押し直しても
+    挨拶します(`::test_line_pressing_the_old_consent_button_again_greets`)。
     履歴書と音声は使う直前に同意を取り、その前は読み取りにも部屋にも進みません(`::test_resume_and_voice_ask_again_right_before_use`、
     `::test_liff_resume_and_voice_ask_for_their_own_consent`、画面は `::test_talk_screen_consent_flow_in_the_browser`)。
     同意は版つきで記録し、版が上がったら取り直します(`::test_record_keeps_the_version_and_a_new_version_asks_again`)。

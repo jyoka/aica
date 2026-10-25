@@ -72,18 +72,28 @@ def entry_offer(summary: dict, usable: list[str]) -> str | None:
     return next((k for k, hit in candidates if hit and (k == "blanks" or k in usable)), None)
 
 
-def with_offer(offer: str | None, quick_replies: list[str], summary: dict) -> dict:
-    """勧める入口を、返信の項目(actions / buttons / quick_replies)にする。"""
+# 再訪の勧めの1文(dip の Prompt の「挨拶で3つの入口を案内する」の例)
+OFFER_TEXT = {"blanks": "ゲームで作った下書きに、数字の空欄が残っています。",
+              "resume_upload": "履歴書を読み込むと、経歴を一から書かずに探せます。",
+              "voice_consult": "下の「音声で相談する」から、話して相談もできます(約5分)。",
+              "arcade": "下の「ゲームで書類を作る」で、遊びながら書類の下書きを作れます。"}
+
+
+def revisit_reply(question: str, offer: str | None, quick_replies: list[str], summary: dict,
+                  usable: list[str]) -> AIMessage:
+    """再訪の挨拶: 窓口で使える入口を全部ボタンにし(task 234)、勧める入口は1つだけ文で勧める(勧めが先、確認の1問が最後)。"""
+    bubbles = [f"おかえりなさい。{OFFER_TEXT[offer]}", question] if offer else [f"おかえりなさい。{question}"]
     if offer == "blanks":
         rest = [q for q in quick_replies if q != "今はいい"][:2]  # 4 つまで。「今はいい」は残す
-        return {"quick_replies": ["空欄を埋める", *rest, "今はいい"]}
-    if offer == "arcade":
-        return {"quick_replies": quick_replies, "buttons": [{"label": "ゲームで書類を作る", "url": summary["arcade_url"]}]}
-    return {"quick_replies": quick_replies, "actions": [offer] if offer else []}
+        quick_replies = ["空欄を埋める", *rest, "今はいい"]
+    url = summary.get("arcade_url")
+    return reply(bubbles, quick_replies=quick_replies, actions=[a for a in ("voice_consult", "resume_upload") if a in usable],
+                 buttons=[{"label": "ゲームで書類を作る", "url": url}] if url and "arcade" in usable else [])
 
 
 def greet(messages) -> AIMessage:
-    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニューと使える入口すべて、再訪は要約を読んでから入口を1つ)。"""
+    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニューと使える入口すべて、再訪は要約を読んでから、使える入口すべてと
+    勧めの1文)。"""
     system = messages[0].content
     uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
     usable = usable_entries(system)
@@ -99,14 +109,14 @@ def greet(messages) -> AIMessage:
     prefs = {k: v["value"] for k, v in (summary.get("stated_preferences") or {}).items()}
     if prefs:
         said = "・".join(prefs[k] for k in ("area", "time_band", "job_type") if k in prefs)
-        return reply([f"おかえりなさい。前回は{said}でしたが、今回も同じですか?"],
-                     **with_offer(offer, ["同じで探す", "少し変えたい", "今はいい"], summary))
+        return revisit_reply(f"前回は{said}でしたが、今回も同じですか?", offer, ["同じで探す", "少し変えたい", "今はいい"],
+                             summary, usable)
     viewed = (summary.get("recent_views") or {}).get("by_job_type") or {}
     if viewed:
         top = max(viewed, key=viewed.get)
-        return reply([f"おかえりなさい。最近は{top}のお仕事を見ていましたか?"],
-                     **with_offer(offer, ["そう、探したい", "ほかの仕事", "今はいい"], summary))
-    return reply(["おかえりなさい。何をしますか?"], **with_offer(offer, MENU, summary))
+        return revisit_reply(f"最近は{top}のお仕事を見ていましたか?", offer, ["そう、探したい", "ほかの仕事", "今はいい"],
+                             summary, usable)
+    return revisit_reply("何をしますか?", offer, MENU, summary, usable)
 
 
 def propose(messages) -> AIMessage:
@@ -171,8 +181,12 @@ def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatc
     assert first["actions"] == ["resume_upload"] and first["buttons"] == [ARCADE_BUTTON]
     for r in (back_prefs, back_views):  # 再訪は要約(プロフィールと行動履歴)を読んでから挨拶する
         assert r["entry"] == "revisit" and [t["name"] for t in r["tools"]] == ["get_user_conversation_summary"]
-    assert back_prefs["bubbles"] == ["おかえりなさい。前回は渋谷・日中・カフェでしたが、今回も同じですか?"]
-    assert back_views["bubbles"] == ["おかえりなさい。最近はカフェのお仕事を見ていましたか?"]
+    # 再訪も窓口で使える入口を全部ボタンで出し(task 234。音声は LiveKit が無いので出さない)、勧めの1文は summary に合う1つだけ
+    assert back_prefs["bubbles"] == [f"おかえりなさい。{OFFER_TEXT['arcade']}", "前回は渋谷・日中・カフェでしたが、今回も同じですか?"]
+    assert back_views["bubbles"] == [f"おかえりなさい。{OFFER_TEXT['resume_upload']}", "最近はカフェのお仕事を見ていましたか?"]
+    for r in (back_prefs, back_views):
+        assert r["actions"] == ["resume_upload"] and [b["label"] for b in r["buttons"]] == ["ゲームで書類を作る"]
+        assert r["buttons"][0]["url"].startswith("/liff/arcade")
     assert model.script == []
 
 
@@ -198,7 +212,7 @@ def test_revisit_with_preferences_confirms_and_takes_only_the_difference(tmp_pat
                         (uid, "revisit", None)], tmp_path)
     t1, t2, _, again = turns
 
-    assert t1["bubbles"] == ["おかえりなさい。前回は渋谷・日中・カフェでしたが、今回も同じですか?"]
+    assert t1["bubbles"] == [f"おかえりなさい。{OFFER_TEXT['arcade']}", "前回は渋谷・日中・カフェでしたが、今回も同じですか?"]
     rec = next(t for t in t2["tools"] if t["name"] == "recommend_jobs")
     assert rec["args"] == {"line_user_id": uid, "area": "渋谷", "time_band": "夕方", "job_type": "カフェ"}
     assert t2["cards"] and [c["job_id"] for c in t2["cards"]] == [j["job_id"] for j in rec["result"]["jobs"]]
@@ -209,7 +223,7 @@ def test_revisit_with_preferences_confirms_and_takes_only_the_difference(tmp_pat
     # 本人が話した希望は差分だけ更新され、次の再訪の確認にそのまま出る
     prefs = {k: v["value"] for k, v in logic.stated_preferences(State(tmp_path / "state.json").user(uid)).items()}
     assert prefs == {"job_type": "カフェ", "area": "渋谷", "time_band": "夕方"}
-    assert again["bubbles"] == ["おかえりなさい。前回は渋谷・夕方・カフェでしたが、今回も同じですか?"]
+    assert again["bubbles"][1:] == ["前回は渋谷・夕方・カフェでしたが、今回も同じですか?"]
 
     checks = conversation_checks(sc, turns[:3], user_msgs)
     assert checks["violations"] == [] and checks["outcome_as_expected"] and checks["branch_within_3"]
@@ -232,8 +246,8 @@ def test_revisit_with_only_browsing_mentions_it_once_without_listing_jobs(tmp_pa
 
     summary = t1["tools"][0]["result"]
     assert summary["stated_preferences"] == {} and summary["recent_views"]["count_30d"] == 3  # 行動履歴だけの人
-    assert t1["bubbles"] == ["おかえりなさい。最近はカフェのお仕事を見ていましたか?"]
-    assert t1["cards"] == [] and not re.search(r"\d+\s*件", t1["bubbles"][0])
+    assert t1["bubbles"] == [f"おかえりなさい。{OFFER_TEXT['resume_upload']}", "最近はカフェのお仕事を見ていましたか?"]
+    assert t1["cards"] == [] and not re.search(r"\d+\s*件", "".join(t1["bubbles"]))
     assert t2["cards"] and all("見てい" not in b for b in t2["bubbles"] + t3["bubbles"])  # 触れるのは1回だけ
 
     checks = conversation_checks(sc, turns, user_msgs)

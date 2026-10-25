@@ -261,9 +261,9 @@ def to_run(r: dict, rep: int) -> dict:
                 "condition_no_options": len(r.get("condition_no_options_turns", [])),
                 # 受け止めの「〜ですね」の文がある吹き出しの数(続けて使うと違反。#221 では 113 吹き出しのうち 24 個)
                 "echo_acks": r.get("echo_ack_bubbles"),
-                # 初回訪問の挨拶が LINE で何通か(LINE の初回訪問だけ。ほかは None)
+                # 挨拶が LINE で何通か(LINE の初回訪問と再訪だけ。ほかは None。再訪は task 234 から)
                 "greeting_line_messages": r["line_messages"][0] if r.get("line_messages")
-                and (r.get("turn_log") or [{}])[0].get("entry") == "visit" else None,
+                and (r.get("turn_log") or [{}])[0].get("entry") in ("visit", "revisit") else None,
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}

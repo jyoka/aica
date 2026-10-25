@@ -1594,28 +1594,64 @@ def greeting_offers(r: dict) -> list[str]:
     return out
 
 
+# 再訪の挨拶の勧めの文が、どの入口に触れたか(目安)。勧めの文は問いの吹き出しより前に置く決まりなので、吹き出しが 2 つ以上なら
+# 最後の(問いの)吹き出しは見ない(「前回読み込んだ履歴書では事務でした。今回も事務で探しますか?」は勧めではない)。問いの文も見ない。
+# 下書きの続き(「ゲームで作った下書きに、数字の空欄が残っています。」)は、ゲームではなく下書きの続きに数える
+ENTRY_WORDS = {
+    "voice_consult": re.compile(r"音声|話して(?:伝え|相談)"),
+    "resume_upload": re.compile(r"履歴書|職務経歴書|読み込|ファイル"),
+    "arcade": re.compile(r"ゲーム|アーケード|遊びながら|書類を作"),
+}
+
+
+def greeting_mentions(r: dict) -> list[str]:
+    """その返信の勧めの文(問いの吹き出しより前の、問いでない文)が触れた入口(ENTRIES の名前と、下書きの続きの BLANKS_OFFER)。
+    ボタンは見ない。"""
+    out: list[str] = []
+    bubbles = r["bubbles"][:-1] if len(r["bubbles"]) > 1 else r["bubbles"]
+    for x in (x for b in bubbles for x in _sentences(b) if not _questions([x])):
+        hits = [BLANKS_OFFER] if BLANKS_REPLY.search(x) else [e for e, p in ENTRY_WORDS.items() if p.search(x)]
+        out += [h for h in hits if h not in out]
+    return out
+
+
+def lineup(r: dict, usable: tuple[str, ...]) -> bool:
+    """その返信が、窓口で使える入口(ゲームを含む 2 つ以上)を全部ボタンで並べたか(挨拶の 3 つの入口の案内の形)。
+    ゲームの無い窓口は見ない: 経験を聞く1問の履歴書と音声(Prompt が別の場面で許す)だけで全部になってしまうため。"""
+    offers = greeting_offers(r)
+    return len(usable) >= 2 and "arcade" in usable and all(e in offers for e in usable)
+
+
 def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
                               features: list[str] | tuple[str, ...] = ()) -> list[str]:
     """挨拶の入口の案内(docs/design/line-sim-scenarios.md の 12 章)。
-    初回訪問(visit): 窓口で使える入口を全部出し、使えないものは出さない。
-    再訪(revisit): 勧めるのは 1 つだけで、使えないものは出さない。シナリオの expect_greeting_offer があれば、それを勧める
-    (期待の入口がその窓口で使えなければ、何を勧めたかは問わない)。"""
-    if not turns or sc.get("event") not in ("visit", "revisit"):
-        return []
+    どの会話でも: 入口を全部並べる(lineup)のは 1 つの会話で 1 回だけ(task 234)。
+    初回訪問(visit)・再訪(revisit): 窓口で使える入口を全部ボタンで出し、使えないものは出さない。
+    再訪は、文で触れる(勧める)入口が 1 つだけ(ほかはボタンだけ。task 234)。シナリオの expect_greeting_offer があれば、
+    文でそれを勧める(下書きの続きは「空欄を埋める」の選択肢も要る。期待の入口がその窓口で使えなければ、何を勧めたかは問わない)。"""
     usable = available_entries(channel, features)
-    offers = greeting_offers(turns[0])
     out = []
+    if len(shown := [i for i, r in enumerate(turns) if lineup(r, usable)]) > 1:
+        out.append(f"T{shown[1] + 1}: 入口を全部並べるのは1つの会話で1回だけ(T{shown[0] + 1} で並べた)")
+    if not turns or sc.get("event") not in ("visit", "revisit"):
+        return out
+    offers = greeting_offers(turns[0])
     if unusable := [o for o in offers if o != BLANKS_OFFER and o not in usable]:
         out.append(f"T1: 窓口で使えない入口を出した: {unusable}")
+    kind = "初回訪問" if sc["event"] == "visit" else "再訪"
+    if missing := [e for e in usable if e not in offers]:
+        out.append(f"T1: {kind}の挨拶に、使える入口が出ていない: {missing}")
     if sc["event"] == "visit":
-        if missing := [e for e in usable if e not in offers]:
-            out.append(f"T1: 初回訪問の挨拶に、使える入口が出ていない: {missing}")
         return out
-    if len(offers) > 1:
-        out.append(f"T1: 再訪の挨拶で入口を{len(offers)}つ勧めた(1つだけ): {offers}")
+    told = greeting_mentions(turns[0])
+    if len(told) > 1:
+        out.append(f"T1: 再訪の挨拶で入口を文で{len(told)}つ並べた(勧めは1つだけ。ほかはボタンだけ): {told}")
     want = sc.get("expect_greeting_offer")
-    if want and (want == BLANKS_OFFER or want in usable) and offers != [want]:
-        out.append(f"T1: 再訪の挨拶で勧めた入口が {offers or 'なし'}(summary からは {want})")
+    if want and (want == BLANKS_OFFER or want in usable):
+        if told != [want]:
+            out.append(f"T1: 再訪の挨拶で勧めた入口が {told or 'なし'}(summary からは {want})")
+        if want == BLANKS_OFFER and BLANKS_OFFER not in offers:
+            out.append("T1: 下書きの続きを勧めたのに、選択肢に「空欄を埋める」が無い")
     return out
 
 
@@ -1676,7 +1712,8 @@ def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAUL
         out.append(f"T1: 行動履歴に言い切りで触れた(問いの中で確認形に): {''.join(told)}")
     if not (sc.get("seed_preferences") or sc.get("seed_track")) and any(ONCE_AGAIN.search(b) for b in bubbles):
         out.append("T1: 前に話したことが無い人に「今回も」と言った")
-    if greeting_offers(turns[0]) and bubbles and _questions(bubbles[-1:]) and any(
+    # 勧めがあるはずの挨拶だけ見る(task 234 から入口のボタンはいつも出るので、ボタンの有無では勧めたか分からない)
+    if sc.get("expect_greeting_offer") and bubbles and _questions(bubbles[-1:]) and any(
             OFFER_WORDS.search(x) for x in _sentences(bubbles[-1]) if not _questions([x])):
         out.append(f"T1: 入口の勧めを問いと同じ吹き出しに詰めた(勧めを先の吹き出しに): {bubbles[-1]}")
     limit = GREETING_TOTAL_MAX.get(track, GREETING_TOTAL_MAX[DEFAULT_TRACK])
@@ -1778,14 +1815,17 @@ def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | N
 # LINE の通数(task 231): 返信を LINE のメッセージにする line_channel.to_messages をオフラインで通して数える。
 # LIFF の設定の代わりに、その会話で使えたもの(features)を渡す。公開 URL は数えるためだけの仮のもの(どこにも送らない)
 LINE_COUNT_BASE = "https://line-count.invalid"
-GREETING_LINE_MAX = 2  # 初回訪問の挨拶は 2 通まで(本文と、問いを見出しにした入口のボタン)
+# 挨拶は 2 通まで。初回訪問は本文と、問いを見出しにした入口のボタン。再訪は挨拶と勧めを見出しにした入口のボタンと、確認の1問
+GREETING_LINE_MAX = 2
+GREETING_KINDS = {"visit": "初回訪問", "revisit": "再訪"}
 
 
-def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = (), visit: bool = False) -> list[int]:
-    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。visit: 会話が初回訪問の挨拶で始まった
-    (シナリオの event が visit)。そのときだけ、1 ターン目を挨拶のターンとして数える(問いがボタンの見出しになる)。
-    2 ターン目からは、会話の入口が visit でも挨拶ではない(server._line_turn と同じ決め方)。"""
-    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features), visit_greeting=visit and i == 0))
+def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = (),
+                        greeting: str | None = None) -> list[int]:
+    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。greeting: 会話が挨拶で始まったならその入口
+    (シナリオの event が visit / revisit)。そのときだけ、1 ターン目を挨拶のターンとして数える(吹き出しの 1 つがボタンの見出しになる)。
+    2 ターン目からは、会話の入口が visit や revisit でも挨拶ではない(server._line_turn と同じ決め方)。"""
+    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features), greeting=greeting if i == 0 else None))
             for i, r in enumerate(turns)]
 
 
@@ -1801,16 +1841,19 @@ def entry_labels(r: dict) -> dict[str, str]:
 
 def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
                              features: list[str] | tuple[str, ...] = ()) -> list[str]:
-    """LINE の初回訪問の挨拶(docs/design/line-sim-scenarios.md の 12 章): 2 通まで。入口のボタンの文言は、
-    ゲームの文言(line_channel.ARCADE_LABEL)と同じで、本文(吹き出し)に同じ言い方で出ている。"""
-    if channel != "line" or sc.get("event") != "visit" or not turns:
+    """LINE の挨拶(docs/design/line-sim-scenarios.md の 12 章): 初回訪問も再訪も 2 通まで。ゲームのボタンの文言は
+    line_channel.ARCADE_LABEL(リッチメニューと同じ)。初回訪問は、入口のボタンの文言が本文(吹き出し)に同じ言い方で出ている
+    (再訪は勧めの 1 つだけを文で触れるので見ない)。"""
+    if channel != "line" or (event := sc.get("event")) not in GREETING_KINDS or not turns:
         return []
     first, out = turns[0], []
-    if (n := line_message_counts(turns[:1], features, visit=True)[0]) > GREETING_LINE_MAX:
-        out.append(f"T1: 初回訪問の挨拶が LINE で {n} 通({GREETING_LINE_MAX} 通まで)")
+    if (n := line_message_counts(turns[:1], features, greeting=event)[0]) > GREETING_LINE_MAX:
+        out.append(f"T1: {GREETING_KINDS[event]}の挨拶が LINE で {n} 通({GREETING_LINE_MAX} 通まで)")
     labels = {e: lb for e, lb in entry_labels(first).items() if e in features}
     if labels.get("arcade", line_channel.ARCADE_LABEL) != line_channel.ARCADE_LABEL:
         out.append(f"T1: ゲームのボタンの文言が「{labels['arcade']}」(「{line_channel.ARCADE_LABEL}」)")
+    if event != "visit":
+        return out
     body = "".join(first["bubbles"])
     if missing := [lb for lb in labels.values() if lb not in body]:
         out.append(f"T1: 入口のボタンの名前が本文に無い(言い方がずれている): {missing}")
@@ -1973,9 +2016,12 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
+        # 再訪の挨拶の文が触れた(勧めた)入口(初回訪問は 3 つを文で伝えるので None)
+        "greeting_mentions": greeting_mentions(first) if first and sc.get("event") == "revisit" else None,
         "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         # 各ターンの返信が LINE で何通になるか(LINE の窓口の会話だけ。Web は None)
-        "line_messages": line_message_counts(turns, features, sc.get("event") == "visit") if channel == "line" else None,
+        "line_messages": (line_message_counts(turns, features, sc.get("event") if sc.get("event") in GREETING_KINDS else None)
+                          if channel == "line" else None),
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,
