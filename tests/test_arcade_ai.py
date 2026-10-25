@@ -177,6 +177,7 @@ def test_start_answer_and_save_reach_the_profile_the_summary_and_the_talk(arc):
     summary = logic.conversation_summary(arc.server.state, arc.uid)
     ad = summary["arcade_draft"]
     assert ad["document_kind"] == "職務経歴書" and ad["lines"] == 2 and ad["blanks"] == 1
+    assert ad["view_url"] == out["view_url"]  # 「下書きを見る」と同じ画面(エージェントはこの URL だけをボタンにする)
     assert ad["blank_lines"] == ["ペーパームーン: 共通コンポーネントのライブラリを整備 [+X% ← 数字を入れる]"]
     assert "決済完了率を61%から68%に改善" not in json.dumps(ad, ensure_ascii=False)  # 空欄の無い行の全文は載せない
     assert summary["arcade_url"] == "/liff/arcade/the-case-of-you"  # 正社員の既定のゲーム

@@ -1132,7 +1132,7 @@ def _sentences(b: str) -> list[str]:
 
 
 def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAULT_TRACK) -> list[str]:
-    """挨拶の言い方と並び(docs/design/line-sim-scenarios.md の 13 章)。
+    """挨拶の言い方と並び(docs/design/line-sim-scenarios.md の 15 章)。
     初回訪問・再訪: こちらから連絡した言い方をしない。問いがあれば、最後の吹き出しを問いで終える。
     再訪: 行動履歴には問いの中で触れ、言い切り(「見ていましたね」「ご覧になっていたので」)にしない。問いと同じ文に
     読点でつないだ言い切り(「ご覧になっていたので、カフェで探しますか?」)も数える。「今回も」は
@@ -1159,6 +1159,96 @@ def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAUL
     limit = GREETING_TOTAL_MAX.get(track, GREETING_TOTAL_MAX[DEFAULT_TRACK])
     if (total := sum(len(b) for b in bubbles)) > limit:
         out.append(f"T1: 再訪の挨拶が計{total}字({limit}字まで)")
+    return out
+
+
+# ----------------------------- 評価そのものの確かさ(エージェントの違反には数えない) -----------------------------
+
+# 模擬ユーザーが設定(ペルソナ)の指示文を発言にしたしるし。「〜と書く」「〜と答える」は設定の書き方で、本人の発言には出ない
+# (2026-10-25 の T-switch-to-fulltime の U2「次の質問に答えるときに、考え直して「…」と書きます。」。evals/baseline/ と
+# jyoka/tasks#221 の結果の本人の発言 約 500 で、当たったのはこの1つだけ)
+SIM_DIRECTION = re.compile(r"と(書|答え|言|伝え|選)(く|る|う|ぶ|える|きます|ます|います|えます|びます)(?=[。、!！]|$)"
+                           r"|と言って終え|この言い方のまま|次の(質問|返信)に答えるときに")
+
+
+def sim_leaks(user_msgs: list[str | None]) -> list[str]:
+    """模擬ユーザーが設定の指示文をそのまま発言にした発言(U は user_msgs の添字。U2 は T3 が答える発言)。
+    エージェントは指示文に答えることになり、その後の判定(区分の切り替えの期限など)が崩れる。見つかったら、
+    その発言を台本(script)にする。"""
+    return [f"U{i}: {m}" for i, m in enumerate(user_msgs) if m and SIM_DIRECTION.search(m)]
+
+
+def conversation_end(n_turns: int, cap: int, ended_by_user: bool) -> dict:
+    """会話がどう終わったか。ended_by_user は、模擬ユーザー(か台本)が終えたか、何も返さなかったか。
+    そうでなくエージェントのターンが上限に達していれば、上限で切れた(その後の提案や反応を評価が見ていない)。"""
+    cut = not ended_by_user and n_turns >= cap
+    return {"turn_cap": cap, "ended_by": "turn_cap" if cut else "user", "cut_at_cap": cut}
+
+
+# ----------------------------- 下書きの空欄の数字(下書きに書き込むのは本人。会話の改善 C (7/10)) -----------------------------
+
+DRAFT_LABEL = "下書きを見る"
+# 下書きの空欄の数字を聞く返信: 空欄か下書きに触れ、数を尋ねる語か数字(「2日で合っていますか?」の確認形)がある
+BLANK_TOPIC = re.compile(r"空欄|下書き")
+NUMBER_QUESTION = re.compile(r"何[日件人回割個社名台倍年円時%％]|何か月|何ヶ月|何パーセント|どのくらい|どれくらい|どれぐらい"
+                             r"|いくつ|[0-9０-９]")
+DIGIT = re.compile(r"[0-9０-９]")
+# 本人が数字を答えた: 数字を書いた(「十分」は数に数えない)。数字を示して確かめた問いには「はい」も答え
+NUMBER_ANSWER = re.compile(r"[0-9０-９]|[一二三四五六七八九十百千]+[日件人回割個社名台倍年円%％]")
+AFFIRM = re.compile(r"^(はい|そう|合って|その(とおり|通り))")
+
+
+def draft_buttons(r: dict) -> bool:
+    """その返信に「下書きを見る」(下書きの画面 /liff/arcade/draft を開くボタン)があるか。"""
+    return any(str(b.get("url", "")).startswith(ARCADE_DRAFT_PATH) for b in r.get("buttons") or [])
+
+
+def _blank_question(r: dict, said: str | None) -> bool:
+    """下書きの空欄の数字を聞く返信か(問いがあり、数を尋ねるか数字を示す。吹き出し全体で見る)。空欄か下書きに触れた返信か、
+    本人が空欄に触れた発言(said。「空欄を埋める」)への返信だけを数える(「週に何日働きたいですか?」は空欄の問いではない)。"""
+    text = "\n".join(r["bubbles"])
+    return bool(_questions(r["bubbles"]) and NUMBER_QUESTION.search(text)
+                and (BLANK_TOPIC.search(text) or BLANKS_REPLY.search(said or "")))
+
+
+def _answered_number(r: dict, m: str | None) -> bool:
+    """本人の発言 m が、返信 r の空欄の問いへの数字の答えか(「分からない」は答えではない)。"""
+    if not m or DONT_KNOW.search(m):
+        return False
+    m = m.strip()
+    return bool(NUMBER_ANSWER.search(m) or (AFFIRM.search(m) and DIGIT.search("\n".join(r["bubbles"]))))
+
+
+def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | None], channel: str = "web",
+                            features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """下書きの空欄の数字(baitoru_assistant.md の「ゲームで書類を作る」)。
+    - 「下書きを見る」は 1 つの会話で 1 回だけ
+    - 空欄の数字を聞いて本人が答えたら(数字か、数字を示した確認形に「はい」)、その返信に「下書きを見る」がある
+      (本人が画面で数字を入れる)。下書きの画面を開けない窓口(LIFF の無い LINE。features に arcade が無い)では問わない
+    - シナリオの expect_confirm_number(summary の履歴書にある、空欄と同じ行の数字。例「2日」)があれば、白紙で聞かず、
+      その数字を示して確かめる(本人がその数字を言うより前に、空欄の問いの返信にその数字がある。選択肢だけでは数えない)
+    空欄の問いは、本人が「空欄を埋める」を選んでも、エージェントが自分から聞いても(playbook の場面)同じに見る。"""
+    out = []
+    shown = [i for i, r in enumerate(turns) if draft_buttons(r)]
+    if len(shown) > 1:
+        out.append(f"T{shown[1] + 1}: 「{DRAFT_LABEL}」を1つの会話で{len(shown)}回出した(1回だけ)")
+    asked = [i for i, r in enumerate(turns)
+             if i and _blank_question(r, user_msgs[i] if i < len(user_msgs) else None)]  # T1 は挨拶かプッシュ(下書きの続きを勧めるだけ)
+    viewable = channel != "line" or "arcade" in features
+    for i in asked:
+        if i + 1 >= len(turns) or not _answered_number(turns[i], user_msgs[i + 1] if i + 1 < len(user_msgs) else None):
+            continue
+        if viewable and not draft_buttons(turns[i + 1]):
+            out.append(f"T{i + 2}: 空欄の数字を聞いて本人が答えた後に「{DRAFT_LABEL}」が無い(本人が下書きの画面で入れられない)")
+        break
+    started = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m and BLANKS_REPLY.search(m)), None)
+    start = min((x for x in (started, asked[0] if asked else None) if x is not None), default=None)
+    if (want := sc.get("expect_confirm_number")) and start is not None:
+        said = next((k for k in range(start + 1, len(user_msgs)) if user_msgs[k] and want in user_msgs[k]), None)
+        confirmed = next((i for i in asked if want in "\n".join(turns[i]["bubbles"])), None)
+        if confirmed is None or (said is not None and said <= confirmed):
+            at = said if said is not None else start + 1
+            out.append(f"T{at}: 下書きの空欄を白紙で聞いた(summary にある「{want}」を示して確かめていない)")
     return out
 
 
@@ -1199,6 +1289,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         violations.append(f"T1: 初回訪問の挨拶の選択肢に「求人を探す」「まず相談する」が無い: {first['quick_replies']}")
     violations += greeting_entry_violations(sc, turns, channel, features)
     violations += greeting_wording_violations(sc, turns, tracks[0] if tracks else DEFAULT_TRACK)
+    violations += draft_number_violations(sc, turns, user_msgs, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1242,6 +1333,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
+        "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,
@@ -1250,4 +1342,5 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),
         "call_overlaps": call_overlaps(turns, user_msgs),
+        "sim_leaks": sim_leaks(user_msgs),
     }

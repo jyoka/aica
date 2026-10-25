@@ -17,7 +17,7 @@ import pytest
 
 from dip_mcp.data import ROOT
 from evals.checks import conversation_checks, jobs_offer_turn
-from evals.run import MAX_TURNS, recheck
+from evals.run import SCENARIO_TURNS, recheck
 from evals.scenarios import load_scenarios
 
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
@@ -119,9 +119,10 @@ def test_other_scenarios_still_expect_the_recorded_outcome():
 def test_consult_personas_expect_an_offer_by_the_turn_limit():
     for case in CONSULT_PERSONAS:
         sc = SCENARIOS[case]
-        assert sc["consult_mode"] and sc["expect_offer_by"] == MAX_TURNS == 8, case
+        # 求人を見るかを聞く期限は T8 のまま(会話の決まりは変えない)。task 222 でターンの上限だけを 12 にした
+        # (T-side-job は 8 の上限より前に終わっていたので、上限はシナリオの既定のまま。tests/test_turn_cap.py)
+        assert sc["consult_mode"] and sc["expect_offer_by"] == SCENARIO_TURNS == 8, case
         assert "expect_outcome" not in sc, case  # 結果の記録は期待しない(期待を2つ持たない)
-        assert "max_turns" not in sc, case  # ターン上限は評価全体の 8 のまま(基準との比較を保つ)
     # 相談から始まらないペルソナと、相談の C-* は、これまでどおり記録した結果で見る
     for case in ("T-switch-to-fulltime", "C-consult-propose", "C-consult-only", "C-consult-switch"):
         assert SCENARIOS[case]["expect_outcome"] and "expect_offer_by" not in SCENARIOS[case], case
