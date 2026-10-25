@@ -8,7 +8,7 @@
     「分からない」で職種を並べない。同じ場面の悪い振る舞いは評価の機械判定が捕まえる
 (4) 区分が変わったターンで playbook を読み直す(読み直さなければ評価の違反)
 (5) 相談の長さ: 相談の問いは4問まで(4問目までに求人を見るかを聞く)。掘り下げは1つの項目に1回まで、「分からない」
-    「特にない」が2回続いたら条件の1問へ、条件はまとめて1問で聞く(task 225。前は「目安は5、6問」で、jyoka/tasks#221 の
+    「特にない」が2回続いたら条件の1問へ、条件は1問に1つで選択肢を付ける(task 233。task 225 ではまとめて1問だった。前は「目安は5、6問」で、jyoka/tasks#221 の
     C-consult-propose は8ターンで7問聞いて求人に届かなかった)。評価の判定 evals.checks.consult_questions の正例・負例も見る
     事情を話して探し始めた人(T-side-job、T-blank-parent)は相談に入れず、足りない条件だけを聞いて(2問まで)探す
     (evals.checks.situation_start_violations)
@@ -196,7 +196,7 @@ OFFER = ["求人を見る", "もう少し相談したい", "今はいい"]
 
 
 def career_script(third: dict | None = None) -> list:
-    """目的を聞く(履歴書は確認形)→ 掘り下げ → 条件をまとめて1問 → 4問目で求人を見るか → 提案(相談の問いは4問まで)。
+    """目的を聞く(履歴書は確認形)→ 掘り下げ → 条件の1問 → 4問目で求人を見るか → 提案(相談の問いは4問まで)。
     third を渡すと、掘り下げへの答え(「まだ分からない」)に返す3問目の返信で台本を終える。"""
     head = [
         call("get_user_conversation_summary", {"line_user_id": UID}),
@@ -214,8 +214,9 @@ def career_script(third: dict | None = None) -> list:
         return [*head, third]
     return [
         *head,
-        # 求人を探す前にエリアが要る(task 224)。年収と勤務地は1問にまとめる(task 225)
-        reply([ACK, "希望の年収と勤務地を教えてもらえますか?"], quick_replies=[]),
+        # 求人を探す前にエリアが要る(task 224)。条件は1問に1つで、選択肢を付ける(task 233)。本人が年収も一緒に答えたので、
+        # 年収は聞き足さない
+        reply([ACK, "勤務地はどのあたりがよいですか?"], quick_replies=["新宿", "渋谷", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"min_annual_salary": "年収600万以上",
                                                                           "area": "新宿"}}),
         reply(["新しいプロダクトを最初から企画したい、年収600万以上、新宿で整理しました。", "この内容で求人を見ますか?"],
@@ -260,7 +261,7 @@ def test_career_consult_asks_the_purpose_digs_and_builds_options_from_the_resume
     # 切り替えたターンで正社員の playbook を読み、その会話の決まり(120字)で返信した
     assert playbooks_read(turns[1]) == [SEISHAIN]
     assert any(len(b) > 80 for b in turns[3]["bubbles"])  # 正社員の吹き出しは 80 字を超えてよい
-    # 目的を聞く(白紙の1問)→ 答えを掘り下げる(具体的な場面)→ 条件をまとめて1問 → 4問目で求人を見るか
+    # 目的を聞く(白紙の1問)→ 答えを掘り下げる(具体的な場面)→ 条件の1問 → 4問目で求人を見るか
     assert PURPOSE_ASK.search(turns[1]["bubbles"][-1])
     assert PROFILE_FOLLOW_UP.search(turns[2]["bubbles"][-1])
     assert checks.asks_conditions(turns[3]) and r["consult_questions"] == {"start": 2, "asked": [2, 3, 4], "offer": 5,
@@ -390,14 +391,15 @@ def length_script(after_dig: list) -> list:
     ]
 
 
-CONDITIONS = reply(["介護の現場を見ておくために、勉強の時間を除いて働ける曜日・時間帯と、通いやすいエリアを教えてもらえますか?"],
-                   quick_replies=["平日の日中", "今はいい"])
+# 条件は1問に1つで、選択肢を付ける(task 233)。本人が日数とエリアも一緒に答えたので、聞き足さない
+CONDITIONS = reply(["介護の現場を見ておくために、勉強の時間を除くと、働けるのはいつごろですか?"],
+                   quick_replies=["平日の日中", "夕方から", "土日", "今はいい"])
 SAVE_CONDITIONS = call("save_user_preferences", {"line_user_id": UID, "preferences": {
     "time_band": "日中", "days_per_week": "週2日", "area": "大宮"}})
 
 
 def test_consult_asks_to_see_jobs_by_the_fourth_question(tmp_path):
-    """目的 → 掘り下げ1回 → 条件をまとめて1問 → 4問目で求人を見るか。やりたいことの掘り下げや不安・強みが残っていても
+    """目的 → 掘り下げ1回 → 条件の1問 → 4問目で求人を見るか。やりたいことの掘り下げや不安・強みが残っていても
     聞き続けない。ユーザーの4回目の返信に求人を見るかを聞き、5回目の返信で提案する(jyoka/tasks#221 の C-consult-propose は 8 ターンで 7 問だった)。"""
     model = ConsultModel(script=length_script([
         CONDITIONS,
@@ -415,7 +417,8 @@ def test_consult_asks_to_see_jobs_by_the_fourth_question(tmp_path):
     # 配られた playbook に、相談の長さの決まりがある
     text = next(x["result"]["playbook"] for x in turns[1]["tools"] if x["name"] == "get_counseling_playbook")
     assert "相談の問いは4問まで。相談に入ってから4問目までに" in text and "この内容で求人を見るかを1問で聞く" in text
-    assert "まとめて1問で聞いてよい" in text and "掘り下げは1つの項目につき1回まで" in text
+    assert "1問に1つだけ聞き、必ず選択肢を付ける" in text and "まとめて1問で聞いてよい" not in text
+    assert "掘り下げは1つの項目につき1回まで" in text
     r = conversation_checks(LENGTH_SC, turns, LENGTH_SAID)
     assert r["violations"] == [], r["violations"]
     assert r["outcome_as_expected"] is True and r["outcomes"] == ["propose"]
@@ -440,7 +443,7 @@ def test_digging_twice_and_asking_conditions_one_by_one_is_caught(tmp_path):
         reply(["利用者さんとの関わり方を近くで見たいのですね。", "勉強の時間を除くと、働けるのはいつですか?"],
               quick_replies=["平日の日中", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "日中", "days_per_week": "週2日"}}),
-        reply(["通いやすいエリアはどのあたりですか?"], quick_replies=[]),
+        reply(["通いやすいエリアはどのあたりですか?"], quick_replies=["大宮", "浦和", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"area": "大宮"}}),
         reply(["大宮の平日日中・週2日で整理しました。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
@@ -489,14 +492,14 @@ def test_continuing_after_more_consulting_is_not_counted_again():
 def test_no_consult_no_count():
     """相談に入らず条件から探した会話(「求人を探す」・条件だけの発言)は数えない。"""
     said = [None, "求人を探す", "渋谷でカフェ"]
-    turns = [GREETING, _q("どのエリアで、どんなお仕事を探しますか?"), t(["渋谷のカフェです。"], [("recommend_jobs", {}, {})])]
+    turns = [GREETING, _q("どのエリアで探しますか?"), t(["渋谷のカフェです。"], [("recommend_jobs", {}, {})])]
     assert checks.consult_questions(turns, said) is None and checks.consult_length_violations(turns, said) == []
 
 
 @pytest.mark.parametrize("reply_turn, bad", [
     (DIG[3], True),  # #221 の C-consult-propose T4: 2回続けて詰まったのに、別の項目の抽象的な問いを続けた
-    (_q("働ける曜日・時間帯と、通いやすいエリアを教えてもらえますか?"), False),  # 条件の1問へ進んだ
-    (_q("希望の年収と勤務地を教えてもらえますか?"), False),
+    (_q("働けるのは、いつごろですか?"), False),  # 条件の1問へ進んだ
+    (_q("希望の年収はどのくらいですか?"), False),
     (ASK_JOBS, False),  # 条件が分かっていて、求人を見るかを聞いた
 ])
 def test_two_stuck_answers_in_a_row_move_on_to_conditions(reply_turn, bad):
@@ -546,12 +549,12 @@ def test_saved_conversations_before_the_change_ask_too_many_questions():
 
 
 
-# 事情を話して探し始めた人は相談の掘り下げに入れず、足りない条件だけを聞いて早く探す。条件はまとめて1問で聞いてよく、
+# 事情を話して探し始めた人は相談の掘り下げに入れず、足りない条件だけを聞いて早く探す。条件は1問に1つで選択肢を付け(task 233)、
 # 条件の問いは2問まで(利用者の決定 2026-10-25、その読み方 2026-10-26。jyoka/tasks#221 で、相談に入らずに時間帯 → エリアを
 # 聞いて T4 で提案した T-side-job の会話が、16 件の中でいちばん滑らかだった。この会話は合格にする)
 SIDE_SAID = [None, "本業の後の空いた時間でバイトを探したい", "平日の19時以降か土日に、新宿あたりで働きたいです。",
              "ありがとう、考えます"]
-SIDE_ASK = "どのエリアで、何曜日の何時ごろ働けますか?"
+SIDE_ASK = "働けるのは、何曜日の何時ごろですか?"  # 条件は1問に1つ(task 233)。本人がエリアも一緒に答える
 
 
 def test_prompt_does_not_enter_a_consult_for_someone_who_explains_their_situation():
@@ -560,20 +563,21 @@ def test_prompt_does_not_enter_a_consult_for_someone_who_explains_their_situatio
     assert "迷いや相談したいことを言っていなければ相談に入らない" in entry
     assert "目的ややりたいことの掘り下げは聞かず" in entry
     assert "足りないもの(エリアと、アルバイト・パートなら働ける時間帯・曜日)だけを聞いて、早く探す" in entry
-    assert "条件はまとめて1問で聞いてよく" in entry and "条件の問いは2問まで" in entry
+    assert "条件は1問に1つ、選択肢を付けて聞き" in entry and "条件の問いは2問まで" in entry
+    assert "条件はまとめて1問で聞いてよく" not in entry  # task 225 の決まりは task 233 で直した
     assert checks.SITUATION_QUESTIONS_MAX == 2
     # 前の読み方(条件が揃っていなければ相談に入る)は残っていない
     assert "揃っていれば、相談に入らず" not in entry and "または、本人が自分の状況や事情を話して探し始めたとき" not in entry
 
 
 def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path):
-    """T-side-job の流れ: 区分を切り替え、エリアと時間帯・曜日を1問にまとめて聞き、答えを受けたターンで探す(T3)。
+    """T-side-job の流れ: 区分を切り替え、時間帯・曜日を選択肢つきの1問で聞き、本人がエリアも一緒に答えたターンで探す(T3)。
     playbook は読まず、相談の1文(「一緒に整理」)も出さない。シナリオの期待(相談に入れない、T4 までに探す)を満たす。"""
     sc = SCENARIOS["T-side-job"]
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": SIDE_SAID[1]}),
-        reply(["アルバイト・パートで、合うお仕事を考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "今はいい"]),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", SIDE_ASK], quick_replies=["平日の夜", "夕方から", "土日", "今はいい"]),
         calls(("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "平日の19時以降か土日",
                                                                                      "area": "新宿あたり"}}),
               ("recommend_jobs", {"line_user_id": UID, "employment_type": BAITO, "area": "新宿", "time_band": "夜"}),
@@ -595,7 +599,7 @@ SEARCHED = t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], c
 
 
 @pytest.mark.parametrize("turns, want", [
-    # 1問にまとめて聞き、T3 で探した
+    # 条件の1問(本人がエリアも一緒に答えた)で、T3 で探した
     ([GREETING, _q(SIDE_ASK), SEARCHED], []),
     # 時間帯とエリアを別々に聞いて T4 で提案した(#221 の T-side-job)。条件の問いは2問までなので合格
     ([GREETING, _q("本業の後なら、何時ごろから働けますか?"), _q("どのエリアで探しますか?"), SEARCHED], []),
@@ -681,7 +685,7 @@ def test_blank_parent_scenario_follows_the_situation_entry_rule():
     assert sc["expect_no_consult"] and not sc.get("consult_mode") and not sc.get("measure_depth")
     assert not checks.CONSULT_SIGN.search(BLANK_SAID[1])
     # 決まりどおりの会話: 足りない条件を1問で聞き、T3 で探す → 違反なし、期限(T4)までに探した
-    ask = _q("どのエリアで、何曜日の何時ごろ働けますか?")
+    ask = _q(SIDE_ASK, quick_replies=["平日の日中", "夕方から", "土日", "今はいい"])
     found = t(["吉祥寺で、平日の昼間に働ける事務のパートです。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])
     closing = t(["ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"])
     r = conversation_checks(sc, [GREETING, ask, found, closing], BLANK_SAID)
@@ -735,7 +739,7 @@ def _examples() -> dict[str, str]:
     return {
         "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
         "Prompt: 相談に入らない事情の発言": _between(PROMPT, "話して探し始めたとき(", ")は、"),
-        "Prompt: 事情を話した人に足りない条件を聞く1問": _between(PROMPT, "条件はまとめて1問で聞いてよく(例:", ")、"),
+        "Prompt: 事情を話した人に足りない条件を聞く1問": _between(PROMPT, "条件は1問に1つ、選択肢を付けて聞き(例:", "。下の対話ルール"),
         "Prompt: 提案の一言": _between(PROMPT, "その一言を本人の話につなげる(例:", ")。"),
         "common: 提案の一言": _between(common, "経験とのつながりを伝える(例:", ")。"),
         "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),

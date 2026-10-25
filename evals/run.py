@@ -226,7 +226,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
               "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
               "consult_offer_at": "down", "greeting_line_messages": "down", "escape_only_options": "down",
-              "echo_acks": "down",
+              "echo_acks": "down", "condition_no_options": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -257,6 +257,8 @@ def to_run(r: dict, rep: int) -> dict:
                 "consult_offer_at": (r.get("consult_questions") or {}).get("offer_at"),
                 # 問いの選択肢が逃げ道だけ(「それ以外 / 今はいい」など)のターンの数(違反の内数。0 が決まり)
                 "escape_only_options": len(r.get("escape_only_turns", [])),
+                # 条件の問いのうち、答えの候補が無い(選択肢が無いか逃げ道だけ)ターンの数(0 が決まり。task 233)
+                "condition_no_options": len(r.get("condition_no_options_turns", [])),
                 # 受け止めの「〜ですね」の文がある吹き出しの数(続けて使うと違反。#221 では 113 吹き出しのうち 24 個)
                 "echo_acks": r.get("echo_ack_bubbles"),
                 # 挨拶が LINE で何通か(LINE の初回訪問と再訪だけ。ほかは None。再訪は task 234 から)
@@ -304,6 +306,11 @@ def report(doc: dict) -> str:
     lines += [f"- **{tag(r)}** 入口 T{q['start']}、問い {'・'.join(f'T{k}' for k in q['asked']) or 'なし'}、"
               + (f"求人を見るかを聞いた・探した T{q['offer']}({q['offer_at']}問目)" if q["offer"] else "求人を見るかを聞いていない")
               for r in runs if (q := r["detail"].get("consult_questions"))] or ["- なし(相談に入った会話が無い)"]
+    lines += ["", "## 条件の問い(1問に1つ、必ず選択肢を付ける)", ""]
+    lines += [f"- **{tag(r)}** 条件の問い {'・'.join(f'T{k}' for k in qs)}、"
+              + (f"答えの候補が無い {'・'.join(f'T{k}' for k in bad)}" if (bad := r["detail"].get("condition_no_options_turns"))
+                 else "どれも候補つき")
+              for r in runs if (qs := r["detail"].get("condition_question_turns"))] or ["- なし(条件の問いが無い)"]
     lines += ["", f"## 複数の会話で同じ文({SHARED_SENTENCE_MIN_CONVS} 件以上。挨拶の T1、問い、Prompt が文言を決めている文は除く)", ""]
     lines += [f"- {n} 件: 「{x}」" for x, n in shared_sentences([r["detail"].get("turn_log") or [] for r in runs]).items()] or ["- なし"]
     lines += ["", "## 模擬ユーザーが設定の指示文を発言にした(評価の崩れ。エージェントの違反ではない)", ""]

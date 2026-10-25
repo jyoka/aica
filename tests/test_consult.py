@@ -141,7 +141,7 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
               quick_replies=["生活費の足しに", "経験を積みたい", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"purpose": "働く経験を積みたい",
                                                                           "wants": "人と話す接客"}}),
-        reply(["働く経験を積みたい、人と話す接客をしてみたいのですね。", "働ける時間帯・曜日と、通いやすいエリアを教えてもらえますか?"],
+        reply(["働く経験を積みたい、人と話す接客をしてみたいのですね。", "働けるのは、何曜日の何時ごろですか?"],
               quick_replies=["平日の夕方", "土日の日中", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {
             "experience": "未経験", "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}}),
@@ -262,7 +262,7 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
         reply(["居酒屋のホールを1年されていたんですね。", "今回、お仕事を探そうと思ったきっかけは何ですか?"],
               quick_replies=[]),
-        reply(["承知しました。", "どのエリアで探しますか?"], quick_replies=[]),
+        reply(["承知しました。", "どのエリアで探しますか?"], quick_replies=["渋谷", "新宿", "今はいい"]),
         calls(("save_user_preferences", {"line_user_id": uid, "preferences": {"area": "渋谷"}}),
               ("recommend_jobs", {"line_user_id": uid, "area": "渋谷", "job_type": "飲食ホール",
                                   "keywords": "居酒屋 ホール"}),
@@ -373,7 +373,7 @@ PROPOSE = [("recommend_jobs", {"area": "池袋"}), ("record_conversation_outcome
 
 def test_checks_catch_jobs_proposed_before_asking_the_purpose():
     said = [None, "まず相談する", "池袋の夕方。生活費のため", "求人を見る"]
-    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["時間帯とエリアはどのあたりですか?"], [READ]),
+    turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["働けるのは、いつごろですか?"], [READ]),
              turn(["池袋の夕方ですね。この内容で求人を見ますか?"]),
              turn(["池袋・夕方の求人です。"], PROPOSE, cards=[CARD], quick_replies=CLOSING)]
     v = conversation_checks(CONSULT, turns, said)["violations"]
@@ -391,7 +391,7 @@ def test_checks_catch_jobs_proposed_before_asking_the_purpose():
         turns[1]["bubbles"] = [asked]
         assert conversation_checks(CONSULT, turns, said)["violations"] == [
             "T4: 目的(なぜ今探すのか)を確かめる前に求人を出した"], asked
-    turns[1]["bubbles"] = ["時間帯とエリアはどのあたりですか?"]
+    turns[1]["bubbles"] = ["働けるのは、いつごろですか?"]
     turns[2]["tools"] = [{"name": "save_user_preferences", "args": {"preferences": {"purpose": "生活費"}}, "result": {}}]
     assert conversation_checks(CONSULT, turns, said)["violations"] == []
 

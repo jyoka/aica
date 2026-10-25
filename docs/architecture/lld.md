@@ -227,6 +227,7 @@ classDiagram
 | 見出し | 主な関数と定数 |
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
+| 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
 | 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
@@ -331,7 +332,7 @@ classDiagram
 |---|---|
 | `run.py` | 評価のハーネス。模擬ユーザーとエージェントを会話させて採点する(4.7)。`--rejudge` で保存した会話をジャッジだけで判定し直す |
 | `scenarios.json`、`scenarios.py` | シナリオの一覧(15 件)と、始める前の準備(`prepare`、`upload_resume`、`load_resume`)。開発者画面と共通 |
-| `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
+| `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、条件の問い(`condition_question_violations`。1 問に 1 つ、必ず選択肢)、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
 | `judge.py` | LLM ジャッジ。相談の深さの 4 項目、トーン、設計への合い方(`design_fit`)、ひとこと(`comment`)。`samples` 回(既定 2)判定してまとめる |
 | `meter.py` | Anthropic と OpenAI の SDK の呼び出しをクラスごと包んで、トークンと費用を数える(評価だけで使う) |
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
@@ -687,6 +688,8 @@ flowchart LR
 
 - 本人の行動を読むツールは、`behavior.view`(要約に、会話の中で書いた分を重ねたもの)だけを読みます。行動の元データは読みません(5.8)。
   `get_user_conversation_summary`(連携している人)と `get_application_status` は、要約を作った時刻 `as_of` を返します
+- `get_user_conversation_summary` は、条件の問いの選択肢の候補 `condition_options` も返します(連携していない人にも)。`set_search_track` は、
+  区分を切り替えたときだけ、切り替えた後の区分の `condition_options` を返します(給与の区切りは区分で変わるので、要約を読み直さずに聞けるように。4.9)
 - Prompt `baitoru_assistant(entry)` は `prompts/baitoru_assistant.md` に、`entries.json` の入口の文(無い入口は `A`)を足して返します
 - Resource `baitoru://faq` は `fixtures/faq.json` をそのまま返します
 - 一覧に無い職種、エリア、属性の値は、0 件で返さずに `error` と使える値の一覧を返します(`_job_type_error`、`_area_error`、`_filters_error`)。
@@ -1275,7 +1278,7 @@ sequenceDiagram
 
 - 入口は、初回の挨拶の選択肢「まず相談する」と、本人が迷いや相談したいことを話したとき(「何から始めれば」「自分に合うのが分からない」)だけです。
   条件だけを言ったときは相談に入りません。本人が自分の状況や事情を話して探し始めたときも相談に入らず、掘り下げずに足りない条件
-  (エリアと、アルバイト・パートなら時間帯・曜日)だけを聞いて探します。条件はまとめて 1 問で聞いてよく、2 問までです。区分の確かめ(「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」)も条件の問いに数えます(評価は `situation_start_violations`。
+  (エリアと、アルバイト・パートなら時間帯・曜日)だけを聞いて探します。条件は 1 問に 1 つで選択肢を付け、2 問までです。区分の確かめ(「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」)も条件の問いに数えます(評価は `situation_start_violations`。
   [設計メモの 18 章](../design/line-sim-scenarios.md))
 - 入ったターンで今の区分の playbook を読みます。区分が変わったターン(切り替え、取り消し)では、新しい区分で読み直します
 - playbook には「明らかにすること」と「掘り下げ方」だけを書き、次に何を聞くか(順番)は決めません
@@ -1285,7 +1288,7 @@ sequenceDiagram
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯、曜日、エリア)、興味と得意、経験、不安 |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
-| `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、時間帯、日数など)はまとめて 1 問で聞いてよい。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
+| `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
 - playbook と dip の Prompt の例文は、評価のペルソナの発言と経歴に重ならない例にします(`tests/test_playbook.py` が確かめる)
 - 会話の決まり(`CONVERSATION_RULES`)は、アルバイト・パートと未定が v1 のまま(吹き出し 80 字、本人の 3 回目の返信までに会話の段階に入る)です。
@@ -1293,6 +1296,41 @@ sequenceDiagram
 - 話した内容は `save_user_preferences` で本人の言葉のまま保存し、そのまま求人の提案の条件にします。言い直しは要りません
 - 「今はいい」なら提案なしで終えます。途中で「求人を見せて」と言えば、その時点までの内容ですぐ提案に切り替えます。
   エリアだけは最低限の条件なので、まだ分からなければエリアの 1 問だけを聞いてから探します。分かっている経験とやりたいことは `keywords` に入れます
+
+#### 条件の問いの選択肢
+
+探す条件(エリア、職種、時給か年収、時間帯と曜日、週の日数、正社員なら働き方と時期)の問いは、1 問に 1 つだけ聞き、必ず選択肢を付けます
+(dip の Prompt の対話ルールの「条件の問い」、playbook の「探す条件」)。条件の問いは、選択肢なしでよい「自由な問い」に当たりません。
+LINE の実機(2026-10-26)で、エリアと年収の下限を 1 問で聞き、選択肢が無かったため(利用者の決定、2026-10-26。[設計メモの 22 章](../design/line-sim-scenarios.md))。
+
+エージェントが候補を作れずに選択肢を外さないよう、dip の要約に候補 `condition_options` を載せます(`logic.condition_options`。LLM を使わない)。
+項目の名前は `save_user_preferences` の項目と同じです。
+
+| 項目 | 候補 | 区分 |
+|---|---|---|
+| `area` | 本人が話したエリア(`stated_preferences` の area にある地名と駅名)、行動の傾向(`tendency` の area)、直近の応募のエリアの順。3 つに足りなければ、その区分の求人に多いエリアで埋める(同じ数なら `AREAS` の順) | すべて |
+| `job_type` | 行動の傾向と直近の応募の職種(区分の一覧にあるものだけ)。足りなければ区分の求人に多い職種。相談に入っていないときの「どんなお仕事を探しますか?」にだけ使う(相談の途中の仕事の方向は playbook のとおり本人の話から作る) | すべて |
+| `min_wage` | 「時給1200円〜」「時給1400円〜」「時給1600円〜」「こだわらない」 | アルバイト・パート |
+| `min_annual_salary` | 「400万円〜」「500万円〜」「600万円〜」「こだわらない」 | 正社員 |
+| `time_band` / `days_per_week` | 「平日の日中」「夕方から」「土日」/「週2〜3日」「週4日以上」 | アルバイト・パート |
+| `work_style` / `start_timing` | 「在宅もできる」「土日祝休み」「残業少なめ」/「すぐにでも」「3か月以内」「半年以内」 | 正社員 |
+
+区分が未定のときは `area` と `job_type` だけです(未定の playbook のとおり、給与と時間帯は区分が決まってから聞く)。
+
+給与の区切り(`PAY_STEPS`)は、求人データ(`fixtures`、2026-10-26 時点)の分布から決めました。どの区切りも求人を絞り、一番上の区切りでも
+区分の求人の 15% 以上が残るようにしています(`tests/test_condition_options.py` が確かめる)。
+
+| 区分 | 比べる値 | 求人の数 | 区切りごとに残る求人 |
+|---|---|---|---|
+| アルバイト・パート | 時給の下限(`Pay.min`。1,120〜2,400 円) | 63 | 1,200 円〜 57 件(90%)、1,400 円〜 33 件(52%)、1,600 円〜 17 件(27%) |
+| 正社員 | 年収の見込みの中央値(`annual_pay_mid`。月給は 12 か月分。288〜800 万円) | 40 | 400 万円〜 28 件(70%)、500 万円〜 18 件(45%)、600 万円〜 8 件(20%) |
+
+- 区切りは、区分の求人のおよそ 7〜9 割、半分、2〜3 割が残る、切りのよい値です。押すたびに結果が目に見えて変わり、どれを押しても 0 件にならない幅にしました
+- アルバイト・パートは、カード(jyoka/tasks#233)の例(1,100 円〜)より 100 円上げました。時給の一番低い求人が 1,120 円なので、1,100 円の区切りでは 1 件も絞れません
+- 求人データが変わって区切りが合わなくなったら、テストが落ちます。そのときは表を作り直して値を選び直します
+- 時給・年収の問いは、区切り 3 つと「こだわらない」で選択肢の上限(4 つ)になります。評価は、時給・年収の問いだけ「こだわらない」を「今はいい」と同じ逃げ道に数えます
+  (`evals.checks.PAY_ESCAPE`)。選ばれた区切りの数字を `min_wage` / `min_annual_salary` に渡し、「こだわらない」なら渡しません
+- 区切りの金額は求人の事実ではないので、評価の作り話の判定(`fact_violations`)は、`condition_options` の金額を根拠にしません
 
 選択肢の決まりです。
 

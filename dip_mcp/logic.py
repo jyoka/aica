@@ -130,13 +130,76 @@ def _profile_summary(user: dict) -> dict:
     return out | ({"arcade_url": url} if url else {})
 
 
+# ----------------------------- 条件の問いの選択肢(task 233) -----------------------------
+# 条件(エリア・職種・給与・時間帯・日数、正社員なら働き方・時期)の問いは1問に1つで、必ず選択肢を付ける(Prompt の対話ルール)。
+# エージェントが候補を作れずに選択肢を外さないよう、要約に区分ごとの候補を載せる。区切りの根拠は LLD の「条件の問いの選択肢」
+CONDITION_OPTIONS_MAX = 3
+# 給与の下限の区切り。区分の求人のうち、およそ7〜9割・半分・2〜3割が残る切りのよい値(求人データの分布から決めた。
+# アルバイト・パートの時給は 1,120〜2,400円で、1,100円ではどの求人も落ちない。正社員は年収の見込みの中央値で比べる)
+PAY_STEPS = {"アルバイト・パート": ("min_wage", (1200, 1400, 1600)), "正社員": ("min_annual_salary", (400, 500, 600))}
+PAY_LABELS = {"min_wage": "時給{}円〜", "min_annual_salary": "{}万円〜"}
+PAY_ANY = "こだわらない"
+# 時間帯は曜日と合わせて1つの条件として聞く。日数は別の条件
+TIME_OPTIONS = ("平日の日中", "夕方から", "土日")
+DAYS_OPTIONS = ("週2〜3日", "週4日以上")
+WORK_STYLE_OPTIONS = ("在宅もできる", "土日祝休み", "残業少なめ")
+START_OPTIONS = ("すぐにでも", "3か月以内", "半年以内")
+CONDITION_NOTE = ("condition_options は条件の問いに付ける選択肢の候補(条件は1問に1つ聞き、必ず選択肢を付ける)。"
+                  "area と job_type は本人の話・行動から分かるものを先に並べ、足りなければ求人の多いもので埋めてある。"
+                  "job_type は相談に入っていないときの「どんなお仕事を探しますか?」にだけ使う(相談の途中の仕事の方向は"
+                  "playbook のとおり本人の話から作る)。"
+                  "min_wage / min_annual_salary は区切り3つと「こだわらない」をそのまま quick_replies にする。"
+                  "ほかの条件は候補から2〜3個と「今はいい」にする。")
+
+
+def _place_names(text: str) -> list[str]:
+    """文の中の地名・駅名(AREAS と求人の最寄り駅名)を、出てきた順に(同じ位置なら長い方)。"""
+    names = set(AREAS) | {j.station.removesuffix("駅") for j in load_jobs().values() if j.station}
+    found = [a for a in names if a in text]
+    found = [a for a in found if not any(a != b and a in b for b in found)]  # 「新横浜」の中の「横浜」は数えない
+    return [a for _, _, a in sorted((text.find(a), -len(a), a) for a in found)]
+
+
+def _most_common(values: list[str], order: tuple[str, ...]) -> list[str]:
+    """多い順(同じ数なら order の順)。"""
+    rank = {v: i for i, v in enumerate(order)}
+    return [v for v, _ in sorted(Counter(values).items(), key=lambda kv: (-kv[1], rank.get(kv[0], len(rank))))]
+
+
+def condition_options(user: dict, track: str, tendency: dict | None = None, last_app: dict | None = None) -> dict:
+    """条件の問いの選択肢の候補(項目 -> 候補の並び。項目名は save_user_preferences の項目と同じ)。
+    エリアは、本人が話したエリア(stated_preferences の area にある地名)、行動の傾向(閲覧・保存・応募の tendency)、
+    直近の応募のエリアの順に並べ、3つに足りなければ、その区分の求人に多いエリアで埋める。職種も同じ作り(区分の一覧の中だけ)。
+    給与は区分ごとの区切り3つと「こだわらない」。区分が未定なら、給与・時間帯などは区分が決まってから聞くので載せない。"""
+    track_jobs = [j for j in load_jobs().values() if track not in EMPLOYMENT_TYPES or j.employment_type == track]
+    tend = tendency or {}
+    last = last_app or {}
+    stated = str(((user.get("preferences") or {}).get("area") or {}).get("value", ""))
+    own_areas = _place_names(stated) + list(tend.get("area") or []) + ([last["area"]] if last.get("area") else [])
+    areas = _most_common([j.area for j in track_jobs], AREAS)
+    types = JOB_TYPES_BY_EMPLOYMENT.get(track) or JOB_TYPES + FULLTIME_JOB_TYPES
+    own_types = [t for t in [*(tend.get("job_type") or []), last.get("job_type")] if t in types]
+    out = {"area": list(dict.fromkeys(own_areas + areas))[:CONDITION_OPTIONS_MAX],
+           "job_type": list(dict.fromkeys(own_types + _most_common([j.job_type for j in track_jobs], types)))
+           [:CONDITION_OPTIONS_MAX]}
+    if track in PAY_STEPS:
+        key, steps = PAY_STEPS[track]
+        out[key] = [PAY_LABELS[key].format(n) for n in steps] + [PAY_ANY]
+    if track == "アルバイト・パート":
+        out |= {"time_band": list(TIME_OPTIONS), "days_per_week": list(DAYS_OPTIONS)}
+    elif track == "正社員":
+        out |= {"work_style": list(WORK_STYLE_OPTIONS), "start_timing": list(START_OPTIONS)}
+    return out
+
+
 def conversation_summary(state: State, line_user_id: str) -> dict:
     user = state.user(line_user_id)
     if not behavior.dip_id(state, line_user_id):
         return {"linked": False, "segment": "unlinked", **_track_summary(user), **_profile_summary(user),
+                "condition_options": condition_options(user, search_track(user)),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -179,9 +242,10 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "last_contact": ({"channel": contact["channel"], "when": _md(contact["at"]),
                           "message": contact["message"]} if contact else None),
         **_profile_summary(user),
+        "condition_options": condition_options(user, search_track(user), b["tendency"], last_app),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE,
     }
 
 
@@ -992,6 +1056,9 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
         result.update({"track": track, "changed": True, "recorded": rec})
 
     state.update(line_user_id, apply)
+    if result.get("changed"):  # 給与などの候補は区分で変わるので、切り替えた後の区分の候補を返す(要約を読み直さずに聞けるように)
+        tend = behavior.view(state, line_user_id)["tendency"] if behavior.dip_id(state, line_user_id) else None
+        result["condition_options"] = condition_options(state.user(line_user_id), track, tend)
     return result
 
 
