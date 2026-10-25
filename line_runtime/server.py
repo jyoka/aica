@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import secrets
@@ -211,7 +212,7 @@ def talk_continues(conv: dict) -> bool:
 class EventIn(BaseModel):
     user_id: str
     event: str
-    text: str | None = None
+    text: str | None = None  # 長さの上限(turn.MAX_TEXT_CHARS)は turn.accept が確かめる(LINE の発言と共通)
     # 本番のトーク画面が表示している会話の番号(/api/talk/open が返す)。/dev・評価は送らない。
     # 送られたら: 発言は今の会話がこれと同じときだけ受け付ける(違えば stale)/ 挨拶が返ったら開いた記録を残す
     thread: int | None = None
@@ -877,7 +878,11 @@ async def voice_wait(body: VoiceWaitIn, request: Request):
     next は次に待つときの since(この部屋でない結果も読み飛ばす。そちらは会話に入っているので再読み込みで出る)。"""
     user_id, since, room = body.user_id, body.since, body.room
     _require_own(request, user_id)
-    timeout = min(max(body.timeout, 0.0), VOICE_WAIT_MAX)
+    # NaN(本文の `NaN` は json.loads が通す)は max/min の丸めをすり抜けて wait_for → loop.call_at に届き、プロセスで共有する
+    # タイマーの山の順序を壊すので断る。モデルの検証にしないのは、既定の 422 が入力の nan を JSON にできず 500 になるため
+    if math.isnan(body.timeout):
+        raise HTTPException(422, "timeout は数値で指定してください")
+    timeout = min(max(body.timeout, 0.0), VOICE_WAIT_MAX)  # Infinity は上限、負と -Infinity は 0
     cond = _voice_ready(user_id)
     async with cond:
         try:
