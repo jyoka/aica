@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -19,6 +18,7 @@ from dip_mcp import logic
 from dip_mcp.data import State
 from evals.checks import conversation_checks, turn_violations
 from evals.scenarios import load_scenarios
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from resume_draft.schema import ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply, run
@@ -255,7 +255,7 @@ def greet_from_track(messages) -> AIMessage:
     system = messages[0].content
     assert "入口R(再訪)" in system
     if not any(m.type == "tool" for m in _this_turn(messages)):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", system).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
     track = _summary_in_turn(messages)["search_track"]
     if track == "未定":

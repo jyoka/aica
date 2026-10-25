@@ -16,6 +16,7 @@ from dip_mcp import logic
 from dip_mcp.data import State
 from evals.checks import conversation_checks
 from evals.scenarios import load_scenarios, prepare
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply, run
 
@@ -46,7 +47,7 @@ def _tool_result(messages, name: str) -> dict:
 def greet(messages) -> AIMessage:
     """dip の入口のシナリオどおりに挨拶する(初回訪問はメニュー、再訪は要約を読んでから)。"""
     system = messages[0].content
-    uid = re.search(r"LINE ユーザーID: ([^(\s]+)", system).group(1)
+    uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
     if "入口V(初回訪問)" in system:
         return reply(["こんにちは。バイト探しをお手伝いします。何をしますか?"], quick_replies=MENU)
     assert "入口R(再訪)" in system

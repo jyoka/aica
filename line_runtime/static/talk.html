@@ -174,7 +174,7 @@
       thread = ev.thread;  // 挨拶で新しい会話が始まったら、その番号に替わる
     } else if (ev.kind === "reply") {
       if (ev.sent === false) col.parentElement.remove();  // 本番の画面はプッシュを起こさないので、ここには来ない
-      else { renderReply(ev, col); setTrack(ev.search_track); }
+      else { if (ev.redacted) talk.redactedNote(col.parentElement); renderReply(ev, col); setTrack(ev.search_track); }
     } else if (ev.kind === "error") {
       talk.fail(col, "うまく返信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(ev.message);
@@ -259,6 +259,7 @@
     log.innerHTML = ""; thread = h.thread; setTrack(h.search_track);
     for (const t of h.turns) {
       if (t.user != null) me(t.user, "");
+      if (t.redacted) talk.redactedNote();  // 保存してあるのは伏せた後の文(吹き出しにも [個人情報を削除] が出る)
       if (t.upload) { talk.meFile(t.upload.file, ""); talk.resumeConfirm(t.upload, botCol(), ""); }  // 履歴書を送ったターン
       if (t.bot) { disableChips(); renderReply(t.bot, botCol(), ""); }  // 選べるのは最後の返信の選択肢だけ
     }

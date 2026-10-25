@@ -23,6 +23,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic
 from evals.checks import turn_violations
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -50,7 +51,7 @@ class Advisor(ScriptedModel):
         return ChatResult(generations=[ChatGeneration(message=self.respond(messages))])
 
     def respond(self, messages):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         self.seen.append(human)

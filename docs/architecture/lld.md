@@ -157,7 +157,7 @@ classDiagram
         admit(user_id, ip)
     }
     class ScenarioMiddleware {
-        awrap_model_call: 指示に dip の Prompt とユーザーIDを足す
+        awrap_model_call: 指示に dip の Prompt を足す(ユーザーIDは載せない)
     }
     class TurnCallLimitMiddleware {
         awrap_model_call: 1 ターンのモデルの呼び出しを 10 回までにする
@@ -179,7 +179,9 @@ classDiagram
   10 回目の指示には、ツールを呼ばずに返信するよう添え書き(`LAST_CALL_NOTE`)を足します。それでもツールを呼んだら、11 回目はモデルを呼ばずに
   決まった返信(`TURN_LIMIT_REPLY`。うまくまとめられなかったので短く聞き直してほしい)でターンを終えます。この返信は LLM を呼んでいないので、
   費用台帳と画面の `llm` の行には載せません(`additional_kwargs` の `turn_limit`)
-- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます
+- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + `USER_NOTE` にします。入口は会話の state(`entry`)から読みます。
+  ユーザーIDは載せません。`USER_NOTE` は「ツールの `line_user_id` には `me`(`PINNED_USER`)を入れる」で、`PinUserMiddleware` が
+  会話の state の `line_user_id` に置き換えます。指示はユーザーごとに変わらないので、プロンプトキャッシュも壊しません
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
 - `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
 
@@ -346,12 +348,18 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | `schema.py` | Resume Draft の形と envelope(5.5) | `ResumeDraft`(と 5 つの部品の型)、`envelope`、`document_kind_of`、`FORMAT_VERSION`(`1.0`)、`FORMAT_VERSION_WITH_KIND`(`1.1`)、`PERSONAL_KEYS`、`DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`JST` |
 | `pii.py` | 電話、メール、住所、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`ADDRESS_LIKE`、`address_spans`(住所)、`personal_value`、`redact_personal`(電話、メール、住所)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
 
-- `has_pii` と `redact_pii` は電話とメールを探します。トークの発言、希望、相談の記録の照合に使います
-- `ADDRESS_LIKE` は住所らしい所(番地、丁目、`1-2-3` の形、市区町村名の直後の `3-5` の形)です。年収や日付の幅(`400-500万円`、`3-6か月`、`2026-09-30`)は数えません。
+- `has_pii` と `redact_pii` は電話とメールを探します。希望、相談の記録の照合に使います。伏せた所には `REDACTED`(`[個人情報を削除]`)を入れます。
+  `redact_pii` は、置き換えた後にまた当たる所が出なくなるまで(上限 `_REDACT_PASSES` 回)くり返します
+- `ADDRESS_LIKE` は住所らしい所(番地、丁目、`1-2-3` の形、市区町村名の直後の `3-5` の形)です。すぐ後ろが「駅」の丁目(`新宿三丁目駅`)は駅の名前なので数えません。
+  「駅」の付かない形でも、求人データの最寄り駅の名前(`load_jobs()` の `station` から「駅」を外した値。`新宿三丁目`)そのものなら数えません。
+  AI は求人の最寄り駅をそのまま言うので、本人がそれを返しても発言が消えないようにするためです。
+  前に地名の文字が付くもの(`西新宿三丁目`)と、後ろに番地が続くもの(`新宿三丁目5-1`)は住所です。年収や日付の幅(`400-500万円`、`3-6か月`、`2026-09-30`)は数えません。
   `address_spans` は、当たった所を区切り(空白、句読点、括弧)までの語に広げた範囲です
 - `personal_value` は、値に電話、メール、住所らしい所があるかです。dip の希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、
   フォームの続き(`resume_form`)が、本人の値を受け取るかをこれで決めます。`redact_personal` は同じ 3 つを伏せます。
-  相談の理由とまとめ(`record_outcome`)と、雇用区分の根拠(`set_search_track`)に使います
+  相談の理由とまとめ(`record_outcome`)と、雇用区分の根拠(`set_search_track`)に使います。
+  トークの発言(`line_runtime.turn.accept`、`runtime.event_input`)も `redact_personal` で伏せ、音声アドバイザーの調べものの問いは
+  `personal_value` が真なら調べません(`voice_resume.advisor`)
 - `scrub_pii` は Resume Draft の文字列から、電話、メール、郵便番号を消します。`PII_VALUE` より広く取ります
   (区切りが空白 1 つの電話番号、郵便番号も消す)。`SCRUB_PATTERNS` を順に当てるのを、元の文字列と `fold_pii` でそろえた文字の両方で行い、
   どちらかで消えた位置を元の文字列から消します(`fold_pii` は 1 文字を 1 文字に写すので位置は同じ)。元の文字列でも照合するのは、
@@ -583,7 +591,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
 | `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
 | `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
-| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える) |
+| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メール、住所らしい所があれば(`personal_value`)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
 
@@ -643,7 +651,9 @@ sequenceDiagram
     H-->>S: 行を順に返す
 ```
 
-- 入力の文は `event_input` が作ります。挨拶とプッシュは `[イベント: ...]` で始まる文です。アップロードは `facts` の確認の吹き出しを入れます
+- 入力の文は `event_input` が作ります。挨拶とプッシュは `[イベント: ...]` で始まる文です。アップロードは `facts` の確認の吹き出しを入れます。
+  本人の発言は `redact_personal` で伏せた文です。Web と LINE は `turn.accept` で伏せ済みで、ここでも伏せるのは、評価などが `handle` を直に呼んでも
+  伏せない文が LLM と会話に入らないようにするためです
 - `new_conversation` は、発言でも新しい会話を始める指定です。LINE の発言で、最後のやりとりから間が空いたときだけ真です(4.11)。
   新しい会話の最初のターンなので、`entry`(A)と `line_user_id` を書き、知らせは置きません
 - 知らせ(`notice`)は、続きのターンの本人の入力の直前に `HumanMessage(additional_kwargs={"profile_notice": True})` で置きます。
@@ -653,7 +663,9 @@ sequenceDiagram
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
 
 Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と、空の発言・長すぎる発言(`MAX_TEXT_CHARS`、5000 字)の確かめ、アップロードの事実
-(`upload_facts`))を呼び、`turn.run` でターンを進めます。`run` は、プッシュなら上限に空きがあるかと `push_trigger` → `stale_thread` →
+(`upload_facts`))を呼び、`turn.run` でターンを進めます。`accept` は、発言の電話、メール、住所らしい所を `redact_personal` で `[個人情報を削除]` に置き換え
+(長さは本人が書いた文と伏せた後の文の両方で数えます。伏せると長くなることがあるため)、伏せた後の文を `Turn.text` に、伏せたかを `Turn.redacted` にします。`run` は、伏せたターンの `reply` の行に
+`redacted: true` を付けます。`/api/talk/history` は、`[個人情報を削除]` を含む発言のターンに `redacted: true` を付けます。`run` は、プッシュなら上限に空きがあるかと `push_trigger` → `stale_thread` →
 `try_take` → `profile_notice` → LineRuntime の順に進み、行を順に出します。返信が返ったら `record_open` が、渡した知らせを消し
 (`profile.take_changes`)、本番のトーク画面(`thread` あり)の挨拶なら開いた記録を残し、読み取れなかったアップロードの事実を捨てます。
 LineRuntime が stale を返したら、使ったターンを `refund` で返します。`event` は `turn.reply_of` で最後の返信だけを返し、
@@ -1028,6 +1040,8 @@ sequenceDiagram
 トーク画面(`/`。求職者が使う、スマホ前提の 1 画面):
 
 - ユーザーIDは匿名ユーザーIDそのものです。fixtures のシナリオユーザーは使わず、空の状態から始まります。状態を初期に戻す操作はありません
+- 返信か履歴のターンに `redacted` があれば、本人の吹き出しの下に「電話番号などは送らないようにしました」と小さく出します(`talk-core.js` の `redactedNote`)。
+  送った直後の吹き出しは本人が書いたままの文で、描き直した履歴は伏せた後の文です。開発者画面も返信のときに同じ知らせを出します
 - 開いたときの流れは 4.2 です。会話が stale になったら、古いタブに「別の画面で新しい会話が始まりました」と出して、最新の会話を描き直します
 - 下のナビは 3 つです。トーク、保存した求人(`GET /api/saved` の求人をカードで一覧)、プロフィールです
 - ヘッダーに今の雇用区分(「正社員で相談中」など)を出します
@@ -1148,7 +1162,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   使いません(作り直すと全員の ID が変わるため)。LINE の設定があるのに鍵が無い、短いときは、`lifespan` の `check_id_key` で起動を
   止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
 - 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12 で、LLM を使いません
-- ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
+- ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません。
+  発言の電話、メール、住所らしい所は Web と同じく `accept` で伏せます。本人の文は LINE のトークに残るので、伏せたことの知らせは出しません
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。`user_lock` の中で `rt.conversation` を読み、
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
@@ -1842,6 +1857,12 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
    (`::test_resume_form_rejects_pii_in_values_of_other_fields`、`::test_resume_form_rejects_address_like_values`)。
    希望の保存、まとめを直す、フォーム、雇用区分の根拠は、同じ決まり(`resume_draft/pii.py`)で見分けます
    (`tests/test_isolation.py::test_one_address_rule_for_preferences_summary_form_and_track`)。
+   トークの発言(Web、LINE、`handle` を直に呼ぶとき)の電話、メール、住所らしい所は、LLM に送る前と会話を保存する前に伏せ、
+   ふつうの条件の言い方と求人カードのボタンの文は伏せず、伏せても求人の検索は続きます(`tests/test_redact_before_send.py`)。
+   system prompt にユーザーIDは無く、ツールは `me` のまま本人の分に届き、dip のツールの結果にもユーザーIDは入りません
+   (`::test_system_prompt_has_no_user_id_and_tools_still_reach_this_user`、`::test_dip_tools_do_not_return_the_user_id`)。
+   音声相談の調べものの問いに個人情報らしい値があれば調べません
+   (`tests/voice/test_advisor.py::test_research_with_personal_values_is_refused_without_searching`)。
    全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)。
    読み取りと下書きは、同じ LLM の出力から同じ形の Resume Draft を出し、全角で書いた電話、メール、郵便番号も消します。
    envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)

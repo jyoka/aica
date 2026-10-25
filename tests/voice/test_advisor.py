@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from resume_draft.schema import ResumeDraft
 from voice_resume import config
-from voice_resume.advisor import ResumeAdvisor
+from voice_resume.advisor import PERSONAL_QUERY_REPLY, ResumeAdvisor
 from voice_resume.wages import (
     WageEntry,
     WageReference,
@@ -725,6 +725,24 @@ def test_web_searches_stop_at_the_limit_across_tools(monkeypatch):
     assert len(room.published) == published  # 表示も出さない
     # 参考データから答える全国・東京は web を使わないので、上限の後も答えられる
     assert "全国で1303円" in asyncio.run(advisor.wage_average(area="東京"))
+
+
+def test_research_with_personal_values_is_refused_without_searching():
+    """調べものの問いに電話番号・メールアドレス・住所らしい所があれば、web で調べずに断る(問いは OpenAI を通って
+    検索エンジンにも届くので。docs/design/privacy.md の 3.2)。表示も出さず、回数にも数えない。値は架空。"""
+    room = _FakeRoom()
+    client = _FakeResearchClient("答え")
+    advisor = ResumeAdvisor(research_client_factory=lambda: client, wage_reference=REF, room=room)
+    for call in (lambda: advisor.web_research(query="090-1234-5678 だれの番号"),
+                 lambda: advisor.web_research(query="sample.user@example.com の持ち主"),
+                 lambda: advisor.research_company(name="ナイトマート", hint="みほん市みほん町1丁目2-3の店"),
+                 lambda: advisor.wage_average(area="みほん市3-5", job_type="コンビニ")):
+        assert asyncio.run(call()) == PERSONAL_QUERY_REPLY
+    assert client.calls == [] and room.published == [] and advisor.web_searches == 0
+    # ふつうの問い(会社名・エリア・職種)はそのまま調べる
+    asyncio.run(advisor.research_company(name="ナイトマート", hint="中野のコンビニ"))
+    asyncio.run(advisor.web_research(query="コンビニバイト 時給 2026年"))
+    assert len(client.calls) == 2 and advisor.web_searches == 2
 
 
 REF = WageReference(

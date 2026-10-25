@@ -3,6 +3,7 @@
 - 探す: has_pii / redact_pii(PII_VALUE。電話番号とメールアドレス)。トークの発言、相談の記録、保存する値の照合に使う
 - 住所: ADDRESS_LIKE / address_spans(住所らしい所)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
   文の中で伏せるのは redact_personal(同じ 3 つ)で決める。dip の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
+  トークの発言(line_runtime.turn.accept)と、音声相談の調べものの問い(voice_resume.advisor)も同じ 3 つを伏せる・断る
 - 消す: scrub_pii(SCRUB_PATTERNS。電話番号、メール、郵便番号)。Resume Draft の文字列から機械的に落とす
 どちらも照合の前に fold_pii で全角の数字・ハイフンなどを半角にそろえる(1文字を1文字に写すので、位置は元の文字列と同じ)。
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from functools import cache
 
 # 項目名に関係なく、値に含まれていたら個人情報とみなすもの(電話番号・メールアドレス)。
 # 電話番号は、区切り(- や空白・括弧)のある形か、0 で始まる10〜11桁だけ。数字の途中の 0 から始まる並び
@@ -36,13 +38,20 @@ _PII_FOLD = str.maketrans(
 # 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
 # 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
 # 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える。
-# 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)
+# 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)。
+# 「丁目」のすぐ後ろが「駅」なら駅の名前(「新宿三丁目駅」)で、住所ではない(トークで伏せると求人の検索の条件が消える)。
+# 「駅」の付かない形でも、求人データの最寄り駅の名前(「新宿三丁目」)そのものなら住所に数えない(_is_station_choume)。
+# AI は求人の最寄り駅をそのまま言うので、本人がそれを返すと発言が消えてしまう。personal_value / address_spans はこれも見る
 ADDRESS_LIKE = re.compile(
     r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
     r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
-    r"|丁目|番地"
+    r"|丁目(?!駅)|番地"
 )
 _WORD_SEP = set("、。,.!?！？「」()（）")
+# redact_pii が置き換えをくり返す回数の上限(ふつうは 1〜2 回で当たる所が無くなる)
+_REDACT_PASSES = 8
+# 伏せた所に入れる文。トークの発言(line_runtime.turn)もこれで伏せ、履歴を返すときはこれで伏せたかを見る
+REDACTED = "[個人情報を削除]"
 
 # Resume Draft から消すもの(メール、電話番号、郵便番号)。プロンプトで「書かない」を指示した上で、
 # 出力に混ざっても機械的に落とすセーフティネット。PII_VALUE より広く取る(区切りが空白1つの電話番号、郵便番号も消す)。
@@ -52,6 +61,42 @@ SCRUB_PATTERNS = [
     re.compile(r"(?<!\d)0\d{1,4}[-()\s]?\d{1,4}[-()\s]?\d{3,4}(?!\d)"),
     re.compile(r"〒?\s*(?<!\d)\d{3}-\d{4}(?!\d)"),
 ]
+
+
+# 駅の名前の前にこれが付いていたら、もっと長い地名の一部(「西新宿三丁目」)なので駅の名前とみなさない
+_NAME_CHAR = re.compile(r"[\u3005\u30a0-\u30ff\u4e00-\u9fff]")
+# 駅の名前の後ろにこれが続いたら番地(「新宿三丁目5-1」「新宿三丁目5番」)なので駅の名前とみなさない
+_NUMBER_CHAR = re.compile(r"[\d\-一二三四五六七八九十〇番]")
+
+
+@cache
+def _choume_stations() -> tuple[str, ...]:
+    """求人データの最寄り駅のうち「丁目」を含む名前(「駅」を外した形。「新宿三丁目」)。長い順。"""
+    # dip_mcp は resume_draft.pii を使うので、使うときに読む
+    from dip_mcp.data import load_jobs
+
+    names = {j.station.removesuffix("駅") for j in load_jobs().values()}
+    return tuple(sorted((n for n in names if "丁目" in n), key=len, reverse=True))
+
+
+def _is_station_choume(text: str, m: re.Match) -> bool:
+    """ADDRESS_LIKE の「丁目」の当たりが、求人の最寄り駅の名前そのものか。前に地名の文字が付かず
+    (「西新宿三丁目」は住所)、後ろに番地が続かない(「新宿三丁目5-1」は住所)ときだけ駅の名前とみなす。"""
+    if m.group() != "丁目":
+        return False
+    end = m.end()
+    if end < len(text) and _NUMBER_CHAR.match(text[end]):
+        return False
+    for name in _choume_stations():
+        start = end - len(name)
+        if start >= 0 and text[start:end] == name and (start == 0 or not _NAME_CHAR.match(text[start - 1])):
+            return True
+    return False
+
+
+def _address_matches(text: str) -> list[re.Match]:
+    """ADDRESS_LIKE に当たった所のうち、求人の最寄り駅の名前を除いたもの。"""
+    return [m for m in ADDRESS_LIKE.finditer(text) if not _is_station_choume(text, m)]
 
 
 def fold_pii(text: str) -> str:
@@ -66,18 +111,18 @@ def has_pii(text: str) -> bool:
 
 def personal_value(text: str) -> bool:
     """本人の値として受け取らない、個人情報らしい値か(電話番号・メールアドレス・住所らしい所を含む)。"""
-    return has_pii(text) or ADDRESS_LIKE.search(fold_pii(text)) is not None
+    return has_pii(text) or bool(_address_matches(fold_pii(text)))
 
 
 def address_spans(text: str) -> list[tuple[int, int]]:
-    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所を含む、区切り(空白・句読点・括弧)までの語
+    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所(求人の最寄り駅の名前を除く)を含む、区切り(空白・句読点・括弧)までの語
     (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
     時間がかかるので、当たった所から区切りまで広げる。"""
     def sep(ch: str) -> bool:
         return ch.isspace() or ch in _WORD_SEP
 
     spans: list[tuple[int, int]] = []
-    for m in ADDRESS_LIKE.finditer(text):
+    for m in _address_matches(text):
         start, end = m.span()
         if spans and start < spans[-1][1]:  # 前の語に含まれている
             continue
@@ -89,10 +134,22 @@ def address_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def redact_pii(text: str, repl: str = "[個人情報を削除]",
+def redact_pii(text: str, repl: str = REDACTED,
                extra: Callable[[str], list[tuple[int, int]]] | None = None) -> str:
     """電話番号・メールアドレス(と extra が返す範囲)を repl に置き換える。照合は fold_pii した文字で行い、
-    置き換えは元の文字列の同じ位置に対して行う(全角のまま残ったりしない)。"""
+    置き換えは元の文字列の同じ位置に対して行う(全角のまま残ったりしない)。
+    置き換えた後にまた当たる所が出なくなるまでくり返す(「090-1234-5678.taro@example.com」は、電話番号を先に取ると
+    メールが前の文字に続いて見えて当たらず、置き換えた後に当たる)。くり返すたびに元の文字が減るので止まるが、
+    repl そのものが当たる形でも止まるよう、回数に上限(_REDACT_PASSES)を置く。"""
+    for _ in range(_REDACT_PASSES):
+        once = _redact_once(text, repl, extra)
+        if once == text:
+            break
+        text = once
+    return text
+
+
+def _redact_once(text: str, repl: str, extra: Callable[[str], list[tuple[int, int]]] | None) -> str:
     folded = fold_pii(text)
     spans = [m.span() for m in PII_VALUE.finditer(folded)]
     if extra is not None:
@@ -107,7 +164,7 @@ def redact_pii(text: str, repl: str = "[個人情報を削除]",
     return "".join(out) + text[last:]
 
 
-def redact_personal(text: str, repl: str = "[個人情報を削除]") -> str:
+def redact_personal(text: str, repl: str = REDACTED) -> str:
     """電話番号・メールアドレス・住所らしい所(区切りまでの語ごと)を repl に置き換える(personal_value と同じ範囲)。"""
     return redact_pii(text, repl, extra=address_spans)
 

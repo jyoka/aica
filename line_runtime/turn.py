@@ -1,6 +1,7 @@
 """イベントの受け付けとターンの決まり(task 163)。POST /api/event(JSON)と POST /api/event/stream(NDJSON)が共通に使う。
 
 受け付け(accept): イベントの種類、空の発言・長すぎる発言(MAX_TEXT_CHARS)、アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn。
+発言の電話番号・メールアドレス・住所らしい所は、ここで伏せる(resume_draft.pii.redact_personal)。LLM にも会話の保存にも届かない。
 ターン(run): プッシュの判定 → stale の照合 → 会話数を 1 つ数える → 知らせ → LineRuntime → 開いた記録、の順に進め、
 行(dict)を順に出す。Web サーバーは Cookie の照合と、HTTP(reply_of)と NDJSON への書き出しだけを受け持つ。
 評価が後で同じ手順を呼べるように、FastAPI には依存させない(docs/design/consolidate-resume-draft-and-event-turn.md)。
@@ -16,6 +17,7 @@ from dip_mcp.data import State
 from line_runtime.quota import DailyQuota, limit_reply
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
+from resume_draft.pii import redact_personal
 
 LIMIT_REASON = "本日の会話数の上限に達している"
 # 1つの発言の長さの上限(字数)。LINE のテキストメッセージの上限と同じ(LINE からはこれより長い発言は届かない)。
@@ -57,12 +59,15 @@ class Turn:
     kind: str  # EVENTS の種別(user・upload・greet・push)
     facts: dict | None  # アップロードの事実。プッシュの事実は run が足す
     new_conversation: bool = False  # 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いた)
+    redacted: bool = False  # 発言の個人情報らしい所を伏せた(text は伏せた後の文)。返信に redacted を付け、画面が知らせる
 
 
 def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: int | None,
            new_conversation: bool = False) -> Turn:
     """LLM も会話数も使わない検証: イベント、空の発言・長すぎる発言、アップロードの事実。だめなら BadTurn。
-    new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。"""
+    new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。
+    発言の電話番号・メールアドレス・住所らしい所は [個人情報を削除] に置き換える(相談のまとめと同じ決まり。aica はどれも使わない)。
+    伏せた後の文が Turn.text になり、LLM に送るのも会話に保存するのもこの文だけ。"""
     if event not in EVENTS:
         raise BadTurn(f"event は {list(EVENTS)} のいずれか")
     entry, kind = EVENTS[event]
@@ -70,9 +75,12 @@ def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: i
         raise BadTurn(f"{event} には空でない text が必要です")
     if kind == "user" and len(text) > MAX_TEXT_CHARS:  # 長すぎる発言も、会話数を使う前・LLM を呼ぶ前に断る
         raise BadTurn(f"{event} の text は {MAX_TEXT_CHARS} 字までです")
+    safe = redact_personal(text) if kind == "user" else text
+    if kind == "user" and len(safe) > MAX_TEXT_CHARS:  # 伏せると長くなることがある(「番地」の 2 字が 9 字に)。送る文も上限まで
+        raise BadTurn(f"{event} の text は {MAX_TEXT_CHARS} 字までです")
     facts = upload_facts(deps, user_id) if kind == "upload" else None
-    return Turn(user_id=user_id, event=event, text=text, thread=thread, entry=entry, kind=kind, facts=facts,
-                new_conversation=new_conversation)
+    return Turn(user_id=user_id, event=event, text=safe, thread=thread, entry=entry, kind=kind, facts=facts,
+                new_conversation=new_conversation, redacted=safe != text)
 
 
 async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
@@ -106,6 +114,8 @@ async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
                                        new_conversation=turn.new_conversation)
         while (ev := await _next(events)) is not None:
             if ev["kind"] == "reply":
+                if turn.redacted:
+                    ev["redacted"] = True  # 画面が本人の吹き出しに「電話番号などは送らないようにしました」と出す
                 record_open(deps, turn, ev, changes)
                 track_status(deps.state, turn.user_id, ev)["search_track"] = logic.search_track(deps.state.user(turn.user_id))
             elif ev["kind"] == "stale":  # 事前の照合の後に別のタブが会話を始めていた: LLM は呼んでいないので会話数を返す

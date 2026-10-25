@@ -58,9 +58,16 @@ class LineState(AgentState):
     line_user_id: NotRequired[str]
 
 
+# ツールの line_user_id に入れる値。本当のユーザーIDは LLM に渡さず、PinUserMiddleware がこの会話のユーザーに置き換える
+PINNED_USER = "me"
+USER_NOTE = (f"# このユーザー\nツールの line_user_id には「{PINNED_USER}」を入れる"
+             "(LINE 側が、このトークのユーザーに置き換えて事業者に渡す)。\n")
+
+
 class ScenarioMiddleware(AgentMiddleware):
-    """会話の入口に応じた dip のシナリオ(MCP の Prompt)と、ユーザーIDをシステムプロンプトに付ける。
-    どちらも会話の途中で変わらないので、プロンプトキャッシュを壊さない。"""
+    """会話の入口に応じた dip のシナリオ(MCP の Prompt)を、システムプロンプトに付ける。
+    ユーザーIDは載せない(USER_NOTE: ツールの line_user_id は PinUserMiddleware が固定するので、LLM が知る必要がない)。
+    どれも会話の途中で変わらず、ユーザーごとにも変わらないので、プロンプトキャッシュを壊さない。"""
 
     state_schema = LineState
 
@@ -70,9 +77,8 @@ class ScenarioMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         entry = request.state.get("entry", "A")
-        uid = request.state.get("line_user_id", "")
         text = (f"{PLATFORM_PROMPT}\n# 事業者(dip)の対話シナリオ\n{self.scenarios.get(entry, self.scenarios['A'])}\n"
-                f"# このユーザー\nLINE ユーザーID: {uid}(ツールの line_user_id に使う)\n")
+                + USER_NOTE)
         return await handler(request.override(system_message=SystemMessage(text)))
 
 

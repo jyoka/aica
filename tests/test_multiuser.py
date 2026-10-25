@@ -16,6 +16,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import behavior, logic
 from dip_mcp.data import State
+from line_runtime.agent import PINNED_USER
 from tests.test_handle import call, reply
 
 
@@ -88,7 +89,8 @@ def test_reset_user_can_seed_a_browser_user_from_a_scenario_template(tmp_path):
 
 
 class RoutedModel(BaseChatModel):
-    """システムプロンプトのユーザーIDごとに、決められた返事を順に返す(2ユーザーが並行しても取り違えない)。"""
+    """会話の最初の発言ごとに、決められた返事を順に返す(2ユーザーが並行しても取り違えない)。
+    システムプロンプトにユーザーIDは無い(ツールの line_user_id は PINNED_USER。LINE 側が会話のユーザーに置き換える)。"""
 
     scripts: dict = {}  # noqa: RUF012  pydantic の項目
 
@@ -100,8 +102,8 @@ class RoutedModel(BaseChatModel):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        uid = re.search(r"LINE ユーザーID: ([^\s((]+)", messages[0].content).group(1)
-        return ChatResult(generations=[ChatGeneration(message=self.scripts[uid].pop(0))])
+        first = next(m.content for m in messages if m.type == "human")
+        return ChatResult(generations=[ChatGeneration(message=self.scripts[first].pop(0))])
 
 
 U1 = "w-1111111111111111:sim-new"
@@ -118,11 +120,12 @@ def test_two_users_talk_in_parallel_without_mixing(tmp_path):
     ikebukuro = [j["job_id"] for j in logic.recommend(state, None, area="池袋", time_band="夜")["jobs"]]
     assert shibuya and ikebukuro and not set(shibuya) & set(ikebukuro)
 
-    model = RoutedModel(scripts={
-        U1: [call("save_user_preferences", {"line_user_id": U1, "preferences": {"area": "渋谷"}}),
-             call("recommend_jobs", {"line_user_id": U1, "area": "渋谷", "time_band": "日中"}, "t2"),
-             reply(["渋谷・日中で探しました。"], job_ids=shibuya)],
-        U2: [call("recommend_jobs", {"line_user_id": U2, "area": "池袋", "time_band": "夜"}),
+    model = RoutedModel(scripts={  # どちらも同じ PINNED_USER を渡す。保存と提案が本人の分に入るのは LINE 側が固定するから
+        "渋谷で日中に働きたい": [
+            call("save_user_preferences", {"line_user_id": PINNED_USER, "preferences": {"area": "渋谷"}}),
+            call("recommend_jobs", {"line_user_id": PINNED_USER, "area": "渋谷", "time_band": "日中"}, "t2"),
+            reply(["渋谷・日中で探しました。"], job_ids=shibuya)],
+        "池袋で夜に働きたい": [call("recommend_jobs", {"line_user_id": PINNED_USER, "area": "池袋", "time_band": "夜"}),
              reply(["池袋・夜で探しました。"], job_ids=ikebukuro)],
     })
     ledger = Ledger(tmp_path / "costs.jsonl")

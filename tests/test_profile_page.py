@@ -27,6 +27,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import behavior, logic, profile
 from dip_mcp.data import JST
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -67,7 +68,7 @@ class Rememberer(ScriptedModel):
 
     def respond(self, messages):
         self.contexts.append(list(messages))
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         if human.startswith("[イベント:") and "アップロード" not in human or human == "要約を読んで":

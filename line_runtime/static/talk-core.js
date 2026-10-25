@@ -26,6 +26,12 @@ function createTalk(o) {
   // time: 描き直した履歴は送った時刻が分からないので出さない("")
   function meRow(bubble, time) { const r = el("div", "row me"); if (time) r.appendChild(el("span", "time", time)); r.appendChild(bubble); log.appendChild(r); scroll(); }
   function me(text, time = now()) { meRow(el("div", "bubble", text), time); }
+  // 本人の発言の電話番号・メール・住所らしい所を、サーバーが伏せて送った(返信・履歴の redacted)。本人の吹き出しの下に出す。
+  // before: 返信の行(その前、本人の吹き出しのすぐ下に入れる)。無ければ最後に足す(履歴の描き直し)
+  function redactedNote(before) {
+    const n = el("div", "redacted", "電話番号などは送らないようにしました");
+    if (before) log.insertBefore(n, before); else { log.appendChild(n); scroll(); }
+  }
   // 本人が送ったファイル(LINE でファイルを送ったときの吹き出し)。ファイル名は出さない(氏名が入りがち)。種類だけ
   function meFile(label, time = now()) { const b = el("div", "bubble file"); b.append(el("span", "fi", "📄"), el("span", null, label)); meRow(b, time); }
   function botCol() {
@@ -454,6 +460,6 @@ function createTalk(o) {
     if (voicePendingSince != null && turns.some(t => t.bot && t.bot.voice_result >= voicePendingSince)) voicePendingSince = null;
   }
 
-  return { el, now, scroll, yen, sys, me, meFile, botCol, typingCol, disableChips, fail, setWait, onStep, readStream,
+  return { el, now, scroll, yen, sys, me, redactedNote, meFile, botCol, typingCol, disableChips, fail, setWait, onStep, readStream,
            jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled, voicePending, voiceShown };
 }
