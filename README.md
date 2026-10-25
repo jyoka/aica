@@ -132,7 +132,9 @@ LIFF の中でマイクが使えるかは、下の「LINE の中でマイクが�
    1 人が Cookie を替えて匿名ユーザーIDを 20 個使うと、ほかの新しい Web の利用者はその日ずっと 429 になります(下の「設定」のターン数の上限)
 6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://<マシン名>.<tailnet>.ts.net/line/webhook` にし、
    「Webhookの利用」をオンにして「検証」を押す(成功と出れば、署名とつながりが合っています)
-7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します
+7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します。
+   挨拶には、LINE で使える入口(LIFF の設定があれば履歴書の読み込みとゲーム、LiveKit の設定もあれば音声相談)のボタンと、
+   文字の選択肢(求人を探す / まず相談する / 今はいい)が出ます([設計メモの 12 章](docs/design/line-sim-scenarios.md#12-挨拶から-3-つの入口へ案内する2026-10-25会話の改善-23))
 
 - Funnel を開いている間は、URL を知っている人は誰でも Web のトーク画面と開発者画面も開けます(費用がかかります)。
   試し終わったら止めます(`tailscale funnel 8030` を Ctrl+C。`--bg` で動かしたときは `tailscale funnel reset`)
@@ -195,6 +197,53 @@ LINE のトークに出るボタン(履歴書の読み込み、音声相談、�
   過ぎたら、開いたときにもう一度 ID トークンで確かめます。1 時間を過ぎてから応募フォームを送ると、入力は残らず、開き直しになります
 - ID トークンを確かめられない(LINE が断った、期限切れ、別のチャネルのトークン)ときは「本人を確かめられませんでした」と出して止まり、
   ほかの人の画面にはなりません
+
+### LINE のリッチメニュー
+
+LINE のトークの下に、常に出しておけるメニュー(リッチメニュー)を置けます。ボタンは 4 つです。
+
+| ボタン | 押すと |
+|---|---|
+| 音声で相談 | 音声相談の LIFF 画面(`https://liff.line.me/<LIFF ID>/voice`)を開く。LiveKit の設定があるときだけ置く |
+| 履歴書を読み込む | 履歴書の読み込みの LIFF 画面(`…/resume/upload`)を開く |
+| ゲームで書類を作る | レジュメ・アーケードの LIFF 画面(`…/arcade`)を開く |
+| 求人を探す | 「求人を探す」を本人の発言としてトークに送る(エージェントが返信トークで返す) |
+
+前の 3 つは、トークのボタンと同じ LIFF 画面です。押した後の流れ(結果がトークに届く)も同じです。
+LIFF の設定が無いときは作りません(スクリプトが止まります)。登録するのは人で、`scripts/line_rich_menu.py` が画像(2500x843 の PNG)も作ります。
+上の「LINE で試す」と「LINE で LIFF 画面を開く」が済んでいる前提です。
+
+1. Web サーバーと同じ `.env`(`LINE_CHANNEL_ACCESS_TOKEN`、`LINE_LIFF_ID`、`LINE_LIFF_CHANNEL_ID`、音声相談も置くなら `LIVEKIT_*`)を用意する
+2. 画像と本文を作って見る(LINE は呼びません)。`data/richmenu/richmenu.png` と `richmenu.json` ができます
+
+   ```bash
+   ./.venv/bin/python -m scripts.line_rich_menu --dry-run
+   ```
+
+   日本語のフォントは macOS のヒラギノか Linux の Noto Sans CJK を探します。無ければ `--font <ファイル>` で渡します
+3. 登録する。LINE で形を確かめ、作り、画像を上げ、友だち全員の既定のメニューにします
+
+   ```bash
+   ./.venv/bin/python -m scripts.line_rich_menu             # 初めて
+   ./.venv/bin/python -m scripts.line_rich_menu --replace   # 作り直すとき(前にこのスクリプトで作ったメニューを消してから)
+   ```
+
+   `--replace` は、新しいメニューを既定にした後で、前にこのスクリプトで作ったメニュー(名前が `aica-menu`)だけを消します。
+   途中で LINE に断られたら、そこで止まり、前のメニューは出たままです。
+   **既定のメニューは友だち全員に 1 つです**。LINE Official Account Manager などで既定にしていた別のメニューは、既定でなくなります
+   (消しはしません。スクリプトがその ID を出します)
+4. LINE のアプリでトークを開き、下のメニューを押して確かめる。LIFF ID やエンドポイント URL を変えたら、もう一度 3 をします
+
+月のメッセージ数(無料のコミュニケーションプランは月 200 通)との関係(2026-10-25 に LINE の公式の資料で確かめた):
+
+- 月のメッセージ数に数えると公式が書いているのは、メッセージ配信と、Messaging API の Push、Multicast、Broadcast、Narrowcast だけです。
+  応答メッセージ(Reply API)、あいさつメッセージ、チャットは数えません([Messaging API の料金](https://developers.line.biz/ja/docs/messaging-api/pricing/)、
+  [LINE公式アカウントの料金プラン](https://www.lycbiz.com/jp/service/line-official-account/plan/))
+- **リッチメニューの登録と表示が数えられるかは不明です**。どちらの資料にも、数える側にも数えない側にも書いてありません。
+  リッチメニューの API(作る、画像を上げる、既定にする)は、数えると書かれたメッセージの送り方のどれでもありません(数えられないと推測しますが、確かめていません)。
+  確かめるときは、LINE Official Account Manager の「分析」か、Messaging API の「当月のメッセージ利用状況」で、登録の前後の通数を比べます
+- 「求人を探す」を押したときの返事は返信トークで返すので、数えません(間に合わなかったときの push だけ数えます。上の「LINE で試す」)。
+  前の 3 つから開いた画面の結果は、トークのボタンから開いたときと同じく push で届き、数えます(上の「LINE で LIFF 画面を開く」)
 
 ### LINE の中でマイクが使えるかを確かめる
 
@@ -284,6 +333,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m pytest -q` | テスト | 使わない |
 | `node --test tests/js/arcade-ja.test.js` | レジュメ・アーケードの日本語の判定のテスト(pytest からも回る) | 使わない |
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
+| `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
@@ -291,6 +341,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m line_runtime.ledger [--date 2026-09-27] [--by-user-id] [--json]` | 費用台帳を人と日ごとに表で集計する(合計の行つき)。`--by-user-id` はシナリオユーザーを匿名ユーザーIDにまとめない | 使わない |
 | `python -m line_runtime.purge [--url https://…]` | 期間で消す掃除を今すぐ走らせる。動いている Web プロセス(既定 `http://127.0.0.1:8030`)の内部の口を `AICA_INTERNAL_KEY` で呼ぶだけで、このコマンドは何も消さない。掃除は Web プロセスが起動時と 1 日 1 回、自分でも走らせる | 使わない |
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
+| `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |

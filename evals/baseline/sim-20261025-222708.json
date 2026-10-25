@@ -1,0 +1,376 @@
+{
+  "harness": "line-sim",
+  "config": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "sim_model": "gpt-6-luna",
+    "judge": false,
+    "judge_model": null,
+    "judge_samples": null,
+    "max_turns": 8,
+    "repeat": 1,
+    "channel": "line",
+    "features": []
+  },
+  "directions": {
+    "branch_within_3": "up",
+    "outcome_recorded": "up",
+    "outcome_as_expected": "up",
+    "violations": "down",
+    "search_arg_violations": "down",
+    "call_overlaps": "down",
+    "fabrications": "down",
+    "track_ok": "up",
+    "cache_hit_rate": "up",
+    "llm_calls": "down",
+    "latency_p50": "down",
+    "latency_max": "down",
+    "cost_usd": "down",
+    "depth_purpose": "up",
+    "depth_dig": "up",
+    "depth_options": "up",
+    "depth_reasons": "up",
+    "tone": "up",
+    "design_fit": "up"
+  },
+  "runs": [
+    {
+      "case": "R-revisit",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": true,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 3,
+        "search_arg_violations": 0,
+        "call_overlaps": 0,
+        "action_offers": 0,
+        "latency_p50": 4.1,
+        "latency_max": 14.1,
+        "cost_usd": 0.0703,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.826,
+        "depth_purpose": null,
+        "depth_dig": null,
+        "depth_options": null,
+        "depth_reasons": null,
+        "tone": null,
+        "design_fit": null
+      },
+      "detail": {
+        "id": "R-revisit",
+        "user": "sim-new",
+        "push_facts": null,
+        "channel": "line",
+        "features": [],
+        "turns": 3,
+        "branch_turn": 2,
+        "branch_within_3": true,
+        "tracks": [
+          "未定",
+          "未定",
+          "未定"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [],
+        "greeting_offers": [],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "offer_turn": 2,
+        "violations": [],
+        "fabrications": [],
+        "search_arg_violations": [],
+        "call_overlaps": [],
+        "upload_turn": null,
+        "latency_p50": 4.1,
+        "latency_max": 14.1,
+        "cost_usd": 0.0703,
+        "llm_calls": 6,
+        "cache_hit_rate": 0.826,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "前回、渋谷・日中のカフェをご希望でした。今回も同じ条件で探しますか？\n[選択肢] 同じ条件で探す / 条件を変えたい / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "同じ条件で探す。エリアは原宿も入れてほしいです。"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷・日中のカフェで1件見つかりました。原宿は今回の検索で指定できなかったため、まだ探せていません。こちらの求人はどうですか？\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] 仕事内容を知りたい / 条件を変えたい / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます"
+          },
+          {
+            "who": "agent",
+            "text": "もちろんです。どのあたりが気になっていますか？\n[選択肢] 時給 / シフト / 仕事内容 / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          []
+        ],
+        "turn_log": [
+          {
+            "entry": "revisit",
+            "track_switch": null,
+            "bubbles": [
+              "前回、渋谷・日中のカフェをご希望でした。今回も同じ条件で探しますか？"
+            ],
+            "quick_replies": [
+              "同じ条件で探す",
+              "条件を変えたい",
+              "まず相談する",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "get_user_conversation_summary",
+                "args": {
+                  "line_user_id": "sim-new"
+                },
+                "result": {
+                  "linked": false,
+                  "segment": "unlinked",
+                  "search_track": "未定",
+                  "track_history": [],
+                  "stated_preferences": {
+                    "job_type": {
+                      "value": "カフェ",
+                      "saved": "9/23"
+                    },
+                    "area": {
+                      "value": "渋谷",
+                      "saved": "9/23"
+                    },
+                    "time_band": {
+                      "value": "日中",
+                      "saved": "9/23"
+                    }
+                  },
+                  "consultation_summary": null,
+                  "uploaded_resume": null,
+                  "arcade_draft": null,
+                  "arcade_url": "/liff/arcade",
+                  "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う(URL を作らない。arcade_url が無ければボタンを出さない)。"
+                }
+              }
+            ]
+          },
+          {
+            "entry": "revisit",
+            "track_switch": null,
+            "bubbles": [
+              "渋谷・日中のカフェで1件見つかりました。原宿は今回の検索で指定できなかったため、まだ探せていません。こちらの求人はどうですか？"
+            ],
+            "quick_replies": [
+              "仕事内容を知りたい",
+              "条件を変えたい",
+              "まず相談する",
+              "今はいい"
+            ],
+            "cards": [
+              {
+                "job_id": "a003",
+                "title": "カフェホール 渋谷道玄坂",
+                "employer": "コーヒースタンド ドウゲン",
+                "employment_type": "アルバイト・パート",
+                "job_type": "カフェ",
+                "area": "渋谷",
+                "station": "渋谷",
+                "walk_min": 6,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1250,
+                  "max": null
+                },
+                "pay_text": "時給1250円",
+                "shift": "10:00〜19:00(4時間〜)",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "髪色自由",
+                  "短時間OK"
+                ],
+                "reasons": [
+                  "日中の勤務(10:00〜19:00(4時間〜))",
+                  "渋谷エリア"
+                ],
+                "match_score": 13.2,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.4,
+                  "wage": 0.62,
+                  "keywords": 12.18
+                }
+              }
+            ],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "save_user_preferences",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "preferences": {
+                    "area": "渋谷、原宿"
+                  }
+                },
+                "result": {
+                  "saved": [
+                    "area"
+                  ],
+                  "rejected": []
+                }
+              },
+              {
+                "name": "recommend_jobs",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "area": "渋谷",
+                  "time_band": "日中",
+                  "job_type": null,
+                  "min_wage": null,
+                  "employment_type": null,
+                  "min_annual_salary": null,
+                  "max_talk_level": null,
+                  "min_talk_level": null,
+                  "max_physical_level": null,
+                  "min_physical_level": null,
+                  "remote": null,
+                  "weekends_holidays": null,
+                  "max_overtime_hours": null,
+                  "keywords": "カフェ",
+                  "exclude_ids": null,
+                  "posted_within_days": null
+                },
+                "result": {
+                  "total": 1,
+                  "jobs": [
+                    {
+                      "job_id": "a003",
+                      "title": "カフェホール 渋谷道玄坂",
+                      "employer": "コーヒースタンド ドウゲン",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "カフェ",
+                      "area": "渋谷",
+                      "station": "渋谷",
+                      "walk_min": 6,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1250,
+                        "max": null
+                      },
+                      "pay_text": "時給1250円",
+                      "shift": "10:00〜19:00(4時間〜)",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "髪色自由",
+                        "短時間OK"
+                      ],
+                      "reasons": [
+                        "日中の勤務(10:00〜19:00(4時間〜))",
+                        "渋谷エリア"
+                      ],
+                      "match_score": 13.2,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.4,
+                        "wage": 0.62,
+                        "keywords": 12.18
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "record_conversation_outcome",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "outcome": "propose",
+                  "reason": "同じ条件で探す。エリアは原宿も入れてほしいです。",
+                  "confidence": 0.95,
+                  "summary": "渋谷・日中のカフェを引き続き希望。原宿もエリアに追加したい。次に確かめること: 提示した渋谷の求人について気になる点。"
+                },
+                "result": {
+                  "recorded": {
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "outcome": "propose",
+                    "reason": "同じ条件で探す。エリアは原宿も入れてほしいです。",
+                    "confidence": 0.95,
+                    "summary": "渋谷・日中のカフェを引き続き希望。原宿もエリアに追加したい。次に確かめること: 提示した渋谷の求人について気になる点。"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "revisit",
+            "track_switch": null,
+            "bubbles": [
+              "もちろんです。どのあたりが気になっていますか？"
+            ],
+            "quick_replies": [
+              "時給",
+              "シフト",
+              "仕事内容",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          }
+        ],
+        "user_msgs": [
+          null,
+          "同じ条件で探す。エリアは原宿も入れてほしいです。",
+          "ありがとう、考えます"
+        ],
+        "upload": null,
+        "keyword_searches": [
+          {
+            "keywords": "カフェ",
+            "peak": 0.342,
+            "semantic": true,
+            "candidates": 3,
+            "kept": 1,
+            "word_hits": 1
+          }
+        ]
+      }
+    }
+  ],
+  "spent_usd": 0.0704,
+  "stopped": null,
+  "ledger_total_usd": 0.5562
+}

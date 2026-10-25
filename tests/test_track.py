@@ -25,8 +25,10 @@ from tests.test_handle import ScriptedModel, call, reply, run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 UID = "sim-new"
-MENU = ["求人を探す", "まず相談する", "応募履歴を確認", "今はいい"]
-WELCOME = reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU)
+MENU = ["求人を探す", "まず相談する", "今はいい"]
+# 初回訪問の挨拶(入口V): 文字の選択肢と、Web で使える 3 つの入口
+WELCOME = reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU,
+                actions=["voice_consult", "resume_upload"], buttons=[{"label": "ゲームで書類を作る", "url": "/liff/arcade"}])
 CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
 
 

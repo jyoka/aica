@@ -21,6 +21,8 @@ from tests.test_handle import ScriptedModel, call, reply, run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 MENU = ["求人を探す", "応募履歴を確認", "使い方", "今はいい"]
+VISIT_MENU = ["求人を探す", "まず相談する", "今はいい"]  # 初回訪問の挨拶の文字の選択肢(入口V)
+ARCADE_BUTTON = {"label": "ゲームで書類を作る", "url": "/liff/arcade"}
 
 
 class Greeter(ScriptedModel):
@@ -43,27 +45,64 @@ def _tool_result(messages, name: str) -> dict:
     return next(_tool_payload(m) for m in reversed(_this_turn(messages)) if m.type == "tool" and m.name == name)
 
 
+def usable_entries(system: str) -> list[str]:
+    """システムプロンプトの「窓口」から、使える入口(Web は 3 つとも、LINE は使えると書かれたものだけ)。"""
+    from line_runtime.agent import LINE_FEATURES
+
+    if "LINE のトーク。" not in system:  # Web は、音声相談の準備が無いと書かれていなければ 3 つとも
+        return [k for k in ("voice_consult", "resume_upload", "arcade")
+                if k != "voice_consult" or "音声相談は、この画面ではまだ使えない" not in system]
+    return [k for k in ("voice_consult", "resume_upload", "arcade") if LINE_FEATURES[k][0] in system]
+
+
+def entry_offer(summary: dict, usable: list[str]) -> str | None:
+    """再訪で勧める入口を 1 つ(dip の Prompt の「挨拶で3つの入口を案内する」の順)。"""
+    if summary.get("segment") in ("applied_waiting", "form_exit"):
+        return None
+    knows_career = summary.get("uploaded_resume") or "experience" in (summary.get("stated_preferences") or {})
+    draft = summary.get("arcade_draft")
+    candidates = [("blanks", bool(draft and draft.get("blank_lines"))),
+                  ("resume_upload", not knows_career and not summary.get("consultation_summary")),
+                  ("voice_consult", not summary.get("consultation_summary")),
+                  ("arcade", not draft and bool(summary.get("arcade_url")))]
+    return next((k for k, hit in candidates if hit and (k == "blanks" or k in usable)), None)
+
+
+def with_offer(offer: str | None, quick_replies: list[str], summary: dict) -> dict:
+    """勧める入口を、返信の項目(actions / buttons / quick_replies)にする。"""
+    if offer == "blanks":
+        rest = [q for q in quick_replies if q != "今はいい"][:2]  # 4 つまで。「今はいい」は残す
+        return {"quick_replies": ["空欄を埋める", *rest, "今はいい"]}
+    if offer == "arcade":
+        return {"quick_replies": quick_replies, "buttons": [{"label": "ゲームで書類を作る", "url": summary["arcade_url"]}]}
+    return {"quick_replies": quick_replies, "actions": [offer] if offer else []}
+
+
 def greet(messages) -> AIMessage:
-    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニュー、再訪は要約を読んでから)。"""
+    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニューと使える入口すべて、再訪は要約を読んでから入口を1つ)。"""
     system = messages[0].content
     uid = re.search(r"LINE ユーザーID: ([^(\s]+)", system).group(1)
+    usable = usable_entries(system)
     if "入口V(初回訪問)" in system:
-        return reply(["こんにちは。バイト探しをお手伝いします。何をしますか?"], quick_replies=MENU)
+        return reply(["こんにちは。バイト探しをお手伝いします。何をしますか?"], quick_replies=VISIT_MENU,
+                     actions=[a for a in ("voice_consult", "resume_upload") if a in usable],
+                     buttons=[ARCADE_BUTTON] if "arcade" in usable else [])
     assert "入口R(再訪)" in system
     if not any(m.type == "tool" for m in _this_turn(messages)):
         return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
     summary = _tool_result(messages, "get_user_conversation_summary")
+    offer = entry_offer(summary, usable)
     prefs = {k: v["value"] for k, v in (summary.get("stated_preferences") or {}).items()}
     if prefs:
         said = "・".join(prefs[k] for k in ("area", "time_band", "job_type") if k in prefs)
         return reply([f"おかえりなさい。前回は{said}でしたが、今回も同じですか?"],
-                     quick_replies=["同じで探す", "少し変えたい", "今はいい"])
+                     **with_offer(offer, ["同じで探す", "少し変えたい", "今はいい"], summary))
     viewed = (summary.get("recent_views") or {}).get("by_job_type") or {}
     if viewed:
         top = max(viewed, key=viewed.get)
         return reply([f"おかえりなさい。最近は{top}のお仕事を見ていましたか?"],
-                     quick_replies=["そう、探したい", "ほかの仕事", "今はいい"])
-    return reply(["おかえりなさい。何をしますか?"], quick_replies=MENU)
+                     **with_offer(offer, ["そう、探したい", "ほかの仕事", "今はいい"], summary))
+    return reply(["おかえりなさい。何をしますか?"], **with_offer(offer, MENU, summary))
 
 
 def propose(messages) -> AIMessage:
@@ -93,6 +132,8 @@ def close(uid: str) -> list[AIMessage]:
 def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatch):
     """画面と同じ呼び方(シナリオを始める → /api/event/stream)で、入口ごとに挨拶が変わる。"""
     monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):  # 音声相談の設定は無い(挨拶の入口に音声は出ない)
+        monkeypatch.delenv(k, raising=False)
     from fastapi.testclient import TestClient
 
     from line_runtime import config, runtime, server
@@ -118,9 +159,12 @@ def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatc
 
         first, back_prefs, back_views = (open_talk(s) for s in ("F-follow-new", "R-revisit", "R-revisit-browsing"))
 
-    assert first["entry"] == "visit" and first["tools"] == []  # 初回訪問は履歴を読まずにメニュー
+    # 台本の初回訪問は要約を読まずにメニューと入口を返す(本物のエージェントは arcade_url のために要約を読む。入口V)
+    assert first["entry"] == "visit" and first["tools"] == []
     assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
-    assert first["quick_replies"] == MENU
+    assert first["quick_replies"] == VISIT_MENU
+    # LiveKit の設定が無いので、本番のトーク画面では音声相談を出さない(line_channel.web_features)。履歴書とゲームは出す
+    assert first["actions"] == ["resume_upload"] and first["buttons"] == [ARCADE_BUTTON]
     for r in (back_prefs, back_views):  # 再訪は要約(プロフィールと行動履歴)を読んでから挨拶する
         assert r["entry"] == "revisit" and [t["name"] for t in r["tools"]] == ["get_user_conversation_summary"]
     assert back_prefs["bubbles"] == ["おかえりなさい。前回は渋谷・日中・カフェでしたが、今回も同じですか?"]

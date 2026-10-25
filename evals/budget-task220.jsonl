@@ -1,0 +1,7 @@
+{"at": "2026-10-25T13:24:21+00:00", "run": "sim-20261025-222315", "cost_usd": 0.1277, "case": "F-follow-new", "rep": 0}
+{"at": "2026-10-25T13:24:40+00:00", "run": "sim-20261025-222315", "cost_usd": 0.0705, "case": "R-revisit", "rep": 0}
+{"at": "2026-10-25T13:25:10+00:00", "run": "sim-20261025-222315", "cost_usd": 0.0896, "case": "R-revisit-browsing", "rep": 0}
+{"at": "2026-10-25T13:25:26+00:00", "run": "sim-20261025-222315", "cost_usd": 0.0319, "case": "R-revisit-track", "rep": 0}
+{"at": "2026-10-25T13:25:54+00:00", "run": "sim-20261025-222315", "cost_usd": 0.0412, "case": "R-revisit-draft", "rep": 0}
+{"at": "2026-10-25T13:27:05+00:00", "run": "sim-20261025-222610", "cost_usd": 0.1249, "case": "F-follow-new", "rep": 0}
+{"at": "2026-10-25T13:27:39+00:00", "run": "sim-20261025-222708", "cost_usd": 0.0704, "case": "R-revisit", "rep": 0}

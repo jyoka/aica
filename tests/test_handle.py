@@ -31,9 +31,9 @@ def call(name: str, args: dict, id_: str = "t1") -> AIMessage:
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": id_, "type": "tool_call"}])
 
 
-def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actions=()) -> AIMessage:
+def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actions=(), buttons=()) -> AIMessage:
     return AIMessage(content=json.dumps({"bubbles": bubbles, "quick_replies": list(quick_replies),
-                                         "job_ids": list(job_ids), "buttons": [], "actions": list(actions)},
+                                         "job_ids": list(job_ids), "buttons": list(buttons), "actions": list(actions)},
                                         ensure_ascii=False))
 
 

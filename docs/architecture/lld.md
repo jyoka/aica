@@ -196,6 +196,8 @@ classDiagram
   LIFF の設定があれば、レジュメ・アーケードは要約の `arcade_url` をボタンにでき、AI と保存も LINE の本人で使えると書きます。
   `channel` と `channel_features` は、ターンのたびに `turn.accept` → `LineRuntime.handle_stream` が入力と一緒に state に書きます
   (Web と評価は既定の `web`。LINE の webhook と LIFF 画面からのターンは `line` と `line_channel.liff_features()`)。
+  本番のトーク画面(`/api/event`、`/api/event/stream`)は `line_channel.web_features()` を渡し、LiveKit の設定が無ければ
+  窓口を `WEB_NO_VOICE_NOTE`(音声相談を勧めない)にします。Web の features が空(評価、テスト)なら 3 つとも使える扱いです
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
 - `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
@@ -354,6 +356,7 @@ classDiagram
 | `voice/live_room_smoke.py` | LiveKit の部屋の実経路の確かめ |
 | `voice/eval_stt.py`、`voice/eval_hearing.py`、`voice/tool_call_probe.py` | STT の比較、ヒアリングの深さ、ツールを同じターンで呼ぶかの計測(実 API) |
 | `voice/update_wage_reference.py` | 平均時給の参考データを web 検索で作り直す(年 1 回くらい、1 回 $0.05 前後) |
+| `line_rich_menu.py` | LINE のリッチメニューの画像(Pillow)と本文を作り、LINE に登録する。人が回す(4.11 の終わり) |
 
 ### 1.8 resume_draft
 
@@ -1073,6 +1076,10 @@ sequenceDiagram
 
 - 費用は `evals/meter.py` の `Meter` が、このプロセスの SDK の呼び出し(エージェント、模擬ユーザー、ジャッジ)を数えたものです
 - 結果は 1 回ごとに `evals/results/sim-<時刻>.json` と `.md` に上書きします。止めても、払った分の結果は残ります
+- 窓口は既定で Web のトーク画面です。`--channel line --features …` で、毎ターンの `handle` に LINE の窓口と LIFF 画面で使えるものを渡します
+  (エージェントのシステムプロンプトの「窓口」が変わる)。結果の `channel` と `features` は `recheck` が判定に使います
+- 台帳と止める額は既定で PRD の `evals/budget.jsonl` と $4 です。PRD とは別の予算のカードは `--ledger` と `--limit-usd` で自分の台帳を使います
+  (会話の改善 (2/3) は `evals/budget-task220.jsonl`)
 - `--rejudge` は保存した会話を、ジャッジだけで判定し直します(`rejudge`)。`recheck` はコードの判定を保存した材料でやり直します
 
 コードの判定(`evals/checks.py`)が見るものです。シナリオごとの狙いは [line-sim-scenarios.md](../design/line-sim-scenarios.md) にあります。
@@ -1082,12 +1089,13 @@ sequenceDiagram
 | 形式 | 1 ターン 1 問。選択肢は最大 4 つで逃げ道を含む。吹き出しの字数。求人は最大 3 件で理由つき。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
 | 会話の進め方 | ツールが返していない求人を出さない。個人情報をトーク経由でツールに渡さない。「今はいい」「送らないで」の後に質問や求人を続けない。「求人を見せて」のターンで求人を探す。この会話で保存した項目を聞き直さない。断られていないのに wait を記録しない |
 | 再訪 | 希望ありは、1 通目で前の希望に触れ、以後その項目を聞き直さない。行動履歴のみは、1 通目で最近の行動に触れ、触れるのは会話を通して 1 回だけ。1 通目に求人カード、求人名、件数を並べず、職種も 1 つだけ |
+| 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`) | 初回訪問は、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)が 1 通目に全部ある。選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、1 通目の入口が 1 つまでで、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを勧める(期待の入口がその窓口で使えなければ問わない)。どちらも窓口で使えないものを出したら違反。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |
 | プッシュ | 本番と同じく `push_trigger` を通してから始める |
 | 事実性(`fact_violations`、指標 `fabrications`) | 返信の金額、日付、徒歩分数、件数、求人名が、この会話で dip から来た情報(ツールの結果、プッシュの根拠の事実、dip の Prompt)か本人の発言にあるか。数字は同じ単位の値とだけ照合する(徒歩の分数は `walk_min`、件数は `total` など。ID や日付の中の数字は根拠にしない)。dip の Prompt の例文の日付は根拠にしない。その場で作った架空の求人名は文字列では見分けにくいので、求人名で捕まえるのは実在の求人の出し間違い。保存した希望が本人の発言に無いのも違反(本人が決めていない条件を記録しない) |
 | 相談(`consult_mode` のシナリオ) | 初回の選択肢に「まず相談する」がある。相談の入口で playbook を読み、求人を出さずに 1 問から始める。本人が切り上げる前に相談を締めない。相談で聞いた項目を保存する。目的を確かめる前に求人を出さない(本人が自分から「求人を見せて」と言ったときを除く)。本人の発言にも履歴書にも無い職種を選択肢に 2 つ以上並べない |
 | playbook(`playbook_violations`、`dont_know_violations`) | 区分が変わったターンで新しい区分の playbook を読み直したか。「分からない」の直後の返信で、選択肢か候補を示す文に職種を 2 つ以上並べていないか |
 | 雇用区分(`track_expectations`、指標 `track_ok`) | シナリオの `expect_tracks`(期待する区分と、期限のターン `turn` か期限を決める本人の発言 `on_said`)と、実際に区分が変わった `set_search_track` を突き合わせる。ok、missing、wrong_track、late、unexpected を分ける。模擬ユーザーが期待の発言をしなかった回(no_trigger)はエージェントの判定に数えない。区分つきの再訪(`expect_track_in_greeting`)は、挨拶の 1 問に記録された区分を入れ、区分を聞き直さない |
-| アップロード | `upload_resume` のシナリオは、エージェントが履歴書の操作を出したら(出なければ `upload_by_turn` のターンで)アップロードする。その後は質問 1 つで、画面の確認をくり返さず、履歴書だけで区分を切り替えない。履歴書と音声の提案(`actions`)が出たターンも記録する(`action_offers`) |
+| アップロード | `upload_resume` のシナリオは、エージェントが履歴書の操作を出したら(出なければ `upload_by_turn` のターンで)アップロードする。1 通目(挨拶)の入口の案内では上げない(ペルソナは挨拶の選択肢を選ばずに書き始める)。その後は質問 1 つで、画面の確認をくり返さず、履歴書だけで区分を切り替えない。履歴書と音声の提案(`actions`)が出たターンも記録する(`action_offers`) |
 
 指標です。
 
@@ -1164,8 +1172,9 @@ sequenceDiagram
 
 選択肢の決まりです。
 
-- リッチメニューは既存の運用のまま触らない前提です。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、トークの選択肢
-  (クイックリプライ)として出します。挨拶だけのときと、意図が分からないときの最初の 1 問です。初回訪問の挨拶では「使い方」の代わりに「まず相談する」を出します
+- エージェントの返信はリッチメニューに頼らず、触れません(LINE のリッチメニューは 4.11 の終わり)。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、トークの選択肢
+  (クイックリプライ)として出します。挨拶だけのときと、意図が分からないときの最初の 1 問です。初回訪問の挨拶は「求人を探す / まず相談する / 今はいい」で、
+  音声相談、履歴書の読み込み、ゲームの入口のボタンを添えます(dip の Prompt の「挨拶で3つの入口を案内する」。[設計メモの 12 章](../design/line-sim-scenarios.md#12-挨拶から-3-つの入口へ案内する2026-10-25会話の改善-23))
 - 返信は必ず選択肢で終えます(締めくくりの返信にも「求人を探す / 応募履歴を確認 / 使い方」)。LINE のクイックリプライは、ボタンを押すか
   新しいメッセージが届くまで消えないので、次に開いた人が書くしかない状態を減らせます。トークを開き直したときに表示が残るかは
   LINE のドキュメントに記載が無く、実機で確かめていません
@@ -1398,6 +1407,22 @@ LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 
 - `_line_upload_turn` は、その人の `line_locks` の中で、入力中の表示 → `_line_turn(uid, "upload")`(`resume_upload` のターン。LINE の窓口)→
   読み取りの確認と「読み取り結果を見る」のボタンの後に続きの返信をつないで(`_joined`)、1 回の push で送ります。ターンが失敗したら、確認と `FAILED_TEXT` を送ります
 - LINE の userId(`sub`)は `line_voice_rooms` と、応答の後の処理の引数にだけあり、保存もログもしません
+
+リッチメニュー(`scripts/line_rich_menu.py`、task 220。手順は README の「LINE のリッチメニュー」):
+
+- 人が回すスクリプトです。Web サーバーは何もしません(新しいイベントも口も無い)。`.env` は Web サーバーと同じものを読みます(`config.load_env`)
+- ボタン(`items`): 音声相談(`liff_features` に `voice_consult` があるときだけ)、履歴書の読み込み、ゲーム、求人を探す。前の 3 つは URI のアクションで、
+  トークのボタンと同じ LIFF URL(`liff_page_url(LIFF_ACTIONS[…][1])`、ゲームは `ARCADE_PATH` から作る `…/arcade`)。「求人を探す」は message のアクションで、
+  押すとその文が本人の発言として webhook に届きます(ふつうのテキストのターン)。LIFF の設定が無ければ `RichMenuError` で止まり、何も作りません
+- 本文(`menu_body`): 2500x843、`selected: true`(トークを開くとメニューが開いている)、名前 `aica-menu`、バーの文言「メニュー」。領域は横に等分します
+- 画像(`render_image`): Pillow で PNG を描きます(緑の丸の絵、大きな文言、小さな文言。文言の大きさはどの列も同じ)。1MB を超えたら止めます。
+  日本語のフォントは `FONT_CANDIDATES`(ヒラギノ、Noto Sans CJK)か `--font`
+- 登録(`register`): `POST /v2/bot/richmenu/validate` → `GET /v2/bot/user/all/richmenu`(今の既定) → `POST /v2/bot/richmenu` →
+  `POST https://api-data.line.me/v2/bot/richmenu/{id}/content` → `POST /v2/bot/user/all/richmenu/{id}`(既定)。`--replace` は既定にした後で、
+  `GET /v2/bot/richmenu/list` から名前が `aica-menu` の前のもの(作ったばかりのものを除く)だけを `DELETE` します。途中で失敗しても前のメニューが出たままです。
+  別のメニューが既定だったら、既定でなくなったことを出します(消さない)。LINE が断ったら、その本文の先頭 300 字を出して止まり、既定にはしません。トークンは出しません
+- `--dry-run` は `data/richmenu/` に `richmenu.png` と `richmenu.json` を書くだけで、LINE を呼びません。テスト(`tests/test_rich_menu.py`)は
+  `httpx.MockTransport` の偽物の LINE を使います
 
 LIFF の中でマイクを試す画面(`/liff/line/mic-check`、task 205。手順は README の「LINE の中でマイクが使えるかを確かめる」):
 

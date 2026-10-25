@@ -197,6 +197,11 @@ def liff_features() -> tuple[str, ...]:
     return ("resume_upload",) + (("voice_consult",) if voice_configured() else ()) + ("arcade",)
 
 
+def web_features() -> tuple[str, ...]:
+    """Web のトーク画面で使えるもの: 履歴書の読み込みとゲームはいつも、音声相談は LiveKit の設定があるときだけ。"""
+    return ("resume_upload",) + (("voice_consult",) if voice_configured() else ()) + ("arcade",)
+
+
 def _is_arcade(path: str) -> bool:
     p = path.partition("?")[0]
     return p == ARCADE_PATH or p.startswith(ARCADE_PATH + "/")
