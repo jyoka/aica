@@ -10,6 +10,7 @@
 (5) 相談の長さ: 相談の問いは4問まで(4問目までに求人を見るかを聞く)。掘り下げは1つの項目に1回まで、「分からない」
     「特にない」が2回続いたら条件の1問へ、条件はまとめて1問で聞く(task 225。前は「目安は5、6問」で、jyoka/tasks#221 の
     C-consult-propose は8ターンで7問聞いて求人に届かなかった)。評価の判定 evals.checks.consult_questions の正例・負例も見る
+    事情を話して探し始めた人(T-side-job)は相談に入れず、足りない条件を1問で聞いて探す(evals.checks.situation_start_violations)
 (6) playbook と Prompt の例文が、評価のペルソナの発言・経歴と重ならない(例文をなぞるだけで評価が良くならないように)
 LLM が playbook どおりに深く聞けるかは、評価(実 API、LLM ジャッジの深さの項目)で測る。
 """
@@ -465,9 +466,6 @@ DIG = [_q("どんな場面でそう感じましたか?"), _q("ほかに、やっ
     ([None, "相談したい", "a", "b", "c"], [GREETING, READ, *DIG[:2], ASK_JOBS], {"asked": [2, 3, 4], "offer": 5}),
     # 求人を見るかを聞かずに4問 → 4問目のターンで違反
     ([None, "相談したい", "a", "b", "c", "d"], [GREETING, READ, *DIG], {"asked": [2, 3, 4, 5, 6], "offer": None}),
-    # 「文字で話す」の後に経験を聞き直す1問は数えない(押しても答えにならない)
-    ([None, "相談したい", "a", "文字で話す", "b", "c"], [GREETING, READ, *DIG[:3], ASK_JOBS],
-     {"asked": [2, 3, 5], "offer": 6}),
     # 本人が「今はいい」で切り上げたら、そこで数えるのをやめる
     ([None, "相談したい", "a", "b", "今はいい"], [GREETING, READ, *DIG[:2], t(["わかりました。"])],
      {"asked": [2, 3, 4], "offer": None}),
@@ -507,6 +505,25 @@ def test_two_stuck_answers_in_a_row_move_on_to_conditions(reply_turn, bad):
     assert checks.consult_length_violations(turns, said) == (want if bad else [])
 
 
+@pytest.mark.parametrize("first, second", [
+    ("分かりません", "わかりません"),  # 丁寧形(模擬ユーザーは丁寧形で答えることが多い)
+    ("思いつきません", "特に思いつきません"),
+    ("まだ分かりません。", "うーん、わかんない"),
+    ("特にないです。", "浮かびません"),
+])
+def test_stuck_answers_in_polite_and_casual_forms(first, second):
+    """詰まった答えは「分からない」「特にない」の言い方によらず数える(丁寧形・くだけた形も)。"""
+    said = [None, "まず相談する", first, second]
+    turns = [GREETING, READ, DIG[0], DIG[3]]
+    assert checks.consult_length_violations(turns, said) == [
+        "T4: 「分からない」「特にない」が2回続いたのに、掘り下げを続けた(条件の1問か、求人を見るかの問いへ進む)"]
+
+
+@pytest.mark.parametrize("said", ["分かりました", "わかりました、カフェです", "決まっています"])
+def test_answers_that_are_not_stuck(said):
+    assert not checks.STUCK.search(said) and not checks.DONT_KNOW.search(said)
+
+
 def test_one_stuck_answer_may_dig_back_once():
     said = [None, "相談したい", "思いつかない", "接客のバイトが楽しかったです"]
     turns = [GREETING, READ, _q("これまでで、手応えがあった場面はありますか?"), DIG[0]]
@@ -526,6 +543,92 @@ def test_saved_conversations_before_the_change_ask_too_many_questions():
     assert all(any("相談で求人を見るかを聞かずに4問を聞いた" in v for v in r["violations"]) for r in got.values())
     assert any(v.startswith("T4: 「分からない」「特にない」が2回続いた") for v in got["C-consult-propose"]["violations"])
 
+
+
+# 事情を話して探し始めた人は相談に入れず、足りない条件だけを1問にまとめて聞いて探す(利用者の決定、2026-10-26。
+# jyoka/tasks#221 で、相談に入らずに条件を聞いて提案した T-side-job の会話が、16 件の中でいちばん滑らかだった)
+SIDE_SAID = [None, "本業の後の空いた時間でバイトを探したい", "平日の19時以降か土日に、新宿あたりで働きたいです。",
+             "ありがとう、考えます"]
+SIDE_ASK = "どのエリアで、何曜日の何時ごろ働けますか?"
+
+
+def test_prompt_does_not_enter_a_consult_for_someone_who_explains_their_situation():
+    entry = _between(PROMPT, "## 相談(playbook に沿って進める)", "- 入ったら、")
+    assert "相談に入るのは、この2つのときだけ" in entry
+    assert "迷いや相談したいことを言っていなければ相談に入らない" in entry
+    assert "足りないもの(エリアと、アルバイト・パートなら働ける時間帯・曜日)だけを1問にまとめて聞き" in entry
+    # 前の読み方(条件が揃っていなければ相談に入る)は残っていない
+    assert "揃っていれば、相談に入らず" not in entry and "または、本人が自分の状況や事情を話して探し始めたとき" not in entry
+
+
+def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path):
+    """T-side-job の流れ: 区分を切り替え、エリアと時間帯・曜日を1問にまとめて聞き、答えを受けたターンで探す(T3)。
+    playbook は読まず、相談の1文(「一緒に整理」)も出さない。シナリオの期待(相談に入れない、T3 までに探す)を満たす。"""
+    sc = SCENARIOS["T-side-job"]
+    model = ConsultModel(script=[
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
+        call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": SIDE_SAID[1]}),
+        reply(["アルバイト・パートのお仕事で考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "それ以外", "今はいい"]),
+        calls(("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "平日の19時以降か土日",
+                                                                                     "area": "新宿あたり"}}),
+              ("recommend_jobs", {"line_user_id": UID, "employment_type": BAITO, "area": "新宿", "time_band": "夜"}),
+              ("record_conversation_outcome", {"line_user_id": UID, "outcome": "propose",
+                                               "reason": "本業の後の夜に新宿で探す", "confidence": 0.8})),
+        lambda msgs: reply(["本業の後に働ける、新宿の夜の求人です。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
+        reply(["ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"], quick_replies=CLOSING),
+    ])
+    turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in SIDE_SAID[1:]], tmp_path)
+    assert "迷いや相談したいことを言っていなければ相談に入らない" in model.systems[1]
+    assert not any(playbooks_read(x) for x in turns) and turns[2]["cards"]
+    r = conversation_checks(sc, turns, SIDE_SAID)
+    assert r["violations"] == [], r["violations"]
+    assert r["consult_questions"] is None and r["offer_turn"] == 3 == sc["expect_offer_by"]
+    assert r["outcome_as_expected"] and r["outcomes"] == ["propose"]
+
+
+@pytest.mark.parametrize("turns, want", [
+    # 1問にまとめて聞き、T3 で探した
+    ([GREETING, _q(SIDE_ASK), t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])], []),
+    # 時間帯とエリアを別々に聞いた(#221 の T-side-job。T4 で提案)→ 2問目のターンで違反
+    ([GREETING, _q("本業の後なら、何時ごろから働けますか?"), _q("どのエリアで探しますか?"),
+      t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])],
+     ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]),
+    # 相談に入った(playbook を読み、目的から聞いた)→ 入口のターンと2問目のターンで違反
+    ([GREETING, READ, _q(SIDE_ASK)],
+     ["T2: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)",
+      "T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]),
+])
+def test_situation_start_violations(turns, want):
+    sc = {"expect_no_consult": True}
+    assert checks.situation_start_violations(sc, turns, SIDE_SAID[:len(turns)]) == want
+    # 期待の無いシナリオ(相談のシナリオなど)では数えない
+    assert checks.situation_start_violations({}, turns, SIDE_SAID[:len(turns)]) == []
+
+
+def test_situation_start_stops_counting_when_the_person_opts_out():
+    said = [None, SIDE_SAID[1], "今はいい"]
+    turns = [GREETING, _q(SIDE_ASK), _q("また気が向いたら声をかけてくださいね。ほかに気になることはありますか?")]
+    assert checks.situation_start_violations({"expect_no_consult": True}, turns, said) == []
+
+
+def test_saved_side_job_conversations_are_rechecked_with_the_situation_rule():
+    """保存済みの T-side-job の会話(費用なし)を今のシナリオの期待で見直す。#221 の回(相談に入らず、時間帯とエリアを
+    別々に聞いて T4 で提案)と、お礼の締めを直した回(同じ流れ)は2問目で違反、相談に入った回は入口でも違反になる。"""
+    from evals.run import recheck
+
+    def side_job(name: str) -> dict:
+        doc = json.loads((EVALS / "baseline" / f"{name}.json").read_text(encoding="utf-8"))
+        return recheck(next(r for r in doc["runs"] if r["case"] == "T-side-job")["detail"])
+
+    got = {name: side_job(name) for name in ("sim-20261025-230120", "sim-20261025-234745", "sim-20261025-234138")}
+    assert {name: (r["offer_turn"], r["outcome_as_expected"]) for name, r in got.items()} == {
+        "sim-20261025-230120": (4, False), "sim-20261025-234745": (4, False), "sim-20261025-234138": (5, False)}
+    situation = {name: [v for v in r["violations"] if "事情を話して" in v] for name, r in got.items()}
+    assert situation == {
+        "sim-20261025-230120": ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"],
+        "sim-20261025-234745": ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"],
+        "sim-20261025-234138": ["T2: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)",
+                                "T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]}
 
 # ----------------------------- (6) 例文を評価のペルソナから離す -----------------------------
 
@@ -558,7 +661,8 @@ def _examples() -> dict[str, str]:
     parttime = (PLAYBOOKS / "parttime_chat.md").read_text(encoding="utf-8")
     return {
         "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
-        "Prompt: 相談の入口(本人の状況や事情)": _between(PROMPT, "話して探し始めたとき(", ")。"),
+        "Prompt: 相談に入らない事情の発言": _between(PROMPT, "話して探し始めたとき(", ")は、"),
+        "Prompt: 事情を話した人に足りない条件を聞く1問": _between(PROMPT, "1問にまとめて聞き(例:", ")、"),
         "Prompt: 提案の一言": _between(PROMPT, "その一言を本人の話につなげる(例:", ")。"),
         "common: 提案の一言": _between(common, "経験とのつながりを伝える(例:", ")。"),
         "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),
@@ -581,7 +685,7 @@ def _shared(example: str, persona: str, n: int = 4) -> set[str]:
 def test_examples_in_playbooks_and_prompt_do_not_echo_the_eval_personas():
     persona = _persona_text()
     examples = _examples()
-    assert len(examples) == 12 and all(examples.values())
+    assert len(examples) == 13 and all(examples.values())
     for where, example in examples.items():
         assert _shared(example, persona) == set(), (where, example, _shared(example, persona))
     # 負例: 差し替える前の例文(ペルソナとほぼ同じ)は、この判定で重なりとして見つかる

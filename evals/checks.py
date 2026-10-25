@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from dip_mcp.data import ROOT, load_jobs
 from dip_mcp.logic import AREAS, CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
+from line_runtime import line_channel
 from resume_draft.pii import PII_VALUE as DIP_PII_VALUE
 from resume_draft.pii import fold_pii, has_pii
 
@@ -39,6 +40,8 @@ THINK_IT_OVER = re.compile(r"考え(ます|てみ|させて|ておき|たい|と
 # 迷いを言っている言葉。お礼があっても、これがあれば迷いのサインで、迷いの点を1問聞いてよい
 # (「ありがとう、でも時給で迷うので考えます」「うーん、考えます」)
 HESITATION = re.compile(r"迷|悩|うーん|ううん|どうしよう|気にな|不安|心配|考え中|(?<![つ何れこ誰])でも|けど|けれど")  # 「いつでも」「何でも」「誰でも」は除く
+# 絵文字(記号の絵文字・顔・物・旗など)。ボタンと選択肢の文言に使わない(トークの決まりの「絵文字なし」、task 231 の D3)
+EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
 # 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
@@ -201,8 +204,10 @@ def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     for b in r["bubbles"]:
         if len(b) > rules["bubble_max"]:
             v.append(f"吹き出しが{len(b)}字({rules['bubble_max']}字以内)")
-    if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、文字で答えたい人の選択肢が無い
-        v.append(f"操作ボタン({'/'.join(r['actions'])})に「文字で話す」などの選択肢が無い")
+    if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、ボタンを使わない人の選択肢が無い
+        v.append(f"操作ボタン({'/'.join(r['actions'])})に文字の選択肢(答えの候補や「今はいい」)が無い")
+    if emoji := [x for x in [b.get("label", "") for b in r.get("buttons") or []] + list(r["quick_replies"]) if EMOJI.search(x)]:
+        v.append(f"ボタンや選択肢に絵文字がある(トークの決まりは絵文字なし): {emoji}")
     if len(r["cards"]) > JOBS_MAX:
         v.append(f"求人カードが{len(r['cards'])}件(最大3)")
     if any(not c.get("reasons") for c in r["cards"]):
@@ -707,8 +712,11 @@ _STARTING = (rf"({_WORK}(を|で|に|として)?(始め|探(?!せな|さな)|目
 PURPOSE_STARTED = rf"{_STARTING}[^。!！?？]{{0,8}}と思ったのは|どんな変化から|得たいこと"
 # 目的を聞く問い(白紙の問いの REASK["purpose"] に、きっかけ・理由などの言い方を足す)
 PURPOSE_ASK = re.compile(REASK["purpose"].pattern + r"|きっかけ|目的|理由|なぜ|どうして|何のため|" + PURPOSE_STARTED)
-# 本人が「分からない」「まだ決めていない」と言った(職種を並べず、掘り下げに戻る場面)
-DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|決まって(い)?ない|決めて(い)?ない|思いつかない|ピンと(こ|来)ない")
+# 本人が「分からない」「まだ決めていない」と言った(職種を並べず、掘り下げに戻る場面)。丁寧形(「分かりません」
+# 「思いつきません」)とくだけた形(「わかんない」)も数える。模擬ユーザーは丁寧形で答えることが多い
+DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|(分か|わか)(りません|んない)|決まって(い)?(ない|ません)"
+                       r"|決めて(い)?(ない|ません)|思い(つ|付)(かない|かなく|きません)|浮かば(ない|なく)|浮かびません"
+                       r"|ピンと(こ|来)(ない|ません)")
 # 職種を候補として並べる文(提案・比較の言い方)。経歴を受け止める平叙文(「カフェと事務のご経験があるんですね。」)は数えない
 SUGGESTING = re.compile(r"向いて|合いそう|近そう|おすすめ|候補|考えられ|いかが|どれ|どちら")
 
@@ -844,8 +852,6 @@ def offers_jobs(r: dict) -> bool:
 
 # 相談に入ってから、何問目までに求人を見るかを聞くか(playbook の「相談の問いは4問まで」。求人を見るかの問いも数える)
 CONSULT_QUESTIONS_MAX = 4
-# 履歴書・音声の提案の選択肢「文字で話す」。答えではないので、その後に経験を聞き直す1問は数えない
-TEXT_INSTEAD = re.compile(r"文字で話す[。.]?")
 # 相談を本人が切り上げた発言(ここで数えるのをやめる)。CONSULT_CUTOFF の「やめ」は「本業はやめない」にも当たるので使わない
 CONSULT_STOP = re.compile(r"今はいい|送らないで|また今度")
 # 答えに詰まった発言(「分からない」「特にない」「思いつかない」、中身の無い「それ以外」)。2回続いたら掘り下げをやめる
@@ -866,7 +872,7 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
     """相談に入ってから、求人を見るかを聞く(または探す)までに聞いた問いを数える。
     入口は、T1 の後で最初に、本人の発言に相談の合図(CONSULT_SIGN)があった・playbook を読んだ・入口の1文(CONSULT_OPENING)を
     伝えたターン。求人を見るかを聞いた直後の「もう少し相談したい」は入口に数えない(本人が続けたいと言えば続けてよい)。
-    数えるのは問いのある返信(1ターン1問)。「文字で話す」の後に経験を聞き直すターンは数えない。本人が切り上げたら
+    数えるのは問いのある返信(1ターン1問)。本人が切り上げたら
     (今はいい・お礼・「求人を見せて」)、そこで数えるのをやめる。
     返り値: start は入口のターン、asked は求人を見るかの問いより前の問いのターン、offer は求人を見るかを聞いた・探したターン
     (どれも1始まり)、offer_at はそれが相談の何問目か(聞いていなければ None)。相談に入っていなければ None。"""
@@ -886,7 +892,7 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
         if offers_jobs(turns[k]):
             offer = k
             break
-        if _questions(turns[k]["bubbles"]) and not TEXT_INSTEAD.fullmatch(m.strip()):
+        if _questions(turns[k]["bubbles"]):
             asked.append(k)
     return {"start": start + 1, "asked": [k + 1 for k in asked], "offer": None if offer is None else offer + 1,
             "offer_at": None if offer is None else len(asked) + 1}
@@ -912,6 +918,34 @@ def consult_length_violations(turns: list[dict], user_msgs: list[str | None]) ->
         if _questions(r["bubbles"]) and not (offers_jobs(r) or asks_conditions(r)):
             out.append(f"T{i + 1}: 「分からない」「特にない」が2回続いたのに、掘り下げを続けた(条件の1問か、求人を見るかの問いへ進む)")
             break
+    return out
+
+
+def situation_start_violations(sc: dict, turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """事情を話して探し始めた人(sc["expect_no_consult"]。例: 「本業の後の空いた時間でバイトを探したい」)の判定
+    (利用者の決定、2026-10-26。Prompt の「相談」の入口): 相談に入れず、足りない条件だけを1問にまとめて聞いて、
+    答えを受けたターンで探す。(1) 相談に入った(consult_questions が入口を見つけた)ら違反。(2) 本人の最初の発言から
+    探すまでに2問目を聞いたら違反(2問目のターン)。本人が切り上げたら(今はいい・お礼)、そこで見るのをやめる。
+    アルバイト・パートで探す人のシナリオに付ける(正社員は、探す前に経歴と目的の1問も聞くので2問目の判定が合わない)。"""
+    if not sc.get("expect_no_consult"):
+        return []
+    out = []
+    if (q := consult_questions(turns, user_msgs)) is not None:
+        out.append(f"T{q['start']}: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)")
+    first = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m), None)
+    if first is None:
+        return out
+    asked = []
+    for k in range(first, len(turns)):
+        m = (user_msgs[k] if k < len(user_msgs) else None) or ""
+        if k > first and (CONSULT_STOP.search(m) or thanks_goodbye(m)):
+            break
+        if turns[k]["cards"] or SEARCH_TOOLS & {t["name"] for t in turns[k]["tools"]}:
+            break
+        if _questions(turns[k]["bubbles"]):
+            asked.append(k)
+    if len(asked) > 1:
+        out.append(f"T{asked[1] + 1}: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)")
     return out
 
 
@@ -1536,6 +1570,48 @@ def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | N
     return out
 
 
+# LINE の通数(task 231): 返信を LINE のメッセージにする line_channel.to_messages をオフラインで通して数える。
+# LIFF の設定の代わりに、その会話で使えたもの(features)を渡す。公開 URL は数えるためだけの仮のもの(どこにも送らない)
+LINE_COUNT_BASE = "https://line-count.invalid"
+GREETING_LINE_MAX = 2  # 初回訪問の挨拶は 2 通まで(本文と、問いを見出しにした入口のボタン)
+
+
+def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = (), visit: bool = False) -> list[int]:
+    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。visit: 会話が初回訪問の挨拶で始まった
+    (シナリオの event が visit)。そのときだけ、1 ターン目を挨拶のターンとして数える(問いがボタンの見出しになる)。
+    2 ターン目からは、会話の入口が visit でも挨拶ではない(server._line_turn と同じ決め方)。"""
+    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features), visit_greeting=visit and i == 0))
+            for i, r in enumerate(turns)]
+
+
+def entry_labels(r: dict) -> dict[str, str]:
+    """その返信が出した入口と、LINE のボタンの文言(actions は LIFF_ACTIONS、ゲームは buttons の label)。"""
+    labels = {a: line_channel.LIFF_ACTIONS[a][0] for a in ENTRY_ACTIONS if a in (r.get("actions") or [])}
+    for b in r.get("buttons") or []:
+        url = str(b.get("url", ""))
+        if url.startswith(ARCADE_PATH) and not url.startswith(ARCADE_DRAFT_PATH):
+            labels.setdefault("arcade", str(b.get("label", "")).strip())
+    return labels
+
+
+def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
+                             features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """LINE の初回訪問の挨拶(docs/design/line-sim-scenarios.md の 12 章): 2 通まで。入口のボタンの文言は、
+    ゲームの文言(line_channel.ARCADE_LABEL)と同じで、本文(吹き出し)に同じ言い方で出ている。"""
+    if channel != "line" or sc.get("event") != "visit" or not turns:
+        return []
+    first, out = turns[0], []
+    if (n := line_message_counts(turns[:1], features, visit=True)[0]) > GREETING_LINE_MAX:
+        out.append(f"T1: 初回訪問の挨拶が LINE で {n} 通({GREETING_LINE_MAX} 通まで)")
+    labels = {e: lb for e, lb in entry_labels(first).items() if e in features}
+    if labels.get("arcade", line_channel.ARCADE_LABEL) != line_channel.ARCADE_LABEL:
+        out.append(f"T1: ゲームのボタンの文言が「{labels['arcade']}」(「{line_channel.ARCADE_LABEL}」)")
+    body = "".join(first["bubbles"])
+    if missing := [lb for lb in labels.values() if lb not in body]:
+        out.append(f"T1: 入口のボタンの名前が本文に無い(言い方がずれている): {missing}")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
@@ -1575,6 +1651,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     violations += greeting_entry_violations(sc, turns, channel, features)
     violations += greeting_wording_violations(sc, turns, tracks[0] if tracks else DEFAULT_TRACK)
     violations += draft_number_violations(sc, turns, user_msgs, channel, features)
+    violations += line_greeting_violations(sc, turns, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1590,6 +1667,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
     violations += consult_length_violations(turns, user_msgs)
+    violations += situation_start_violations(sc, turns, user_msgs)
     violations += thanks_close_violations(turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
@@ -1624,6 +1702,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
         "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
+        # 各ターンの返信が LINE で何通になるか(LINE の窓口の会話だけ。Web は None)
+        "line_messages": line_message_counts(turns, features, sc.get("event") == "visit") if channel == "line" else None,
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,

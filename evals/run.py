@@ -52,7 +52,7 @@ sys.path.insert(0, str(HERE.parent / "evalkit"))
 from aggregate import summary_md  # isort: skip
 
 from evals import budget
-from line_runtime import config, llm
+from line_runtime import config, line_channel, llm
 
 # 模擬ユーザーとジャッジは安いモデル。OpenAI の料金表(https://developers.openai.com/api/docs/pricing、2026-09-29 確認)
 # で gpt-6-luna は入力 $0.10 / 出力 $0.50(1M トークン)で、本番の gpt-6-sol($2.00 / $10.00)の 1/20。
@@ -73,10 +73,13 @@ SIM_SYSTEM = """あなたは LINE で仕事探し(アルバイト・パートか
 {persona}"""
 
 
-ACTION_LABEL = {"resume_upload": "ファイルを選ぶ(履歴書)", "voice_consult": "話して伝える(音声・約5分)"}
+# 模擬ユーザーとジャッジに見せる操作ボタンの文言。Web はトーク画面の文言(talk-core.js の絵文字を除く)、
+# LINE は LINE のボタンの文言(line_channel.LIFF_ACTIONS。挨拶の本文と同じ言い方)
+ACTION_LABEL = {"web": {"resume_upload": "ファイルを選ぶ(履歴書)", "voice_consult": "話して伝える(音声・約5分)"},
+                "line": {a: label for a, (label, _) in line_channel.LIFF_ACTIONS.items()}}
 
 
-def _format_agent(r: dict) -> str:
+def _format_agent(r: dict, channel: str = "web") -> str:
     parts = list(r["bubbles"])
     for c in r["cards"]:
         parts.append(f"[求人カード] {c['title']} / {c.get('employment_type', '')} / {c['pay_text']} / {c['shift']} / "
@@ -84,7 +87,7 @@ def _format_agent(r: dict) -> str:
     for b in r["buttons"]:
         parts.append(f"[ボタン] {b['label']}")
     for a in r.get("actions", []):
-        parts.append(f"[操作] {ACTION_LABEL.get(a, a)}")
+        parts.append(f"[操作] {ACTION_LABEL[channel].get(a, a)}")
     if r["quick_replies"]:
         parts.append("[選択肢] " + " / ".join(r["quick_replies"]))
     return "\n".join(parts)
@@ -170,7 +173,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
         seconds.append(time.perf_counter() - t0)
         marks.append((k, meter.mark()))  # このターンのエージェント側の呼び出し(模擬ユーザーはこの後に呼ぶ)
         turns.append(r)
-        transcript.append({"who": "agent", "text": _format_agent(r)})
+        transcript.append({"who": "agent", "text": _format_agent(r, channel)})
 
     user_msgs.append(None)  # 1通目は AI 側から(本人の発言なし)
     await agent_turn(sc["event"], None, push_facts)
@@ -222,7 +225,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
               "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
-              "consult_offer_at": "down",
+              "consult_offer_at": "down", "greeting_line_messages": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -251,6 +254,9 @@ def to_run(r: dict, rep: int) -> dict:
                 "cut_at_cap": r.get("cut_at_cap"), "sim_leaks": len(r.get("sim_leaks", [])),
                 # 相談で求人を見るかを聞いたのが何問目か(相談に入らなかった・聞かなかった回は None。4 以下が決まり)
                 "consult_offer_at": (r.get("consult_questions") or {}).get("offer_at"),
+                # 初回訪問の挨拶が LINE で何通か(LINE の初回訪問だけ。ほかは None)
+                "greeting_line_messages": r["line_messages"][0] if r.get("line_messages")
+                and (r.get("turn_log") or [{}])[0].get("entry") == "visit" else None,
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}
