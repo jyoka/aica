@@ -18,6 +18,7 @@ from evals.checks import conversation_checks, escape_only, turn_violations
 from evals.run import recheck
 
 BASELINE_221 = ROOT / "evals" / "baseline" / "sim-20261025-230120.json"
+BASELINE_H = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
 COMMON_CHAT = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
 ONLY = "質問の選択肢が逃げ道だけ"
@@ -44,6 +45,14 @@ def kinds(r: dict) -> list[str]:
     ["特にない", "それ以外", "今はいい"],
     ["まだ決めていない", "それ以外", "今はいい"],
     ["今はいい"],  # 「それ以外」を消しただけでも、答えの候補が無い
+    # 「それ以外」を禁じた後にモデルが流れやすい言い換え(「まだ」「特に」と語尾の揺れ)
+    ["まだ分からない", "今はいい"],
+    ["特に決めていない", "今はいい"],
+    ["わかりません", "今はいい"],
+    ["特にありません", "今はいい"],
+    # H の基準(sim-20261004-113109)の T-career-fulltime T6 と T-blank-parent T5
+    ["特に決めていない", "それ以外", "今はいい"],
+    ["まだ分からない", "それ以外", "今はいい"],
 ])
 def test_escape_only_options_are_caught(quick):
     r = t(["今回、バイトを探そうと思ったきっかけは何ですか?"], quick)
@@ -77,6 +86,9 @@ def test_extra_escapes_besides_ima_wa_ii_are_caught():
     """逃げ道は「今はいい」1つ。候補と並んでいても、「それ以外」「特にない」「思いつかない」は付けない。"""
     assert kinds(t(["どのエリアで探しますか?"], ["新宿", "渋谷", "それ以外", "今はいい"])) == [EXTRA]
     assert kinds(t(["避けたいことはありますか?"], ["立ち仕事", "特にない", "今はいい"])) == [EXTRA]
+    # 言い換えも数える
+    assert kinds(t(["避けたいことはありますか?"], ["立ち仕事", "特にありません", "今はいい"])) == [EXTRA]
+    assert kinds(t(["気になる職種はありますか?"], ["接客", "事務", "思いつきません", "今はいい"])) == [EXTRA]
     # #221 の T-side-job T3: 「今はいい」が無く、「それ以外」がある
     assert kinds(t(["夜からですね。どのエリアで探しますか？"], ["新宿", "渋谷", "都内ならどこでも", "それ以外"])) == [
         EXTRA, NO_ESCAPE]
@@ -116,6 +128,17 @@ def test_221_conversations_have_28_escape_only_turns_out_of_87():
     # 「文字で話す」は別の違反で数える(#221 の直す所 11)
     assert any(TEXT in v for v in checked["C-consult-propose"]["violations"])
     assert any(TEXT in v for v in checked["T-switch-to-fulltime"]["violations"])
+
+
+def test_h_baseline_counts_rephrased_non_answers_as_escape_only():
+    """H の基準では「特に決めていない / それ以外 / 今はいい」「まだ分からない / それ以外 / 今はいい」も逃げ道だけに数え、
+    92 ターン中 25 ターンになる(言い換えを取りこぼすと 23 ターン)。"""
+    runs = [r for r in json.loads(BASELINE_H.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"]
+    checked = {r["case"]: recheck(r["detail"]) for r in runs}
+    assert sum(c["turns"] for c in checked.values()) == 92
+    assert sum(len(c["escape_only_turns"]) for c in checked.values()) == 25
+    assert 6 in checked["T-career-fulltime"]["escape_only_turns"]
+    assert 5 in checked["T-blank-parent"]["escape_only_turns"]
 
 
 # ----------------------------- Prompt と playbook の決まり -----------------------------
