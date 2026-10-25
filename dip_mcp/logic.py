@@ -40,7 +40,7 @@ from dip_mcp.data import (
     parse_ts,
     pay_text,
 )
-from resume_draft.pii import fold_pii, has_pii, redact_pii, scrub_pii
+from resume_draft.pii import personal_value, redact_personal, scrub_pii
 from resume_draft.schema import (
     DEFAULT_DOCUMENT_KIND,
     DOCUMENT_KINDS,
@@ -722,9 +722,10 @@ def application_status(state: State, line_user_id: str, job_id: str | None = Non
 
 def resume_form(state: State, line_user_id: str, job_id: str, answers: dict[str, str]) -> dict:
     """トークで受け取れる項目(個人情報以外)だけを反映し、残りは LIFF 画面の URL を返す。
-    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレスが含まれていれば受け取らない。
+    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレス・住所らしい所が含まれていれば受け取らない
+    (resume_draft/pii.py の personal_value。希望の保存・まとめと同じ決まり)。受け取らない項目は「入力済み」にしない。
     反映は、答えた項目名を元データに form_fill のイベントで書く(値は持たない。シミュレーションなので値を使う先が無い)。"""
-    rejected = [k for k, v in answers.items() if k in PII_FIELDS or has_pii(str(v))]
+    rejected = [k for k, v in answers.items() if k in PII_FIELDS or personal_value(str(v))]
     e = behavior.view(state, line_user_id)["form_exit"]
     if not e or e["job_id"] != job_id:
         return {"error": f"{job_id} の入力途中の応募フォームはありません"}
@@ -797,43 +798,12 @@ FULLTIME_PREFERENCE_KEYS = ("min_annual_salary", "work_style", "start_timing")
 PREFERENCE_VALUE_MAX = 100  # 本人の言葉のまま短い文で。長い値は要約・会話ログの貼り付けになりがちなので保存しない
 
 
-# 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
-# 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
-# 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える
-ADDRESS_LIKE = re.compile(
-    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
-    r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
-    r"|丁目|番地"
-)
-_WORD_SEP = set("、。,.!?！？「」()（）")
-
-
-def address_spans(text: str) -> list[tuple[int, int]]:
-    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所を含む、区切り(空白・句読点・括弧)までの語
-    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
-    時間がかかるので、当たった所から区切りまで広げる。"""
-    def sep(ch: str) -> bool:
-        return ch.isspace() or ch in _WORD_SEP
-
-    spans: list[tuple[int, int]] = []
-    for m in ADDRESS_LIKE.finditer(text):
-        start, end = m.span()
-        if spans and start < spans[-1][1]:  # 前の語に含まれている
-            continue
-        while start > 0 and not sep(text[start - 1]):
-            start -= 1
-        while end < len(text) and not sep(text[end]):
-            end += 1
-        spans.append((start, end))
-    return spans
-
-
 def _preference_error(key: str, value) -> str | None:
     """保存しない理由(保存してよければ None)。個人情報らしい値の防御は全項目に効かせる。"""
     if key not in PREFERENCE_KEYS:
         return "unknown_key"
     v = str(value)
-    if has_pii(v) or ADDRESS_LIKE.search(fold_pii(v)):
+    if personal_value(v):
         return "personal_info"
     if len(v.strip()) > PREFERENCE_VALUE_MAX:
         return "too_long"
@@ -890,10 +860,11 @@ def track_history(user: dict) -> list[dict]:
 
 def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False) -> dict:
     """雇用区分を切り替えて履歴に残す。evidence は根拠になった本人の発言そのまま。
+    根拠の電話番号・メールアドレス・住所らしい所は伏せる(redact_personal)。
     undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
-    evidence = redact_pii(str(evidence or "").strip())[:EVIDENCE_MAX]
+    evidence = redact_personal(str(evidence or "").strip())[:EVIDENCE_MAX]
     if not evidence:
         return {"error": "evidence に、切り替えの根拠になった本人の発言をそのまま入れてください"
                          "(履歴書の内容や推測だけでは切り替えない)。"}
@@ -1130,11 +1101,11 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
                          "もう一度呼んでください(本人の発言に基づく事実と、次に確かめることだけ)。何も記録していません。"}
     # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、区切りまでの語ごと消す)。
     # 氏名はコードでは見分けられないので消せない: ツールの説明で書かないよう指示し(dip_mcp/server.py)、評価で見る
-    reason = redact_pii(reason, extra=address_spans)
+    reason = redact_personal(reason)
     rec = {"at": now(line_user_id).isoformat(), "outcome": outcome, "reason": reason,
            "confidence": max(0.0, min(1.0, confidence))}
     if summary:
-        rec["summary"] = redact_pii(summary, extra=address_spans)
+        rec["summary"] = redact_personal(summary)
     state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
     return {"recorded": rec}
 
