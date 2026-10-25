@@ -1119,6 +1119,73 @@ def conversation_end(n_turns: int, cap: int, ended_by_user: bool) -> dict:
     return {"turn_cap": cap, "ended_by": "turn_cap" if cut else "user", "cut_at_cap": cut}
 
 
+# ----------------------------- 下書きの空欄の数字(下書きに書き込むのは本人。会話の改善 C (7/10)) -----------------------------
+
+DRAFT_LABEL = "下書きを見る"
+# 下書きの空欄の数字を聞く返信: 空欄か下書きに触れ、数を尋ねる語か数字(「2日で合っていますか?」の確認形)がある
+BLANK_TOPIC = re.compile(r"空欄|下書き")
+NUMBER_QUESTION = re.compile(r"何[日件人回割個社名台倍年円時%％]|何か月|何ヶ月|何パーセント|どのくらい|どれくらい|どれぐらい"
+                             r"|いくつ|[0-9０-９]")
+DIGIT = re.compile(r"[0-9０-９]")
+# 本人が数字を答えた: 数字を書いた(「十分」は数に数えない)。数字を示して確かめた問いには「はい」も答え
+NUMBER_ANSWER = re.compile(r"[0-9０-９]|[一二三四五六七八九十百千]+[日件人回割個社名台倍年円%％]")
+AFFIRM = re.compile(r"^(はい|そう|合って|その(とおり|通り))")
+
+
+def draft_buttons(r: dict) -> bool:
+    """その返信に「下書きを見る」(下書きの画面 /liff/arcade/draft を開くボタン)があるか。"""
+    return any(str(b.get("url", "")).startswith(ARCADE_DRAFT_PATH) for b in r.get("buttons") or [])
+
+
+def _blank_question(r: dict, said: str | None) -> bool:
+    """下書きの空欄の数字を聞く返信か(問いがあり、数を尋ねるか数字を示す。吹き出し全体で見る)。空欄か下書きに触れた返信か、
+    本人が空欄に触れた発言(said。「空欄を埋める」)への返信だけを数える(「週に何日働きたいですか?」は空欄の問いではない)。"""
+    text = "\n".join(r["bubbles"])
+    return bool(_questions(r["bubbles"]) and NUMBER_QUESTION.search(text)
+                and (BLANK_TOPIC.search(text) or BLANKS_REPLY.search(said or "")))
+
+
+def _answered_number(r: dict, m: str | None) -> bool:
+    """本人の発言 m が、返信 r の空欄の問いへの数字の答えか(「分からない」は答えではない)。"""
+    if not m or DONT_KNOW.search(m):
+        return False
+    m = m.strip()
+    return bool(NUMBER_ANSWER.search(m) or (AFFIRM.search(m) and DIGIT.search("\n".join(r["bubbles"]))))
+
+
+def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | None], channel: str = "web",
+                            features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """下書きの空欄の数字(baitoru_assistant.md の「ゲームで書類を作る」)。
+    - 「下書きを見る」は 1 つの会話で 1 回だけ
+    - 空欄の数字を聞いて本人が答えたら(数字か、数字を示した確認形に「はい」)、その返信に「下書きを見る」がある
+      (本人が画面で数字を入れる)。下書きの画面を開けない窓口(LIFF の無い LINE。features に arcade が無い)では問わない
+    - シナリオの expect_confirm_number(summary の履歴書にある、空欄と同じ行の数字。例「2日」)があれば、白紙で聞かず、
+      その数字を示して確かめる(本人がその数字を言うより前に、空欄の問いの返信にその数字がある。選択肢だけでは数えない)
+    空欄の問いは、本人が「空欄を埋める」を選んでも、エージェントが自分から聞いても(playbook の場面)同じに見る。"""
+    out = []
+    shown = [i for i, r in enumerate(turns) if draft_buttons(r)]
+    if len(shown) > 1:
+        out.append(f"T{shown[1] + 1}: 「{DRAFT_LABEL}」を1つの会話で{len(shown)}回出した(1回だけ)")
+    asked = [i for i, r in enumerate(turns)
+             if i and _blank_question(r, user_msgs[i] if i < len(user_msgs) else None)]  # T1 は挨拶かプッシュ(下書きの続きを勧めるだけ)
+    viewable = channel != "line" or "arcade" in features
+    for i in asked:
+        if i + 1 >= len(turns) or not _answered_number(turns[i], user_msgs[i + 1] if i + 1 < len(user_msgs) else None):
+            continue
+        if viewable and not draft_buttons(turns[i + 1]):
+            out.append(f"T{i + 2}: 空欄の数字を聞いて本人が答えた後に「{DRAFT_LABEL}」が無い(本人が下書きの画面で入れられない)")
+        break
+    started = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m and BLANKS_REPLY.search(m)), None)
+    start = min((x for x in (started, asked[0] if asked else None) if x is not None), default=None)
+    if (want := sc.get("expect_confirm_number")) and start is not None:
+        said = next((k for k in range(start + 1, len(user_msgs)) if user_msgs[k] and want in user_msgs[k]), None)
+        confirmed = next((i for i in asked if want in "\n".join(turns[i]["bubbles"])), None)
+        if confirmed is None or (said is not None and said <= confirmed):
+            at = said if said is not None else start + 1
+            out.append(f"T{at}: 下書きの空欄を白紙で聞いた(summary にある「{want}」を示して確かめていない)")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
@@ -1155,6 +1222,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
             any("求人" in q for q in first["quick_replies"]) and any("相談" in q for q in first["quick_replies"])):
         violations.append(f"T1: 初回訪問の挨拶の選択肢に「求人を探す」「まず相談する」が無い: {first['quick_replies']}")
     violations += greeting_entry_violations(sc, turns, channel, features)
+    violations += draft_number_violations(sc, turns, user_msgs, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1198,6 +1266,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
+        "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,

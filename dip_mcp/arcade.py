@@ -251,9 +251,17 @@ def game_url(line_user_id: str, game: str | None = None) -> str | None:
     return liff_url(f"{HUB_PATH}/{game}" if game else HUB_PATH, line_user_id)
 
 
+def view_url(line_user_id: str, draft_id: int) -> str | None:
+    """エージェントがボタン(「下書きを見る」)にする、下書きの画面の URL。窓口の決まりはゲームの URL と同じ(game_url):
+    LINE のユーザーには、LIFF の設定があるときだけ返す(LINE では LIFF URL のボタンになる)。無ければ None。"""
+    if is_line_user(line_user_id) and not liff_configured():
+        return None
+    return draft_url(line_user_id, draft_id)
+
+
 def summary(user: dict) -> dict | None:
-    """要約に載せる、最新の下書きの要点(書類の種類、作った日、職務要約、行の数、空欄のある行を 5 行まで)。
-    空欄の無い行の全文は載せない。無ければ None。"""
+    """要約に載せる、最新の下書きの要点(書類の種類、作った日、職務要約、行の数、空欄のある行を 5 行まで)と、
+    下書きの画面の URL(view_url。開けない窓口では載せない)。空欄の無い行の全文は載せない。無ければ None。"""
     recs = sorted((user.get("arcade_drafts") or {}).values(), key=lambda r: r["id"])
     if not recs:
         return None
@@ -265,4 +273,5 @@ def summary(user: dict) -> dict | None:
 
     return {"document_kind": r["document_kind"], "game": GAME_NAMES.get(r.get("game"), r.get("game")),
             "saved": _md(r["at"]), "job_summary": res["job_summary"], "self_pr": res["self_pr"],
-            "lines": len(lines), "blank_lines": blank[:BLANK_LINES_IN_SUMMARY], "blanks": blanks(r)}
+            "lines": len(lines), "blank_lines": blank[:BLANK_LINES_IN_SUMMARY], "blanks": blanks(r)} | (
+        {"view_url": url} if (url := view_url(user.get("line_user_id", ""), r["id"])) else {})
