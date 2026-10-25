@@ -113,12 +113,18 @@
                       display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
   nav.bottom button .i { font-size: 18px; line-height: 1; }
   nav.bottom button.on { color: var(--ok-dark); }
+
+  /* ---------- ヘッダーの下の 1 行: テスト用の公開・架空の求人と、規約とポリシー(docs/legal/。task 207) ---------- */
+  .legal-bar { margin: 0; background: #fff7e6; color: var(--sub); font-size: 11px; line-height: 1.5; padding: 4px 12px; }
+  .legal-bar a { color: var(--chip); white-space: nowrap; }
 </style>
 <link rel="stylesheet" href="/static/talk-core.css">
 </head>
 <body>
 <div class="app">
   <header><span class="name">バイトル</span><span class="track" id="track" hidden></span></header>
+  <p class="legal-bar" id="legal-bar">テスト用の公開です。求人は架空のデモで、応募しても実際の応募にはなりません。
+    <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a> · <a href="/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a></p>
   <main>
     <section class="view" id="v-talk">
       <div id="log"></div>
