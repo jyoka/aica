@@ -34,7 +34,7 @@ LINE の共通ルール:
 - job_ids: 求人カード(Flex)として表示する求人ID(0〜3件)。このターンまでに事業者のツールが返した求人のものだけ。
 - buttons: 画面を開くボタン(事業者のツールが返した URL だけ)。
 - actions: トークの操作を差し出すボタン(0〜2個)。resume_upload = 履歴書・職務経歴書のファイルを選ぶ、
-  voice_consult = 音声相談を始める。事業者のシナリオが案内する場面でだけ付ける。quick_replies(押すと本人の発言として
+  voice_consult = 音声相談を始める。事業者のシナリオが案内する場面で、下の「窓口」で使えるときだけ付ける。quick_replies(押すと本人の発言として
   送られる選択肢)とは別で、押しても発言は送られない。
 """
 
@@ -56,6 +56,36 @@ class LineReply(BaseModel):
 class LineState(AgentState):
     entry: NotRequired[str]
     line_user_id: NotRequired[str]
+    channel: NotRequired[str]  # 今の窓口(CHANNELS)。無ければ web
+    channel_features: NotRequired[list[str]]  # LINE のトークから LIFF 画面で使えるもの(line_channel.liff_features)
+
+
+# 今の窓口。web = Web のトーク画面(LINE 風の画面)、line = LINE 公式アカウントのトーク
+CHANNELS = ("web", "line")
+WEB_NOTE = "Web のトーク画面(LINE 風の画面)。actions の resume_upload と voice_consult は、トークの中のボタンになり、この画面で使える。"
+WEB_NO_VOICE_NOTE = ("Web のトーク画面(LINE 風の画面)。actions の resume_upload は、トークの中のボタンになり、この画面で使える。"
+                     "音声相談は、この画面ではまだ使えない(準備ができていない)。勧めず、voice_consult も付けない。")
+LINE_NOTE = ("LINE のトーク。このトークには文の発言だけが届く(ファイル・写真・音声は届かない)。"
+             "ファイルや写真をこのトークに送るようには言わない。")
+# LINE で使えるもの → 使えるときの案内 / 使えないときの案内
+LINE_FEATURES = {
+    "resume_upload": ("resume_upload を付けると、履歴書・職務経歴書のファイルを読み込む LINE の画面(LIFF)を開くボタンになる。",
+                      "履歴書・職務経歴書のファイルの読み込みは、LINE では使えない。勧めず、resume_upload も付けない。経歴は文で聞く。"),
+    "voice_consult": ("voice_consult を付けると、音声相談の LINE の画面(LIFF)を開くボタンになる。",
+                      "音声相談は、LINE では使えない。勧めず、voice_consult も付けない。"),
+    "arcade": (("summary の arcade_url(レジュメ・アーケード)は、LINE の画面(LIFF)で開くボタンになる。ゲームの AI と下書きの保存も"
+                "この本人として使え、保存するとこのトークに知らせが届く。"),
+               "レジュメ・アーケード(/liff/arcade)は、LINE では開けない。勧めず、ボタンも付けない。"),
+}
+
+
+def channel_note(channel: str | None, features: list[str] | tuple[str, ...] = ()) -> str:
+    """システムプロンプトに付ける、今の窓口と、そこで使えるもの・使えないもの。
+    Web の features は、空なら全部使える(評価と開発者画面の既定)。本番のトーク画面は line_channel.web_features を渡し、
+    音声相談の設定(LiveKit)が無ければ音声相談を勧めない(押すと 503 になるため)。"""
+    if channel != "line":
+        return WEB_NO_VOICE_NOTE if features and "voice_consult" not in features else WEB_NOTE
+    return "\n- ".join([LINE_NOTE, *(on if k in features else off for k, (on, off) in LINE_FEATURES.items())])
 
 
 # ツールの line_user_id に入れる値。本当のユーザーIDは LLM に渡さず、PinUserMiddleware がこの会話のユーザーに置き換える
@@ -65,9 +95,10 @@ USER_NOTE = (f"# このユーザー\nツールの line_user_id には「{PINNED_
 
 
 class ScenarioMiddleware(AgentMiddleware):
-    """会話の入口に応じた dip のシナリオ(MCP の Prompt)を、システムプロンプトに付ける。
+    """会話の入口に応じた dip のシナリオ(MCP の Prompt)と、今の窓口(Web / LINE)をシステムプロンプトに付ける。
     ユーザーIDは載せない(USER_NOTE: ツールの line_user_id は PinUserMiddleware が固定するので、LLM が知る必要がない)。
-    どれも会話の途中で変わらず、ユーザーごとにも変わらないので、プロンプトキャッシュを壊さない。"""
+    どれも会話の途中で変わらず、ユーザーごとにも変わらないので、プロンプトキャッシュを壊さない(窓口はシナリオの後に置き、
+    シナリオまではどの窓口の会話でも同じにする)。"""
 
     state_schema = LineState
 
@@ -77,8 +108,9 @@ class ScenarioMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         entry = request.state.get("entry", "A")
+        note = channel_note(request.state.get("channel"), request.state.get("channel_features") or ())
         text = (f"{PLATFORM_PROMPT}\n# 事業者(dip)の対話シナリオ\n{self.scenarios.get(entry, self.scenarios['A'])}\n"
-                + USER_NOTE)
+                f"# 窓口\n{note}\n" + USER_NOTE)
         return await handler(request.override(system_message=SystemMessage(text)))
 
 
@@ -136,9 +168,12 @@ class TurnCallLimitMiddleware(AgentMiddleware):
 
 def build_model(model: str | None = None, effort: str | None = None) -> BaseChatModel:
     if config.PROVIDER == "openai":
-        # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動
+        # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動。
+        # OpenAI に応答を残さない(store=False。docs/design/privacy.md の 3.2)。前の応答の ID は使わず、毎回会話の全文を送る。
+        # 残さない応答の reasoning は ID で参照できないので、暗号化した中身を受け取り、次の呼び出しでそのまま送り返す
         return ChatOpenAI(model=model or config.MODEL, max_tokens=16000, use_responses_api=True,
-                          reasoning={"effort": effort or config.EFFORT})
+                          reasoning={"effort": effort or config.EFFORT},
+                          store=False, include=["reasoning.encrypted_content"])
     return ChatAnthropic(model=model or config.MODEL, max_tokens=16000, thinking={"type": "adaptive"},
                          output_config={"effort": effort or config.EFFORT})
 

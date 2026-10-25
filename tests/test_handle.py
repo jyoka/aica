@@ -31,9 +31,9 @@ def call(name: str, args: dict, id_: str = "t1") -> AIMessage:
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": id_, "type": "tool_call"}])
 
 
-def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actions=()) -> AIMessage:
+def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actions=(), buttons=()) -> AIMessage:
     return AIMessage(content=json.dumps({"bubbles": bubbles, "quick_replies": list(quick_replies),
-                                         "job_ids": list(job_ids), "buttons": [], "actions": list(actions)},
+                                         "job_ids": list(job_ids), "buttons": list(buttons), "actions": list(actions)},
                                         ensure_ascii=False))
 
 
@@ -174,7 +174,7 @@ def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tm
         """ツールの実行が始まった直後に落ちるランタイム(タイムアウト・MCP 断の代わり)。"""
 
         async def handle_stream(self, user_id, event, text=None, facts=None, talk_thread=None, notice=None,
-                                new_conversation=False):
+                                new_conversation=False, channel="web", features=()):
             yield {"kind": "llm", "ms": 1, "tool_calls": ["recommend_jobs"]}
             yield {"kind": "tool_start", "calls": [{"name": "recommend_jobs", "args": {"area": "渋谷"}}]}
             raise RuntimeError("MCP が落ちた")

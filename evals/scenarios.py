@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dip_mcp import logic
+from dip_mcp import arcade, logic
 from dip_mcp.data import State
 
 HERE = Path(__file__).resolve().parent
@@ -34,6 +34,19 @@ def load_resume(name: str) -> dict:
     return json.loads((PERSONAS / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def load_arcade_draft(name: str) -> dict:
+    """ペルソナの架空の、ゲームで作った下書き({game, document_kind, markdown})。"""
+    return json.loads((PERSONAS / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def seed_arcade_draft(state: State, user: str, d: dict) -> dict:
+    """前にゲームで下書きを保存したことにする(本番の保存と同じく、遊びを始めてから dip_mcp.arcade.save_draft で)。"""
+    from resume_arcade.draft import to_envelope
+
+    play = arcade.start_play(state, user, d["game"], ai=False)
+    return arcade.save_draft(state, user, d["game"], play["id"], to_envelope(d["markdown"], d["document_kind"]))
+
+
 def upload_resume(state: State, sc: dict, user: str | None = None) -> dict:
     """会話の途中で本人が履歴書をアップロードしたことにする(sc["upload_resume"])。
     本番の /api/resume/.../upload と同じく dip に保存し、resume_upload のイベントに渡す事実を返す。"""
@@ -49,6 +62,7 @@ def prepare(state: State, sc: dict, user: str | None = None) -> None:
     """そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まる)。
     再訪のシナリオなら前に本人が話した希望(seed_preferences)と雇用区分(seed_track)を入れる。
     seed_resume は、前にアップロード済みの履歴書(会話の前から要約の uploaded_resume にある)。
+    seed_arcade_draft は、前にゲームで保存した書類の下書き(会話の前から要約の arcade_draft にある。load_arcade_draft)。
     user を与えると、シナリオ用ユーザーの初期状態をそのIDに写して始める(ブラウザごとの匿名ユーザー用)。"""
     user = user or sc["user"]
     state.reset_user(user, template=sc["user"])
@@ -58,3 +72,5 @@ def prepare(state: State, sc: dict, user: str | None = None) -> None:
         logic.set_search_track(state, user, sc["seed_track"], SEED_TRACK_EVIDENCE)
     if sc.get("seed_resume"):
         logic.save_resume_upload(state, user, load_resume(sc["seed_resume"]), file=RESUME_FILE)
+    if sc.get("seed_arcade_draft"):
+        seed_arcade_draft(state, user, load_arcade_draft(sc["seed_arcade_draft"]))

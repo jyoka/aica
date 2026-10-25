@@ -35,17 +35,25 @@ _PII_FOLD = str.maketrans(
     | {"（": "(", "）": ")", "＠": "@", "．": ".", "　": " ", "，": ","}
 )
 
-# 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
-# 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
-# 2つ組は地名の字(漢字・カタカナ・ひらがな。「西新宿2-8」「大字みほん1234-5」)の直後で、前が「週」「月」「給」「収」でなく、
-# 後ろに単位(万・円・か月・年・日・時・人など)が続かないものだけを数える。
-# 部屋番号まで続けた形(「1-2-3-405」)と、「2番3号」「4の5の6」の形も数える。
-# 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)。
-# この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)
+# 住所らしい値(番地・丁目・「1-2-3」の形・地名の後ろの数の並び)。氏名はコードでは見分けられないので、Prompt で保存させない。
+# この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)。
+# 住む言葉と同じ文では、伏せ漏れしない側に倒す: 地名の字(漢字・カタカナ・ひらがな。「みほん町552」「大字みほん1234」
+# 「あおば町12の3」「西新宿2-8」)の直後の数の並び(1〜4桁の数を「-」「の」「番」「番地」「号」「丁目」でつないだもの。数が 1 つでも)を数える。
+# 外すのは、前が「週」「月」「給」「収」(「週3」「時給1200」「年収400」)か、最後の数のすぐ後ろが単位(万・円・か月・年・日・時・人・代・駅など。
+# 「5-10人」「3-6か月」「20代」「2駅」「8h」)か、桁の区切り・時刻・幅の続き(「1,200円」「18:00」「4〜5時間」)のときだけ。
+# 地名と数の間の空白 1 つ(「みほん町 552」)も越える。並びは 6 つの数まで(長い入力で照合し直す量を抑える)。
+# 漢数字は「二番八号」の形と、「丁目」「番地」で数える(「一番近い」「三鷹」は数えない)。
+# 3つ組(部屋番号まで続けた「1-2-3-405」も)は地名の後ろでなくても数える。日付(「2026-09-30」)は先頭が4桁なので数えない。
+# 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)
+_KANJI_NUM = "〇一二三四五六七八九十百千"
+_NOT_LOT = "万千円かカヵヶケ年月日時分秒歳才%％人名件回個本社店倍点週枚代駅つ位度kｋキhHｈ"  # 数のすぐ後ろにあれば番地ではない単位
+_PLACE_CHARS = "一-鿿々ヶァ-ヺぁ-ゖ"  # 地名の字(漢字・カタカナ・ひらがな)
 ADDRESS_LIKE = re.compile(
     r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?:[-－]\d{1,4})?(?![\d-])"
-    r"|\d{1,4}番\d{1,4}号"
-    r"|(?<=[一-鿿々ヶァ-ヺぁ-ゖ])(?<![週月給収])\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分秒歳才%％人名件回個本社店倍点週枚])"
+    rf"|(?:\d{{1,4}}|[{_KANJI_NUM}]{{1,4}})番(?:\d{{1,4}}|[{_KANJI_NUM}]{{1,4}})号"
+    rf"|(?:(?<=[{_PLACE_CHARS}])(?<![週月給収])|(?<=[{_PLACE_CHARS}]\s)(?<![週月給収]\s))"
+    rf"\d{{1,4}}(?:(?:[-－]|の|番地?の?|号の?|丁目)\d{{1,4}}){{0,5}}+(?:番地?|号)?+"
+    rf"(?![\d{_NOT_LOT}]|[,，:：~〜～]\d)"
     r"|(?<![\d])\d{1,4}の\d{1,4}の\d{1,4}(?!\d)"
     r"|丁目|番地"
 )
@@ -146,10 +154,14 @@ def address_spans(text: str) -> list[tuple[int, int]]:
     for m in matches:
         start, end = m.span()
         if spans and start < spans[-1][1]:  # 前の住所に含まれている
+            if end > spans[-1][1]:  # はみ出す(「4丁目2の8」の「2の8」): 前の住所の終わりを延ばす
+                spans[-1] = (spans[-1][0], _address_end(text, end))
             continue
         i = bisect_right(lives, start)
         word = lives[i - 1] if i else -1
         floor = max(spans[-1][1] if spans else 0, word, 0)
+        if start - 1 > floor and text[start - 1].isspace() and _is_name_char(text[start - 2]):
+            start -= 1  # 地名と番地の間の空白(「大字みほん 1234」)。地名もさかのぼる
         spans.append((_address_start(text, start, floor, word), _address_end(text, end)))
     return spans
 
@@ -173,8 +185,9 @@ def _address_start(text: str, start: int, floor: int, word: int = -1) -> int:
             between = start - run <= 2 and _is_kanji(before) and _is_kanji(text[start])
             goes_on = before in _PLACE_SUFFIX or between or (before.isspace() and text[run - 2:run - 1] in _PLACE_SUFFIX)
             after_word = run == word and word > 0 and (text[word - 1] in "はがもの:：" or text[word - 1].isspace())
-            name = text[start] in _PLACE_SUFFIX or (
-                (_is_kanji(text[start]) or text[start].isdigit()) and (ch not in _PARTICLE_START or after_word))
+            head = text[start + 1] if text[start].isspace() else text[start]  # 空白の後ろの番地(「みほん 1234」)
+            name = head in _PLACE_SUFFIX or (
+                (_is_kanji(head) or head.isdigit()) and (ch not in _PARTICLE_START or after_word))
             if not (goes_on or name):
                 break  # 地名の一部ではない(「を新宿三丁目」の「を」)
             start = run
@@ -228,6 +241,11 @@ def _is_hiragana(ch: str) -> bool:
 
 def _is_kanji(ch: str) -> bool:
     return ch != "" and ("一" <= ch <= "鿿" or ch in "々ヶ")  # 文の始まりの前("")は漢字ではない
+
+
+def _is_name_char(ch: str) -> bool:
+    """地名の字(ADDRESS_LIKE の _PLACE_CHARS と同じ。漢字、カタカナ、ひらがな)。"""
+    return _is_kanji(ch) or _is_hiragana(ch) or "ァ" <= ch <= "ヺ"
 
 
 def _is_place_char(ch: str) -> bool:

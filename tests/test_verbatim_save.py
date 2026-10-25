@@ -39,13 +39,14 @@ SAID = [None,
         "少し収入を増やしたいのと、本業とは違う人と話す仕事をしてみたいからです。",
         "一日中数字を見ているので、気分を変えたいです。",
         "平日は19時以降か、土日なら働けます。深夜は避けたいです。",
-        "新宿あたりで探したいです。"]
+        "求人を見る"]
 TIMES = SAID[4]
 # H の保存(T-side-job T5): days_per_week が言い換えで、平日の「19時以降」が落ちている
 H_SAVE = {"time_band": "平日は19時以降", "days_per_week": "平日か土日なら働けます", "avoids": "深夜は避けたいです"}
 # 直した決まりの保存: 分けても、どの値も発言から切り出した本人の言葉
 SAVE = {"time_band": "平日は19時以降", "days_per_week": "土日なら働けます", "avoids": "深夜は避けたいです"}
-SC = {"expect_offer_by": 8, "consult_mode": True, "expect_saved_preferences": ["purpose", "time_band", "area"]}
+# エリアは「求人を見る」の後に聞く(台本はその問いで終わる)ので、保存の期待に入れない
+SC = {"expect_offer_by": 5, "consult_mode": True, "expect_saved_preferences": ["purpose", "time_band"]}
 
 
 def save(prefs: dict):
@@ -53,25 +54,23 @@ def save(prefs: dict):
 
 
 def script(times: dict) -> list:
-    """T-side-job の H の会話と同じ問いの順(目的 → 掘り下げ → 時間帯 → エリア → 求人を見るか)。
-    違うのは、時間帯と曜日の答えの保存(times)だけ。"""
+    """T-side-job の H の会話の問い(目的 → 掘り下げ → 時間帯 → エリア → 求人を見るか)を、相談の問いは4問までの決まり
+    (task 225)に合わせて縮めたもの: 目的 → 掘り下げ → 条件をまとめて1問 → 求人を見るか → (「求人を見る」の後に)エリア。
+    本人は条件の問いに時間帯と曜日だけを答える(H の T5 の発言のまま)。違うのは、時間帯と曜日の答えの保存(times)だけ。"""
     return [
         reply(["こんにちは。お仕事探しや応募のご相談ができます。今日は何から始めますか?"], quick_replies=MENU),
         switch_and_read(UID, BAITO, SAID[1]),
-        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら、一緒に整理します。",
-               "本業の後にバイトをしたいのは、どんな理由からですか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["アルバイトで何から始めるか、一緒に整理しましょう。",
+               "本業の後にバイトをしたいのは、どんな理由からですか?"], quick_replies=[]),
         save({"purpose": "少し収入を増やしたい", "wants": "本業とは違う人と話す仕事をしてみたい"}),
         reply(["収入を増やしながら、人と話す仕事もしてみたいのですね。", "そう思ったのは、どんな場面からですか?"],
-              quick_replies=["それ以外", "今はいい"]),
-        reply(["数字を見る仕事から気分を変えたいのですね。", "本業の後、何時ごろから、どの曜日に働けそうですか?"],
-              quick_replies=["夕方から", "夜から", "それ以外", "今はいい"]),
+              quick_replies=[]),
+        reply(["本業の後、何時ごろから、どの曜日に、どのあたりで働けそうですか?"],
+              quick_replies=["夕方から", "夜から", "今はいい"]),
         save(times),
-        reply(["平日は19時以降か土日で、深夜は避けたいのですね。", "どのあたりで探しますか?"],
-              quick_replies=["新宿", "それ以外", "今はいい"]),
-        save({"area": "新宿あたり",
-              "wants": "本業とは違う人と話す仕事をしてみたい。一日中数字を見ているので、気分を変えたい"}),
-        reply(["新宿あたりで、平日は19時以降か土日、人と話せる仕事を探す方向ですね。", "この内容で求人を見ますか?"],
+        reply(["平日は19時以降か土日で、深夜は避けたい、人と話せる仕事を探す方向ですね。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
+        reply(["探す前に、エリアだけ伺います。", "どのあたりで探しますか?"], quick_replies=[]),
     ]
 
 
@@ -136,7 +135,7 @@ def test_split_save_keeps_the_persons_words_and_conditions(tmp_path):
     h = conversation_checks(SC, h_turns, SAID)
     assert h["fabrications"] == [flagged] and h["violations"] == [flagged]
     r = conversation_checks(SC, turns, SAID)
-    assert r["violations"] == [] and r["fabrications"] == [] and r["outcome_as_expected"] and r["offer_turn"] == 6
+    assert r["violations"] == [] and r["fabrications"] == [] and r["outcome_as_expected"] and r["offer_turn"] == 5
     # 直した保存: どの値も発言から切り出した本人の言葉(言い換えが無い)で、平日の「19時以降」と「土日」の両方が残る
     new = stated(tmp_path / "new", UID)
     assert all(new[k] in TIMES for k in SAVE)

@@ -1,0 +1,1106 @@
+{
+  "harness": "line-sim",
+  "config": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "sim_model": "gpt-6-luna",
+    "judge": false,
+    "judge_model": null,
+    "judge_samples": null,
+    "max_turns": 8,
+    "repeat": 1,
+    "channel": "line",
+    "features": [
+      "resume_upload",
+      "arcade"
+    ]
+  },
+  "directions": {
+    "branch_within_3": "up",
+    "outcome_recorded": "up",
+    "outcome_as_expected": "up",
+    "violations": "down",
+    "search_arg_violations": "down",
+    "call_overlaps": "down",
+    "fabrications": "down",
+    "track_ok": "up",
+    "cache_hit_rate": "up",
+    "llm_calls": "down",
+    "latency_p50": "down",
+    "latency_max": "down",
+    "cost_usd": "down",
+    "depth_purpose": "up",
+    "depth_dig": "up",
+    "depth_options": "up",
+    "depth_reasons": "up",
+    "tone": "up",
+    "design_fit": "up"
+  },
+  "runs": [
+    {
+      "case": "F-follow-new",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": false,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 8,
+        "search_arg_violations": 0,
+        "call_overlaps": 0,
+        "action_offers": 1,
+        "latency_p50": 5.6,
+        "latency_max": 7.6,
+        "cost_usd": 0.1243,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.929,
+        "depth_purpose": null,
+        "depth_dig": null,
+        "depth_options": null,
+        "depth_reasons": null,
+        "tone": null,
+        "design_fit": null
+      },
+      "detail": {
+        "id": "F-follow-new",
+        "user": "sim-new",
+        "push_facts": null,
+        "channel": "line",
+        "features": [
+          "resume_upload",
+          "arcade"
+        ],
+        "turns": 8,
+        "branch_turn": 4,
+        "branch_within_3": false,
+        "tracks": [
+          "未定",
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 1,
+            "actions": [
+              "resume_upload"
+            ]
+          }
+        ],
+        "greeting_offers": [
+          "resume_upload",
+          "arcade"
+        ],
+        "outcomes": [
+          "propose",
+          "propose",
+          "consult"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "offer_turn": 4,
+        "violations": [],
+        "fabrications": [],
+        "search_arg_violations": [],
+        "call_overlaps": [],
+        "upload_turn": null,
+        "latency_p50": 5.6,
+        "latency_max": 7.6,
+        "cost_usd": 0.1243,
+        "llm_calls": 16,
+        "cache_hit_rate": 0.929,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "お仕事探しの相談と、求人のご提案をします。履歴書の読み込みや、ゲームでの書類作りもできます。\nどれから始めますか？\n[ボタン] ゲームで書類を作る\n[操作] ファイルを選ぶ(履歴書)\n[選択肢] 求人を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を探す"
+          },
+          {
+            "who": "agent",
+            "text": "正社員のお仕事と、アルバイト・パートのどちらを探していますか？\n[選択肢] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイト・パート"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で探しますね。働きたいエリアや駅はどのあたりですか？\n[選択肢] 東京都内 / 神奈川県 / 埼玉県 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "東京都内"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内のアルバイト・パートを3件ご紹介します。吉祥寺の家庭教師は駅徒歩3分、中野のコンビニと塾講師は未経験OKです。気になる求人はありますか？\n[求人カード] 訪問型の家庭教師(小中学生・1件ずつ選べる) / アルバイト・パート / 時給2100円 / 15:00〜21:00の間で90分〜120分 / 理由: 吉祥寺駅から徒歩3分・未経験OK\n[求人カード] 深夜コンビニスタッフ｜22時以降は時給1750円 / アルバイト・パート / 時給1750円 / 22:00〜翌7:00 / 理由: 中野駅から徒歩3分・未経験OK\n[求人カード] 【集団指導】中学生向け数学・英語の塾講師 / アルバイト・パート / 時給1800円 / 17:30〜21:40 / 理由: 中野駅から徒歩4分・未経験OK\n[選択肢] 家庭教師 / コンビニ / 塾講師 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "それ以外"
+          },
+          {
+            "who": "agent",
+            "text": "別の求人を探しますね。希望する職種や時間帯、東京都内のエリアがあれば、まとめて教えてください。\n[選択肢] 事務・日中 / カフェ・夕方 / 倉庫・夜 / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "カフェ・夕方"
+          },
+          {
+            "who": "agent",
+            "text": "東京都内で夕方に働けるカフェの求人が3件あります。中野は夕方からのシフト、吉祥寺は駅徒歩4分、渋谷は4時間から勤務できます。気になる求人はありますか？\n[求人カード] カフェホールスタッフ(週2日〜) / アルバイト・パート / 時給1120円 / 10:00〜16:00 / 15:00〜21:00 / 理由: 夕方の勤務(10:00〜16:00 / 15:00〜21:00)・中野駅から徒歩3分\n[求人カード] カフェスタッフ(ホール・ドリンク) / アルバイト・パート / 時給1180円 / 11:00〜19:00(実働5h〜) / 理由: 夕方の勤務(11:00〜19:00(実働5h〜))・吉祥寺駅から徒歩4分\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 夕方の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] 中野のカフェ / 吉祥寺のカフェ / 渋谷のカフェ / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "渋谷のカフェ"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷のカフェですね。この求人について、気になることはありますか？\n[選択肢] 仕事内容 / 勤務時間 / 未経験でも大丈夫？ / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "未経験でも大丈夫？"
+          },
+          {
+            "who": "agent",
+            "text": "はい。この求人は「未経験OK」です。求人のFAQには、コーヒー未経験の方がほとんどで、豆の種類や抽出は入店後にマニュアルと先輩から教わるとあります。\nほかに気になることはありますか？\n[選択肢] 仕事内容 / 勤務時間 / 求人を探す / 今はいい"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [],
+          [
+            "answer_job_question",
+            "record_conversation_outcome"
+          ]
+        ],
+        "turn_log": [
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。履歴書の読み込みや、ゲームでの書類作りもできます。",
+              "どれから始めますか？"
+            ],
+            "quick_replies": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [
+              {
+                "label": "ゲームで書類を作る",
+                "url": "/liff/arcade"
+              }
+            ],
+            "actions": [
+              "resume_upload"
+            ],
+            "tools": [
+              {
+                "name": "get_user_conversation_summary",
+                "args": {
+                  "line_user_id": "sim-new"
+                },
+                "result": {
+                  "linked": false,
+                  "segment": "unlinked",
+                  "search_track": "未定",
+                  "track_history": [],
+                  "stated_preferences": {},
+                  "consultation_summary": null,
+                  "uploaded_resume": null,
+                  "arcade_draft": null,
+                  "arcade_url": "/liff/arcade",
+                  "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う(URL を作らない。arcade_url が無ければボタンを出さない)。"
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "正社員のお仕事と、アルバイト・パートのどちらを探していますか？"
+            ],
+            "quick_replies": [
+              "正社員",
+              "アルバイト・パート",
+              "まだ決めていない",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          },
+          {
+            "entry": "visit",
+            "track_switch": {
+              "id": "3a019d3e2856",
+              "from": "未定",
+              "track": "アルバイト・パート",
+              "undo": false
+            },
+            "bubbles": [
+              "アルバイト・パートのお仕事で探しますね。働きたいエリアや駅はどのあたりですか？"
+            ],
+            "quick_replies": [
+              "東京都内",
+              "神奈川県",
+              "埼玉県",
+              "それ以外"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "set_search_track",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "track": "アルバイト・パート",
+                  "evidence": "アルバイト・パート",
+                  "undo": false
+                },
+                "result": {
+                  "track": "アルバイト・パート",
+                  "changed": true,
+                  "recorded": {
+                    "id": "3a019d3e2856",
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "from": "未定",
+                    "track": "アルバイト・パート",
+                    "evidence": "アルバイト・パート",
+                    "undo": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "東京都内のアルバイト・パートを3件ご紹介します。吉祥寺の家庭教師は駅徒歩3分、中野のコンビニと塾講師は未経験OKです。気になる求人はありますか？"
+            ],
+            "quick_replies": [
+              "家庭教師",
+              "コンビニ",
+              "塾講師",
+              "それ以外"
+            ],
+            "cards": [
+              {
+                "job_id": "b1004",
+                "title": "訪問型の家庭教師(小中学生・1件ずつ選べる)",
+                "employer": "家庭教師センター あおば学びサポート",
+                "employment_type": "アルバイト・パート",
+                "job_type": "塾講師・家庭教師",
+                "area": "吉祥寺",
+                "station": "吉祥寺駅",
+                "walk_min": 3,
+                "pay": {
+                  "kind": "時給",
+                  "min": 2100,
+                  "max": null
+                },
+                "pay_text": "時給2100円",
+                "shift": "15:00〜21:00の間で90分〜120分",
+                "days_min": 1,
+                "perks": [
+                  "未経験OK",
+                  "学生歓迎",
+                  "主婦(夫)歓迎",
+                  "交通費支給",
+                  "短時間OK",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "吉祥寺駅から徒歩3分",
+                  "未経験OK"
+                ],
+                "match_score": 1.75,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.7,
+                  "wage": 1.05
+                }
+              },
+              {
+                "job_id": "b0401",
+                "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                "employer": "ハミングマート中野南口店",
+                "employment_type": "アルバイト・パート",
+                "job_type": "コンビニ",
+                "area": "中野",
+                "station": "中野",
+                "walk_min": 3,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1750,
+                  "max": null
+                },
+                "pay_text": "時給1750円",
+                "shift": "22:00〜翌7:00",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "学生歓迎",
+                  "交通費支給",
+                  "髪色自由",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "中野駅から徒歩3分",
+                  "未経験OK"
+                ],
+                "match_score": 1.58,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.7,
+                  "wage": 0.88
+                }
+              },
+              {
+                "job_id": "b1001",
+                "title": "【集団指導】中学生向け数学・英語の塾講師",
+                "employer": "個別指導塾 まなびの森ゼミナール",
+                "employment_type": "アルバイト・パート",
+                "job_type": "塾講師・家庭教師",
+                "area": "中野",
+                "station": "中野駅",
+                "walk_min": 4,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1800,
+                  "max": null
+                },
+                "pay_text": "時給1800円",
+                "shift": "17:30〜21:40",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "学生歓迎",
+                  "交通費支給",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "中野駅から徒歩4分",
+                  "未経験OK"
+                ],
+                "match_score": 1.5,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.6,
+                  "wage": 0.9
+                }
+              }
+            ],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "save_user_preferences",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "preferences": {
+                    "area": "東京都内"
+                  }
+                },
+                "result": {
+                  "saved": [
+                    "area"
+                  ],
+                  "rejected": []
+                }
+              },
+              {
+                "name": "recommend_jobs",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "area": "東京都内",
+                  "time_band": null,
+                  "job_type": null,
+                  "min_wage": null,
+                  "employment_type": "アルバイト・パート",
+                  "min_annual_salary": null,
+                  "max_talk_level": null,
+                  "min_talk_level": null,
+                  "max_physical_level": null,
+                  "min_physical_level": null,
+                  "remote": null,
+                  "weekends_holidays": null,
+                  "max_overtime_hours": null,
+                  "keywords": null,
+                  "exclude_ids": null,
+                  "posted_within_days": null
+                },
+                "result": {
+                  "total": 35,
+                  "jobs": [
+                    {
+                      "job_id": "b1004",
+                      "title": "訪問型の家庭教師(小中学生・1件ずつ選べる)",
+                      "employer": "家庭教師センター あおば学びサポート",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "塾講師・家庭教師",
+                      "area": "吉祥寺",
+                      "station": "吉祥寺駅",
+                      "walk_min": 3,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 2100,
+                        "max": null
+                      },
+                      "pay_text": "時給2100円",
+                      "shift": "15:00〜21:00の間で90分〜120分",
+                      "days_min": 1,
+                      "perks": [
+                        "未経験OK",
+                        "学生歓迎",
+                        "主婦(夫)歓迎",
+                        "交通費支給",
+                        "短時間OK",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "吉祥寺駅から徒歩3分",
+                        "未経験OK"
+                      ],
+                      "match_score": 1.75,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.7,
+                        "wage": 1.05
+                      }
+                    },
+                    {
+                      "job_id": "b0401",
+                      "title": "深夜コンビニスタッフ｜22時以降は時給1750円",
+                      "employer": "ハミングマート中野南口店",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "コンビニ",
+                      "area": "中野",
+                      "station": "中野",
+                      "walk_min": 3,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1750,
+                        "max": null
+                      },
+                      "pay_text": "時給1750円",
+                      "shift": "22:00〜翌7:00",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "学生歓迎",
+                        "交通費支給",
+                        "髪色自由",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "中野駅から徒歩3分",
+                        "未経験OK"
+                      ],
+                      "match_score": 1.58,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.7,
+                        "wage": 0.88
+                      }
+                    },
+                    {
+                      "job_id": "b1001",
+                      "title": "【集団指導】中学生向け数学・英語の塾講師",
+                      "employer": "個別指導塾 まなびの森ゼミナール",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "塾講師・家庭教師",
+                      "area": "中野",
+                      "station": "中野駅",
+                      "walk_min": 4,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1800,
+                        "max": null
+                      },
+                      "pay_text": "時給1800円",
+                      "shift": "17:30〜21:40",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "学生歓迎",
+                        "交通費支給",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "中野駅から徒歩4分",
+                        "未経験OK"
+                      ],
+                      "match_score": 1.5,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.6,
+                        "wage": 0.9
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "record_conversation_outcome",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "outcome": "propose",
+                  "reason": "アルバイト・パート、東京都内で探したい",
+                  "confidence": 0.95,
+                  "summary": null
+                },
+                "result": {
+                  "recorded": {
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "outcome": "propose",
+                    "reason": "アルバイト・パート、東京都内で探したい",
+                    "confidence": 0.95
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "別の求人を探しますね。希望する職種や時間帯、東京都内のエリアがあれば、まとめて教えてください。"
+            ],
+            "quick_replies": [
+              "事務・日中",
+              "カフェ・夕方",
+              "倉庫・夜",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "東京都内で夕方に働けるカフェの求人が3件あります。中野は夕方からのシフト、吉祥寺は駅徒歩4分、渋谷は4時間から勤務できます。気になる求人はありますか？"
+            ],
+            "quick_replies": [
+              "中野のカフェ",
+              "吉祥寺のカフェ",
+              "渋谷のカフェ",
+              "今はいい"
+            ],
+            "cards": [
+              {
+                "job_id": "b0304",
+                "title": "カフェホールスタッフ(週2日〜)",
+                "employer": "珈琲屋こもれび 中野北口店",
+                "employment_type": "アルバイト・パート",
+                "job_type": "カフェ",
+                "area": "中野",
+                "station": "中野駅",
+                "walk_min": 3,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1120,
+                  "max": null
+                },
+                "pay_text": "時給1120円",
+                "shift": "10:00〜16:00 / 15:00〜21:00",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "主婦(夫)歓迎",
+                  "学生歓迎",
+                  "交通費支給",
+                  "まかない",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "夕方の勤務(10:00〜16:00 / 15:00〜21:00)",
+                  "中野駅から徒歩3分"
+                ],
+                "match_score": 1.26,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.7,
+                  "wage": 0.56
+                }
+              },
+              {
+                "job_id": "b0301",
+                "title": "カフェスタッフ(ホール・ドリンク)",
+                "employer": "カフェ・ルミエール吉祥寺店",
+                "employment_type": "アルバイト・パート",
+                "job_type": "カフェ",
+                "area": "吉祥寺",
+                "station": "吉祥寺駅",
+                "walk_min": 4,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1180,
+                  "max": null
+                },
+                "pay_text": "時給1180円",
+                "shift": "11:00〜19:00(実働5h〜)",
+                "days_min": 3,
+                "perks": [
+                  "未経験OK",
+                  "学生歓迎",
+                  "主婦(夫)歓迎",
+                  "交通費支給",
+                  "まかない",
+                  "短時間OK"
+                ],
+                "reasons": [
+                  "夕方の勤務(11:00〜19:00(実働5h〜))",
+                  "吉祥寺駅から徒歩4分"
+                ],
+                "match_score": 1.19,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.6,
+                  "wage": 0.59
+                }
+              },
+              {
+                "job_id": "a003",
+                "title": "カフェホール 渋谷道玄坂",
+                "employer": "コーヒースタンド ドウゲン",
+                "employment_type": "アルバイト・パート",
+                "job_type": "カフェ",
+                "area": "渋谷",
+                "station": "渋谷",
+                "walk_min": 6,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1250,
+                  "max": null
+                },
+                "pay_text": "時給1250円",
+                "shift": "10:00〜19:00(4時間〜)",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "髪色自由",
+                  "短時間OK"
+                ],
+                "reasons": [
+                  "夕方の勤務(10:00〜19:00(4時間〜))",
+                  "渋谷エリア"
+                ],
+                "match_score": 1.02,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.4,
+                  "wage": 0.62
+                }
+              }
+            ],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "save_user_preferences",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "preferences": {
+                    "job_type": "カフェ",
+                    "time_band": "夕方"
+                  }
+                },
+                "result": {
+                  "saved": [
+                    "job_type",
+                    "time_band"
+                  ],
+                  "rejected": []
+                }
+              },
+              {
+                "name": "recommend_jobs",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "area": "東京都内",
+                  "time_band": "夕方",
+                  "job_type": "カフェ",
+                  "min_wage": null,
+                  "employment_type": "アルバイト・パート",
+                  "min_annual_salary": null,
+                  "max_talk_level": null,
+                  "min_talk_level": null,
+                  "max_physical_level": null,
+                  "min_physical_level": null,
+                  "remote": null,
+                  "weekends_holidays": null,
+                  "max_overtime_hours": null,
+                  "keywords": null,
+                  "exclude_ids": [
+                    "b1004",
+                    "b0401",
+                    "b1001"
+                  ],
+                  "posted_within_days": null
+                },
+                "result": {
+                  "total": 3,
+                  "jobs": [
+                    {
+                      "job_id": "b0304",
+                      "title": "カフェホールスタッフ(週2日〜)",
+                      "employer": "珈琲屋こもれび 中野北口店",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "カフェ",
+                      "area": "中野",
+                      "station": "中野駅",
+                      "walk_min": 3,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1120,
+                        "max": null
+                      },
+                      "pay_text": "時給1120円",
+                      "shift": "10:00〜16:00 / 15:00〜21:00",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "主婦(夫)歓迎",
+                        "学生歓迎",
+                        "交通費支給",
+                        "まかない",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "夕方の勤務(10:00〜16:00 / 15:00〜21:00)",
+                        "中野駅から徒歩3分"
+                      ],
+                      "match_score": 1.26,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.7,
+                        "wage": 0.56
+                      }
+                    },
+                    {
+                      "job_id": "b0301",
+                      "title": "カフェスタッフ(ホール・ドリンク)",
+                      "employer": "カフェ・ルミエール吉祥寺店",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "カフェ",
+                      "area": "吉祥寺",
+                      "station": "吉祥寺駅",
+                      "walk_min": 4,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1180,
+                        "max": null
+                      },
+                      "pay_text": "時給1180円",
+                      "shift": "11:00〜19:00(実働5h〜)",
+                      "days_min": 3,
+                      "perks": [
+                        "未経験OK",
+                        "学生歓迎",
+                        "主婦(夫)歓迎",
+                        "交通費支給",
+                        "まかない",
+                        "短時間OK"
+                      ],
+                      "reasons": [
+                        "夕方の勤務(11:00〜19:00(実働5h〜))",
+                        "吉祥寺駅から徒歩4分"
+                      ],
+                      "match_score": 1.19,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.6,
+                        "wage": 0.59
+                      }
+                    },
+                    {
+                      "job_id": "a003",
+                      "title": "カフェホール 渋谷道玄坂",
+                      "employer": "コーヒースタンド ドウゲン",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "カフェ",
+                      "area": "渋谷",
+                      "station": "渋谷",
+                      "walk_min": 6,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1250,
+                        "max": null
+                      },
+                      "pay_text": "時給1250円",
+                      "shift": "10:00〜19:00(4時間〜)",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "髪色自由",
+                        "短時間OK"
+                      ],
+                      "reasons": [
+                        "夕方の勤務(10:00〜19:00(4時間〜))",
+                        "渋谷エリア"
+                      ],
+                      "match_score": 1.02,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.4,
+                        "wage": 0.62
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "record_conversation_outcome",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "outcome": "propose",
+                  "reason": "カフェ・夕方を希望",
+                  "confidence": 0.98,
+                  "summary": null
+                },
+                "result": {
+                  "recorded": {
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "outcome": "propose",
+                    "reason": "カフェ・夕方を希望",
+                    "confidence": 0.98
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "渋谷のカフェですね。この求人について、気になることはありますか？"
+            ],
+            "quick_replies": [
+              "仕事内容",
+              "勤務時間",
+              "未経験でも大丈夫？",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "はい。この求人は「未経験OK」です。求人のFAQには、コーヒー未経験の方がほとんどで、豆の種類や抽出は入店後にマニュアルと先輩から教わるとあります。",
+              "ほかに気になることはありますか？"
+            ],
+            "quick_replies": [
+              "仕事内容",
+              "勤務時間",
+              "求人を探す",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "answer_job_question",
+                "args": {
+                  "question": "未経験でも大丈夫？",
+                  "job_id": "a003"
+                },
+                "result": {
+                  "job": {
+                    "job_id": "a003",
+                    "title": "カフェホール 渋谷道玄坂",
+                    "employer": "コーヒースタンド ドウゲン",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "カフェ",
+                    "area": "渋谷",
+                    "station": "渋谷",
+                    "walk_min": 6,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1250,
+                      "max": null
+                    },
+                    "time_bands": [
+                      "日中",
+                      "夕方"
+                    ],
+                    "shift": "10:00〜19:00(4時間〜)",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "髪色自由",
+                      "短時間OK"
+                    ],
+                    "description": "スペシャルティコーヒーのスタンドでドリンク提供とレジ。ラテアートは入店後に教えます。",
+                    "drawback": "土日の昼は行列ができ、立ちっぱなしが続きます。",
+                    "talk_level": 3,
+                    "physical_level": 2,
+                    "required_experience": [],
+                    "preferred_experience": [],
+                    "work_style": null,
+                    "holidays": null,
+                    "employment_terms": null
+                  },
+                  "card": {
+                    "job_id": "a003",
+                    "title": "カフェホール 渋谷道玄坂",
+                    "employer": "コーヒースタンド ドウゲン",
+                    "employment_type": "アルバイト・パート",
+                    "job_type": "カフェ",
+                    "area": "渋谷",
+                    "station": "渋谷",
+                    "walk_min": 6,
+                    "pay": {
+                      "kind": "時給",
+                      "min": 1250,
+                      "max": null
+                    },
+                    "pay_text": "時給1250円",
+                    "shift": "10:00〜19:00(4時間〜)",
+                    "days_min": 2,
+                    "perks": [
+                      "未経験OK",
+                      "髪色自由",
+                      "短時間OK"
+                    ],
+                    "reasons": [
+                      "未経験OK"
+                    ]
+                  },
+                  "hits": [
+                    {
+                      "source": "案件の FAQ",
+                      "q": "コーヒーの知識がなくても大丈夫ですか?",
+                      "a": "未経験の方がほとんどです。豆の種類や抽出は入店後にマニュアルと先輩から教わります。"
+                    },
+                    {
+                      "source": "全体の FAQ",
+                      "id": "faq-inexperienced",
+                      "q": "未経験でも大丈夫?",
+                      "a": "「未経験OK」の記載がある求人は、研修やマニュアルが用意されています。初日は先輩スタッフと一緒に入るのが一般的です。"
+                    },
+                    {
+                      "source": "求人の説明",
+                      "a": "待遇: 未経験OK・髪色自由・短時間OK"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "record_conversation_outcome",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "outcome": "consult",
+                  "reason": "渋谷のカフェが未経験でも大丈夫か質問",
+                  "confidence": 0.99,
+                  "summary": null
+                },
+                "result": {
+                  "recorded": {
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "outcome": "consult",
+                    "reason": "渋谷のカフェが未経験でも大丈夫か質問",
+                    "confidence": 0.99
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "user_msgs": [
+          null,
+          "求人を探す",
+          "アルバイト・パート",
+          "東京都内",
+          "それ以外",
+          "カフェ・夕方",
+          "渋谷のカフェ",
+          "未経験でも大丈夫？"
+        ],
+        "upload": null,
+        "keyword_searches": []
+      }
+    }
+  ],
+  "spent_usd": 0.1249,
+  "stopped": null,
+  "ledger_total_usd": 0.4858
+}

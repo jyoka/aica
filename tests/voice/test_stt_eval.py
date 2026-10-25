@@ -68,6 +68,7 @@ def test_create_stt_deepgram_default(monkeypatch):
     assert stt._opts.model == "nova-3"
     assert stt._opts.language == "ja"
     assert list(stt._opts.keyterm) == list(config.STT_KEYTERMS)
+    assert stt._opts.mip_opt_out is True  # 声を Deepgram の改善プログラムに使わせない(docs/design/privacy.md の 3.2)
 
 
 def test_create_stt_nova2_fallback_drops_keyterm(monkeypatch):
@@ -79,6 +80,7 @@ def test_create_stt_nova2_fallback_drops_keyterm(monkeypatch):
     stt = create_stt()
     assert stt._opts.model == "nova-2"
     assert not stt._opts.keyterm
+    assert stt._opts.mip_opt_out is True
 
 
 def test_create_stt_openai(monkeypatch):

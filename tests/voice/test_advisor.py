@@ -58,12 +58,13 @@ class FakeDip:
             raise self.relax_error
         return self.relax_result
 
-    async def save_user_preferences(self, user_id: str, preferences: dict) -> dict:
+    async def save_user_preferences(self, user_id: str, preferences: dict, room: str | None = None) -> dict:
         self.save_calls.append({"line_user_id": user_id, "preferences": preferences})
         return {"saved": list(preferences), "rejected": []}
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None,
+        room: str | None = None,
     ) -> dict:
         if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
@@ -252,8 +253,10 @@ def test_new_search_without_relax_clears_the_previous_relaxed():
 
 
 def test_finalize_writes_draft_preferences_and_job_ids(tmp_path, monkeypatch):
-    """終わると、履歴書の下書き(共通 JSON)・希望条件・提案した求人IDが out/ に出る。"""
+    """開発で書き出すとき(VOICE_RESUME_WRITE_FILES=1)、終わると履歴書の下書き(共通 JSON)・希望条件・提案した求人IDが
+    OUT_DIR に出る。"""
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(config, "WRITE_FILES", True)
     draft_client = _FakeDraftClient()
     dip = FakeDip()
     advisor = ResumeAdvisor(dip=dip, draft_client_factory=lambda: draft_client)
@@ -314,7 +317,7 @@ RELAXED_SEARCH_TRANSCRIPT = [
 
 
 def test_zero_hit_research_keeps_already_proposed_jobs(tmp_path, monkeypatch):
-    """一度提案した求人の記録は、あとの0件の再検索で消えない(out/ の求人IDが空にならない)。
+    """一度提案した求人の記録は、あとの0件の再検索で消えない(求人の提案の求人IDが空にならない)。
 
     提案 → 条件を足した再検索が0件 → そのまま面談終了、の順でも
     job-proposal の proposed_job_ids に最初の提案が残る。
@@ -336,8 +339,7 @@ def test_zero_hit_research_keeps_already_proposed_jobs(tmp_path, monkeypatch):
 
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     asyncio.run(advisor.finalize_interview())
-    proposal_path = next(p for p in tmp_path.iterdir() if p.name.startswith("job-proposal"))
-    proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+    proposal = advisor.finalized["proposal"]
     assert proposal["proposed_job_ids"] == ["b0305", "b0304", "b0301"]
     # 各検索で何を提案したかは search_attempts に残る
     assert [a["proposed_job_ids"] for a in proposal["search_attempts"]] == [
@@ -381,8 +383,7 @@ def test_relaxed_search_does_not_rewrite_stated_wishes(tmp_path, monkeypatch):
 
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     asyncio.run(advisor.finalize_interview())
-    proposal_path = next(p for p in tmp_path.iterdir() if p.name.startswith("job-proposal"))
-    proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+    proposal = advisor.finalized["proposal"]
     assert proposal["preferences"] == {
         "time_band": "日中", "min_wage": 1500, "other_wishes": "午後から働きたい",
     }
@@ -612,7 +613,8 @@ def test_finalize_records_propose_and_returns_the_result_to_the_talk(tmp_path, m
 
 def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):
     """締めの後に「面談を終える」ボタンなどで finalize がもう一度呼ばれても、
-    out/ への追記・結果の記録・トークへの送信は1回分のまま(2回目は前回の結果を返すだけ)。"""
+    OUT_DIR への追記(開発で書き出すとき)・結果の記録・トークへの送信は1回分のまま(2回目は前回の結果を返すだけ)。"""
+    monkeypatch.setattr(config, "WRITE_FILES", True)
     dip = FakeDip()
     poster = _FakePoster()
     advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
@@ -620,6 +622,7 @@ def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     first = asyncio.run(advisor.finalize_interview())
     files_after_first = sorted(p.name for p in tmp_path.iterdir())
+    assert len(files_after_first) == 4
 
     second = asyncio.run(advisor.finalize_interview())
     # 副作用は1回分のまま: 結果の記録・トークへの送信・out/ のファイル
@@ -641,7 +644,8 @@ def test_finalize_without_proposals_records_consult(tmp_path, monkeypatch):
 
 
 def test_finalize_keeps_the_draft_when_the_talk_delivery_fails(tmp_path, monkeypatch):
-    """トーク(line_runtime)が落ちていても、下書きは out/ に残り、面談は締められる。"""
+    """開発で書き出すとき、トーク(line_runtime)が落ちていても、下書きは OUT_DIR に残り、面談は締められる。"""
+    monkeypatch.setattr(config, "WRITE_FILES", True)
     dip = FakeDip()
     poster = _FakePoster(error=RuntimeError("connection refused"))
     advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
@@ -651,6 +655,47 @@ def test_finalize_keeps_the_draft_when_the_talk_delivery_fails(tmp_path, monkeyp
     assert "保存" in reply
     assert advisor.delivered_to_talk is False
     assert next(p for p in tmp_path.iterdir() if p.name.startswith("resume-draft"))
+
+
+def test_by_default_a_failed_talk_delivery_is_not_told_as_saved(tmp_path, monkeypatch):
+    """既定(書き出さない)で、トークに届かなかったら下書きはどこにも残らない。面談は締めるが「保存した」とは言わない。"""
+    monkeypatch.setattr(config, "WRITE_FILES", False)
+    dip = FakeDip()
+    poster = _FakePoster(error=RuntimeError("connection refused"))
+    advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path / "voice-resume", monkeypatch=monkeypatch)
+    asyncio.run(advisor.propose_jobs(job_type="カフェ"))
+    advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
+    reply = asyncio.run(advisor.finalize_interview())
+    assert advisor.delivered_to_talk is False and advisor.finalized["files"] == []
+    assert "保存しました" not in reply and "残せませんでした" in reply
+    assert not (tmp_path / "voice-resume").exists()
+    # dip の記録にも「保存した」とは書かない
+    assert "保存した" not in dip.outcome_calls[0]["reason"] and "残っていない" in dip.outcome_calls[0]["reason"]
+
+
+def test_a_rejected_talk_delivery_is_logged_as_an_error_without_the_contents(tmp_path, monkeypatch, caplog):
+    """トークが結果を 401 で断った(Web サーバーと AICA_INTERNAL_KEY が合わない)ら、ワーカーのログにエラーを 1 行出す。
+    送った中身(会話の文、下書き、希望)は書かない(docs/design/privacy.md)。task 218。"""
+    import aiohttp
+    from multidict import CIMultiDict, CIMultiDictProxy
+    from yarl import URL
+
+    url = URL(f"{config.TALK_URL}/api/voice/result")
+    info = aiohttp.RequestInfo(url, "POST", CIMultiDictProxy(CIMultiDict()), url)
+    rejected = aiohttp.ClientResponseError(info, (), status=401, message="Unauthorized")
+    monkeypatch.setattr(config, "WRITE_FILES", False)
+    dip = FakeDip()
+    advisor = _talk_advisor(dip, poster=_FakePoster(error=rejected), tmp_out=tmp_path, monkeypatch=monkeypatch)
+    asyncio.run(advisor.propose_jobs(job_type="カフェ"))
+    advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
+    caplog.set_level("INFO", logger="voice-resume")
+    asyncio.run(advisor.finalize_interview())
+    assert advisor.delivered_to_talk is False
+    (line,) = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert "結果送信に失敗" in line.getMessage() and "401" in line.getMessage()
+    assert "AICA_INTERNAL_KEY" in line.getMessage()  # どの鍵を確かめればよいか
+    for secret in ("カフェ", "コンビニ", "時給", advisor.finalized["markdown"][:20]):
+        assert secret not in caplog.text
 
 
 def test_stated_preferences_enter_the_instructions_and_forbid_reasking():
@@ -692,6 +737,7 @@ def test_web_research_searches_the_web_and_returns_a_short_answer():
     assert call["model"] == config.RESEARCH_MODEL
     assert call["tools"][0]["type"] == "web_search"
     assert "コンビニバイト 仕事内容" in call["input"]
+    assert call["store"] is False  # OpenAI に応答を残さない
 
 
 def test_web_research_failure_keeps_the_conversation_going():
@@ -796,6 +842,7 @@ def test_fetch_reference_uses_web_search_and_stamps_the_date():
     assert ref.fetched_at == "2026-09-26"
     assert ref.source == "マイナビ"  # 読み上げる情報源にリンクを残さない
     assert captured["tools"] == [{"type": "web_search"}] and captured["text_format"] is WageReference
+    assert captured["store"] is False
 
 
 def test_research_company_passes_the_hint_and_asks_not_to_guess():

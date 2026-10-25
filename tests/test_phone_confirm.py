@@ -47,7 +47,7 @@ COMMON_VOICE = (ROOT / "dip_mcp" / "playbooks" / "common_voice.md").read_text(en
 PHONE = "「電話はしたくない」"
 CONFIRM = "お客様と話すレジや接客は大丈夫ですか?"
 CONFIRM_FULLTIME = "お客様や取引先と話す仕事は大丈夫ですか?"  # 正社員の人と話す量の3は営業・企画・教育など(task 109 の計測)
-CONFIRM_REPLIES = ["レジや接客は大丈夫", "接客も苦手", "それ以外", "今はいい"]
+CONFIRM_REPLIES = ["レジや接客は大丈夫", "接客も苦手", "今はいい"]
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 JOBS = load_jobs()
 # 本人の答え -> 付けるべき max_talk_level(None = 人と話す量では絞らない)
@@ -109,13 +109,15 @@ def test_chat_confirms_service_with_one_question_before_setting_the_talk_level(t
     model = ConsultModel(script=[
         switch_and_read(uid, BAITO, "アルバイトを探しています",
                         ("save_user_preferences", {"line_user_id": uid, "preferences": {"avoids": "電話"}})),
-        reply(["アルバイト・パートのお仕事で考えますね。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         calls(("recommend_jobs", search),
               ("record_conversation_outcome", {"line_user_id": uid, "outcome": "propose",
                                                "reason": "電話を避けたい人に求人を提案", "confidence": 0.8})),
         lambda msgs: reply(["電話の少ない求人です。"], job_ids=_cards_without_call_centers(msgs), quick_replies=CLOSING),
     ])
-    said = [f"{time_band or ''}{'で' if time_band else ''}アルバイトを探しています。電話はしたくないです", answer]
+    # 場所を問わない人(task 224: エリアが分からないまま探すのは、本人がエリアを問わないと言ったときだけ)
+    said = [f"{time_band or ''}{'で' if time_band else ''}アルバイトを探しています。場所はどこでもいいです。電話はしたくないです",
+            answer]
     turns = run(model, [(uid, "message", m) for m in said], tmp_path)
 
     assert CONFIRM in model.systems[0]  # 1問で確かめる指示が LINE 側エージェントに届いている

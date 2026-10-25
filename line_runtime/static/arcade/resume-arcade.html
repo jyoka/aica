@@ -115,6 +115,7 @@ canvas.screen {
 .cab:hover .play, .cab:focus-visible .play { background: var(--coin); color: #000; }
 .cab[aria-disabled="true"] { opacity: .55; pointer-events: none; }
 footer { color: var(--dim); font-size: 14px; line-height: 1.8; max-width: 46em; }
+footer a.legal { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .sign, .credits i { animation: none; }
   .cab { transition: none; }
@@ -129,7 +130,8 @@ footer { color: var(--dim); font-size: 14px; line-height: 1.8; max-width: 46em; 
     <div class="credits">クレジット 02 <i>&#9654; 遊ぶ筐体を選んでください</i></div>
   </header>
   <main class="wall" id="wall"></main>
-  <footer>いまはオフライン：AIを使わない簡易分析で動きます。それでも最後まで遊べて、職務経歴書ができます。名前や連絡先は聞きません（書類では空欄になります）。答えはこの端末のブラウザにだけ残ります。どのゲームにも架空の人物で遊ぶ「サンプル」があり、2分ほどで全体の流れを見られます。</footer>
+  <footer>いまはオフライン：AIを使わない簡易分析で動きます。それでも最後まで遊べて、職務経歴書ができます。名前や連絡先は聞きません（書類では空欄になります）。答えはこの端末のブラウザにだけ残ります。どのゲームにも架空の人物で遊ぶ「サンプル」があり、2分ほどで全体の流れを見られます。<br>
+    <a class="legal" href="/legal/terms" target="_blank" rel="noopener">利用規約</a> · <a class="legal" href="/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a></footer>
 </div>
 
 <script>
@@ -164,7 +166,8 @@ const GAMES = [
 const wall = document.getElementById("wall");
 const screens = [];
 for (const g of GAMES.filter((x) => x.shipped)) {
-  const url = "/liff/arcade/" + g.slug;
+  /* LINE のアプリで開いたハブ(/liff/line/arcade。LIFF の本人がある)からは、ゲームも LIFF の本人のまま開く(task 204) */
+  const url = location.pathname.startsWith("/liff/line/") ? "/liff/line/arcade/" + g.slug : "/liff/arcade/" + g.slug;
   const a = document.createElement("a");
   a.className = "cab";
   a.style.setProperty("--c", g.c);

@@ -113,12 +113,18 @@
                       display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
   nav.bottom button .i { font-size: 18px; line-height: 1; }
   nav.bottom button.on { color: var(--ok-dark); }
+
+  /* ---------- ヘッダーの下の 1 行: テスト用の公開・架空の求人と、規約とポリシー(docs/legal/。task 207) ---------- */
+  .legal-bar { margin: 0; background: #fff7e6; color: var(--sub); font-size: 11px; line-height: 1.5; padding: 4px 12px; }
+  .legal-bar a { color: var(--chip); white-space: nowrap; }
 </style>
 <link rel="stylesheet" href="/static/talk-core.css">
 </head>
 <body>
 <div class="app">
   <header><span class="name">バイトル</span><span class="track" id="track" hidden></span></header>
+  <p class="legal-bar" id="legal-bar">テスト用の公開です。求人は架空のデモで、応募しても実際の応募にはなりません。
+    <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a> · <a href="/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a></p>
   <main>
     <section class="view" id="v-talk">
       <div id="log"></div>
@@ -185,21 +191,26 @@
     if (busy || !current) return;
     setBusy(true); disableChips();
     const col = talk.typingCol();
-    let stale = false;
+    let stale = false, reconsent = false;
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
                                                       body: JSON.stringify({ user_id: current, event, text, thread }) });
-      if (!res.ok) throw new Error(res.status + " " + await res.text());
-      await talk.readStream(res, (ev) => { onEvent(ev, col); if (ev.kind === "stale") stale = true; });
-      if (stale) {
-        if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
-        await redrawLatest();
+      if (res.status === 403) {  // 同意がまだ(別のタブで「すべて消す」をした、版が上がった): 開き直して同意の画面を出す
+        col.parentElement.remove(); if (text) input.value = text; reconsent = true;
+      } else {
+        if (!res.ok) throw new Error(res.status + " " + await res.text());
+        await talk.readStream(res, (ev) => { onEvent(ev, col); if (ev.kind === "stale") stale = true; });
+        if (stale) {
+          if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
+          await redrawLatest();
+        }
       }
     } catch (e) {
       talk.fail(col, "通信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(e);
     }
     finally { setBusy(false); }
+    if (reconsent) start();
   }
 
   // 別のタブで新しい会話が始まっていた: 最新の会話を描き直す
@@ -278,7 +289,8 @@
   const EMPTY = "まだありません";
   // 「すべて消す」で消えるもの・消えないもの(docs/prd/aica-v2-fulltime.md の範囲)
   const FORGET_WHAT = "aica が覚えていること・保存した求人・応募・これまでの会話";
-  const FORGET_KEPT = "その日の利用回数は消えません。";
+  const FORGET_KEPT = "その日の利用回数は消えません。費用の記録は、あなたを見分ける番号を外して残ります。";
+  const EXPORT_WHAT = "aica が保存している、あなたのデータ(プロフィール、これまでの会話、費用の記録)を 1 つのファイル(JSON)で受け取れます。";
 
   async function loadProfile() {
     const box = $("profile");
@@ -423,7 +435,14 @@
     }
     box.appendChild(ac);
 
-    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない)。確認の1段を挟む
+    // データを書き出す: 保存しているものを 1 つの JSON のファイルで受け取る(本人は Cookie で決まる。リンクを開くとダウンロード)
+    const xc = card("データを書き出す", EXPORT_WHAT);
+    const xr = el("div", "prow"); xr.dataset.key = "export";
+    const xb = el("div", "pbtns"), xa = el("a", null, "書き出す");
+    xa.href = profileUrl("/export"); xa.download = "";
+    xb.appendChild(xa); xr.appendChild(xb); xc.appendChild(xr); box.appendChild(xc);
+
+    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない。費用の記録はユーザーIDを外して残す)。確認の1段を挟む
     const dc = card("すべて消す", `${FORGET_WHAT}をすべて消します。${FORGET_KEPT}次に開くと、はじめての訪問として始まります。`);
     dc.classList.add("danger");
     const dr = el("div", "prow"); dr.dataset.key = "forget";
@@ -446,11 +465,19 @@
   }
 
   // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
+  // 使い始める同意がまだなら(初めて開いたとき、版が上がったとき)、挨拶の前に同意の画面を出す。押すまで LLM を呼ばない
   async function start() {
     setBusy(true);
     let opened;
     try {
-      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread; setTrack(opened.search_track);
+      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread;
+      talk.setConsent(opened.consent);
+      if (opened.consent.needed.includes("terms")) {
+        log.innerHTML = "";  // 同意の後に、続きなら履歴を描き直し、新しい会話なら挨拶から描く
+        await talk.ask("terms", { cancel: false });
+        return start();  // 同意した: 開き直して挨拶から始める
+      }
+      setTrack(opened.search_track);
       if (opened.event == null) await restore();
     } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
     setBusy(false);

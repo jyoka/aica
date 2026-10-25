@@ -76,6 +76,10 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
         # スタブに PDF がそのまま渡っている(ファイルはディスクに置かずバイト列で読む)
         part = app.stub.calls[0]["input"][0]["content"][0]
         assert part["type"] == "input_file" and part["file_data"].startswith("data:application/pdf;base64,")
+        # OpenAI にファイル名(氏名が入りがち)を送らず、応答も残させない
+        assert part["filename"] == "resume.pdf"
+        assert "佐藤美咲" not in json.dumps(app.stub.calls[0]["input"], ensure_ascii=False)
+        assert app.stub.calls[0]["store"] is False
         # 応答にも個人情報は無い(トークに出す確認の材料)
         assert all(v == "" for v in body["result"]["personal"].values())
         assert not any(p in r.text for p in PII)
@@ -94,6 +98,27 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
     saved = (tmp_path / "state.json").read_text(encoding="utf-8")
     assert not any(p in saved for p in PII)
     assert FILENAME not in saved and "佐藤" not in saved
+
+
+def test_upload_of_text_pdf_sends_only_its_text(app):
+    """テキストのある PDF をトークからアップロードすると、OpenAI にはテキストだけが届き、顔写真もファイルも届かない。
+    (docs/design/privacy.md の 3.2 の案 B。サンプルは架空の JIS 風の表の履歴書で、顔写真の欄に画像がある)"""
+    from fastapi.testclient import TestClient
+
+    from resume_intake import config as resume_config
+
+    data = (resume_config.SAMPLES / "05_table_photo.pdf").read_bytes()
+    with TestClient(app.app) as client:
+        _open(client)
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        r = _upload(client, user, name="鈴木陽翔_履歴書.pdf", data=data)
+        assert r.status_code == 200, r.text
+        assert r.json()["file"] == "履歴書(PDF)"  # トークの吹き出しは今までどおり形式だけ
+    content = app.stub.calls[0]["input"][0]["content"]
+    assert [p["type"] for p in content] == ["input_text", "input_text"]
+    assert "株式会社みほんシステム" in content[0]["text"]
+    sent = json.dumps(app.stub.calls[0]["input"], ensure_ascii=False)
+    assert "base64" not in sent and "鈴木陽翔_履歴書" not in sent
 
 
 def test_upload_rejects_unsupported_files_and_other_users(app):
@@ -206,7 +231,7 @@ def test_prompt_tells_the_agent_to_use_the_uploaded_resume():
         text = baitoru_assistant(entry)
         assert "uploaded_resume" in text and "[イベント: 本人が履歴書(PDF)をアップロード]" in text
         # いつ履歴書・音声を差し出すか(返信の actions)の決まりがある
-        assert "resume_upload" in text and "voice_consult" in text and "文字で話す" in text
+        assert "resume_upload" in text and "voice_consult" in text and "今はいい" in text
 
 
 # ----------------------------- トークに出す確認は要点だけ(task 89) -----------------------------

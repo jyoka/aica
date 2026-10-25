@@ -147,6 +147,211 @@ def test_recommend_matches_job_type_exactly(state):
     assert all(j["job_type"] == "飲食ホール" for j in logic.recommend(state, None, job_type="飲食ホール")["jobs"])
 
 
+# ----------------------------- 推薦の理由に本人の言葉(task 229) -----------------------------
+
+
+@pytest.fixture
+def offline_keywords(monkeypatch):
+    """keywords の意味検索の API を呼ばせない(部分一致だけ)。意味検索を使うテストは _api_embed を上書きする。"""
+    from dip_mcp import embedding
+
+    def _fail(*_a, **_kw):
+        raise ConnectionError("offline")
+
+    embedding._query_cache.clear()
+    monkeypatch.setattr(embedding, "_api_embed", _fail)
+    yield embedding
+    embedding._query_cache.clear()
+
+
+def test_reasons_tell_the_users_experience_with_a_fixed_word(state, offline_keywords):
+    # 経験「カフェでホールを2年」を保存し、経験と希望「カフェ」で探した。渋谷のカフェホール(a003)の職種は「カフェ」
+    logic.save_preferences(state, "u-story", {"experience": "カフェでホールを2年", "job_type": "カフェ"})
+    r = logic.recommend(state, "u-story", area="渋谷", keywords="カフェでホールを2年 カフェ")
+    card = next(j for j in r["jobs"] if j["job_id"] == "a003")
+    assert card["reasons"] == ["カフェのご経験を活かせます", "渋谷エリア"]
+
+
+def test_reasons_use_only_what_the_user_said_about_themselves(state, offline_keywords):
+    # 同じ keywords でも、やりたいこと・経験として保存された言葉が無ければ(条件の職種だけなら)今までどおり
+    logic.save_preferences(state, "u-cond", {"job_type": "カフェ"})
+    for uid in ("u-cond", None):
+        card = next(j for j in logic.recommend(state, uid, area="渋谷", keywords="カフェでホールを2年 カフェ")["jobs"]
+                    if j["job_id"] == "a003")
+        assert not any("お話" in x or "ご経験" in x for x in card["reasons"])
+
+
+def test_reasons_stay_as_before_when_no_word_of_the_user_is_in_the_job(state, offline_keywords, monkeypatch):
+    # 意味が近いだけで選ばれた求人(b0701 の倉庫。「もくもくと働きたい」に職種の語は無い)には、本人の話とのつながりを作らない
+    monkeypatch.setattr(offline_keywords, "_api_embed",
+                        lambda *a, **kw: offline_keywords._vectors()["jobs"]["b0701"]["v"])
+    logic.save_preferences(state, "u-quiet", {"wants": "もくもくと働きたい"})
+    r = logic.recommend(state, "u-quiet", keywords="もくもくと働きたい")
+    jobs, acts = logic.load_jobs(), behavior.view(state, "u-quiet")
+    assert r["jobs"][0]["job_id"] == "b0701"
+    for card in r["jobs"]:
+        assert card["reasons"] == logic._reasons(jobs[card["job_id"]], None, None, None, acts, jobs, logic.now("u-quiet"))
+
+
+def test_reasons_without_keywords_are_unchanged(state):
+    r = logic.recommend(state, "sim-yoru", area="新宿", time_band="夜")
+    assert r["jobs"][0]["reasons"][0] == "7月に応募した飲食ホールと同系統"
+    assert not any("お話" in x or "ご経験" in x for j in r["jobs"] for x in j["reasons"])
+
+
+def test_reason_vocab_is_the_words_of_the_job_type():
+    # 語彙は職種の名前の語だけ。どの職種にもまたがる広い語(スタッフ・管理・サービス・技術)は入れない
+    # 「・」で切った部分の全体(職種の名前そのもの)も入れて、先に置く(task 229 の 3 回目の自動レビュー)
+    assert logic.reason_vocab("飲食ホール") == ["飲食ホール", "飲食", "ホール"]
+    assert logic.reason_vocab("アパレル販売") == ["アパレル販売", "アパレル", "販売"]
+    assert logic.reason_vocab("オフィス事務") == ["オフィス事務", "事務"]
+    assert logic.reason_vocab("イベントスタッフ") == ["イベントスタッフ", "イベント"]
+    assert logic.reason_vocab("事務・管理") == ["事務"]
+    assert logic.reason_vocab("企画・PM") == ["企画", "PM"]
+    assert logic.reason_vocab("カフェ") == ["カフェ"]
+    vocab = {w for t in logic.JOB_TYPES + logic.FULLTIME_JOB_TYPES for w in logic.reason_vocab(t)}
+    assert not vocab & {"未経験", "経験", "スタッフ", "オフィス", "管理", "サービス", "技術"}
+
+
+def _reason(job_id, keywords, **said):
+    return logic._keyword_reason(logic.load_jobs()[job_id], keywords, said)
+
+
+@pytest.mark.parametrize(("job_id", "keywords", "said", "reason"), [
+    ("a003", "カフェ", {"wants": "カフェ"}, "カフェの仕事をしたいというお話に合います"),
+    ("a003", "渋谷 カフェ", {"wants": "渋谷のカフェで働きたい"}, "カフェの仕事をしたいというお話に合います"),
+    ("a001", "居酒屋のホールを1年やっていました", {"experience": "居酒屋のホールを1年やっていました"}, "ホールのご経験を活かせます"),
+    ("a002", "コンビニ", {"wants": "コンビニ。夜勤ムリ"}, "コンビニの仕事をしたいというお話に合います"),  # 語の全体で見る
+    # やりたいことを経験より先に見る(経験の「カフェは未経験」は使わない)
+    ("a003", "カフェ 未経験", {"wants": "カフェで働きたい", "experience": "カフェは未経験"}, "カフェの仕事をしたいというお話に合います"),
+    ("f0101", "営業 PM", {"experience": "法人営業ではなく営業事務", "wants": "営業"}, "営業の仕事をしたいというお話に合います"),
+    # 職種の名前そのものを話して探したとき。長い語を先に見る(task 229 の 3 回目の自動レビュー)
+    ("b0601", "アパレル販売", {"experience": "アパレル販売を2年"}, "アパレル販売のご経験を活かせます"),
+    ("b0601", "アパレル販売を2年", {"experience": "アパレル販売を2年"}, "アパレル販売のご経験を活かせます"),
+    ("b1201", "オフィス事務", {"experience": "オフィス事務を3年"}, "オフィス事務のご経験を活かせます"),
+    ("b1101", "イベントスタッフ", {"wants": "イベントスタッフをやりたい"}, "イベントスタッフの仕事をしたいというお話に合います"),
+    ("b0101", "飲食ホール", {"experience": "飲食ホールを1年"}, "飲食ホールのご経験を活かせます"),
+    ("b0601", "アパレル 販売", {"experience": "アパレルで販売を2年"}, "アパレルのご経験を活かせます"),  # 分けて話せば今までどおり
+    # 避けたいことの「アパレル販売」は、語彙にアパレル販売の無い職種(スーパー・販売)の「販売」を止めない
+    ("b0501", "販売", {"wants": "販売の仕事", "avoids": "アパレル販売はもうやりたくない"}, "販売の仕事をしたいというお話に合います"),
+])
+def test_keyword_reason_is_a_fixed_sentence_with_a_word_of_the_vocab(job_id, keywords, said, reason):
+    assert _reason(job_id, keywords, **said) == reason
+
+
+@pytest.mark.parametrize(("job_id", "keywords", "said"), [
+    # task 229 の自動レビューの例。語彙に無い語(夜勤・接客)と、長い語の一部(飲食未経験の飲食)は理由にしない
+    ("a002", "コンビニ 夜勤", {"wants": "夜勤ムリ"}),
+    ("a002", "コンビニ 夜勤", {"wants": "夜勤ナシ"}),
+    ("a002", "夜勤", {"wants": "夜勤なし"}),
+    ("b0101", "未経験 ホール", {"experience": "飲食未経験"}),
+    ("b0101", "未経験 飲食", {"experience": "飲食未経験"}),
+    ("b0601", "未経験 ホール", {"experience": "飲食未経験", "wants": "ホール"}),  # アパレルの職種にホールは無い
+    ("b0505", "未経験 カフェ", {"experience": "接客未経験"}),
+    ("a002", "コンビニ", {"wants": "コンビニムリ"}),  # カタカナどうしで続く語は語の全体ではない
+    ("a003", "カフェ", {"experience": "カフェは未経験"}),  # 経験の項目に未経験の印があれば見ない
+    # task 229 の 2 回目の自動レビューの例。否定が別の句にあっても、経験の項目を丸ごと見ない
+    ("b0105", "未経験 飲食", {"experience": "飲食 未経験"}),
+    ("a003", "未経験 カフェ", {"experience": "カフェ、未経験"}),
+    ("a003", "未経験 カフェ", {"experience": "カフェは、未経験です"}),
+    ("b0105", "未経験 ホール", {"experience": "ホール/未経験"}),
+    ("b0505", "販売", {"experience": "販売を3年、飲食は未経験"}),  # 経験のある句があっても、迷ったら付けない
+    # 未経験と言わずに初めてと話したとき
+    ("a003", "カフェ", {"experience": "カフェは初めて"}),
+    ("a003", "カフェ", {"experience": "カフェははじめてです"}),
+    ("a003", "カフェ", {"experience": "カフェは経験ゼロ"}),
+    ("a003", "カフェ", {"experience": "カフェはしたことがなくて"}),
+    ("a003", "カフェ", {"experience": "カフェで働いたことがなく"}),
+    ("a003", "カフェ", {"experience": "カフェはまだ"}),
+    ("a003", "カフェ", {"experience": "カフェは初心者"}),
+    ("a003", "カフェ", {"experience": "カフェ経験なし"}),
+    ("a003", "カフェ", {"experience": "カフェで働いたことはない"}),  # 経験と言い切る形なので、否定の印のある句も見ない
+    ("b0505", "販売", {"experience": "販売はしたことがありません"}),
+    ("a001", "飲食", {"experience": "飲食はやったことがなかった"}),
+    # 避けたいこと・不安にある語は、前向きの項目にあっても使わない
+    ("a002", "コンビニ", {"wants": "コンビニ", "avoids": "コンビニの夜勤"}),
+    ("a003", "カフェ", {"experience": "カフェで2年", "concerns": "カフェは立ち仕事がきつい"}),
+    # keywords に無い語(意味が近いだけで選ばれた)、前向きの項目に無い語、条件の項目だけ
+    ("a003", "居酒屋", {"wants": "カフェで働きたい"}),
+    ("a003", "カフェ", {"experience": "居酒屋のホール"}),
+    ("a003", "カフェ", {"job_type": "カフェ", "area": "渋谷"}),
+    ("a003", "カフェ", {}),
+    ("a003", None, {"wants": "カフェ"}),
+    ("a003", "", {"wants": "カフェ"}),
+    ("a003", "カフェホール", {"wants": "カフェホール"}),  # 長い語の一部(カフェホールのカフェ)は語の全体ではない
+    # 職種の名前の全体でも、未経験や初めての印があれば付けない。避けたいことに一部の語があっても付けない
+    ("b0601", "未経験 アパレル販売", {"experience": "アパレル販売未経験"}),
+    ("b0601", "アパレル販売", {"experience": "アパレル販売は初めて"}),
+    ("b1201", "オフィス事務", {"experience": "オフィス事務はしたことがない"}),
+    ("b0601", "アパレル販売", {"wants": "アパレル販売", "avoids": "アパレルはノルマがきつそう"}),
+    ("b0601", "販売", {"experience": "アパレル販売を2年"}),  # keywords に職種の名前の全体が無く、販売は長い語の一部
+    # 短い語を当てるとき、それを含む職種の名前の全体が避けたいことにあっても付けない(task 229 の 4 回目の自動レビュー)
+    ("b0605", "販売", {"wants": "販売の仕事", "avoids": "アパレル販売はもうやりたくない"}),
+    ("b0101", "ホール", {"experience": "ホールを2年", "avoids": "飲食ホールはもう嫌"}),
+    # 当てる語と重ならない語(販売を当てるときのアパレル)が避けたいことにあっても、その職種の求人には付けない(5 回目)
+    ("b0605", "販売", {"wants": "販売の仕事", "avoids": "アパレルはもう嫌"}),
+    ("b0101", "飲食 キッチン", {"wants": "飲食で働きたい", "avoids": "ホールは苦手"}),
+    # 避けたいことの語が長い語の頭にあるとき(飲食店の飲食、コンビニムリのコンビニ)も付けない
+    ("b0101", "ホール", {"experience": "ホールを2年", "avoids": "飲食店はもう嫌"}),
+    ("a002", "コンビニ", {"wants": "コンビニ", "concerns": "コンビニムリかも"}),
+])
+def test_keyword_reason_is_none_unless_a_vocab_word_was_said_and_searched(job_id, keywords, said):
+    assert _reason(job_id, keywords, **said) is None
+
+
+def test_no_card_gets_a_made_up_reason_for_a_first_timer(state, offline_keywords):
+    # 自動レビューの E2E: 経験「飲食未経験」、keywords は Prompt の決まりどおり「未経験」を入れる
+    for uid, prefs, kw in [("u-new", {"experience": "飲食未経験", "wants": "ホール"}, "未経験 ホール"),
+                           ("u-new2", {"experience": "接客未経験"}, "未経験 カフェ"),
+                           ("u-new3", {"experience": "飲食 未経験"}, "未経験 飲食"),
+                           ("u-n2", {"wants": "コンビニ。夜勤ムリ"}, "コンビニ 夜勤")]:
+        logic.save_preferences(state, uid, prefs)
+        for card in logic.recommend(state, uid, area="渋谷" if uid != "u-n2" else None, keywords=kw, limit=10)["jobs"]:
+            assert not any("「未経」" in x or "夜勤" in x or "接客" in x for x in card["reasons"]), card  # 待遇の「未経験OK」は前から
+            # 付くのは、やりたいことに語の全体である職種の語(ホール・コンビニ)と、その職種の求人だけ
+            for x in card["reasons"]:
+                if "お話" in x or "ご経験" in x:
+                    assert (x, card["job_type"]) in {("ホールの仕事をしたいというお話に合います", "飲食ホール"),
+                                                     ("コンビニの仕事をしたいというお話に合います", "コンビニ")}
+
+
+def test_reasons_tell_the_job_type_the_user_named_as_experience(state, offline_keywords):
+    # 3 回目の自動レビューの E2E: 職種の名前そのものを経験として話し、keywords にも入れて探した
+    for uid, exp, kw, word in [("u-apparel", "アパレル販売を2年", "アパレル販売", "アパレル販売"),
+                               ("u-office", "オフィス事務を3年", "オフィス事務", "オフィス事務")]:
+        logic.save_preferences(state, uid, {"experience": exp})
+        cards = logic.recommend(state, uid, keywords=kw, job_type=word)["jobs"]
+        assert cards and all(c["job_type"] == word for c in cards)
+        assert all(f"{word}のご経験を活かせます" in c["reasons"] for c in cards), cards
+
+
+def test_attribute_reason_stays_first_and_the_users_words_come_next(state):
+    job, jobs = logic.load_jobs()["a003"], logic.load_jobs()
+    reasons = logic._reasons(job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
+                             {"max_talk_level": 3}, "カフェ", {"wants": "カフェ"})
+    assert reasons == [logic.TALK_REASONS[job.talk_level], "カフェの仕事をしたいというお話に合います"]
+
+
+def test_users_words_take_the_place_of_the_second_attribute_reason(state):
+    # 属性の理由が2つあるときも、本人の話は1つ目の次。2つまでの制限で消えるのは2つ目の属性の理由
+    job, jobs = logic.load_jobs()["a003"], logic.load_jobs()
+    args = (job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
+            {"max_talk_level": 3, "max_physical_level": 2})
+    assert logic._reasons(*args) == [logic.TALK_REASONS[job.talk_level], logic.PHYSICAL_REASONS[job.physical_level]]
+    assert logic._reasons(*args, "カフェ", {"wants": "カフェ"}) == [
+        logic.TALK_REASONS[job.talk_level], "カフェの仕事をしたいというお話に合います"]
+
+
+def test_no_story_reason_on_a_job_type_the_user_wants_to_avoid(state, offline_keywords):
+    # 5 回目の自動レビューの E2E: 避けたいことに職種の一部の語(アパレル)があり、別の語(販売)で探した
+    logic.save_preferences(state, "u-avoid", {"wants": "販売の仕事", "avoids": "アパレルはもう嫌"})
+    cards = logic.recommend(state, "u-avoid", keywords="販売", limit=10)["jobs"]
+    story = "販売の仕事をしたいというお話に合います"
+    assert {c["job_type"] for c in cards} >= {"アパレル販売", "スーパー・販売"}, cards
+    for c in cards:
+        assert (story in c["reasons"]) == (c["job_type"] == "スーパー・販売"), c
+
+
 # ----------------------------- 支援・記録 -----------------------------
 
 
@@ -210,7 +415,7 @@ def test_wait_without_refusal_words_is_not_recorded(state):
     # 「別のこと」を選んだだけの人を wait にしない(断っていない人を wait と記録しない。spike 2026-09-25)
     r = logic.record_outcome(state, "sim-yoru", "wait", "別のことを選んだ。内容は未確認", 0.6)
     assert "error" in r and not state.user("sim-yoru").get("outcomes")
-    # 「考えます」は迷いのサインで、断りではない(迷いのポイントを聞いて支援する)
+    # 「考えます」は断りではない(お礼つきなら会話の終わりとして締め、迷いを言っていれば迷いのポイントを聞く)
     assert "error" in logic.record_outcome(state, "sim-yoru", "wait", "ありがとう、考えます", 0.6)
     assert logic.record_outcome(state, "sim-yoru", "wait", "もう送らないで", 0.9)["recorded"]["outcome"] == "wait"
     assert logic.record_outcome(state, "sim-yoru", "consult", "面接の質問", 0.8)["recorded"]["outcome"] == "consult"

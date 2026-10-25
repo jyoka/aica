@@ -32,9 +32,10 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 
 - image に `.env` が入っていない(`.dockerignore`)。API キーは `docker run` の環境変数でだけ渡す
 - `/healthz` が 200 になる。`GET /` の Cookie に `Secure` と `HttpOnly` が付く
-- 新しいブラウザで開くと初回訪問(`visit`)になり、挨拶の吹き出しが返る
+- 新しいブラウザで開くと、まず使い始める同意を求める(入口は無く、LLM を呼ばない)。画面の「同意して始める」と同じく
+  今の版で同意すると(`POST /api/consent`)初回訪問(`visit`)になり、挨拶の吹き出しが返る
 - 画面(`/`、`/dev`、`/static/talk-core.js`)と返信と履歴に、`OPENAI_API_KEY` の値が出てこない
-- `/app/data` がコンテナの外のボリュームで、コンテナを再起動しても会話の履歴と dip の状態が残る
+- `/app/data` がコンテナの外のボリュームで、コンテナを再起動しても会話の履歴と同意と dip の状態が残る
 
 2026-10-25 に手元(OrbStack)で通しました。挨拶の後のコンテナのメモリは約 200MB でした(Starter は 512MB)。
 
@@ -50,7 +51,8 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
 - `AICA_TRUST_PROXY=1` と `AICA_INTERNAL_KEY`(乱数)は Blueprint が入れます。`AICA_INTERNAL_KEY` は同じコンテナの Web プロセスと
-  音声ワーカーが同じ値を読むので、そろえる手間はありません
+  音声ワーカーが同じ値を読むので、そろえる手間はありません。音声相談の設定(`LIVEKIT_*`)があるのに `AICA_INTERNAL_KEY` が無い、
+  短い(32 文字未満)ときは、Web プロセスも音声ワーカーも起動で止まります。ダッシュボードで作るときは、忘れずに長い乱数を入れます
 - Blueprint を使わずにダッシュボードで作るときは、下の「環境変数」の表と、Health Check Path `/healthz`、
   ディスクの Mount Path `/app/data` を同じに設定します。Docker Command は空のままにします(`Dockerfile` の CMD を使う)
 
@@ -68,7 +70,7 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 
 ### 3. トークの 1 往復と再訪の挨拶を確かめる **【運営者】**
 
-1. スマホのブラウザで公開 URL を開く。挨拶が出たら、1 回書いて返事が来ることを確かめる
+1. スマホのブラウザで公開 URL を開く。同意の画面で「同意して始める」を押し、挨拶が出たら、1 回書いて返事が来ることを確かめる
 2. 30 分より後に、同じブラウザで開き直す。前回の続きを踏まえた再訪の挨拶になることを確かめる
 3. 2 の手順の smoke で出た匿名ユーザーIDでも確かめられます
 
@@ -120,6 +122,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | エージェント、履歴書の読み取り、意味検索 |
 | `AICA_TRUST_PROXY` | `1` | Blueprint | IP を `X-Forwarded-For` の最後の値から取る(Render のプロキシの後ろ) |
 | `AICA_INTERNAL_KEY` | 乱数 | Blueprint(`generateValue`) | 音声ワーカーが結果を返すときの共有鍵 |
+| `VOICE_RESUME_STT_PROVIDER` | `deepgram` | Blueprint | 本番の文字起こしを Deepgram に固定する。変えない(`openai` にすると声そのものが OpenAI に届く。[privacy.md](../design/privacy.md) の 3.2) |
 | `AICA_SECURE_COOKIE` | `1` | `Dockerfile` | 匿名ユーザーIDの Cookie に `Secure` を付ける |
 | `PORT` | `10000` | Render | `scripts/container_start.sh` が `LINE_SIM_PORT` にする |
 
@@ -179,7 +182,7 @@ LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKi
 |---|---|---|
 | `/app/data/line_checkpoints.db` | 会話 | 本人が「すべて消す」。履歴書を消すと、その前の会話も消える |
 | `/app/data/state.json`、`dip_*.db` | プロフィール(希望、経歴、履歴書の読み取り結果、保存した求人、応募) | 本人が消す、「すべて消す」 |
-| `/app/data/voice-resume/` | 音声相談の下書きと文字起こし | 本人が下書きを消す、「すべて消す」 |
+| `/app/data/voice-resume/` | 本番では書かない。`VOICE_RESUME_WRITE_FILES` を付けないと、音声相談の下書きと文字起こしをファイルに書き出さない(下書きは `state.json` に入る) | - |
 | `/app/data/costs.jsonl` | 匿名ユーザーIDごとの費用 | 消さない(上限を逃れられないように) |
 | `/app/data/quota.json` | 当日のターン数と、当日の接続元の IP | 日付(日本時間)が変わった後、最初にターンかプロフィールの書き込みがあったときに書き直されて消える(それまではファイルに残る) |
 | Render のアクセスログ | 要求のパス、時刻、接続元など | Render の保存の期間による(不明。Render の設定と規約で確かめる) |

@@ -69,7 +69,7 @@ class Advisor(ScriptedModel):
         if human.startswith("[イベント:"):
             return reply(["こんにちは。お仕事探しをお手伝いします。何をしますか?"], quick_replies=MENU)
         if human == "まず相談する":
-            return reply(PROPOSE, quick_replies=["文字で話す", "今はいい"], actions=ACTIONS)
+            return reply(PROPOSE, quick_replies=["今はいい"], actions=ACTIONS)
         return reply(["承知しました。これまでのお仕事を教えてください。"], quick_replies=["飲食", "販売", "今はいい"])
 
 
@@ -102,7 +102,7 @@ def test_ai_offers_resume_and_voice_as_actions_on_the_talk_and_dev_screens(advis
         assert greeting["actions"] == [] and greeting["quick_replies"] == MENU
         r = stream(client, opened["user"], "message", greeting["thread"], "まず相談する")[-1]
         assert r["kind"] == "reply" and r["actions"] == ACTIONS
-        assert r["quick_replies"] == ["文字で話す", "今はいい"]  # 操作は自由文の選択肢とは別に届く
+        assert r["quick_replies"] == ["今はいい"]  # 操作は自由文の選択肢とは別に届く(「文字で話す」は付けない)
         assert turn_violations(0, r) == []  # 評価の機械判定(1問・逃げ道・80字)も通る
 
         # /dev のシナリオでも同じ返信の形(画面は同じ talk-core.js で描く)
@@ -119,8 +119,8 @@ def test_ai_offers_resume_and_voice_as_actions_on_the_talk_and_dev_screens(advis
 def test_actions_without_a_text_choice_are_flagged_by_the_checks():
     r = {"bubbles": ["これまでのお仕事を教えてください。"], "quick_replies": [], "cards": [], "buttons": [], "tools": [],
          "actions": ACTIONS}
-    assert any("文字で話す" in v for v in turn_violations(0, r))
-    assert turn_violations(0, r | {"quick_replies": ["文字で話す", "今はいい"]}) == []
+    assert any("文字の選択肢" in v for v in turn_violations(0, r))
+    assert turn_violations(0, r | {"quick_replies": ["接客", "事務", "今はいい"]}) == []
 
 
 def test_the_screens_turn_actions_into_file_picking_and_the_voice_entry():
@@ -303,6 +303,7 @@ LIVEKIT_ENV = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": 
 def livekit(monkeypatch):
     for k, v in LIVEKIT_ENV.items():
         monkeypatch.setenv(k, v)
+    monkeypatch.setenv("AICA_INTERNAL_KEY", "offline-test-internal-key-offline-test")  # 無いと起動で止まる
 
 
 def _fake_livekit(context) -> list[str]:
@@ -340,7 +341,7 @@ def _talk_through_actions(page, context) -> None:
     pick = page.locator("#log .chips button.action", has_text="ファイルを選ぶ")
     talk = page.locator("#log .chips button.action", has_text="話して伝える(音声・約5分)")
     pick.wait_for()
-    assert talk.count() == 1 and page.locator("#log .chips button", has_text="文字で話す").count() == 1
+    assert talk.count() == 1 and page.locator("#log .chips button", has_text="文字で話す").count() == 0
 
     before = page.locator("#log .sys").count()
     _open_and_close_the_voice_sheet(page, context, talk.click)

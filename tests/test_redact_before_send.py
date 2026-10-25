@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,6 +34,7 @@ from tests.test_handle import ScriptedModel, call, reply, run
 from tests.test_revisit import Greeter, greet, propose
 from tests.test_talk_page import app, open_talk, stream  # noqa: F401  app はフィクスチャ
 
+DEPS = SimpleNamespace(state=None)  # 同意はテストの既定で「している」扱い(tests/conftest.py)。状態は読まない
 PHONE, MAIL, ADDRESS = "090-1234-5678", "sample.user@example.com", "みほん市みほん町1丁目2-3"
 SAID = f"渋谷で日中に働きたいです。連絡は {PHONE} か {MAIL} に。家は {ADDRESS} です"
 SENT = f"渋谷で日中に働きたいです。連絡は {REDACTED} か {REDACTED} に。家は {REDACTED} です"
@@ -46,15 +48,15 @@ def _no_personal(text: str) -> bool:
 
 
 def test_accept_redacts_phone_mail_and_address_and_marks_the_turn():
-    t = turn.accept(None, "w-0123456789abcdef", "message", SAID, None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", SAID, None)
     assert t.text == SENT and t.redacted is True
     # 全角で書いても伏せる(照合の前に半角にそろえる決まりは resume_draft.pii と同じ)。電話番号は住む言葉が無くても伏せる。
     # 電話番号の形は住所の形(1-2-3)にも当たるが、住む言葉の無い文では住所とみなさないので、電話番号の所だけを伏せる
-    t = turn.accept(None, "w-0123456789abcdef", "message", "渋谷で働きたい。電話は０９０－１２３４－５６７８です", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", "渋谷で働きたい。電話は０９０－１２３４－５６７８です", None)
     assert t.text == f"渋谷で働きたい。電話は{REDACTED}です" and t.redacted
-    t = turn.accept(None, "w-0123456789abcdef", "message", f"{PHONE}に連絡して渋谷で日中がいい", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"{PHONE}に連絡して渋谷で日中がいい", None)
     assert t.text == f"{REDACTED}に連絡して渋谷で日中がいい"
-    t = turn.accept(None, "w-0123456789abcdef", "message", f"{MAIL} に送って", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"{MAIL} に送って", None)
     assert t.text == f"{REDACTED} に送って"
 
 
@@ -74,7 +76,7 @@ ORDINARY = [
 
 @pytest.mark.parametrize("text", ORDINARY)
 def test_ordinary_search_words_are_not_redacted(text):
-    t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
     assert t.text == text and t.redacted is False
 
 
@@ -82,24 +84,24 @@ def test_job_card_buttons_send_the_title_unchanged():
     """求人カードのボタンが送る文(talk-core.js、LINE の Flex)は、どの求人でも伏せない(求人の話が続けられる)。"""
     for job_id, job in load_jobs().items():
         for text in (f"「{job.title}」について詳しく教えて", f"「{job.title}」({job_id})を保存して"):
-            t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+            t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
             assert t.text == text, text
 
 
 def test_too_long_is_checked_on_what_the_user_wrote_and_on_what_is_sent():
     with pytest.raises(turn.BadTurn):
-        turn.accept(None, "w-0123456789abcdef", "message", PHONE * 500, None)
+        turn.accept(DEPS, "w-0123456789abcdef", "message", PHONE * 500, None)
     # 伏せると長くなる(「番地」の 2 字が [個人情報を削除] の 9 字に)。送る文も上限を超えない
     text = "家は" + " 番地" * 1666
     assert len(text) <= turn.MAX_TEXT_CHARS
     with pytest.raises(turn.BadTurn):
-        turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
 
 
 def test_redaction_repeats_until_nothing_is_left():
     """電話番号のすぐ後ろにメールアドレスが続いても、どちらも伏せる(1 回では、メールが前の文字に続いて見えて当たらない)。
     伏せた文をもう一度伏せても変わらない(runtime.event_input でもう一度伏せる)。"""
-    t = turn.accept(None, "w-0123456789abcdef", "message", f"{PHONE}.{MAIL}", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"{PHONE}.{MAIL}", None)
     assert t.text == REDACTED * 2 and redact_personal(t.text) == t.text
     assert redact_personal(SENT) == SENT
 
@@ -118,7 +120,7 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                        ("みほん町３－５に引っ越しました", f"{REDACTED}に引っ越しました"),
                        ("１－２－３に住む", f"{REDACTED}に住む"),
                        ("東京都みほん区みほん町1丁目2-3みほんビル101号室に住む", f"{REDACTED}に住む")):
-        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
         assert t.text == said and t.redacted, text
         assert personal_value(text), text
     # 句読点や空白の無い 1 文に住所と検索の条件を書いても、条件は残る
@@ -128,7 +130,7 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                        ("新宿三丁目に住んでいて渋谷駅近くのカフェで働きたい", f"{REDACTED}に住んでいて渋谷駅近くのカフェで働きたい"),
                        ("自宅はみほん市3-5なので近くの倉庫の仕事がいいです", f"自宅は{REDACTED}なので近くの倉庫の仕事がいいです"),
                        ("家は新宿区西新宿2-8-1の近くの店で週3-4日", f"家は{REDACTED}の近くの店で週3-4日")):
-        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
         assert t.text == said and t.redacted, text
     # 住所の部分だけを伏せても、地名、番地、建物の名前は残さない
     for text, said in (("自宅はみほん市あおば台1-2-3です", f"自宅は{REDACTED}です"),
@@ -146,6 +148,18 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                        ("住所は東京都中央区銀座4-5です", f"住所は{REDACTED}です"),
                        ("住所は長野県みほん市大字みほん1234-5です", f"住所は{REDACTED}です"),
                        ("住所は東京都中央区銀座4の5の6です", f"住所は{REDACTED}です"),
+                       # 住む言葉と同じ文では、地名の後ろの数の並びを、数が 1 つでも住所とみなす(「12の3」「二番八号」も)
+                       ("住所はみほん県みほん郡みほん町大字みほん1234です", f"住所は{REDACTED}です"),
+                       ("住所はみほん町552です", f"住所は{REDACTED}です"),
+                       ("自宅はみほん市あおば町12の3です", f"自宅は{REDACTED}です"),
+                       ("住所はみほん町552のみほんハイツ101号室です", f"住所は{REDACTED}です"),
+                       ("住所はみほん町二番八号です", f"住所は{REDACTED}です"),
+                       ("住所は港区芝公園4丁目2の8です", f"住所は{REDACTED}です"),
+                       # 地名と番地の間に空白 1 つがあっても、地名から番地まで伏せる
+                       ("住所はみほん市みほん町 552です", f"住所は{REDACTED}です"),
+                       ("住所はみほん町 5-6です", f"住所は{REDACTED}です"),
+                       ("住所はみほん郡みほん町大字みほん 1234です", f"住所は{REDACTED}です"),
+                       ("住所は東京都千代田区千代田 1-1-1です", f"住所は{REDACTED}です"),
                        # 郵便番号から書いた住所は、郵便番号も伏せる
                        ("住所は〒100-0001 東京都千代田区千代田1-1です", f"住所は{REDACTED}です"),
                        # 住む言葉のすぐ後ろのひらがなの町名は、助詞の字で終わっても残さない
@@ -155,12 +169,12 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                        ("引っ越し先は東京都中央区銀座4-5-6です", f"引っ越し先は{REDACTED}です"),
                        # 文の始まりの助詞は地名に含めない
                        ("を新宿三丁目に住んでる", f"を{REDACTED}に住んでる")):
-        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
         assert t.text == said and t.redacted, text
     # 伏せるのは住む言葉と同じ文の住所らしい所だけ。ほかの文の条件は残る
-    t = turn.accept(None, "w-0123456789abcdef", "message", "新宿三丁目5分以内で探して。家は 渋谷区神南1丁目2-3 です", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", "新宿三丁目5分以内で探して。家は 渋谷区神南1丁目2-3 です", None)
     assert t.text == f"新宿三丁目5分以内で探して。家は {REDACTED} です"
-    t = turn.accept(None, "w-0123456789abcdef", "message", "住所は、みほん市みほん町1丁目。渋谷駅の近くで働きたい", None)
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", "住所は、みほん市みほん町1丁目。渋谷駅の近くで働きたい", None)
     assert t.text == f"住所は、{REDACTED}。渋谷駅の近くで働きたい"
     # 見出しだけの行(「住所:」「【住所】」「自宅」)の後ろの行の住所も伏せる。連絡先を貼るときによくある書き方
     for text, said in (("住所:\n東京都みほん区みほん町1-2-3", f"住所:\n{REDACTED}"),
@@ -170,20 +184,26 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                        ("住所\n〒100-0001\nみほん市みほん町3丁目", f"住所\n{REDACTED}"),
                        ("住所:\nみほん市みほん町1-2-3\n新宿三丁目5分以内で探して",
                         f"住所:\n{REDACTED}\n新宿三丁目5分以内で探して")):
-        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", text, None)
         assert t.text == said and t.redacted, text
         assert personal_value(text), text
     # ふつうの文の改行は、次の行に効かせない
     text = "住所は言いたくないです\n新宿三丁目5分以内で探して"
-    assert turn.accept(None, "w-0123456789abcdef", "message", text, None).text == text
+    assert turn.accept(DEPS, "w-0123456789abcdef", "message", text, None).text == text
     assert not personal_value(text)
     # 住む言葉の無い文は、地名、駅、丁目、番地の形でも伏せない(personal_value も同じ)
     for text in ORDINARY:
         assert not personal_value(text), text
-    # 住む言葉と同じ文でも、数の幅(人数、回数、給与、日付)は 2 つ組の住所とみなさない
-    for text in ("住んでる所から5-10人の職場", "自宅から時給1000-1200円", "家から3-6か月以内に住所を決めたい"):
-        assert turn.accept(None, "w-0123456789abcdef", "message", text, None).text == text, text
-    t = turn.accept(None, "w-0123456789abcdef", "message", "住所はみほん町2-3で月3-5回、年収400-500万円", None)
+    # 住む言葉と同じ文でも、後ろに単位が続く数(人数、回数、給与、日付、年代、駅の数、時間)と、時給・週などの後ろの数、
+    # 桁の区切り・時刻・幅の続き(「1,000円」「18:00」「4〜5時間」)は住所とみなさない。どれも求人の検索の条件
+    for text in ("住んでる所から5-10人の職場", "自宅から時給1000-1200円", "家から3-6か月以内に住所を決めたい",
+                 "自宅は町田市で時給1200円", "家から2駅以内で20代歓迎の店", "自宅から近い所で週3日、1日4時間",
+                 "自宅から一番近い店舗", "自宅の近くで時給は1,000円以上がいい", "家は新宿で、時給は1,200円以上",
+                 "自宅の近くで、18:00から22:00まで働きたい", "自宅から近くで、朝6:30から", "自宅から近い所で、1日4〜5時間",
+                 "自宅から近い所で、1日4～5時間", "家は駅から10分で、1日8h働きたい", "自宅は町田市で時給 1200",
+                 "自宅から近くで 3,000円"):
+        assert turn.accept(DEPS, "w-0123456789abcdef", "message", text, None).text == text, text
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", "住所はみほん町2-3で月3-5回、年収400-500万円", None)
     assert t.text == f"住所は{REDACTED}で月3-5回、年収400-500万円"
 
 
@@ -192,7 +212,7 @@ def test_every_job_station_is_kept_with_or_without_eki():
     for station in {j.station for j in load_jobs().values()}:
         for name in (station, station.removesuffix("駅")):
             text = f"{name}の求人が気になります"
-            assert turn.accept(None, "w-0123456789abcdef", "message", text, None).text == text, text
+            assert turn.accept(DEPS, "w-0123456789abcdef", "message", text, None).text == text, text
 
 
 # ----------------------------- Web のトーク: LLM と会話の保存に届かない -----------------------------

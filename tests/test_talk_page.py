@@ -21,7 +21,7 @@ from dip_mcp.data import State
 from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, greet
 
-INTERNAL_KEY = "offline-test-internal-key"
+INTERNAL_KEY = "offline-test-internal-key-offline-test"
 WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}
 
 
@@ -67,6 +67,11 @@ def open_talk(client) -> tuple[dict, dict]:
     return opened, evs[-1] | {"thread": thread_of(evs)}
 
 
+def without_consent(opened: dict) -> dict:
+    """/api/talk/open の結果から、同意の状態と文言(consent。tests/test_consent.py で確かめる)を除いたもの。"""
+    return {k: v for k, v in opened.items() if k != "consent"}
+
+
 def thread_of(evs: list[dict]) -> int | None:
     """ストリームが LLM を呼ぶ前に出す、このターンの会話番号(本番のトーク画面が thread を送ったときだけ出る。
     会話数の上限で断ったときは会話に入らないので出ない)。"""
@@ -92,14 +97,14 @@ def test_first_open_greets_as_a_first_visit_and_reopening_greets_as_a_revisit(ap
         assert app.ANON_COOKIE not in client.cookies
         opened, first = open_talk(client)
         uid = client.cookies[app.ANON_COOKIE]
-        assert opened == {"user": uid, "event": "visit", "thread": 0, "search_track": "未定"}
+        assert without_consent(opened) == {"user": uid, "event": "visit", "thread": 0, "search_track": "未定"}
         assert first["entry"] == "visit" and first["tools"] == [] and first["thread"] == 1
         assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
 
         # Cookie あり(同じブラウザで30分を過ぎて開き直す): 同じユーザーの再訪。要約を読んでから挨拶する
         app.later(31)
         opened, again = open_talk(client)
-        assert opened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert without_consent(opened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["entry"] == "revisit" and [t["name"] for t in again["tools"]] == ["get_user_conversation_summary"]
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
 
@@ -197,7 +202,7 @@ def test_reloading_mid_conversation_redraws_the_same_conversation_without_the_ll
 
         app.later(29)  # 最後のやりとりから30分以内に開き直す(再読み込み)
         reopened, hist = open_talk(client)
-        assert reopened == {"user": uid, "event": None, "thread": 1, "search_track": "未定"}
+        assert without_consent(reopened) == {"user": uid, "event": None, "thread": 1, "search_track": "未定"}
         assert client.app.state.quota.used(uid) == used and model.script == [remembers]  # LLM も会話数も使わない
         assert hist["thread"] == 1
         greeting, search = hist["turns"]
@@ -226,7 +231,7 @@ def test_opening_after_30_minutes_starts_a_new_conversation_with_the_revisit_gre
         stream(client, uid, "message", 1, "こんにちは")
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
         hist = client.get("/api/talk/history").json()  # 描き直すのは新しい会話だけ
         assert hist["thread"] == 2 and len(hist["turns"]) == 1
@@ -370,7 +375,7 @@ def test_a_first_greeting_cut_off_by_a_disconnect_still_counts_as_opened(app):
 
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
@@ -445,7 +450,7 @@ def test_a_first_greeting_cut_off_by_a_real_disconnect_still_counts_as_opened(ap
 
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
     assert model.script == []
 
@@ -470,7 +475,7 @@ def test_a_greeting_cut_off_before_its_wording_changed_still_counts_as_opened(ap
         monkeypatch.setattr(runtime, "GREETINGS", {"visit": "はじめての訪問", "revisit": "ふたたびの訪問"})
         app.later(31)
         reopened, again = open_talk(client)
-        assert reopened == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
+        assert without_consent(reopened) == {"user": uid, "event": "revisit", "thread": 1, "search_track": "未定"}
         assert again["bubbles"] == ["おかえりなさい。何をしますか?"] and again["thread"] == 2
     assert model.script == []
 

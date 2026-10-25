@@ -2,6 +2,10 @@
 
 複数の知人が同時に使う前提なので、費用の行には必ずユーザーIDが付く(誰の利用にいくらかかったかを後から数えられる)。
 料金表はここが正で、評価の計測(evals/meter.py)も同じ表を使う。
+ユーザーIDを持つのは ID_TTL(90 日)まで。過ぎた行は、期間で消す掃除(line_runtime.purge)が日ごと(日本時間)の
+合計の 1 行(user_id は FOLDED、calls に元の行の数)に置き換える(fold_old。docs/design/privacy.md の 3.3)。
+本人が「すべて消す」をしたら、その人の行のユーザーIDを FOLDED に置き換える(forget。金額とトークン数は残す)。
+外した行も、90 日を過ぎたら日ごとの合計にまとめる。
 
 ユーザー別・日別の集計(運営者向け、日付は日本時間・ユーザーは会話数の上限と同じ人単位):
 
@@ -14,10 +18,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import threading
 import warnings
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from line_runtime.quota import person, today
@@ -33,6 +38,10 @@ PRICES = {
     "gpt-6-luna": (0.1, 0.5),
 }
 WEB_SEARCH_PER_CALL = 0.01
+ID_TTL = timedelta(days=90)  # 行にユーザーIDを残す期間。過ぎたら日ごとの合計にする
+FOLDED = "deleted"  # 日ごとの合計の行と、「すべて消す」をした人の行の user_id(どの人の分かは残さない)
+DAILY_TOTAL = "daily_total"  # 日ごとの合計の行の event
+_TOTALS = ("input_tokens", "output_tokens", "cache_read", "cache_write")
 
 
 _UNPRICED: set[str] = set()
@@ -84,6 +93,64 @@ class Ledger:
         return row
 
 
+    def fold_old(self, now: datetime) -> int:
+        """now から ID_TTL より前の行を、日ごとの合計の行に置き換える(ファイルとメモリの両方)。ユーザーIDを外した行の数を返す。
+        ファイルは全体を書き直してから置き換える(追記と同じロックの中なので、その間の記録は失わない)。"""
+        cutoff = now - ID_TTL
+        with self._lock:
+            self.rows, n = fold(self.rows, cutoff)
+            if self.path and self.path.is_file():
+                before = load(self.path)
+                rows, n = fold(before, cutoff)
+                if rows is not before:
+                    self._rewrite(rows)
+        return n
+
+    def forget(self, person_id: str) -> int:
+        """「すべて消す」: その人(quota.person。シナリオユーザーも含む)の行のユーザーIDを FOLDED に置き換える
+        (ファイルとメモリの両方)。金額、トークン数、時刻、イベント、モデルは残す。置き換えた行の数を返す。"""
+        def drop(rows: list[dict]) -> tuple[list[dict], int]:
+            hit = [r.get("user_id") != FOLDED and person(r.get("user_id") or "") == person_id for r in rows]
+            return [r | {"user_id": FOLDED} if h else r for r, h in zip(rows, hit, strict=True)], sum(hit)
+
+        with self._lock:
+            self.rows, n = drop(self.rows)
+            if self.path and self.path.is_file():
+                rows, n = drop(load(self.path))
+                if n:
+                    self._rewrite(rows)
+        return n
+
+    def rows_of(self, person_id: str) -> list[dict]:
+        """その人(シナリオユーザーも含む)の行(プロフィールの「データを書き出す」)。ファイルがあればファイルから読む。"""
+        with self._lock:
+            rows = load(self.path) if self.path else list(self.rows)
+        return [r for r in rows if r.get("user_id") != FOLDED and person(r.get("user_id") or "") == person_id]
+
+    def _rewrite(self, rows: list[dict]) -> None:
+        """ファイルを一時ファイルに書いてから置き換える。self._lock の中で呼ぶ。"""
+        tmp = self.path.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        tmp.replace(self.path)
+
+
+def fold(rows: list[dict], cutoff: datetime) -> tuple[list[dict], int]:
+    """cutoff より前の行を、日ごと(日本時間)の合計の 1 行にまとめる。前にまとめた合計の行も、同じ日なら 1 行にまとめ直す。
+    「すべて消す」でユーザーIDを外した行(user_id が FOLDED の 1 回の呼び出しの行)もまとめる。
+    (まとめた後の行, ユーザーIDを外した行の数)。まとめる行が無ければ rows をそのまま(同じ list を)返す。"""
+    old = [r for r in rows if datetime.fromisoformat(r["at"]) < cutoff]
+    n = sum(1 for r in old if r.get("user_id") != FOLDED)
+    if not any(r.get("event") != DAILY_TOTAL for r in old):
+        return rows, 0
+    days: dict[str, list[dict]] = defaultdict(list)
+    for r in old:
+        days[today(datetime.fromisoformat(r["at"]))].append(r)
+    totals = [{"at": max(r["at"] for r in rs), "user_id": FOLDED, "event": DAILY_TOTAL, "model": "",
+               "calls": sum(r.get("calls", 1) for r in rs), **{k: sum(r.get(k) or 0 for r in rs) for k in _TOTALS},
+               "cost_usd": round(sum(r.get("cost_usd") or 0.0 for r in rs), 6)} for _, rs in sorted(days.items())]
+    return totals + [r for r in rows if datetime.fromisoformat(r["at"]) >= cutoff], n
+
+
 def load(path: Path) -> list[dict]:
     if not Path(path).is_file():
         return []
@@ -96,7 +163,7 @@ def summarize(rows: list[dict], by_person: bool = True) -> list[dict]:
         lambda: {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
     for r in rows:
         g = groups[(today(datetime.fromisoformat(r["at"])), person(r["user_id"]) if by_person else r["user_id"])]
-        g["calls"] += 1
+        g["calls"] += r.get("calls", 1)  # 日ごとの合計の行(fold)は、まとめた行の数
         g["input_tokens"] += r.get("input_tokens") or 0
         g["output_tokens"] += r.get("output_tokens") or 0
         g["cost_usd"] += r.get("cost_usd") or 0.0

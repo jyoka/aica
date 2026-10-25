@@ -34,7 +34,9 @@ def test_scenario_list_has_titles_and_no_user_first_start():
                         "C-consult-propose", "C-consult-only", "C-consult-switch",  # 相談モード
                         # aica v2 の E: 区分つきの再訪と、雇用区分・相談の深さを見るペルソナ
                         "R-revisit-track", "T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent",
-                        "T-switch-to-fulltime"}
+                        "T-switch-to-fulltime",
+                        # 会話の改善 (2/3): ゲームの下書きに空欄がある人の再訪(挨拶で勧める入口)
+                        "R-revisit-draft"}
     for sc in SCENARIOS:
         assert sc["title"] and sc["desc"] and sc["event"] in EVENTS
         assert sc["event"] != "message"  # ユーザーのメッセージ待ちから始まるものは無い

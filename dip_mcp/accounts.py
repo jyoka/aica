@@ -285,6 +285,17 @@ class Accounts:
             db.execute("DELETE FROM links WHERE user_id = ?", (user_id,))
         return row[0] if row else None
 
+    def forget_users(self, user_ids: list[str]) -> None:
+        """そのユーザーたちの連携と、bot が出した linkToken を外す(期間で消す掃除。ユーザーIDを表に残さない)。"""
+        with self._tx() as db:
+            for table in ("links", "link_tokens"):
+                db.executemany(f"DELETE FROM {table} WHERE user_id = ?", ((u,) for u in user_ids))
+
+    def vacuum(self) -> None:
+        """消した行がファイルの空き領域に残らないように詰める(期間で消す掃除の後。line_runtime.purge)。"""
+        with closing(sqlite3.connect(self.path, isolation_level=None, timeout=10)) as db:
+            db.execute("VACUUM")
+
     def reset_links(self) -> None:
         """連携の表を初期(シナリオのユーザーだけが連携済み)に戻す。出した linkToken と nonce も忘れる。"""
         with self._tx() as db:

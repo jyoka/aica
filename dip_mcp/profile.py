@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy
 import json
 
-from dip_mcp import arcade, behavior, logic
+from dip_mcp import accounts, arcade, behavior, logic, retention
 from dip_mcp.data import State, now
 from resume_draft.pii import personal_value
 from resume_draft.schema import document_kind_of
@@ -302,7 +302,8 @@ def resume_uploaded(state: State, line_user_id: str) -> None:
 
 
 # 「すべて消す」の後も持ち越すもの: 連番(古いリンクの rid が、消した後の新しい履歴書・下書き・ゲームの下書きを開かないように)と、
-# 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)
+# 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)。
+# 持ち越した行には消した時刻を最後の利用として書き、部屋の名前は 1 日、行は 180 日で掃除が外す(dip_mcp.retention)
 _KEPT_ON_FORGET = ("resume_upload_seq", "voice_result_seq", "arcade_draft_seq")
 
 
@@ -313,20 +314,33 @@ def forget_all(state: State, line_user_id: str) -> dict:
     users = [line_user_id, *sorted(u for u in state.user_ids() if u.startswith(f"{line_user_id}:"))]
     files: list[str] = []
     for uid in users:
-        before = state.user(uid)
+        # 持ち越す値は、行を戻すのと同じロックの中で書き戻す(間に、消す前の部屋の書き込みが通らないように)
+        before = state.reset_user(uid, keep=_kept_on_forget)
         files += [f for r in before.get("voice_results", []) for f in r.get("files") or []]
-        kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
-        if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
-            kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
-        if "voice_results" in before:
-            kept["voice_result_seq"] = logic._next_voice_id(before)
-        rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
-        if rooms:
-            kept["forgotten_voice_rooms"] = rooms
-        state.reset_user(uid)
-        if kept:
-            state.update(uid, lambda u, kept=kept: u.update(kept))
     return {"forgotten": True, "files": files, "users": users}
+
+
+def _kept_on_forget(before: dict) -> dict:
+    """「すべて消す」の後も持ち越す値(消す前の 1 人の dict から)。"""
+    kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
+    if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
+        kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
+    if "voice_results" in before:
+        kept["voice_result_seq"] = logic._next_voice_id(before)
+    rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
+    if rooms:
+        kept["forgotten_voice_rooms"] = rooms
+    return retention.mark_forgotten(kept) if kept else kept
+
+
+def stored(state: State, line_user_id: str) -> dict:
+    """「データを書き出す」の dip の分: そのユーザーと、同じブラウザの /dev のシナリオ用ユーザーの、dip の状態の行
+    (state.json に保存しているそのままの形)と、dip の会員との連携(dip_id)。状態にいない人の行は出さない
+    (見るだけではユーザーを作らない)。範囲は「すべて消す」(forget_all)と同じ。"""
+    users = [u for u in state.user_ids() if u == line_user_id or u.startswith(f"{line_user_id}:")]
+    links = accounts.of(state)
+    return {"users": {u: state.user(u) for u in sorted(users)},
+            "links": {u: d for u in sorted({line_user_id, *users}) if (d := links.dip_id(u))}}
 
 
 # ----------------------------- 会話の途中で直したときの知らせ -----------------------------

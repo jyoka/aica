@@ -21,7 +21,7 @@ DUMMY_ENV = {
     "LINE_CHANNEL_SECRET": "offline-test",
     "LINE_CHANNEL_ACCESS_TOKEN": "offline-test",
     "AICA_ID_KEY": "offline-test-id-key-offline-test-id-key",
-    "AICA_INTERNAL_KEY": "offline-test-internal-key",
+    "AICA_INTERNAL_KEY": "offline-test-internal-key-offline-test",
     "LIVEKIT_URL": "wss://example.livekit.cloud",
     "LIVEKIT_API_KEY": "k",
     "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret",
