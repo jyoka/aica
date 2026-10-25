@@ -398,6 +398,6 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](docs/design/privacy.md) |
-| 利用規約とプライバシーポリシーの下書き(公開前に人が確認する) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) |
+| 利用規約とプライバシーポリシー(版 1.0。画面は `/legal/terms`、`/legal/privacy`。法律の確認は利用者がする) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md)、[docs/legal/README.md](docs/legal/README.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](docs/deploy/render.md) |

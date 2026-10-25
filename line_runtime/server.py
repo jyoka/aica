@@ -59,6 +59,9 @@ ID トークンをもう一度確かめて受け取り、届けるまでメモ�
 LIFF の中でマイクを試す画面(task 205): /liff/line/mic-check。LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と
 WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エラー名、音の大きさ、LIFF の環境)だけを POST /api/liff/mic-check が
 ログに 1 行書く。声もその文字起こしも送らない・残さない。本人を決めない(本人のデータを読み書きしない)。
+
+利用規約とプライバシーポリシー(task 207): GET /legal/terms と GET /legal/privacy。原文は docs/legal/ の Markdown で、
+line_runtime.legal が HTML にする。Cookie を発行も要求もしない。トーク画面と LIFF 画面の下から開ける(legal.footer_html)。
 """
 
 from __future__ import annotations
@@ -102,7 +105,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from dip_mcp import accounts, arcade, behavior, logic, profile, retention
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, line_channel, llm, purge, turn
+from line_runtime import config, fake_line, legal, line_channel, llm, purge, turn
 from line_runtime.arcade_reply import arcade_reply
 from line_runtime.log_policy import quiet_sdk_loggers
 from line_runtime.quota import (
@@ -353,6 +356,14 @@ async def shared_static(name: str):
     if name not in SHARED_STATIC | LIFF_STATIC:
         raise HTTPException(404)
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/legal/{name}", response_class=HTMLResponse)
+async def legal_page(name: str):
+    """利用規約(terms)とプライバシーポリシー(privacy)。原文は docs/legal/。だれでも開ける(Cookie を発行も要求もしない)。"""
+    if name not in legal.DOCS:
+        raise HTTPException(404)
+    return HTMLResponse(legal.page(name), headers={"Cache-Control": "no-cache"})
 
 
 # レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。ゲームの名前はファイル名と同じ。
@@ -974,14 +985,14 @@ def _login_form(link_token: str, message: str = "") -> str:
 
 def _bad_link_page() -> HTMLResponse:
     return HTMLResponse(_page("dip にログイン", "<p>このリンクは使えません。LINE のトークから、もう一度「アカウント連携」と"
-                                               "送ってください。</p>"), status_code=400)
+                                               "送ってください。</p>", legal_links=False), status_code=400)
 
 
 @app.get(line_channel.LINK_LOGIN_PATH, response_class=HTMLResponse)
 async def dip_login_page(link_token: Annotated[str, Query(alias="linkToken")] = ""):
     if not LINK_TOKEN_FORM.fullmatch(link_token):
         return _bad_link_page()
-    return _page("dip にログイン", _login_form(link_token))
+    return _page("dip にログイン", _login_form(link_token), legal_links=False)
 
 
 @app.post(line_channel.LINK_LOGIN_PATH)
@@ -994,7 +1005,7 @@ async def dip_login(link_token: Annotated[str, Form(alias="linkToken")] = "", lo
     acc = accounts.of(state)
     r = await asyncio.to_thread(acc.login, login_id, password)  # ハッシュの計算は遅いので、ほかの要求を止めない
     if "error" in r:
-        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]])),
+        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]]), legal_links=False),
                             status_code=429 if r["error"] == "locked" else 401)
     nonce = acc.issue_nonce(r["dip_id"], link_token)
     base = FAKE_ACCOUNT_LINK_PATH if app.state.fake_line.knows(link_token) else line_channel.ACCOUNT_LINK_URL
@@ -1039,9 +1050,10 @@ async def fake_line_account_link(request: Request, link_token: Annotated[str, Qu
     opener = _owner(request)
     event = app.state.fake_line.open_account_link(link_token, nonce, opener)
     if event is None:
-        return HTMLResponse(_page("アカウント連携", "<p>このリンクは使えません。</p>", "偽物の LINE"), status_code=404)
+        return HTMLResponse(_page("アカウント連携", "<p>このリンクは使えません。</p>", "偽物の LINE", legal_links=False), status_code=404)
     text = account_link(event["source"]["userId"], event["link"])
-    return _page("アカウント連携", f"<p>{escape(text)}</p><p><a href='/'>トークに戻る</a></p>", "偽物の LINE")
+    return _page("アカウント連携", f"<p>{escape(text)}</p><p><a href='/'>トークに戻る</a></p>", "偽物の LINE",
+                 legal_links=False)
 
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
@@ -1501,15 +1513,26 @@ async def liff_form(job: str, request: Request, scenario_user: str | None = None
     return _apply_form_page(_page_user(request, scenario_user), job, scenario_user)
 
 
+# 応募フォームの体験(求人は架空のデモ。docs/legal/terms.md の第 1 条)。欄は残し、架空の値を最初から入れておく。
+# 本物の情報を入れないよう画面に書き、送られた値は保存しない(docs/legal/privacy-policy.md の 2)。
+DEMO_FORM_VALUES = {"氏名": "山田 太郎", "電話番号": "090-0000-0000", "メールアドレス": "taro@example.com",
+                    "住所": "みほん市みほん町1-2-3", "生年月日": "2000-01-01", "年齢": "26", "希望開始日": "すぐに"}
+DEMO_FORM_OTHER = "架空の値"  # 上に無い項目
+APPLY_DEMO_NOTE = ("架空の求人のデモです。応募しても、実際の応募にはなりません。欄には架空の値を入れてあります。"
+                   "本物の情報は入れないでください。送った値は保存しません。")
+APPLY_DONE_TEXT = "応募の体験を終えました。架空の求人なので、実際の応募にはなりません。店舗から連絡は来ません。"
+
+
 def _apply_form_page(user: str, job: str, scenario_user: str | None = None) -> HTMLResponse | str:
     j = load_jobs().get(job)
     exit_ = logic.form_exit(state, user)
     if j is None or exit_ is None or exit_["job_id"] != job:
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
     fields = "".join(
-        f'<label>{escape(f)}<input name="f_{escape(f)}" required placeholder="(シミュレーションなので架空の値で)"></label>'
-        for f in exit_["remaining_fields"])
-    body = (f"<p class='job'>{escape(j.title)}<br><small>{escape(j.employer)}</small></p>"
+        f'<label>{escape(f)}<input name="f_{escape(f)}" required value="{escape(DEMO_FORM_VALUES.get(f, DEMO_FORM_OTHER))}">'
+        "</label>" for f in exit_["remaining_fields"])
+    body = (f"<p class='demo'>{escape(APPLY_DEMO_NOTE)}</p>"
+            f"<p class='job'>{escape(j.title)}<br><small>{escape(j.employer)}</small></p>"
             f"<p>入力済み: {escape('、'.join(exit_['completed_fields']))}</p>"
             f"<form method='post'><input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
             f"<input type='hidden' name='job' value='{escape(job)}'>{fields}<button>応募する</button></form>")
@@ -1525,9 +1548,9 @@ def _apply_submit(user: str, job: str) -> HTMLResponse | str:
     exit_ = logic.form_exit(state, user)
     if exit_ is None or exit_["job_id"] != job:  # 入力途中の応募が無ければ確定しない(状態にも書かない)
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
-    # 入力値は保存しない(シミュレーション)。応募の確定だけを dip の状態に反映する。
+    # 入力値は受け取っても読まない・保存しない(架空のデモ)。応募の確定だけを dip の状態に反映する。
     logic.submit_application(state, user, job)
-    return _page("応募完了", "<p>応募しました。店舗からの連絡をお待ちください。</p><p>このタブを閉じてトークに戻れます。</p>")
+    return _page("応募の体験", f"<p>{escape(APPLY_DONE_TEXT)}</p><p>このタブを閉じてトークに戻れます。</p>")
 
 
 # ----------------------------- LINE のアプリで開く LIFF 画面(/liff/line/…) -----------------------------
@@ -1819,7 +1842,8 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 .col{{display:flex;flex-direction:column;gap:4px;max-width:80%}}.who,.time{{font-size:11px;color:#fff}}
 .bubble{{background:#fff;padding:8px 12px;border-radius:16px;font-size:14.5px;white-space:pre-wrap}}
 .liff a{{display:block;background:#fff;border-radius:10px;padding:10px;color:var(--chip);margin-left:40px}}
-.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}</style>
+.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}
+{legal.FOOTER_CSS}.legal,.legal a{{color:#fff}}</style>
 </head><body><header>🎤 音声で相談(LINE)</header><main>
 <p class="intro">アドバイザーと話しながら、希望と経験を5分ほどで伺います。終わると、話した内容のまとめと求人が LINE のトークに届きます。
 氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。</p>
@@ -1827,6 +1851,7 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 <p id="liff-status"></p><div id="log"></div><form id="talk-form" hidden></form>
 <button class="go" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
 </main>
+{legal.footer_html()}
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script src="/static/talk-core.js"></script>
 <script>
@@ -1997,15 +2022,19 @@ async def liff_mic_check_log(body: MicCheckIn, request: Request):
     return {"ok": True}
 
 
-def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:
+def _page(title: str, body: str, site: str = "LIFF・dip の画面", legal_links: bool = True) -> str:
+    """LIFF と dip の画面の枠。aica の画面(legal_links)なら、下にテスト用の公開であることと、規約とポリシーへのリンクを置く。
+    dip のログインと偽物の LINE の画面は、aica ではない役の画面なので置かない。"""
+    footer = legal.footer_html() if legal_links else ""
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>
 <style>body{{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:#f4f6f8;color:#111}}
 header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{padding:16px;max-width:480px;margin:auto}}
 .job{{background:#fff;border-radius:10px;padding:12px;font-weight:700}}label{{display:block;margin:12px 0;font-size:14px}}
 input{{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px;font-size:16px;border:1px solid #ccd;border-radius:8px}}
-button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}</style>
-</head><body><header>{title}({site})</header><main>{body}</main></body></html>"""
+button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}
+.demo{{background:#fff7e6;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6}}{legal.FOOTER_CSS}</style>
+</head><body><header>{title}({site})</header><main>{body}</main>{footer}</body></html>"""
 
 
 def main() -> None:

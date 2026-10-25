@@ -5,7 +5,9 @@
 .env.*
 data/
 tests/
-docs/
+# docs/ のうち、画面に出す利用規約とプライバシーポリシーの原文(docs/legal/。line_runtime/legal.py)だけは入れる
+docs/*
+!docs/legal/
 evals/results/
 voice_resume/results/
 **/__pycache__
