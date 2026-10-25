@@ -140,12 +140,14 @@ function withPlaceholder(line, placeholder) { return hasMetric(line) ? line : li
 const NAME_PLACEHOLDER = '[氏名]';
 const CONTACT_PLACEHOLDER = '[メール] · [電話] · [居住地] · [リンク]';
 
-/* r = { headline, summary, experience: [{ company, title, dates, bullets }], skills: [], education }。
-   氏名と連絡先は聞かないので、いつも空欄で出す(本人が後で書く)。 */
+/* r = { headline, summary, selfPr, experience: [{ company, title, dates, bullets }], skills: [], education }。
+   氏名と連絡先は聞かないので、いつも空欄で出す(本人が後で書く)。自己PR(履歴書のとき)は、あるときだけ出す。 */
 function resumeMarkdown(r) {
   const L = ['# ' + NAME_PLACEHOLDER];
   if (r.headline) L.push('**' + r.headline + '**');
-  L.push(CONTACT_PLACEHOLDER, '', '## 職務要約', r.summary || '', '', '## 職務経歴');
+  L.push(CONTACT_PLACEHOLDER, '', '## 職務要約', r.summary || '', '');
+  if (r.selfPr) L.push('## 自己PR', r.selfPr, '');
+  L.push('## 職務経歴');
   for (const x of r.experience || []) {
     L.push('### ' + (x.company || '[会社名]') + '｜' + (x.title || '[役職]'));
     if (x.dates) L.push('*' + x.dates + '*');
@@ -157,12 +159,39 @@ function resumeMarkdown(r) {
   return L.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
+/* ---------- 自己PR(履歴書のとき) ---------- */
+
+const SELF_PR_PLACEHOLDER = '[ここに自己PRを3〜4文で書く]';
+/* AI を使わない自己PR: 本人の書類の行(lines)を 2 つまで引いた、です・ます調の 2〜3 文。強み(strengths)は画面に出した言葉だけ。
+   行に無いことは足さない(数字の空欄も行のまま残す)。行が無ければ、見える空欄を 1 つ返す。 */
+function selfPrOffline(o) {
+  const lines = ((o && o.lines) || []).map(x => squish(x).replace(/[。.]+$/, '')).filter(x => x && !/^\[ここに/.test(x)).slice(0, 2);
+  if (!lines.length) return SELF_PR_PLACEHOLDER;
+  const S = ['これまでの仕事では、' + lines.map(x => '「' + x + '」').join('や') + 'に取り組んできました。'];
+  const st = ((o && o.strengths) || []).map(squish).filter(Boolean).slice(0, 2);
+  if (st.length) S.push('特に' + st.join('と') + 'を強みにしています。');
+  S.push('この経験を活かし、新しい職場でも任された仕事に責任をもって取り組みます。');
+  return S.join('');
+}
+/* 書類の Markdown の「## 自己PR」の節を、書類の種類に合わせる: selfPr があれば職務要約の後に入れ(本人が書いた節があれば
+   そのまま)、selfPr が空なら節を外す。本人が画面で直した Markdown にも使う。 */
+function withSelfPr(md, selfPr) {
+  const text = String(md || '');
+  const has = /^## 自己PR\s*$/m.test(text);
+  if (!selfPr) return has ? text.replace(/^## 自己PR\s*\n[\s\S]*?(?=^## |(?![\s\S]))/m, '') : text;
+  if (has) return text;
+  const at = text.search(/^## 職務経歴\s*$/m);
+  const block = '## 自己PR\n' + selfPr + '\n\n';
+  return at < 0 ? text.replace(/\s*$/, '\n\n') + block.trim() + '\n' : text.slice(0, at) + block + text.slice(at);
+}
+
 const API = {
   clean, squish, isJa, wordCount, textSize, wordUnits,
   isDateish, findMetric, hasMetric, isVague,
   sentences, trimTo, plainEnding, stripLead, plainLine,
   PLACEHOLDER, PLACEHOLDER_YEN, PLACEHOLDER_COUNT, PLACEHOLDER_RE, withPlaceholder,
   NAME_PLACEHOLDER, CONTACT_PLACEHOLDER, resumeMarkdown,
+  SELF_PR_PLACEHOLDER, selfPrOffline, withSelfPr,
 };
 root.ArcadeJa = API;
 if (typeof module !== 'undefined' && module.exports) module.exports = API;

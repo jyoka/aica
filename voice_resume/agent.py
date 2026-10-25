@@ -23,7 +23,7 @@ from livekit.plugins import cartesia, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from voice_resume import config
-from voice_resume.advisor import ResumeAdvisor
+from voice_resume.advisor import ResumeAdvisor, _post_json
 from voice_resume.dip import DipMCP
 from voice_resume.jobs import DEFAULT_TRACK
 from voice_resume.prompts import greeting_instructions
@@ -103,6 +103,19 @@ async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAd
     return advisor, greeting_instructions(stated, resume, track)
 
 
+async def report_session(room: str, user_id: str, state: str, poster=None) -> bool:
+    """部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)を、トーク(line_runtime の /api/voice/session)へ
+    知らせる。共有鍵を付ける。トークがその人の別の部屋を知っていれば False(このジョブは止める)。
+    届かなければ True(面談は続ける。トークは接続トークンを発行するときに 1 人 1 部屋を確かめ、時間でも部屋を終わったとみなす)。"""
+    try:
+        got = await (poster or _post_json)(f"{config.TALK_URL}/api/voice/session",
+                                           {"user_id": user_id, "room": room, "state": state})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("トークへ部屋の%sを知らせられません: %s", "始まり" if state == "joined" else "終わり", exc)
+        return True
+    return (got or {}).get("allowed", True) is not False
+
+
 class SessionGuard:
     """1 回の音声相談の上限。時間が来たら締めて閉じる。「面談を終える」(end パケット)への返答は 1 回だけ作る。
 
@@ -139,6 +152,11 @@ class SessionGuard:
             self._closing = self._session.generate_reply(instructions=END_INSTRUCTIONS)
         except RuntimeError as exc:  # session が閉じかけている
             logger.warning("締めの返答を作れません: %s", exc)
+
+    @property
+    def closing_down(self) -> bool:
+        """時間切れで自分で閉じている最中か。"""
+        return self._closing_down
 
     async def aclose(self) -> None:
         self._cancel_timer()
@@ -197,6 +215,17 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     participant = await ctx.wait_for_participant()
     user_id = participant_user_id(participant)
 
+    if user_id:  # トークの部屋: ジョブが終わるまで、その人は次の部屋を開けない(line_runtime.voice_rooms)
+        if not await report_session(ctx.room.name, user_id, "joined"):
+            logger.warning("同じ人の別の部屋が終わっていないので、この部屋の相談は始めない: room=%s", ctx.room.name)
+            ctx.shutdown(reason="the person already has another voice room")
+            return
+
+        async def _ended() -> None:
+            await report_session(ctx.room.name, user_id, "ended")
+
+        ctx.add_shutdown_callback(_ended)
+
     advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
@@ -225,8 +254,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             },
         },
     )
-    await session.start(agent=advisor, room=ctx.room)
     guard = SessionGuard(ctx, session, advisor, max_seconds=config.MAX_SESSION_MINUTES * 60)
+    # 本人が抜けてセッションが閉じたら、部屋が閉じるのを待たずにジョブも終える(プロセスと dip MCP の子プロセスを返し、
+    # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い。
+    # 時間切れで guard が閉じているときは何もしない(guard が部屋を消してからジョブを終える)
+    session.on("close", lambda _ev: guard.closing_down or ctx.shutdown(reason="agent session closed"))
+    await session.start(agent=advisor, room=ctx.room)
     guard.start()
 
     # 画面の「面談を終える」ボタン → 下書きを保存して締める(返答は 1 回だけ)
@@ -243,6 +276,31 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     await session.generate_reply(instructions=greeting)
 
 
+def _job_unit() -> float:
+    """ジョブ 1 個の負荷。MAX_JOBS 以上の最小の 2 の累乗の逆数にする。負荷も上限もこの倍数なので、livekit-agents の
+    足し算と比べ合いが丸めずに済む(1 / MAX_JOBS だと、6 のとき 1/6 + 5 * (1/6) が 1 より小さくなり、7 件目を受ける)。"""
+    return 1 / (1 << (max(config.MAX_JOBS, 1) - 1).bit_length())
+
+
+def job_load(worker) -> float:
+    """ワーカーの負荷: 動いているジョブの数 * _job_unit()。load_threshold と合わせて、MAX_JOBS 個で満員を報告する。"""
+    return len(worker.active_jobs) * _job_unit()
+
+
+def worker_options() -> agents.WorkerOptions:
+    """ワーカーの設定。同時に受けるジョブは config.MAX_JOBS まで(dev でも。livekit-agents の既定は、dev では上限なし、
+    start では CPU 70%)。上限の負荷は MAX_JOBS * _job_unit()(1 以下。start は 1 を超えると起動で止まる)。
+    ジョブのプロセスのメモリが config.JOB_MEMORY_LIMIT_MB を超えたら、そのジョブを止める。
+
+    温めておくプロセスの数も MAX_JOBS にする。livekit-agents は、動いているジョブが 0 個の間、受付中(起動前)の
+    ジョブ 1 件の負荷を load_threshold / num_idle_processes と見積もる。dev の既定の 0 のままだと 1 件で満員になり、
+    最初のジョブが起動するまでの数秒に来た 2 人目を断ってしまう。MAX_JOBS にすると、見積もりは _job_unit() ちょうどになる。"""
+    max_jobs = max(config.MAX_JOBS, 1)
+    return agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, load_fnc=job_load,
+                                load_threshold=max_jobs * _job_unit(), num_idle_processes=max_jobs,
+                                job_memory_limit_mb=config.JOB_MEMORY_LIMIT_MB)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    agents.cli.run_app(worker_options())

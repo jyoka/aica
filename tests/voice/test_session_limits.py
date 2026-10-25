@@ -111,7 +111,7 @@ class FakeRoom(rtc.EventEmitter):
 
 
 class FakeJobContext:
-    """JobContext の代役。shutdown と delete_room を記録する。"""
+    """JobContext の代役。shutdown と delete_room を、呼ばれた順にも記録する。"""
 
     def __init__(self) -> None:
         self.room = FakeRoom()
@@ -119,6 +119,7 @@ class FakeJobContext:
         self.shutdown_callbacks: list = []
         self.shutdown_reasons: list[str] = []
         self.deleted_rooms = 0
+        self.events: list[str] = []
 
     async def connect(self) -> None:
         pass
@@ -131,9 +132,11 @@ class FakeJobContext:
 
     def shutdown(self, reason: str = "user requested") -> None:
         self.shutdown_reasons.append(reason)
+        self.events.append("shutdown")
 
     def delete_room(self, room_name: str | None = None):
         self.deleted_rooms += 1
+        self.events.append("delete_room")
         fut = asyncio.get_running_loop().create_future()
         fut.set_result(None)
         return fut
@@ -170,7 +173,24 @@ def agent_mod(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "openai", SimpleNamespace(LLM=lambda **kw: SimpleNamespace(fake="llm", **kw)))
     monkeypatch.setattr(agent, "cartesia", SimpleNamespace(TTS=lambda **kw: SimpleNamespace(fake="tts", **kw)))
     monkeypatch.setattr(agent, "MultilingualModel", lambda: SimpleNamespace(fake="turn-detector"))
+    monkeypatch.setattr(agent, "_post_json", talk_reports(agent))  # トークへの知らせは送らずに残す
     return agent
+
+
+def talk_reports(agent):
+    """トーク(line_runtime)への部屋の始まりと終わりの知らせ(_post_json)の代役。知らせを agent.reported に残し、許可する。"""
+    agent.reported = []
+
+    async def post(url, payload):
+        agent.reported.append(payload["state"])
+        return {"allowed": True}
+
+    return post
+
+
+async def run_shutdown_callbacks(ctx: FakeJobContext) -> None:
+    """ctx.shutdown の後に livekit-agents がすること(登録された shutdown コールバックを呼ぶ)。"""
+    await asyncio.gather(*(cb() for cb in ctx.shutdown_callbacks))
 
 
 def run_on_fake_clock(scenario) -> None:
@@ -246,6 +266,25 @@ def test_session_closes_at_the_time_limit(agent_mod):
     run_on_fake_clock(scenario)
 
 
+def test_time_limit_deletes_the_room_before_the_job_ends_and_reports_ended(agent_mod):
+    """時間切れで閉じるとき、セッションの close でジョブを先に終えない(task 202 の close のハンドラは、締めている間は
+    何もしない)。部屋を消してからジョブを終え、ジョブの終わりにトークへ ended を知らせる(その人は次の部屋を開ける)。"""
+
+    async def scenario(loop):
+        ctx, session = await start_session(agent_mod)
+        assert agent_mod.reported == ["joined"]
+        loop.advance(10 * 60)
+        await settle()
+        assert session.closed
+        assert ctx.events == ["delete_room", "shutdown"]
+        assert ctx.shutdown_reasons == ["voice session time limit"]
+
+        await run_shutdown_callbacks(ctx)
+        assert agent_mod.reported == ["joined", "ended"]
+
+    run_on_fake_clock(scenario)
+
+
 def test_time_limit_follows_the_setting(agent_mod, monkeypatch):
     """上限の長さは VOICE_RESUME_MAX_SESSION_MINUTES(config.MAX_SESSION_MINUTES)で変えられる。"""
     monkeypatch.setattr(config, "MAX_SESSION_MINUTES", 3)
@@ -286,15 +325,17 @@ def test_stuck_closing_reply_is_cut_and_the_session_still_closes(agent_mod):
 
 
 def test_session_closed_by_the_user_stops_the_timer(agent_mod):
-    """本人が切って session が先に閉じたら、上限の時刻になっても返答を作らず、部屋も消さない。"""
+    """本人が切って session が先に閉じたら、上限の時刻になっても返答を作らず、部屋も消さない。
+    ジョブはすぐに終える(task 202: プロセスと dip MCP の子プロセスを返し、トークへ ended を知らせる)。"""
 
     async def scenario(loop):
         ctx, session = await start_session(agent_mod)
         await session.aclose()
+        assert ctx.shutdown_reasons == ["agent session closed"]
         loop.advance(60 * 60)
         await settle()
         assert time_up_replies(session) == []
-        assert ctx.deleted_rooms == 0 and ctx.shutdown_reasons == []
+        assert ctx.deleted_rooms == 0 and ctx.shutdown_reasons == ["agent session closed"]
 
     run_on_fake_clock(scenario)
 
