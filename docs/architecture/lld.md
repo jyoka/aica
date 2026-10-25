@@ -13,6 +13,7 @@
 - LINE のアカウント連携(4.12、5.9、`accounts.py`、`fake_line.py`)は task 182 で足しました
 - レジュメ・アーケードの画面(1.1 の `static/arcade/`、3.1 の口、4.10 の終わり、10 章の node のテスト)は task 187 で足しました
 - レジュメ・アーケードの AI と下書き(1.9、1.10、`dip_mcp/arcade.py`、3.1 の `/api/arcade/…`、4.10 の終わり、5.1、5.3、5.5 の `arcade`)は task 188 で足しました
+- LINE のアプリで遊ぶゲーム(`arcade.liff_configured`、LINE のトークから LIFF 画面で使う操作の `/api/liff/arcade/…`、`arcade-ai.js` の LIFF)は task 219 で足しました
 
 ## 1. パッケージの構成
 
@@ -111,7 +112,7 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`profile_export`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log`、`legal_page`、`DEMO_FORM_VALUES` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`_arcade_start`、`_arcade_ai`、`_arcade_save`、`arcade_client`、`liff_arcade_draft`、`_arcade_draft_page`、`_arcade_draft_edit`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`profile_export`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_line_arcade_game`、`liff_line_arcade_draft`、`liff_arcade_start`、`liff_arcade_ai`、`liff_arcade_save`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log`、`legal_page`、`DEMO_FORM_VALUES` |
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`check_internal_key`、`InternalKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
@@ -192,6 +193,7 @@ classDiagram
 - `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + 窓口 + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます。
   窓口(`channel_note`)は state の `channel`(`web` / `line`)と `channel_features`(LINE で LIFF 画面で使えるもの)から作り、
   LINE で使えないもの(履歴書の読み込み、音声相談、レジュメ・アーケード)は勧めず、`actions` も付けないよう書きます。
+  LIFF の設定があれば、レジュメ・アーケードは要約の `arcade_url` をボタンにでき、AI と保存も LINE の本人で使えると書きます。
   `channel` と `channel_features` は、ターンのたびに `turn.accept` → `LineRuntime.handle_stream` が入力と一緒に state に書きます
   (Web と評価は既定の `web`。LINE の webhook と LIFF 画面からのターンは `line` と `line_channel.liff_features()`)。
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
@@ -210,7 +212,7 @@ classDiagram
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
 | `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`for_agent`、`head`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`AGENT_APPLICATIONS`、`AGENT_SAVES`、`SUMMARIES_PATH` |
 | `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
-| `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
+| `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
 | `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
@@ -1223,6 +1225,9 @@ sequenceDiagram
   具体的な答えが 1 つある思い出を書類の 1 行と数え、目安は各職場 2 行)、「聞かれていること」(`PLAIN_ASK`)、答えを書いている間のチェックと
   1 行の見本(`answerChecks`、`previewLine`)、いつでも開ける「下書き」です
 - 答えと進み具合は、そのブラウザの localStorage にだけ残ります(あなたという事件は `theCaseOfYou.v1.*`。仕事の収穫は見本の人物では残さない)
+- LINE のアプリ(task 219): `window.AICA_LIFF` があれば、`arcade-ai.js` は `/api/liff/arcade/…` を呼び、保存の本文に `liff.getIDToken()` を足します
+  (`liff.init` は 1 回だけ)。401 なら、ID トークンで `POST /api/liff/session` を 1 回だけ呼び直してから送り直します。
+  仕事の収穫の「トークに戻る」は、LINE のアプリでは `liff.closeWindow()` にします
 - AI(task 188): 2 本は `arcade-ai.js` の `ArcadeAI(game)` で API を呼びます。自分の事件(畑)を新しく始めたときだけ `start()` で
   遊びの番号をもらい、進み具合と一緒に `S.play`(`{id, ai, documentKind, track}`)として残します。続きを開いたときは呼び直しません。
   `aiOn()` は、本人の遊び(見本の人物ではない)で `S.play.ai` のときだけ真です。`call(play, stage, data)` が投げる `code` は
@@ -1337,7 +1342,10 @@ LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 
 |---|---|
 | `GET /liff/line/voice` | 音声相談の画面(`_liff_voice_page`)。`talk-core.js` の `createTalk` を、`voiceApi`(`/api/liff/voice/…`、`extra` で `liff.getIDToken()` を足す)と `onVoiceClosed` つきで使う |
 | `GET /liff/line/resume/upload` | 履歴書の読み込みの画面(`_liff_upload_page`)。ファイルと `user_id` と `liff.getIDToken()` をフォームで送る |
-| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする |
+| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする。AI と保存につながった 2 本(`ARCADE_SHIPPED`)は、`</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
+| `GET /liff/line/arcade/draft`、`POST /liff/line/arcade/draft` | ゲームで作った下書きの画面と、直した書類の保存(`_arcade_draft_page`、`_arcade_draft_edit`。Web と同じ。フォームの送り先は `/liff/line/arcade/draft`)。本人が無ければ GET は殻、POST は 401。`{game}` より先に登録する |
+| `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`) |
+| `POST /api/liff/arcade/save` | 本文は Web の `/api/arcade/save` に `id_token` を足したもの。`_arcade_save`(Web と同じ決まり。403、400 なら LINE に確かめに行かない)→ 今の会話に返信を足す → Messaging API の設定があれば ID トークンを確かめ、`line_user(sub)` が本人なら宛先にする。宛先があり、その日の知らせが 3 通(`ARCADE_DAILY_PUSHES`。`quota.json` の `arcade_line_push`)に達していなければ、応答の後に `_line_push` で同じ返信(`arcade_reply`)を 1 回 push(`line`)。宛先が無くても、上限でも保存はする。`view_url` は `/liff/line/arcade/draft?rid=…` |
 | `POST /api/liff/voice/start` | `{user_id, id_token}`。`_liff_api_user`(Cookie `aica_liff` が無ければ 401、本文のユーザーが違えば 403)→ LiveKit の設定(無ければ 503)→ `_liff_sub`(ID トークンを確かめ、`line_user(sub)` が本人でなければ 401)→ `_voice_token`(Web と同じ。会話数 1、IP は数えない)。部屋 → `(sub, 時刻)` を `app.state.line_voice_rooms` に覚える(1 時間より古いものは、始めるときと結果が届くときに捨てる。`_forget_old_voice_rooms`) |
 | `POST /api/liff/voice/wait` | Web の `/api/voice/wait` と同じ(`_voice_wait`)。返信のボタンの URL は `/liff/line/…` にする(`_liff_reply`) |
 | `POST /api/liff/resume/upload` | フォームの `user_id`、`id_token`、`file`。本人と `sub` を確かめてから `_read_resume`(Web の `/api/resume/upload` と同じ。会話数 1)。応答の後に `_line_upload_turn` |
@@ -1554,7 +1562,7 @@ sequenceDiagram
 - 「データを書き出す」は、その人の行を `Ledger.rows_of` で読みます(ユーザーIDを外した行は、もうその人の行として見分けられないので入らない)
 
 ターン数(`data/quota.json`)は `{"day": "2026-10-11", "counts": {人: ターン数}, "ips": {IP の鍵: {人: ターン数}}, "extra": {数えるもの: {人: 回数}}}` です。
-`extra` はターンとは別の 1 日の回数で、今は AI つきで始めたゲームの回数(`arcade_ai_play`)だけです(`take_daily`)。
+`extra` はターンとは別の 1 日の回数で、AI つきで始めたゲームの回数(`arcade_ai_play`)と、LINE のトークに送ったゲームの保存の知らせの数(`arcade_line_push`。1 日 3 通まで。task 219)です(`take_daily`)。
 日本時間の日付が変わると数え直します。IP の鍵は `ip_key` が作ります(IPv6 は /64、IPv4 射影は IPv4)。
 
 | 上限 | 環境変数 | 既定 |

@@ -120,7 +120,7 @@ ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケー�
 
 def _profile_summary(user: dict) -> dict:
     """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
-    ゲームの URL は Web のユーザーにだけ載せる(LINE で開いても本人にならないため。arcade.game_url)。"""
+    ゲームの URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる(LINE では LIFF 画面で開くため。arcade.game_url)。"""
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
            "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))

@@ -15,6 +15,7 @@ aica が何でできていて、データがどこを流れるかの全体図で
 - 4.8 の LINE のトークから LIFF 画面で音声相談・履歴書・レジュメ・アーケードを使うことと、エージェントに窓口を伝えることは、
   2026-10-25 のユーザーの方針で、task 204 で足しました
 - 4.8 の LIFF の中でマイクを試す画面は、2026-10-25 のユーザーの方針で、task 205 で足しました
+- 4.8 と 4.11 の LINE でレジュメ・アーケードのボタンを出し、LIFF の中のゲームで AI と保存を LINE の本人で使うことは、task 219 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -225,7 +226,7 @@ flowchart TB
     server -- "直接読み書き" --> logic
     server --> liff
     server --> arcade
-    arcade -- "POST /api/arcade/…" --> server
+    arcade -- "POST /api/arcade/…、/api/liff/arcade/…" --> server
     server --> arcadeai
     rt --> agent
     rt --> ledger
@@ -275,7 +276,7 @@ flowchart TB
 
 | ツール | 役割 |
 |---|---|
-| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書、ゲームで作った下書きの要点(`arcade_draft`。空欄のある行を 5 行まで)、ゲームの URL(`arcade_url`。Web のユーザーだけ)。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
+| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書、ゲームで作った下書きの要点(`arcade_draft`。空欄のある行を 5 行まで)、ゲームの URL(`arcade_url`。Web のユーザーと、LIFF の設定があるときの LINE のユーザー)。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
 | `get_user_recent_applications`、`get_application_status` | 応募と選考の状況(`get_application_status` は `as_of` つき) |
 | `get_user_form_exit`、`resume_application_form` | 途中の応募フォームの続き。個人情報の項目はトークで受け取らず、LIFF 画面へ回す |
 | `recommend_jobs` | 条件に合う求人を最大 3 件、理由と `match_score` つきで返す |
@@ -635,9 +636,11 @@ sequenceDiagram
 - エージェントには、システムプロンプトの「窓口」で今の窓口(Web か LINE か)と、LINE で使えるもの・使えないものを伝えます
   (`agent.channel_note`。使えるものは `line_channel.liff_features`)。使えないものは勧めないように言うので、本文でファイルを勧めた直後に
   断りの文が続く、という並びにしません
-- エージェントが LINE でボタンを出すのは、応募フォームの続き(プッシュの後)と、読み取り結果と下書きの画面です。
-  レジュメ・アーケードのボタンは、エージェントが LINE ではまだ出しません。dip が LINE のユーザーにゲームの URL を渡さないためです(4.11)。
-  ゲームの AI と保存の API は Cookie の匿名ユーザーIDの本人で呼ぶので、LIFF の中のゲームは簡易分析だけで、保存できません
+- エージェントが LINE でボタンを出すのは、応募フォームの続き(プッシュの後)と、読み取り結果と下書きの画面と、レジュメ・アーケードです。
+  レジュメ・アーケードは、LIFF の設定があれば dip が LINE のユーザーにもゲームの URL(`arcade_url`)を渡し、エージェントは Web と同じ場面
+  (シナリオと playbook の「ゲームで書類を作る」、本人が書類を作りたいと言ったとき)でボタンを出します(4.11)。
+  LIFF の中のゲームは、AI と保存の API(`/api/liff/arcade/…`)を LIFF の本人で呼ぶので、AI(回数の上限は Web と同じ)も保存も LINE の本人で動きます。
+  保存すると、その本人の LINE のトークに知らせが届きます(下の「LINE のアプリで遊ぶゲーム」)
 
 LIFF 画面を LINE の本人で開く(task 203):
 
@@ -668,7 +671,7 @@ sequenceDiagram
 ```
 
 - LINE のボタンは `https://liff.line.me/<LIFF ID>/<パスの /liff/ より後>` です(`line_channel.liff_url_of`)。LIFF URL にするのは
-  `/liff/line` の下にもある画面(応募フォームの続き、読み取り結果、下書き、レジュメ・アーケード)と、操作の画面(音声相談、履歴書の読み込み)です。
+  `/liff/line` の下にもある画面(応募フォームの続き、読み取り結果、下書き、レジュメ・アーケードとその下書き)と、操作の画面(音声相談、履歴書の読み込み)です。
   LINE ミニアプリの LIFF ID でも、この形の URL で開けます。LIFF アプリのエンドポイント URL は
   `<公開 URL>/liff/line` で、LINE はその後ろに続きを付けて開きます。Web のブラウザの `/liff/…` は今までどおり Cookie の匿名ユーザーIDです
 - `/liff/line/…` は Cookie の匿名ユーザーID(`aica_uid`)を見ません。本人は、ID トークンを確かめた LINE のユーザーだけです。
@@ -685,7 +688,7 @@ sequenceDiagram
   ミニアプリは 1 つのチャネルの中に開発中・審査用・公開済みの環境があり、環境ごとに LIFF ID とエンドポイント URL があります。
   開発中の環境を開発用(Tailscale Funnel)に、公開済みの環境を公開用(Render)に使い、それぞれの `.env` に、その環境の LIFF ID と
   チャネル ID(ID トークンの `aud`)を書きます。環境ごとにチャネル ID が違うかは、コンソールで確かめます(このリポジトリでは確かめていません)
-- 1 つのアプリの中で、画面はパスで分けます(`/liff/line/apply`、`/resume`、`/voice/draft`、`/voice`、`/resume/upload`、`/arcade`)。
+- 1 つのアプリの中で、画面はパスで分けます(`/liff/line/apply`、`/resume`、`/voice/draft`、`/voice`、`/resume/upload`、`/arcade`、`/arcade/draft`)。
   パスつきの LIFF URL で開くと、LINE はまずエンドポイント URL を `liff.state=<パス>` つきで開き、`liff.init` がその画面へ送ります。
   入口(`/liff/line`)は本人がいても殻を返して送り先へ渡し、各画面は本人が無ければ殻で本人を確かめてから読み直します
 
@@ -732,6 +735,41 @@ sequenceDiagram
 - 会話数は Web と同じです。音声相談は 1 つ、履歴書は読み取りと続きのターンで 2 つ使います。IP ごとには数えません
 - 画面の下書きのボタンは `/liff/line/voice/draft`(LIFF の本人のまま開く)、トークに届くボタンは LIFF URL です
 - Messaging API の設定が無いと push できないので、履歴書の続きのターンは進めません(画面に確認だけ出します)
+
+LINE のアプリで遊ぶゲーム(task 219):
+
+LINE のトークのゲームのボタン(`https://liff.line.me/<LIFF ID>/arcade/<ゲーム>`)は、上の流れで LIFF の本人になってから
+`/liff/line/arcade/<ゲーム>` を開きます。AI と保存につながった 2 本には、サーバーが LIFF の設定(`window.AICA_LIFF`)と LIFF SDK を入れ、
+ゲームの部品(`arcade-ai.js`)は Web の `/api/arcade/…` の代わりに `/api/liff/arcade/…` を呼びます(中身は同じで、本人だけが違う)。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者(LINE アプリ)
+    participant G as ゲーム(/liff/line/arcade/<ゲーム>)
+    participant S as Web サーバー
+    participant L as LINE(検証の API、Messaging API)
+
+    U->>G: トークのボタン(LIFF URL)。本人の Cookie aica_liff になる
+    G->>S: POST /api/liff/arcade/start、/ai(Cookie aica_liff)
+    S-->>G: 遊びの番号、AI の結果(回数の上限は Web と同じ)
+    G->>S: POST /api/liff/arcade/save(番号、書類の Markdown、id_token)
+    S->>S: l-… の下書きとして保存し、今の会話に「下書きができました」を足す
+    S->>L: (Messaging API の設定があれば)id_token を確かめる。sub が l-… の本人か
+    S-->>G: 下書きを見る URL(/liff/line/arcade/draft?rid=…)
+    S->>L: push(「下書きができました」、下書きを見る LIFF URL)を 1 回
+    L-->>U: トークに届く
+```
+
+- 本人は Cookie `aica_liff` の LINE のユーザー(`l-…`)です。Cookie が無い、期限切れなら 401 です。ゲームの部品は、401 のとき
+  ID トークンで 1 回だけ確かめ直します(遊んでいる間に 1 時間を過ぎても続けられるように)。`scenario_user` は見ません
+- 会話数(AI つきで始めるときの 1 つ)と 1 日の AI つきの遊びは、LINE のユーザーごとと全体で数えます。IP ごとには数えません
+- push は保存 1 回につき 1 通で、1 人 1 日 3 通までです(月のメッセージ数に数えられます。保存は何度でもでき、AI なしの遊びは会話数も使わないため。
+  超えた保存も下書きと会話には入ります)。宛先の LINE の userId は保存の本文の ID トークンから受け取り、
+  届けるまでメモリにだけ置きます。ID トークンが無い、確かめられない、別の人のものなら、保存だけして push しません
+  (本人の書類を失わないため。別の人には送りません)。Messaging API の設定が無いときも push しません
+- 保存した下書きは、その LINE のユーザーの要約(`arcade_draft`)と「データを見る」に出ます。下書きの画面
+  (`/liff/line/arcade/draft`)で見て直せます
 
 LIFF の中でマイクを試す(task 205):
 
@@ -852,12 +890,14 @@ sequenceDiagram
 
 - ハブ(`GET /liff/arcade`)と 8 本のゲーム(`GET /liff/arcade/{game}`、`game` はファイル名)を、`line_runtime/static/arcade/` の
   HTML のまま返します。LINE のアプリでは、LIFF の本人を確かめてから `/liff/line/arcade`、`/liff/line/arcade/{game}` で同じ HTML を返し、
-  ハブのリンクも `/liff/line/arcade/…` になります(task 204)。LIFF の設定が無ければ、ゲームのボタンを LINE に出しません。
+  ハブのリンクも `/liff/line/arcade/…` になります(task 204)。AI と保存につながった 2 本には、LIFF の設定と LIFF SDK を入れます(task 219。4.8)。
+  LIFF の設定が無ければ、ゲームのボタンを LINE に出しません。
   知らない名前は 404 です。ハブに出すのは、案内の部品がそろい、AI と保存がつながった 2 本(あなたという事件、
   仕事の収穫)だけです。残りの 6 本は開発者画面からだけリンクし、AI を使わず、本人のデータも読み書きしません
 - 日本語の答えの判定(数字の検出、字数のあいまいさ、言い切り、数字の空欄、職務経歴書の Markdown)は、共通部品
   `arcade-ja.js` に 1 つだけ置き、2 本が使います。AI と保存の API を呼ぶ部品は `arcade-ai.js` です
 - ゲームの画面は Cookie を発行も要求もしません。2 本は、ほかの LIFF 画面と同じく Cookie の匿名ユーザーIDの本人として API を呼びます。
+  LINE のアプリで開いたときは、LIFF の本人(`aica_liff`)として `/api/liff/arcade/…` を呼びます(4.8 の「LINE のアプリで遊ぶゲーム」)。
   トーク画面を開いていない(Cookie が無い)ときは、簡易分析で最後まで遊べて、保存のボタンを出しません
 - 氏名と連絡先は聞きません。書類には `[氏名]` と `[メール] · [電話] · [居住地] · [リンク]` の空欄が残り、本人が後で書きます
 
@@ -904,7 +944,9 @@ sequenceDiagram
   ゲームは雇用区分を変えません。履歴書なら書類に自己PR が入ります。未定のときも最後のまとめは自己PR を書いておくので、
   本人が後で選び直しても AI を呼び直しません。AI を使わない簡易分析でも、本人の行から簡易の自己PR を作ります
 - エージェントは、下書きを dip の要約の `arcade_draft` で読み、ボタンにするゲームの URL は要約の `arcade_url` だけを使います。
-  LINE のユーザーには `arcade_url` を載せず、LINE のメッセージも `/liff/arcade` のボタンを出しません(4.8)
+  LINE のユーザーには、LIFF の設定があるときだけ `arcade_url` を載せます。無ければ載せず、LINE のメッセージも `/liff/arcade` の
+  ボタンを出しません(4.8)。dip は `line_runtime` を import しないので、LIFF の設定の判定(`arcade.liff_configured`)を
+  `line_channel.liff_configured` と同じ環境変数で持ちます
 - 下書きは、プロフィールの「ゲームで作った下書き」から見て、直して(`/liff/arcade/draft`)、消せます。「すべて消す」で消え、
   通し番号は持ち越すので、古いリンクが新しい下書きを開くことはありません
 
