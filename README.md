@@ -314,7 +314,7 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | 会話(`data/line_checkpoints.db`) | 会話ごとに、最後のやりとりから 30 日 | `line_runtime.purge.CONVERSATION_TTL` |
 | 使われなくなった人(`data/state.json` の行、連携、音声の下書きのファイル) | 最後の利用から 180 日 | `dip_mcp.retention.USER_TTL` |
 | 「すべて消す」で持ち越した部屋の名前 | 消した時刻から 1 日 | `dip_mcp.retention.FORGOTTEN_ROOMS_TTL` |
-| 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする | `line_runtime.ledger.ID_TTL` |
+| 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする。「すべて消す」では、すぐにその人のユーザーIDを外す(金額は残す) | `line_runtime.ledger.ID_TTL` |
 | Cookie `aica_uid` | 最後に画面を開いた日から 180 日 | `line_runtime.server.ANON_COOKIE_MAX_AGE` |
 
 | 環境変数 | 既定 | 用途 | `.env` |

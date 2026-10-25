@@ -287,6 +287,26 @@ class LineRuntime:
         await self._erase(user_id)
         self._threads.pop(user_id, None)  # 次に参照したとき、残りの会話(無いので 0)から数え直す
 
+    async def conversations_of(self, person_id: str) -> list[dict]:
+        """その人の会話のすべて(プロフィールの「データを書き出す」)。シナリオユーザー(「匿名ID:シナリオユーザー」)の会話も入る。
+        1 つの会話は {user_id, thread, last_at, turns}。turns は画面に描き直す形(history)。本人の会話を先に、番号の順。LLM は呼ばない。"""
+        await self._saver.setup()
+        async with self._saver.lock, self._saver.conn.execute(
+                "SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id > ? AND thread_id < ?",
+                (f"{person_id}:", f"{person_id};")) as cur:
+            threads = [row[0] for row in await cur.fetchall()]
+        out = []
+        for thread_id in threads:
+            user_id, _, n = thread_id.rpartition(":")
+            if not n.isdigit():
+                continue
+            cfg = {"configurable": {"thread_id": thread_id}}
+            messages = (await self.agent.aget_state(cfg)).values.get("messages", [])
+            at = await self._last_at(thread_id)
+            out.append({"user_id": user_id, "thread": int(n), "last_at": at.isoformat() if at else None,
+                        "turns": history(messages, user_id)})
+        return sorted(out, key=lambda c: (c["user_id"] != person_id, c["user_id"], c["thread"]))
+
     async def _last_at(self, thread_id: str) -> datetime | None:
         """その会話の最後のやりとり(最新のチェックポイントの保存時刻、UTC)。会話が無ければ None。"""
         tup = await self._saver.aget_tuple({"configurable": {"thread_id": thread_id}})

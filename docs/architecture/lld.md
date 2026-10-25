@@ -111,14 +111,14 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log`、`legal_page`、`DEMO_FORM_VALUES` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`profile_export`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log`、`legal_page`、`DEMO_FORM_VALUES` |
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
-| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
+| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`(`conversations_of`)、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形、今の窓口の案内 | `LineReply`、`Button`、`LineState`、`channel_note`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
-| `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にする(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`)、`fold`、`summarize`、`ID_TTL`、`FOLDED` |
+| `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
@@ -204,7 +204,7 @@ classDiagram
 |---|---|---|
 | `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
-| `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `delete_arcade_draft`、`edit_arcade_draft`、`link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`pending_changes`、`take_changes`、`notice` |
+| `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `delete_arcade_draft`、`edit_arcade_draft`、`link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`stored`、`pending_changes`、`take_changes`、`notice` |
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
@@ -498,6 +498,7 @@ flowchart LR
 | `POST /api/event/stream` | `event_stream` | 本人 | 1 | 同上。途中経過は NDJSON(3.2) |
 | `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「dip から見た状態」) |
 | `GET /api/profile` | `profile_get` | Cookie | - | - |
+| `GET /api/profile/export` | `profile_export` | Cookie | - | -(「データを書き出す」。本人の保存内容を JSON のファイルで返す。下の注) |
 | `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
 | `PUT`、`DELETE /api/profile/track` | `profile_track`、`profile_track_delete` | Cookie + 書き込みの枠 | - | 雇用区分、知らせ |
 | `DELETE /api/profile/resume` | `profile_resume_delete` | Cookie + 書き込みの枠 | - | 会話を閉じてから読み取り結果を消す(4.6) |
@@ -529,6 +530,11 @@ flowchart LR
 - Cookie `aica_uid` は HttpOnly、SameSite=Lax です。`AICA_SECURE_COOKIE=1`(コンテナの image の既定)のときは Secure も付けます。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
 - Cookie の期限(`ANON_COOKIE_MAX_AGE`)は 180 日です。`_issue` は Cookie があって形が正しいときも、同じ ID で書き直して期限を延ばします。
   期限は最後に画面を開いた日から数えるので、毎日使う人が 181 日目に ID を失いません。API は書き直しません
+- `GET /api/profile/export`(「データを書き出す」。[個人情報の設計メモ](../design/privacy.md) の 3.7)は `Content-Disposition: attachment` の
+  `aica-data-<日本時間の日付>.json` を、`Cache-Control: no-store` で返します。範囲は「すべて消す」と同じで、本人と同じ Cookie のシナリオユーザーです。
+  中身は `profile`(`GET /api/profile` と同じ)、`stored`(`profile.stored`。`state.json` の行そのままと、連携の `dip_id`)、
+  `conversations`(`LineRuntime.conversations_of`。会話ごとに `history` の形)、`costs`(`Ledger.rows_of`。費用台帳の行)です。
+  本人とシナリオユーザーの `user_lock` の中で読みます(`_own_users`。「すべて消す」と同じ順)。見るだけなので、最後の利用に数えず、状態にいない人の行も作りません。LINE の人の書き出しは「データを見る」の返事です(4.11)
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
   ブラウザの履歴、アクセスログ、Referer に残るためです
 - dip の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
@@ -833,6 +839,7 @@ sequenceDiagram
     participant S as Web サーバー
     participant R as LineRuntime
     participant D as dip の状態
+    participant L as 費用台帳
     participant F as data/voice-resume/
 
     P->>S: POST /api/profile/forget(LINE は「データを消す」の確かめの後。下)
@@ -842,6 +849,7 @@ sequenceDiagram
         S->>R: forget(1 つのトランザクションで会話を消す)
     end
     S->>D: profile.forget_all(連番と、消す前の部屋を残して初期に戻す)
+    S->>L: Ledger.forget(その人の行のユーザーIDを deleted にする)
     S->>S: unread_uploads を捨てる
     S->>F: 書き出した下書きのファイルを消す
 ```
@@ -863,7 +871,12 @@ sequenceDiagram
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
 - 閉じた会話は描き直せず、次の会話の文脈にも入りません。次にトーク画面を開くと、30 分以内でも新しい会話(再訪の挨拶)から始まります。
   消すこと自体は LLM を呼ばず、ターンも数えません
-- ターン数の上限の数と費用台帳は消しません
+- ターン数の上限の数は消しません。消すと上限を逃れられるためです
+- 費用台帳は、その人(`quota.person`。シナリオユーザーも)の行のユーザーIDを `deleted`(`FOLDED`)に置き換えます(`Ledger.forget`)。
+  金額、トークン数、時刻、イベント、モデルは残すので、費用の合計は変わりません。進行中のターンが書いた行も外せるよう、`user_lock` の中で行います。
+  ゲームの AI(`arcade_ai`)と履歴書の読み取り(`_read_resume`)は `user_lock` の外で台帳に書くので、消す前に始めた呼び出しが消した後に終わると、
+  その行はユーザーIDつきで残ります(90 日で日ごとの合計になる)
+  外した行も、90 日を過ぎたら掃除が日ごとの合計にまとめます(5.3)
 
 LINE の「データを消す」([個人情報の設計メモ](../design/privacy.md) の 3.7):
 
@@ -1527,6 +1540,10 @@ sequenceDiagram
   合計の行は `{"at": その日の最後の行の時刻, "user_id": "deleted", "event": "daily_total", "model": "", "calls": まとめた行の数, …}` で、
   トークン数と `cost_usd` は足したものです。集計は `calls` を回数として数えるので、日ごとの合計の金額と回数は変わりません。
   前にまとめた日の行も、同じ日なら 1 行にまとめ直します。ファイルは `Ledger._lock` の中で一時ファイルに書いてから置き換えます
+- 「すべて消す」: その人の行の `user_id` を `deleted` に置き換えます(`Ledger.forget`。ほかの値はそのまま)。90 日を過ぎた行が、どれもこの
+  外した行でも、掃除は日ごとの合計にまとめます(`event` が `daily_total` でない行があれば、まとめる)。`fold_old` が返す数は、まだユーザーIDが
+  あった行だけです
+- 「データを書き出す」は、その人の行を `Ledger.rows_of` で読みます(ユーザーIDを外した行は、もうその人の行として見分けられないので入らない)
 
 ターン数(`data/quota.json`)は `{"day": "2026-10-11", "counts": {人: ターン数}, "ips": {IP の鍵: {人: ターン数}}, "extra": {数えるもの: {人: 回数}}}` です。
 `extra` はターンとは別の 1 日の回数で、今は AI つきで始めたゲームの回数(`arcade_ai_play`)だけです(`take_daily`)。
@@ -2119,6 +2136,16 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     ブラウザでリンクを押すと別のタブで開きます(`::test_the_talk_screen_and_liff_screens_link_to_the_terms_and_policy`、
     `::test_the_talk_screen_opens_the_terms_and_policy_in_a_browser`)。応募フォームの体験は欄に架空の値が入り、送った値はどのファイルにも残りません
     (`::test_the_apply_form_is_a_demo_with_made_up_values_that_are_not_kept`)
+
+30. プロフィールの「データを書き出す」は、本人と同じ Cookie のシナリオユーザーの、プロフィール、`state.json` の行、連携、会話、費用台帳の行を
+    1 つの JSON のファイルで返し、他人の分は入りません。見るだけで状態のファイルを変えません
+    (`tests/test_profile_export.py::test_export_is_one_json_file_of_everything_saved_for_this_browser_and_nothing_of_others`)。
+    Cookie が無ければ 401 で、話す前の人のユーザーは作りません(`::test_export_needs_the_browser_cookie_and_creates_no_user`)。
+    画面のボタンでファイルを受け取れます(`::test_export_button_on_the_profile_screen_downloads_the_file`)。
+    「すべて消す」の後の費用台帳には本人とシナリオユーザーのユーザーIDが残らず、行の数、トークン数、金額は変わりません。外した行も、90 日を過ぎたら
+    掃除が日ごとの合計にまとめます(`::test_forget_all_takes_the_user_ids_off_the_ledger_and_keeps_the_totals`、
+    `::test_rows_forgotten_before_90_days_are_still_folded_into_daily_totals`)。LINE の「データを消す」も同じです
+    (`tests/test_line_data.py::test_forget_data_asks_first_and_then_erases_the_same_as_the_web_forget_all`)
 
 ## 10. テストと評価の仕組み
 

@@ -113,6 +113,7 @@ from line_runtime.quota import (
     daily_limit,
     ip_ids_limit,
     ip_limit,
+    today,
     total_ids_limit,
     total_limit,
 )
@@ -1182,10 +1183,35 @@ async def profile_unsave(job_id: str, request: Request):
     return _profile_view(user_id)
 
 
+# 「データを書き出す」のファイルの説明(ファイルの先頭に入れる)
+EXPORT_ABOUT = ("aica が保存している、あなたのデータです。profile はプロフィール画面と同じ内容、stored は保存しているそのままの形、"
+                "conversations はこれまでの会話(最後のやりとりから 30 日まで残ります)、costs は AI を使った費用の記録です。")
+
+
+@app.get("/api/profile/export")
+async def profile_export(request: Request):
+    """データを書き出す(開示。docs/design/privacy.md の 3.7): 本人の保存内容を 1 つの JSON のファイルで返す。
+    範囲は「すべて消す」と同じ(本人と、同じ Cookie の /dev のシナリオ利用者)。dip の状態の行、連携、会話、費用台帳の行。
+    見るだけなので、最後の利用に数えず、dip の状態にユーザーを作らない。LLM は呼ばず、会話数も使わない。"""
+    user_id = _owner(request)
+    rt = app.state.rt
+    async with AsyncExitStack() as locks:  # 進行中のターンが書き終えてから読む(「すべて消す」と同じ人たち、同じ順)
+        for uid in _own_users(user_id):
+            await locks.enter_async_context(rt.user_lock(uid))
+        data = {"service": "aica", "about": EXPORT_ABOUT, "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "user_id": user_id, "profile": _profile_view(user_id),
+                "stored": await asyncio.to_thread(profile.stored, state, user_id),
+                "conversations": await rt.conversations_of(user_id),
+                "costs": await asyncio.to_thread(rt.ledger.rows_of, user_id)}
+    name = f"aica-data-{today(datetime.now(UTC))}.json"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
     """すべて消す: dip の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
-    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。
+    次に開くと初回訪問として始まる。会話数の上限の数は消さない(消すと上限を逃れられるため)。費用台帳は、その人の行の
+    ユーザーIDを外す(金額とトークン数は残す。docs/design/privacy.md の 3.3)。
     同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
     会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
@@ -1193,19 +1219,24 @@ async def profile_forget(request: Request):
     return {"forgotten": True}
 
 
+def _own_users(anon: str) -> list[str]:
+    """本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。名前の順
+    (この順で user_lock を取る)。「すべて消す」と「データを書き出す」の範囲。"""
+    return sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
+                   *(f"{anon}:{s}" for s in _scenario_users())})
+
+
 async def _forget_all(anon: str) -> None:
     """すべて消す(Web のプロフィール画面と、LINE の「データを消す」の確かめ)。anon は本人のユーザーID(w-… か l-…)。"""
     rt = app.state.rt
-    # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
-    # どのユーザーも、進行中のターンが終わってから消す
-    users = sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
-                    *(f"{anon}:{s}" for s in _scenario_users())})
+    users = _own_users(anon)  # どのユーザーも、進行中のターンが終わってから消す
     async with AsyncExitStack() as locks:
         for uid in users:
             await locks.enter_async_context(rt.user_lock(uid))
         for uid in users:
             await rt.forget(uid)
         out = profile.forget_all(state, anon)
+        await asyncio.to_thread(rt.ledger.forget, anon)  # 進行中のターンが書いた行も外すよう、ロックの中で
     for uid in users:
         app.state.unread_uploads.pop(uid, None)
     _remove_voice_files(out["files"])

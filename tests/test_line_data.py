@@ -185,12 +185,14 @@ def test_forget_data_asks_first_and_then_erases_the_same_as_the_web_forget_all(t
         data = _ask(client, fake, 2)
         assert server.state.user(uid).get("preferences")  # 確かめるまでは消さない
         assert client.portal.call(rt.current_thread, uid) == 1
+        assert any(r["user_id"] == uid for r in rt.ledger.rows)
 
         assert _tap(client, data, 3).status_code == 200
         assert _texts(fake)[-1] == [line_channel.FORGOT_TEXT]
         assert client.portal.call(rt.current_thread, uid) == 0  # 会話も消えた
         assert not draft.exists() and uid not in server.app.state.unread_uploads
         assert server.app.state.quota.used(uid) == used  # 会話数は使わず、消しもしない
+        assert not any(r["user_id"] == uid for r in rt.ledger.rows)  # 費用台帳のユーザーIDも外れる(金額は残る)
 
         client.cookies.set(server.ANON_COOKIE, WEB_USER)
         assert client.post("/api/profile/forget").status_code == 200

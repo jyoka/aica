@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy
 import json
 
-from dip_mcp import arcade, behavior, logic, retention
+from dip_mcp import accounts, arcade, behavior, logic, retention
 from dip_mcp.data import State, now
 from resume_draft.pii import personal_value
 from resume_draft.schema import document_kind_of
@@ -331,6 +331,16 @@ def _kept_on_forget(before: dict) -> dict:
     if rooms:
         kept["forgotten_voice_rooms"] = rooms
     return retention.mark_forgotten(kept) if kept else kept
+
+
+def stored(state: State, line_user_id: str) -> dict:
+    """「データを書き出す」の dip の分: そのユーザーと、同じブラウザの /dev のシナリオ用ユーザーの、dip の状態の行
+    (state.json に保存しているそのままの形)と、dip の会員との連携(dip_id)。状態にいない人の行は出さない
+    (見るだけではユーザーを作らない)。範囲は「すべて消す」(forget_all)と同じ。"""
+    users = [u for u in state.user_ids() if u == line_user_id or u.startswith(f"{line_user_id}:")]
+    links = accounts.of(state)
+    return {"users": {u: state.user(u) for u in sorted(users)},
+            "links": {u: d for u in sorted({line_user_id, *users}) if (d := links.dip_id(u))}}
 
 
 # ----------------------------- 会話の途中で直したときの知らせ -----------------------------
