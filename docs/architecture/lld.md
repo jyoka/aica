@@ -103,8 +103,8 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
@@ -817,8 +817,8 @@ sequenceDiagram
     participant D as dip の状態
     participant F as data/voice-resume/
 
-    P->>S: POST /api/profile/forget
-    S->>S: 消すユーザー = 匿名ユーザーID + そのシナリオユーザー(dip にいる人と一覧の人)
+    P->>S: POST /api/profile/forget(LINE は「データを消す」の確かめの後。下)
+    S->>S: _forget_all: 消すユーザー = 本人のユーザーID + そのシナリオユーザー(dip にいる人と一覧の人)
     S->>R: 全員の user_lock を取る
     loop ユーザーごと
         S->>R: forget(1 つのトランザクションで会話を消す)
@@ -846,6 +846,20 @@ sequenceDiagram
 - 閉じた会話は描き直せず、次の会話の文脈にも入りません。次にトーク画面を開くと、30 分以内でも新しい会話(再訪の挨拶)から始まります。
   消すこと自体は LLM を呼ばず、ターンも数えません
 - ターン数の上限の数と費用台帳は消しません
+
+LINE の「データを消す」([個人情報の設計メモ](../design/privacy.md) の 3.7):
+
+- LINE のユーザーはプロフィール画面を開けないので、トークで「データを消す」(`FORGET_DATA_TEXT`)と送ります。`_line_data` は消す範囲の文
+  (`FORGET_ASK_TEXT`)と、クイックリプライ「すべて消す」「やめる」を返します。どちらも postback で、押した文(`displayText`)がトークに出ます
+- 「すべて消す」の postback のデータは `aica-forget=<番号>` です。番号は `secrets.token_urlsafe(16)` で、`app.state.line_forget_asks` に
+  ユーザーごとに 1 つ、期限(10 分、`FORGET_CONFIRM_SECONDS`)と一緒にメモリで覚えます。番号が合い、期限の内なら `_forget_all(l-…)` で、
+  Web と同じ処理で消します。会話、dip の状態(連番と消す前の部屋は持ち越す)、連携の表、`unread_uploads`、音声の下書きのファイルです
+- 確かめは 1 回だけ使えます。「やめる」は覚えた番号を捨てて `FORGET_CANCELLED_TEXT` を返します。番号が合わない(前の確かめ、
+  ほかの人の確かめ)、期限切れ、再起動の後の確かめは `FORGET_EXPIRED_TEXT` を返し、消しません。番号が合わないときは、今の確かめを
+  残します。期限の切れた確かめは、次に見る、消すの決まった文か確かめの postback を受けたときに、どのユーザーの分も捨てます。「すべて消す」と文で書いて送っても、ふつうの発言として
+  ターンに流れます(postback のデータは本人が文で送れないため)
+- LINE のアプリのトークの画面に残るやりとりは aica から消せないので、消した後の文(`FORGOT_TEXT`)でそう伝えます
+- 友だち解除(`unfollow`)では消しません(4.11)
 
 ### 4.7 求人の推薦(`logic.recommend`)
 
@@ -1145,7 +1159,9 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 2. 本文をそのまま読み、`X-Line-Signature` を確かめます。合わなければ 400 で、本文の JSON も読みません
 3. `events` のうち、答えるもの(`_line_kind`)だけを残します。1 対 1 のトーク(`source.type == "user"`)の、
    空白だけでないテキストのメッセージ(`message`、`message.type == "text"`)と友だち追加(`follow`)と、アカウント連携の結果
-   (`accountLink`。4.12)です。テキストが `LINK_TEXT`(「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら、`link` と `unlink` です。
+   (`accountLink`。4.12)と、「データを消す」の確かめの postback(`forget_postback` が読めるデータだけ。4.6)です。テキストが `LINK_TEXT`
+   (「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら `link` と `unlink`、`VIEW_DATA_TEXT`(「データを見る」)か `FORGET_DATA_TEXT`
+   (「データを消す」)なら `view_data` と `forget_data` です(前後の空白は見ない)。友だち解除(`unfollow`)には答えません(下)。
    `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
 4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
    ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
@@ -1162,7 +1178,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   鍵は aica 専用の `AICA_ID_KEY`(32 バイト以上)で、鍵を知らなければ userId から `l-…` を作れません。チャネルシークレットは鍵に
   使いません(作り直すと全員の ID が変わるため)。LINE の設定があるのに鍵が無い、短いときは、`lifespan` の `check_id_key` で起動を
   止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
-- 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12 で、LLM を使いません
+- 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12、`view_data`、`forget_data`、
+  `forget_confirm`、`forget_cancel` は `_line_data`(下と 4.6)で、どれも LLM を使わず、ターン数も数えません
 - ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。`user_lock` の中で `rt.conversation` を読み、
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
@@ -1192,6 +1209,20 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
 - `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
 - LIFF の設定が無いときの LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+
+本人が見る、消す(`_line_data`。[個人情報の設計メモ](../design/privacy.md) の 3.7):
+
+- 「データを見る」: `user_lock` の中で、プロフィール画面と同じ `_profile_view(l-…)` と、会話があるか(`current_thread` が 1 以上)を読み、
+  `data_view_messages` でテキストにします。区分けは、雇用区分(切り替えの記録と根拠の発言つき)、目的、希望、経歴、相談のまとめ、
+  履歴書の読み取り結果(トークの確認と同じ要点)、音声相談の下書き、ゲームで作った下書き、保存した求人、応募した求人、dip の会員との連携、会話です。
+  値の無い項目は出さず、無い区分けは「なし」です。1 つ 5,000 字(UTF-16 の単位で数える)まで、5 つまでのテキストに詰めます。
+  収まらなければ、どの区分けも落とさずに、区分けごとの行の数を 20、10、5、3 と減らし、残りは「ほか N 件」と書きます(1 行も UTF-16 の単位で 200 まで。絵文字は割らずに切ります)。
+  LINE の userId と `l-…` は出しません。
+  見るだけでは dip の状態にユーザーを作りません。この返事を、LINE の人の書き出し(開示)とします
+- 「データを消す」: 4.6 の終わり
+- 友だち解除(`unfollow`。ブロック): 受けても何もしません(`_line_kind` が None)。データは消さず、もう一度友だち追加すると再訪として
+  前の続きから使えます。間違えて押すこともあるからです。使われなくなったユーザーは、期間で消す掃除(設計メモの 3.3。
+  まだ入っていない)に任せます
 
 LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは HLD の 4.8):
 
@@ -1917,7 +1948,10 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     実際の時刻を使い、匿名ユーザーIDとシナリオユーザーと重ならず、LINE の userId はどのファイルにも残りません。設定が無ければ 404 です
     (`tests/test_line_webhook.py`)。LINE のテキストは、最後のやりとりから 29 分なら同じ会話、31 分なら新しい会話で、新しい会話にも
     保存した希望と相談のまとめが渡ります(`::test_text_continues_within_30_minutes_and_starts_a_new_conversation_after`、
-    `::test_new_conversation_after_30_minutes_still_gets_saved_preferences_and_the_consultation_summary`)
+    `::test_new_conversation_after_30_minutes_still_gets_saved_preferences_and_the_consultation_summary`)。
+    「データを見る」は LLM を呼ばずに保存している中身を返し、「データを消す」は確かめの「すべて消す」を押したときだけ、Web の「すべて消す」と
+    同じ状態にします。文で書いた「すべて消す」、やめた、期限切れ、ほかの人の、2 回目の確かめでは消さず、`unfollow` でも消しません
+    (`tests/test_line_data.py`)
 20. 行動の元データのイベントは追記だけです(`tests/test_dip_events.py::test_events_are_append_only`)。生成器は同じ種で同じデータを作ります
     (`::test_generator_makes_the_same_data_from_the_same_seed`)。バッチの後に足したイベントは次のバッチまで要約に入りません
     (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
