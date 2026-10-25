@@ -222,6 +222,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
               "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
+              "consult_offer_at": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -248,6 +249,8 @@ def to_run(r: dict, rep: int) -> dict:
                 "call_overlaps": len(r.get("call_overlaps", [])),
                 "action_offers": len(r["action_offers"]),
                 "cut_at_cap": r.get("cut_at_cap"), "sim_leaks": len(r.get("sim_leaks", [])),
+                # 相談で求人を見るかを聞いたのが何問目か(相談に入らなかった・聞かなかった回は None。4 以下が決まり)
+                "consult_offer_at": (r.get("consult_questions") or {}).get("offer_at"),
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}
@@ -285,6 +288,10 @@ def report(doc: dict) -> str:
     lines += ["", "## ターンの上限で切れた会話(その後の提案や反応を見ていない)", ""]
     lines += [f"- **{tag(r)}** T{r['detail']['turns']} で上限({r['detail']['turn_cap']})に達して切れた"
               for r in runs if r["detail"].get("cut_at_cap")] or ["- なし"]
+    lines += ["", "## 相談で求人を見るかを聞くまでの問い(4問目までに聞く)", ""]
+    lines += [f"- **{tag(r)}** 入口 T{q['start']}、問い {'・'.join(f'T{k}' for k in q['asked']) or 'なし'}、"
+              + (f"求人を見るかを聞いた・探した T{q['offer']}({q['offer_at']}問目)" if q["offer"] else "求人を見るかを聞いていない")
+              for r in runs if (q := r["detail"].get("consult_questions"))] or ["- なし(相談に入った会話が無い)"]
     lines += ["", "## 模擬ユーザーが設定の指示文を発言にした(評価の崩れ。エージェントの違反ではない)", ""]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("sim_leaks", [])] or ["- なし"]
     lines += ["", "## keywords の検索(最高値 - 中央値。SIM_PEAK 未満は部分一致だけ)", ""]

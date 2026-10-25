@@ -140,12 +140,17 @@ def run_script(script: list, said: list, tmp_path) -> tuple[list[dict], int]:
     return turns, n
 
 
+# 台本は H の会話の問いの数(目的・掘り下げ・やりたいこと・掘り下げ・条件の5問の後に求人を見るか)のまま。task 225 で
+# 相談の問いを4問までにしたので、その違反だけは出る(このテストが見るのは保存と検索の呼び方。相談の長さは tests/test_playbook.py)
+LENGTH = "T5: 相談で求人を見るかを聞かずに4問を聞いた(4問目までに聞く)"
+
+
 def test_consult_saves_dig_answers_with_the_next_call_and_calls_fewer_times(tmp_path):
     h_turns, h_calls = run_script(consult_script(h=True), CONSULT_SAID, tmp_path / "h")
     turns, llm_calls = run_script(consult_script(h=False), CONSULT_SAID, tmp_path / "new")
 
     # H の呼び方は、評価の違反ではないが、呼び出しの重複として数える
-    assert conversation_checks(CONSULT_SC, h_turns, CONSULT_SAID)["violations"] == []
+    assert conversation_checks(CONSULT_SC, h_turns, CONSULT_SAID)["violations"] == [LENGTH]
     assert call_overlaps(h_turns, CONSULT_SAID) == [
         "T4: 掘り下げの答えだけで save_user_preferences を呼んだ(保存済みの purpose)",
         "T6: 掘り下げの答えだけで save_user_preferences を呼んだ(保存済みの wants)",
@@ -154,7 +159,7 @@ def test_consult_saves_dig_answers_with_the_next_call_and_calls_fewer_times(tmp_
     ]
     # 直した決まりの台本: 違反も重複も無く、save・検索・LLM の呼び出しが減った
     r = conversation_checks(CONSULT_SC, turns, CONSULT_SAID)
-    assert r["violations"] == [] and r["call_overlaps"] == [] and r["outcomes"] == ["propose"]
+    assert r["violations"] == [LENGTH] and r["call_overlaps"] == [] and r["outcomes"] == ["propose"]
     assert (count(h_turns, "save_user_preferences"), count(turns, "save_user_preferences")) == (6, 3)
     assert (count(h_turns, "recommend_jobs"), count(turns, "recommend_jobs")) == (2, 1)
     assert (h_calls, llm_calls) == (17, 13)
