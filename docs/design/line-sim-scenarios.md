@@ -824,6 +824,7 @@ summary とこの会話で分かったことについて書いていたが、言
 ### 実 API の計測
 
 未計測。2026-10-26 も OpenAI の API の残高が尽きていて(1 文字の embeddings の呼び出しで 429 `insufficient_quota`)、費用は $0。
-残高が戻ったら、`T-switch-to-fulltime` を `--channel line --judge` で回し、聞き直し(`「wants」を聞き直した`)が無いこと、受け止めの続きと決まり文句の違反、
+監督役の判断(2026-10-26)で、このカードでは実 API を回さず、上の保存済みの会話の見直しで代える(`sim-20261025-230120` の `T-switch-to-fulltime` で、T7・T8 の聞き直しを違反として拾う)。
+残高が戻ったら利用者が、`T-switch-to-fulltime` を `--channel line --judge` で回し、聞き直し(`「wants」を聞き直した`)が無いこと、受け止めの続きと決まり文句の違反、
 指標 `echo_acks` を、上の #221 の数と比べる。続けて、相談に入る `C-consult-propose`、`T-career-fulltime`、`T-student-first` と、区分を切り替える `F-follow-new` で、
 md の「複数の会話で同じ文」を見る(台帳は `evals/results/budget-task230.jsonl`、このカードの予算は $1)
