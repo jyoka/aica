@@ -263,6 +263,31 @@ def test_card_ids_are_not_the_players_numbers(arc):
     assert res["experience"][0]["bullets"] == ["[N件 ← 数字を入れる]の新規顧客を開拓", f"売上を{PLACEHOLDER}向上"]
 
 
+def test_neighbouring_fields_do_not_run_together(arc):
+    """欄と欄の数字はくっつかない: 経験年数「5」の次の欄が「10人の…」でも、本人の「10人」は残る。
+    2 つの欄にまたがる引用(「教えた」+「3人」)は本人の言葉と見ない。"""
+    lines = [{"id": "e1", "title": "現場", "text": "新人に教えた", "quote": "", "metric": ""},
+             {"id": "e2", "title": "現場", "text": "3人でレジを回した", "quote": "", "metric": ""}]
+
+    def verdict_from_fields(d):
+        r = verdict(d)
+        r["strengths"][0]["exhibits"] = ["教えた3人", "3人でレジを回した"]
+        r["resume"]["summary"] = "10人のチームを率いたい。"
+        return r
+
+    arc.llm.script["Verdict"] = verdict_from_fields
+    p = start(arc.client)
+    data = {"intake": {"years": "5", "target": "10人のチームのリーダー"}, "jobs": [JOB | {"lines": lines}]}
+    v = ai(arc.client, p["play"], "verdict", data)
+    assert v["result"]["resume"]["summary"] == "10人のチームを率いたい。"
+    assert v["result"]["strengths"][0]["exhibits"] == ["3人でレジを回した"]
+    # 仕事の収穫の年数「2019〜2022」の次の行が「3人で…」でも、つないだ「20223人」は本人の数字ではない
+    assert check_numbers("20223人", ["2019〜2022", "3人でレジを回した"])[1] == 1
+    assert check_numbers("2022年まで3人で回した", ["2019〜2022", "3人でレジを回した"])[1] == 0
+    # 1 つの欄の中でも、空白をはさんだ数字はくっつけない
+    assert check_numbers("2022件", ["2019 2022"])[1] == 0 and check_numbers("20192022件", ["2019 2022"])[1] == 1
+
+
 def test_the_fact_check_keeps_what_the_player_wrote():
     """本人が書いた数字を消さない(1,200 と 1200、全角の数字、本人も AI も「三割」)。日付は成果の数字と数えない。"""
     said = ["問い合わせを月1,200件さばき、待ち時間を３割減らしました。表示は６１％速くなった。2022年に公開。"]

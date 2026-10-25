@@ -390,8 +390,8 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | `find_metric`、`has_metric`、`is_dateish` | `arcade-ja.js` の `findMetric` の写し。範囲、単位つきの数、漢数字(三割、半分)、順位の順に探す。4 桁の年と暦の日付は数えない |
 | `is_vague` | あいまいさ(日本語の字数と、数字が要るか) |
 | `PLACEHOLDER`、`PLACEHOLDER_YEN`、`PLACEHOLDER_COUNT`、`PLACEHOLDER_WHEN`、`PLACEHOLDER_RE`、`placeholder_count` | 数字の空欄 |
-| `check_numbers(text, sources)` | text の数字のうち sources に無いものを空欄にする。(置き換えた文, 数)。比べる前に NFKC、空白を除く、桁の区切りを外す。漢数字は書いたままの形で比べる(三割を 30% と言い換えたら空欄)。空欄の種類は単位で選ぶ(%・割・倍は `[+X% …]`、円は `[X円 …]`、年と日付は `[時期 …]`、ほかは `[N件 …]`) |
-| `quote_in(quote, sources)` | 引用が sources にそのままあるか(同じそろえ方) |
+| `check_numbers(text, sources)` | text の数字のうち sources に無いものを空欄にする。(置き換えた文, 数)。比べる前に NFKC、空白を除く(数字と数字の間の空白は 1 つ残す)、桁の区切りを外す。sources は 1 欄ずつそろえて区切りをはさんでつなぐ(隣の欄の数字がくっついて、年数「5」+「10人」が「510人」にならないように)。漢数字は書いたままの形で比べる(三割を 30% と言い換えたら空欄)。空欄の種類は単位で選ぶ(%・割・倍は `[+X% …]`、円は `[X円 …]`、年と日付は `[時期 …]`、ほかは `[N件 …]`) |
+| `quote_in(quote, sources)` | 引用が sources のどれか 1 欄にそのままあるか(同じそろえ方。2 つの欄にまたがる引用は認めない) |
 
 `arcade-ja.js` の `plainEnding`(です・ます調を言い切りに)は、まだ写していません(使うのはトークの「1 行追加」から。PRD の A)。
 

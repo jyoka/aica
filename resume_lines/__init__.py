@@ -40,10 +40,26 @@ def clean(text) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(text or ""))).strip()
 
 
+def _between_digits(m: re.Match) -> bool:
+    return m.start() > 0 and m.end() < len(m.string) and m.string[m.start() - 1].isdigit() and m.string[m.end()].isdigit()
+
+
 def _fold(text) -> str:
-    """比べる形: NFKC、空白を除く、桁の区切りのカンマを外す(1,200 → 1200)。"""
-    t = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(text or "")))
+    """比べる形: NFKC、空白を除く、桁の区切りのカンマを外す(1,200 → 1200)。
+    数字と数字の間の空白だけは 1 つ残す(「2019 2022」が 20192022 という別の数字にならないように)。"""
+    t = re.sub(r"\s+", lambda m: " " if _between_digits(m) else "", unicodedata.normalize("NFKC", str(text or "")))
     return re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", t)
+
+
+_SOURCE_SEP = "\x00"  # 欄と欄の間。_fold で消えず、数字にも引用にも入らない
+
+
+def _fold_sources(sources: list[str] | str) -> str:
+    """sources を 1 欄ずつそろえて、区切りをはさんでつなぐ。
+    空白でつないでから _fold すると空白が消え、隣の欄の数字がくっつく(年数「5」+「10人の…」→「510人」)。"""
+    if isinstance(sources, str):
+        return _fold(sources)
+    return _SOURCE_SEP.join(_fold(x) for x in sources)
 
 
 # ----------------------------- 数字の検出(日付は数えない) -----------------------------
@@ -145,7 +161,7 @@ def check_numbers(text, sources: list[str] | str) -> tuple[str, int]:
     s = str(text or "")
     if not s:
         return s, 0
-    folded = _fold(" ".join(sources) if isinstance(sources, list) else sources)
+    folded = _fold_sources(sources)
     out, replaced, last = [], 0, 0
     keep = [m.span() for m in PLACEHOLDER_RE.finditer(s)]
 
@@ -177,4 +193,4 @@ def quote_in(quote, sources: list[str] | str) -> bool:
     q = _fold(quote).strip("「」\"'。.…")
     if not q:
         return False
-    return q in _fold(" ".join(sources) if isinstance(sources, list) else sources)
+    return q in _fold_sources(sources)
