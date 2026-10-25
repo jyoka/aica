@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>レジュメ・アーケード</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Dela+Gothic+One&family=Zen+Old+Mincho:wght@700&family=Zen+Maru+Gothic:wght@700&family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* Layout: a dark arcade hall; a wall of eight cabinets, each with a live pixel screen and marquee. Single dark look by design. */
+:root {
+  color-scheme: dark;
+  --floor: #120d1f;
+  --wall: #1c1430;
+  --ink: #efe6ff;
+  --dim: #a99cc7;
+  --neon: #ff5fa2;
+  --neon2: #5ff2ff;
+  --coin: #ffd25f;
+  --pixel: "DotGothic16", "Hiragino Sans", "Yu Gothic", monospace;
+  --body: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+}
+html, body { height: 100%; }
+body {
+  background: var(--floor);
+  background-image:
+    radial-gradient(ellipse at 50% -10%, #3a1f5c 0%, transparent 60%),
+    repeating-linear-gradient(90deg, transparent 0 63px, #ffffff08 63px 64px);
+  color: var(--ink);
+  font-family: var(--body);
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+.hall {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+  display: grid;
+  gap: 36px;
+}
+header { display: grid; gap: 16px; justify-items: start; }
+.sign {
+  font-family: var(--pixel);
+  font-size: clamp(30px, 6.5vw, 58px);
+  line-height: 1.2;
+  letter-spacing: .06em;
+  margin: 0;
+  color: var(--neon);
+  text-shadow: 0 0 6px var(--neon), 0 0 22px #ff5fa288, 4px 4px 0 #000;
+  text-wrap: balance;
+  animation: buzz 6s steps(1) infinite;
+}
+.sign span { color: var(--neon2); text-shadow: 0 0 6px var(--neon2), 0 0 22px #5ff2ff88, 4px 4px 0 #000; }
+@keyframes buzz { 0%, 91%, 93%, 100% { opacity: 1 } 92% { opacity: .35 } }
+.lede { max-width: 40em; color: var(--dim); font-size: 17px; line-height: 1.8; margin: 0; }
+.lede b { color: var(--ink); }
+.credits { font-family: var(--pixel); font-size: 15px; color: var(--coin); letter-spacing: .08em; }
+.credits i { font-style: normal; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0 } }
+
+.wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 28px 22px;
+}
+.cab {
+  --c: var(--neon);
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  background: linear-gradient(180deg, var(--wall), #140e24);
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 3px var(--c), 6px 6px 0 #000;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .15s steps(3);
+  min-width: 0;
+}
+.cab:hover, .cab:focus-visible { transform: translateY(-6px); }
+.cab:focus-visible { outline: 3px dashed var(--coin); outline-offset: 4px; }
+.marquee {
+  padding: 12px 14px 10px;
+  background: var(--c);
+  color: #0b0716;
+  font-size: 24px;
+  line-height: 1.25;
+  border-bottom: 3px solid #000;
+}
+.screen-wrap { padding: 14px 14px 0; }
+canvas.screen {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  image-rendering: pixelated;
+  background: #000;
+  border: 3px solid #000;
+  box-shadow: 0 0 0 2px #ffffff22, 0 0 24px color-mix(in srgb, var(--c) 40%, transparent);
+}
+.info { padding: 12px 14px 4px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.genre { font-family: var(--pixel); font-size: 14px; letter-spacing: .08em; color: var(--c); line-height: 1.4; }
+.pitch { margin: 0; font-size: 15px; line-height: 1.7; color: var(--ink); }
+.out { margin: 0; font-size: 14px; line-height: 1.7; color: var(--dim); }
+.play {
+  margin: 12px 14px 14px;
+  padding: 10px;
+  text-align: center;
+  font-family: var(--pixel);
+  font-size: 16px;
+  background: #000;
+  color: var(--coin);
+  border: 2px solid var(--coin);
+}
+.cab:hover .play, .cab:focus-visible .play { background: var(--coin); color: #000; }
+.cab[aria-disabled="true"] { opacity: .55; pointer-events: none; }
+footer { color: var(--dim); font-size: 14px; line-height: 1.8; max-width: 46em; }
+@media (prefers-reduced-motion: reduce) {
+  .sign, .credits i { animation: none; }
+  .cab { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="hall">
+  <header>
+    <h1 class="sign">レジュメ・<span>アーケード</span></h1>
+    <p class="lede">職務経歴書を書くという、キャリアでいちばん退屈な作業を、最後まで遊べるゲームにしました。いま遊べるのは2本です。<b>どの筐体も、終わり方は同じです。</b>あなたが話したことだけから職務経歴書ができあがり、強みと弱みを正直に教えてくれます。</p>
+    <div class="credits">クレジット 02 <i>&#9654; 遊ぶ筐体を選んでください</i></div>
+  </header>
+  <main class="wall" id="wall"></main>
+  <footer>いまはオフライン：AIを使わない簡易分析で動きます。それでも最後まで遊べて、職務経歴書ができます。名前や連絡先は聞きません（書類では空欄になります）。答えはこの端末のブラウザにだけ残ります。どのゲームにも架空の人物で遊ぶ「サンプル」があり、2分ほどで全体の流れを見られます。</footer>
+</div>
+
+<script>
+const GAMES = [
+  { id: "quest", name: "キャリアクエスト", c: "#7ee07a", genre: "街づくりRPG",
+    pitch: "これまでの職場が、ドット絵のふるさとに建物として建っていきます。同僚のNPCがあなたに話を聞きにきます。",
+    out: "ラスボスは、面接の塔で待つ採用担当者。", slug: "career-quest" },
+  { id: "dungeon", name: "職歴ダンジョン", c: "#ffb347", genre: "ローグライク",
+    pitch: "職場ひとつにつき、ダンジョンを1階ずつ下ります。本当にぶつかった壁を、何をしたかを語って倒します。",
+    out: "具体的な数字は会心の一撃。戦利品は職務経歴書の1行です。", slug: "dungeon-of-past-jobs" },
+  { id: "noir", name: "あなたという事件", c: "#ffc861", genre: "ノワール探偵",
+    pitch: "1947年、窓を打つ雨。依頼人が「ある人物の正体を調べてくれ」と言う。調査対象は、あなた自身です。",
+    out: "証人の質問に答えるたび、職務経歴書が1行ずつ増えていきます。", slug: "the-case-of-you", shipped: true },
+  { id: "pet", name: "キャリアペット", font: "Zen Maru Gothic", c: "#ff8fd0", genre: "育成ゲーム",
+    pitch: "手のひらサイズの生きものに、仕事の思い出を食べさせます。やがて、あなたのキャリアのタイプに進化します。",
+    out: "おなかをすかせたステータスが弱み。最後はレシートで職務経歴書を印刷します。", slug: "career-pet" },
+  { id: "fighter", name: "キャリアファイター", font: "Dela Gothic One", c: "#ff4d4d", genre: "対戦格闘",
+    pitch: "あなたのスキルが必殺技になります。求人票を貼りつけると、それがボスとして立ちはだかります。",
+    out: "返せない応募条件は痛い一撃。それが、あなたに足りないものです。", slug: "career-fighter" },
+  { id: "deck", name: "実績デッキ", font: "Zen Old Mincho", c: "#c9a14a", genre: "デッキ構築",
+    pitch: "鍛冶屋が、あなたのやってきたことを1枚ずつカードに鍛えます。そのデッキで求人票と戦います。",
+    out: "デッキを見れば、得意なことと、どのカードでも返せないことがわかります。", slug: "deck-of-deeds" },
+  { id: "star", name: "スターログ", c: "#8fb8ff", genre: "宇宙の旅",
+    pitch: "これまでの職場ごとの惑星へ飛びます。船のコンピューターが、あなたの話を星として記録します。",
+    out: "星がつながって、名前のついた星座になります。それがあなたの強みです。", slug: "star-log" },
+  { id: "farm", name: "仕事の収穫", font: "Zen Maru Gothic", c: "#f7d36b", genre: "のんびり農場",
+    pitch: "思い出の種をまき、具体的な話で水をやります。本当の成果がある話だけが、金色の実をつけます。",
+    out: "収穫祭の市場の掲示板が、そのまま職務経歴書になります。", slug: "harvest-of-work", shipped: true },
+];
+
+/* aica では、案内の部品をそろえたゲーム(shipped)だけをハブに出す。残りは開発者画面からだけ開ける(task 187)。 */
+const wall = document.getElementById("wall");
+const screens = [];
+for (const g of GAMES.filter((x) => x.shipped)) {
+  const url = "/liff/arcade/" + g.slug;
+  const a = document.createElement("a");
+  a.className = "cab";
+  a.style.setProperty("--c", g.c);
+  a.href = url;
+  const m = document.createElement("div");
+  m.className = "marquee";
+  m.textContent = g.name;
+  if (g.font) m.style.fontFamily = `"${g.font}", var(--pixel)`;
+  const sw = document.createElement("div");
+  sw.className = "screen-wrap";
+  const cv = document.createElement("canvas");
+  cv.className = "screen";
+  cv.width = 96; cv.height = 72;
+  sw.append(cv);
+  const info = document.createElement("div");
+  info.className = "info";
+  info.innerHTML = `<div class="genre"></div><p class="pitch"></p><p class="out"></p>`;
+  info.children[0].textContent = g.genre;
+  info.children[1].textContent = g.pitch;
+  info.children[2].textContent = g.out;
+  const p = document.createElement("div");
+  p.className = "play";
+  p.textContent = "コインを入れる ▶";
+  a.append(m, sw, info, p);
+  wall.append(a);
+  screens.push({ g, ctx: cv.getContext("2d") });
+}
+
+// Tiny attract-mode loops, one per cabinet. 96x72 canvases, scaled up with pixelated rendering.
+const R = (s) => { let x = Math.sin(s * 9301 + 49297) * 233280; return x - Math.floor(x); };
+const px = (c, x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x | 0, y | 0, w, h); };
+const DRAW = {
+  quest(c, t) {
+    px(c, 0, 0, 96, 72, "#5fb04a");
+    for (let i = 0; i < 40; i++) px(c, R(i) * 96, R(i + 99) * 72, 1, 2, "#7ed35f");
+    px(c, 0, 50, 96, 8, "#d9b57a");
+    const hs = [[10, 24, "#c8553d"], [38, 18, "#3d7cc8"], [66, 26, "#8a5ac8"]];
+    hs.forEach(([x, y, col], i) => {
+      const rise = Math.min(1, Math.max(0, ((t / 1200) % 6) - i));
+      const h = 22 * rise;
+      px(c, x, y + 22 - h, 20, h, "#f0e0c0");
+      if (rise > .9) { px(c, x - 2, y - 6, 24, 7, col); px(c, x + 8, y + 12, 5, 10, "#6b4423"); }
+    });
+    const hx = 4 + ((t / 30) % 92);
+    px(c, hx, 46, 5, 6, "#2b2b6b"); px(c, hx + 1, 43, 3, 3, "#f2c89b");
+  },
+  dungeon(c, t) {
+    px(c, 0, 0, 96, 72, "#1a1022");
+    for (let y = 0; y < 72; y += 8) for (let x = (y / 8) % 2 * 6; x < 96; x += 12) px(c, x, y, 11, 7, "#2a1d38");
+    const f = 0.6 + 0.4 * Math.sin(t / 90) * Math.sin(t / 37);
+    c.fillStyle = `rgba(255,170,60,${0.18 * f})`; c.beginPath(); c.arc(14, 20, 22, 0, 7); c.fill();
+    px(c, 13, 18, 2, 8, "#6b4423"); px(c, 12, 14 + f * 2, 4, 4, "#ffb347");
+    const hit = (t % 1600) < 200;
+    px(c, 58 + (hit ? 2 : 0), 30, 20, 22, hit ? "#fff" : "#7a8a5a");
+    px(c, 62, 36, 3, 3, "#ff4040"); px(c, 71, 36, 3, 3, "#ff4040");
+    px(c, 24, 38, 6, 12, "#c0c0d0"); px(c, 25, 34, 4, 4, "#f2c89b"); px(c, 30, 40, 10, 2, "#e0e0f0");
+    if (hit) { c.fillStyle = "#ffd25f"; c.font = "8px monospace"; c.fillText("CRIT!", 56, 26 - (t % 1600) / 40); }
+  },
+  noir(c, t) {
+    px(c, 0, 0, 96, 72, "#141a26");
+    px(c, 50, 8, 38, 40, "#25324a");
+    for (let i = 0; i < 30; i++) { const y = (R(i) * 72 + t / 6 * (1 + R(i + 5))) % 40; px(c, 50 + R(i + 3) * 38, 8 + y, 1, 3, "#5a7090"); }
+    for (let y = 10; y < 48; y += 5) px(c, 50, y, 38, 1, "#0b0f18");
+    const flash = (t % 7000) < 90;
+    if (flash) px(c, 50, 8, 38, 40, "#c8d6f0");
+    c.fillStyle = "rgba(255,200,97,.22)"; c.beginPath(); c.moveTo(18, 30); c.lineTo(2, 72); c.lineTo(44, 72); c.fill();
+    px(c, 14, 26, 10, 5, "#ffc861"); px(c, 18, 31, 2, 12, "#333");
+    px(c, 0, 58, 96, 14, "#2a1f17");
+    px(c, 60, 56, 10, 2, "#ddd"); const sm = (t / 50) % 20; px(c, 64 + Math.sin(t / 300) * 2, 54 - sm, 1, 1, "#889");
+  },
+  pet(c, t) {
+    px(c, 0, 0, 96, 72, "#9bbc8f");
+    for (let y = 0; y < 72; y += 3) px(c, 0, y, 96, 1, "#94b587");
+    const b = Math.abs(Math.sin(t / 260)) * 5;
+    const x = 40 + Math.sin(t / 1400) * 18;
+    px(c, x, 40 - b, 16, 14, "#2f3b2a"); px(c, x + 2, 38 - b, 12, 2, "#2f3b2a");
+    const blink = (t % 3000) < 120;
+    px(c, x + 4, 44 - b, 2, blink ? 1 : 3, "#9bbc8f"); px(c, x + 10, 44 - b, 2, blink ? 1 : 3, "#9bbc8f");
+    px(c, 0, 56, 96, 1, "#2f3b2a");
+    for (let i = 0; i < 5; i++) { const on = i < 3 + ((t / 2000) | 0) % 3; px(c, 8 + i * 9, 62, 6, 5, on ? "#2f3b2a" : "#7f9a74"); }
+    if ((t % 2400) < 900) { px(c, x + 18, 26 - b, 3, 3, "#2f3b2a"); px(c, x + 22, 24 - b, 3, 3, "#2f3b2a"); }
+  },
+  fighter(c, t) {
+    px(c, 0, 0, 96, 72, "#2b0f3a");
+    px(c, 0, 30, 96, 20, "#5a1f4a");
+    for (let i = 0; i < 12; i++) px(c, i * 8 + (Math.sin(t / 200 + i) > 0 ? 1 : 0), 44, 6, 6, "#3a1030");
+    px(c, 0, 52, 96, 20, "#c85a2a");
+    const ph = (t % 1400) / 1400;
+    const lunge = ph < .3 ? ph * 30 : 0;
+    px(c, 20 + lunge, 34, 8, 18, "#ff4d4d"); px(c, 21 + lunge, 29, 6, 5, "#f2c89b");
+    if (ph < .3) px(c, 28 + lunge, 38, 8, 3, "#ff4d4d");
+    const hit = ph > .25 && ph < .35;
+    px(c, 62 + (hit ? 3 : 0), 34, 8, 18, "#4d7aff"); px(c, 63 + (hit ? 3 : 0), 29, 6, 5, "#f2c89b");
+    if (hit) { px(c, 54, 34, 8, 8, "#fff"); }
+    px(c, 4, 4, 38, 4, "#ffd25f"); px(c, 54, 4, 38 * (1 - ((t / 1400) | 0) % 5 / 6), 4, "#ffd25f");
+  },
+  deck(c, t) {
+    px(c, 0, 0, 96, 72, "#123826");
+    for (let i = 0; i < 60; i++) px(c, R(i) * 96, R(i + 7) * 72, 1, 1, "#1a4a33");
+    for (let i = 0; i < 5; i++) {
+      const lift = ((t / 700) | 0) % 5 === i ? 6 : 0;
+      const x = 10 + i * 16, y = 36 - lift;
+      px(c, x, y, 14, 20, "#000"); px(c, x + 1, y + 1, 12, 18, "#e9d8a6");
+      px(c, x + 3, y + 4, 8, 6, ["#c84a4a", "#4a7ac8", "#c9a14a", "#6ac84a", "#a04ac8"][i]);
+      px(c, x + 3, y + 12, 8, 1, "#8a7550"); px(c, x + 3, y + 14, 6, 1, "#8a7550");
+    }
+    const f = Math.sin(t / 120) > 0 ? 1 : 0;
+    px(c, 44, 8 + f, 8, 14, "#555"); px(c, 46, 4 + f, 4, 4, "#ffb347");
+  },
+  star(c, t) {
+    px(c, 0, 0, 96, 72, "#070a1a");
+    for (let i = 0; i < 70; i++) { const tw = Math.sin(t / 400 + i) > .6; px(c, (R(i) * 96 - t / (60 + R(i) * 80)) % 96 + 96 * (R(i) * 96 - t / (60 + R(i) * 80) < 0), R(i + 50) * 72, 1, 1, tw ? "#fff" : "#6a7ab0"); }
+    c.fillStyle = "#3a5fc0"; c.beginPath(); c.arc(70, 46, 12, 0, 7); c.fill();
+    px(c, 62, 42, 6, 2, "#5f86e0");
+    const sx = 20 + Math.sin(t / 900) * 6, sy = 24 + Math.cos(t / 700) * 4;
+    px(c, sx, sy, 6, 3, "#e0e0f0"); px(c, sx + 6, sy + 1, 2, 1, "#8fb8ff"); px(c, sx - 2 - (t / 60 % 3), sy + 1, 2, 1, "#ffb347");
+    c.strokeStyle = "#8fb8ff"; c.lineWidth = 1; c.beginPath(); c.moveTo(10, 10); c.lineTo(22, 6); c.lineTo(34, 12); c.stroke();
+  },
+  farm(c, t) {
+    const night = (Math.sin(t / 3000) + 1) / 2;
+    px(c, 0, 0, 96, 72, "#7cc35a");
+    for (let r = 0; r < 3; r++) for (let i = 0; i < 6; i++) {
+      const x = 10 + i * 13, y = 18 + r * 16;
+      px(c, x, y, 10, 10, "#7a5232");
+      const stage = (((t / 900) | 0) + i + r) % 4;
+      if (stage > 0) px(c, x + 4, y + 6 - stage * 2, 2, stage * 2 + 1, "#2f8a2f");
+      if (stage === 3) px(c, x + 3, y + 1, 4, 3, ["#ffd25f", "#ff6b6b", "#ff9a3c"][r]);
+    }
+    const bx = (t / 20) % 110 - 10; px(c, bx, 8 + Math.sin(t / 100) * 3, 2, 2, "#fff");
+    c.fillStyle = `rgba(20,20,60,${night * .35})`; c.fillRect(0, 0, 96, 72);
+  },
+};
+let start = performance.now();
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function frame(now) {
+  const t = now - start;
+  for (const s of screens) { s.ctx.imageSmoothingEnabled = false; DRAW[s.g.id](s.ctx, reduce ? 1500 : t); }
+  if (!reduce) requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

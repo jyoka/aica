@@ -263,6 +263,38 @@ async def shared_static(name: str):
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
+# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。いまは AI を使わない簡易分析だけで、
+# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。ゲームの名前はファイル名と同じ。
+ARCADE = STATIC / "arcade"
+ARCADE_SHIPPED = ("the-case-of-you", "harvest-of-work")  # ハブに出す(案内の部品がそろったもの)
+ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする
+    "career-quest", "dungeon-of-past-jobs", "career-pet", "career-fighter", "deck-of-deeds", "star-log")
+ARCADE_STATIC = {"arcade-ja.js"}  # ゲームが共通に使う部品(日本語の答えの判定)
+
+
+@app.get("/static/arcade/{name}")
+async def arcade_static(name: str):
+    """レジュメ・アーケードの共通部品。"""
+    if name not in ARCADE_STATIC:
+        raise HTTPException(404)
+    return FileResponse(ARCADE / name, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade")
+async def liff_arcade():
+    """レジュメ・アーケードのハブ(ゲームを選ぶ画面)。"""
+    return FileResponse(ARCADE / "resume-arcade.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade/{game}")
+async def liff_arcade_game(game: str):
+    """レジュメ・アーケードの 1 本のゲーム。知らない名前は 404(「draft」は (3/3) の下書きの画面に取っておく)。"""
+    if game not in ARCADE_GAMES:
+        return HTMLResponse(_page("レジュメ・アーケード", '<p>このゲームは見つかりません。<a href="/liff/arcade">ハブに戻る</a></p>'),
+                            status_code=404)
+    return FileResponse(ARCADE / f"{game}.html", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/me")
 async def me(request: Request):
     """このブラウザの匿名ユーザーID(発行はしない。Cookie が無ければ 401)。"""
