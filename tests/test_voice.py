@@ -72,7 +72,7 @@ def test_record_voice_result_without_jobs_keeps_the_draft(state):
 def test_record_voice_result_keeps_only_safe_preferences(state):
     """まとめに使う希望は、保存と同じ決まり: 決まった項目だけ・個人情報らしい値は捨てる。"""
     logic.record_voice_result(state, "sim-new", [], DRAFT, preferences={
-        "job_type": "カフェ", "min_wage": 1200, "area": "みほん町3-5", "phone": "090-1234-5678", "skills": " "})
+        "job_type": "カフェ", "min_wage": 1200, "area": "みほん町3-5に住んでいます", "phone": "090-1234-5678", "skills": " "})
     (got,) = logic.voice_results_since(state, "sim-new", 0)
     assert got["preferences"] == {"job_type": "カフェ", "min_wage": "1200"}
 

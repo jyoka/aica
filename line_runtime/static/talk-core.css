@@ -4,6 +4,9 @@
 .bubble.file { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
 .bubble.file .fi { width: 30px; height: 30px; border-radius: 8px; background: #ffffffb3; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 
+/* 本人の発言の電話番号・メール・住所らしい所を伏せて送った知らせ(本人の吹き出しのすぐ下) */
+.redacted { align-self: flex-end; font-size: 11px; color: #eef2fa; margin: -2px 2px 2px; }
+
 /* AI が差し出す操作(ファイルを選ぶ・話して伝える)。押しても発言は送らない */
 .chips button.action { background: var(--ok-soft); color: var(--ok-dark); border-color: #9fdfb8; font-weight: 700; }
 .chips button.action:disabled { background: #fff; color: #9aa7bd; border-color: var(--chip-line); }

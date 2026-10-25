@@ -13,7 +13,6 @@ LINE の Messaging API と ID トークンの検証は偽物の LINE(httpx.MockT
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -21,6 +20,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from dip_mcp import arcade, logic, profile
 from dip_mcp.data import State
 from line_runtime import line_channel
+from line_runtime.agent import PINNED_USER
 from line_runtime.line_channel import line_user
 from line_runtime.runtime import _tool_payload
 from tests.test_arcade_ai import MD, StubLLM
@@ -97,7 +97,7 @@ class GameGuide(ScriptedModel):
 
     def respond(self, messages):
         self.systems.append(messages[0].content)
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         if human != ASK:

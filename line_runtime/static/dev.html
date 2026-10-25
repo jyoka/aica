@@ -375,6 +375,7 @@
     } else if (ev.kind === "reply") {
       if (ev.sent === false) { col.parentElement.remove(); sys(`[dip] プッシュしない: ${ev.reason}`); light([], { denied: true }); }
       else {
+        if (ev.redacted) talk.redactedNote(col.parentElement);
         renderReply(ev, col);
         traceRow("reply", "LINE の返信", `吹き出し ${ev.bubbles.length}・求人カード ${ev.cards.length}・選択肢 ${ev.quick_replies.length}` +
                  (ev.actions?.length ? `・操作 ${ev.actions.map(a => `<code>${esc(a)}</code>`).join(" ")}` : "") +

@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -19,6 +18,7 @@ from dip_mcp import logic
 from dip_mcp.data import State
 from evals.checks import conversation_checks, turn_violations
 from evals.scenarios import load_scenarios
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from resume_draft.schema import ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply, run
@@ -102,10 +102,10 @@ def test_set_search_track_rejects_unknown_track_missing_evidence_and_strips_cont
 
 
 def test_set_search_track_strips_addresses_from_the_evidence(tmp_path):
-    """根拠の発言も、希望の保存・まとめと同じ住所の決まりで伏せる(住所らしい所は、区切りまでの語ごと)。"""
+    """根拠の発言も、希望の保存・まとめと同じ住所の決まりで伏せる(住所らしい所は、地名から番地までの住所の部分だけ)。"""
     state = State(tmp_path / "state.json")
     r = logic.set_search_track(state, UID, "正社員", "渋谷区神南1-2-3に住んでいて、正社員で探したい")
-    assert r["recorded"]["evidence"] == "[個人情報を削除]、正社員で探したい"
+    assert r["recorded"]["evidence"] == "[個人情報を削除]に住んでいて、正社員で探したい"
     (h,) = logic.conversation_summary(state, UID)["track_history"]
     assert "神南" not in h["evidence"] and "1-2-3" not in h["evidence"]
     # 住所でない数字の幅は伏せない
@@ -257,7 +257,7 @@ def greet_from_track(messages) -> AIMessage:
     system = messages[0].content
     assert "入口R(再訪)" in system
     if not any(m.type == "tool" for m in _this_turn(messages)):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", system).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
     track = _summary_in_turn(messages)["search_track"]
     if track == "未定":

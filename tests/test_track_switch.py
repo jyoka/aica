@@ -16,12 +16,11 @@
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic, profile
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_talk_actions import (  # noqa: F401  フィクスチャ
@@ -59,7 +58,7 @@ class Switcher(ScriptedModel):
 
     @staticmethod
     def respond(messages):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         notice = messages[last - 1].content if messages[last - 1].type == "human" else ""

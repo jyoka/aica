@@ -1198,7 +1198,7 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
     if len(summary) > CONSULTATION_SUMMARY_MAX:
         return {"error": f"summary(相談のまとめ)が{len(summary)}字です。{CONSULTATION_SUMMARY_MAX}字以内に書き直して、"
                          "もう一度呼んでください(本人の発言に基づく事実と、次に確かめることだけ)。何も記録していません。"}
-    # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、区切りまでの語ごと消す)。
+    # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、地名から番地までの住所の部分を消す)。
     # 氏名はコードでは見分けられないので消せない: ツールの説明で書かないよう指示し(dip_mcp/server.py)、評価で見る
     reason = redact_personal(reason)
     rec = {"at": now(line_user_id).isoformat(), "outcome": outcome, "reason": reason,

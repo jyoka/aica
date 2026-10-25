@@ -88,10 +88,17 @@ def channel_note(channel: str | None, features: list[str] | tuple[str, ...] = ()
     return "\n- ".join([LINE_NOTE, *(on if k in features else off for k, (on, off) in LINE_FEATURES.items())])
 
 
+# ツールの line_user_id に入れる値。本当のユーザーIDは LLM に渡さず、PinUserMiddleware がこの会話のユーザーに置き換える
+PINNED_USER = "me"
+USER_NOTE = (f"# このユーザー\nツールの line_user_id には「{PINNED_USER}」を入れる"
+             "(LINE 側が、このトークのユーザーに置き換えて事業者に渡す)。\n")
+
+
 class ScenarioMiddleware(AgentMiddleware):
-    """会話の入口に応じた dip のシナリオ(MCP の Prompt)と、今の窓口(Web / LINE)と、ユーザーIDをシステムプロンプトに付ける。
-    どれも会話の途中で変わらないので、プロンプトキャッシュを壊さない(窓口はシナリオの後に置き、シナリオまでは
-    どの窓口の会話でも同じにする)。"""
+    """会話の入口に応じた dip のシナリオ(MCP の Prompt)と、今の窓口(Web / LINE)をシステムプロンプトに付ける。
+    ユーザーIDは載せない(USER_NOTE: ツールの line_user_id は PinUserMiddleware が固定するので、LLM が知る必要がない)。
+    どれも会話の途中で変わらず、ユーザーごとにも変わらないので、プロンプトキャッシュを壊さない(窓口はシナリオの後に置き、
+    シナリオまではどの窓口の会話でも同じにする)。"""
 
     state_schema = LineState
 
@@ -101,11 +108,9 @@ class ScenarioMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         entry = request.state.get("entry", "A")
-        uid = request.state.get("line_user_id", "")
         note = channel_note(request.state.get("channel"), request.state.get("channel_features") or ())
         text = (f"{PLATFORM_PROMPT}\n# 事業者(dip)の対話シナリオ\n{self.scenarios.get(entry, self.scenarios['A'])}\n"
-                f"# 窓口\n{note}\n"
-                f"# このユーザー\nLINE ユーザーID: {uid}(ツールの line_user_id に使う)\n")
+                f"# 窓口\n{note}\n" + USER_NOTE)
         return await handler(request.override(system_message=SystemMessage(text)))
 
 

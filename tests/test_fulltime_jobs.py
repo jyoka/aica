@@ -20,6 +20,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import logic
 from dip_mcp.data import ROOT, State, annual_pay_mid, load_jobs, pay_text
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_talk_actions import (  # noqa: F401  browser はフィクスチャ
@@ -207,7 +208,7 @@ class Recruiter(ScriptedModel):
         return ChatResult(generations=[ChatGeneration(message=self.respond(messages))])
 
     def respond(self, messages):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         search = {"正社員で年収600万以上": {"employment_type": "正社員", "min_annual_salary": 600, "area": "新宿"},

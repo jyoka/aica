@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 
 from livekit.agents import Agent, function_tool
 
+from resume_draft.pii import has_pii, looks_like_address
 from voice_resume import config
 from voice_resume.jobs import (
     DEFAULT_TRACK,
@@ -53,6 +54,9 @@ from voice_resume.wages import WageReference, answer_from_reference, load_refere
 logger = logging.getLogger("voice-resume.advisor")
 
 DATA_TOPIC = "voice-resume"
+# 調べものの問いに個人情報らしい値(電話番号・メールアドレス・住所らしい所)があったときの答え(web では調べない)
+PERSONAL_QUERY_REPLY = ("問いに電話番号・メールアドレス・住所のような個人情報が入っていたので、調べませんでした。"
+                        "本人の個人情報は調べられないと短く伝え、個人情報を外した問いで調べ直すか、会話の続きに戻ってください。")
 
 
 class TalkForgotten(Exception):
@@ -752,7 +756,13 @@ class ResumeAdvisor(Agent):
         """web で調べて読み上げ用の答えを返す。1 回の相談で config.MAX_WEB_SEARCHES 回まで(費用の上限)。
 
         上限を超えたら調べず、表示も出さない(一瞬で消える表示を出さない)。失敗した回も 1 回に数える。
+        問い(subject。OpenAI を通って検索エンジンにも届く)に電話番号・メールアドレス・住所の形があれば、
+        調べずに PERSONAL_QUERY_REPLY を返す(表示も出さず、回数にも数えない)。問いは LLM が書くので、
+        本人の文と違い、住む言葉が無くても住所の形で断る(looks_like_address)。
         """
+        if has_pii(subject) or looks_like_address(subject):
+            logger.info("調べものの問いに個人情報らしい値があるので調べません")
+            return PERSONAL_QUERY_REPLY
         if self.web_searches >= config.MAX_WEB_SEARCHES:
             logger.info("web の調べものは上限(%d 回)に達したので調べません", config.MAX_WEB_SEARCHES)
             return (f"この相談で web を調べられる回数({config.MAX_WEB_SEARCHES}回)を使い切りました。"

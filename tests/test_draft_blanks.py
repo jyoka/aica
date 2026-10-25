@@ -9,8 +9,6 @@ aica は下書きに書き込まない(利用者の判断 D4)。数字を聞い�
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from dip_mcp import arcade, logic
@@ -22,6 +20,7 @@ from evals.scenarios import (
     prepare,
     seed_arcade_draft,
 )
+from line_runtime.agent import PINNED_USER
 from line_runtime.line_channel import line_user
 from tests.test_arcade_liff import _links
 from tests.test_handle import call, reply, run
@@ -83,7 +82,7 @@ def blank_filler(messages):
     if "空欄を埋める" not in human and "2日" not in human:
         return greet(messages)
     if not any(m.type == "tool" for m in _this_turn(messages)):
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
     draft = _tool_result(messages, "get_user_conversation_summary")["arcade_draft"]
     if "空欄を埋める" in human:

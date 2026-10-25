@@ -27,6 +27,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from dip_mcp import behavior, logic, profile
 from dip_mcp.data import JST
+from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
@@ -67,7 +68,7 @@ class Rememberer(ScriptedModel):
 
     def respond(self, messages):
         self.contexts.append(list(messages))
-        uid = re.search(r"LINE ユーザーID: ([^(\s]+)", messages[0].content).group(1)
+        uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
         last = max(i for i, m in enumerate(messages) if m.type == "human")
         human, turn = messages[last].content, messages[last + 1:]
         if human.startswith("[イベント:") and "アップロード" not in human or human == "要約を読んで":
@@ -794,8 +795,8 @@ def test_profile_routes_need_a_well_formed_cookie(remembered, cookies):
 
 
 @pytest.mark.parametrize("value", ["090-1234-5678", "連絡は09012345678", "misaki@example.com",
-                                   "新宿区西新宿2-8-1", "西新宿三丁目", "1-2-3 に住んでいます",
-                                   "０９０－１２３４－５６７８", "090ー1234ー5678", "西新宿２－８－１"])
+                                   "住所は新宿区西新宿2-8-1", "西新宿三丁目に住んでいます", "1-2-3 に住んでいます",
+                                   "０９０－１２３４－５６７８", "090ー1234ー5678", "自宅は西新宿２－８－１"])
 def test_personal_info_is_rejected_when_editing_by_hand(remembered, value):
     with _client(remembered) as client:
         uid = _cookie_user(client)
@@ -811,7 +812,7 @@ def test_values_that_only_look_like_numbers_are_kept_when_editing_by_hand(rememb
     with _client(remembered) as client:
         _cookie_user(client)
         for key, value in (("min_annual_salary", "年収400-500万円"), ("start_timing", "3-6か月以内"),
-                           ("area", "新宿区")):
+                           ("area", "新宿区"), ("area", "新宿三丁目")):  # 住む言葉の無い地名は住所とみなさない
             assert client.put(f"/api/profile/items/{key}", json={"value": value}).status_code == 200, value
         assert client.put("/api/profile/items/wants", json={"value": "あ" * 101}).status_code == 400
 

@@ -372,9 +372,11 @@ def test_resume_form_rejects_pii_in_values_of_other_fields(state):
     assert not state.user("sim-exit").get(behavior.WRITES)  # 何も書かない
 
 
-@pytest.mark.parametrize("value", ["渋谷区神南1-2-3", "みほん市みほん町3丁目", "みほん町３－５", "東京都みほん市1-2-3から通う"])
+@pytest.mark.parametrize("value", ["自宅は渋谷区神南1-2-3", "みほん市みほん町3丁目に住んでいます", "住所 みほん町３－５",
+                                   "東京都みほん市1-2-3在住"])
 def test_resume_form_rejects_address_like_values(state, value):
-    """住所らしい値は、項目名が個人情報の項目でなくても受け取らない(希望の保存・まとめと同じ決まり)。"""
+    """住所らしい値(住んでいる所を言う言葉と一緒のもの)は、項目名が個人情報の項目でなくても受け取らない
+    (希望の保存・まとめと同じ決まり)。住む言葉の無い地名や番地の形だけでは住所とみなさない(task 211)。"""
     r = logic.resume_form(state, "sim-exit", "a002", {"希望開始日": value})
     assert r["rejected_pii"] == ["希望開始日"] and "希望開始日" in r["remaining_fields"]
     assert r["liff_url"].startswith("/liff/apply") and "個人情報" in r["note"]
@@ -509,7 +511,7 @@ def test_preferences_for_unlinked_user_are_kept_by_line_id(state):
 
 
 def test_preferences_accept_numbers_and_reject_addresses(state):
-    r = logic.save_preferences(state, "sim-yoru", {"min_wage": 1200, "days_per_week": 3, "area": "渋谷区神南1-2-3"})
+    r = logic.save_preferences(state, "sim-yoru", {"min_wage": 1200, "days_per_week": 3, "area": "自宅は渋谷区神南1-2-3"})
     assert r["saved"] == ["min_wage", "days_per_week"] and r["rejected"] == ["area"]
     assert logic.conversation_summary(state, "sim-yoru")["stated_preferences"]["min_wage"]["value"] == "1200"
 

@@ -33,6 +33,7 @@ from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
 from line_runtime.voice_reply import voice_history_reply
+from resume_draft.pii import REDACTED, redact_personal
 
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
     ("line_runtime.agent", "LineReply"), ("line_runtime.agent", "Button"),
@@ -69,12 +70,14 @@ def _threads_of(user_id: str) -> tuple[int, str, tuple]:
 
 
 def event_input(event: str, text: str | None, facts: dict | None) -> str:
-    """エージェントへの入力。ユーザー起点は発言そのもの、こちら起点はイベントと根拠の事実。"""
+    """エージェントへの入力。ユーザー起点は発言(電話番号・メール・住所らしい所を伏せた文)、こちら起点はイベントと根拠の事実。
+    発言は Web と LINE では turn.accept が伏せ済み。ここでも伏せるのは、評価などが handle を直に呼んでも、伏せない文が
+    LLM と会話の保存に届かないように(redact_personal は当たる所が無くなるまで伏せるので、伏せた文をもう一度伏せても変わらない)。"""
     kind = EVENTS[event][1]
     if kind == "user":
         if not (text or "").strip():
             raise ValueError(f"{event} には空でない text が必要です")
-        return text
+        return redact_personal(text)
     if kind == "greet":
         return f"[イベント: {GREETINGS[event]}] {FIRST_MESSAGE}"
     if kind == "upload":
@@ -528,7 +531,8 @@ def history(messages: list, user_id: str) -> list[dict]:
     そのまま bot にする。カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。
     本人のデータの画面の URL(読み取り結果・下書き)は会話の記録から取らず、ここで組み立てる(ユーザーIDを載せない形。
     ユーザーID入りの URL を保存していた古い記録も、返すときには載せない)。
-    プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。"""
+    プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。
+    発言に伏せた所(REDACTED)があれば redacted を付ける(画面が「電話番号などは送らないようにしました」と出す)。"""
     bounds = [i for i, m in enumerate(messages) if m.type == "human"]
     humans = [i for i in bounds if not messages[i].additional_kwargs.get("profile_notice")]
     turns = []
@@ -557,7 +561,9 @@ def history(messages: list, user_id: str) -> list[dict]:
         elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}
-        turns.append({"user": user, "bot": bot} | ({"upload": upload} if upload else {}))
+        redacted = isinstance(user, str) and REDACTED in user
+        turns.append({"user": user, "bot": bot} | ({"upload": upload} if upload else {})
+                     | ({"redacted": True} if redacted else {}))
     return turns
 
 
