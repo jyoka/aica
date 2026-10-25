@@ -9,6 +9,8 @@ aica が何でできていて、データがどこを流れるかの全体図で
 - 4.9 の行動データと状況の要約は、task 180 で足しました。ツールが要約を読むところは task 181 で足しました
 - 4.10 の LINE のアカウント連携は、2026-10-21 のユーザーの依頼で、task 182 で足しました
 - 4.8 の LINE の会話の区切り(30 分空いたら新しい会話)は、2026-10-21 のユーザーの決定で、task 184 で足しました
+- 4.11 のレジュメ・アーケード(ゲームの LIFF 画面)は、[PRD](../prd/resume-arcade.md) の (2/3) として task 187 で足しました
+- 4.8 の LIFF 画面を LINE の本人で開く(LIFF の ID トークン)は、2026-10-25 のユーザーの方針で、task 203 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -43,7 +45,7 @@ LINE のチャネルは、設定(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TO
 - LINE での、ファイルの受け取り、音声相談、プッシュ。LINE で扱うのは、テキストの会話と友だち追加の挨拶です(4.8)。
   ファイルの受け取りは、LINE の後続のタスク(3 つのうちの 2 つ目)で足します
 - 認証と招待(URL を知っている知人だけが使う前提)
-- 公開(Render への配置は人の作業で、まだ始めていない。jyoka/tasks#64)
+- 公開そのもの(Render のサービスを作るのは運営者の作業。image、Blueprint、smoke、手順は [docs/deploy/render.md](../deploy/render.md))
 - 複数台、複数プロセスでの配置
 
 以前の構成(転職の求職者エージェント ca-agent と aica-poc)は、LLM に多くを任せる作りでした。aica(line-sim)は事業者のツールを
@@ -117,13 +119,16 @@ flowchart LR
     deepgram[("Deepgram<br/>文字起こし")]
     cartesia[("Cartesia<br/>読み上げ")]
     cdn[("jsDelivr<br/>LiveKit の JS")]
+    fonts[("Google Fonts<br/>ゲームの字体")]
 
     seeker -- "トーク、履歴書、プロフィール" --> aica
     lineu -- "トーク" --> lineapi
+    lineu -- "LIFF 画面(ID トークン)" --> aica
     lineapi -- "webhook(署名つき)" --> aica
-    aica -- "入力中の表示、返信、push" --> lineapi
+    aica -- "入力中の表示、返信、push、ID トークンの検証" --> lineapi
     seeker -- "音声(WebRTC)" --> livekit
     seeker -. "JS を読む" .-> cdn
+    seeker -. "字体を読む(ゲーム)" .-> fonts
     livekit -- "音声" --> aica
     op -- "評価、費用台帳、起動" --> aica
     aica -- "会話、読み取り、下書き、検索" --> openai
@@ -153,7 +158,8 @@ flowchart TB
         talk["トーク画面 /<br/>talk.html"]
         devp["開発者画面 /dev<br/>dev.html"]
         core["トークの部品<br/>talk-core.js、talk-core.css"]
-        liff["LIFF 画面<br/>/liff/apply、/liff/resume、/liff/voice/draft<br/>dip のログイン /dip/login"]
+        liff["LIFF 画面<br/>/liff/apply、/liff/resume、/liff/voice/draft<br/>LINE のアプリで開く /liff/line/…<br/>dip のログイン /dip/login"]
+        arcade["レジュメ・アーケード(LIFF 画面)<br/>/liff/arcade、/liff/arcade/{game}<br/>static/arcade/(共通部品 arcade-ja.js)"]
     end
 
     subgraph web["Web プロセス: python -m line_runtime.server"]
@@ -207,6 +213,7 @@ flowchart TB
     server --> intake
     server -- "直接読み書き" --> logic
     server --> liff
+    server --> arcade
     rt --> agent
     rt --> ledger
     agent -- "MCP(stdio か HTTP)" --> mcp
@@ -233,7 +240,7 @@ flowchart TB
 
 | 部品 | 役割 | 書いてよいもの |
 |---|---|---|
-| 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ | 何も持たない。Cookie の匿名ユーザーIDだけ |
+| 画面(`line_runtime/static/`) | トーク、保存した求人、プロフィール、音声相談のシート、開発者画面の処理の流れ、レジュメ・アーケードのゲーム(4.11) | 何も持たない。Cookie の匿名ユーザーIDだけ。ゲームの答えと進み具合は、そのブラウザの localStorage だけに置く |
 | Web サーバー(`line_runtime/server.py`) | Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、LIFF 画面、プロフィールの API、履歴書のアップロード、音声相談の結果の受け取り | dip の状態、会話、`quota.json`、費用台帳(履歴書の読み取り)。`data/voice-resume/` の下書きを消す |
 | LINE のチャネル(`line_runtime/line_channel.py`) | webhook の署名の確かめ、LINE の userId から LINE のユーザーIDを作る、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し(linkToken の発行を含む)、アカウント連携の文とボタン。FastAPI に依存しない | `data/line_events.json`(受けた webhook のイベントの ID) |
 | 偽物の LINE(`line_runtime/fake_line.py`) | アカウント連携の LINE の役(linkToken の発行、accountLink の画面、webhook のイベント)。テストと、開発者画面から試す Web の匿名ユーザーの連携で使う | 何も書かない(出した linkToken はメモリだけ) |
@@ -332,7 +339,7 @@ sequenceDiagram
     U->>P: 書く、または選択肢を押す
     P->>S: POST /api/event/stream(user_id、event、text、thread)
     S->>S: Cookie と user_id を照合する(401、403)
-    S->>T: accept: イベント、空の発言、アップロードの事実を確かめる(だめなら 400)
+    S->>T: accept: イベント、空の発言・長すぎる発言(5000 字まで)、アップロードの事実を確かめる(だめなら 400)
     T->>T: プッシュなら、上限に空きがあるかを見てから push_trigger で送ってよいかを決める
     T->>T: 会話が替わっていれば stale で返す
     T->>T: ターンを 1 つ数える(上限を超えたら LLM を呼ばずに案内)
@@ -577,10 +584,53 @@ sequenceDiagram
   挟むと本人の発言に答える前に別の問いを出し、LLM の呼び出しとターンも 2 回分使います。入口 A も、要約を読んだうえで、
   前回の条件があれば確認形で使います
 - 返信の形は Web と同じ `render` の結果です。求人カードは dip のツールが返した求人だけで、Flex Message の carousel で送ります。
-  LIFF 画面のボタンは、公開 URL(`AICA_PUBLIC_URL`)の後ろにパスを付けたリンクにします。操作(ファイルを選ぶ、話して伝える)は、
-  LINE ではまだ使えないので、文で案内します
-- LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません。今のところ
-  LINE でボタンが出るのは、応募フォームの続き(プッシュの後)と履歴書、下書きの画面で、どれも LINE ではまだ起きない流れです
+  LIFF 画面のボタンは、LIFF の設定があれば LIFF URL(下)、無ければ公開 URL(`AICA_PUBLIC_URL`)の後ろにパスを付けたリンクにします。
+  操作(ファイルを選ぶ、話して伝える)は、LINE ではまだ使えないので、文で案内します
+- 今のところ LINE でボタンが出るのは、応募フォームの続き(プッシュの後)と履歴書、下書きの画面で、どれも LINE ではまだ起きない流れです。
+  レジュメ・アーケードのボタンは、まだエージェントが出しません([PRD](../prd/resume-arcade.md) の (3/3))。`/liff/line/` の下にゲームの画面もまだありません
+
+LIFF 画面を LINE の本人で開く(task 203):
+
+LINE のアプリで開いた LIFF 画面は、LIFF SDK の ID トークンを LINE に確かめてもらい、トークと同じ LINE のユーザーID(`l-…`)の本人にします。
+設定(`LINE_LIFF_ID`、`LINE_LOGIN_CHANNEL_ID`)が無ければ、LINE のボタンは今までどおり公開 URL の画面を開き、
+LINE のユーザーが開いても本人の画面になりません(Cookie の匿名ユーザーIDで決めるため)。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 求職者(LINE アプリ)
+    participant P as LIFF 画面(/liff/line/…)
+    participant S as Web サーバー
+    participant L as LINE ログイン(api.line.me)
+
+    U->>P: トークのボタン https://liff.line.me/<LIFF ID>/apply?job=…
+    Note over U,P: LINE はエンドポイント URL(/liff/line)を liff.state つきで開き、<br/>liff.init が /liff/line/apply?job=… へ送る
+    P->>S: GET /liff/line/apply?job=…(本人の Cookie aica_liff が無い)
+    S-->>P: 殻(LIFF SDK を読む。本人のデータは載せない)
+    P->>P: liff.init({ liffId }) → liff.getIDToken()
+    P->>S: POST /api/liff/session { id_token }
+    S->>L: POST /oauth2/v2.1/verify(id_token、client_id = LINE ログインのチャネル ID)
+    L-->>S: 中身(iss、sub、aud、exp)か、断り(400)
+    S->>S: 発行元・aud・期限・sub の形をもう一度見る。sub から l-… を作る(AICA_ID_KEY)
+    S-->>P: 署名つきの Cookie aica_liff(閉じるまで、長くても 1 時間)。確かめられなければ 401 で、前の Cookie も消す
+    P->>S: 読み直す GET /liff/line/apply?job=…
+    S-->>P: l-… の本人の画面
+```
+
+- LINE のボタンは `https://liff.line.me/<LIFF ID>/<パスの /liff/ より後>` です(`line_channel.liff_url_of`)。LIFF URL にするのは
+  `/liff/line` の下にもある画面(応募フォームの続き、読み取り結果、下書き)だけで、ほかは今までどおり公開 URL です。LIFF アプリのエンドポイント URL は
+  `<公開 URL>/liff/line` で、LINE はその後ろに続きを付けて開きます。Web のブラウザの `/liff/…` は今までどおり Cookie の匿名ユーザーIDです
+- `/liff/line/…` は Cookie の匿名ユーザーID(`aica_uid`)を見ません。本人は、ID トークンを確かめた LINE のユーザーだけです。
+  確かめられない(署名が合わない、期限切れ、別のチャネルの `aud`、LINE につながらない)ときは本人にならず、匿名ユーザーにも切り替えません。
+  画面は「本人を確かめられませんでした」と出して止まります。応募の送信(`POST /liff/line/apply`)は 401 です
+- トークンはそのまま信用しません。LINE の検証の API が署名・発行元・`aud`・期限を確かめ、Web サーバーも答えの発行元・`aud`・期限・`sub` の形を見ます
+- LINE の userId はプロバイダーごとに違います。LIFF アプリを置く LINE ログインのチャネルは、Messaging API のチャネルと同じプロバイダーに作ります。
+  別のプロバイダーだと、同じ人でもトークとは別の `l-…` になります
+- 確かめた本人は、署名つきの Cookie `aica_liff`(`l-…`、期限、`AICA_ID_KEY` から用途を分けて作った鍵の HMAC-SHA256)で覚えます。
+  ブラウザを閉じたら消え、開いたままでも 1 時間で確かめ直します。外のブラウザ(PC など)を人と共用すると、その間は前の人の画面のままです。
+  LINE の userId は Cookie にも保存にも載せません。LIFF の設定があるのに `AICA_ID_KEY` が無い、短いときは起動で止まります
+- `POST /api/liff/session` は JSON の本文だけを受けます。ほかのサイトのフォームから、別人のトークンで本人を入れ替えさせないためです
+- LIFF アプリ 1 つにエンドポイント URL は 1 つなので、開発用(Tailscale Funnel)と公開用(Render)の 2 つを作ります。`LINE_LIFF_ID` だけが変わります
 
 ### 4.9 dip の行動データと状況の要約
 
@@ -687,6 +737,19 @@ sequenceDiagram
 - Web のトーク画面の匿名ユーザーは、開発者画面の「アカウント連携(偽物の LINE)」から同じ流れを試せます。LINE の役は偽物の LINE
   (`line_runtime/fake_line.py`)がします。テストも同じ偽物の LINE を使い、実 LINE は呼びません
 
+### 4.11 レジュメ・アーケード
+
+ドット絵のゲームで、遊びながら職務経歴書を作る LIFF 画面です。決めたことと続きの作業は
+[PRD](../prd/resume-arcade.md) にあります。今は AI を使わない簡易分析だけで動き、サーバーには何も送りません。
+
+- ハブ(`GET /liff/arcade`)と 8 本のゲーム(`GET /liff/arcade/{game}`、`game` はファイル名)を、`line_runtime/static/arcade/` の
+  HTML のまま返します。知らない名前は 404 です。ハブに出すのは、案内の部品がそろった 2 本(あなたという事件、仕事の収穫)だけです。
+  残りの 6 本は開発者画面からだけリンクします
+- 日本語の答えの判定(数字の検出、字数のあいまいさ、言い切り、数字の空欄、職務経歴書の Markdown)は、共通部品
+  `arcade-ja.js`(`GET /static/arcade/arcade-ja.js`)に 1 つだけ置き、2 本が使います。残りの 6 本は、まだ自分の写しを持ちます
+- 本人のデータを読み書きしないので、本人を決めません(Cookie を発行も要求もしない)。答えと進み具合は、そのブラウザの localStorage だけに残ります
+- 氏名と連絡先は聞きません。書類には `[氏名]` と `[メール] · [電話] · [居住地] · [リンク]` の空欄が残り、本人が後で書きます
+
 ## 5. 責任の分担
 
 LINE 側と dip 側のどちらに置くかは 1.1 で決めます。この章は、LLM とコードの分担です。
@@ -729,6 +792,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書と下書きの `personal`(氏名、住所、電話、メール、生年月日)は、何が来ても空で保存します
 - 希望とプロフィールの値は、決まった項目だけを受け付け、電話、メール、住所らしい値は保存しません(`logic.save_preferences`)
 - 履歴書のファイル本体とファイル名は保存しません
+- レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。答えはそのブラウザの localStorage にだけ残り、サーバーには送りません(4.11)
 - 本人がトークに書いた文は、そのまま会話に保存し、LLM のプロバイダに送ります。個人情報が書かれても消しません
 - 音声相談の文字起こしは `data/voice-resume/` に保存します
 - 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`(トークの発言、希望、相談の記録)と、
@@ -740,7 +804,8 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 画面を開いたとき(`GET /`、`GET /dev`)だけ、匿名ユーザーID(`w-<16桁hex>`)を Cookie `aica_uid` で発行します
 - ブラウザから呼ぶ API は、正しい Cookie が無ければ 401 です。扱えるのは Cookie の匿名ユーザーIDのユーザーと、
   その匿名ユーザーIDのシナリオユーザーだけで、ほかは 403 です
-- 本人のデータを指す URL にユーザーIDを載せません。LIFF 画面は Cookie から本人を決めます
+- 本人のデータを指す URL にユーザーIDを載せません。LIFF 画面は Cookie から本人を決めます。Web のブラウザの `/liff/…` は匿名ユーザーIDの
+  Cookie(`aica_uid`)、LINE のアプリの `/liff/line/…` は、LIFF の ID トークンを LINE に確かめてもらった本人の署名つきの Cookie(`aica_liff`)だけです(4.8)
 - エージェントが呼ぶ dip のツールの `line_user_id` は、会話のユーザーに固定します(`agent.py` の `PinUserMiddleware`)
 - 同じシナリオから始めた別のブラウザのシナリオユーザーは、同じ dip の会員の要約を読みます。会話の中で書いた分(保存など)は
   本人にだけ重なるので、互いに見えません(4.9)
@@ -759,7 +824,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - dip の MCP サーバーの子プロセスは、親の環境変数をすべて受け取ります
 - ブラウザに渡すのは、LiveKit の部屋ごとの接続トークン(有効期限 5 分)だけです
 - LINE のチャネルシークレットとチャネルアクセストークン(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`)も `.env` に置きます
-- LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も `.env` に置きます。漏れると、userId を知っている人が `l-…` を作れます
+- LINE のユーザーIDを作る鍵(`AICA_ID_KEY`)も `.env` に置きます。漏れると、userId を知っている人が `l-…` を作れます。
+  LIFF の本人の Cookie の署名の鍵もここから作るので、漏れると LIFF 画面で誰にでもなれます
+- LIFF ID と LINE ログインのチャネル ID(`LINE_LIFF_ID`、`LINE_LOGIN_CHANNEL_ID`)は秘密ではありませんが、ほかの LINE の設定と同じく `.env` に置きます
 - 音声ワーカーから Web サーバーへの `POST /api/voice/result` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
   (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
 
@@ -771,6 +838,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   ツールの `line_user_id` の固定と、カード、ボタンの照合で絞っています
 - 音声アドバイザーは、本人が気になったことを web 検索します(`web_research`、`research_company`)
 - 音声相談のシートは LiveKit のブラウザ用ライブラリを jsDelivr から読みます
+- レジュメ・アーケードのゲームは、字体を Google Fonts から読みます。本人のブラウザが Google に接続します(自前で置くかは未定。PRD の「決まっていないこと」の 7)
 
 ### 費用
 
@@ -810,16 +878,19 @@ flowchart TB
   そのため、同じマシンの同じファイルシステムに置く必要があります
 - Web プロセスは 1 つだけを前提にしています。ターンの排他、音声相談の待ち合わせ、読み取れなかったアップロードは
   プロセスのメモリにあります
-- Web サーバーは `127.0.0.1` で待ち受けます。プロキシの後ろに置くときだけ `AICA_TRUST_PROXY=1` にします
+- Web サーバーは `127.0.0.1` で待ち受けます。プロキシの後ろに置くとき(cloudflared のトンネルも含む)だけ `AICA_TRUST_PROXY=1` にします
 - LINE で試すときは、トンネル(cloudflared など)で手元の Web サーバーを https で公開し、その URL を LINE Developers の
   Webhook URL と `AICA_PUBLIC_URL` に設定します(手順は README)。トンネルの URL を知っていれば、誰でも Web のトーク画面も開けます
-- 公開の形(Render の 1 コンテナ)は決まっていますが、配置の設定はまだリポジトリにありません
+- 公開は Render の 1 コンテナです(`Dockerfile`、`render.yaml`)。上の 2 つのプロセスと dip の子プロセスが同じコンテナで動き
+  (音声ワーカーは `AICA_VOICE_WORKER=1` のときだけ)、`data/` はコンテナの `/app/data` につないだ永続ディスクです。
+  Web サーバーは `0.0.0.0:$PORT` で待ち受け、`AICA_TRUST_PROXY=1` と `AICA_SECURE_COOKIE=1` で動きます。
+  `.env` は image に入れず、API キーは Render の環境変数に置きます。手順は [docs/deploy/render.md](../deploy/render.md)
 
 ## 8. 品質の目標
 
 | 項目 | 目標と、守っている仕組み |
 |---|---|
-| 費用 | 1 人 1 日 50 ターン、全体 1 日 1,000 ターン(1 ターン約 $0.05 で 1 日約 $50 が天井)。評価は予算台帳で $4 に達したら止まる |
+| 費用 | 1 人 1 日 50 ターン、全体 1 日 1,000 ターン(1 ターン約 $0.05 で 1 日約 $50 が天井)。1 ターンは発言 5000 字まで、モデルの呼び出し 10 回まで。評価は予算台帳で $4 に達したら止まる |
 | 速さ | 入口とユーザーIDを会話の途中で変えず、プロンプトキャッシュを効かせる(評価の指標 `cache_hit_rate`)。途中経過は NDJSON で順に出す |
 | 決まった答え | dip のツールは LLM を使わない。意味検索が使えないときは部分一致に戻り、検索を止めない |
 | 事実性 | 求人カードは dip が返したものだけ。評価が返信の金額、日付、徒歩分数、件数、求人名を dip の事実と本人の発言に照合する |
@@ -875,7 +946,11 @@ flowchart TB
 | 偽物の LINE | テストと開発者画面で LINE の役をする部品(`line_runtime/fake_line.py`) | モック LINE |
 | playbook | 雇用区分とチャネルごとの、相談の進め方の指針 | 台本、シナリオ、ステージ指針 |
 | 会話の決まり | 雇用区分ごとの質問の数、吹き出しの字数、期限(`CONVERSATION_RULES`) | 形式ルール |
-| LIFF 画面 | dip の画面のモック(`/liff/*`)。応募フォーム、読み取り結果、下書き | LIFF ページ |
+| LIFF 画面 | `/liff/*` の画面。dip の画面のモック(応募フォーム、読み取り結果、下書き)と、レジュメ・アーケード。LINE のアプリで開く `/liff/line/*` は LIFF の ID トークンで本人を決める(4.8) | LIFF ページ |
+| レジュメ・アーケード | 職務経歴書を作るゲームとハブの全体(4.11) | Resume Arcade(コードの名前としてだけ使う) |
+| ゲーム | レジュメ・アーケードの 1 本のゲームの LIFF 画面(`/liff/arcade/{game}`) | 筐体(ハブの中の言い方としてだけ使う) |
+| ハブ | ゲームを選ぶ LIFF 画面(`/liff/arcade`) | トップ |
+| 簡易分析 | AI を使わずに、ブラウザの中の判定でゲームを進める形。画面には「オフライン：AIを使わない簡易分析」と出す | オフラインモード |
 
 ### 会話
 
@@ -922,6 +997,8 @@ flowchart TB
 | 書類の種類 | Resume Draft の `document_kind`。履歴書か職務経歴書 | - |
 | 読み取り結果 | アップロードした履歴書から作った Resume Draft | 解析結果 |
 | 下書き | 音声相談から作った Resume Draft と、その Markdown | ドラフト |
+| 書類の行 | 本人の 1 つの答えから作った、職務経歴書の 1 行(レジュメ・アーケード) | 戦利品、証拠(ゲームの中の言い方としてだけ使う) |
+| 数字の空欄 | `[+X% ← 数字を入れる]` などの、本人が後で埋める欄 | プレースホルダー |
 
 ### 評価と運用
 

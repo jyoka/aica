@@ -701,6 +701,32 @@ def test_web_research_failure_keeps_the_conversation_going():
     assert "分かりませんでした" in asyncio.run(advisor.web_research(query="時給 相場 新宿"))
 
 
+def test_web_searches_stop_at_the_limit_across_tools(monkeypatch):
+    """1 回の相談で web を調べるのは config.MAX_WEB_SEARCHES 回まで(3 つのツールの合計。失敗した回も数える)。
+    上限を超えたら調べず、「調べています…」も出さず、調べられない旨を伝えさせる(セキュリティ監査 run-1 の 4 番)。"""
+    assert config.MAX_WEB_SEARCHES == 5
+    monkeypatch.setattr(config, "MAX_WEB_SEARCHES", 3)
+    room = _FakeRoom()
+    client = _FakeResearchClient("答え")
+    failing = _FakeResearchClient(error=RuntimeError("timeout"))
+    clients = iter([client, failing, client])
+    advisor = ResumeAdvisor(research_client_factory=lambda: next(clients, client), wage_reference=REF, room=room)
+    asyncio.run(advisor.web_research(query="コンビニバイト 仕事内容"))
+    assert "失敗" in asyncio.run(advisor.wage_average(area="大阪府"))
+    asyncio.run(advisor.research_company(name="ナイトマート"))
+    assert advisor.web_searches == 3
+    published = len(room.published)
+
+    for call in (lambda: advisor.web_research(query="資格"), lambda: advisor.wage_average(area="福岡県"),
+                 lambda: advisor.research_company(name="カフェA")):
+        reply = asyncio.run(call())
+        assert "使い切りました" in reply and "3回" in reply
+    assert len(client.calls) + len(failing.calls) == 3  # 4 回目からは調べていない
+    assert len(room.published) == published  # 表示も出さない
+    # 参考データから答える全国・東京は web を使わないので、上限の後も答えられる
+    assert "全国で1303円" in asyncio.run(advisor.wage_average(area="東京"))
+
+
 REF = WageReference(
     survey="マイナビ アルバイト・パート平均時給レポート", period="2026年8月", source="マイナビキャリアリサーチLab",
     entries=[WageEntry(area="全国", average_wage=1303), WageEntry(area="東京都", average_wage=1428)],
