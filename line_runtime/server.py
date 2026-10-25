@@ -211,7 +211,7 @@ def talk_continues(conv: dict) -> bool:
 class EventIn(BaseModel):
     user_id: str
     event: str
-    text: str | None = None
+    text: str | None = None  # 長さの上限(turn.MAX_TEXT_CHARS)は turn.accept が確かめる(LINE の発言と共通)
     # 本番のトーク画面が表示している会話の番号(/api/talk/open が返す)。/dev・評価は送らない。
     # 送られたら: 発言は今の会話がこれと同じときだけ受け付ける(違えば stale)/ 挨拶が返ったら開いた記録を残す
     thread: int | None = None
