@@ -390,6 +390,130 @@ def texts(*items: str) -> list[dict]:
     return [_text(t) for t in items]
 
 
+# ----------------------------- 本人が見る、消す(データを見る、データを消す) -----------------------------
+# LINE のユーザーはプロフィール画面を開けないので、トークの決まった文で見る、消す(docs/design/privacy.md の 3.7)。
+# 消すのは、確かめのクイックリプライ(postback)を押したときだけ。postback のデータは本人が文で送れないので、
+# 「すべて消す」と書いて送っても消えない。確かめは 1 回だけ使え、FORGET_CONFIRM_SECONDS で切れる(server がメモリで覚える)。
+
+VIEW_DATA_TEXT = "データを見る"
+FORGET_DATA_TEXT = "データを消す"
+FORGET_CONFIRM_SECONDS = 600
+FORGET_POSTBACK = "aica-forget="  # 後ろに確かめの番号を付ける
+FORGET_CANCEL_POSTBACK = "aica-forget-cancel"
+FORGET_LABEL, FORGET_CANCEL_LABEL = "すべて消す", "やめる"
+# Web の「すべて消す」(static/talk.html の FORGET_WHAT、FORGET_KEPT)と同じ範囲
+FORGET_WHAT = "aica が覚えていること(雇用区分、希望、相談のまとめ、履歴書の読み取り結果、音声相談の下書き)、保存した求人、応募、これまでの会話"
+FORGET_ASK_TEXT = (f"{FORGET_WHAT}をすべて消します。dip の会員との連携も外れます。消したものは元に戻せません。"
+                   "その日の利用回数は消えません。\n\n"
+                   f"消してよければ、下の「{FORGET_LABEL}」を押してください(10 分以内)。")
+FORGOT_TEXT = (f"{FORGET_WHAT}を消しました。次に話しかけると、はじめての方として始まります。\n"
+               "このトークの画面に残っているやりとりは LINE のアプリの中のもので、aica からは消せません。"
+               "消すときは、LINE のアプリでトークを削除してください。")
+FORGET_CANCELLED_TEXT = "消さずに、そのままにしました。"
+FORGET_EXPIRED_TEXT = f"確かめの期限が切れたので、消していません。消すときは、もう一度「{FORGET_DATA_TEXT}」と送ってください。"
+VIEW_INTRO = "aica が保存している、あなたのデータです。"
+VIEW_OUTRO = f"直すときは、このトークで言い直してください。消すときは「{FORGET_DATA_TEXT}」と送ってください。"
+NONE_TEXT = "なし"
+
+
+def data_command(text: str) -> str | None:
+    """見る、消すの決まった文なら "view_data" / "forget_data"(前後の空白は見ない)。ほかは None(ふつうの発言)。"""
+    return {VIEW_DATA_TEXT: "view_data", FORGET_DATA_TEXT: "forget_data"}.get(text.strip())
+
+
+def forget_postback(data: str) -> tuple[str, str] | None:
+    """確かめのクイックリプライの postback のデータなら ("forget_confirm", 番号) / ("forget_cancel", "")。ほかは None。"""
+    if data == FORGET_CANCEL_POSTBACK:
+        return "forget_cancel", ""
+    if data.startswith(FORGET_POSTBACK) and (nonce := data.removeprefix(FORGET_POSTBACK)):
+        return "forget_confirm", nonce
+    return None
+
+
+def forget_ask_messages(nonce: str) -> list[dict]:
+    """消す範囲と、確かめのクイックリプライ(押した文がトークに出る postback)。"""
+    def item(label: str, data: str) -> dict:
+        return {"type": "action", "action": {"type": "postback", "label": label, "data": data, "displayText": label}}
+
+    return [_text(FORGET_ASK_TEXT) | {"quickReply": {"items": [item(FORGET_LABEL, FORGET_POSTBACK + nonce),
+                                                               item(FORGET_CANCEL_LABEL, FORGET_CANCEL_POSTBACK)]}}]
+
+
+VIEW_ITEM_CHARS = 200  # 1 行の上限(UTF-16 の単位。根拠の発言とまとめは 200 字までなので、絵文字が無ければふつうは切れない)
+VIEW_CAPS = (20, 10, 5, 3)  # 1 つの区分けに出す行の数。5 つのメッセージに収まるまで減らす(はみ出す分は「ほか N 件」)
+MAX_TEXT_CHARS = 5000  # 1 つのテキストのメッセージの上限(Messaging API)
+
+
+def _view_section(title: str, lines: list[str], cap: int, head: str = "") -> str:
+    shown = [_clip_units(x, VIEW_ITEM_CHARS) for x in lines[:cap]]
+    more = [f"ほか {len(lines) - cap} 件"] if len(lines) > cap else []
+    body = "\n".join([head] * bool(head) + shown + more)
+    return f"■ {title}\n{body or NONE_TEXT}"
+
+
+def _view_sections(view: dict, talked: bool, linked: bool, cap: int) -> list[str]:
+    track = view["track"]
+    history = [f"・{h['when']} {h['from']}→{h['track']}{'(取り消し)' if h['undo'] else ''}: {h['evidence']}"
+               for h in reversed(track["history"])]  # 新しい順
+    sections = [_view_section("雇用区分", history, cap, head=track["current"])]
+    for sec in view["sections"]:
+        sections.append(_view_section(sec["title"], [f"・{i['label']}: {i['value']}({i['saved']})"
+                                                     for i in sec["items"] if i["value"]], cap))
+    summary = view["consultation_summary"]
+    sections.append(_view_section("相談のまとめ", [f"{summary['text']}({summary['recorded']})"] if summary else [], cap))
+    resume = view["resume"]
+    sections.append(_view_section("履歴書の読み取り結果", [f"・{x}" for x in resume["highlights"]] if resume else [], cap,
+                                  head=f"{resume['uploaded']}に読み取り" if resume else ""))
+    sections.append(_view_section("音声相談の下書き", [f"・{d['at']} {d['document_kind']}" for d in view["voice_drafts"]], cap))
+    sections.append(_view_section("保存した求人", [f"・{j['title']}({j['saved_at']})" for j in view["saved_jobs"]], cap))
+    sections.append(_view_section("応募した求人", [
+        f"・{a['title'] or a['job_id']}({'、'.join(x for x in (a['applied'], a['status']) if x)})"
+        for a in view["applications"]], cap))
+    sections.append(f"■ dip の会員との連携\n{'あり' if linked else NONE_TEXT}")
+    sections.append("■ 会話\n" + ("このトークでの、あなたの発言と aica の返信" if talked else NONE_TEXT))
+    return sections
+
+
+def _units(s: str) -> int:
+    """LINE が数える文字数(UTF-16 の単位。絵文字は 2 つに数える)。"""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _clip_units(s: str, n: int) -> str:
+    """_clip を UTF-16 の単位で数える版(絵文字を途中で割らない)。"""
+    if _units(s) <= n:
+        return s
+    out, used = [], 1  # 1 は末尾の「…」
+    for ch in s:
+        used += _units(ch)
+        if used > n:
+            break
+        out.append(ch)
+    return "".join(out) + "…"
+
+
+def _pack(parts: list[str]) -> list[str]:
+    """順に詰めて、1 つ MAX_TEXT_CHARS 字までのテキストにする(数は問わない)。"""
+    chunks = [parts[0]]
+    for s in parts[1:]:
+        if _units(chunks[-1]) + 2 + _units(s) <= MAX_TEXT_CHARS:
+            chunks[-1] += "\n\n" + s
+        else:
+            chunks.append(s)
+    return chunks
+
+
+def data_view_messages(view: dict, talked: bool, linked: bool) -> list[dict]:
+    """「データを見る」の返事。view はプロフィール画面と同じ形(server._profile_view)。talked は会話を保存しているか、
+    linked は dip の会員と連携しているか。値の無い項目は出さず、無い区分けは「なし」と書く。
+    どの区分けも落とさずに 5 つのメッセージに収める: 収まらなければ、区分けごとの行の数を減らし、残りは「ほか N 件」と書く。"""
+    for cap in VIEW_CAPS:
+        chunks = _pack([VIEW_INTRO, *_view_sections(view, talked, linked, cap), VIEW_OUTRO])
+        if len(chunks) <= MAX_MESSAGES and all(_units(c) <= MAX_TEXT_CHARS for c in chunks):
+            break
+    return [_text(c) for c in chunks[:MAX_MESSAGES]]
+
+
 # ----------------------------- LINE の API -----------------------------
 
 

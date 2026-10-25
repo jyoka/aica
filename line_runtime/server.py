@@ -35,6 +35,11 @@ accountLink の画面に送る。LINE から accountLink の webhook が来た�
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 
+LINE で見る、消す(docs/design/privacy.md の 3.7): 「データを見る」と送ると、プロフィール画面と同じ中身をテキストで返す。
+「データを消す」と送ると、消す範囲と確かめのクイックリプライ(postback)を返し、「すべて消す」を押したら Web の「すべて消す」と
+同じ処理(_forget_all)をする。どちらも LLM を呼ばず、会話数も数えない。友だち解除(unfollow。ブロック)では消さない
+(間違えて押すこともあり、解除すれば前の続きから使えるため。使われなくなったユーザーの期間で消す掃除に任せる)。
+
 LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID があるときだけ、/liff/line/… を開く(無ければ 404)。
 ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
 (POST /api/liff/session が確かめて、署名つきの Cookie aica_liff を返す)。Web のブラウザの /liff/… は今までどおり Cookie の匿名ユーザーID。
@@ -48,6 +53,7 @@ import math
 import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -241,6 +247,7 @@ async def lifespan(app: FastAPI):
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
+    app.state.line_forget_asks = {}  # LINE のユーザー → 「データを消す」の確かめ(番号、期限の monotonic 秒)。1 回だけ使える
     app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
@@ -493,17 +500,22 @@ def line_login() -> line_channel.LineLogin:
 
 
 def _line_kind(e: dict) -> str | None:
-    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link と
-    解除 unlink)、友だち追加(follow)、アカウント連携の結果(account_link)。ほかは None(無視する)。
-    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。"""
+    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
+    解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
+    「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)。ほかは None(無視する)。
+    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
+    友だち解除(unfollow)も None: 受けても消さない(docs/design/privacy.md の 3.7。期間で消す掃除に任せる)。"""
     src = e.get("source") or {}
     if src.get("type") != "user" or not src.get("userId") or e.get("mode", "active") != "active":
         return None
     msg = e.get("message") or {}
     if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
-        return line_channel.link_command(str(msg["text"])) or "message"
+        text = str(msg["text"])
+        return line_channel.link_command(text) or line_channel.data_command(text) or "message"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
+    if e.get("type") == "postback" and (pb := line_channel.forget_postback(str((e.get("postback") or {}).get("data") or ""))):
+        return pb[0]
     return "follow" if e.get("type") == "follow" else None
 
 
@@ -553,8 +565,10 @@ async def _line_user_events(line_uid: str, events: list[dict]) -> None:
 
 
 async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kind: str, e: dict) -> list[dict] | None:
-    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)は LLM を使わず、会話数も数えない。
-    ほかは会話のターン(返すものが無ければ None)。"""
+    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)と、データを見る、消すは LLM を使わず、
+    会話数も数えない。ほかは会話のターン(返すものが無ければ None)。"""
+    if kind in ("view_data", "forget_data", "forget_confirm", "forget_cancel"):
+        return await _line_data(uid, kind, e)
     if kind == "account_link":
         return line_channel.texts(account_link(uid, e["link"]))
     if kind == "link":
@@ -579,6 +593,34 @@ async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -
         return line_channel.texts(line_channel.LINK_UNAVAILABLE_TEXT)
     accounts.of(state).record_link_token(uid, token)
     return line_channel.link_messages(base, token)
+
+
+async def _line_data(uid: str, kind: str, e: dict) -> list[dict]:
+    """データを見る、消す(docs/design/privacy.md の 3.7)。消すのは、直前の「データを消す」で出した確かめ(1 回だけ、
+    FORGET_CONFIRM_SECONDS まで)の「すべて消す」が押されたときだけ。範囲は Web の「すべて消す」と同じ(_forget_all)。"""
+    asks = app.state.line_forget_asks
+    now = time.monotonic()
+    for u in [u for u, (_, until) in asks.items() if until <= now]:  # 期限の切れた確かめを捨てる(覚えすぎない)
+        del asks[u]
+    if kind == "view_data":
+        rt = app.state.rt
+        async with rt.user_lock(uid):  # 進行中のターンが書き終えてから読む
+            talked = await rt.current_thread(uid) > 0
+            view = _profile_view(uid)
+        return line_channel.data_view_messages(view, talked=talked, linked=behavior.dip_id(state, uid) is not None)
+    if kind == "forget_data":
+        nonce = secrets.token_urlsafe(16)
+        asks[uid] = (nonce, now + line_channel.FORGET_CONFIRM_SECONDS)
+        return line_channel.forget_ask_messages(nonce)
+    if kind == "forget_cancel":
+        asks.pop(uid, None)
+        return line_channel.texts(line_channel.FORGET_CANCELLED_TEXT)
+    _, nonce = line_channel.forget_postback(str(e["postback"]["data"]))
+    if uid not in asks or not secrets.compare_digest(asks[uid][0], nonce):  # 前の確かめ: 今の確かめは残す
+        return line_channel.texts(line_channel.FORGET_EXPIRED_TEXT)
+    del asks[uid]
+    await _forget_all(uid)
+    return line_channel.texts(line_channel.FORGOT_TEXT)
 
 
 def account_link(uid: str, link: dict) -> str:
@@ -852,7 +894,12 @@ async def profile_forget(request: Request):
     同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
     会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
-    anon = _owner(request)
+    await _forget_all(_owner(request))
+    return {"forgotten": True}
+
+
+async def _forget_all(anon: str) -> None:
+    """すべて消す(Web のプロフィール画面と、LINE の「データを消す」の確かめ)。anon は本人のユーザーID(w-… か l-…)。"""
     rt = app.state.rt
     # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
     # どのユーザーも、進行中のターンが終わってから消す
@@ -867,7 +914,6 @@ async def profile_forget(request: Request):
     for uid in users:
         app.state.unread_uploads.pop(uid, None)
     _remove_voice_files(out["files"])
-    return {"forgotten": True}
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
