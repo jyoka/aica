@@ -534,6 +534,25 @@ def forget_ask_messages(nonce: str) -> list[dict]:
                                                                item(FORGET_CANCEL_LABEL, FORGET_CANCEL_POSTBACK)]}}]
 
 
+# ----------------------------- 使い始める前の同意(docs/design/privacy.md の 3.6) -----------------------------
+# 友だち追加と、同意の前の発言には、要点(文言は line_runtime.consent)と「同意して始める」のクイックリプライ(postback)を返す。
+# postback のデータには示した版(consent.tag)を入れる。本人が「同意して始める」と文で送っても同意にならない(postback だけ)。
+
+CONSENT_POSTBACK = "aica-consent="  # 後ろに示した版を付ける
+
+
+def consent_postback(data: str) -> str | None:
+    """同意のクイックリプライの postback のデータなら、示した版(空でも返す)。ほかは None。"""
+    return data.removeprefix(CONSENT_POSTBACK) if data.startswith(CONSENT_POSTBACK) else None
+
+
+def consent_messages(text: str, version: str, label: str) -> list[dict]:
+    """同意の要点と、「同意して始める」のクイックリプライ(押した文がトークに出る postback)。"""
+    item = {"type": "action", "action": {"type": "postback", "label": _clip(label, 20), "data": CONSENT_POSTBACK + version,
+                                         "displayText": label}}
+    return [_text(text) | {"quickReply": {"items": [item]}}]
+
+
 VIEW_ITEM_CHARS = 200  # 1 行の上限(UTF-16 の単位。根拠の発言とまとめは 200 字までなので、絵文字が無ければふつうは切れない)
 VIEW_CAPS = (20, 10, 5, 3)  # 1 つの区分けに出す行の数。5 つのメッセージに収まるまで減らす(はみ出す分は「ほか N 件」)
 MAX_TEXT_CHARS = 5000  # 1 つのテキストのメッセージの上限(Messaging API)

@@ -56,7 +56,8 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 
 - 既定(`LINE_SIM_PROVIDER=openai`)では、`OPENAI_API_KEY` が無いと Web プロセスは起動の途中で止まります
-- トーク画面を開くと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
+- トーク画面を初めて開くと、まず同意の画面が出ます(「同意して始める」を押すまで実 API を呼びません)。
+  押すと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
   開発者画面は、シナリオを選ぶまで呼びません。話すとターンごとに呼びます
 - `LINE_SIM_PROVIDER=anthropic` にすると、エージェントは Anthropic のモデルになります(`ANTHROPIC_API_KEY` が要る)。
   履歴書の読み取り、意味検索、音声相談は常に OpenAI です
@@ -81,7 +82,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ### Render で公開する
 
 1 つのコンテナ(`Dockerfile`)を、Render の Web サービスに永続ディスクつきで置きます。Blueprint は `render.yaml` です。
-手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と初回の挨拶の
+手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と、同意してから初回の挨拶の
 1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
 Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](docs/deploy/render.md) にあります。
 

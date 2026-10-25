@@ -452,6 +452,13 @@
   }
   async function startScenario(id) {
     if (busy) return;  // 返信を待っている間に切り替えると、前のシナリオへの返信が新しいトークに出てしまう
+    // 使い始める同意は人(このブラウザの匿名ID)ごと。まだなら、シナリオの前に同意の画面を出す(押すまで LLM を呼ばない)
+    try {
+      const res = await fetch("/api/consent");
+      if (!res.ok) throw new Error(res.status + " " + await res.text());
+      talk.setConsent(await res.json());
+    } catch (e) { sys(`同意の状態を読めない: ${e.message}`); return; }
+    if (!(await talk.ask("terms"))) return;
     const sc = scenarios.find(x => x.id === id);
     if (narrow()) setTab("talk");  // 狭い画面では、始めたトークを見せる
     setBusy(true);

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -97,9 +99,10 @@ def test_a_message_over_the_limit_is_rejected_before_the_model_and_the_quota(tmp
 
 def test_accept_rejects_a_long_message_for_every_channel():
     """LINE の webhook も Web と同じ turn.accept を通る(LINE からは 5000 字を超える発言は届かないが、念のため)。"""
-    assert turn.accept(None, "u", "message", "あ" * turn.MAX_TEXT_CHARS, None).text
+    deps = SimpleNamespace(state=None)  # 同意はテストの既定で「している」扱い(tests/conftest.py)。状態は読まない
+    assert turn.accept(deps, "u", "message", "あ" * turn.MAX_TEXT_CHARS, None).text
     with pytest.raises(turn.BadTurn):
-        turn.accept(None, "u", "message", "あ" * (turn.MAX_TEXT_CHARS + 1), None, new_conversation=True)
+        turn.accept(deps, "u", "message", "あ" * (turn.MAX_TEXT_CHARS + 1), None, new_conversation=True)
 
 
 def test_one_turn_stops_at_the_model_call_limit_with_an_ordinary_reply(tmp_path, monkeypatch):

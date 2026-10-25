@@ -477,6 +477,12 @@ flowchart LR
 - LIFF: `_liff_page_user`。署名つきの Cookie `aica_liff` の LINE のユーザーID(`l-…`)。`aica_uid` は見ない。無い、不正、期限切れなら、
   GET は LIFF SDK の殻(`_liff_shell`)、POST は 401。LIFF の設定が無ければ 404(4.11)
 - 書き込みの枠: `_admit`(`DailyQuota.admit`)。この IP か全体で、その日に使える匿名ユーザーIDの数を超えたら 429
+- 同意: `_require_consent`(`line_runtime.consent`)。使い始める同意(`terms`)と、その口の同意(`resume`、`voice`)が今の版で無ければ 403。
+  ターン(`/api/event`、`/api/event/stream`)は `turn.accept` が `NeedsConsent` を出し、同じく 403。どれも LLM を呼ばず、ターンも使わない。
+  ほかに、雇用区分の取り消し、シナリオの開始、連携の開始(`/api/dev/link/start`)も `terms` が要る。プロフィールの口(`_profile_writer`)は、
+  直す口(`PUT`)だけ同意の前は 403 で、消す口は同意の前もできる(そのときは最後の利用を書かない)。同意の前に本人の行が
+  まだ無ければ、消すものが無いので何も書かずに空のプロフィールを返す(`_NothingToDelete`。Cookie を作り直して空の行を
+  増やせないように)。行があれば、同意の後と同じく `_admit`(IP ごとの新しい匿名IDの上限)を通してから消す
 - 内部の鍵: `_require_internal`。`Authorization: Bearer <AICA_INTERNAL_KEY>` でなければ 401(鍵の前後の空白は、照合でも送るときでも除く)。音声相談の設定(`LIVEKIT_*`)があるのに
   鍵が無い、または短い(前後の空白を除いて 32 文字未満)ときは、Web サーバーも音声ワーカーも起動で止まります(`line_channel.check_internal_key`、
   `InternalKeyError`)。鍵が無いまま動くと、相談は最後まで進むのに、ワーカーが送る結果が 401 で断られ、まとめと下書きが届かないためです。
@@ -496,19 +502,21 @@ flowchart LR
 | `GET /liff/arcade/{game}` | `liff_arcade_game` | -(同上) | - | -(ゲーム。`ARCADE_GAMES` に無い名前は 404) |
 | `GET /liff/arcade/draft` | `liff_arcade_draft` | 画面 | - | -(ゲームで作った下書き。`rid` が無ければ 404。`{game}` より先に登録する) |
 | `POST /liff/arcade/draft` | `liff_arcade_draft_edit` | 画面 + 書き込みの枠 | - | 本人が直した下書き(`profile.edit_arcade_draft`。`scrub_pii`、2 万字まで)、知らせ |
-| `POST /api/arcade/start` | `arcade_start` | 画面 + 書き込みの枠 | AI を使えるときだけ 1 | 遊びの記録(前の記録を置き換える)、始めた数、`quota.json` の AI つきの遊びの回数。Cookie が無ければ番号なし(`play: null`)の 200。AI を使えないとき(`AICA_ARCADE_AI=0`、API キーが無い、1 日の回数、ターン数の上限)は `ai: false` の番号 |
-| `POST /api/arcade/ai` | `arcade_ai` | 画面 | - | 遊びの記録の回数、費用台帳(`arcade:<game>:<段>`)、置き換えた数。だめなとき(番号、期限、回数、形、4,000 字、LLM の失敗)は LLM を呼ばずに `{ok: false, offline: true, reason}` の 200 |
+| `POST /api/arcade/start` | `arcade_start` | 画面 + 書き込みの枠 | AI を使えるときだけ 1 | 遊びの記録(前の記録を置き換える)、始めた数、`quota.json` の AI つきの遊びの回数。Cookie が無いか、使い始める同意がまだなら番号なし(`play: null`)の 200。AI を使えないとき(`AICA_ARCADE_AI=0`、API キーが無い、1 日の回数、ターン数の上限)は `ai: false` の番号 |
+| `POST /api/arcade/ai` | `arcade_ai` | 画面 | - | 遊びの記録の回数、費用台帳(`arcade:<game>:<段>`)、置き換えた数。だめなとき(同意、番号、期限、回数、形、4,000 字、LLM の失敗)は LLM を呼ばずに `{ok: false, offline: true, reason}` の 200 |
 | `POST /api/arcade/save` | `arcade_save` | 画面 | - | ゲームの下書き(そのゲームの前の下書きを置き換える)、保存した数と空欄の数、会話にエージェントの返信を足す。番号が無い・ほかの人の番号は 403、未定で書類の種類が無ければ 400 |
 | `DELETE /api/profile/arcade/{id}` | `profile_arcade_delete` | Cookie + 書き込みの枠 | - | ゲームの下書きを消す、知らせ。無ければ 404 |
 | `GET /api/me` | `me` | Cookie | - | - |
-| `POST /api/talk/open` | `talk_open` | Cookie | - | 挨拶が保存されているのに記録が無ければ `record_talk_open` で補う |
+| `POST /api/talk/open` | `talk_open` | Cookie | - | 挨拶が保存されているのに記録が無ければ `record_talk_open` で補う。同意の状態と文言(`consent`)を返す。使い始める同意がまだなら何も書かず `event: null`(画面は同意の画面を出す。4.2) |
+| `GET /api/consent` | `consent_get` | Cookie | - | -(同意の状態と文言。開発者画面がシナリオの前に読む) |
+| `POST /api/consent` | `consent_post` | Cookie + 書き込みの枠 | - | 同意の記録(`consents`。5.1)。示した版(`version`)が今と違えば 409 で、今の同意の状態を付ける。`resume`、`voice` は `terms` の後だけ(前なら 403) |
 | `GET /api/talk/history` | `talk_history` | Cookie | - | - |
 | `POST /api/talk/track/undo` | `talk_track_undo` | 本人 + 書き込みの枠 | - | 雇用区分の取り消し、知らせ。直前の切り替えでなければ 409 |
 | `GET /api/saved` | `saved` | Cookie | - | - |
 | `GET /api/scenarios` | `scenarios` | - | - | - |
 | `POST /api/scenarios/{id}/start` | `start_scenario` | Cookie + 書き込みの枠 | - | シナリオユーザーの dip の状態を初期に戻す(`evals.scenarios.prepare`) |
-| `POST /api/event` | `event` | 本人 | 1 | 会話、dip の状態(ツール)、費用台帳。`ValueError` は 400 |
-| `POST /api/event/stream` | `event_stream` | 本人 | 1 | 同上。途中経過は NDJSON(3.2) |
+| `POST /api/event` | `event` | 本人 + 同意 | 1 | 会話、dip の状態(ツール)、費用台帳。`ValueError` は 400 |
+| `POST /api/event/stream` | `event_stream` | 本人 + 同意 | 1 | 同上。途中経過は NDJSON(3.2) |
 | `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「dip から見た状態」) |
 | `GET /api/profile` | `profile_get` | Cookie | - | - |
 | `GET /api/profile/export` | `profile_export` | Cookie | - | -(「データを書き出す」。本人の保存内容を JSON のファイルで返す。下の注) |
@@ -518,16 +526,17 @@ flowchart LR
 | `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` に書き出したファイルがあれば消す。無ければ 404 |
 | `DELETE /api/profile/saved/{job_id}` | `profile_unsave` | Cookie + 書き込みの枠 | - | 保存の取り消し、知らせ |
 | `POST /api/profile/forget` | `profile_forget` | Cookie | - | 「すべて消す」(4.6) |
-| `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
+| `POST /api/voice/start` | `voice_start` | 本人 + 同意(`terms`、`voice`) | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
 | `POST /api/voice/wait` | `voice_wait` | 本人 | - | -(最長 `VOICE_WAIT_MAX` 30 秒、既定 25 秒) |
 | `POST /api/voice/result` | `voice_result_in` | 内部の鍵 | - | 音声相談の結果、会話にエージェントの返信を足す。部屋はまだ終わったとみなさない。「すべて消す」の前の部屋なら 410。下書きが `DRAFT_MAX`(2 万字)を超えたら 422 |
 | `POST /api/internal/purge` | `internal_purge` | 内部の鍵 | - | 期間で消す掃除を今すぐ走らせ、消した数を返す(4.6)。CLI `python -m line_runtime.purge` が呼ぶ |
 | `POST /api/voice/session` | `voice_session` | 内部の鍵 | - | ワーカーのジョブの始まり(`joined`)と終わり(`ended`)。終わっていない部屋の記録(メモリだけ。`line_runtime/voice_rooms.py`)。`joined` でその人に別の部屋があれば `allowed: false` を返し、ワーカーはそのジョブを止める |
-| `POST /api/resume/upload` | `resume_upload` | 本人 | 1 | 読み取り結果、費用台帳。形式が違えば 400、10MB を超えたら 413、会話が替わっていれば 409、上限なら 429、API の失敗は 502 |
+| `POST /api/resume/upload` | `resume_upload` | 本人 + 同意(`terms`、`resume`) | 1 | 読み取り結果、費用台帳。形式が違えば 400、10MB を超えたら 413、会話が替わっていれば 409、上限なら 429、API の失敗は 502 |
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れる。入力値は読まず、保存しない |
 | `POST /api/liff/session` | `liff_session` | LIFF の ID トークン(LINE の検証) | - | Cookie `aica_liff`。確かめられなければ 401 で Cookie を消す。JSON でなければ 415。LIFF の設定が無ければ 404 |
+| `POST /api/liff/consent` | `liff_consent` | LIFF | - | 履歴書か音声の同意の記録(LIFF 画面の「同意して…」)。`terms` は LINE のトークで取るので 400、その前なら 403、版が違えば 409 |
 | `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
 | `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
 | `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
@@ -720,6 +729,13 @@ sequenceDiagram
     P->>S: POST /api/talk/open
     S->>R: user_lock の中で conversation(user_id)
     R-->>S: thread、last_at、turns、greeted
+    opt 使い始める同意がまだ(初めて開いた、版が上がった)
+        S-->>P: event なし、consent(文言と版)
+        P->>P: 同意の画面を重ねる(押すまで LLM を呼ばない)
+        P->>S: POST /api/consent(terms、示した版)
+        S->>D: consents に記録(版が違えば 409)
+        P->>S: POST /api/talk/open(開き直す)
+    end
     opt 挨拶が保存されているのに、開いた記録が無い
         S->>D: record_talk_open
     end
@@ -734,6 +750,13 @@ sequenceDiagram
     end
 ```
 
+- 同意の文言と版は `line_runtime/consent.py` の 1 か所です。`talk_open` は同意の状態(`consent.view`: 版の `tag`、まだの同意 `needed`、
+  文言 `texts`、規約とポリシーへのリンク)を返し、画面は履歴書と音声の同意にもこれを使います(`talk-core.js` の `setConsent`、`ask`)。
+  履歴書は「同意してファイルを選ぶ」を押したその場でファイルを選ぶ画面を開き(押した操作の中でしか開けないため)、同意の記録が
+  終わるまで選んだファイルを送りません。音声は、同意してから音声相談のシートを開きます。開発者画面はシナリオを始める前に
+  `GET /api/consent` を読み、まだなら同じ同意の画面を出します
+- 開いている間に同意の記録が無くなったとき(別のタブで「すべて消す」をした、版が上がった)、サーバーは 403 で断ります。トーク画面は
+  送れなかった発言を入力欄に戻して開き直し(同意の画面が出る)、履歴書と音声は同意の状態を読み直して、次に使うときに同意の画面を出します
 - 会話の番号は、最初に使うとき `_current` がチェックポイントの最大の番号から復元します。再起動しても古い会話に戻りません
 - `LineRuntime.conversation` の `last_at` は、返信のある会話の最後のチェックポイントの時刻です。返信の無い会話は続けません
 - 続けるかは `server.talk_continues` が決めます(`last_at` が None でなく、`clock()` との差が `TALK_RESUME_WINDOW`(30 分)以内)。
@@ -1322,7 +1345,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
    空白だけでないテキストのメッセージ(`message`、`message.type == "text"`)と友だち追加(`follow`)と、アカウント連携の結果
    (`accountLink`。4.12)と、「データを消す」の確かめの postback(`forget_postback` が読めるデータだけ。4.6)です。テキストが `LINK_TEXT`
    (「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら `link` と `unlink`、`VIEW_DATA_TEXT`(「データを見る」)か `FORGET_DATA_TEXT`
-   (「データを消す」)なら `view_data` と `forget_data` です(前後の空白は見ない)。友だち解除(`unfollow`)には答えません(下)。
+   (「データを消す」)なら `view_data` と `forget_data` です(前後の空白は見ない)。使い始める同意のクイックリプライの postback
+   (`consent_postback` が読めるデータ)は `consent` です。友だち解除(`unfollow`)には答えません(下)。
    `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
 4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
    ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
@@ -1341,6 +1365,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
 - 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12、`view_data`、`forget_data`、
   `forget_confirm`、`forget_cancel` は `_line_data`(下と 4.6)で、どれも LLM を使わず、ターン数も数えません
+- 使い始める同意(下の「同意」)がまだなら、友だち追加、テキスト、`link` には、ターンに流さず `_line_consent_ask` を返します
 - ターンは Web と同じ `turn.accept` と `turn.reply_of` です(`_line_turn`)。`TurnDeps.ip` は None で、IP ごとの上限は見ません
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。`user_lock` の中で `rt.conversation` を読み、
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
@@ -1374,6 +1399,20 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
 - `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
 - LIFF の設定が無いときの LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+
+同意(`_line_consent_ask`、`_line_consent`。[個人情報の設計メモ](../design/privacy.md) の 3.6、HLD の 6 章「同意」):
+
+- LINE には同意の画面が無いので、友だち追加の挨拶の代わりに、要点(`consent.line_text`。消し方の行は「データを消す」)と、規約とポリシーの
+  URL(`AICA_PUBLIC_URL` + `/legal/terms`、`/legal/privacy`。公開 URL が無ければ URL を付けず、警告のログ)を 1 つのテキストで返し、
+  クイックリプライ「同意して始める」を付けます(`consent_messages`)。postback のデータは `aica-consent=<版の tag>` で、押した文がトークに出ます
+- 同意の前のテキストと「アカウント連携」にも同じものを返します。発言はターンに流さず、会話にも dip の状態にも残しません。
+  「同意して始める」と文で送っても同意になりません(postback だけ)。「データを見る」「データを消す」「連携解除」は同意の前もできます
+- 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を
+  返します。版が違えば記録せず、`consent.STALE` を前に付けて示し直します。もう同意していれば何も返しません(二度押し)
+- LIFF 画面の履歴書と音声は、使う直前に同意を取ります。履歴書の画面は、同意がまだなら同意の文と「同意してファイルを選ぶ」を出し、
+  ファイルを選ぶ欄を隠します。押すと `POST /api/liff/consent` で記録して欄を出します。音声相談の画面は `talk-core.js` の `ask` で、
+  シートを開く前に同意の画面を出します(`consentApi: "/api/liff/consent"`)。どちらも、使い始める同意がまだなら、LINE のトークで
+  「同意して始める」を押すよう案内して止まります(`consent.MISSING_LINE_TERMS`)
 
 本人が見る、消す(`_line_data`。[個人情報の設計メモ](../design/privacy.md) の 3.7):
 
@@ -1415,7 +1454,7 @@ LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 
 | `GET /liff/line/resume/upload` | 履歴書の読み込みの画面(`_liff_upload_page`)。ファイルと `user_id` と `liff.getIDToken()` をフォームで送る |
 | `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする。AI と保存につながった 2 本(`ARCADE_SHIPPED`)は、`</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
 | `GET /liff/line/arcade/draft`、`POST /liff/line/arcade/draft` | ゲームで作った下書きの画面と、直した書類の保存(`_arcade_draft_page`、`_arcade_draft_edit`。Web と同じ。フォームの送り先は `/liff/line/arcade/draft`)。本人が無ければ GET は殻、POST は 401。`{game}` より先に登録する |
-| `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`) |
+| `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`)。使い始める同意(LINE のトークで取る)がまだなら、Web と同じく番号なし(`play: null`)の 200 と、LLM を呼ばない `/ai` |
 | `POST /api/liff/arcade/save` | 本文は Web の `/api/arcade/save` に `id_token` を足したもの。`_arcade_save`(Web と同じ決まり。403、400 なら LINE に確かめに行かない)→ 今の会話に返信を足す → Messaging API の設定があれば ID トークンを確かめ、`line_user(sub)` が本人なら宛先にする。宛先があり、その日の知らせが 3 通(`ARCADE_DAILY_PUSHES`。`quota.json` の `arcade_line_push`)に達していなければ、応答の後に `_line_push` で同じ返信(`arcade_reply`)を 1 回 push(`line`)。宛先が無くても、上限でも保存はする。`view_url` は `/liff/line/arcade/draft?rid=…` |
 | `POST /api/liff/voice/start` | `{user_id, id_token}`。`_liff_api_user`(Cookie `aica_liff` が無ければ 401、本文のユーザーが違えば 403)→ LiveKit の設定(無ければ 503)→ `_liff_sub`(ID トークンを確かめ、`line_user(sub)` が本人でなければ 401)→ `_voice_token`(Web と同じ。会話数 1、IP は数えない)。部屋 → `(sub, 時刻)` を `app.state.line_voice_rooms` に覚える(1 時間より古いものは、始めるときと結果が届くときに捨てる。`_forget_old_voice_rooms`) |
 | `POST /api/liff/voice/wait` | Web の `/api/voice/wait` と同じ(`_voice_wait`)。返信のボタンの URL は `/liff/line/…` にする(`_liff_reply`) |
@@ -1598,6 +1637,7 @@ sequenceDiagram
 | `arcade_metrics` | 指標のための数 `{started, saved, blanks, replaced}`(答えの中身は持たない) | `arcade.start_play`、`arcade.save_draft`、`arcade.record_replaced` |
 | `last_seen_at` | 最後の利用の時刻(実際の時刻、UTC。秒まで)。ターン(プッシュを除く)、プロフィールの書き換え、雇用区分の取り消し、シナリオの開始、音声相談の開始と結果、履歴書のアップロード、ゲームの開始と保存で書く。fixtures のユーザーそのものには書かない | `retention.touch`、`retention.sweep`(無い行)、`forget_all`(消した時刻) |
 | `forgotten_at` | 「すべて消す」の時刻(`forgotten_voice_rooms` を持ち越したときだけ)。1 日で部屋の名前と一緒に外れる | `forget_all`、`retention.sweep` |
+| `consents` | 本人の同意 `{terms|resume|voice: {version: {terms, privacy}, at}}`(`version` は規約とポリシーの版、`at` は実際の時刻、UTC)。人(匿名ID、`l-…`)の行にだけ書き、シナリオユーザーは匿名IDの行を見る。今の版と違えば同意していない扱い。「すべて消す」では持ち越さない | `consent.record`(`POST /api/consent`、`POST /api/liff/consent`、LINE の postback) |
 
 時刻は `data.now(line_user_id)` の値です(HLD の 4.7、R4、ADR-0004)。`last_seen_at` と `forgotten_at` だけは、シナリオユーザーも
 実際の時刻です(期間で消す掃除が実際の時刻で数えるため。`retention.clock`)。
@@ -2243,6 +2283,13 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     ブラウザでリンクを押すと別のタブで開きます(`::test_the_talk_screen_and_liff_screens_link_to_the_terms_and_policy`、
     `::test_the_talk_screen_opens_the_terms_and_policy_in_a_browser`)。応募フォームの体験は欄に架空の値が入り、送った値はどのファイルにも残りません
     (`::test_the_apply_form_is_a_demo_with_made_up_values_that_are_not_kept`)
+30. 同意の前は LLM を呼ばず、状態に書きません。Web は挨拶の前に同意の画面を出し、ターンは 403 です
+    (`tests/test_consent.py::test_web_talk_asks_before_the_greeting_and_calls_no_llm_until_agreed`)。LINE は友だち追加と最初の発言の前に
+    「同意して始める」の postback を返し、押したら挨拶します(`::test_line_asks_on_follow_and_before_the_first_message_then_greets_after_the_button`)。
+    履歴書と音声は使う直前に同意を取り、その前は読み取りにも部屋にも進みません(`::test_resume_and_voice_ask_again_right_before_use`、
+    `::test_liff_resume_and_voice_ask_for_their_own_consent`、画面は `::test_talk_screen_consent_flow_in_the_browser`)。
+    同意は版つきで記録し、版が上がったら取り直します(`::test_record_keeps_the_version_and_a_new_version_asks_again`)。
+    ほかのテストは、既定で同意している扱いです(`tests/conftest.py`。同意のテストは `@pytest.mark.consent`)
 
 30. プロフィールの「データを書き出す」は、本人と同じ Cookie のシナリオユーザーの、プロフィール、`state.json` の行、連携、会話、費用台帳の行を
     1 つの JSON のファイルで返し、他人の分は入りません。見るだけで状態のファイルを変えません
