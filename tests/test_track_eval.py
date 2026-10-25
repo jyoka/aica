@@ -25,7 +25,7 @@ def t(bubbles=("どうしますか?",), switch=None, error=False, changed=True, 
     if switch:
         result = {"error": "track は…"} if error else {"track": switch, "changed": changed}
         tools.append({"name": "set_search_track", "args": {"track": switch, "evidence": "…"}, "result": result})
-    return {"bubbles": list(bubbles), "quick_replies": ["今はいい"], "cards": [], "buttons": [], "tools": tools,
+    return {"bubbles": list(bubbles), "quick_replies": ["答えの候補", "今はいい"], "cards": [], "buttons": [], "tools": tools,
             "actions": list(actions)}
 
 

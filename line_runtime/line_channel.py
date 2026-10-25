@@ -133,11 +133,14 @@ MAX_ID_TOKEN_CHARS = 4096
 LIFF_SESSION_SECONDS = 3600
 LIFF_PAGES = ("/liff/apply", "/liff/resume", "/liff/voice/draft")  # LIFF_PREFIX の下にもある画面(line_runtime.server)
 ARCADE_PATH = "/liff/arcade"  # レジュメ・アーケード(ハブと各ゲーム)。LIFF_PREFIX の下にもある。LIFF で開けなければ LINE に出さない
-# 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり
+# 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり。
+# ボタンの文言は、挨拶の本文(dip の Prompt の entries.json の visit)とリッチメニュー(scripts.line_rich_menu)と同じ言い方にし、
+# 絵文字を付けない(トークの決まりの「絵文字なし」。task 231)
 LIFF_ACTIONS = {
-    "resume_upload": ("📄 履歴書・職務経歴書を送る", "resume/upload"),
-    "voice_consult": ("🎤 音声で相談する(約5分)", "voice"),
+    "resume_upload": ("履歴書を読み込む", "resume/upload"),
+    "voice_consult": ("音声で相談する", "voice"),
 }
+ARCADE_LABEL = "ゲームで書類を作る"  # ゲームのボタンの文言(dip の Prompt が buttons の label に書く文言と同じ)
 LIVEKIT_ENVS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")  # 音声相談に要る(voice_resume.livekit_token と同じ)
 
 
@@ -164,11 +167,41 @@ def voice_configured() -> bool:
     return all(os.environ.get(k) for k in LIVEKIT_ENVS)
 
 
+# 音声ワーカー → Web サーバー(POST /api/voice/session と /api/voice/result)の共有鍵。2 つのプロセスで同じ値にする
+INTERNAL_KEY_ENV = "AICA_INTERNAL_KEY"
+MIN_INTERNAL_KEY_CHARS = 32  # 鍵の長さの下限(前後の空白を除いた文字数。secrets.token_urlsafe(32) は 43 文字)
+
+
+class InternalKeyError(RuntimeError):
+    """音声相談の設定があるのに、内部の鍵(AICA_INTERNAL_KEY)が無い・短い。"""
+
+
+def check_internal_key() -> None:
+    """起動のときに呼ぶ(Web サーバーの lifespan と音声ワーカー)。音声相談の設定があるのに鍵が無い・短ければ
+    InternalKeyError で止める。鍵が無いまま動くと、相談は最後まで進むが、ワーカーが送る結果が 401 で断られ、
+    まとめと下書きが届かない(利用者には何も知らされない)。音声相談の設定が無ければ、鍵は要らない(何もしない)。"""
+    if not voice_configured():
+        return
+    key = os.environ.get(INTERNAL_KEY_ENV, "").strip()
+    if len(key) < MIN_INTERNAL_KEY_CHARS:
+        why = "がありません" if not key else (
+            f"が短すぎます({len(key)} 文字。{MIN_INTERNAL_KEY_CHARS} 文字以上にしてください)")
+        raise InternalKeyError(
+            f"{INTERNAL_KEY_ENV} {why}。音声相談の設定({'、'.join(LIVEKIT_ENVS)})があるときに要る鍵で、"
+            "音声ワーカーが相談の結果を Web サーバーへ届けるのに使います。.env に、Web サーバーと音声ワーカーで同じ値を書いてください"
+            ' (作り方の例: python3 -c "import secrets; print(secrets.token_urlsafe(32))")')
+
+
 def liff_features() -> tuple[str, ...]:
     """LINE のトークから LIFF 画面で使えるもの: resume_upload(履歴書を読み込む)、voice_consult(音声相談。LiveKit の
     設定も要る)、arcade(レジュメ・アーケード)。LIFF の設定が無ければ空(どれも LINE では使えない)。"""
     if not liff_configured():
         return ()
+    return ("resume_upload",) + (("voice_consult",) if voice_configured() else ()) + ("arcade",)
+
+
+def web_features() -> tuple[str, ...]:
+    """Web のトーク画面で使えるもの: 履歴書の読み込みとゲームはいつも、音声相談は LiveKit の設定があるときだけ。"""
     return ("resume_upload",) + (("voice_consult",) if voice_configured() else ()) + ("arcade",)
 
 
@@ -341,14 +374,19 @@ def _cards_message(cards: list[dict]) -> dict:
             "contents": {"type": "carousel", "contents": [_card_bubble(c) for c in cards[:12]]}}
 
 
-def _buttons_message(links: list[dict]) -> dict:
-    """リンク({label, uri})をボタンの並んだ Flex にする。"""
-    return {"type": "flex", "altText": _clip("リンク: " + "、".join(b["label"] for b in links), 400),
-            "contents": {"type": "bubble", "size": "kilo", "body": {
-                "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
-                    {"type": "button", "style": "link", "height": "sm",
-                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": b["uri"]}}
-                    for b in links]}}}
+def _buttons_message(links: list[dict], heading: str | None = None) -> dict:
+    """リンク({label, uri})をボタンの並んだ Flex にする。heading があれば、ボタンの上の見出し(header)にし、
+    通知とトークの一覧に出る文(altText)にもする。"""
+    alt = heading or "リンク: " + "、".join(b["label"] for b in links)
+    bubble = {"type": "bubble", "size": "kilo", "body": {
+        "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
+            {"type": "button", "style": "link", "height": "sm",
+             "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": b["uri"]}}
+            for b in links]}}
+    if heading:
+        bubble["header"] = {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": _clip(heading, 2000), "wrap": True, "size": "md", "color": "#222222"}]}
+    return {"type": "flex", "altText": _clip(alt, 400), "contents": bubble}
 
 
 def _quick_reply(labels: list[str]) -> dict:
@@ -361,20 +399,28 @@ def _labeled(items: list[str]) -> list[str]:
     return [x.strip() for x in items if isinstance(x, str) and x.strip()]
 
 
-def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
+def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, ...] | None = None,
+                visit_greeting: bool = False) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト
     - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
       へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
+    - 初回訪問の挨拶のターン(visit_greeting)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出し
+      (「どれから始めますか?」)を入口のボタンの見出しにする(task 231。挨拶が「本文」と「問い + 入口のボタン」の 2 通になる)。
+      ほかの返信は見出しにしない: 再訪の確認の1問(「はい」で答える)や、同じ会話の後のターンの経験の1問の答えは、ボタンではなく
+      文字の選択肢なので、問いがボタンの見出しになると答えではないボタンの上に問いが載る。返信の entry は会話の入口で、
+      初回訪問で始まった会話のどのターンでも visit なので、挨拶のターンかどうかの印には使わない
     - quick_replies → 最後のメッセージのクイックリプライ
-    5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。"""
+    5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。
+    features は LINE で使えるもの(既定は liff_features()。評価が LINE の通数を数えるときに、設定の代わりに渡す)。
+    visit_greeting は、このターンが初回訪問の挨拶か(ターンの種類が greet で入口が visit。呼び出し元が turn.Turn から決める)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
-    features = liff_features()
+    features = liff_features() if features is None else tuple(features)
     actions = [a for a in dict.fromkeys(reply.get("actions") or []) if a in LIFF_ACTIONS]
-    texts = _labeled(reply.get("bubbles") or [])
-    texts += [ACTION_NOTES[a] for a in actions if a not in features]
+    bubbles = _labeled(reply.get("bubbles") or [])
+    notes = [ACTION_NOTES[a] for a in actions if a not in features]
     flex = []
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
@@ -391,8 +437,10 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
         buttons = [b for b in buttons if b not in dropped]
     links = [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
     links += [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
+    heading = bubbles.pop() if visit_greeting and links and not flex and len(bubbles) >= 2 else None
+    texts = bubbles + notes
     if links:
-        flex.append(_buttons_message(links))
+        flex.append(_buttons_message(links, heading))
     room = MAX_MESSAGES - len(flex)
     if len(texts) > room:
         texts = [*texts[: room - 1], "\n\n".join(texts[room - 1:])]
@@ -451,7 +499,7 @@ FORGET_LABEL, FORGET_CANCEL_LABEL = "すべて消す", "やめる"
 # Web の「すべて消す」(static/talk.html の FORGET_WHAT、FORGET_KEPT)と同じ範囲
 FORGET_WHAT = "aica が覚えていること(雇用区分、希望、相談のまとめ、履歴書の読み取り結果、音声相談の下書き、ゲームで作った下書き)、保存した求人、応募、これまでの会話"
 FORGET_ASK_TEXT = (f"{FORGET_WHAT}をすべて消します。dip の会員との連携も外れます。消したものは元に戻せません。"
-                   "その日の利用回数は消えません。\n\n"
+                   "その日の利用回数は消えません。費用の記録は、あなたを見分ける番号を外して残ります。\n\n"
                    f"消してよければ、下の「{FORGET_LABEL}」を押してください(10 分以内)。")
 FORGOT_TEXT = (f"{FORGET_WHAT}を消しました。次に話しかけると、はじめての方として始まります。\n"
                "このトークの画面に残っているやりとりは LINE のアプリの中のもので、aica からは消せません。"

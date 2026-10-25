@@ -21,7 +21,7 @@ from dip_mcp.data import State
 from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, greet
 
-INTERNAL_KEY = "offline-test-internal-key"
+INTERNAL_KEY = "offline-test-internal-key-offline-test"
 WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}
 
 

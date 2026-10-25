@@ -6,7 +6,7 @@ LLM は台本のスタブ(OpenAI の SDK の形。server.arcade_client を差し
 - 費用の上限: 1 回の遊びの反応の回数、1 人 1 日の AI つきの遊び、AI を止める設定、ターン数の上限、まとめの 4,000 字。どれも LLM を呼ばない
 - 遊びの番号: 無い・ほかの人の・24 時間を過ぎた・置き換えられた番号では LLM を呼ばず、保存は 403(24 時間を過ぎても保存はできる)
 - 保存: プロフィール、dip の要約、トークに出る。雇用区分で書類の種類が決まり、区分は変わらない。「すべて消す」で消え、古いリンクは開かない
-- LINE: 要約にゲームの URL が無く、LINE のメッセージにゲームのボタンが出ない
+- LINE: LIFF の設定が無ければ、要約にゲームの URL が無く、LINE のメッセージにゲームのボタンが出ない(あるときは tests/test_arcade_liff.py)
 - 画面を押すテスト(Playwright。入っていなければ飛ばす): AI の道で質問・反応・評決・保存まで行き、再読み込みで start を呼び直さない
 """
 
@@ -177,6 +177,7 @@ def test_start_answer_and_save_reach_the_profile_the_summary_and_the_talk(arc):
     summary = logic.conversation_summary(arc.server.state, arc.uid)
     ad = summary["arcade_draft"]
     assert ad["document_kind"] == "職務経歴書" and ad["lines"] == 2 and ad["blanks"] == 1
+    assert ad["view_url"] == out["view_url"]  # 「下書きを見る」と同じ画面(エージェントはこの URL だけをボタンにする)
     assert ad["blank_lines"] == ["ペーパームーン: 共通コンポーネントのライブラリを整備 [+X% ← 数字を入れる]"]
     assert "決済完了率を61%から68%に改善" not in json.dumps(ad, ensure_ascii=False)  # 空欄の無い行の全文は載せない
     assert summary["arcade_url"] == "/liff/arcade/the-case-of-you"  # 正社員の既定のゲーム

@@ -413,6 +413,25 @@ def test_liff_resume_and_voice_ask_for_their_own_consent(line_liff):  # noqa: F8
         assert client.post("/api/liff/voice/start", json={"user_id": uid, "id_token": "good"}).status_code == 200
 
 
+def test_liff_arcade_waits_for_the_talk_consent(line_liff, monkeypatch):  # noqa: F811
+    """LIFF の中のゲームも、使い始める同意(LINE のトーク)の前は番号なしで、AI を呼ばず、会話数も使わない(Web と同じ)。"""
+    server, _, _, _ = line_liff
+    monkeypatch.setattr(server, "arcade_client", lambda: (_ for _ in ()).throw(AssertionError("同意の前に AI を呼んだ")))
+    uid = line_user(RAW_USER)
+    with _liff_client(server) as client:
+        assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
+        quota = server.app.state.quota
+        used = quota.used(uid)
+        r = client.post("/api/liff/arcade/start", json={"game": "the-case-of-you"})
+        assert r.status_code == 200 and r.json()["play"] is None and r.json()["ai"] is False
+        r = client.post("/api/liff/arcade/ai", json={"game": "the-case-of-you", "play": "p-1", "stage": "reaction"})
+        assert r.status_code == 200 and r.json() == {"ok": False, "offline": True, "reason": "no_play"}
+        assert quota.used(uid) == used and uid not in server.state.user_ids()
+
+        consent.record(server.state, uid, "terms", consent.tag())  # LINE のトークで「同意して始める」を押した
+        assert client.post("/api/liff/arcade/start", json={"game": "the-case-of-you"}).json()["play"] is not None
+
+
 def test_dev_screen_asks_before_the_first_scenario(advised, served, browser):  # noqa: F811
     """開発者画面も、シナリオの前に同じ同意の画面を出す(同意は人ごと。シナリオユーザーは匿名IDの同意を見る)。"""
     context = browser.new_context()

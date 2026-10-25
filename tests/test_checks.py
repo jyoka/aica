@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from evals.checks import fact_violations, preference_violations
+import pytest
+
+from evals.checks import (
+    area_violations,
+    asks_area,
+    conversation_checks,
+    experience_keyword_violations,
+    fact_violations,
+    preference_violations,
+)
 
 
 def turn(bubbles, tools=()):
@@ -315,7 +324,10 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
                     "最近カフェの求人を見ていましたね。どれか気になっていましたか?",  # 1通目の言及と追いかけの問いで1回
                     "最近カフェの求人を見ていましたね。今も探していらっしゃいますか?"):
         once = [dict(ok[0], bubbles=[mention]), ok[1]]
-        assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", once)), mention
+        found = _checks("R-revisit-browsing", once)
+        assert not any("触れていない" in v or "回触れた" in v or "羅列" in v for v in found), mention
+        # 言い切り(「見ていましたね」)は、1回でも挨拶の言い方の違反(task 227。問いの中で確認形にする)
+        assert any("言い切り" in v for v in found) is ("ね。" in mention), mention
     for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",
                     "最近はカフェやアパレル販売を見ていましたか?"):
         listed = [dict(ok[0], bubbles=[listing]), ok[1]]
@@ -586,3 +598,418 @@ def test_saved_preference_whose_meaning_is_reversed_is_a_fabrication():
                         ("土日は休みたい、平日の仕事がいい", {"days_per_week": "土日の仕事がいい"})):
         k, v = next(iter(prefs.items()))
         assert preference_violations([_saved(prefs)], [said]) == [f"T1: 本人が言っていない希望を保存した: {k}={v}"], said
+
+
+# ----------------------------- 最初の求人はエリアが分かってから(task 224) -----------------------------
+
+AREA_UNKNOWN = "エリアが分からないまま recommend_jobs で探した(先にエリアを1問で聞く)"
+
+
+def t(bubbles, tools=(), quick_replies=("答えの候補", "今はいい"), cards=()):
+    """(ツール名, args) か (ツール名, args, result) の呼び出しを持つ1ターン。"""
+    return {"bubbles": list(bubbles), "quick_replies": list(quick_replies), "cards": list(cards), "buttons": [],
+            "tools": [{"name": x[0], "args": x[1], "result": x[2] if len(x) > 2 else {}} for x in tools],
+            "unknown_job_ids": []}
+
+
+def rec(**args):
+    return ("recommend_jobs", args)
+
+
+def summary(**prefs):
+    return ("get_user_conversation_summary", {}, {"stated_preferences": {
+        k: {"value": v, "saved": "10/20"} for k, v in prefs.items()}})
+
+
+GREETING = t(["はじめまして。どうしますか?"], quick_replies=["求人を探す", "まず相談する", "今はいい"])
+CLOSE = ["求人を探す", "応募履歴を確認", "使い方"]
+
+
+def follow_new(last_tools, said3="カフェで働きたいです"):
+    """#221 の F-follow-new の形: 区分 → 仕事 → 4 ターン目に探す。"""
+    turns = [GREETING, t(["どちらで探しますか?"], quick_replies=["アルバイト・パート", "今はいい"]),
+             t(["どんなお仕事で探しますか?"], quick_replies=["カフェ", "今はいい"]),
+             t(["3件あります。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["カフェ"]}])]
+    return turns, [None, "求人を探す", "アルバイト・パート", said3]
+
+
+def test_search_before_the_area_is_known_is_a_violation():
+    # #221 の F-follow-new T4: 「カフェ」だけで探し、大宮・中野・吉祥寺の求人を出した
+    turns, said = follow_new([rec(job_type="カフェ")])
+    assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+    assert f"T4: {AREA_UNKNOWN}" in conversation_checks({"expect_outcome": ["propose"]}, turns, said)["violations"]
+    # #221 の C-consult-switch T4: 「求人を見せて」で、引数がすべて null
+    turns, said = follow_new([rec(area=None, job_type=None, keywords=None)], "求人を見せて")
+    assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+
+
+def test_known_area_left_out_of_the_search_is_a_violation():
+    turns, said = follow_new([rec(job_type="カフェ")], "渋谷か池袋のカフェで")
+    assert area_violations(turns, said) == ["T4: 分かっているエリア(渋谷)を recommend_jobs の area に入れずに探した"]
+    # 要約の stated_preferences にエリアがあるとき(再訪)
+    turns, said = follow_new([rec(job_type="カフェ")])
+    turns[0] = t(["前回は新宿でしたが、今回も同じですか?"], [summary(area="新宿")])
+    assert area_violations(turns, said) == ["T4: 分かっているエリア(新宿)を recommend_jobs の area に入れずに探した"]
+
+
+def test_search_with_the_area_is_fine():
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷のカフェで")
+    assert area_violations(turns, said) == []
+    # 本人が挙げた2つのエリアを並べて探すのも同じ
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷"), rec(job_type="カフェ", area="池袋")], "渋谷か池袋で")
+    assert area_violations(turns, said) == []
+
+
+@pytest.mark.parametrize("said3", ["カフェで、場所はどこでもいいです", "カフェで。エリアはこだわりません",
+                                   "勤務地は特にないです", "在宅でできる仕事がいいです"])
+def test_area_left_open_by_the_person_is_not_a_violation(said3):
+    turns, said = follow_new([rec(job_type="カフェ")], said3)
+    assert area_violations(turns, said) == []
+
+
+def test_no_preference_answer_to_the_area_question_is_not_a_violation():
+    turns, said = follow_new([rec(job_type="カフェ")], "特にないです")
+    turns[2] = t(["どのエリアで探しますか?"], quick_replies=["渋谷", "池袋", "今はいい"])
+    assert area_violations(turns, said) == []
+    # 同じ「特にないです」でも、エリアを聞いていない問い(やりたいこと)への答えなら、エリアは分かっていない
+    turns[2] = t(["やってみたいことはありますか?"])
+    assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+
+
+def test_area_named_in_the_answer_is_not_left_open():
+    # 「どのエリアで、どんなお仕事を」への答えの「特にこだわりません」は仕事のこと。地名があればエリアは分かっている
+    turns, said = follow_new([rec(area=None)], "渋谷で。仕事内容は特にこだわりません")
+    turns[2] = t(["どのエリアで、どんなお仕事を探しますか？"])
+    assert area_violations(turns, said) == ["T4: 分かっているエリア(渋谷)を recommend_jobs の area に入れずに探した"]
+    # 問わないと言った後に地名を言い直したら、エリアは決まっている
+    turns, said = follow_new([rec(job_type="カフェ")], "やっぱり池袋で")
+    said[2] = "場所はどこでもいいです"
+    assert area_violations(turns, said) == ["T4: 分かっているエリア(池袋)を recommend_jobs の area に入れずに探した"]
+
+
+@pytest.mark.parametrize("said3", ["在宅じゃなくて、カフェで働きたい", "リモートでなくていいです",
+                                   "リモートは無理なので、カフェで働きたい", "在宅ワークはしたくないです。カフェで",
+                                   "リモートの仕事は興味ないです、カフェがいい"])
+def test_ruling_out_remote_does_not_leave_the_area_open(said3):
+    turns, said = follow_new([rec(job_type="カフェ")], said3)
+    assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+
+
+@pytest.mark.parametrize(("said3", "area"), [("リモートは無理なので、渋谷のカフェで働きたい", "渋谷"),
+                                             ("在宅は苦手です。池袋のカフェで", "池袋"),
+                                             ("リモートが週2日あるとよいです。場所は渋谷で", "渋谷")])
+def test_remote_words_with_an_area_do_not_leave_the_area_open(said3, area):
+    # 地名のある発言は、在宅・リモートの言い方があっても、エリアが分かっている
+    turns, said = follow_new([rec(job_type="カフェ")], said3)
+    assert area_violations(turns, said) == [f"T4: 分かっているエリア({area})を recommend_jobs の area に入れずに探した"]
+
+
+def test_dropping_the_area_without_widening_after_an_area_search_is_a_violation():
+    # エリアつきで探した後、本人が別の地名を言ったのに、area を外して探した
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷のカフェで")
+    turns.append(t(["池袋のカフェです。"], [rec(job_type="カフェ")], quick_replies=CLOSE))
+    assert area_violations(turns, said + ["やっぱり池袋で探したい"]) == [
+        "T5: 分かっているエリア(池袋)を recommend_jobs の area に入れずに探した"]
+    # relax_conditions の案内の後でも、本人が新しい地名を言ったら、広げたのではない
+    turns.insert(4, t(["エリアを外すと増えます。外しますか?"], [("relax_conditions", {"area": "渋谷"})]))
+    assert area_violations(turns, said + ["もっと見たい", "それより池袋で"]) == [
+        "T6: 分かっているエリア(池袋)を recommend_jobs の area に入れずに探した"]
+    # relax_conditions も「広げて」も無いまま、エリアを外した
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷のカフェで")
+    turns.append(t(["ほかの求人です。"], [rec(job_type="カフェ")], quick_replies=CLOSE))
+    assert area_violations(turns, said + ["ほかのも見たい"]) == [
+        "T5: 分かっているエリア(渋谷)を recommend_jobs の area に入れずに探した"]
+    # 本人が「広げて」と言ったなら、エリアを外してよい
+    assert area_violations(turns, said + ["もう少し広げて見たい"]) == []
+
+
+def test_remote_search_and_widening_after_an_area_search_are_not_violations():
+    turns, said = follow_new([rec(employment_type="正社員", remote="可")], "フルで働ける正社員の仕事")
+    assert area_violations(turns, said) == []
+    # 前のターンでエリアつきで探した後、本人の了承でエリアを外して広げる(relax_conditions の案内の後)
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷のカフェで")
+    turns += [t(["エリアを外すと12件に増えます。外して探しますか?"], [("relax_conditions", {"area": "渋谷"})]),
+              t(["広げて探しました。"], [rec(job_type="カフェ")], quick_replies=CLOSE)]
+    assert area_violations(turns, said + ["0件でした", "はい、外してください"]) == []
+
+
+def test_experience_goes_into_the_keywords():
+    exp = ("save_user_preferences", {"preferences": {"experience": "居酒屋のホールを1年"}})
+    turns, said = follow_new([rec(area="渋谷")], "求人を見せて")
+    turns[2]["tools"] = [{"name": exp[0], "args": exp[1], "result": {}}]
+    assert experience_keyword_violations(turns) == [
+        "T4: 分かっている経験「居酒屋のホールを1年」を recommend_jobs の keywords に入れていない(keywords=None)"]
+    # 指標は検索の引数の違反(search_arg_violations)として出る。会話の違反(violations)には入れない
+    r = conversation_checks({"expect_outcome": ["propose"]}, turns, said)
+    assert r["search_arg_violations"] == experience_keyword_violations(turns)
+    assert not any("経験" in v for v in r["violations"])
+    for kw in ("居酒屋 ホール", "ホール経験", "居酒屋のホールを1年"):
+        turns[3]["tools"][0]["args"]["keywords"] = kw
+        assert experience_keyword_violations(turns) == [], kw
+    # 経験の語の無い keywords は、入れていないのと同じ
+    turns[3]["tools"][0]["args"]["keywords"] = "日払い"
+    assert len(experience_keyword_violations(turns)) == 1
+
+
+def test_experience_from_the_summary_and_only_the_first_search_is_judged():
+    turns, _ = follow_new([rec(area="渋谷", keywords="カフェ")])
+    turns[0] = t(["前回のお話の続きから伺います。どうしますか?"], [summary(experience="未経験")])
+    assert experience_keyword_violations(turns) == [
+        "T4: 分かっている経験「未経験」を recommend_jobs の keywords に入れていない(keywords='カフェ')"]
+    turns[3]["tools"][0]["args"]["keywords"] = "カフェ 未経験"
+    # 最初の検索で入れていれば、後で本人が別の方向を言って探し直したときは問わない
+    turns.append(t(["事務の求人です。"], [rec(area="渋谷", job_type="オフィス事務")], quick_replies=CLOSE))
+    assert experience_keyword_violations(turns) == []
+    # 経験が分からなければ、何も見ない
+    turns, _ = follow_new([rec(area="渋谷")])
+    assert experience_keyword_violations(turns) == []
+
+
+def test_the_area_question_is_not_counted_for_branch_within_3():
+    sc = {"expect_outcome": ["propose"]}
+    # 仕事 → エリア → 4 ターン目に探す: エリアの1問は数えないので、3回目の返信までに分岐したことになる
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷です")
+    turns[2] = t(["どのエリアで探しますか?"], quick_replies=[])
+    assert conversation_checks(sc, turns, said)["branch_within_3"] is True
+    # エリア以外の条件(時間帯)を聞いて遅れたのは、これまでどおり期限に数える
+    turns[2] = t(["働きたい時間帯はありますか?"], quick_replies=["日中", "今はいい"])
+    assert conversation_checks(sc, turns, said[:3] + ["日中です"])["branch_within_3"] is False
+    # 数えないのは1問だけ(エリアを聞いた後、さらに時間帯を聞いて 5 ターン目に探すのは遅い)
+    turns, said = follow_new([rec(job_type="カフェ", area="渋谷", time_band="日中")], "日中です")
+    turns[2] = t(["どのエリアで探しますか?"], quick_replies=[])
+    turns.insert(3, t(["働きたい時間帯はありますか?"]))
+    assert conversation_checks(sc, turns, said[:3] + ["渋谷です", "日中です"])["branch_within_3"] is False
+
+
+CONSULT_SC = {"expect_outcome": ["propose"], "consult_mode": True}
+READ_PLAYBOOK = ("get_counseling_playbook", {"track": "未定", "channel": "chat"})
+
+
+def consult_switch(ask: str, last_tools):
+    """C-consult-switch の形: 相談 → 経験 → 「求人を見せて」→ ask の1問 → 次のターンで探す。"""
+    turns = [GREETING, t(["いくつか伺いながら一緒に整理します。経験はありますか?"], [READ_PLAYBOOK]),
+             t(["きっかけは何ですか?"], [("save_user_preferences", {"preferences": {"experience": "居酒屋のホール"}})]),
+             t([ask], quick_replies=[]),
+             t(["渋谷の3件です。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["渋谷"]}])]
+    said = [None, "まず相談する", "居酒屋のホールをしていました", "求人を見せて", "渋谷でお願いします"]
+    return turns, said
+
+
+def test_show_me_jobs_may_wait_for_the_one_area_question():
+    search = [rec(area="渋谷", keywords="居酒屋 ホール"), ("record_conversation_outcome", {"outcome": "propose"})]
+    turns, said = consult_switch("どのエリアで探しますか?", search)
+    r = conversation_checks(CONSULT_SC, turns, said)
+    assert r["violations"] == [] and r["search_arg_violations"] == []
+    # エリアの1問でも、答えを受けたターンで探さなければ違反のまま
+    turns[4] = t(["時間帯はどうしますか?"])
+    assert "T4: 「求人を見せて」の後に求人を探さなかった" in conversation_checks(CONSULT_SC, turns, said)["violations"]
+    # エリアの1問の後に「今はいい」なら、探さずに終えてよい
+    turns[4] = t(["承知しました。"], [("record_conversation_outcome", {"outcome": "consult"})], quick_replies=CLOSE)
+    v = conversation_checks(CONSULT_SC, turns, said[:4] + ["今はいい"])["violations"]
+    assert not any("求人を見せて" in x for x in v), v
+
+
+def test_show_me_jobs_followed_by_other_conditions_is_still_a_violation():
+    # ほかの条件(時間帯)は聞き足さない: エリア以外の問いで探すのを遅らせたら違反
+    search = [rec(area="渋谷", keywords="居酒屋 ホール"), ("record_conversation_outcome", {"outcome": "propose"})]
+    turns, said = consult_switch("働きたい時間帯はありますか?", search)
+    assert "T4: 「求人を見せて」の後に求人を探さなかった" in conversation_checks(CONSULT_SC, turns, said)["violations"]
+
+
+def test_area_wording_that_keeps_a_preference_is_not_left_open():
+    # 「こだわりはあります」はエリアを問わない言い方ではない
+    turns, said = follow_new([rec(job_type="カフェ")], "場所のこだわりはあります")
+    assert area_violations(turns, said) == [f"T4: {AREA_UNKNOWN}"]
+
+
+def test_prompt_and_playbook_state_the_area_rule():
+    from dip_mcp.data import ROOT
+
+    prompt = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
+    common = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
+    assert "最低限の条件はエリア" in prompt and "エリアが無ければエリアだけを1問で聞いてから探す" in prompt
+    assert "エリアと仕事の希望をまとめて1問で聞く" in prompt
+    assert "探す前にエリアを聞く1問(上の「提案」)は、この回数に数えない" in prompt
+    assert "keywords に本人の言葉で入れる" in prompt
+    assert "エリアの1問だけを聞いてから探す" in common and "経験とやりたいことは keywords" in common
+
+
+@pytest.mark.parametrize(("ask", "is_area"), [
+    ("どのエリアで探しますか?", True), ("どのエリアで、どんなお仕事を探しますか?", True),
+    ("どのあたりで、どんなお仕事を探しますか?", True), ("最寄りの駅はどこですか?", True),
+    ("どこで働きたいですか?", True), ("勤務地の希望はありますか?", True),
+    # 区分の問い・迷いの問い・ほかの条件の問いは、エリアの問いではない
+    ("正社員とアルバイト・パート、どちらで探しますか?", False), ("どのあたりで迷っていますか?", False),
+    ("どこが気になりますか?", False), ("働きたい時間帯はありますか?", False),
+    ("エリアが渋谷の求人です。", False),  # 疑問符の無い文は問いではない
+])
+def test_area_question_detection(ask, is_area):
+    assert asks_area(t([ask])) is is_area
+
+
+def test_show_me_jobs_area_question_must_not_add_other_conditions():
+    # 実 API の 2 回目(task 224)の C-consult-switch T4: 「求人を見せて」にエリアと仕事をまとめて聞いた
+    search = [rec(area="渋谷", keywords="居酒屋 ホール"), ("record_conversation_outcome", {"outcome": "propose"})]
+    turns, said = consult_switch("求人を探します。どのエリアで、どんなお仕事を探しますか?", search)
+    v = conversation_checks(CONSULT_SC, turns, said)["violations"]
+    assert v == ["T4: 「求人を見せて」の後に、エリアのほかの条件(job_type)も聞いた"]
+    turns[3] = t(["どのエリアで、何時ごろ働きたいですか?"])
+    v = conversation_checks(CONSULT_SC, turns, said)["violations"]
+    assert v == ["T4: 「求人を見せて」の後に、エリアのほかの条件(time_band)も聞いた"]
+    # 「求人を探す」を選んだだけ(「求人を見せて」ではない)なら、まとめて聞いてよい
+    turns, said = follow_new([rec(area="渋谷", job_type="カフェ")], "渋谷のカフェで")
+    turns[1] = t(["どのエリアで、どんなお仕事を探しますか?"])
+    sc = {"expect_outcome": ["propose"]}
+    assert conversation_checks(sc, turns[:2] + turns[3:], said[:2] + said[3:])["violations"] == []
+
+
+# ----------------------------- お礼つきの「考えます」で締める(task 223 の D1) -----------------------------
+
+CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
+# エリアつきで探した提案(task 224 の area_violations に掛からないように)
+PROPOSED = t(["渋谷・日中で3件あります。"], [rec(area="渋谷", time_band="日中") + ({"jobs": []},),
+                                          ("record_conversation_outcome", {}, {"recorded": True})],
+             quick_replies=["詳しく聞く", "今はいい"])
+
+
+def _closing(bubbles, tools=()):
+    return {**turn(bubbles, tools), "quick_replies": CLOSING}
+
+
+def test_thanks_and_think_is_closed_without_a_question():
+    """「ありがとう、考えます」には迷いの問いを返さず締める(#221 の F-follow-new T6 の返信は違反)。"""
+    from evals.checks import conversation_checks, thanks_close_violations
+
+    said = [None, "ありがとう、考えます"]
+    asked = {**turn(["承知しました。迷っているのは、どのあたりですか？"]),
+             "quick_replies": ["仕事内容", "シフト", "未経験でも大丈夫か", "今はいい"]}
+    v = thanks_close_violations([PROPOSED, asked], said)
+    assert v == ["T2: お礼つきの「考えます」に問いを返した(締めていない): 承知しました。迷っているのは、どのあたりですか？"]
+    assert v[0] in conversation_checks({"expect_outcome": ["propose"]}, [PROPOSED, asked], said)["violations"]
+    # 問いで終えず、次に開いたときの入口を1文添えて締めるのは違反ではない(出口は提案したターンの記録でよい)
+    closed = _closing(["承知しました。ゆっくり考えてみてください。",
+                       "気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"])
+    assert thanks_close_violations([PROPOSED, closed], said) == []
+    assert conversation_checks({"expect_outcome": ["propose"]}, [PROPOSED, closed], said)["violations"] == []
+
+
+def test_thanks_and_think_close_is_short_has_no_jobs_and_keeps_the_outcome():
+    from evals.checks import thanks_close_violations
+
+    said = [None, "ありがとうございます。少し検討します。"]
+    long = _closing(["承知しました。", "ゆっくり考えてみてください。", "またいつでもどうぞ。"])
+    assert any("吹き出し3つ" in x for x in thanks_close_violations([PROPOSED, long], said))
+    more_jobs = {**_closing(["承知しました。ほかにもこんな求人があります。"]), "cards": [{"job_id": "c001", "reasons": ["渋谷"]}]}
+    assert any("求人を出した" in x for x in thanks_close_violations([PROPOSED, more_jobs], said))
+    # 出口をまだ記録していなければ、締めるターンで記録する
+    asked_only = {**turn(["渋谷・日中で3件あります。"], [("recommend_jobs", {"jobs": []})]), "quick_replies": ["今はいい"]}
+    closed = _closing(["承知しました。ゆっくり考えてみてください。"])
+    assert any("出口" in x for x in thanks_close_violations([asked_only, closed], said))
+    recorded = _closing(["承知しました。ゆっくり考えてみてください。"], [("record_conversation_outcome", {"recorded": True})])
+    assert thanks_close_violations([asked_only, recorded], said) == []
+
+
+def test_hesitating_think_may_still_ask_one_question():
+    """迷いを言っている「考えます」には、今までどおり迷いの点を1問聞いてよい(お礼があっても)。"""
+    from evals.checks import thanks_and_think, thanks_close_violations
+
+    asked = {**turn(["どのあたりで迷っていますか?"]), "quick_replies": ["時給", "シフト", "今はいい"]}
+    for m in ("うーん、考えます", "ちょっと迷うので考えます", "ありがとう、でも時給で迷うので考えます", "考えます",
+              "ありがとう、考えます。制服はありますか？", "ありがとう、考えます。求人を見せて"):
+        assert not thanks_and_think(m), m
+        assert thanks_close_violations([PROPOSED, asked], [None, m]) == [], m
+    for m in ("ありがとう、考えます", "ありがとう、考えます。", "ありがとうございます。検討してみます",
+              "ありがとう、いつでも見られるなら考えます", "ありがとうございます、考えておきます",
+              "ありがとう、検討しておきます", "ありがとうございます。検討いたします",
+              "ありがとうございます、考えたいと思います", "ありがとう、考えてみる", "ありがとう、考えとくね",
+              "ありがとうございます。誰でもできるなら考えます"):
+        assert thanks_and_think(m), m
+        assert thanks_close_violations([PROPOSED, asked], [None, m]), m
+    # 事情の説明や、考えた後の返事は「考えます」ではない
+    for m in ("ありがとう、転職を考えていて", "ありがとう、考えました。応募します"):
+        assert not thanks_and_think(m), m
+
+
+def test_thanks_close_offers_voice_consult_only_once_per_conversation():
+    """締めの音声相談の入口は、履歴書・音声の提案の決まり(1つの会話で1回だけ・断られた後は出さない)に従う。
+    T1 の挨拶の入口の案内は数えない。"""
+    from evals.checks import thanks_close_violations
+
+    greeting = {**turn(["はじめまして。"]), "quick_replies": ["求人を探す", "まず相談する"],
+                "actions": ["voice_consult", "resume_upload"]}
+    experience = {**turn(["これまでどんなお仕事をされてきましたか?"]), "quick_replies": ["今はいい"],
+                  "actions": ["resume_upload", "voice_consult"]}
+    written = _closing(["ありがとうございます。"], [("record_conversation_outcome", {"recorded": True})])
+    voice = {**_closing(["承知しました。", "話して相談したいときは、音声相談も使えます(約5分)。"],
+                        [("record_conversation_outcome", {"recorded": True})]), "actions": ["voice_consult"]}
+    said = [None, "まず相談する", "カフェで1年働きました", "ありがとう、考えます"]
+    v = thanks_close_violations([greeting, experience, written, voice], said)
+    assert v == ["T4: お礼つきの「考えます」の締めで、T2 に出した履歴書・音声の提案をもう一度出した(1つの会話で1回だけ)"]
+    # 挨拶の入口の案内だけなら、締めで音声相談を案内してよい
+    assert thanks_close_violations([greeting, written, voice], [None, "まず相談する", "ありがとう、考えます"]) == []
+    # 締めの actions は音声相談だけ
+    upload = {**voice, "actions": ["resume_upload"]}
+    assert any("音声相談以外" in x for x in thanks_close_violations([greeting, written, upload],
+                                                                [None, "まず相談する", "ありがとう、考えます"]))
+
+
+def test_hesitating_think_does_not_end_a_consultation():
+    """相談の途中の「うーん、考えます」は切り上げではない(迷いの点を聞く場面で、相談を締めるのは打ち切り)。
+    「ありがとう、考えます」は切り上げ。"""
+    from evals.checks import consult_violations
+
+    entry = {**turn(["いくつか伺いながら一緒に整理します。", "探そうと思ったきっかけは何ですか?"],
+                    [("get_counseling_playbook", {"playbook": "…"})]), "quick_replies": []}
+    close = _closing(["承知しました。"], [("record_conversation_outcome", {"recorded": True})])
+    sc = {"consult_mode": True}
+    said = [None, "何から始めればいいか分からない"]
+    turns = [{**turn(["はじめまして。"]), "quick_replies": ["求人を探す", "まず相談する", "今はいい"]}, entry, close]
+    v = consult_violations(sc, turns, [*said, "うーん、考えます"])
+    assert any("切り上げる前に相談を締めた" in x for x in v)
+    assert not any("切り上げる前" in x for x in consult_violations(sc, turns, [*said, "ありがとう、考えます"]))
+
+
+# ----------------------------- 吹き出しでカードの理由を繰り返さない(task 229) -----------------------------
+
+
+def _carded(bubble, reasons=("日中の勤務(10:00〜19:00(4時間〜))", "渋谷エリア")):
+    return {**turn([bubble]), "quick_replies": ["応募したい", "今はいい"],
+            "cards": [{"job_id": "a003", "title": "カフェホール 渋谷道玄坂", "reasons": list(reasons)}]}
+
+
+@pytest.mark.parametrize("bubble", [
+    "渋谷・日中のカフェで1件見つかりました。勤務時間とエリアがご希望に合っています。",  # #221 の R-revisit-browsing T2
+    "勤務時間と場所がご希望に合う求人です。",
+    "日中の勤務(10:00〜19:00(4時間〜))の求人です。",  # カードの理由をそのまま書いた
+    "勤務時間がご希望に合っているから選びました。",  # 「から」は問いではない
+    "時間が合わないかもしれませんが、エリアはご希望に合っています。",  # 否定の後に、合う形がもう1つある
+])
+def test_bubble_repeating_the_card_reasons_is_a_violation(bubble):
+    from evals.checks import reason_echo_violations
+
+    assert reason_echo_violations([_carded(bubble)]) == [f"T1: 吹き出しでカードの理由を繰り返した: {bubble!r}"]
+    assert reason_echo_violations([_carded(bubble)])[0] in conversation_checks(
+        {"expect_outcome": ["propose"]}, [_carded(bubble)], [None])["violations"]
+
+
+@pytest.mark.parametrize("bubble", [
+    "渋谷・日中で3件あります。",  # 件数と条件の一言(Prompt の例)
+    "渋谷エリアで1件あります。",  # 短い理由(渋谷エリア)は件数の一言にも出る
+    "料理に関わる仕事がしたいというお話から、キッチンのある3件です。",  # 本人の話につなげる一言
+    "本業の後とのお話でしたが、居酒屋の求人は終わりが翌1:00です。",  # 事情と勤務時間に1文で触れる
+    # 合わないかもしれない、合うかを確かめる1文(5 回目の自動レビュー)。カードの理由は合うとしか言わない
+    "本業の後とのお話でしたが、勤務時間がご希望と合わないかもしれません。",
+    "シフトが本業の後というお話に沿うか、画面で確かめてください。",
+    "勤務時間がご希望に合いませんが、ほかの条件は合っています。",
+])
+def test_count_line_and_story_line_are_not_repeating_the_reasons(bubble):
+    from evals.checks import reason_echo_violations
+
+    assert reason_echo_violations([_carded(bubble)]) == []
+
+
+def test_reason_words_without_cards_are_not_judged():
+    from evals.checks import reason_echo_violations
+
+    # カードを出していないターン(条件を確かめる問い)は見ない
+    assert reason_echo_violations([turn(["勤務時間とエリアがご希望に合う求人を探しますか？"])]) == []

@@ -7,9 +7,10 @@
 手元で確かめること:
 - image に .env(API キー)が入っていない。API キーは docker run の環境変数でだけ渡す
 - /healthz が 200 になる。GET / の Cookie に Secure と HttpOnly が付く
-- 新しいブラウザで /api/talk/open が visit を返し、/api/event/stream で挨拶(吹き出し)が返る
+- 新しいブラウザでは /api/talk/open が同意を求め(入口は無い)、/api/consent で今の版に同意してから開き直すと visit を返し、
+  /api/event/stream で挨拶(吹き出し)が返る
 - 画面と返信の中に API キーの値が出てこない
-- コンテナを再起動しても、会話(/api/talk/history)と dip の状態(/app/data/state.json)が残る。/app/data は別につないだボリューム
+- コンテナを再起動しても、会話(/api/talk/history)と同意と dip の状態(/app/data/state.json)が残る。/app/data は別につないだボリューム
 
 公開 URL では、http が https に飛ぶことも確かめる。--cookie に前回の匿名ユーザーIDを渡すと、同じブラウザで開き直したときと
 同じになる(最後のやりとりから 30 分を過ぎていれば再訪の挨拶。--expect revisit で確かめる)。
@@ -118,8 +119,17 @@ def open_page(base: str, cookie: str | None) -> tuple[str, str]:
 
 def greet(base: str, uid: str, expect: str | None) -> tuple[dict, str]:
     """/api/talk/open と、新しい会話ならそのイベントで /api/event/stream(画面と同じ呼び方)。(open の結果, 返信の本文)。
+    使い始める同意(terms)がまだなら、画面と同じく今の版で同意して(/api/consent)から開き直す。
     expect があれば、挨拶を呼ぶ前に入口を確かめる(違う入口で LLM を呼ばない)。"""
     opened = get_json(base, "POST", "/api/talk/open", uid)
+    if "terms" in opened["consent"]["needed"]:
+        check(opened["event"] is None, "同意の前は挨拶を始めない(入口が無い)")
+        version = opened["consent"]["version"]
+        step(f"使い始める同意がまだなので、画面の「同意して始める」と同じく版 {version!r} で同意します")
+        agreed = get_json(base, "POST", "/api/consent", uid, {"kind": "terms", "version": version})
+        check("terms" not in agreed["needed"], "同意が記録された")
+        opened = get_json(base, "POST", "/api/talk/open", uid)
+        check("terms" not in opened["consent"]["needed"], "同意の後に開き直すと、同意の画面を出さない")
     if opened["event"] is None:
         step("最後のやりとりから 30 分以内なので、今の会話の続きになりました(挨拶は呼んでいません)")
     if expect:
@@ -233,6 +243,7 @@ def local_smoke(image: str, build: bool) -> None:
         hist = get_json(base, "GET", "/api/talk/history", uid)
         check(len(hist["turns"]) >= 1 and bool(hist["turns"][0]["bot"]["bubbles"]), "再起動の後も会話の履歴が残っている")
         opened = get_json(base, "POST", "/api/talk/open", uid)
+        check("terms" not in opened["consent"]["needed"], "再起動の後も同意が残っている")
         check(opened["event"] is None and opened["thread"] == hist["thread"], "再起動の後に開き直すと、今の会話の続きになる")
         state = in_container(name, "import json; print(json.dumps(sorted(json.load(open('/app/data/state.json'))['users'])))")
         check(uid in json.loads(state), "再起動の後も dip の状態(/app/data/state.json)に本人がいる")

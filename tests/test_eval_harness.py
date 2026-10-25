@@ -82,10 +82,14 @@ def _rule(name: str) -> str:
     return next(x for x in SYSTEM.splitlines() if x.startswith(f"- {name}"))
 
 
-def test_judge_prompt_accepts_one_question_after_i_will_think_about_it():
-    # 「考えます」のあとに迷いの点を1問聞くのは Prompt(baitoru_assistant.md の対話ルール)どおり。待つのは「今はいい」の後
+def test_judge_prompt_closes_on_thanks_and_asks_only_on_hesitation():
+    # Prompt(baitoru_assistant.md の対話ルール)と同じ: お礼つきの「考えます」は短く締める(迷いの問いは減点)。
+    # 迷いを言っている「考えます」のあとに迷いの点を1問聞くのは正しい。待つのは「今はいい」の後(task 223 の D1)
     rule = _rule("design_fit")
-    assert "「考えます」「迷っている」" in rule and "断りではない" in rule
+    assert "お礼や終わりの挨拶と一緒の「考えます」(「ありがとう、考えます」)は会話の終わり" in rule
+    assert "問いを返さず短く締め、次に開いたときの入口を1つ添えるのが正しく" in rule
+    assert "迷いの点を聞き返すのは減点する" in rule
+    assert "迷いを言っている「考えます」(「うーん、考えます」「迷うので考えます」)" in rule and "断りではない" in rule
     assert "どこで迷っているかを1問だけ聞くのは正しい" in rule and "減点しない" in rule
     assert "待つ(wait)のは「今はいい」が選ばれた後" in rule
 
@@ -205,9 +209,10 @@ class CareerAgent(BaseChatModel):
         last_human = max(i for i, m in enumerate(messages) if m.type == "human")
         text, after = messages[last_human].content, messages[last_human + 1:]
         uid = "sim-new"
-        if text.startswith("[イベント: 初回訪問"):
-            msg = reply(["こんにちは。お仕事探しをお手伝いします。履歴書があれば読み取ります。何から始めますか?"],
-                        quick_replies=["求人を探す", "応募履歴を確認", "文字で話す", "今はいい"], actions=["resume_upload"])
+        if text.startswith("[イベント: 初回訪問"):  # 入口V: 3 つの入口を全部出す(ペルソナは選ばずに書き始める)
+            msg = reply(["こんにちは。お仕事探しをお手伝いします。音声、履歴書、ゲームからも始められます。何から始めますか?"],
+                        quick_replies=["求人を探す", "まず相談する", "今はいい"], actions=["voice_consult", "resume_upload"],
+                        buttons=[{"label": "ゲームで書類を作る", "url": "/liff/arcade"}])
         elif "アップロード" in text:
             msg = reply(["法人営業とPMのご経験ですね。それを活かせるお仕事を一緒に考えますか?"],
                         quick_replies=["考えたい", "今はいい"])
@@ -215,6 +220,9 @@ class CareerAgent(BaseChatModel):
             msg = call("set_search_track", {"line_user_id": uid, "track": "正社員", "evidence": text})
         elif "転職" in text and not any(m.type == "tool" and m.name == "get_counseling_playbook" for m in after):
             msg = call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb")
+        elif "転職" in text:  # 経歴の要る場面で、履歴書の操作を出す
+            msg = reply(["正社員のお仕事で考えますね。職務経歴書があれば、読み込むと早いです。", "なぜ今、転職を考えているのですか?"],
+                        quick_replies=["新しい企画をしたい", "今はいい"], actions=["resume_upload"])
         else:
             msg = reply(["正社員のお仕事で考えますね。なぜ今、転職を考えているのですか?"], quick_replies=["今はいい"])
         return ChatResult(generations=[ChatGeneration(message=msg)])
@@ -240,14 +248,17 @@ def test_persona_with_a_resume_uploads_when_offered_and_is_judged(tmp_path, monk
     from line_runtime import config
 
     sc = SCENARIOS["T-career-fulltime"]
-    client = FakeClient(["転職を考えていて、正社員の仕事を相談したい"])
+    client = FakeClient(["転職を考えていて、正社員の仕事を相談したい", "新しいプロダクトを企画したいからです"])
     r = _run(sc, client, CareerAgent(), tmp_path, monkeypatch, use_judge=True)
-    # T1 で履歴書の操作が出たので、本人の次の1ターンはアップロード(dip に保存され、会話に入る)
-    assert r["upload_turn"] == 2 and r["action_offers"] == [{"turn": 1, "actions": ["resume_upload"]}]
-    assert r["transcript"][1] == {"who": "user", "text": "[職務経歴書(PDF)をアップロード]"}
+    # T1 の挨拶の入口ではアップロードせず(ペルソナは選択肢を選ばずに書く)、T2 で経歴の場面の履歴書の操作が出たので、
+    # 本人の次の1ターンはアップロード(dip に保存され、会話に入る)
+    assert r["upload_turn"] == 3 and r["action_offers"] == [{"turn": 1, "actions": ["voice_consult", "resume_upload"]},
+                                                            {"turn": 2, "actions": ["resume_upload"]}]
+    assert r["greeting_offers"] == ["voice_consult", "resume_upload", "arcade"]
+    assert r["transcript"][3] == {"who": "user", "text": "[職務経歴書(PDF)をアップロード]"}
     assert logic.resume_upload(State(tmp_path / "state.json"), "sim-new")["resume"]["work_history"]
     # アップロードの後は1問、区分は本人が「転職」と言ったターンで正社員に
-    assert r["tracks"] == ["未定", "未定", "正社員"]
+    assert r["tracks"] == ["未定", "正社員", "正社員", "正社員"]
     assert r["track_ok"] is True and r["track_checks"][0]["status"] == "ok"
     assert not any("アップロード" in v or "切り替え" in v for v in r["violations"]), r["violations"]
     # ジャッジは安いモデルで、履歴書と会話ログを受け取り、深さの4項目を根拠つきで返す
@@ -353,6 +364,21 @@ def test_nothing_runs_when_the_ledger_is_already_at_the_limit(tmp_path):
     assert ran == []
     with pytest.raises(budget.BudgetExceeded):
         budget.check(ledger)
+
+
+def test_a_card_with_its_own_budget_uses_its_own_ledger_and_limit(tmp_path):
+    """PRD とは別の予算のカード(--ledger と --limit-usd)は、その台帳の累計がその額に達したら止まる。"""
+    ledger = tmp_path / "budget-card.jsonl"
+    ran, logs, paid = [], [], Paid()
+
+    async def run_one(sc, rep):
+        ran.append(sc["id"])
+        paid.pay(0.6)
+
+    assert asyncio.run(run_cases(_cases(3), run_one, paid, ledger, "card", log=logs.append, limit=1.0)) is True
+    assert len(ran) == 2 and budget.spent(ledger) == pytest.approx(1.2)  # 始める前に見るので、2 回目の後に止まる
+    assert any("budget-card.jsonl の累計 $1.2000 が $1.00 に達したので止めます" in x for x in logs)
+    assert "止める額 $1.00(残り $-0.2000)" in budget.line(ledger, 1.0) and "予算" not in budget.line(ledger, 1.0)
 
 
 def test_runs_below_the_limit_record_every_case(tmp_path):
@@ -558,8 +584,9 @@ def test_depth_is_counted_only_on_consult_and_persona_scenarios():
     for case in ("B-exit", "pii", "F-follow-new", "R-revisit", "Q-job-question"):
         assert set(depth_of(case, j).values()) == {None}, case
     measured = {sc["id"] for sc in SCENARIOS.values() if sc.get("measure_depth")}
-    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime", "T-side-job",
-                        "T-student-first", "T-blank-parent", "T-switch-to-fulltime"}
+    # T-side-job と T-blank-parent は相談に入れないので測らない(task 225)
+    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime",
+                        "T-student-first", "T-switch-to-fulltime"}
 
 
 def test_keyword_trace_is_split_per_conversation(tmp_path, monkeypatch):

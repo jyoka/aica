@@ -288,7 +288,8 @@
   const EMPTY = "まだありません";
   // 「すべて消す」で消えるもの・消えないもの(docs/prd/aica-v2-fulltime.md の範囲)
   const FORGET_WHAT = "aica が覚えていること・保存した求人・応募・これまでの会話";
-  const FORGET_KEPT = "その日の利用回数は消えません。";
+  const FORGET_KEPT = "その日の利用回数は消えません。費用の記録は、あなたを見分ける番号を外して残ります。";
+  const EXPORT_WHAT = "aica が保存している、あなたのデータ(プロフィール、これまでの会話、費用の記録)を 1 つのファイル(JSON)で受け取れます。";
 
   async function loadProfile() {
     const box = $("profile");
@@ -433,7 +434,14 @@
     }
     box.appendChild(ac);
 
-    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない)。確認の1段を挟む
+    // データを書き出す: 保存しているものを 1 つの JSON のファイルで受け取る(本人は Cookie で決まる。リンクを開くとダウンロード)
+    const xc = card("データを書き出す", EXPORT_WHAT);
+    const xr = el("div", "prow"); xr.dataset.key = "export";
+    const xb = el("div", "pbtns"), xa = el("a", null, "書き出す");
+    xa.href = profileUrl("/export"); xa.download = "";
+    xb.appendChild(xa); xr.appendChild(xb); xc.appendChild(xr); box.appendChild(xc);
+
+    // すべて消す(プロフィール・応募・会話を初期化。会話数の上限の数は消さない。費用の記録はユーザーIDを外して残す)。確認の1段を挟む
     const dc = card("すべて消す", `${FORGET_WHAT}をすべて消します。${FORGET_KEPT}次に開くと、はじめての訪問として始まります。`);
     dc.classList.add("danger");
     const dr = el("div", "prow"); dr.dataset.key = "forget";

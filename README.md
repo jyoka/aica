@@ -72,7 +72,8 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 
 - 2 つのプロセスは、リポジトリ直下で同じ venv と同じ `.env` を使います
-- `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)。
+  音声相談の設定(`LIVEKIT_*`)があるのに無い、短い(32 文字未満)と、Web プロセスも音声ワーカーも起動で止まります
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
 - 1 人が開ける音声相談は同時に 1 つまでです(Web プロセスを再起動した直後は、再起動の前から続いている相談を数えません)。
   音声ワーカーが同時に受ける相談は `VOICE_RESUME_MAX_JOBS`(既定 4)までです。
@@ -81,7 +82,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ### Render で公開する
 
 1 つのコンテナ(`Dockerfile`)を、Render の Web サービスに永続ディスクつきで置きます。Blueprint は `render.yaml` です。
-手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と初回の挨拶の
+手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と、同意してから初回の挨拶の
 1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
 Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](docs/deploy/render.md) にあります。
 
@@ -89,8 +90,9 @@ Render のサービスを作る手順と、運営者がする操作は [docs/dep
 
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。トークで使えるのは、テキストの会話と、友だち追加の挨拶と、
 アカウント連携(下の「アカウント連携を試す」)です。履歴書の読み込みと音声相談は、LIFF の設定(下の「LINE で LIFF 画面を開く」)があれば、トークのボタンから LIFF 画面で使えます。
-結果は LINE のトークに届きます。レジュメ・アーケードも LIFF 画面で開けますが、今は dip が LINE のユーザーにゲームの URL を渡さないので、
-エージェントはそのボタンを出しません([PRD](docs/prd/resume-arcade.md) の「LINE のとき」)。
+結果は LINE のトークに届きます。レジュメ・アーケードも、LIFF の設定があれば dip が LINE のユーザーにゲームの URL を渡すので、
+エージェントがトークにゲームのボタンを出します。LIFF 画面のゲームは AI と保存を LINE の本人で使え、保存すると LINE のトークに知らせが届きます
+([PRD](docs/prd/resume-arcade.md) の「LINE のとき」)。
 トークに直接送ったファイルと写真は読みません。LIFF の設定が無いときは、エージェントにも「LINE では使えない」と伝え、
 それでも勧めたときは文で書くよう案内します。
 LIFF の中でマイクが使えるかは、下の「LINE の中でマイクが使えるかを確かめる」の手順で実機で確かめます。
@@ -131,7 +133,9 @@ LIFF の中でマイクが使えるかは、下の「LINE の中でマイクが�
    1 人が Cookie を替えて匿名ユーザーIDを 20 個使うと、ほかの新しい Web の利用者はその日ずっと 429 になります(下の「設定」のターン数の上限)
 6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://<マシン名>.<tailnet>.ts.net/line/webhook` にし、
    「Webhookの利用」をオンにして「検証」を押す(成功と出れば、署名とつながりが合っています)
-7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します
+7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します。
+   挨拶には、LINE で使える入口(LIFF の設定があれば履歴書の読み込みとゲーム、LiveKit の設定もあれば音声相談)のボタンと、
+   文字の選択肢(求人を探す / まず相談する / 今はいい)が出ます([設計メモの 12 章](docs/design/line-sim-scenarios.md#12-挨拶から-3-つの入口へ案内する2026-10-25会話の改善-23))
 
 - Funnel を開いている間は、URL を知っている人は誰でも Web のトーク画面と開発者画面も開けます(費用がかかります)。
   試し終わったら止めます(`tailscale funnel 8030` を Ctrl+C。`--bg` で動かしたときは `tailscale funnel reset`)
@@ -186,14 +190,61 @@ LINE のトークに出るボタン(履歴書の読み込み、音声相談、�
   |---|---|---|
   | 音声相談 | `/voice` | Web と同じ音声相談のシート。終わると、まとめと求人と下書きのボタンが LINE のトークに届く |
   | 履歴書の読み込み | `/resume/upload` | ファイル(PDF / JPEG / PNG)を選んで読み取る。確認とエージェントの次の 1 問が LINE のトークに届く |
-  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム。AI と保存の API は Cookie の匿名ユーザーIDの本人で呼ぶので、LIFF の中では簡易分析で遊べて、保存はできない |
-  | 応募フォームの続き、読み取り結果、下書き | `/apply?job=…`、`/resume?rid=…`、`/voice/draft?rid=…` | Web と同じ画面 |
-- トークに届けるのは push です(LINE 公式アカウントの月のメッセージ数に数えられます)。宛先の LINE の userId は、操作を始めるときに
-  ID トークンからもらい、届けるまでメモリにだけ置きます。面談の途中で Web サーバーを起動し直すと、そのまとめはトークに届きません(会話には入ります)
+  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム。AI(回数の上限は Web と同じ)と保存は LINE の本人で使う。保存すると「下書きができました」と「下書きを見る」が LINE のトークに届く |
+  | 応募フォームの続き、読み取り結果、下書き | `/apply?job=…`、`/resume?rid=…`、`/voice/draft?rid=…`、`/arcade/draft?rid=…` | Web と同じ画面 |
+- トークに届けるのは push です(LINE 公式アカウントの月のメッセージ数に数えられます。ゲームは保存 1 回につき 1 通で、1 人 1 日 3 通まで)。宛先の LINE の userId は、操作を始めるとき
+  (ゲームは保存するとき)に ID トークンからもらい、届けるまでメモリにだけ置きます。面談の途中で Web サーバーを起動し直すと、そのまとめはトークに届きません(会話には入ります)
 - 確かめた本人は、署名つきの Cookie で覚えます。ブラウザ(LINE の中のブラウザ)を閉じるまでで、長くても 1 時間です。
   過ぎたら、開いたときにもう一度 ID トークンで確かめます。1 時間を過ぎてから応募フォームを送ると、入力は残らず、開き直しになります
 - ID トークンを確かめられない(LINE が断った、期限切れ、別のチャネルのトークン)ときは「本人を確かめられませんでした」と出して止まり、
   ほかの人の画面にはなりません
+
+### LINE のリッチメニュー
+
+LINE のトークの下に、常に出しておけるメニュー(リッチメニュー)を置けます。ボタンは 4 つです。
+
+| ボタン | 押すと |
+|---|---|
+| 音声で相談する | 音声相談の LIFF 画面(`https://liff.line.me/<LIFF ID>/voice`)を開く。LiveKit の設定があるときだけ置く |
+| 履歴書を読み込む | 履歴書の読み込みの LIFF 画面(`…/resume/upload`)を開く |
+| ゲームで書類を作る | レジュメ・アーケードの LIFF 画面(`…/arcade`)を開く |
+| 求人を探す | 「求人を探す」を本人の発言としてトークに送る(エージェントが返信トークで返す) |
+
+前の 3 つは、トークのボタンと同じ LIFF 画面で、ボタンの文言も同じです(`line_channel.LIFF_ACTIONS` と `ARCADE_LABEL`。絵文字は付けません)。押した後の流れ(結果がトークに届く)も同じです。
+LIFF の設定が無いときは作りません(スクリプトが止まります)。登録するのは人で、`scripts/line_rich_menu.py` が画像(2500x843 の PNG)も作ります。
+上の「LINE で試す」と「LINE で LIFF 画面を開く」が済んでいる前提です。
+
+1. Web サーバーと同じ `.env`(`LINE_CHANNEL_ACCESS_TOKEN`、`LINE_LIFF_ID`、`LINE_LIFF_CHANNEL_ID`、音声相談も置くなら `LIVEKIT_*`)を用意する
+2. 画像と本文を作って見る(LINE は呼びません)。`data/richmenu/richmenu.png` と `richmenu.json` ができます
+
+   ```bash
+   ./.venv/bin/python -m scripts.line_rich_menu --dry-run
+   ```
+
+   日本語のフォントは macOS のヒラギノか Linux の Noto Sans CJK を探します。無ければ `--font <ファイル>` で渡します
+3. 登録する。LINE で形を確かめ、作り、画像を上げ、友だち全員の既定のメニューにします
+
+   ```bash
+   ./.venv/bin/python -m scripts.line_rich_menu             # 初めて
+   ./.venv/bin/python -m scripts.line_rich_menu --replace   # 作り直すとき(前にこのスクリプトで作ったメニューを消してから)
+   ```
+
+   `--replace` は、新しいメニューを既定にした後で、前にこのスクリプトで作ったメニュー(名前が `aica-menu`)だけを消します。
+   途中で LINE に断られたら、そこで止まり、前のメニューは出たままです。
+   **既定のメニューは友だち全員に 1 つです**。LINE Official Account Manager などで既定にしていた別のメニューは、既定でなくなります
+   (消しはしません。スクリプトがその ID を出します)
+4. LINE のアプリでトークを開き、下のメニューを押して確かめる。LIFF ID やエンドポイント URL を変えたら、もう一度 3 をします
+
+月のメッセージ数(無料のコミュニケーションプランは月 200 通)との関係(2026-10-25 に LINE の公式の資料で確かめた):
+
+- 月のメッセージ数に数えると公式が書いているのは、メッセージ配信と、Messaging API の Push、Multicast、Broadcast、Narrowcast だけです。
+  応答メッセージ(Reply API)、あいさつメッセージ、チャットは数えません([Messaging API の料金](https://developers.line.biz/ja/docs/messaging-api/pricing/)、
+  [LINE公式アカウントの料金プラン](https://www.lycbiz.com/jp/service/line-official-account/plan/))
+- **リッチメニューの登録と表示が数えられるかは不明です**。どちらの資料にも、数える側にも数えない側にも書いてありません。
+  リッチメニューの API(作る、画像を上げる、既定にする)は、数えると書かれたメッセージの送り方のどれでもありません(数えられないと推測しますが、確かめていません)。
+  確かめるときは、LINE Official Account Manager の「分析」か、Messaging API の「当月のメッセージ利用状況」で、登録の前後の通数を比べます
+- 「求人を探す」を押したときの返事は返信トークで返すので、数えません(間に合わなかったときの push だけ数えます。上の「LINE で試す」)。
+  前の 3 つから開いた画面の結果は、トークのボタンから開いたときと同じく push で届き、数えます(上の「LINE で LIFF 画面を開く」)
 
 ### LINE の中でマイクが使えるかを確かめる
 
@@ -283,6 +334,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m pytest -q` | テスト | 使わない |
 | `node --test tests/js/arcade-ja.test.js` | レジュメ・アーケードの日本語の判定のテスト(pytest からも回る) | 使わない |
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
+| `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
@@ -290,6 +342,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m line_runtime.ledger [--date 2026-09-27] [--by-user-id] [--json]` | 費用台帳を人と日ごとに表で集計する(合計の行つき)。`--by-user-id` はシナリオユーザーを匿名ユーザーIDにまとめない | 使わない |
 | `python -m line_runtime.purge [--url https://…]` | 期間で消す掃除を今すぐ走らせる。動いている Web プロセス(既定 `http://127.0.0.1:8030`)の内部の口を `AICA_INTERNAL_KEY` で呼ぶだけで、このコマンドは何も消さない。掃除は Web プロセスが起動時と 1 日 1 回、自分でも走らせる | 使わない |
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
+| `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
@@ -315,7 +368,7 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | 会話(`data/line_checkpoints.db`) | 会話ごとに、最後のやりとりから 30 日 | `line_runtime.purge.CONVERSATION_TTL` |
 | 使われなくなった人(`data/state.json` の行、連携、音声の下書きのファイル) | 最後の利用から 180 日 | `dip_mcp.retention.USER_TTL` |
 | 「すべて消す」で持ち越した部屋の名前 | 消した時刻から 1 日 | `dip_mcp.retention.FORGOTTEN_ROOMS_TTL` |
-| 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする | `line_runtime.ledger.ID_TTL` |
+| 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする。「すべて消す」では、すぐにその人のユーザーIDを外す(金額は残す) | `line_runtime.ledger.ID_TTL` |
 | Cookie `aica_uid` | 最後に画面を開いた日から 180 日 | `line_runtime.server.ANON_COOKIE_MAX_AGE` |
 
 | 環境変数 | 既定 | 用途 | `.env` |
@@ -374,7 +427,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](docs/design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
-| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
+| `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは dip の状態に入り、トークに届く([privacy.md](docs/design/privacy.md) の 3.3) | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | `VOICE_RESUME_WRITE_FILES=1` のときの、下書き、文字起こし、求人の提案の置き場 | 不可 |
