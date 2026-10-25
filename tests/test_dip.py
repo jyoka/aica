@@ -201,12 +201,16 @@ def test_reasons_without_keywords_are_unchanged(state):
 
 def test_reason_vocab_is_the_words_of_the_job_type():
     # 語彙は職種の名前の語だけ。どの職種にもまたがる広い語(スタッフ・管理・サービス・技術)は入れない
-    assert logic.reason_vocab("飲食ホール") == ["飲食", "ホール"]
-    assert logic.reason_vocab("イベントスタッフ") == ["イベント"]
+    # 「・」で切った部分の全体(職種の名前そのもの)も入れて、先に置く(task 229 の 3 回目の自動レビュー)
+    assert logic.reason_vocab("飲食ホール") == ["飲食ホール", "飲食", "ホール"]
+    assert logic.reason_vocab("アパレル販売") == ["アパレル販売", "アパレル", "販売"]
+    assert logic.reason_vocab("オフィス事務") == ["オフィス事務", "事務"]
+    assert logic.reason_vocab("イベントスタッフ") == ["イベントスタッフ", "イベント"]
     assert logic.reason_vocab("事務・管理") == ["事務"]
     assert logic.reason_vocab("企画・PM") == ["企画", "PM"]
+    assert logic.reason_vocab("カフェ") == ["カフェ"]
     vocab = {w for t in logic.JOB_TYPES + logic.FULLTIME_JOB_TYPES for w in logic.reason_vocab(t)}
-    assert not vocab & {"未経験", "経験", "スタッフ", "管理", "サービス", "技術"}
+    assert not vocab & {"未経験", "経験", "スタッフ", "オフィス", "管理", "サービス", "技術"}
 
 
 def _reason(job_id, keywords, **said):
@@ -221,6 +225,15 @@ def _reason(job_id, keywords, **said):
     # やりたいことを経験より先に見る(経験の「カフェは未経験」は使わない)
     ("a003", "カフェ 未経験", {"wants": "カフェで働きたい", "experience": "カフェは未経験"}, "カフェの仕事をしたいというお話に合います"),
     ("f0101", "営業 PM", {"experience": "法人営業ではなく営業事務", "wants": "営業"}, "営業の仕事をしたいというお話に合います"),
+    # 職種の名前そのものを話して探したとき。長い語を先に見る(task 229 の 3 回目の自動レビュー)
+    ("b0601", "アパレル販売", {"experience": "アパレル販売を2年"}, "アパレル販売のご経験を活かせます"),
+    ("b0601", "アパレル販売を2年", {"experience": "アパレル販売を2年"}, "アパレル販売のご経験を活かせます"),
+    ("b1201", "オフィス事務", {"experience": "オフィス事務を3年"}, "オフィス事務のご経験を活かせます"),
+    ("b1101", "イベントスタッフ", {"wants": "イベントスタッフをやりたい"}, "イベントスタッフの仕事をしたいというお話に合います"),
+    ("b0101", "飲食ホール", {"experience": "飲食ホールを1年"}, "飲食ホールのご経験を活かせます"),
+    ("b0601", "アパレル 販売", {"experience": "アパレルで販売を2年"}, "アパレルのご経験を活かせます"),  # 分けて話せば今までどおり
+    # 避けたいことの「アパレル販売」は、語彙にアパレル販売の無い職種(スーパー・販売)の「販売」を止めない
+    ("b0501", "販売", {"wants": "販売の仕事", "avoids": "アパレル販売はもうやりたくない"}, "販売の仕事をしたいというお話に合います"),
 ])
 def test_keyword_reason_is_a_fixed_sentence_with_a_word_of_the_vocab(job_id, keywords, said, reason):
     assert _reason(job_id, keywords, **said) == reason
@@ -266,6 +279,15 @@ def test_keyword_reason_is_a_fixed_sentence_with_a_word_of_the_vocab(job_id, key
     ("a003", None, {"wants": "カフェ"}),
     ("a003", "", {"wants": "カフェ"}),
     ("a003", "カフェホール", {"wants": "カフェホール"}),  # 長い語の一部(カフェホールのカフェ)は語の全体ではない
+    # 職種の名前の全体でも、未経験や初めての印があれば付けない。避けたいことに一部の語があっても付けない
+    ("b0601", "未経験 アパレル販売", {"experience": "アパレル販売未経験"}),
+    ("b0601", "アパレル販売", {"experience": "アパレル販売は初めて"}),
+    ("b1201", "オフィス事務", {"experience": "オフィス事務はしたことがない"}),
+    ("b0601", "アパレル販売", {"wants": "アパレル販売", "avoids": "アパレルはノルマがきつそう"}),
+    ("b0601", "販売", {"experience": "アパレル販売を2年"}),  # keywords に職種の名前の全体が無く、販売は長い語の一部
+    # 短い語を当てるとき、それを含む職種の名前の全体が避けたいことにあっても付けない(task 229 の 4 回目の自動レビュー)
+    ("b0605", "販売", {"wants": "販売の仕事", "avoids": "アパレル販売はもうやりたくない"}),
+    ("b0101", "ホール", {"experience": "ホールを2年", "avoids": "飲食ホールはもう嫌"}),
 ])
 def test_keyword_reason_is_none_unless_a_vocab_word_was_said_and_searched(job_id, keywords, said):
     assert _reason(job_id, keywords, **said) is None
@@ -285,6 +307,16 @@ def test_no_card_gets_a_made_up_reason_for_a_first_timer(state, offline_keywords
                 if "お話" in x or "ご経験" in x:
                     assert (x, card["job_type"]) in {("ホールの仕事をしたいというお話に合います", "飲食ホール"),
                                                      ("コンビニの仕事をしたいというお話に合います", "コンビニ")}
+
+
+def test_reasons_tell_the_job_type_the_user_named_as_experience(state, offline_keywords):
+    # 3 回目の自動レビューの E2E: 職種の名前そのものを経験として話し、keywords にも入れて探した
+    for uid, exp, kw, word in [("u-apparel", "アパレル販売を2年", "アパレル販売", "アパレル販売"),
+                               ("u-office", "オフィス事務を3年", "オフィス事務", "オフィス事務")]:
+        logic.save_preferences(state, uid, {"experience": exp})
+        cards = logic.recommend(state, uid, keywords=kw, job_type=word)["jobs"]
+        assert cards and all(c["job_type"] == word for c in cards)
+        assert all(f"{word}のご経験を活かせます" in c["reasons"] for c in cards), cards
 
 
 def test_attribute_reason_stays_first_and_the_users_words_come_next(state):

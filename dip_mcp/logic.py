@@ -448,7 +448,9 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
 # 理由に入れる本人の話は、決まった語彙(職種の名前の語)だけで作る(task 229)。本人の文の一部を引用すると、否定の文
 # (「夜勤ムリ」「飲食未経験」)から逆の意味や意味の無い理由ができる。日本語の否定を正規表現で見分けきることはできないので、
 # 本人の文は、語彙の語が語の全体で出てくるかだけを見る(2026-10-26 に監督役が決めた。jyoka/tasks#229 のコメント)。
-# 語彙は職種の名前を「・」と文字の種類(漢字・カタカナ・英字)の境で切った語。どの職種にもまたがる広い語は入れない
+# 語彙は職種の名前を「・」と文字の種類(漢字・カタカナ・英字)の境で切った語。どの職種にもまたがる広い語は入れない。
+# 「・」で切った部分の全体(「アパレル販売」「オフィス事務」「イベントスタッフ」)も入れる。本人は職種の名前をそのまま
+# 話すことが多く、切った語だけでは「アパレル販売を2年」のどの語も語の全体にならない(3 回目の自動レビュー)
 _REASON_VOCAB_SKIP = {"スタッフ", "オフィス", "管理", "サービス", "技術"}
 # 本人の前向きの項目と、理由の決まった形。やりたいことを経験より先に見る(経験の項目には「未経験」も入る)
 REASON_SOURCES = {"wants": "{}の仕事をしたいというお話に合います", "experience": "{}のご経験を活かせます"}
@@ -464,10 +466,13 @@ _WORD_CHAR = r"[一-龥々ァ-ヴーA-Za-z]"
 
 
 def reason_vocab(job_type: str) -> list[str]:
-    """職種の名前から、理由に使う語彙の語(「飲食ホール」→ 飲食・ホール、「イベントスタッフ」→ イベント、「企画・PM」→ 企画・PM)。"""
+    """職種の名前から、理由に使う語彙の語(「飲食ホール」→ 飲食ホール・飲食・ホール、「イベントスタッフ」→ イベントスタッフ・イベント、
+    「企画・PM」→ 企画・PM)。「・」で切った部分の全体を先に置く。広い語だけの部分(「事務・管理」の管理)は入れない。"""
+    whole = [p for p in job_type.split("・") if p not in _REASON_VOCAB_SKIP]
     for w in _REASON_VOCAB_SKIP:
         job_type = job_type.replace(w, "・")
-    return [w for w in _SCRIPT_RUN.findall(job_type) if len(w) >= 2]
+    words = [w for w in _SCRIPT_RUN.findall(job_type) if len(w) >= 2]
+    return [p for p in whole if p not in words] + words
 
 
 def _whole_word(word: str, text: str) -> bool:
@@ -479,8 +484,8 @@ def _whole_word(word: str, text: str) -> bool:
 def _keyword_reason(job: BaitoJob, keywords: str | None, said: dict[str, str] | None) -> str | None:
     """本人の話とこの求人のつながりを、決まった形の1文で返す。迷ったら付けない(None)。
     求人の職種の語彙の語(reason_vocab)が、本人の前向きの項目(REASON_SOURCES)と keywords の両方に語の全体であるときだけ。
-    避けたいこと・不安の項目(REASON_NEVER)にその語があれば付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
-    意味が近いだけで選ばれた求人(職種の語が keywords に無い)には付けない。"""
+    避けたいこと・不安の項目(REASON_NEVER)にその語か、その語と重なる語彙の語があれば付けない。経験の項目は、未経験や否定の印(NO_EXPERIENCE)が1つでもあれば見ない。
+    長い語を先に見る(「アパレル販売」が当たれば「アパレル販売のご経験」にする)。意味が近いだけで選ばれた求人(職種の語が keywords に無い)には付けない。"""
     if not keywords or not said:
         return None
     never = " ".join(str(said.get(k) or "") for k in REASON_NEVER)
@@ -488,8 +493,13 @@ def _keyword_reason(job: BaitoJob, keywords: str | None, said: dict[str, str] | 
         text = str(said.get(key) or "")
         if key == "experience" and any(m in text for m in NO_EXPERIENCE):
             continue
-        for w in reason_vocab(job.job_type):
-            if _whole_word(w, keywords) and not _whole_word(w, never) and _whole_word(w, text):
+        vocab = sorted(reason_vocab(job.job_type), key=len, reverse=True)
+        for w in vocab:
+            # 重なる語が避けたいことにあれば、長い語・短い語のどちらでも付けない(「アパレル販売」を当てるときのアパレル、
+            # 「販売」を当てるときのアパレル販売)。語彙はこの求人の職種の語だけなので、スーパー・販売の「販売」は止めない
+            if any(_whole_word(v, never) for v in vocab if v in w or w in v):
+                continue
+            if _whole_word(w, keywords) and _whole_word(w, text):
                 return form.format(w)
     return None
 
