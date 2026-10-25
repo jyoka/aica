@@ -782,6 +782,10 @@ def test_research_with_personal_values_is_refused_without_searching(monkeypatch)
     advisor = ResumeAdvisor(research_client_factory=lambda: client, wage_reference=REF, room=room)
     for call in (lambda: advisor.web_research(query="090-1234-5678 だれの番号"),
                  lambda: advisor.web_research(query="sample.user@example.com の持ち主"),
+                 # 電話番号は書き方によらず断る(括弧の市外局番、+81 で始まる形、全角)
+                 lambda: advisor.web_research(query="(03)1234-5678 だれの番号"),
+                 lambda: advisor.web_research(query="+81 90-1234-5678 の持ち主"),
+                 lambda: advisor.research_company(name="ナイトマート", hint="電話 ０９０−１２３４−５６７８ の店"),
                  lambda: advisor.research_company(name="ナイトマート", hint="自宅のみほん市みほん町1丁目2-3の近くの店"),
                  lambda: advisor.wage_average(area="みほん市3-5に住んでいる", job_type="コンビニ"),
                  # 問いは LLM が書くので、住む言葉が無くても番地まである住所の形なら断る(本人が話した住所を書き写せるため)

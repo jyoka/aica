@@ -29,6 +29,7 @@ from line_runtime import turn
 from line_runtime.agent import PINNED_USER
 from resume_draft.pii import (
     REDACTED,
+    has_pii,
     looks_like_address,
     personal_value,
     redact_personal,
@@ -63,6 +64,81 @@ def test_accept_redacts_phone_mail_and_address_and_marks_the_turn():
     assert t.text == f"{REDACTED}に連絡して渋谷で日中がいい"
     t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"{MAIL} に送って", None)
     assert t.text == f"{REDACTED} に送って"
+
+
+# 電話番号は書き方ではなく、区切り(空白、-、括弧、.)を除いた数字の並びで見る(全角は先に半角にそろえる)。番号はどれも架空
+PHONE_WAYS = ["(03)1234-5678", "+81 90-1234-5678", "+81-90-1234-5678", "090 1234 5678", "０９０−１２３４−５６７８",
+              "（０３）１２３４－５６７８", "+81(0)90-1234-5678", "(+81)3-1234-5678", "＋８１ ９０ １２３４ ５６７８", "090.1234.5678",
+              "( 03 ) 1234 - 5678"]
+# 数字の並びでも電話番号ではないもの(空白で区切った数のすぐ後ろが単位、0 で始まらない、桁が足りない、81 の前に + も括弧も無い、
+# 数字のすぐ後ろの「.」「-」から始まる日付の期間)
+NOT_PHONES = ["時給(1200円)", "年収3000000円", "2026-10-26", "年収3,000,000円", "0120円", "定員 0 100 200 3000人",
+              "81 90 1234 5678", "定員 0 1000 2000 3000人", "１個@100円", "メールは@で",
+              "2001.04.01-2005.03.31まで勤めていました", "2020.04.01 - 2024.03.31"]
+# 電話番号のすぐ後ろに単位の字で始まる語が続くもの。単位とみなさず、番号の所を伏せる
+PHONE_THEN_WORD = [
+    ("連絡先は(03)1234-5678 月曜は休みです", f"連絡先は{REDACTED} 月曜は休みです"),
+    ("+81 90-1234-5678 日中なら出られます", f"{REDACTED} 日中なら出られます"),
+    ("+81-90-1234-5678本人の携帯です", f"{REDACTED}本人の携帯です"),
+    ("090.1234.5678 日中つながります", f"{REDACTED} 日中つながります"),
+    ("(03)1234-5678 分かりにくければメールで", f"{REDACTED} 分かりにくければメールで"),
+    ("電話(03)1234-5678 年末は不在", f"電話{REDACTED} 年末は不在"),
+    ("090.1234.5678日中", f"{REDACTED}日中"),
+    ("(03) 1234 5678日中", f"{REDACTED}日中"),
+    ("+81 90 1234 5678時間外は留守電", f"{REDACTED}時間外は留守電"),
+]
+
+
+@pytest.mark.parametrize("phone", PHONE_WAYS)
+def test_phone_numbers_are_redacted_however_they_are_written(phone):
+    said = f"連絡は{phone}にお願いします"
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", said, None)
+    assert t.text == f"連絡は{REDACTED}にお願いします" and t.redacted, phone
+    # 後ろに別の数が続いても、電話番号の所は伏せる
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"電話は {phone} 2回かけた", None)
+    assert t.text == f"電話は {REDACTED} 2回かけた", phone
+    # 本人の値の照合(dip の保存)と、調べものの問いも同じ決まりで当たる
+    assert has_pii(said) and personal_value(said), phone
+    assert has_pii(f"調べること: {phone} だれの番号"), phone
+
+
+@pytest.mark.parametrize(("said", "sent"), PHONE_THEN_WORD)
+def test_a_word_after_a_phone_number_does_not_let_it_through(said, sent):
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", said, None)
+    assert t.text == sent and t.redacted, said
+    assert has_pii(said) and personal_value(said), said
+
+
+def test_a_number_with_a_unit_after_a_phone_number_is_kept():
+    # 空白で区切った別の数のすぐ後ろが単位なら、人数や回数として残す
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", "電話は 090 1234 5678 3人で使っています", None)
+    assert t.text == f"電話は {REDACTED} 3人で使っています"
+
+
+@pytest.mark.parametrize("text", NOT_PHONES)
+def test_numbers_that_are_not_phone_numbers_are_kept(text):
+    t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"{text}で探して", None)
+    assert t.text == f"{text}で探して" and not t.redacted, text
+    assert not has_pii(text), text
+
+
+def test_mail_addresses_are_redacted_with_fullwidth_at_and_without_a_dot():
+    for mail in ("sample.user@example.com", "sample_user+job@example.co.jp", "ｓａｍｐｌｅ＠ｅｘａｍｐｌｅ．ｃｏｍ",
+                 "sample-user@example", "ｓａｍｐｌｅ＠ｅｘａｍｐｌｅ"):
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"メールは {mail} です", None)
+        assert t.text == f"メールは {REDACTED} です", mail
+        assert has_pii(f"調べること: {mail} の持ち主"), mail
+
+
+def test_a_mail_address_written_right_next_to_japanese_redacts_only_the_address():
+    # 名前とドメインに、かなや漢字は含めない。前後の文(検索の条件)は残す
+    for said, sent in (("連絡はsample@example.comで新宿のカフェを探して", f"連絡は{REDACTED}で新宿のカフェを探して"),
+                       ("連絡はsample@example.comで新宿三丁目5分以内のカフェを探して",
+                        f"連絡は{REDACTED}で新宿三丁目5分以内のカフェを探して"),
+                       ("メールはsample@example.comです", f"メールは{REDACTED}です"),
+                       ("メールはｓａｍｐｌｅ＠ｅｘａｍｐｌｅ．ｃｏｍです", f"メールは{REDACTED}です")):
+        t = turn.accept(DEPS, "w-0123456789abcdef", "message", said, None)
+        assert t.text == sent and t.redacted, said
 
 
 # 求人を探すときのふつうの言い方。どれも伏せない(伏せると検索の条件が消える)
