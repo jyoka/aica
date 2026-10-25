@@ -153,6 +153,7 @@ def test_voice_start_counts_against_the_daily_quota(tmp_path, monkeypatch):
         r = client.post("/api/voice/start", json={"user_id": user})
         assert r.status_code == 200 and r.json()["token"]  # 1回目は発行(1ターン消費)
         assert server.app.state.quota.used(user) == 1
+        server.app.state.voice_rooms.release(user, r.json()["room"])  # 面談が終わった(同時に開けるのは 1 部屋まで)
         r = client.post("/api/voice/start", json={"user_id": user})
         assert r.status_code == 429 and r.json()["detail"] == LIMIT_MESSAGE
         # テキストの会話も同じ枠なので、もう使えない

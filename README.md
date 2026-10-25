@@ -73,6 +73,9 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - 2 つのプロセスは、リポジトリ直下で同じ venv と同じ `.env` を使います
 - `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
+- 1 人が開ける音声相談は同時に 1 つまでです(Web プロセスを再起動した直後は、再起動の前から続いている相談を数えません)。
+  音声ワーカーが同時に受ける相談は `VOICE_RESUME_MAX_JOBS`(既定 4)までです。
+  ワーカーは、相談がなくても同じ数のプロセスを温めておきます(`dev` でも。1 つ約 200MB)
 
 ### Render で公開する
 
@@ -295,11 +298,13 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
-| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
+| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
 | `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
+| `VOICE_RESUME_MAX_JOBS` | 4 | 音声ワーカーが同時に受ける相談の数。超えた部屋にはアドバイザーが入らない(`dev` でも) | 不可 |
+| `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | 2000 | 相談 1 つのプロセスのメモリの上限(MB)。超えたらその相談を止める。0 で上限なし | 不可 |
 | `VOICE_RESUME_*`(モデル、ボイス、ターンの判定) | [LLD の 7.1](docs/architecture/lld.md#71-音声の部品の設定) | STT、LLM、読み上げの設定 | 不可 |
 
 ## 文書

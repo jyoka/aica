@@ -411,9 +411,10 @@ flowchart LR
 | `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` のファイルを消す。無ければ 404 |
 | `DELETE /api/profile/saved/{job_id}` | `profile_unsave` | Cookie + 書き込みの枠 | - | 保存の取り消し、知らせ |
 | `POST /api/profile/forget` | `profile_forget` | Cookie | - | 「すべて消す」(4.6) |
-| `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`)。LiveKit の設定が無ければターンを使わずに 503、上限なら 429 |
+| `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
 | `POST /api/voice/wait` | `voice_wait` | 本人 | - | -(最長 `VOICE_WAIT_MAX` 30 秒、既定 25 秒) |
-| `POST /api/voice/result` | `voice_result_in` | 内部の鍵 | - | 音声相談の結果、会話にエージェントの返信を足す。「すべて消す」の前の部屋なら 410。下書きが `DRAFT_MAX`(2 万字)を超えたら 422 |
+| `POST /api/voice/result` | `voice_result_in` | 内部の鍵 | - | 音声相談の結果、会話にエージェントの返信を足す。部屋はまだ終わったとみなさない。「すべて消す」の前の部屋なら 410。下書きが `DRAFT_MAX`(2 万字)を超えたら 422 |
+| `POST /api/voice/session` | `voice_session` | 内部の鍵 | - | ワーカーのジョブの始まり(`joined`)と終わり(`ended`)。終わっていない部屋の記録(メモリだけ。`line_runtime/voice_rooms.py`)。`joined` でその人に別の部屋があれば `allowed: false` を返し、ワーカーはそのジョブを止める |
 | `POST /api/resume/upload` | `resume_upload` | 本人 | 1 | 読み取り結果、費用台帳。形式が違えば 400、10MB を超えたら 413、会話が替わっていれば 409、上限なら 429、API の失敗は 502 |
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
@@ -1643,8 +1644,10 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
 | 結果を返す先 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` |
 | 出力先 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume/` |
-| 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消す(`agent.SessionGuard`) |
+| 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消し、ジョブを終える(`agent.SessionGuard`。ジョブの終わりにトークへ `ended` を知らせる) |
 | 1 回の相談の web の調べもの | `VOICE_RESUME_MAX_WEB_SEARCHES` | 5 回(`web_research`、`wage_average`、`research_company` の合計) |
+| 同時に受ける相談の数 | `VOICE_RESUME_MAX_JOBS` | 4(`load_fnc` が動いているジョブの数 × 単位を返し、`load_threshold` = `VOICE_RESUME_MAX_JOBS` × 単位で満員を報告する。単位は `VOICE_RESUME_MAX_JOBS` 以上の最小の 2 の累乗の逆数(4 なら 1/4、6 なら 1/8)。1 / `VOICE_RESUME_MAX_JOBS` だと、6 などのとき足し算の丸めで 1 件多く受ける。温めておくプロセスも 4 つにする(`num_idle_processes`。ジョブが 0 個の間、livekit-agents は起動前の依頼 1 件の負荷を `load_threshold` / `num_idle_processes` と見積もるので、`dev` の既定の 0 のままだと、最初のジョブが起動するまでの数秒に来た 2 件目を断る)。`dev` でも同じ。LiveKit Cloud の上でワーカーを動かすときは、livekit-agents が `load_fnc` と `load_threshold` を既定に戻すので効かない) |
+| 相談 1 つのメモリの上限 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | 2000 MB(超えたらそのジョブを止める。0 で上限なし) |
 
 STT は聞き間違い(「時給の下限」が「地球の加減」になるなど)を比べて nova-3 と keyterm に決めました(旧リポジトリの task 37、
 `scripts/voice/eval_stt.py`)。
@@ -1760,6 +1763,12 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`::test_a_rejected_id_token_is_nobody_and_never_falls_back_to_the_web_user`)。LINE が 200 で答えても、発行元、`aud`、期限、`sub` の形を
     もう一度見ます。LIFF の設定が無ければ `/liff/line/…` は 404 で、ほかは今までどおりです。殻の画面はブラウザで、偽物の LIFF SDK を使って
     動かします(`::test_the_liff_page_in_a_browser`)
+24. 1 人が開ける音声相談の部屋は同時に 1 つまでで、2 つ目はターンを使わずに 409 です。ワーカーがジョブの終わりを知らせるか、
+    だれも入らないまま接続トークンの期限(+1 分)が過ぎるか、入ってから 15 分(相談の長さの上限 10 分と、締めの返答を待つ時間に
+    余裕を足したもの)が過ぎたら、次を開けます。結果が届いただけでは開けません。
+    古い接続トークンで終わった部屋に入り直しても、その人に別の部屋があれば、ワーカーは相談を始めずにジョブを止めます。本人が抜けて
+    セッションが閉じたら、ジョブも終えます。音声ワーカーは `dev` でも同時に `VOICE_RESUME_MAX_JOBS` 個までしか受けません
+    (`tests/test_voice_concurrency.py`)。記録は Web プロセスのメモリだけで、再起動の前から続いているジョブは数えません
 
 ## 10. テストと評価の仕組み
 

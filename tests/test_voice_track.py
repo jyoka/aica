@@ -451,6 +451,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
     assert summary["consultation_summary"] is None and summary["stated_preferences"] == {}
 
     # 負例: 消した後に始めた面談の結果は、これまでどおり届く
+    server.app.state.voice_rooms.release(uid, room)  # 前の面談のジョブが終わった(同時に開けるのは 1 部屋まで)
     new_room = client.post("/api/voice/start", json={"user_id": uid}).json()["room"]
 
     async def finalize(a):
