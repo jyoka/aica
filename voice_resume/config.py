@@ -84,6 +84,13 @@ RESULTS_DIR = ROOT / "voice_resume" / "results"
 
 LIVEKIT_ROOM_PREFIX = "voice-resume"
 
+# --- ワーカーの同時ジョブ数とメモリ(agent.worker_options)---
+# 部屋ごとに、ジョブのプロセスと dip MCP の子プロセスが 1 つずつできる。Web プロセスと同じマシンを圧迫しないように、
+# 同時に受けるジョブを MAX_JOBS までにする(dev で起動しても満員を報告する)。1 人が開ける部屋は Web 側で同時に 1 つまで
+MAX_JOBS = int(os.environ.get("VOICE_RESUME_MAX_JOBS", "4"))
+# ジョブのプロセスのメモリの上限(MB)。超えたらそのジョブを止める(0 で上限なし。警告は livekit-agents の既定の 1000MB)
+JOB_MEMORY_LIMIT_MB = float(os.environ.get("VOICE_RESUME_JOB_MEMORY_LIMIT_MB", "2000"))
+
 
 def load_env() -> None:
     """リポジトリ直下の .env を os.environ へ(既存値は上書きしない)。"""

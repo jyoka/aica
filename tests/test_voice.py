@@ -109,6 +109,13 @@ def post_result(client, body: dict):
     return TestClient(client.app).post("/api/voice/result", json=body, headers=WORKER)
 
 
+def post_session(client, body: dict):
+    """音声ワーカーと同じく、共有鍵を付けて部屋の始まり・終わりを知らせる。"""
+    from fastapi.testclient import TestClient
+
+    return TestClient(client.app).post("/api/voice/session", json=body, headers=WORKER)
+
+
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
            "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
 
@@ -137,6 +144,8 @@ def test_voice_start_issues_a_token_only_for_the_browsers_own_user(client, livek
         claims = jwt.decode(body["token"], options={"verify_signature": False})
         assert claims["sub"] == user and participant_user_id(type("P", (), {"metadata": claims["metadata"]})()) == user
         assert 0 < claims["exp"] - claims["nbf"] <= 10 * 60  # 既定の6時間ではなく数分
+        # 同じ人の部屋は同時に 1 つまで(tests/test_voice_concurrency.py)。ワーカーが終わりを知らせてから次を始める
+        post_session(client, {"user_id": user, "room": body["room"], "state": "ended"})
 
     other = TestClient(client.app)  # 別のブラウザ
     other.get("/")
