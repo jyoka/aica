@@ -371,8 +371,11 @@ def test_the_consultation_summary_drops_addresses(tmp_path):
 
 
 @pytest.mark.parametrize("value,personal", [
-    ("渋谷区神南1-2-3", True), ("みほん町３－５", True), ("みほん市みほん町3丁目", True), ("090-1234-5678", True),
-    ("taro@example.com", True), ("年収400-500万円", False), ("3-6か月以内", False), ("2026-10-01から", False),
+    ("自宅は渋谷区神南1-2-3", True), ("みほん町３－５に住んでいます", True), ("住所はみほん市みほん町3丁目", True),
+    ("090-1234-5678", True), ("taro@example.com", True), ("年収400-500万円", False), ("3-6か月以内", False),
+    ("2026-10-01から", False),
+    # 住む言葉の無い地名・番地の形は住所とみなさない(task 211。駅の名前や数の幅と形だけでは見分けられないため)
+    ("渋谷区神南1-2-3", False), ("みほん市みほん町3丁目", False),
 ])
 def test_one_address_rule_for_preferences_summary_form_and_track(tmp_path, value, personal):
     """希望の保存、まとめを直す、フォームの続き、雇用区分の根拠が、同じ決まり(resume_draft/pii.py)で個人情報を見分ける。"""
@@ -395,8 +398,12 @@ def test_address_scrubbing_stays_fast_on_a_long_reason(tmp_path):
 
     state = State(tmp_path / "state.json")
     t = time.perf_counter()
-    rec = logic.record_outcome(state, "sim-new", "consult", "あ" * 20000 + "1丁目" + "い" * 20000, 0.5)["recorded"]
+    rec = logic.record_outcome(state, "sim-new", "consult", "あ" * 20000 + "1丁目に住む" + "い" * 20000, 0.5)["recorded"]
     assert time.perf_counter() - t < 1.0 and rec["reason"] == "[個人情報を削除]"
+    # 文と住所らしい所がたくさんあっても(文ごとに住む言葉を探す)
+    t = time.perf_counter()
+    rec = logic.record_outcome(state, "sim-new", "consult", "1丁目。家は2丁目。" * 3000, 0.5)["recorded"]
+    assert time.perf_counter() - t < 1.0 and rec["reason"] == "1丁目。[個人情報を削除]。" * 3000
 
 
 def test_the_voice_worker_sends_the_shared_key(monkeypatch):

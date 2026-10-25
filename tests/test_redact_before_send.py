@@ -5,7 +5,8 @@
 - system prompt に LINE のユーザーIDを載せない。ツールの line_user_id は PinUserMiddleware が会話のユーザーに固定する
 - dip のツールの結果にもユーザーIDは入らない(LLM に届かない)
 - 音声相談の調べものの問いに個人情報らしい値があれば、web で調べずに断る
-- 伏せても、求人の検索と会話の流れは変わらない(ふつうの条件の言い方は伏せない)
+- 住所らしい所は、同じ文に住んでいる所を言う言葉があるときだけ伏せる。電話番号とメールアドレスはいつも伏せる
+- 伏せても、求人の検索と会話の流れは変わらない(ふつうの条件の言い方、駅の名前、丁目は伏せない)
 
     ./.venv/bin/python -m pytest -q tests/test_redact_before_send.py
 
@@ -46,19 +47,25 @@ def _no_personal(text: str) -> bool:
 def test_accept_redacts_phone_mail_and_address_and_marks_the_turn():
     t = turn.accept(None, "w-0123456789abcdef", "message", SAID, None)
     assert t.text == SENT and t.redacted is True
-    # 全角で書いても伏せる(照合の前に半角にそろえる決まりは resume_draft.pii と同じ)。電話番号の形は住所の形
-    # (1-2-3)にも当たるので、区切り(空白・句読点)までの語ごと伏せる。前の文(条件)は残る
+    # 全角で書いても伏せる(照合の前に半角にそろえる決まりは resume_draft.pii と同じ)。電話番号は住む言葉が無くても伏せる。
+    # 電話番号の形は住所の形(1-2-3)にも当たるが、住む言葉の無い文では住所とみなさないので、電話番号の所だけを伏せる
     t = turn.accept(None, "w-0123456789abcdef", "message", "渋谷で働きたい。電話は０９０－１２３４－５６７８です", None)
-    assert t.text == f"渋谷で働きたい。{REDACTED}" and t.redacted
+    assert t.text == f"渋谷で働きたい。電話は{REDACTED}です" and t.redacted
+    t = turn.accept(None, "w-0123456789abcdef", "message", f"{PHONE}に連絡して渋谷で日中がいい", None)
+    assert t.text == f"{REDACTED}に連絡して渋谷で日中がいい"
+    t = turn.accept(None, "w-0123456789abcdef", "message", f"{MAIL} に送って", None)
+    assert t.text == f"{REDACTED} に送って"
 
 
 # 求人を探すときのふつうの言い方。どれも伏せない(伏せると検索の条件が消える)
 ORDINARY = [
     "渋谷で日中", "時給1200円以上で週3-4日", "10時-18時で働きたい", "2026-11-01から働けます", "年収400-500万円",
     "新宿区で3-6か月", "1日8時間まで", "土日祝休みで残業は月10時間まで", "正社員で年収600万以上", "中野駅の近く",
-    "まず相談する", "今はいい", "東京都内のコンビニ", "新宿三丁目駅の近くで働きたい",
-    # AI は求人の最寄り駅(「新宿三丁目」)をそのまま言う。本人がその言い方を返しても伏せない
-    "新宿三丁目の飲食ホールが気になります", "新宿三丁目で働きたい",
+    "まず相談する", "今はいい", "東京都内のコンビニ", "新宿三丁目駅の近くで働きたい", "渋谷駅の近くで",
+    # AI は求人の最寄り駅(「新宿三丁目」)をそのまま言う。住む言葉の無い地名、駅、丁目、数の幅は伏せない
+    "新宿三丁目の飲食ホールが気になります", "新宿三丁目で働きたい", "新宿三丁目5分以内で探して", "新宿三丁目の5-10人の職場",
+    "新宿三丁目18時から働ける", "新宿三丁目1200円以上", "新宿三丁目 18-22", "大井町3-4人の職場", "西新宿2-8-1の近くの店",
+    "番地は言いたくないです", "住み込みで新宿三丁目の求人", "住宅手当がある新宿三丁目の求人",
 ]
 
 
@@ -80,8 +87,10 @@ def test_too_long_is_checked_on_what_the_user_wrote_and_on_what_is_sent():
     with pytest.raises(turn.BadTurn):
         turn.accept(None, "w-0123456789abcdef", "message", PHONE * 500, None)
     # 伏せると長くなる(「番地」の 2 字が [個人情報を削除] の 9 字に)。送る文も上限を超えない
+    text = "家は" + " 番地" * 1666
+    assert len(text) <= turn.MAX_TEXT_CHARS
     with pytest.raises(turn.BadTurn):
-        turn.accept(None, "w-0123456789abcdef", "message", "番地 " * 1666, None)
+        turn.accept(None, "w-0123456789abcdef", "message", text, None)
 
 
 def test_redaction_repeats_until_nothing_is_left():
@@ -92,32 +101,38 @@ def test_redaction_repeats_until_nothing_is_left():
     assert redact_personal(SENT) == SENT
 
 
-def test_station_names_with_chome_are_kept_but_addresses_are_not():
-    """「新宿三丁目駅」(求人の最寄り駅にある)は伏せない。丁目の住所は伏せる。"""
-    t = turn.accept(None, "w-0123456789abcdef", "message", "新宿三丁目駅の近く。家は 渋谷区神南1丁目2-3", None)
-    assert t.text == f"新宿三丁目駅の近く。家は {REDACTED}"
-    assert any(j.station == "新宿三丁目駅" for j in load_jobs().values())
-    assert any(j.station == "新宿三丁目" for j in load_jobs().values())
-    # 駅の名前を含む長い地名(「西新宿三丁目」は駅の名前ではない)と、番地が続くものは住所として伏せる
-    for text in ("西新宿三丁目に住んでいます", "新宿区新宿三丁目に住んでいます", "新宿三丁目5-1に住んでいます",
-                 "新宿三丁目２番に住んでいます"):
-        t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
-        assert t.text == REDACTED and t.redacted, text
-    # 丁目と番地の間に「の」や空白、読点が入っても、番地まで丸ごと伏せる(駅の名前に見えても住所)
-    for text in ("新宿三丁目の5-1に住む", "新宿三丁目 5-1に住む", "新宿三丁目、5-1", "新宿三丁目の５番地",
-                 "渋谷区神南1丁目 2-3に住む", "新宿三丁目の一番地", "新宿三丁目一番地", "新宿三丁目の十一番に住む"):
+def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
+    """住所らしい所は、同じ文に住んでいる所を言う言葉(「住んでいる」「住所」「在住」「自宅」「家は」「引っ越し」など)が
+    あるときだけ伏せる。駅の名前や数の幅は住所と同じ形になることがあり、形だけでは見分けられないため。"""
+    for text in ("新宿三丁目に住んでいます", "住所は新宿区西新宿2-8-1です", "西新宿三丁目に住んでいます",
+                 "新宿三丁目5-1に住んでいます", "渋谷区神南1丁目2-3在住", "自宅は渋谷区神南1-2-3",
+                 "実家はみほん市みほん町3丁目", "みほん町３－５に引っ越しました", "１－２－３に住む"):
         t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
         assert t.text == REDACTED and t.redacted, text
         assert personal_value(text), text
-    # 駅の名前の後ろに番地でないものが続くときは伏せない
-    # 「一番」(いちばん)と、人数や年代などの幅も番地ではない
-    for text in ("新宿三丁目から徒歩5分", "新宿三丁目の飲食ホールが気になります", "新宿三丁目の5番出口で",
-                 "新宿三丁目、2号店で働きたい", "新宿三丁目の 3-6か月の短期",
-                 "新宿三丁目の一番近くで探したい", "新宿三丁目、一番人気の求人を見せて", "新宿三丁目 一番時給が高いのは？",
-                 "新宿三丁目一番近い店", "新宿三丁目の1番人気", "新宿三丁目、3-4人で働く職場",
-                 "新宿三丁目の 10-20代が多い職場", "新宿三丁目、2-3名の募集", "新宿三丁目の 1-2回の面接"):
+    # 伏せるのは住む言葉と同じ文の住所らしい所だけ。ほかの文の条件は残る
+    t = turn.accept(None, "w-0123456789abcdef", "message", "新宿三丁目5分以内で探して。家は 渋谷区神南1丁目2-3 です", None)
+    assert t.text == f"新宿三丁目5分以内で探して。家は {REDACTED} です"
+    t = turn.accept(None, "w-0123456789abcdef", "message", "住所は、みほん市みほん町1丁目。渋谷駅の近くで働きたい", None)
+    assert t.text == f"住所は、{REDACTED}。渋谷駅の近くで働きたい"
+    # 見出しだけの行(「住所:」「【住所】」「自宅」)の後ろの行の住所も伏せる。連絡先を貼るときによくある書き方
+    for text, said in (("住所:\n東京都みほん区みほん町1-2-3", f"住所:\n{REDACTED}"),
+                       ("【住所】\nみほん市みほん町1-2-3", f"【住所】\n{REDACTED}"),
+                       ("自宅\nみほん市みほん町3丁目", f"自宅\n{REDACTED}"),
+                       ("現住所：\n\nみほん市みほん町1-2-3", f"現住所：\n\n{REDACTED}"),
+                       ("住所\n〒100-0001\nみほん市みほん町3丁目", f"住所\n〒100-0001\n{REDACTED}"),
+                       ("住所:\nみほん市みほん町1-2-3\n新宿三丁目5分以内で探して",
+                        f"住所:\n{REDACTED}\n新宿三丁目5分以内で探して")):
         t = turn.accept(None, "w-0123456789abcdef", "message", text, None)
-        assert t.text == text and not t.redacted, text
+        assert t.text == said and t.redacted, text
+        assert personal_value(text), text
+    # ふつうの文の改行は、次の行に効かせない
+    text = "住所は言いたくないです\n新宿三丁目5分以内で探して"
+    assert turn.accept(None, "w-0123456789abcdef", "message", text, None).text == text
+    assert not personal_value(text)
+    # 住む言葉の無い文は、地名、駅、丁目、番地の形でも伏せない(personal_value も同じ)
+    for text in ORDINARY:
+        assert not personal_value(text), text
 
 
 def test_every_job_station_is_kept_with_or_without_eki():

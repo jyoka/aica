@@ -1,7 +1,7 @@
 """個人情報の決まり。読み取り(resume_intake)、下書き(voice_resume)、dip(dip_mcp)が同じものを使う。
 
 - 探す: has_pii / redact_pii(PII_VALUE。電話番号とメールアドレス)。トークの発言、相談の記録、保存する値の照合に使う
-- 住所: ADDRESS_LIKE / address_spans(住所らしい所)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
+- 住所: ADDRESS_LIKE / address_spans(住所らしい所。住む言葉 RESIDENCE_WORDS と同じ文のときだけ)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
   文の中で伏せるのは redact_personal(同じ 3 つ)で決める。dip の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
   トークの発言(line_runtime.turn.accept)と、音声相談の調べものの問い(voice_resume.advisor)も同じ 3 つを伏せる・断る
 - 消す: scrub_pii(SCRUB_PATTERNS。電話番号、メール、郵便番号)。Resume Draft の文字列から機械的に落とす
@@ -11,8 +11,8 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from collections.abc import Callable
-from functools import cache
 
 # 項目名に関係なく、値に含まれていたら個人情報とみなすもの(電話番号・メールアドレス)。
 # 電話番号は、区切り(- や空白・括弧)のある形か、0 で始まる10〜11桁だけ。数字の途中の 0 から始まる並び
@@ -39,14 +39,25 @@ _PII_FOLD = str.maketrans(
 # 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
 # 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える。
 # 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)。
-# 「丁目」のすぐ後ろが「駅」なら駅の名前(「新宿三丁目駅」)で、住所ではない(トークで伏せると求人の検索の条件が消える)。
-# 「駅」の付かない形でも、求人データの最寄り駅の名前(「新宿三丁目」)そのものなら住所に数えない(_is_station_choume)。
-# AI は求人の最寄り駅をそのまま言うので、本人がそれを返すと発言が消えてしまう。personal_value / address_spans はこれも見る
+# この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)
 ADDRESS_LIKE = re.compile(
     r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
     r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
-    r"|丁目(?!駅)|番地"
+    r"|丁目|番地"
 )
+# 住んでいる所を言う言葉。ADDRESS_LIKE の当たりは、同じ文にこれがあるときだけ住所とみなす。
+# 駅の名前(「新宿三丁目」)や求人の勤務地、数の幅(「5-10人」)は ADDRESS_LIKE と同じ形になることがあり、
+# 形だけで住所と見分けると、求人の検索の条件(「新宿三丁目5分以内で探して」)が消えるため(docs/architecture/lld.md 1.8)。
+# 「住み込み」は働き方なので数えない。「住宅」(住宅手当)も数えない
+RESIDENCE_WORDS = re.compile(r"住所|住居|居住|在住|住ん|住む|住み(?!込)|住まい|すんで|すまい|自宅|実家|家は|引っ越|引越|転居")
+# 文の終わり(住む言葉を探す範囲の区切り)
+_SENTENCE_END = re.compile(r"[。!?！？\n]")
+# 見出しだけの行(「住所:」「【住所】」「自宅」)と、郵便番号だけの行。連絡先を貼るときは見出しと住所を別の行に書くので、
+# 見出しだけの行の住む言葉は、改行の後ろの行にも効かせる(郵便番号だけの行と空の行は飛ばして、その次の行まで)。
+# ふつうの文(「住所は言いたくないです」)は見出しではないので、次の行には効かせない
+_LABEL_MARKS = r"\s【】\[\]「」『』()（）<>＜＞〈〉《》:：・*＊■□●○◆◇"
+_LABEL_LINE = re.compile(rf"[{_LABEL_MARKS}]*(?:現|ご|お)?(?:{RESIDENCE_WORDS.pattern})+地?[{_LABEL_MARKS}]*")
+_POSTAL_LINE = re.compile(rf"[{_LABEL_MARKS}]*〒?\s*\d{{3}}-\d{{4}}[{_LABEL_MARKS}]*")
 _WORD_SEP = set("、。,.!?！？「」()（）")
 # redact_pii が置き換えをくり返す回数の上限(ふつうは 1〜2 回で当たる所が無くなる)
 _REDACT_PASSES = 8
@@ -63,49 +74,24 @@ SCRUB_PATTERNS = [
 ]
 
 
-# 駅の名前の前にこれが付いていたら、もっと長い地名の一部(「西新宿三丁目」)なので駅の名前とみなさない
-_NAME_CHAR = re.compile(r"[\u3005\u30a0-\u30ff\u4e00-\u9fff]")
-# 駅の名前の後ろにこれが続いたら番地(「新宿三丁目5-1」「新宿三丁目5番」)なので駅の名前とみなさない。
-# 「一番」(いちばん。「新宿三丁目一番近い」)は番地ではない(「一番地」は番地)
-_NUMBER_CHAR = re.compile(r"(?!一番(?!地))[\d\-一二三四五六七八九十〇番]")
-# 数の幅の後ろに続く単位。これが続く「3-6か月」「3-4人」「10-20代」は幅で、番地ではない
-_RANGE_UNIT = r"万千円かカヵヶケ年月日時分歳才%％人名代回件社位割倍週本個枚点"
-# 丁目の後ろに区切り(空白・読点・カンマ・「の」)を挟んで続く番地(「新宿三丁目の5-1」「新宿三丁目 5番地」「新宿三丁目、2号」)。
-# 照合は fold_pii の後。「5番目」「5番出口」「1番人気」「2号店」と、幅(「3-6か月」「3-4人」)と、「一番」(「一番近く」)は番地ではない
-_LOT_AFTER = re.compile(
-    rf"[\s、,の]+(?:\d+-\d+(?![-\d{_RANGE_UNIT}])"
-    r"|(?!一番(?!地))[\d一二三四五六七八九十〇]+(?:番地|番(?![目出線人])|号(?![店館機線車])))"
-)
-
-
-@cache
-def _choume_stations() -> tuple[str, ...]:
-    """求人データの最寄り駅のうち「丁目」を含む名前(「駅」を外した形。「新宿三丁目」)。長い順。"""
-    # dip_mcp は resume_draft.pii を使うので、使うときに読む
-    from dip_mcp.data import load_jobs
-
-    names = {j.station.removesuffix("駅") for j in load_jobs().values()}
-    return tuple(sorted((n for n in names if "丁目" in n), key=len, reverse=True))
-
-
-def _is_station_choume(text: str, m: re.Match) -> bool:
-    """ADDRESS_LIKE の「丁目」の当たりが、求人の最寄り駅の名前そのものか。前に地名の文字が付かず
-    (「西新宿三丁目」は住所)、後ろに番地が続かない(「新宿三丁目5-1」「新宿三丁目の5-1」は住所)ときだけ駅の名前とみなす。"""
-    if m.group() != "丁目":
-        return False
-    end = m.end()
-    if _NUMBER_CHAR.match(text, end) or _LOT_AFTER.match(text, end):
-        return False
-    for name in _choume_stations():
-        start = end - len(name)
-        if start >= 0 and text[start:end] == name and (start == 0 or not _NAME_CHAR.match(text[start - 1])):
-            return True
-    return False
-
-
 def _address_matches(text: str) -> list[re.Match]:
-    """ADDRESS_LIKE に当たった所のうち、求人の最寄り駅の名前を除いたもの。"""
-    return [m for m in ADDRESS_LIKE.finditer(text) if not _is_station_choume(text, m)]
+    """ADDRESS_LIKE に当たった所のうち、住んでいる所を言う言葉(RESIDENCE_WORDS)と同じ文にあるもの。
+    見出しだけの行(_LABEL_LINE)の後ろの行も、住む言葉と同じ文とみなす(「住所:\nみほん市みほん町1-2-3」)。
+    文ごとに住む言葉があるかを先に決め、当たった所の文は二分探索で引く(長い文でも時間がかからない)。"""
+    ends = [m.end() for m in _SENTENCE_END.finditer(text)] + [len(text)]
+    lives: list[bool] = []
+    carry = False  # 前の行が見出しだけの行(またはその後ろの郵便番号だけの行、空の行)
+    for start, end in zip([0, *ends[:-1]], ends):
+        line_end = text[end - 1:end] == "\n"
+        body = text[start:end - 1] if line_end else text[start:end]
+        live = carry or RESIDENCE_WORDS.search(body) is not None
+        lives.append(live)
+        carry = line_end and (
+            (live and (_LABEL_LINE.fullmatch(body) is not None or _POSTAL_LINE.fullmatch(body) is not None))
+            or (carry and not body.strip()))
+    if not any(lives):
+        return []
+    return [m for m in ADDRESS_LIKE.finditer(text) if lives[bisect_right(ends, m.start())]]
 
 
 def fold_pii(text: str) -> str:
@@ -119,15 +105,14 @@ def has_pii(text: str) -> bool:
 
 
 def personal_value(text: str) -> bool:
-    """本人の値として受け取らない、個人情報らしい値か(電話番号・メールアドレス・住所らしい所を含む)。"""
+    """本人の値として受け取らない、個人情報らしい値か(電話番号・メールアドレスか、住む言葉と一緒の住所らしい所を含む)。"""
     return has_pii(text) or bool(_address_matches(fold_pii(text)))
 
 
 def address_spans(text: str) -> list[tuple[int, int]]:
-    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所(求人の最寄り駅の名前を除く)を含む、区切り(空白・句読点・括弧)までの語
-    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。区切りの後ろに番地が続けば(_LOT_AFTER。
-    「新宿三丁目 5-1に住む」)、その語まで広げる。正規表現で前後の語まで取ると長い文で
-    時間がかかるので、当たった所から区切りまで広げる。"""
+    """文の中の住所らしい所の範囲: 住んでいる所を言う言葉と同じ文で ADDRESS_LIKE に当たった所を含む、
+    区切り(空白・句読点・括弧)までの語(「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。
+    正規表現で前後の語まで取ると長い文で時間がかかるので、当たった所から区切りまで広げる。"""
     def sep(ch: str) -> bool:
         return ch.isspace() or ch in _WORD_SEP
 
@@ -140,10 +125,6 @@ def address_spans(text: str) -> list[tuple[int, int]]:
             start -= 1
         while end < len(text) and not sep(text[end]):
             end += 1
-        while lot := _LOT_AFTER.match(text, end):
-            end = lot.end()
-            while end < len(text) and not sep(text[end]):
-                end += 1
         spans.append((start, end))
     return spans
 

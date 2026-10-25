@@ -61,7 +61,8 @@ def test_new_items_are_saved_and_show_up_in_the_summary(tmp_path):
 
 @pytest.mark.parametrize("key", sorted(logic.PREFERENCE_KEYS))
 @pytest.mark.parametrize("value", ["連絡は090-1234-5678まで", "09012345678", "taro@example.com に送って",
-                                   "みほん市1-2-3", "みほん町3丁目", "5番地の近く", "みほん町3-5のあたり",
+                                   "みほん市1-2-3に住んでいます", "自宅はみほん町3丁目", "住所は5番地の近く",
+                                   "みほん町3-5のあたりに在住",
                                    "03-12345678", "090-1234-5678,よろしく"])
 def test_personal_info_is_rejected_for_every_item(tmp_path, key, value):
     state = _state(tmp_path)
@@ -74,6 +75,8 @@ def test_personal_info_is_rejected_for_every_item(tmp_path, key, value):
     ("min_annual_salary", "年収400-500万円"), ("start_timing", "3-6か月以内"), ("start_timing", "2026-09-30に入社したい"),
     ("concerns", "ブランクが1-2年あって不安"), ("time_band", "10-18時"), ("days_per_week", "週3-4日"),
     ("min_wage", "時給1000-1200円"), ("area", "みほん区の駅から1-2分"),
+    # 住む言葉(「住んでいる」「自宅」など)の無い地名・番地の形も住所とみなさない(task 211)
+    ("area", "みほん町3丁目"), ("area", "みほん市1-2-3の近く"),
 ])
 def test_ranges_and_dates_are_not_mistaken_for_an_address(tmp_path, key, value):
     """幅や日付の「数字-数字」は住所ではない(番地の「1-2-3」「みほん町3-5」だけを弾く)。"""
