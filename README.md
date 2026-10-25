@@ -316,5 +316,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | 決めたことの記録 | [ADR-0001](docs/adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](docs/adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](docs/adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](docs/adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](docs/adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](docs/adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
+| 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](docs/design/privacy.md) |
+| 利用規約とプライバシーポリシーの下書き(公開前に人が確認する) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](docs/deploy/render.md) |
