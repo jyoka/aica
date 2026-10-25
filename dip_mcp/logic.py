@@ -114,13 +114,16 @@ def _track_summary(user: dict) -> dict:
 
 ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。"
                "blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。"
+               "arcade_draft の view_url は下書きの画面の URL(本人が数字を入れて直す画面)。"
+               "「下書きを見る」のボタンは、この URL だけをそのまま buttons に使う(view_url が無ければボタンを出さない)。"
                "arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う"
                "(URL を作らない。arcade_url が無ければボタンを出さない)。")
 
 
 def _profile_summary(user: dict) -> dict:
     """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
-    ゲームの URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる(LINE では LIFF 画面で開くため。arcade.game_url)。"""
+    ゲームの URL と下書きの画面の URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる
+    (LINE では LIFF 画面で開くため。arcade.game_url、arcade.view_url)。"""
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
            "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))

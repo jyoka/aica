@@ -276,7 +276,7 @@ flowchart TB
 
 | ツール | 役割 |
 |---|---|
-| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書、ゲームで作った下書きの要点(`arcade_draft`。空欄のある行を 5 行まで)、ゲームの URL(`arcade_url`。Web のユーザーと、LIFF の設定があるときの LINE のユーザー)。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
+| `get_user_conversation_summary` | dip の要約。今の雇用区分、直近の応募、フォームの途中離脱、閲覧の傾向、直近の接触、本人が話した希望、相談のまとめ、アップロードした履歴書、ゲームで作った下書きの要点(`arcade_draft`。空欄のある行を 5 行までと、下書きの画面の URL `view_url`)、ゲームの URL(`arcade_url`。Web のユーザーと、LIFF の設定があるときの LINE のユーザー)。行動の事実がいつ時点か(`as_of`)。会話の最初に呼ぶ。閲覧した求人名は返さない |
 | `get_user_recent_applications`、`get_application_status` | 応募と選考の状況(`get_application_status` は `as_of` つき) |
 | `get_user_form_exit`、`resume_application_form` | 途中の応募フォームの続き。個人情報の項目はトークで受け取らず、LIFF 画面へ回す |
 | `recommend_jobs` | 条件に合う求人を最大 3 件、理由と `match_score` つきで返す |
@@ -959,7 +959,9 @@ sequenceDiagram
   ゲームは雇用区分を変えません。履歴書なら書類に自己PR が入ります。未定のときも最後のまとめは自己PR を書いておくので、
   本人が後で選び直しても AI を呼び直しません。AI を使わない簡易分析でも、本人の行から簡易の自己PR を作ります
 - エージェントは、下書きを dip の要約の `arcade_draft` で読み、ボタンにするゲームの URL は要約の `arcade_url` だけを使います。
-  LINE のユーザーには、LIFF の設定があるときだけ `arcade_url` を載せます。無ければ載せず、LINE のメッセージも `/liff/arcade` の
+  下書きの空欄の数字を本人が答えたら、`arcade_draft` の `view_url`(下書きの画面)を「下書きを見る」のボタンにします。
+  aica は下書きに書き込まず、数字は本人が画面で入れます。
+  LINE のユーザーには、LIFF の設定があるときだけ `arcade_url` と `view_url` を載せます。無ければ載せず、LINE のメッセージも `/liff/arcade` の
   ボタンを出しません(4.8)。dip は `line_runtime` を import しないので、LIFF の設定の判定(`arcade.liff_configured`)を
   `line_channel.liff_configured` と同じ環境変数で持ちます
 - 下書きは、プロフィールの「ゲームで作った下書き」から見て、直して(`/liff/arcade/draft`)、消せます。「すべて消す」で消え、
