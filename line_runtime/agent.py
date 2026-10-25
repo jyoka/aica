@@ -63,6 +63,8 @@ class LineState(AgentState):
 # 今の窓口。web = Web のトーク画面(LINE 風の画面)、line = LINE 公式アカウントのトーク
 CHANNELS = ("web", "line")
 WEB_NOTE = "Web のトーク画面(LINE 風の画面)。actions の resume_upload と voice_consult は、トークの中のボタンになり、この画面で使える。"
+WEB_NO_VOICE_NOTE = ("Web のトーク画面(LINE 風の画面)。actions の resume_upload は、トークの中のボタンになり、この画面で使える。"
+                     "音声相談は、この画面ではまだ使えない(準備ができていない)。勧めず、voice_consult も付けない。")
 LINE_NOTE = ("LINE のトーク。このトークには文の発言だけが届く(ファイル・写真・音声は届かない)。"
              "ファイルや写真をこのトークに送るようには言わない。")
 # LINE で使えるもの → 使えるときの案内 / 使えないときの案内
@@ -78,9 +80,11 @@ LINE_FEATURES = {
 
 
 def channel_note(channel: str | None, features: list[str] | tuple[str, ...] = ()) -> str:
-    """システムプロンプトに付ける、今の窓口と、そこで使えるもの・使えないもの。"""
+    """システムプロンプトに付ける、今の窓口と、そこで使えるもの・使えないもの。
+    Web の features は、空なら全部使える(評価と開発者画面の既定)。本番のトーク画面は line_channel.web_features を渡し、
+    音声相談の設定(LiveKit)が無ければ音声相談を勧めない(押すと 503 になるため)。"""
     if channel != "line":
-        return WEB_NOTE
+        return WEB_NO_VOICE_NOTE if features and "voice_consult" not in features else WEB_NOTE
     return "\n- ".join([LINE_NOTE, *(on if k in features else off for k, (on, off) in LINE_FEATURES.items())])
 
 

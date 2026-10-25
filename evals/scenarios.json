@@ -55,7 +55,8 @@
    "propose",
    "wait"
   ],
-  "expect_uses_preferences": true
+  "expect_uses_preferences": true,
+  "expect_greeting_offer": "resume_upload"
  },
  {
   "id": "R-revisit-browsing",
@@ -68,7 +69,8 @@
    "propose",
    "wait"
   ],
-  "expect_recent_activity": true
+  "expect_recent_activity": true,
+  "expect_greeting_offer": "resume_upload"
  },
  {
   "id": "Q-job-question",
@@ -81,7 +83,8 @@
    "consult",
    "wait",
    "propose"
-  ]
+  ],
+  "expect_greeting_offer": "resume_upload"
  },
  {
   "id": "C-consult-propose",
@@ -165,7 +168,25 @@
   ],
   "expect_recent_activity": true,
   "expect_track_in_greeting": true,
-  "expect_tracks": []
+  "expect_tracks": [],
+  "expect_greeting_offer": "resume_upload"
+ },
+ {
+  "id": "R-revisit-draft",
+  "title": "再訪(ゲームの下書きに空欄)",
+  "desc": "職務経歴書をアップロード済みで、ゲームで作った下書きに数字の空欄が残っている人がトークを開き直す。入口は下書きの続きだけを勧める",
+  "user": "sim-new",
+  "event": "revisit",
+  "seed_resume": "accounting_fulltime",
+  "seed_arcade_draft": "accounting_arcade",
+  "persona": "前にこのトークで職務経歴書をアップロードし(メーカーで正社員の経理を7年)、ゲームで職務経歴書の下書きを作った。今日はトークを開き直した。下書きの空欄について案内されたら「空欄を埋める」を選ぶ。決算の作業日数を何日短くしたかを聞かれたら「2日です」と答える。ほかの数字を聞かれたら「わからない」と答える。その後「ありがとう、今日はこれで」と言って終える。",
+  "expect_outcome": [
+   "consult",
+   "support",
+   "propose"
+  ],
+  "expect_greeting_offer": "blanks",
+  "max_turns": 5
  },
  {
   "id": "T-career-fulltime",

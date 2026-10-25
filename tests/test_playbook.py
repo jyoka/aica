@@ -33,6 +33,7 @@ from evals.checks import (
 from evals.scenarios import load_scenarios, prepare
 from tests.test_consult import (
     CLOSING,
+    ENTRIES,
     MENU,
     ConsultModel,
     calls,
@@ -189,7 +190,7 @@ ACK = ("新規事業の企画を2回提案しても通らなかったことが�
 def career_script(dig_back=DIG_BACK) -> list:
     return [
         call("get_user_conversation_summary", {"line_user_id": UID}),
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(UID, SEISHAIN, SAID[1]),
         reply(["正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。",
                "履歴書では法人営業を4年、プロダクトマネージャーを4年されていたんですね。そのうえで、なぜ今、転職を考えているのですか?"],
@@ -304,7 +305,7 @@ def test_switching_track_mid_conversation_rereads_the_playbook(tmp_path):
             "正社員の求人を探す前に、目的や強み、条件をいくつか伺いながら一緒に整理します。")
     assert 80 < len(long) <= 120
     model = ConsultModel(script=[
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": said[1]}),
         reply(["アルバイト・パートのお仕事で考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=["それ以外", "今はいい"]),
         switch_and_read(UID, SEISHAIN, said[2]),
@@ -356,7 +357,7 @@ LENGTH_SC = {"expect_outcome": ["propose"], "consult_mode": True, "max_turns": 8
 def length_script(after_conditions: list) -> list:
     """目的を聞く → 掘り下げる → やりたいことを掘り下げる → 生活の制約を聞く → 条件を保存した後は after_conditions。"""
     return [
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(UID, BAITO, LENGTH_SAID[1]),
         reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
                "勉強と並行して働きたいと思ったのは、どんな理由からですか?"], quick_replies=["それ以外", "今はいい"]),

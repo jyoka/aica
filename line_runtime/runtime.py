@@ -48,7 +48,8 @@ EVENTS = {
     "revisit": ("revisit", "greet"),
     "form_exit": ("D", "push"),
 }
-# リッチメニューは既存運用のまま触らない(入口にしない)。メニュー相当の選択肢はトーク内のクイックリプライで出す。
+# LINE のリッチメニュー(scripts/line_rich_menu.py)は新しいイベントを作らない: 音声相談・履歴書・ゲームは LIFF 画面を直に開き、
+# 「求人を探す」は本人の発言(message)になる。メニュー相当の選択肢はトーク内のクイックリプライで出す。
 STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("greet", "push")}
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}

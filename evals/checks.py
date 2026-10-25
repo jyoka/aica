@@ -1044,15 +1044,69 @@ def search_arg_violations(turns: list[dict], user_msgs: list[str | None]) -> lis
     return out
 
 
+# ----------------------------- 挨拶の入口(音声相談・履歴書の読み込み・ゲーム) -----------------------------
+
+# 挨拶で案内する入口。actions の 2 つと、ゲームのボタン(buttons の /liff/arcade…)。再訪では下書きの続き(「空欄を埋める」)も入口に数える
+ENTRY_ACTIONS = ("voice_consult", "resume_upload")
+ENTRIES = (*ENTRY_ACTIONS, "arcade")
+ARCADE_PATH = "/liff/arcade"
+ARCADE_DRAFT_PATH = "/liff/arcade/draft"  # 下書きの画面は入口ではない(保存の知らせのボタン)
+BLANKS_OFFER = "blanks"
+BLANKS_REPLY = re.compile(r"空欄")
+
+
+def available_entries(channel: str = "web", features: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
+    """窓口で使える入口。Web のトーク画面は 3 つとも、LINE は LIFF 画面で使えるもの(line_channel.liff_features)だけ。"""
+    return ENTRIES if channel != "line" else tuple(e for e in ENTRIES if e in features)
+
+
+def greeting_offers(r: dict) -> list[str]:
+    """その返信が案内した入口(ENTRIES の名前と、下書きの続きの BLANKS_OFFER)。"""
+    out = [a for a in ENTRY_ACTIONS if a in (r.get("actions") or [])]
+    if any(str(b.get("url", "")).startswith(ARCADE_PATH) and not str(b.get("url", "")).startswith(ARCADE_DRAFT_PATH)
+           for b in r.get("buttons") or []):
+        out.append("arcade")
+    if any(BLANKS_REPLY.search(q) for q in r.get("quick_replies") or []):
+        out.append(BLANKS_OFFER)
+    return out
+
+
+def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
+                              features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """挨拶の入口の案内(docs/design/line-sim-scenarios.md の 12 章)。
+    初回訪問(visit): 窓口で使える入口を全部出し、使えないものは出さない。
+    再訪(revisit): 勧めるのは 1 つだけで、使えないものは出さない。シナリオの expect_greeting_offer があれば、それを勧める
+    (期待の入口がその窓口で使えなければ、何を勧めたかは問わない)。"""
+    if not turns or sc.get("event") not in ("visit", "revisit"):
+        return []
+    usable = available_entries(channel, features)
+    offers = greeting_offers(turns[0])
+    out = []
+    if unusable := [o for o in offers if o != BLANKS_OFFER and o not in usable]:
+        out.append(f"T1: 窓口で使えない入口を出した: {unusable}")
+    if sc["event"] == "visit":
+        if missing := [e for e in usable if e not in offers]:
+            out.append(f"T1: 初回訪問の挨拶に、使える入口が出ていない: {missing}")
+        return out
+    if len(offers) > 1:
+        out.append(f"T1: 再訪の挨拶で入口を{len(offers)}つ勧めた(1つだけ): {offers}")
+    want = sc.get("expect_greeting_offer")
+    if want and (want == BLANKS_OFFER or want in usable) and offers != [want]:
+        out.append(f"T1: 再訪の挨拶で勧めた入口が {offers or 'なし'}(summary からは {want})")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
 
 
 def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts: dict | None = None,
-                        upload: dict | None = None) -> dict:
+                        upload: dict | None = None, channel: str = "web",
+                        features: list[str] | tuple[str, ...] = ()) -> dict:
     """会話全体の判定(KPI と シナリオ固有の期待)。
-    upload は会話の途中の履歴書のアップロード({"turn": そのターンの添字, "shown": 画面が出した確認の吹き出し})。"""
+    upload は会話の途中の履歴書のアップロード({"turn": そのターンの添字, "shown": 画面が出した確認の吹き出し})。
+    channel・features は会話の窓口(web / line)と、LINE で使えるもの(挨拶の入口の判定に使う)。"""
     tools_by_turn = [[t["name"] for t in r["tools"]] for r in turns]
     tracks = tracks_by_turn(turns, sc.get("seed_track"))
     outcomes = [t["args"].get("outcome") for r in turns for t in r["tools"] if t["name"] == "record_conversation_outcome"]
@@ -1075,8 +1129,9 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if turns and not turns[-1]["quick_replies"] and not stopped_last:
         violations.append(f"T{len(turns)}: 最後の返信に選択肢がない(次に開いた人が書くしかない)")
     if sc.get("expect_menu") and first and not (
-            any("求人" in q for q in first["quick_replies"]) and any("応募" in q for q in first["quick_replies"])):
-        violations.append(f"T1: 意図が不明な挨拶にメニュー代わりの選択肢を出していない: {first['quick_replies']}")
+            any("求人" in q for q in first["quick_replies"]) and any("相談" in q for q in first["quick_replies"])):
+        violations.append(f"T1: 初回訪問の挨拶の選択肢に「求人を探す」「まず相談する」が無い: {first['quick_replies']}")
+    violations += greeting_entry_violations(sc, turns, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1119,6 +1174,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         # 期待した切り替えがすべて期限までに期待の区分で起き、余計な切り替えが無い(期待の無いシナリオは None)
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
+        "greeting_offers": greeting_offers(first) if first else [],
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,

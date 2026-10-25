@@ -22,3 +22,5 @@ livekit-plugins-cartesia>=1.8
 livekit-plugins-silero>=1.8
 livekit-api>=1.2
 openai>=1.99
+# LINE のリッチメニューの画像を作る(scripts/line_rich_menu.py。人が登録するときだけ使う)
+pillow>=10.3

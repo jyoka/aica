@@ -8,12 +8,18 @@
 結果は1回ごとに書き出す(途中で止めても、そこまでの結果は残る)。実 API を使うので費用がかかる。
 
     ./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 8]
+    ./.venv/bin/python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade
+
+窓口: 既定は Web のトーク画面(--channel web)。--channel line は LINE のトークとして回す(エージェントの「窓口」が LINE になり、
+--features の LIFF 画面で使えるもの(line_channel.liff_features と同じ名前)だけを使ってよいと伝える。既定は 3 つとも)。
+返信は render の結果のまま判定する(LINE のメッセージにする to_messages はオフラインのテストが見る)。
 
 費用(PRD aica-v2-fulltime の予算 $5):
 - エージェントは本番のモデル(line_runtime.config.MODEL)。模擬ユーザーとジャッジは安いモデル(SIM_MODEL・JUDGE_MODEL)。
 - 1会話のエージェントのターンは --max-turns(既定8)まで。シナリオの max_turns が小さければそちら。
 - 実行ごとに費用台帳(evals/budget.jsonl、エージェント・模擬ユーザー・ジャッジの合計)の累計を出し、
   シナリオを始める前に累計が $4 に達していたら止める(evals/budget.py)。
+- PRD とは別の予算のカード(例: 会話の改善 (2/3) の $1)は、--ledger でそのカードの台帳を、--limit-usd で止める額を渡す。
 
 事実性(作り話)と雇用区分の切り替え(set_search_track)は evals/checks.py がコードで判定する。
 --judge は相談の深さ(目的・掘り下げ・選択肢・提案理由を根拠の発言つき)とトーンを LLM ジャッジで見る(evals/judge.py)。
@@ -53,6 +59,8 @@ from line_runtime import config, llm
 SIM_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
 JUDGE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
 MAX_TURNS = 8  # 1会話のエージェントのターンの上限(費用の上限)
+CHANNELS = ("web", "line")  # line_runtime.agent.CHANNELS
+CHANNEL_FEATURES = ("resume_upload", "voice_consult", "arcade")  # --channel line の既定(LIFF と LiveKit の設定がある)
 
 SIM_SYSTEM = """あなたは LINE で仕事探し(アルバイト・パートから正社員まで)のアシスタントと話しているユーザーです。次の設定だけを根拠に、短い話し言葉(1〜2文)で返します。
 - 選択肢(クイックリプライ)が合っていれば、その文言をそのまま使う。
@@ -124,12 +132,15 @@ def _trace_since(offset: int) -> list[dict]:
 
 def _wants_upload(sc: dict, r: dict, n_turns: int) -> bool:
     """履歴書を持つペルソナ(upload_resume)がアップロードするか: AI が履歴書の操作ボタンを出したら、そのとき。
-    upload_by_turn のターンまでに出なければ、そこでアップロードする(アップロード後の1問を必ず見るため)。"""
-    return "resume_upload" in (r.get("actions") or []) or n_turns >= sc.get("upload_by_turn", 10 ** 6)
+    upload_by_turn のターンまでに出なければ、そこでアップロードする(アップロード後の1問を必ず見るため)。
+    1通目(挨拶)の入口の案内は数えない(ペルソナは挨拶の選択肢を選ばずに書き始める。経験を聞く場面の提案で上げる)。"""
+    offered = n_turns > 1 and "resume_upload" in (r.get("actions") or [])
+    return offered or n_turns >= sc.get("upload_by_turn", 10 ** 6)
 
 
 async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: int = MAX_TURNS,
-                       judge_samples: int | None = None) -> dict:
+                       judge_samples: int | None = None, channel: str = "web",
+                       features: tuple[str, ...] = ()) -> dict:
     from dip_mcp import logic
     from dip_mcp.data import State
     from evals.checks import conversation_checks
@@ -152,7 +163,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
     async def agent_turn(event: str, text: str | None, facts: dict | None = None) -> None:
         k = meter.mark()
         t0 = time.perf_counter()
-        r = await rt.handle(sc["user"], event, text, facts)
+        r = await rt.handle(sc["user"], event, text, facts, channel=channel, features=features)
         seconds.append(time.perf_counter() - t0)
         marks.append((k, meter.mark()))  # このターンのエージェント側の呼び出し(模擬ユーザーはこの後に呼ぶ)
         turns.append(r)
@@ -182,8 +193,8 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
         await agent_turn("message", text)
         if nxt.get("end"):
             break
-    result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts,
-              **conversation_checks(sc, turns, user_msgs, push_facts, upload),
+    result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts, "channel": channel, "features": list(features),
+              **conversation_checks(sc, turns, user_msgs, push_facts, upload, channel, features),
               "upload_turn": upload["turn"] + 1 if upload else None,
               "latency_p50": round(statistics.median(seconds), 1), "latency_max": round(max(seconds), 1),
               **_usage(meter, marks), "transcript": transcript,
@@ -314,7 +325,8 @@ def recheck(detail: dict, sc: dict | None = None) -> dict:
     if "turn_log" not in detail:
         raise ValueError(f"{detail.get('id')}: turn_log が保存されていない結果は再判定できない")
     sc = sc or next(x for x in load_scenarios() if x["id"] == detail["id"])
-    return conversation_checks(sc, detail["turn_log"], detail["user_msgs"], detail.get("push_facts"), detail.get("upload"))
+    return conversation_checks(sc, detail["turn_log"], detail["user_msgs"], detail.get("push_facts"), detail.get("upload"),
+                               detail.get("channel", "web"), detail.get("features") or ())
 
 
 def _resume_of(case: str, scenarios: list[dict]) -> dict | None:
@@ -351,7 +363,8 @@ def rejudge_diff(doc: dict) -> list[str]:
     return lines or ["- なし"]
 
 
-async def rejudge(src: Path, ledger: Path = budget.LEDGER, judge_samples: int | None = None) -> int:
+async def rejudge(src: Path, ledger: Path = budget.LEDGER, judge_samples: int | None = None,
+                  limit: float = budget.LIMIT_USD) -> int:
     """保存済みの結果の会話(各 run の transcript)を、今の evals/judge.py のジャッジだけで判定し直す。
     エージェントと模擬ユーザーは呼ばない(実 API はジャッジの安いモデルだけ)。費用は1回ごとに台帳に載せ、
     $4 の停止も同じ。結果は evals/results/<元の名前>-rejudge-<日時>.{json,md} に別ファイルで書く。"""
@@ -361,8 +374,8 @@ async def rejudge(src: Path, ledger: Path = budget.LEDGER, judge_samples: int | 
 
     samples = judge_samples or JUDGE_SAMPLES
     doc = json.loads(Path(src).read_text(encoding="utf-8"))
-    print(budget.line(ledger), flush=True)
-    budget.check(ledger)
+    print(budget.line(ledger, limit), flush=True)
+    budget.check(ledger, limit)
     meter = Meter().install()
     client = llm.client()
     model = JUDGE_MODEL[config.PROVIDER]
@@ -395,14 +408,14 @@ async def rejudge(src: Path, ledger: Path = budget.LEDGER, judge_samples: int | 
     cases = [({"id": r["case"], "index": i}, r["rep"]) for i, r in enumerate(doc["runs"]) if r["status"] == "ok"]
     try:
         stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
-                                  after=save)
+                                  after=save, limit=limit)
     except BaseException:
         new["stopped"] = "interrupted"
         save()
         raise
     new["stopped"] = "budget" if stopped else None
     save()
-    print(f"この実行 ${new['spent_usd']:.4f} / {budget.line(ledger)}")
+    print(f"この実行 ${new['spent_usd']:.4f} / {budget.line(ledger, limit)}")
     print(f"-> {out}.md")
     return 2 if stopped else 0
 
@@ -419,14 +432,14 @@ def select(scenarios: list[dict], only: str | None) -> list[dict]:
 
 
 async def run_cases(cases: list[tuple[dict, int]], run_one, spent, ledger: Path, run_name: str, log=print,
-                    after=None) -> bool:
+                    after=None, limit: float = budget.LIMIT_USD) -> bool:
     """(シナリオ, 回) を順に回す。各シナリオを始める前に費用台帳の累計を見て、上限に達していたら止める(True を返す)。
     spent() はこのプロセスがここまでに払った額(エージェント・模擬ユーザー・ジャッジの合計)で、その回の前後の差を台帳に載せる。
     run_one が失敗しても、途中で止められても(Ctrl-C の KeyboardInterrupt・CancelledError)、払った分は finally で載せてから
     例外をそのまま上げる。after() は台帳に載せたあとに毎回呼ぶ(結果の保存)。"""
     for sc, rep in cases:
         try:
-            total = budget.check(ledger)
+            total = budget.check(ledger, limit)
         except budget.BudgetExceeded as e:
             log(f"!! {e}")
             return True
@@ -438,22 +451,24 @@ async def run_cases(cases: list[tuple[dict, int]], run_one, spent, ledger: Path,
         finally:
             cost = spent() - before
             budget.record(ledger, run_name, cost, case=sc["id"], rep=rep, **({} if done else {"interrupted": True}))
-            log(f"   この回 ${cost:.4f}{'' if done else '(途中で止めた)'} / {budget.line(ledger)}")
+            log(f"   この回 ${cost:.4f}{'' if done else '(途中で止めた)'} / {budget.line(ledger, limit)}")
         if after:
             after()
     return False
 
 
 async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, ledger: Path = budget.LEDGER,
-               judge_samples: int | None = None) -> int:
+               judge_samples: int | None = None, channel: str = "web", features: tuple[str, ...] = CHANNEL_FEATURES,
+               limit: float = budget.LIMIT_USD) -> int:
     from evals.judge import JUDGE_SAMPLES
     from evals.meter import Meter
     from evals.scenarios import load_scenarios
     from line_runtime.runtime import LineRuntime
 
     scenarios = select(load_scenarios(), only)
-    print(budget.line(ledger), flush=True)
-    budget.check(ledger)  # 上限に達していたら、ランタイムを起動する前に止める
+    features = tuple(features) if channel == "line" else ()
+    print(budget.line(ledger, limit), flush=True)
+    budget.check(ledger, limit)  # 上限に達していたら、ランタイムを起動する前に止める
     meter = Meter().install()
     client = llm.client()
     runs = []
@@ -462,7 +477,7 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
            "config": {"provider": config.PROVIDER, "model": config.MODEL, "sim_model": SIM_MODEL[config.PROVIDER],
                       "judge": use_judge, "judge_model": JUDGE_MODEL[config.PROVIDER] if use_judge else None,
                       "judge_samples": (judge_samples or JUDGE_SAMPLES) if use_judge else None,
-                      "max_turns": max_turns, "repeat": repeat},
+                      "max_turns": max_turns, "repeat": repeat, "channel": channel, "features": list(features)},
            "directions": DIRECTIONS, "runs": runs, "spent_usd": 0.0, "stopped": None}
     out.parent.mkdir(exist_ok=True)
 
@@ -478,7 +493,7 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
     async with LineRuntime(in_memory=True) as rt:
         async def run_one(sc: dict, rep: int) -> None:
             try:
-                r = await run_scenario(rt, client, meter, sc, use_judge, max_turns, judge_samples)
+                r = await run_scenario(rt, client, meter, sc, use_judge, max_turns, judge_samples, channel, features)
             except Exception as e:  # noqa: BLE001  1件の失敗で評価全体を止めない
                 print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
                 r = {"id": sc["id"], "error": f"{type(e).__name__}: {e}"}
@@ -490,14 +505,14 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
         cases = [(sc, rep) for rep in range(repeat) for sc in scenarios]
         try:
             stopped = await run_cases(cases, run_one, spent, ledger, out.name, log=lambda m: print(m, flush=True),
-                                      after=save)
+                                      after=save, limit=limit)
         except BaseException:  # Ctrl-C など。台帳には run_cases が載せたので、結果にも止めたことを書いて上げ直す
             doc["stopped"] = "interrupted"
             save()
             raise
     doc["stopped"] = "budget" if stopped else None
     save()
-    print(f"この実行 ${doc['spent_usd']:.4f} / {budget.line(ledger)}")
+    print(f"この実行 ${doc['spent_usd']:.4f} / {budget.line(ledger, limit)}")
     print(f"-> {out}.md")
     return 2 if stopped else 0
 
@@ -517,13 +532,26 @@ if __name__ == "__main__":
     ap.add_argument("--max-turns", type=int, default=MAX_TURNS, help="1会話のエージェントのターンの上限")
     ap.add_argument("--judge-samples", type=int, default=None,
                     help="ジャッジが1つの会話を判定する回数(既定 evals.judge.JUDGE_SAMPLES = 2。まとめ方は evals/judge.py)")
+    ap.add_argument("--channel", choices=CHANNELS, default="web", help="会話の窓口(web: Web のトーク画面 / line: LINE のトーク)")
+    ap.add_argument("--features", default=",".join(CHANNEL_FEATURES),
+                    help="--channel line で LIFF 画面で使えるもの(カンマ区切り。resume_upload / voice_consult / arcade。空なら LIFF 無し)")
+    ap.add_argument("--ledger", type=Path, default=budget.LEDGER, help="費用台帳(既定は PRD aica-v2-fulltime の evals/budget.jsonl)")
+    ap.add_argument("--limit-usd", type=float, default=None,
+                    help=f"台帳の累計がこの額に達したら止める(既定 ${budget.LIMIT_USD:.0f}。--ledger を変えたら必ず渡す)")
     ap.add_argument("--rejudge", type=Path, metavar="RESULT_JSON",
                     help="保存済みの結果の会話を、ジャッジだけで判定し直す(エージェントと模擬ユーザーは呼ばない)")
     args = ap.parse_args()
+    if args.ledger.resolve() != budget.LEDGER.resolve() and args.limit_usd is None:  # 別の予算のカードが PRD の止める額($4)まで使わないように
+        ap.error("--ledger を変えたら、そのカードの止める額を --limit-usd で渡してください")
+    limit = budget.LIMIT_USD if args.limit_usd is None else args.limit_usd
     try:
         if args.rejudge:
-            sys.exit(asyncio.run(rejudge(args.rejudge, judge_samples=args.judge_samples)))
-        sys.exit(asyncio.run(main(args.only, args.judge, args.repeat, args.max_turns, judge_samples=args.judge_samples)))
+            sys.exit(asyncio.run(rejudge(args.rejudge, args.ledger, args.judge_samples, limit)))
+        features = tuple(f.strip() for f in args.features.split(",") if f.strip())
+        if unknown := [f for f in features if f not in CHANNEL_FEATURES]:
+            raise SystemExit(f"--features に知らないもの: {unknown}(ある名前: {list(CHANNEL_FEATURES)})")
+        sys.exit(asyncio.run(main(args.only, args.judge, args.repeat, args.max_turns, args.ledger, args.judge_samples,
+                                  args.channel, features, limit)))
     except budget.BudgetExceeded as e:
         print(f"!! {e}")
         sys.exit(2)

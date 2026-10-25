@@ -570,7 +570,7 @@ async def event(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     deps = _deps(request)
     try:
-        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread)
+        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread, features=line_channel.web_features())
         return await turn.reply_of(deps, t)
     except turn.BadTurn as e:
         raise HTTPException(400, str(e)) from e
@@ -584,7 +584,7 @@ async def event_stream(body: EventIn, request: Request):
     _require_own(request, body.user_id)
     deps = _deps(request)
     try:
-        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread)
+        t = turn.accept(deps, body.user_id, body.event, body.text, body.thread, features=line_channel.web_features())
     except turn.BadTurn as e:  # 応答を返し始める前なので 400 にできる
         raise HTTPException(400, str(e)) from e
 

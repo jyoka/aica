@@ -4,6 +4,7 @@
 コミットされた台帳が要る。評価の実行は、シナリオを始める前に毎回累計を見て、LIMIT_USD に達していたら止まる
 (残りの計測を減らすか、ジャッジを安いモデルのままにするかをユーザーと決める)。
 embedding の比較など評価以外の実 API も、同じ台帳に1行足す(record を呼ぶ)。
+PRD とは別の予算のカード(会話の改善 (2/3) の $1 など)は、別の台帳と止める額を使う(evals.run の --ledger と --limit-usd)。
 
     ./.venv/bin/python -m evals.budget   # 累計と、実行ごとの内訳を出す
 """
@@ -47,15 +48,17 @@ def check(path: Path = LEDGER, limit: float = LIMIT_USD) -> float:
     """累計が上限に達していれば BudgetExceeded。達していなければ累計を返す。"""
     total = spent(path)
     if total >= limit:
-        raise BudgetExceeded(f"費用台帳の累計 ${total:.4f} が ${limit:.2f} に達したので止めます"
-                             f"(PRD の予算 ${BUDGET_USD:.2f})。残りの計測をどうするかユーザーに相談してください。")
+        why = f"(PRD の予算 ${BUDGET_USD:.2f})" if limit == LIMIT_USD else ""
+        raise BudgetExceeded(f"費用台帳 {Path(path).name} の累計 ${total:.4f} が ${limit:.2f} に達したので止めます"
+                             f"{why}。残りの計測をどうするかユーザーに相談してください。")
     return total
 
 
-def line(path: Path = LEDGER) -> str:
+def line(path: Path = LEDGER, limit: float = LIMIT_USD) -> str:
     """実行ごとに出す累計の1行。"""
     total = spent(path)
-    return f"費用台帳の累計 ${total:.4f} / 止める額 ${LIMIT_USD:.2f}(予算 ${BUDGET_USD:.2f}、残り ${LIMIT_USD - total:.4f})"
+    budget = f"予算 ${BUDGET_USD:.2f}、" if limit == LIMIT_USD else ""
+    return f"費用台帳の累計 ${total:.4f} / 止める額 ${limit:.2f}({budget}残り ${limit - total:.4f})"
 
 
 def main() -> None:

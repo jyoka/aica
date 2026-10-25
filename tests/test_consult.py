@@ -18,7 +18,9 @@ from line_runtime.runtime import _tool_payload
 from tests.test_handle import ScriptedModel, call, reply
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
-MENU = ["求人を探す", "まず相談する", "応募履歴を確認", "今はいい"]
+MENU = ["求人を探す", "まず相談する", "今はいい"]
+# 初回訪問の挨拶で出す、Web で使える 3 つの入口(dip の Prompt の「挨拶で3つの入口を案内する」)
+ENTRIES = {"actions": ["voice_consult", "resume_upload"], "buttons": [{"label": "ゲームで書類を作る", "url": "/liff/arcade"}]}
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
 CONFIRM_REPLIES = ["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"]
@@ -106,14 +108,15 @@ def playbooks_read(turn: dict) -> list[str]:
 
 
 def test_consult_prompt_reaches_the_agent_on_first_visit(tmp_path):
-    model = ConsultModel(script=[reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU)])
+    model = ConsultModel(script=[reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES)])
     (r,) = run(model, [("sim-new", "visit", None)], tmp_path)
     system = model.systems[0]
     # v1 の「相談モード」節は、playbook を読む指示に置き換わった
     assert "## 相談モード" not in system and "相談モード" not in system
     assert "## 相談(playbook に沿って進める)" in system and "「まず相談する」" in system
     assert "get_counseling_playbook を今の区分" in system and "新しい区分で呼び直し" in system
-    assert "求人を探す / まず相談する / 応募履歴を確認 / 今はいい" in system  # 初回挨拶の選択肢
+    assert "「求人を探す / まず相談する / 今はいい」の3つ" in system  # 初回挨拶の選択肢
+    assert "## 挨拶で3つの入口を案内する(初回訪問・再訪)" in system  # 音声相談・履歴書・ゲームの入口も案内する
     assert "相談の途中(下の「相談」)はこの規則を適用しない" in system
     # ヒアリングの順番・「分からないなら職種を2〜3挙げる」は Prompt から消えた(playbook は次に何を聞くかを決めない)
     assert "次の順に聞く" not in system and "向いていそうな職種を2〜3つ" not in system
@@ -129,7 +132,7 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
     相談で話したことは dip に保存され、提案の条件にそのまま使われ、次の会話の要約にも出る。"""
     uid = "sim-new"
     model = ConsultModel(script=[
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
         reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         switch_and_read(uid, BAITO, "空いた時間のアルバイト"),
@@ -193,7 +196,7 @@ def test_consult_from_a_sign_of_being_lost_digs_instead_of_listing_job_types(tmp
     (v1 は経験と興味から職種を2〜3挙げていた)。"""
     uid = "sim-new"
     model = ConsultModel(script=[
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(uid, BAITO, "バイトを探したいけど、何から始めればいいか分からない"),
         reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
                "今回、バイトを探そうと思ったのはなぜですか?"], quick_replies=["それ以外", "今はいい"]),
@@ -231,7 +234,7 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
     sc = SCENARIOS["C-consult-only"]
     uid = sc["user"]
     model = ConsultModel(script=[
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
         reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         switch_and_read(uid, BAITO, "バイトは未経験です",
@@ -255,7 +258,7 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
     sc = SCENARIOS["C-consult-switch"]
     uid = sc["user"]
     model = ConsultModel(script=[
-        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
+        reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
         reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
