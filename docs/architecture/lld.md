@@ -225,7 +225,7 @@ classDiagram
 | 見出し | 主な関数と定数 |
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
-| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
+| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`_reason_hit`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
@@ -999,7 +999,7 @@ flowchart TB
     near["部分一致 または 意味が近い(SIM_FLOOR、SIM_RELATIVE、SIM_TOP)"]
     part["部分一致だけ(_keyword_hit)"]
     score["match_breakdown + keywords(SIM_WEIGHT × 類似度)+ salary"]
-    top["点の高い順に最大 3 件、job_card + 理由(_reasons)"]
+    top["点の高い順に最大 3 件、job_card + 理由(_reasons。keywords の本人の言葉が文面にあれば _keyword_reason)"]
 
     args --> err
     err -- "はい" --> errout
@@ -1014,6 +1014,10 @@ flowchart TB
 - 本人の傾向(`preferences`)は dip ID と連携したユーザーだけです。90 日以内の応募と、30 日以内の閲覧と保存から数えます
 - 両方の区分の求人が残ったら(`mixed`)、時間帯の傾向は点にしません
 - `keywords` で 0 件になり、意味検索は使えたが求人を分けられなかったときは、引数で探し直すための `keywords_note` を返します
+- 理由は 2 つまでです。属性で絞った理由、keywords の本人の言葉、過去の応募、時間帯、駅かエリア、職種、正社員の働き方、待遇の順に並べます。
+  本人の言葉は、keywords の語のうち求人の文面(職名・必須と歓迎の経験、待遇、仕事内容の順)に実際にある語だけです(`_keyword_reason`)。
+  意味が近いだけで選ばれた求人には付けません。どの求人にもある語、数字、否定や困りごとの言葉の中の語、仕事内容の文の 2 字の語、
+  修飾つきで話した 2 字の語が求人の長い語の後ろ半分にあるだけのもの(「在庫管理」の「管理」)も使いません(`_reason_hit`)。理由は [line-sim-scenarios.md の 18 章](../design/line-sim-scenarios.md) です
 - `relax` は条件を 1 つずつ外した件数を数え、増えるものを多い順に 3 つ返します。雇用区分と `exclude_ids` は外す候補にしません
 
 keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
@@ -1086,7 +1090,7 @@ sequenceDiagram
 
 | 判定 | 中身 |
 |---|---|
-| 形式 | 1 ターン 1 問。選択肢は最大 4 つで逃げ道を含む。吹き出しの字数。求人は最大 3 件で理由つき。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
+| 形式 | 1 ターン 1 問。選択肢は最大 4 つで逃げ道を含む。吹き出しの字数。求人は最大 3 件で理由つき。求人カードを出したターンの吹き出しで、カードの理由を繰り返さない(`reason_echo_violations`。条件が希望に合うという言い方か、8 字以上の理由をそのまま書いた)。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
 | 会話の進め方 | ツールが返していない求人を出さない。個人情報をトーク経由でツールに渡さない。「今はいい」「送らないで」の後に質問や求人を続けない。「求人を見せて」のターンで求人を探す。この会話で保存した項目を聞き直さない。断られていないのに wait を記録しない。エリアが分からないまま `recommend_jobs` を呼ばない(`area_violations`。分かっていたエリアを `area` に入れなかったのも違反。本人がエリアを問わない(在宅を外す言い方の「リモートは無理」は数えない)・在宅で探す・前にエリアつきで探した後に `relax_conditions` の案内か本人の言葉で広げた、は除く) |
 | 再訪 | 希望ありは、1 通目で前の希望に触れ、以後その項目を聞き直さない。行動履歴のみは、1 通目で最近の行動に触れ、触れるのは会話を通して 1 回だけ。1 通目に求人カード、求人名、件数を並べず、職種も 1 つだけ |
 | 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`) | 初回訪問は、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)が 1 通目に全部ある。選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、1 通目の入口が 1 つまでで、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを勧める(期待の入口がその窓口で使えなければ問わない)。どちらも窓口で使えないものを出したら違反。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |

@@ -147,6 +147,102 @@ def test_recommend_matches_job_type_exactly(state):
     assert all(j["job_type"] == "飲食ホール" for j in logic.recommend(state, None, job_type="飲食ホール")["jobs"])
 
 
+# ----------------------------- 推薦の理由に本人の言葉(task 229) -----------------------------
+
+
+@pytest.fixture
+def offline_keywords(monkeypatch):
+    """keywords の意味検索の API を呼ばせない(部分一致だけ)。意味検索を使うテストは _api_embed を上書きする。"""
+    from dip_mcp import embedding
+
+    def _fail(*_a, **_kw):
+        raise ConnectionError("offline")
+
+    embedding._query_cache.clear()
+    monkeypatch.setattr(embedding, "_api_embed", _fail)
+    yield embedding
+    embedding._query_cache.clear()
+
+
+def test_reasons_quote_the_users_words_that_the_job_contains(state, offline_keywords):
+    # 経験「カフェでホールを2年」と希望「カフェ」で探した。渋谷のカフェホール(a003)の職名に「カフェ」がある
+    r = logic.recommend(state, None, area="渋谷", keywords="カフェでホールを2年 カフェ")
+    card = next(j for j in r["jobs"] if j["job_id"] == "a003")
+    assert card["reasons"] == ["お話の「カフェでホールを2年」と同じ「カフェ」", "渋谷エリア"]
+
+
+def test_reasons_stay_as_before_when_no_word_of_the_user_is_in_the_job(state, offline_keywords, monkeypatch):
+    # 意味が近いだけで選ばれた求人(b0701 の倉庫。「もくもくと働きたい」は文面に無い)には、本人の話とのつながりを作らない
+    monkeypatch.setattr(offline_keywords, "_api_embed",
+                        lambda *a, **kw: offline_keywords._vectors()["jobs"]["b0701"]["v"])
+    r = logic.recommend(state, None, keywords="もくもくと働きたい")
+    jobs, acts = logic.load_jobs(), behavior.view(state, None)
+    assert r["jobs"][0]["job_id"] == "b0701"
+    for card in r["jobs"]:
+        assert card["reasons"] == logic._reasons(jobs[card["job_id"]], None, None, None, acts, jobs, logic.now(None))
+        assert not any(x.startswith("お話") for x in card["reasons"])
+
+
+def test_reasons_without_keywords_are_unchanged(state):
+    r = logic.recommend(state, "sim-yoru", area="新宿", time_band="夜")
+    assert r["jobs"][0]["reasons"][0] == "7月に応募した飲食ホールと同系統"
+    assert not any(x.startswith("お話") for j in r["jobs"] for x in j["reasons"])
+
+
+@pytest.mark.parametrize(("job_id", "keywords", "reason"), [
+    ("a003", "カフェ", "お話と同じ「カフェ」"),  # 言葉そのものが当たったら、同じ語を2回書かない
+    ("a003", "渋谷のカフェ", "お話の「渋谷のカフェ」と同じ「カフェ」"),  # 地名はエリアの理由と重なるので引かない
+    ("b0101", "高校の文化祭で模擬店の接客 居酒屋", "お話と同じ「居酒屋」"),  # 言葉の中の語(「接客」)が文面に無ければ次の言葉
+    ("b0305", "まかない 店長になりたい", "お話の「店長になりたい」と同じ「店長」"),  # 職名にある語(修飾の無い「店長」は「カフェ店長」にも)
+    ("b0101", "販売の仕事で経験を積んでいずれ居酒屋の店長になりたい", "お話と同じ「居酒屋」"),  # 長い言葉は引用しない
+    ("f1004", "在庫管理の経験", "お話の「在庫管理の経験」と同じ「在庫管理」"),  # 長い語が当たれば、その語を書く
+    ("b0505", "お客様と話したい", "お話の「お客様と話したい」と同じ「お客様」"),  # 仕事内容の文でも3字以上の語は当てる
+])
+def test_keyword_reason_picks_one_fact_from_the_users_words(job_id, keywords, reason):
+    assert logic._keyword_reason(logic.load_jobs()[job_id], keywords) == reason
+
+
+@pytest.mark.parametrize("keywords", ["仕事 経験", "宇宙飛行士になりたい", "週2日", None, ""])
+def test_keyword_reason_is_none_without_a_real_word_hit(keywords):
+    # どの求人にもある語(仕事・経験)、文面に無い語、数字だけでは理由にしない
+    assert logic._keyword_reason(logic.load_jobs()["b0101"], keywords) is None
+
+
+@pytest.mark.parametrize(("job_id", "keywords", "in_text"), [
+    ("b0502", "週2日", "週2日"),  # 数字の言葉は、求人の文面にそのままあっても引かない
+    ("f0202", "カフェのホールを2年", "2年"),  # 求人の「経験2年以上」は本人の2年とは別のこと
+    ("b0705", "本業とは違う", "本業"),  # 本人は「本業とは違う」仕事がしたい。「同じ」ではない
+    ("b1105", "アルバイトのままだと収入が安定しない", "収入"),  # 困りごとの中の語
+    ("b0101", "シフトによって収入が変わる", "シフト"),  # 困りごと。「シフト」はどの求人の待遇にもある語でもある
+    ("b0101", "未経験", "未経験"),  # 7割の求人の待遇にある「未経験OK」
+    ("f0101", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 仕事内容の文の2字の語(「経費の管理サービス」)
+    ("f0401", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 職種の分類「事務・管理」
+    ("f1004", "お店の運営やスタッフの管理に挑戦してみたい", "管理"),  # 職名の「在庫管理」はスタッフの管理とは別のもの
+    ("b0902", "店長を目指したい", "目指"),  # 「目指せる」の一部
+])
+def test_keyword_reason_does_not_make_up_a_link_from_a_word_in_the_text(job_id, keywords, in_text):
+    # 本人の言葉の一部が求人の文面にあっても、意味のつながらない一致は理由にしない(task 229 のレビューで見つかった例)
+    job = logic.load_jobs()[job_id]
+    assert in_text in " ".join([job.title, job.job_type, *job.required_experience, *job.perks, job.description])
+    assert logic._keyword_reason(job, keywords) is None
+
+
+def test_keyword_reason_on_all_jobs_for_a_career_change_story():
+    # T-switch-to-fulltime の実 API の keywords。理由が付くのは、カフェ・ホール・店長・運営など本人の話と同じものの求人だけ
+    keywords = "カフェのホールを2年 お店の運営やスタッフの管理に挑戦してみたい 店長を目指したい アルバイトのままだと収入が安定しない"
+    reasons = {jid: logic._keyword_reason(j, keywords) for jid, j in logic.load_jobs().items()}
+    words = {r.rsplit("「", 1)[1].rstrip("」") for r in reasons.values() if r}
+    assert words == {"カフェ", "ホール", "店長", "運営", "管理"}
+    assert [jid for jid, r in reasons.items() if r and r.endswith("「管理」")] == ["f1001"]  # 物流センターの管理者候補
+
+
+def test_attribute_reason_stays_first_and_the_users_words_come_next(state):
+    job, jobs = logic.load_jobs()["a003"], logic.load_jobs()
+    reasons = logic._reasons(job, "渋谷", None, None, behavior.view(state, None), jobs, logic.now(None),
+                             {"max_talk_level": 3}, "カフェ")
+    assert reasons == [logic.TALK_REASONS[job.talk_level], "お話と同じ「カフェ」"]
+
+
 # ----------------------------- 支援・記録 -----------------------------
 
 

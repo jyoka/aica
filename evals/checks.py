@@ -220,6 +220,27 @@ def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     return [f"T{i + 1}: {x}" for x in v]
 
 
+# 吹き出しでカードの理由を繰り返す言い方(task 229。#221 の R-revisit-browsing T2「勤務時間とエリアがご希望に合っています。」)。
+# 条件(時間・エリア・駅)が希望に合うと書くもの。件数と条件の一言(「渋谷・日中で3件あります。」)は繰り返しに数えない
+REASON_ECHO = re.compile(r"(時間|エリア|場所|駅|シフト)[^。!！?？]{0,10}(ご?希望|お話|条件)(に|と)?(合|沿|一致|ぴったり|どおり|通り)")
+REASON_ECHO_MIN = 8  # カードの理由をそのまま書いたとみなす長さ。「渋谷エリア」のような短い理由は、件数の一言にも出るので見ない
+
+
+def reason_echo_violations(turns: list[dict]) -> list[str]:
+    """求人カードを出したターンの吹き出しで、カードの理由を繰り返したか(Prompt の「カードの理由も吹き出しで繰り返さない」)。
+    条件が希望に合うと書いた(REASON_ECHO)か、そのターンのカードの理由(REASON_ECHO_MIN 字以上)をそのまま書いたら違反。"""
+    out = []
+    for i, r in enumerate(turns):
+        if not r["cards"]:
+            continue
+        reasons = {x for c in r["cards"] for x in c.get("reasons") or [] if len(x) >= REASON_ECHO_MIN}
+        for b in r["bubbles"]:
+            if REASON_ECHO.search(b) or any(x in b for x in reasons):
+                out.append(f"T{i + 1}: 吹き出しでカードの理由を繰り返した: {b!r}")
+                break
+    return out
+
+
 # ----------------------------- 事実性(LLM ジャッジの代わりにコードで照合) -----------------------------
 
 NUM = re.compile(r"\d[\d,]*")
@@ -1513,6 +1534,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
     violations += thanks_close_violations(turns, user_msgs)
+    violations += reason_echo_violations(turns)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")

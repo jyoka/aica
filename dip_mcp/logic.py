@@ -445,16 +445,89 @@ def _trace_keywords(keywords: str, peak: float | None, semantic: bool, cands: li
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+# 理由に引く本人の言葉(keywords)の語。どの求人の文面にもある語(職名の「〜スタッフ」、待遇の「シフト自由」「未経験OK」など)と、
+# それだけでは意味の無い語(「未経験OK」の「OK」、「店長を目指したい」の「目指」)は、本人の話と求人をつなぐ印にならないので引かない
+_REASON_FILLER = {"仕事", "お仕事", "経験", "ご経験", "未経験", "職場", "環境", "希望", "求人", "勤務", "時間", "アルバイト", "バイト",
+                  "パート", "正社員", "スタッフ", "お店", "シフト", "時給", "作業", "以上", "以内", "可能", "OK", "目指", "挑戦"}
+# keywords の1語(本人の言葉)の中の内容語。漢字の続き(頭の「お」「ご」も含める: お客様)、カタカナの続き、英字の語。数字は引かない
+_REASON_RUN = re.compile(r"[おご][一-龥々]+|[一-龥々]{2,}|[ァ-ヴー]{2,}|[A-Za-z][A-Za-z0-9+#]+")
+# 否定・不満・避けたいことを言う言葉(「本業とは違う」「収入が安定しない」「シフトで収入が変わる」)。中の語が求人にあっても
+# 「同じ」ではないので、言葉ごと引かない
+_REASON_NEGATIVE = re.compile(r"ない|なく|違う|違い|以外|嫌|苦手|避け|不安|変わる|減ら|やめ|辞め")
+REASON_QUOTE_MAX = 24  # 理由に引用する本人の言葉の長さ。長い言葉は引用せず、当たった語だけを書く(カードの1行に収める)
+REASON_DESCRIPTION_MIN = 3  # 3字より短い語(「管理」)は、仕事内容の長い文のどこかにあるだけでは、つながりにならない
+
+
+def _reason_words(token: str) -> list[str]:
+    """本人の言葉1つから、求人の文面と照らす語を長い順の候補で返す。言葉そのもの、内容語、漢字の続きの短い部分
+    (「接客経験」の「接客」)の順。カタカナの続きは切らない(「カフェ」の「フェ」で当てない)。
+    否定・不満の言葉と、数字を含む言葉そのもの(「週2日」「2年」。求人の「経験2年以上」は本人の2年とは別のこと)は候補にしない。"""
+    if _REASON_NEGATIVE.search(token):
+        return []
+    out = [] if re.search(r"[0-9０-９]", token) else [token]
+    for m in _REASON_RUN.finditer(token):
+        w = m.group()
+        bare = w[1:] if w[0] in "おご" else w
+        out += [w, bare]
+        if re.fullmatch(r"[一-龥々]+", bare) and bare not in _REASON_FILLER:  # 「未経験」の「未経」は引かない
+            out += [bare[i:i + n] for n in range(len(bare) - 1, 1, -1) for i in range(len(bare) - n + 1)]
+    return [w for w in dict.fromkeys(out) if len(w) >= 2 and w not in _REASON_FILLER]
+
+
+def _reason_hit(word: str, text: str, short_ok: bool, qualified: bool) -> bool:
+    """求人の文面 text に、本人の語 word が同じ意味で出てくるか。3字以上の語はそのまま探す。2字の語は short_ok のとき
+    (仕事内容の長い文でなければ)だけ探す。本人が語に修飾を付けて話したとき(qualified: 「スタッフの管理」)は、求人の
+    長い語の後ろ半分(「在庫管理」「プロジェクト管理」の「管理」)を別のものとして当てない。修飾の無い語(「店長になりたい」)は、
+    求人の「カフェ店長」にも当てる。"""
+    if len(word) >= REASON_DESCRIPTION_MIN:
+        return word in text
+    if not short_ok:
+        return False
+    return re.search(rf"(?<![一-龥々ァ-ヴー]){re.escape(word)}" if qualified else re.escape(word), text) is not None
+
+
+def _keyword_reason(job: BaitoJob, keywords: str | None) -> str | None:
+    """keywords に入った本人の言葉(目的・やりたいこと・経験)のうち、この求人の文面に実際にある語を1つ理由にする。
+    当たった語が無ければ None(意味が近いだけで選ばれた求人に、つながりを作らない)。求人の中身(職名・必須と歓迎の経験)に
+    ある語を、待遇(perks)・仕事内容の文にある語より先に選ぶ。職種(job_type)は「事務・管理」のような広い分類なので照らさない。
+    仕事内容の文では、言葉そのものか3字以上の語だけを当てる(_reason_hit)。
+    エリア・駅の名前は、エリアの理由と重なるので引かない。"""
+    if not keywords:
+        return None
+    places = {job.area, job.station.removesuffix("駅"), *AREAS}
+    fields = [" ".join([job.title, *job.required_experience, *job.preferred_experience]), " ".join(job.perks), job.description]
+    best = None  # (文面の順, -語の長さ, 言葉の順, 語, 言葉)
+    for k, token in enumerate(keywords.split()):
+        for w in _reason_words(token):
+            if w in places:
+                continue
+            qualified = token.find(w) > 0
+            rank = next((n for n, text in enumerate(fields)
+                         if _reason_hit(w, text, short_ok=n < 2 or w == token, qualified=qualified)), None)
+            if rank is not None and (best is None or (rank, -len(w), k) < best[:3]):
+                best = (rank, -len(w), k, w, token)
+    if best is None:
+        return None
+    word, token = best[3], best[4]
+    if token == word or len(token) > REASON_QUOTE_MAX:
+        return f"お話と同じ「{word}」"
+    return f"お話の「{token}」と同じ「{word}」"
+
+
 def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[str, BaitoJob], at: datetime,
-             filters: dict | None = None) -> list[str]:
+             filters: dict | None = None, keywords: str | None = None) -> list[str]:
     """推薦理由。指定された条件か、90日以内の本人の行動(acts は behavior.view の形)に基づく事実だけを並べる。
-    属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。"""
+    属性(人と話す量・体を使う量)で絞ったときは、本人が避けたい・やりたいと言ったことへの答えなので先頭に置く。
+    keywords の本人の言葉が求人の文面に当たったら(_keyword_reason)、その次に置く(条件の一致だけでは、本人の目的や
+    経験とのつながりが伝わらない。task 229)。理由は2つまでなので、条件の理由は1つに減ることがある。"""
     f = filters or {}
     reasons = []
     if f.get("max_talk_level") or f.get("min_talk_level"):
         reasons.append(TALK_REASONS[job.talk_level])
     if f.get("max_physical_level") or f.get("min_physical_level"):
         reasons.append(PHYSICAL_REASONS[job.physical_level])
+    if said := _keyword_reason(job, keywords):
+        reasons.insert(min(1, len(reasons)), said)
     for a in reversed(_recent(acts.get("applications", []), "applied_at", at)):  # 古い応募から
         past = jobs.get(a["job_id"])
         if past and past.job_type == job.job_type and past.job_id != job.job_id:
@@ -583,7 +656,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
             b["salary"] = _salary_score(j.pay, min_annual_salary)
         hits.append((round(sum(b.values()), 2), b, j))
     hits.sort(key=lambda h: h[0], reverse=True)
-    top = [job_card(j, _reasons(j, area, time_band, job_type, acts, jobs, at, filters))
+    top = [job_card(j, _reasons(j, area, time_band, job_type, acts, jobs, at, filters, keywords))
            | {"match_score": score, "score_breakdown": b}
            for score, b, j in hits[:max(1, min(limit, MAX_JOBS))]]
     out = {"total": len(hits), "jobs": top}

@@ -125,6 +125,7 @@ def recommend_jobs(
     各求人の match_score は本人の傾向との合い具合(内訳 score_breakdown)。高い順に並ぶ。
     keywords は意味検索(embedding)で言い換えも拾い、意味が近い求人ほど上に来る(内訳の keywords)。
     意味の近い求人が無い希望(求人の情報に無いこと)は、語が一致した求人だけになり0件になりやすい(0件なら keywords_note に次の手がある)。
+    keywords の本人の言葉にある語が求人の文面にあれば、その求人の reasons に1つ入る(「お話の「カフェでホールを2年」と同じ「カフェ」」)。
     人と話す量・体を使う量(max_talk_level など)は両方の区分の求人に、リモート・土日祝休み・残業は正社員の求人だけに効く。"""
     return logic.recommend(state, line_user_id, area, time_band, job_type, min_wage, keywords, exclude_ids,
                            posted_within_days=posted_within_days, employment_type=employment_type,
