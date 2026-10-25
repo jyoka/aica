@@ -30,6 +30,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dip_mcp.logic import liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
+from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
 from line_runtime.voice_reply import voice_history_reply
 
@@ -105,6 +106,15 @@ def voice_event(reply: dict) -> str:
             + (f" 音声相談の後の雇用区分(search_track)は「{track}」。この会話で使っていた区分と違えば、次の返信の前に"
                f" get_counseling_playbook を「{track}」で読み直し、求人を探すときの employment_type もそれに合わせる。"
                if track else ""))
+
+
+# ゲームで下書きを保存したターンの、本人側の記録(LLM は呼ばない。次のターンから LLM が読む文脈になる)
+ARCADE_EVENT = ("[イベント: 本人がゲーム(レジュメ・アーケード)で書類の下書きを保存した] 下書きは dip に保存済み"
+                "(要約の arcade_draft)。トークには次の返信を出しました。同じことを聞き直さず、続きから会話してください。")
+
+
+def arcade_event(reply: dict) -> str:
+    return ARCADE_EVENT + f" 書類: {reply.get('document_kind')}、数字の空欄: {reply.get('blanks', 0)}か所。"
 
 
 def dip_connection() -> dict:
@@ -223,13 +233,21 @@ class LineRuntime:
     async def add_voice_result(self, user_id: str, reply: dict) -> bool:
         """音声相談の結果を、今の会話に AI の返信として続ける(LLM は呼ばない)。画面に描き直せるよう、返信は
         そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。"""
+        return await self._add_reply(user_id, reply, voice_event(reply), "voice")
+
+    async def add_arcade_result(self, user_id: str, reply: dict) -> bool:
+        """ゲームで保存した下書きの知らせ(line_runtime.arcade_reply)を、今の会話に AI の返信として続ける
+        (LLM は呼ばない。add_voice_result と同じ作り)。まだ会話が無ければ何もしない(False)。"""
+        return await self._add_reply(user_id, reply, arcade_event(reply), "arcade")
+
+    async def _add_reply(self, user_id: str, reply: dict, event_text: str, key: str) -> bool:
         async with self._locks[user_id]:
             n = await self._current(user_id)
             if not n:
                 return False
             shown = LineReply(bubbles=reply["bubbles"], quick_replies=reply["quick_replies"],
                               job_ids=[c["job_id"] for c in reply["cards"]])
-            human = HumanMessage(voice_event(reply), additional_kwargs={"voice": reply})
+            human = HumanMessage(event_text, additional_kwargs={key: reply})
             update = {"messages": [human, AIMessage(shown.model_dump_json())]}
             if not (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages"):
                 update |= {"entry": "A", "line_user_id": user_id}  # 閉じた後の空の会話: 結果のターンから始まる
@@ -445,7 +463,8 @@ def history(messages: list, user_id: str) -> list[dict]:
         user = None if k == 0 and isinstance(content, str) and content.startswith("[イベント:") else content
         upload = messages[start].additional_kwargs.get("upload")
         voice = messages[start].additional_kwargs.get("voice")
-        if upload or voice:
+        arcade = messages[start].additional_kwargs.get("arcade")
+        if upload or voice or arcade:
             user = None
         if upload:
             rid = upload.get("upload_id")
@@ -455,6 +474,8 @@ def history(messages: list, user_id: str) -> list[dict]:
         bot = None
         if voice:
             bot = voice_history_reply(user_id, voice)  # URL は今の形で組み直し、書類の呼び方は下書きにそろえる
+        elif arcade:
+            bot = arcade_history_reply(user_id, arcade)
         elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}
