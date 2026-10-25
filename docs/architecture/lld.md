@@ -259,8 +259,8 @@ OpenAI Realtime の構成から作り直しました)。
                                                         ├ TTS: Cartesia sonic-3.5(日本語のボイス、速さ 0.9)
                                                         ├ ターンの判定: Silero VAD + 多言語の turn detector
                                                         ├ dip: dip_mcp を相談ごとに stdio の子プロセスで起動
-                                                        └ 終わり: 下書きなどを data/voice-resume/ に書き、
-                                                           POST /api/voice/result でトークへ結果を返す
+                                                        └ 終わり: 下書きを作り、POST /api/voice/result でトークへ結果を返す
+                                                           (data/voice-resume/ に書くのは開発のときだけ)
 ```
 
 | モジュール | 役割 | 主な名前 |
@@ -271,13 +271,13 @@ OpenAI Realtime の構成から作り直しました)。
 | `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
 | `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
 | `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
-| `outputs.py` | 相談の終わりに 4 つのファイルを書く(5.4) | `write_outputs`、`history_transcript` |
+| `outputs.py` | 相談の終わりに下書きと求人の提案を作る。4 つのファイルを書くのは `WRITE_FILES` のときだけ(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
 | `livekit_token.py` | 部屋の接続トークンの発行。Web サーバーが使う | `configured`、`issue_token`、`TOKEN_TTL`(5 分) |
 | `stt.py` | STT の作り分け | `create_stt` |
 | `flow.py`、`stt_eval.py` | 文字起こしから会話の流れを確かめるチェッカーと、STT の聞き取りの台本(テストと評価で使う) | `verify_flow`、`count_experience_probes`、`find_leading_questions`、`score_transcripts` |
 | `wages.py` | 平均時給の参考データ(`data/wage_reference.json`) | `load_reference`、`answer_from_reference` |
-| `config.py` | 設定(7.1)と `.env` の読み込み | `OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
+| `config.py` | 設定(7.1)と `.env` の読み込み | `WRITE_FILES`、`OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
 | `results/` | 画面の証跡(PNG) | - |
 
 ```mermaid
@@ -499,7 +499,7 @@ flowchart LR
 | `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
 | `PUT`、`DELETE /api/profile/track` | `profile_track`、`profile_track_delete` | Cookie + 書き込みの枠 | - | 雇用区分、知らせ |
 | `DELETE /api/profile/resume` | `profile_resume_delete` | Cookie + 書き込みの枠 | - | 会話を閉じてから読み取り結果を消す(4.6) |
-| `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` のファイルを消す。無ければ 404 |
+| `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` に書き出したファイルがあれば消す。無ければ 404 |
 | `DELETE /api/profile/saved/{job_id}` | `profile_unsave` | Cookie + 書き込みの枠 | - | 保存の取り消し、知らせ |
 | `POST /api/profile/forget` | `profile_forget` | Cookie | - | 「すべて消す」(4.6) |
 | `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
@@ -763,11 +763,13 @@ sequenceDiagram
         A->>O: web_research、research_company(本人が聞いたとき)
     end
     A->>O: finalize_interview から write_outputs、build_draft(下書き)
-    A->>F: 下書き(json、md)、文字起こし、求人の提案
+    opt WRITE_FILES(開発のときだけ。既定は書かない)
+        A->>F: 下書き(json、md)、文字起こし、求人の提案
+    end
     A->>K: データチャネルで draft
     A->>S: POST /api/voice/result(内部の鍵)
     alt 410(すべて消した後)
-        A->>F: 書いたファイルを消す
+        A->>F: 書いたファイルがあれば消す
     else 届いたか、ほかの失敗
         A->>D: record_conversation_outcome(propose か consult、相談のまとめ、部屋つき)
     end
@@ -780,7 +782,8 @@ sequenceDiagram
 - Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
   `LineRuntime.add_voice_result` で今の会話に足し、待っているシート(`voice_ready` の `Condition`)に知らせます
 - トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)。ただし、通話の途中で
-  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)
+  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)。既定ではファイルに書き出さないので、下書きはどこにも残りません。
+  締めの返答も「保存した」とは言わず、残せなかったことを伝えます(`finalize_interview`)
 
 ### 4.5 音声アドバイザーの決まり
 
@@ -850,9 +853,9 @@ sequenceDiagram
     部屋の名前が付き、dip はその部屋が `forgotten_voice_rooms` にあれば何も書かずに断ります。判定は書き込みと同じ `state.update` の中
     (状態のファイルのロックの中)で行うので、「すべて消す」と書き込みが同時に来ても、間に合わない時間がありません(`logic._room_forgotten`)
   - 断られたら、アドバイザーは保存できなかったとだけ扱い、会話は続けます(今の保存の失敗と同じ。区分は切り替えません)
-  - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルも消します
-    (`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、ファイルが
-    残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
+  - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルがあれば
+    消します(`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、
+    ファイルは開発で書き出したときだけ残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
   - トークのツールは部屋を渡さないので、今までどおり書けます。消した後に始めた部屋の書き込みも通ります
 - 履歴書を消す(`profile_resume_delete`)ときは、`close_conversation` で空の会話 n+1 を書いてから、それまでの会話をすべて消し、
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
@@ -1428,7 +1431,7 @@ sequenceDiagram
 | `data/costs.jsonl` | `Ledger.record`(追記)、`Ledger.fold_old`(書き直し) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
 | `data/quota.json` | `DailyQuota._save` | `DailyQuota.__init__` | JSON(5.3) |
 | `data/line_events.json` | `line_channel.SeenEvents.first_time` | `SeenEvents.__init__` | 受けた webhook のイベントの ID の JSON の配列(直近 2,000 件、4.11) |
-| `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs` | Web サーバー(消すだけ)、人 | 5.4 |
+| `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs`(`VOICE_RESUME_WRITE_FILES=1` のときだけ。既定は書かない) | Web サーバー(消すだけ)、人 | 5.4 |
 | `data/resume_intake/` | `resume_intake.cli`、`run_samples` | 人 | 読み取り結果の JSON と比較の Markdown |
 | `evals/results/` | `evals.run` | `evalkit`、人 | 5.6。git に入れない |
 | `evals/budget.jsonl` | `budget.record`(追記) | `budget.check`、`python -m evals.budget` | JSON Lines(5.6)。git に入れる |
@@ -1558,7 +1561,14 @@ sequenceDiagram
 
 ### 5.4 音声相談の出力(`data/voice-resume/`)
 
-`outputs.write_outputs` が、相談ごとに日本時間の時刻(`YYYYmmdd-HHMMSS`)を付けて 4 つのファイルを書きます。
+本番では書き出しません(既定)。書き出すのは、開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです(`config.WRITE_FILES`)。
+理由: 同じ下書きは dip の状態の `voice_results` に入ります。文字起こしは下書きを作った後に使いません([privacy.md](../design/privacy.md) の 3.3)。
+
+- 既定では、`outputs.write_outputs` は下書きの envelope、Markdown、求人の提案を作って返すだけです。置き場のディレクトリも作りません
+- 既定の結果の `files` は空です。トークへ送る `files` も、dip の状態の `voice_results` の `files` も空になります
+- 下書きの Markdown は、トークが受け取った結果として dip の状態に入ります(`logic.record_voice_result`)
+
+書き出すときは、相談ごとに日本時間の時刻(`YYYYmmdd-HHMMSS`)を付けて 4 つのファイルを書きます。
 
 | ファイル | 中身 |
 |---|---|
@@ -1567,7 +1577,7 @@ sequenceDiagram
 | `transcript-<時刻>.json` | 文字起こし `[{role, text}]` |
 | `job-proposal-<時刻>.json` | `preferences`(本人の希望)、`recommend_args`(最後の検索の条件)、`relaxed`(外した条件)、`search_attempts`(検索の経緯)、`proposed_job_ids`、`jobs` |
 
-ファイルの絶対パスは結果の `files` に入り、dip の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
+書き出したときは、ファイルの絶対パスが結果の `files` に入り、dip の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
 
 ### 5.5 Resume Draft
 
@@ -1908,6 +1918,7 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 | ターンの判定 | `VOICE_RESUME_MIN_ENDPOINTING_DELAY`、`VOICE_RESUME_MAX_ENDPOINTING_DELAY` | 0.8 秒、6 秒 |
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
 | 結果を返す先 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` |
+| ファイルの書き出し | `VOICE_RESUME_WRITE_FILES` | 書かない。`1` のときだけ書く(開発用。5.4) |
 | 出力先 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume/` |
 | 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消し、ジョブを終える(`agent.SessionGuard`。ジョブの終わりにトークへ `ended` を知らせる) |
 | 1 回の相談の web の調べもの | `VOICE_RESUME_MAX_WEB_SEARCHES` | 5 回(`web_research`、`wage_average`、`research_company` の合計) |
@@ -1959,7 +1970,7 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 | 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
 | 下書きの保存の失敗 | 決まった文で LLM に謝らせる(例外の文は LLM にも渡さない)。トークへは送らない | `finalize_interview` |
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
-| 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20。「すべて消す」の前の部屋なら dip が断る) | 同上 |
+| 結果をトークに届けられない(ほか) | 警告のログだけ。会話の段階の結果は記録する(「すべて消す」の前の部屋なら dip が断る)。下書きは開発で書き出したときだけファイルに残る(R20) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
 | LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
 | LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
@@ -2084,6 +2095,9 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     動かしても、ログにその値は出ず、例外の型名だけが出ます。下書きの失敗のツールの結果にも例外の文は入りません。本番の音声ワーカー
     (`start`)と Web プロセスでは、SDK のロガーと、後から登録した livekit-agents のプラグインのロガーが INFO を出しません
     (`tests/test_log_privacy.py`)
+28. 音声相談は、既定では文字起こし、下書き、求人の提案をファイルに書き出さず、下書きは dip の状態に入ってトークに届きます
+    (`tests/voice/test_outputs.py::test_by_default_nothing_is_written_but_the_draft_is_returned`、`tests/test_voice_track.py` の `_draft`)。
+    書き出すのは `VOICE_RESUME_WRITE_FILES=1` のときだけです(`tests/voice/test_outputs.py::test_writing_files_is_off_unless_the_setting_is_1`)
 
 ## 10. テストと評価の仕組み
 

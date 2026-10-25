@@ -10,7 +10,8 @@ get_counseling_playbook(track, "voice"))を足したもの(prompts.advisor_instr
 - web_research / wage_average / research_company: 会話中に本人が気になったこと(仕事内容・資格など)、
   平均時給(全国と東京は参考データ data/wage_reference.json からすぐ答える)、気になる会社を web で調べて短く答える
 - finalize_interview: 文字起こしから下書き(正社員なら職務経歴書、それ以外は履歴書)を作り、希望条件・提案した求人IDと
-  一緒に out/ へ保存し、相談のまとめを dip に記録してトークへ結果を返す
+  一緒にトークへ返し(dip の状態に入る)、相談のまとめを dip に記録する。ファイルに書き出すのは開発のときだけ
+  (config.WRITE_FILES)
 
 ツールのロジックはオフラインでテストする(dip と drafter の client を差し替えられる)。
 """
@@ -410,7 +411,7 @@ class ResumeAdvisor(Agent):
                     "proposed_job_ids": [j.get("job_id", "") for j in jobs],
                 }
             )
-            # 提案済みの記録は0件の再検索で消さない(out/ の job-proposal とトークに残すため)。外した求人を除いて
+            # 提案済みの記録は0件の再検索で消さない(トークに残すため)。外した求人を除いて
             # 探し直して0件のときも、前の提案をそのまま残す(「ほかには?」で0件でも、本人が聞いた求人はトークに届く)。
             # そのため、電話が中心の求人だけが当たって外した後に0件なら、読み上げていないその求人もトークに届く
             # (ユーザーの決定、2026-10-04)。画面はその回の結果をそのまま出す(0件なら「見つかりませんでした」)
@@ -544,10 +545,23 @@ class ResumeAdvisor(Agent):
                 f"{kind}の下書きと求人の提案を保存し、トークに送りました(話し終えると通話の画面が閉じ、トークに続きが出ます)。"
                 "内容は本人が確認・修正する旨を伝え、お礼を述べて短く締めてください。"
             )
-        else:
+        elif self.finalized["files"]:
+            # 開発で書き出したとき(config.WRITE_FILES)
             self._finalize_reply = (
                 f"{kind}の下書きと求人の提案を保存しました。"
                 "内容は本人が確認・修正する旨を伝え、お礼を述べて締めてください。"
+            )
+        elif not self._user_id:
+            # トークから入っていない相談(開発の単体の相談)。返す先が無い
+            self._finalize_reply = (
+                f"{kind}の下書きを作りました。"
+                "内容は本人が確認・修正する旨を伝え、お礼を述べて締めてください。"
+            )
+        else:
+            # 既定はファイルに書き出さないので、トークに届かなければ下書きはどこにも残らない(docs/design/privacy.md の 3.3)
+            self._finalize_reply = (
+                f"{kind}の下書きを作りましたが、トークに送れず、残せませんでした。"
+                "そのことを短く謝り、お礼を述べて締めてください。"
             )
         return self._finalize_reply
 
@@ -656,12 +670,15 @@ class ResumeAdvisor(Agent):
         if self._dip is None or not self._user_id:
             return
         kind = self.document_kind
+        # 既定はファイルに書き出さないので、トークに届かなかった下書きはどこにも残っていない
+        saved = self.delivered_to_talk or bool(self.finalized and self.finalized["files"])
+        draft = f"{kind}の下書きを保存した" if saved else f"{kind}の下書きを作った(トークに届かず残っていない)"
         if self.proposed_jobs:
             outcome = "propose"
-            reason = f"音声相談で求人{len(self.proposed_jobs)}件を提案し、{kind}の下書きを保存した"
+            reason = f"音声相談で求人{len(self.proposed_jobs)}件を提案し、{draft}"
         else:
             outcome = "consult"
-            reason = f"音声相談で希望を聞き取り、{kind}の下書きを保存した(条件に合う求人は提案できず)"
+            reason = f"音声相談で希望を聞き取り、{draft}(条件に合う求人は提案できず)"
         try:
             await self._dip.record_conversation_outcome(
                 self._user_id, outcome, reason, confidence=1.0, summary=self.summary, room=self._room_name
@@ -670,7 +687,8 @@ class ResumeAdvisor(Agent):
             logger.warning("record_conversation_outcome 失敗: %s", type(exc).__name__)
 
     async def _deliver_to_talk(self) -> None:
-        """提案した求人と下書きをトーク(line_runtime の /api/voice/result)へ届ける。失敗しても out/ には残る。
+        """提案した求人と下書きをトーク(line_runtime の /api/voice/result)へ届ける。失敗しても面談は締める
+        (開発で書き出していればファイルには残る)。
         トークが受け取らなかった(面談の途中で本人が「すべて消す」をした)ら forgotten にする。"""
         if not self._user_id or self.finalized is None:
             return
