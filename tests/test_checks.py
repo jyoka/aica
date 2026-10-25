@@ -586,3 +586,85 @@ def test_saved_preference_whose_meaning_is_reversed_is_a_fabrication():
                         ("土日は休みたい、平日の仕事がいい", {"days_per_week": "土日の仕事がいい"})):
         k, v = next(iter(prefs.items()))
         assert preference_violations([_saved(prefs)], [said]) == [f"T1: 本人が言っていない希望を保存した: {k}={v}"], said
+
+
+# ----------------------------- お礼つきの「考えます」で締める(task 223 の D1) -----------------------------
+
+CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
+PROPOSED = {**turn(["渋谷・日中で3件あります。"], [("recommend_jobs", {"jobs": []}),
+                                                  ("record_conversation_outcome", {"recorded": True})]),
+            "quick_replies": ["詳しく聞く", "今はいい"]}
+
+
+def _closing(bubbles, tools=()):
+    return {**turn(bubbles, tools), "quick_replies": CLOSING}
+
+
+def test_thanks_and_think_is_closed_without_a_question():
+    """「ありがとう、考えます」には迷いの問いを返さず締める(#221 の F-follow-new T6 の返信は違反)。"""
+    from evals.checks import conversation_checks, thanks_close_violations
+
+    said = [None, "ありがとう、考えます"]
+    asked = {**turn(["承知しました。迷っているのは、どのあたりですか？"]),
+             "quick_replies": ["仕事内容", "シフト", "未経験でも大丈夫か", "今はいい"]}
+    v = thanks_close_violations([PROPOSED, asked], said)
+    assert v == ["T2: お礼つきの「考えます」に問いを返した(締めていない): 承知しました。迷っているのは、どのあたりですか？"]
+    assert v[0] in conversation_checks({"expect_outcome": ["propose"]}, [PROPOSED, asked], said)["violations"]
+    # 問いで終えず、次に開いたときの入口を1文添えて締めるのは違反ではない(出口は提案したターンの記録でよい)
+    closed = _closing(["承知しました。ゆっくり考えてみてください。",
+                       "気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"])
+    assert thanks_close_violations([PROPOSED, closed], said) == []
+    assert conversation_checks({"expect_outcome": ["propose"]}, [PROPOSED, closed], said)["violations"] == []
+
+
+def test_thanks_and_think_close_is_short_has_no_jobs_and_keeps_the_outcome():
+    from evals.checks import thanks_close_violations
+
+    said = [None, "ありがとうございます。少し検討します。"]
+    long = _closing(["承知しました。", "ゆっくり考えてみてください。", "またいつでもどうぞ。"])
+    assert any("吹き出し3つ" in x for x in thanks_close_violations([PROPOSED, long], said))
+    more_jobs = {**_closing(["承知しました。ほかにもこんな求人があります。"]), "cards": [{"job_id": "c001", "reasons": ["渋谷"]}]}
+    assert any("求人を出した" in x for x in thanks_close_violations([PROPOSED, more_jobs], said))
+    # 出口をまだ記録していなければ、締めるターンで記録する
+    asked_only = {**turn(["渋谷・日中で3件あります。"], [("recommend_jobs", {"jobs": []})]), "quick_replies": ["今はいい"]}
+    closed = _closing(["承知しました。ゆっくり考えてみてください。"])
+    assert any("出口" in x for x in thanks_close_violations([asked_only, closed], said))
+    recorded = _closing(["承知しました。ゆっくり考えてみてください。"], [("record_conversation_outcome", {"recorded": True})])
+    assert thanks_close_violations([asked_only, recorded], said) == []
+
+
+def test_hesitating_think_may_still_ask_one_question():
+    """迷いを言っている「考えます」には、今までどおり迷いの点を1問聞いてよい(お礼があっても)。"""
+    from evals.checks import thanks_and_think, thanks_close_violations
+
+    asked = {**turn(["どのあたりで迷っていますか?"]), "quick_replies": ["時給", "シフト", "今はいい"]}
+    for m in ("うーん、考えます", "ちょっと迷うので考えます", "ありがとう、でも時給で迷うので考えます", "考えます",
+              "ありがとう、考えます。制服はありますか？"):
+        assert not thanks_and_think(m), m
+        assert thanks_close_violations([PROPOSED, asked], [None, m]) == [], m
+    for m in ("ありがとう、考えます", "ありがとう、考えます。", "ありがとうございます。検討してみます",
+              "ありがとう、いつでも見られるなら考えます", "ありがとうございます、考えておきます",
+              "ありがとう、検討しておきます", "ありがとうございます。検討いたします",
+              "ありがとうございます、考えたいと思います", "ありがとう、考えてみる", "ありがとう、考えとくね",
+              "ありがとうございます。誰でもできるなら考えます"):
+        assert thanks_and_think(m), m
+        assert thanks_close_violations([PROPOSED, asked], [None, m]), m
+    # 事情の説明や、考えた後の返事は「考えます」ではない
+    for m in ("ありがとう、転職を考えていて", "ありがとう、考えました。応募します"):
+        assert not thanks_and_think(m), m
+
+
+def test_hesitating_think_does_not_end_a_consultation():
+    """相談の途中の「うーん、考えます」は切り上げではない(迷いの点を聞く場面で、相談を締めるのは打ち切り)。
+    「ありがとう、考えます」は切り上げ。"""
+    from evals.checks import consult_violations
+
+    entry = {**turn(["いくつか伺いながら一緒に整理します。", "探そうと思ったきっかけは何ですか?"],
+                    [("get_counseling_playbook", {"playbook": "…"})]), "quick_replies": ["それ以外", "今はいい"]}
+    close = _closing(["承知しました。"], [("record_conversation_outcome", {"recorded": True})])
+    sc = {"consult_mode": True}
+    said = [None, "何から始めればいいか分からない"]
+    turns = [{**turn(["はじめまして。"]), "quick_replies": ["求人を探す", "まず相談する", "今はいい"]}, entry, close]
+    v = consult_violations(sc, turns, [*said, "うーん、考えます"])
+    assert any("切り上げる前に相談を締めた" in x for x in v)
+    assert not any("切り上げる前" in x for x in consult_violations(sc, turns, [*said, "ありがとう、考えます"]))

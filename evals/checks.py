@@ -27,8 +27,18 @@ ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いら�
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
 # この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
 QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?[。!!]?")  # fullmatch で使う
-# 「考えます」「迷って」は断りに数えない(迷いのポイントを聞いて支援するのが正しく、wait を記録するのは違反)
+# 「考えます」「迷って」は断りに数えない(お礼つきなら短く締め、迷いを言っていれば迷いのポイントを聞く。
+# どちらも wait を記録するのは違反)
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
+# お礼か終わりの挨拶。迷いの言葉も問いも無ければ、会話の終わりの合図(Prompt の対話ルール。task 223 の D1)
+THANKS = re.compile(r"ありがと|今日はこれで")
+# 「考えます」「検討します」とその言い換え(「考えておきます」「考えたいと思います」「考えてみる」「考えとく」
+# 「検討いたします」)。お礼と一緒なら会話の終わり、お礼が無ければ迷いのサイン。
+# 「考えていて」「考えました」は含めない(事情の説明や、考えた後の返事)
+THINK_IT_OVER = re.compile(r"考え(ます|てみ|させて|ておき|たい|と[きく])|検討(しま|してみ|させて|しておき|いたしま|したい)")
+# 迷いを言っている言葉。お礼があっても、これがあれば迷いのサインで、迷いの点を1問聞いてよい
+# (「ありがとう、でも時給で迷うので考えます」「うーん、考えます」)
+HESITATION = re.compile(r"迷|悩|うーん|ううん|どうしよう|気にな|不安|心配|考え中|(?<![つ何れこ誰])でも|けど|けれど")  # 「いつでも」「何でも」「誰でも」は除く
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
 # 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
@@ -62,8 +72,9 @@ CONSULT_SIGN = re.compile(r"相談|何から始め|何をすれば|探し方が�
 SHOW_JOBS = re.compile(r"求人を?(見せて|見たい|出して|見る)")
 
 
-# 本人が相談を切り上げた・会話を終えた発言(これより前に相談を締めるのは打ち切り)
-CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度|ありがとう|今日はこれで|考えます")
+# 本人が相談を切り上げた発言(これと thanks_goodbye の発言より前に相談を締めるのは打ち切り)。
+# 迷いを言う「考えます」(「うーん、考えます」)は切り上げではない(迷いの点を1問聞く場面で、まだ締めない)
+CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 # 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
     "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
@@ -125,6 +136,36 @@ PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|た�
                                r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに")
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
+
+
+def thanks_goodbye(m: str) -> bool:
+    """お礼か終わりの挨拶で、迷いの言葉も問いも無い発言(会話の終わりの合図。「ありがとう、考えます」「今日はこれで」)。"""
+    return bool(THANKS.search(m)) and not HESITATION.search(m) and "?" not in m and "\uff1f" not in m
+
+
+def thanks_and_think(m: str) -> bool:
+    """お礼つきの「考えます」(「ありがとう、考えます」)。迷いの問いを返さず、短く締める発言。"""
+    return thanks_goodbye(m) and bool(THINK_IT_OVER.search(m))
+
+
+def thanks_close_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """お礼つきの「考えます」への返信は、問いを返さず(迷いの候補を聞かない)、吹き出し2つまでで締め、求人を出さない。
+    出口(record_conversation_outcome)は、そのターンまでに記録している(提案したターンの記録でよい)。
+    迷いを言っている「考えます」(「うーん、考えます」)は対象にしない(1問聞いてよい)。"""
+    out = []
+    for i, m in enumerate(user_msgs[:len(turns)]):
+        if not m or not thanks_and_think(m):
+            continue
+        r = turns[i]
+        if _questions(r["bubbles"]):
+            out.append(f"T{i + 1}: お礼つきの「考えます」に問いを返した(締めていない): {' / '.join(r['bubbles'])}")
+        if len(r["bubbles"]) > 2:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めが吹き出し{len(r['bubbles'])}つ(2つまで)")
+        if r["cards"]:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の後に求人を出した")
+        if not any(t["name"] == "record_conversation_outcome" for x in turns[:i + 1] for t in x["tools"]):
+            out.append(f"T{i + 1}: お礼つきの「考えます」で締めたのに、出口(record_conversation_outcome)を記録していない")
+    return out
 
 
 def asks_for_jobs(m: str) -> bool:
@@ -615,7 +656,7 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
         out.append(f"T{entry + 1}: 相談に入ったのに playbook(get_counseling_playbook)を読んでいない")
     for i in range(entry, len(turns)):
         m = user_msgs[i] or ""
-        if i > entry and (CONSULT_CUTOFF.search(m) or asks_for_jobs(m)):
+        if i > entry and (CONSULT_CUTOFF.search(m) or thanks_goodbye(m) or asks_for_jobs(m)):
             break
         names = [t["name"] for t in turns[i]["tools"]]
         if "record_conversation_outcome" in names and not turns[i]["cards"] and "recommend_jobs" not in names:
@@ -1146,6 +1187,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
                                    sc.get("seed_preferences") if sc.get("expect_uses_preferences") else None)
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
+    violations += thanks_close_violations(turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
