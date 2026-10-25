@@ -98,7 +98,7 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-INTERNAL_KEY = "offline-test-internal-key"
+INTERNAL_KEY = "offline-test-internal-key-offline-test"
 WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}  # 音声ワーカー(サーバー間の経路)の共有鍵
 
 

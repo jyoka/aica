@@ -1054,7 +1054,8 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   LIFF の本人の Cookie の署名の鍵もここから作るので、漏れると LIFF 画面で誰にでもなれます
 - LIFF ID とチャネル ID(`LINE_LIFF_ID`、`LINE_LIFF_CHANNEL_ID`)は秘密ではありませんが、ほかの LINE の設定と同じく `.env` に置きます
 - 音声ワーカーから Web サーバーへの `POST /api/voice/result` と `POST /api/voice/session` は、Cookie ではなく内部の鍵 `AICA_INTERNAL_KEY`
-  (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です
+  (`Authorization: Bearer`)で守ります。鍵が無い、違う、サーバーに設定が無いときは 401 です。音声相談の設定(`LIVEKIT_*`)があるのに
+  鍵が無い、短いときは、Web サーバーも音声ワーカーも起動で止まります(結果が届かないまま相談だけ進むのを防ぐ)
 
 ### LLM の出力と外のデータ
 

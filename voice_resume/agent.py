@@ -23,9 +23,10 @@ from livekit.agents import AgentSession
 from livekit.plugins import cartesia, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
+from line_runtime import line_channel
 from line_runtime.log_policy import quiet_sdk_loggers
 from voice_resume import config
-from voice_resume.advisor import ResumeAdvisor, _post_json
+from voice_resume.advisor import ResumeAdvisor, _post_json, post_failure
 from voice_resume.dip import DipMCP
 from voice_resume.jobs import DEFAULT_TRACK
 from voice_resume.prompts import greeting_instructions
@@ -114,8 +115,8 @@ async def report_session(room: str, user_id: str, state: str, poster=None) -> bo
         got = await (poster or _post_json)(f"{config.TALK_URL}/api/voice/session",
                                            {"user_id": user_id, "room": room, "state": state})
     except Exception as exc:  # noqa: BLE001
-        logger.warning("トークへ部屋の%sを知らせられません: %s", "始まり" if state == "joined" else "終わり",
-                       type(exc).__name__)
+        logger.error("トークへ部屋の%sを知らせられません: %s", "始まり" if state == "joined" else "終わり",
+                     post_failure(exc))
         return True
     return (got or {}).get("allowed", True) is not False
 
@@ -325,6 +326,22 @@ def configure_logging(argv: list[str]) -> None:
     Plugin.emitter.on("plugin_registered", lambda p: p.logger and p.logger.setLevel(logging.WARNING))
 
 
-if __name__ == "__main__":
-    configure_logging(sys.argv[1:])
+def check_settings(argv: list[str]) -> None:
+    """起動のときに呼ぶ。音声相談の設定があるのに AICA_INTERNAL_KEY が無い・短ければ InternalKeyError で止める
+    (Web サーバーの lifespan と同じ line_channel.check_internal_key)。鍵が無いと、相談は最後まで進むが、
+    このワーカーが送る結果が Web サーバーに 401 で断られる。モデルを取るだけの download-files では確かめない。"""
+    if argv[:1] != ["download-files"]:
+        line_channel.check_internal_key()
+
+
+def main(argv: list[str]) -> None:
+    configure_logging(argv)
+    try:
+        check_settings(argv)
+    except line_channel.InternalKeyError as err:
+        sys.exit(f"音声ワーカーを起動しません: {err}")
     agents.cli.run_app(worker_options())
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

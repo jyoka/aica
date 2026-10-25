@@ -164,6 +164,31 @@ def voice_configured() -> bool:
     return all(os.environ.get(k) for k in LIVEKIT_ENVS)
 
 
+# 音声ワーカー → Web サーバー(POST /api/voice/session と /api/voice/result)の共有鍵。2 つのプロセスで同じ値にする
+INTERNAL_KEY_ENV = "AICA_INTERNAL_KEY"
+MIN_INTERNAL_KEY_CHARS = 32  # 鍵の長さの下限(前後の空白を除いた文字数。secrets.token_urlsafe(32) は 43 文字)
+
+
+class InternalKeyError(RuntimeError):
+    """音声相談の設定があるのに、内部の鍵(AICA_INTERNAL_KEY)が無い・短い。"""
+
+
+def check_internal_key() -> None:
+    """起動のときに呼ぶ(Web サーバーの lifespan と音声ワーカー)。音声相談の設定があるのに鍵が無い・短ければ
+    InternalKeyError で止める。鍵が無いまま動くと、相談は最後まで進むが、ワーカーが送る結果が 401 で断られ、
+    まとめと下書きが届かない(利用者には何も知らされない)。音声相談の設定が無ければ、鍵は要らない(何もしない)。"""
+    if not voice_configured():
+        return
+    key = os.environ.get(INTERNAL_KEY_ENV, "").strip()
+    if len(key) < MIN_INTERNAL_KEY_CHARS:
+        why = "がありません" if not key else (
+            f"が短すぎます({len(key)} 文字。{MIN_INTERNAL_KEY_CHARS} 文字以上にしてください)")
+        raise InternalKeyError(
+            f"{INTERNAL_KEY_ENV} {why}。音声相談の設定({'、'.join(LIVEKIT_ENVS)})があるときに要る鍵で、"
+            "音声ワーカーが相談の結果を Web サーバーへ届けるのに使います。.env に、Web サーバーと音声ワーカーで同じ値を書いてください"
+            ' (作り方の例: python3 -c "import secrets; print(secrets.token_urlsafe(32))")')
+
+
 def liff_features() -> tuple[str, ...]:
     """LINE のトークから LIFF 画面で使えるもの: resume_upload(履歴書を読み込む)、voice_consult(音声相談。LiveKit の
     設定も要る)、arcade(レジュメ・アーケード)。LIFF の設定が無ければ空(どれも LINE では使えない)。"""

@@ -302,6 +302,7 @@ LIVEKIT_ENV = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": 
 def livekit(monkeypatch):
     for k, v in LIVEKIT_ENV.items():
         monkeypatch.setenv(k, v)
+    monkeypatch.setenv("AICA_INTERNAL_KEY", "offline-test-internal-key-offline-test")  # 無いと起動で止まる
 
 
 def _fake_livekit(context) -> list[str]:

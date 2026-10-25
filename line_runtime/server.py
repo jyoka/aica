@@ -19,6 +19,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
   (他人のユーザーIDを本文に入れても 403)。ID を名乗るだけでは読めない・話せない・会話数の上限も迂回できない。
 - 本人のデータを指す URL にユーザーIDを載せない。API はユーザーIDを本文で受け取り、画面(LIFF)は Cookie から本人を決める。
 - サーバー間の経路(音声ワーカー → POST /api/voice/result と /api/voice/session)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
+  音声相談の設定(LIVEKIT_*)があるのに鍵が無い・短ければ、起動で止まる(line_channel.check_internal_key)。
 
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
 丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
@@ -200,13 +201,14 @@ def _page_user(request: Request, scenario_user: str | None) -> str:
 
 
 # サーバー間の経路(音声ワーカー → POST /api/voice/result)の共有鍵。ブラウザの Cookie ではなくこれで守る。
-# 設定が無ければ、その経路はすべて断る(鍵なしで開けない)。
-INTERNAL_KEY_ENV = "AICA_INTERNAL_KEY"
+# 設定が無ければ、その経路はすべて断る(鍵なしで開けない)。音声相談の設定があるのに無い・短ければ、起動で止める
+# (lifespan の line_channel.check_internal_key)。
+INTERNAL_KEY_ENV = line_channel.INTERNAL_KEY_ENV
 
 
 def _require_internal(request: Request) -> None:
     """Authorization: Bearer <AICA_INTERNAL_KEY> の呼び出しだけを通す(無い・違う・サーバーに鍵が無いなら 401)。"""
-    key = os.environ.get(INTERNAL_KEY_ENV, "")
+    key = os.environ.get(INTERNAL_KEY_ENV, "").strip()  # 起動の確かめ(check_internal_key)と同じく、前後の空白は除く
     got = request.headers.get("authorization", "")
     if not key or not secrets.compare_digest(got.encode(), f"Bearer {key}".encode()):
         raise HTTPException(401, "サーバー間の共有鍵がありません")
@@ -272,6 +274,7 @@ class EventIn(BaseModel):
 async def lifespan(app: FastAPI):
     config.load_env()
     line_channel.check_id_key()  # LINE の設定があるのに AICA_ID_KEY が無い・短ければ、ここで止める
+    line_channel.check_internal_key()  # 音声相談の設定があるのに AICA_INTERNAL_KEY が無い・短ければ、ここで止める
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
