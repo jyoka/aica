@@ -82,10 +82,14 @@ def _rule(name: str) -> str:
     return next(x for x in SYSTEM.splitlines() if x.startswith(f"- {name}"))
 
 
-def test_judge_prompt_accepts_one_question_after_i_will_think_about_it():
-    # 「考えます」のあとに迷いの点を1問聞くのは Prompt(baitoru_assistant.md の対話ルール)どおり。待つのは「今はいい」の後
+def test_judge_prompt_closes_on_thanks_and_asks_only_on_hesitation():
+    # Prompt(baitoru_assistant.md の対話ルール)と同じ: お礼つきの「考えます」は短く締める(迷いの問いは減点)。
+    # 迷いを言っている「考えます」のあとに迷いの点を1問聞くのは正しい。待つのは「今はいい」の後(task 223 の D1)
     rule = _rule("design_fit")
-    assert "「考えます」「迷っている」" in rule and "断りではない" in rule
+    assert "お礼や終わりの挨拶と一緒の「考えます」(「ありがとう、考えます」)は会話の終わり" in rule
+    assert "問いを返さず短く締め、次に開いたときの入口を1つ添えるのが正しく" in rule
+    assert "迷いの点を聞き返すのは減点する" in rule
+    assert "迷いを言っている「考えます」(「うーん、考えます」「迷うので考えます」)" in rule and "断りではない" in rule
     assert "どこで迷っているかを1問だけ聞くのは正しい" in rule and "減点しない" in rule
     assert "待つ(wait)のは「今はいい」が選ばれた後" in rule
 

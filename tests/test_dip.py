@@ -208,7 +208,7 @@ def test_wait_without_refusal_words_is_not_recorded(state):
     # 「別のこと」を選んだだけの人を wait にしない(断っていない人を wait と記録しない。spike 2026-09-25)
     r = logic.record_outcome(state, "sim-yoru", "wait", "別のことを選んだ。内容は未確認", 0.6)
     assert "error" in r and not state.user("sim-yoru").get("outcomes")
-    # 「考えます」は迷いのサインで、断りではない(迷いのポイントを聞いて支援する)
+    # 「考えます」は断りではない(お礼つきなら会話の終わりとして締め、迷いを言っていれば迷いのポイントを聞く)
     assert "error" in logic.record_outcome(state, "sim-yoru", "wait", "ありがとう、考えます", 0.6)
     assert logic.record_outcome(state, "sim-yoru", "wait", "もう送らないで", 0.9)["recorded"]["outcome"] == "wait"
     assert logic.record_outcome(state, "sim-yoru", "consult", "面接の質問", 0.8)["recorded"]["outcome"] == "consult"

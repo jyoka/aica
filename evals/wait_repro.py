@@ -28,7 +28,7 @@ CASES = {
                  "script": ["今はいい"], "expect_refusal": True},
     "B-exit": {"user": "sim-exit", "event": "form_exit",
                "script": ["今はいい"], "expect_refusal": True},
-    # 「考えます」は迷いのサイン: 迷いのポイントを聞いて続ける(wait にしない)。その後に「今はいい」なら記録する
+    # 「ありがとう、考えます」は会話の終わり: 問いを返さずに締める(wait にしない)。その後に「今はいい」なら記録する
     "consider": {"user": "sim-new", "event": "visit",
                  "script": ["求人を探す", "渋谷で日中のカフェ。未経験です", "ありがとう、考えます"], "expect_refusal": False},
     "consider-then-no": {"user": "sim-new", "event": "visit",

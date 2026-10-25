@@ -74,11 +74,18 @@ def test_sim_leaks_do_not_flag_natural_messages():
 
 
 def test_sim_leaks_find_nothing_in_the_saved_baselines():
-    # 保存済みの基準の会話の、本人の発言すべて(指示文の発言は #221 の 1 件だけで、基準には無い)
-    said = [m for f in sorted((ROOT / "evals" / "baseline").glob("sim-*.json"))
-            for r in json.loads(f.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"
-            for m in r["detail"].get("user_msgs") or [t["text"] for t in r["detail"]["transcript"] if t["who"] == "user"]]
-    assert len(said) > 300 and sim_leaks([None, *said]) == []
+    # 保存済みの基準の会話の、本人の発言すべて。指示文の発言は #221 の 1 件(T-switch-to-fulltime の U2)だけで、
+    # その回(sim-20261025-230120。task 223 が直す前の基準として入れた)のほかには無い
+    said, leaks = 0, {}
+    for f in sorted((ROOT / "evals" / "baseline").glob("sim-*.json")):
+        msgs = [m for r in json.loads(f.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"
+                for m in r["detail"].get("user_msgs") or [t["text"] for t in r["detail"]["transcript"] if t["who"] == "user"]]
+        said += len(msgs)
+        if found := sim_leaks([None, *msgs]):
+            leaks[f.name] = found
+    assert said > 300
+    assert list(leaks) == ["sim-20261025-230120.json"] and len(leaks["sim-20261025-230120.json"]) == 1
+    assert "次の質問に答えるときに" in leaks["sim-20261025-230120.json"][0]
 
 
 @pytest.mark.parametrize(("turns", "cap", "by_user", "cut"), [

@@ -1,0 +1,783 @@
+{
+  "harness": "line-sim",
+  "config": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "sim_model": "gpt-6-luna",
+    "judge": false,
+    "judge_model": null,
+    "judge_samples": null,
+    "max_turns": 8,
+    "repeat": 1,
+    "channel": "line",
+    "features": [
+      "resume_upload",
+      "voice_consult",
+      "arcade"
+    ]
+  },
+  "directions": {
+    "branch_within_3": "up",
+    "outcome_recorded": "up",
+    "outcome_as_expected": "up",
+    "violations": "down",
+    "search_arg_violations": "down",
+    "call_overlaps": "down",
+    "fabrications": "down",
+    "track_ok": "up",
+    "cache_hit_rate": "up",
+    "llm_calls": "down",
+    "latency_p50": "down",
+    "latency_max": "down",
+    "cost_usd": "down",
+    "depth_purpose": "up",
+    "depth_dig": "up",
+    "depth_options": "up",
+    "depth_reasons": "up",
+    "tone": "up",
+    "design_fit": "up"
+  },
+  "runs": [
+    {
+      "case": "F-follow-new",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "branch_within_3": false,
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "track_ok": null,
+        "violations": 0,
+        "fabrications": 0,
+        "turns": 6,
+        "search_arg_violations": 0,
+        "call_overlaps": 0,
+        "action_offers": 1,
+        "latency_p50": 4.6,
+        "latency_max": 7.3,
+        "cost_usd": 0.0582,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.988,
+        "depth_purpose": null,
+        "depth_dig": null,
+        "depth_options": null,
+        "depth_reasons": null,
+        "tone": null,
+        "design_fit": null
+      },
+      "detail": {
+        "id": "F-follow-new",
+        "user": "sim-new",
+        "push_facts": null,
+        "channel": "line",
+        "features": [
+          "resume_upload",
+          "voice_consult",
+          "arcade"
+        ],
+        "turns": 6,
+        "branch_turn": 4,
+        "branch_within_3": false,
+        "tracks": [
+          "未定",
+          "未定",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート",
+          "アルバイト・パート"
+        ],
+        "track_checks": [],
+        "track_ok": null,
+        "action_offers": [
+          {
+            "turn": 1,
+            "actions": [
+              "voice_consult",
+              "resume_upload"
+            ]
+          }
+        ],
+        "greeting_offers": [
+          "voice_consult",
+          "resume_upload",
+          "arcade"
+        ],
+        "outcomes": [
+          "propose"
+        ],
+        "outcome_recorded": true,
+        "outcome_as_expected": true,
+        "offer_turn": 4,
+        "violations": [],
+        "fabrications": [],
+        "search_arg_violations": [],
+        "call_overlaps": [],
+        "upload_turn": null,
+        "latency_p50": 4.6,
+        "latency_max": 7.3,
+        "cost_usd": 0.0582,
+        "llm_calls": 11,
+        "cache_hit_rate": 0.988,
+        "transcript": [
+          {
+            "who": "agent",
+            "text": "お仕事探しの相談と求人のご提案をします。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。\nどれから始めますか？\n[ボタン] ゲームで書類を作る\n[操作] 話して伝える(音声・約5分)\n[操作] ファイルを選ぶ(履歴書)\n[選択肢] 求人を探す / まず相談する / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "求人を探す"
+          },
+          {
+            "who": "agent",
+            "text": "お仕事を探しますね。正社員とアルバイト・パート、どちらをお考えですか？\n[選択肢] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "アルバイト・パート"
+          },
+          {
+            "who": "agent",
+            "text": "アルバイト・パートのお仕事で考えますね。働きたいエリアはどこですか？\n[選択肢] 新宿 / 渋谷 / 東京都内 / それ以外"
+          },
+          {
+            "who": "user",
+            "text": "渋谷"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷のアルバイト・パートを3件ご紹介します。気になるお仕事はありますか？\n[求人カード] レディースアパレル 店頭販売スタッフ / アルバイト・パート / 時給1350円 / 11:00〜20:00(実働7.5h・休憩90分) / 理由: 渋谷駅から徒歩5分・未経験OK\n[求人カード] 深夜バル ホールスタッフ｜高時給・日払いOK / アルバイト・パート / 時給1700円 / 21:00〜翌4:00 / 理由: 渋谷エリア・日払い\n[求人カード] IT企業のバックオフィスアシスタント(週3〜) / アルバイト・パート / 時給1650円 / 13:00〜19:00 / 理由: 渋谷エリア・短時間OK\n[選択肢] 1件目が気になる / 2件目が気になる / 条件を絞りたい / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "条件を絞りたいです。日中のカフェの仕事で、未経験でもできるものを探しています。"
+          },
+          {
+            "who": "agent",
+            "text": "渋谷で、日中に働ける未経験OKのカフェ求人が1件あります。勤務時間など、気になる点はありますか？\n[求人カード] カフェホール 渋谷道玄坂 / アルバイト・パート / 時給1250円 / 10:00〜19:00(4時間〜) / 理由: 日中の勤務(10:00〜19:00(4時間〜))・渋谷エリア\n[選択肢] 仕事内容を知りたい / 勤務条件を知りたい / ほかの条件で探す / 今はいい"
+          },
+          {
+            "who": "user",
+            "text": "ありがとう、考えます。"
+          },
+          {
+            "who": "agent",
+            "text": "ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。\n[選択肢] 求人を探す / 応募履歴を確認 / 使い方"
+          }
+        ],
+        "tools": [
+          [
+            "get_user_conversation_summary"
+          ],
+          [],
+          [
+            "set_search_track"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs",
+            "record_conversation_outcome"
+          ],
+          [
+            "save_user_preferences",
+            "recommend_jobs"
+          ],
+          []
+        ],
+        "turn_log": [
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "お仕事探しの相談と求人のご提案をします。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。",
+              "どれから始めますか？"
+            ],
+            "quick_replies": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [
+              {
+                "label": "ゲームで書類を作る",
+                "url": "/liff/arcade"
+              }
+            ],
+            "actions": [
+              "voice_consult",
+              "resume_upload"
+            ],
+            "tools": [
+              {
+                "name": "get_user_conversation_summary",
+                "args": {
+                  "line_user_id": "sim-new"
+                },
+                "result": {
+                  "linked": false,
+                  "segment": "unlinked",
+                  "search_track": "未定",
+                  "track_history": [],
+                  "stated_preferences": {},
+                  "consultation_summary": null,
+                  "uploaded_resume": null,
+                  "arcade_draft": null,
+                  "arcade_url": "/liff/arcade",
+                  "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。stated_preferences には、希望の条件のほか、相談で分かった目的(purpose)・強み(strengths)・やりたいこと(wants)・避けたいこと(avoids)・不安(concerns)も入る(本人の言葉)。聞き直さず、確認形で使う。consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。続きから始める材料にする。search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。track_history は直近の切り替え(根拠の発言つき)。uploaded_resume は本人がアップロードした履歴書の読み取り結果(書いてあった事実だけ。個人情報は含まない)。経験・資格・希望を聞き直さず、確認形で使う。unconfirmed は読み取れなかった点。arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う(URL を作らない。arcade_url が無ければボタンを出さない)。"
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "お仕事を探しますね。正社員とアルバイト・パート、どちらをお考えですか？"
+            ],
+            "quick_replies": [
+              "正社員",
+              "アルバイト・パート",
+              "まだ決めていない",
+              "今はいい"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          },
+          {
+            "entry": "visit",
+            "track_switch": {
+              "id": "e25dccad2abf",
+              "from": "未定",
+              "track": "アルバイト・パート",
+              "undo": false
+            },
+            "bubbles": [
+              "アルバイト・パートのお仕事で考えますね。働きたいエリアはどこですか？"
+            ],
+            "quick_replies": [
+              "新宿",
+              "渋谷",
+              "東京都内",
+              "それ以外"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "set_search_track",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "track": "アルバイト・パート",
+                  "evidence": "アルバイト・パート",
+                  "undo": false
+                },
+                "result": {
+                  "track": "アルバイト・パート",
+                  "changed": true,
+                  "recorded": {
+                    "id": "e25dccad2abf",
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "from": "未定",
+                    "track": "アルバイト・パート",
+                    "evidence": "アルバイト・パート",
+                    "undo": false
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "渋谷のアルバイト・パートを3件ご紹介します。気になるお仕事はありますか？"
+            ],
+            "quick_replies": [
+              "1件目が気になる",
+              "2件目が気になる",
+              "条件を絞りたい",
+              "今はいい"
+            ],
+            "cards": [
+              {
+                "job_id": "b0601",
+                "title": "レディースアパレル 店頭販売スタッフ",
+                "employer": "ルミエ・トロワ 渋谷店",
+                "employment_type": "アルバイト・パート",
+                "job_type": "アパレル販売",
+                "area": "渋谷",
+                "station": "渋谷駅",
+                "walk_min": 5,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1350,
+                  "max": null
+                },
+                "pay_text": "時給1350円",
+                "shift": "11:00〜20:00(実働7.5h・休憩90分)",
+                "days_min": 3,
+                "perks": [
+                  "未経験OK",
+                  "学生歓迎",
+                  "交通費支給",
+                  "髪色自由",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "渋谷駅から徒歩5分",
+                  "未経験OK"
+                ],
+                "match_score": 1.18,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.5,
+                  "wage": 0.68
+                }
+              },
+              {
+                "job_id": "b0105",
+                "title": "深夜バル ホールスタッフ｜高時給・日払いOK",
+                "employer": "バル アルデンテ横丁",
+                "employment_type": "アルバイト・パート",
+                "job_type": "飲食ホール",
+                "area": "渋谷",
+                "station": "渋谷",
+                "walk_min": 7,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1700,
+                  "max": null
+                },
+                "pay_text": "時給1700円",
+                "shift": "21:00〜翌4:00",
+                "days_min": 2,
+                "perks": [
+                  "学生歓迎",
+                  "日払い",
+                  "交通費支給",
+                  "まかない",
+                  "髪色自由",
+                  "シフト自由"
+                ],
+                "reasons": [
+                  "渋谷エリア",
+                  "日払い"
+                ],
+                "match_score": 1.15,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.3,
+                  "wage": 0.85
+                }
+              },
+              {
+                "job_id": "b1202",
+                "title": "IT企業のバックオフィスアシスタント(週3〜)",
+                "employer": "合同会社ブルーポート・テック",
+                "employment_type": "アルバイト・パート",
+                "job_type": "オフィス事務",
+                "area": "渋谷",
+                "station": "渋谷駅",
+                "walk_min": 7,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1650,
+                  "max": null
+                },
+                "pay_text": "時給1650円",
+                "shift": "13:00〜19:00",
+                "days_min": 3,
+                "perks": [
+                  "学生歓迎",
+                  "交通費支給",
+                  "髪色自由",
+                  "短時間OK"
+                ],
+                "reasons": [
+                  "渋谷エリア",
+                  "短時間OK"
+                ],
+                "match_score": 1.12,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.3,
+                  "wage": 0.82
+                }
+              }
+            ],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "save_user_preferences",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "preferences": {
+                    "area": "渋谷"
+                  }
+                },
+                "result": {
+                  "saved": [
+                    "area"
+                  ],
+                  "rejected": []
+                }
+              },
+              {
+                "name": "recommend_jobs",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "area": "渋谷",
+                  "time_band": null,
+                  "job_type": null,
+                  "min_wage": null,
+                  "employment_type": "アルバイト・パート",
+                  "min_annual_salary": null,
+                  "max_talk_level": null,
+                  "min_talk_level": null,
+                  "max_physical_level": null,
+                  "min_physical_level": null,
+                  "remote": null,
+                  "weekends_holidays": null,
+                  "max_overtime_hours": null,
+                  "keywords": null,
+                  "exclude_ids": null,
+                  "posted_within_days": null
+                },
+                "result": {
+                  "total": 7,
+                  "jobs": [
+                    {
+                      "job_id": "b0601",
+                      "title": "レディースアパレル 店頭販売スタッフ",
+                      "employer": "ルミエ・トロワ 渋谷店",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "アパレル販売",
+                      "area": "渋谷",
+                      "station": "渋谷駅",
+                      "walk_min": 5,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1350,
+                        "max": null
+                      },
+                      "pay_text": "時給1350円",
+                      "shift": "11:00〜20:00(実働7.5h・休憩90分)",
+                      "days_min": 3,
+                      "perks": [
+                        "未経験OK",
+                        "学生歓迎",
+                        "交通費支給",
+                        "髪色自由",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "渋谷駅から徒歩5分",
+                        "未経験OK"
+                      ],
+                      "match_score": 1.18,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.5,
+                        "wage": 0.68
+                      }
+                    },
+                    {
+                      "job_id": "b0105",
+                      "title": "深夜バル ホールスタッフ｜高時給・日払いOK",
+                      "employer": "バル アルデンテ横丁",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "飲食ホール",
+                      "area": "渋谷",
+                      "station": "渋谷",
+                      "walk_min": 7,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1700,
+                        "max": null
+                      },
+                      "pay_text": "時給1700円",
+                      "shift": "21:00〜翌4:00",
+                      "days_min": 2,
+                      "perks": [
+                        "学生歓迎",
+                        "日払い",
+                        "交通費支給",
+                        "まかない",
+                        "髪色自由",
+                        "シフト自由"
+                      ],
+                      "reasons": [
+                        "渋谷エリア",
+                        "日払い"
+                      ],
+                      "match_score": 1.15,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.3,
+                        "wage": 0.85
+                      }
+                    },
+                    {
+                      "job_id": "b1202",
+                      "title": "IT企業のバックオフィスアシスタント(週3〜)",
+                      "employer": "合同会社ブルーポート・テック",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "オフィス事務",
+                      "area": "渋谷",
+                      "station": "渋谷駅",
+                      "walk_min": 7,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1650,
+                        "max": null
+                      },
+                      "pay_text": "時給1650円",
+                      "shift": "13:00〜19:00",
+                      "days_min": 3,
+                      "perks": [
+                        "学生歓迎",
+                        "交通費支給",
+                        "髪色自由",
+                        "短時間OK"
+                      ],
+                      "reasons": [
+                        "渋谷エリア",
+                        "短時間OK"
+                      ],
+                      "match_score": 1.12,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.3,
+                        "wage": 0.82
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "record_conversation_outcome",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "outcome": "propose",
+                  "reason": "アルバイト・パート、渋谷で求人を探したい",
+                  "confidence": 0.95,
+                  "summary": "アルバイト・パートを渋谷で探している。次に確かめること: 希望の職種や時間帯。"
+                },
+                "result": {
+                  "recorded": {
+                    "at": "2026-09-23T12:00:00+09:00",
+                    "outcome": "propose",
+                    "reason": "アルバイト・パート、渋谷で求人を探したい",
+                    "confidence": 0.95,
+                    "summary": "アルバイト・パートを渋谷で探している。次に確かめること: 希望の職種や時間帯。"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "渋谷で、日中に働ける未経験OKのカフェ求人が1件あります。勤務時間など、気になる点はありますか？"
+            ],
+            "quick_replies": [
+              "仕事内容を知りたい",
+              "勤務条件を知りたい",
+              "ほかの条件で探す",
+              "今はいい"
+            ],
+            "cards": [
+              {
+                "job_id": "a003",
+                "title": "カフェホール 渋谷道玄坂",
+                "employer": "コーヒースタンド ドウゲン",
+                "employment_type": "アルバイト・パート",
+                "job_type": "カフェ",
+                "area": "渋谷",
+                "station": "渋谷",
+                "walk_min": 6,
+                "pay": {
+                  "kind": "時給",
+                  "min": 1250,
+                  "max": null
+                },
+                "pay_text": "時給1250円",
+                "shift": "10:00〜19:00(4時間〜)",
+                "days_min": 2,
+                "perks": [
+                  "未経験OK",
+                  "髪色自由",
+                  "短時間OK"
+                ],
+                "reasons": [
+                  "日中の勤務(10:00〜19:00(4時間〜))",
+                  "渋谷エリア"
+                ],
+                "match_score": 8.29,
+                "score_breakdown": {
+                  "job_type": 0.0,
+                  "time_band": 0.0,
+                  "area": 0.0,
+                  "station": 0.4,
+                  "wage": 0.62,
+                  "keywords": 7.27
+                }
+              }
+            ],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": [
+              {
+                "name": "save_user_preferences",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "preferences": {
+                    "time_band": "日中",
+                    "job_type": "カフェ",
+                    "experience": "未経験"
+                  }
+                },
+                "result": {
+                  "saved": [
+                    "time_band",
+                    "job_type",
+                    "experience"
+                  ],
+                  "rejected": []
+                }
+              },
+              {
+                "name": "recommend_jobs",
+                "args": {
+                  "line_user_id": "sim-new",
+                  "area": "渋谷",
+                  "time_band": "日中",
+                  "job_type": "カフェ",
+                  "min_wage": null,
+                  "employment_type": "アルバイト・パート",
+                  "min_annual_salary": null,
+                  "max_talk_level": null,
+                  "min_talk_level": null,
+                  "max_physical_level": null,
+                  "min_physical_level": null,
+                  "remote": null,
+                  "weekends_holidays": null,
+                  "max_overtime_hours": null,
+                  "keywords": "未経験でもできる",
+                  "exclude_ids": [
+                    "b0601",
+                    "b0105",
+                    "b1202"
+                  ],
+                  "posted_within_days": null
+                },
+                "result": {
+                  "total": 1,
+                  "jobs": [
+                    {
+                      "job_id": "a003",
+                      "title": "カフェホール 渋谷道玄坂",
+                      "employer": "コーヒースタンド ドウゲン",
+                      "employment_type": "アルバイト・パート",
+                      "job_type": "カフェ",
+                      "area": "渋谷",
+                      "station": "渋谷",
+                      "walk_min": 6,
+                      "pay": {
+                        "kind": "時給",
+                        "min": 1250,
+                        "max": null
+                      },
+                      "pay_text": "時給1250円",
+                      "shift": "10:00〜19:00(4時間〜)",
+                      "days_min": 2,
+                      "perks": [
+                        "未経験OK",
+                        "髪色自由",
+                        "短時間OK"
+                      ],
+                      "reasons": [
+                        "日中の勤務(10:00〜19:00(4時間〜))",
+                        "渋谷エリア"
+                      ],
+                      "match_score": 8.29,
+                      "score_breakdown": {
+                        "job_type": 0.0,
+                        "time_band": 0.0,
+                        "area": 0.0,
+                        "station": 0.4,
+                        "wage": 0.62,
+                        "keywords": 7.27
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "entry": "visit",
+            "track_switch": null,
+            "bubbles": [
+              "ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"
+            ],
+            "quick_replies": [
+              "求人を探す",
+              "応募履歴を確認",
+              "使い方"
+            ],
+            "cards": [],
+            "unknown_job_ids": [],
+            "buttons": [],
+            "actions": [],
+            "tools": []
+          }
+        ],
+        "user_msgs": [
+          null,
+          "求人を探す",
+          "アルバイト・パート",
+          "渋谷",
+          "条件を絞りたいです。日中のカフェの仕事で、未経験でもできるものを探しています。",
+          "ありがとう、考えます。"
+        ],
+        "upload": null,
+        "keyword_searches": [
+          {
+            "keywords": "未経験でもできる",
+            "peak": 0.154,
+            "semantic": true,
+            "candidates": 1,
+            "kept": 1,
+            "word_hits": 0
+          }
+        ]
+      }
+    }
+  ],
+  "spent_usd": 0.0586,
+  "stopped": null,
+  "ledger_total_usd": 0.775
+}
