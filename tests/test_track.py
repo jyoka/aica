@@ -145,7 +145,7 @@ def test_explicit_or_strong_signal_switches_in_one_turn(tmp_path, said, track):
         WELCOME,
         switch(track, said),
         reply([f"{label}のお仕事で考えますね。", "いま一番大事にしたいことは何ですか?"],
-              quick_replies=["仕事内容", "働く場所", "それ以外", "今はいい"]),
+              quick_replies=["仕事内容", "働く場所", "今はいい"]),
     ])
     t1, t2 = run(model, [(UID, "visit", None), (UID, "message", said)], tmp_path)
 
@@ -165,11 +165,11 @@ def test_weak_signal_asks_one_question_instead_of_switching(tmp_path):
     weak, answer = "経験を活かしたい", "正社員の仕事を考えています"
     model = TrackModel(script=[
         WELCOME,
-        reply(["経験を活かしたいのですね。", CONFIRM], quick_replies=["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"]),
+        reply(["経験を活かしたいのですね。", CONFIRM], quick_replies=["正社員", "空いた時間のアルバイト", "今はいい"]),
         switch("正社員", answer),
         call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb"),
         reply(["正社員のお仕事で考えますね。", "これまでの経験で、特に活かしたいのはどんなことですか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
     ])
     user_msgs = [None, weak, answer]
     turns = run(model, [(UID, "visit", None), (UID, "message", weak), (UID, "message", answer)], tmp_path)
@@ -206,7 +206,7 @@ def test_resume_alone_does_not_switch(tmp_path):
         assert s["uploaded_resume"]["work_history"][0]["employment_type"] == "正社員"
         assert s["search_track"] == "未定"
         return reply(["履歴書では、法人営業とPMを8年されていたんですね。", CONFIRM],
-                     quick_replies=["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"])
+                     quick_replies=["正社員", "空いた時間のアルバイト", "今はいい"])
 
     model = TrackModel(script=[
         WELCOME,
@@ -231,11 +231,11 @@ def test_undo_in_conversation_returns_to_the_previous_track(tmp_path):
 
     model = TrackModel(script=[
         switch("正社員", "正社員で探したい"),
-        reply(["正社員のお仕事で考えますね。", "どんなお仕事を考えていますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["正社員のお仕事で考えますね。", "どんなお仕事を考えていますか?"], quick_replies=[]),
         call("get_user_conversation_summary", {"line_user_id": UID}, "sum"),
         undo_from_history,
         reply(["承知しました。アルバイトに戻して考えますね。", "働きたい時間帯はありますか?"],
-              quick_replies=["日中", "夕方", "それ以外", "今はいい"]),
+              quick_replies=["日中", "夕方", "今はいい"]),
     ])
     _, t2 = run(model, [(UID, "message", "正社員で探したい"), (UID, "message", "やっぱり正社員じゃなくていい")], tmp_path)
 
@@ -272,7 +272,7 @@ def test_revisit_greeting_starts_from_the_recorded_track(tmp_path):
     model = TrackModel(script=[
         WELCOME,
         switch("正社員", "転職を考えています"),
-        reply(["正社員のお仕事で考えますね。", "転職で一番変えたいことは何ですか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["正社員のお仕事で考えますね。", "転職で一番変えたいことは何ですか?"], quick_replies=[]),
         greet_from_track, greet_from_track,
     ])
     *_, again = run(model, [(UID, "visit", None), (UID, "message", "転職を考えています"), (UID, "revisit", None)],

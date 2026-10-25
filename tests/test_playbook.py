@@ -149,7 +149,7 @@ def test_conversation_rules_match_between_playbooks_prompt_and_eval_format_check
     assert f"区分が正社員なら{rules[SEISHAIN]['branch_by']}回目の返信まで" in PROMPT
 
 
-def t(bubbles, tools=(), quick_replies=("今はいい",), cards=()):
+def t(bubbles, tools=(), quick_replies=("答えの候補", "今はいい"), cards=()):
     return {"bubbles": list(bubbles), "quick_replies": list(quick_replies), "cards": list(cards), "buttons": [],
             "tools": [{"name": n, "args": a, "result": res} for n, a, res in tools], "unknown_job_ids": []}
 
@@ -189,7 +189,7 @@ SAID = [None,
 # 掘り下げに「まだ分からない」と答えた場合(3問目の返信までを見る)
 DONT_KNOW_SAID = [*SAID[:3], "まだ分からないです"]
 DIG_BACK = reply(["まだはっきりしないのですね。", "これまでの仕事で、もう続けたくないと感じた場面はありましたか?"],
-                 quick_replies=["法人営業の新規開拓", "それ以外", "今はいい"])
+                 quick_replies=["法人営業の新規開拓", "今はいい"])
 ACK = ("新規事業の企画を2回提案しても通らなかったことが、転職を考えたきっかけなのですね。今の会社での既存機能の改善の"
        "仕事だけでなく、新しいプロダクトをゼロから企画できる環境を望まれていると受け止めました。")
 OFFER = ["求人を見る", "もう少し相談したい", "今はいい"]
@@ -204,18 +204,18 @@ def career_script(third: dict | None = None) -> list:
         switch_and_read(UID, SEISHAIN, SAID[1]),
         reply(["正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。",
                "履歴書では法人営業を4年、プロダクトマネージャーを4年されていたんですね。そのうえで、なぜ今、転職を考えているのですか?"],
-              quick_replies=["企画の幅を広げたい", "営業の経験を活かしたい", "それ以外", "今はいい"]),
+              quick_replies=["企画の幅を広げたい", "営業の経験を活かしたい", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {
             "purpose": "新しいプロダクトを最初から企画する経験を積みたい"}}),
         reply(["新しいプロダクトを最初から企画する経験を積みたいのですね。", "そう感じたのは、どんな場面でしたか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
     ]
     if third is not None:
         return [*head, third]
     return [
         *head,
         # 求人を探す前にエリアが要る(task 224)。年収と勤務地は1問にまとめる(task 225)
-        reply([ACK, "希望の年収と勤務地を教えてもらえますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply([ACK, "希望の年収と勤務地を教えてもらえますか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"min_annual_salary": "年収600万以上",
                                                                           "area": "新宿"}}),
         reply(["新しいプロダクトを最初から企画したい、年収600万以上、新宿で整理しました。", "この内容で求人を見ますか?"],
@@ -265,7 +265,7 @@ def test_career_consult_asks_the_purpose_digs_and_builds_options_from_the_resume
     assert PROFILE_FOLLOW_UP.search(turns[2]["bubbles"][-1])
     assert checks.asks_conditions(turns[3]) and r["consult_questions"] == {"start": 2, "asked": [2, 3, 4], "offer": 5,
                                                                           "offer_at": 4}
-    # 選択肢は履歴書と本人の発言から作る(「文字で話す」「今はいい」などの逃げ道を除いて、どれも手がかりがある)
+    # 選択肢は履歴書と本人の発言から作る(逃げ道の「今はいい」を除いて、どれも手がかりがある)
     options = [q for q in turns[1]["quick_replies"] if not checks.ESCAPE.search(q)]
     assert options and all(_grounded(q, _resume(turns) + SAID[1]) for q in options), options
     # 相談で分かったことは本人の言葉で保存された。正社員の条件に time_band は入らない
@@ -297,11 +297,11 @@ def test_listing_job_types_after_i_dont_know_is_caught(tmp_path):
 
 @pytest.mark.parametrize("bubbles, quick", [
     # 経歴を受け止める平叙文(候補ではない)と、職種の無い掘り下げの問い
-    (["カフェと事務のご経験があるんですね。", "どんな場面で手応えを感じましたか?"], ["それ以外", "今はいい"]),
+    (["カフェと事務のご経験があるんですね。", "どんな場面で手応えを感じましたか?"], []),
     # 本人の経験から1つだけ確かめる問い
-    (["コンビニのご経験で、楽しかったのはどんな場面でしたか?"], ["レジでの会話", "それ以外", "今はいい"]),
+    (["コンビニのご経験で、楽しかったのはどんな場面でしたか?"], ["レジでの会話", "今はいい"]),
     # 職種の名前が別の語の一部(「法人営業」「営業時間」)
-    (["法人営業のどんなところが合わないと感じましたか?"], ["営業時間が長い", "それ以外", "今はいい"]),
+    (["法人営業のどんなところが合わないと感じましたか?"], ["営業時間が長い", "今はいい"]),
 ])
 def test_digging_back_after_i_dont_know_is_not_a_violation(bubbles, quick):
     turns = [t(["どうしますか?"]), t(bubbles, quick_replies=quick)]
@@ -329,9 +329,9 @@ def test_switching_track_mid_conversation_rereads_the_playbook(tmp_path):
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": said[1]}),
-        reply(["アルバイト・パートのお仕事で考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["アルバイト・パートのお仕事で考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=[]),
         switch_and_read(UID, SEISHAIN, said[2]),
-        reply([long, "店長を目指したいと思ったのは、なぜですか?"], quick_replies=["それ以外", "今はいい"]),
+        reply([long, "店長を目指したいと思ったのは、なぜですか?"], quick_replies=[]),
     ])
     turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in said[1:]], tmp_path)
     sc = SCENARIOS["T-switch-to-fulltime"]
@@ -381,17 +381,17 @@ def length_script(after_dig: list) -> list:
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(UID, BAITO, LENGTH_SAID[1]),
         reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
-               "勉強と並行して働きたいと思ったのは、どんな理由からですか?"], quick_replies=["それ以外", "今はいい"]),
+               "勉強と並行して働きたいと思ったのは、どんな理由からですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"purpose": "介護の資格の学費を自分でまかないたい"}}),
         reply(["学費を自分でまかないたいのですね。", "学費のほかに、このパートで得たいことはありますか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"wants": "介護の現場を見ておきたい"}}),
         *after_dig,
     ]
 
 
 CONDITIONS = reply(["介護の現場を見ておきたいのですね。", "勉強の時間を除くと、働ける曜日・時間帯と、通いやすいエリアを教えてもらえますか?"],
-                   quick_replies=["平日の日中", "それ以外", "今はいい"])
+                   quick_replies=["平日の日中", "今はいい"])
 SAVE_CONDITIONS = call("save_user_preferences", {"line_user_id": UID, "preferences": {
     "time_band": "日中", "days_per_week": "週2日", "area": "大宮"}})
 
@@ -436,11 +436,11 @@ def test_digging_twice_and_asking_conditions_one_by_one_is_caught(tmp_path):
     said = [*LENGTH_SAID[:4], "利用者さんとの関わり方を、近くで見てみたいです", "平日の日中、週2日くらいです", "大宮あたりです"]
     model = ConsultModel(script=length_script([
         reply(["介護の現場を見ておきたいのですね。", "『現場を見ておきたい』というのは、例えばどんなことですか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
         reply(["利用者さんとの関わり方を近くで見たいのですね。", "勉強の時間を除くと、働けるのはいつですか?"],
-              quick_replies=["平日の日中", "それ以外", "今はいい"]),
+              quick_replies=["平日の日中", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "日中", "days_per_week": "週2日"}}),
-        reply(["平日の日中、週2日ですね。", "通いやすいエリアはどのあたりですか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["平日の日中、週2日ですね。", "通いやすいエリアはどのあたりですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"area": "大宮"}}),
         reply(["大宮の平日日中・週2日で整理しました。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
@@ -573,7 +573,7 @@ def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path)
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": SIDE_SAID[1]}),
-        reply(["アルバイト・パートのお仕事で考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "それ以外", "今はいい"]),
+        reply(["アルバイト・パートのお仕事で考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "今はいい"]),
         calls(("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "平日の19時以降か土日",
                                                                                      "area": "新宿あたり"}}),
               ("recommend_jobs", {"line_user_id": UID, "employment_type": BAITO, "area": "新宿", "time_band": "夜"}),
