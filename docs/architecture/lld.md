@@ -1626,6 +1626,21 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | LINE の入力中の表示、返信、push | `server._line_user_events`(`line_channel.LineApi`) | LINE Messaging API(`api.line.me`)。1 回 10 秒で打ち切り | LINE のイベントごと。push は返信トークで返せなかったときだけ | なし。push は LINE 公式アカウントの月のメッセージ数に数えられる |
 | 模擬ユーザー、ジャッジ | `evals.run.sim_reply`、`evals.judge` | `gpt-6-luna`(既定)か `claude-haiku-4-5` | 評価のときだけ | 予算台帳 |
 
+外のサービスに残る量を減らす設定です([privacy.md](../design/privacy.md) の 3.2)。どれも呼ぶところで固定し、環境変数では変えません。
+
+| サービス | 設定 | 呼ぶところ | 効き目 |
+|---|---|---|---|
+| OpenAI Responses | `store=False` | エージェント(`agent.build_model`)、履歴書の読み取り、下書き、調べもの、平均時給の更新(`voice_resume.wages.fetch_reference`)、模擬ユーザーとジャッジ(`line_runtime.llm`) | 応答を OpenAI に残さない。前の応答を ID で参照できなくなる |
+| OpenAI Responses(エージェント) | `include=["reasoning.encrypted_content"]` | `agent.build_model` | 残さない応答の reasoning を、暗号化した中身で受け取る。langchain-openai が次の呼び出しで送り返す(中身の無い reasoning と、メッセージの ID は送らない)。会話の記録にも暗号化したまま残る |
+| OpenAI Chat Completions(音声アドバイザー) | `store=False` | `voice_resume.agent.entrypoint` | 既定も残さないが、明示する |
+| Deepgram | `mip_opt_out=True` | `voice_resume.stt.create_stt` | 声を改善プログラム(Model Improvement Program)に使わせない。先方は処理の間だけ持つ |
+| LiveKit Cloud | `AgentSession.start(record=False)` | `voice_resume.agent.entrypoint` | 録音、文字起こし、ログを Agent Observability に送らない。指定しないとプロジェクトの設定に従う |
+
+エージェントが `store=False` で 2 ターン以上の会話を続けられることは、`tests/test_openai_store.py` が偽の OpenAI で確かめます。
+偽の OpenAI は、`previous_response_id`、ID だけのメッセージ、中身の無い reasoning、reasoning を伴わないツールの呼び出しを断ります。
+最後の決まりは本物の API で確かめていない推測です([privacy.md](../design/privacy.md) の 3.2)。
+OpenAI の Zero Data Retention は申し込んでいません(人が決める)。
+
 料金表は `line_runtime/ledger.py` の `PRICES` が正で、評価の計測(`evals/meter.py`)も同じ表を使います(1M トークンあたり、`gpt-6-sol` は入力 $2、出力 $10、`gpt-6-luna` は $0.1、$0.5)。
 web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同じ単価が別にあります(R13)。
 
@@ -1651,6 +1666,8 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 
 STT は聞き間違い(「時給の下限」が「地球の加減」になるなど)を比べて nova-3 と keyterm に決めました(旧リポジトリの task 37、
 `scripts/voice/eval_stt.py`)。
+本番の STT は Deepgram に固定します(`render.yaml` で `VOICE_RESUME_STT_PROVIDER=deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届きます。
+`openai` に替えるなら、プライバシーポリシーの OpenAI に送る情報に声を足し、音声相談の同意の文言も直します([privacy.md](../design/privacy.md) の 3.2)。
 
 ### 7.2 音声相談の費用の目安
 
@@ -1664,6 +1681,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 | 下書き(gpt-6-sol) | 約 $0.03 |
 | 調べもの(1 回) | 約 $0.02、7〜10 秒 |
 | LiveKit Cloud | 無料枠の中 |
+
+Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引がなくなる、と設計メモ([privacy.md](../design/privacy.md) の 2.2)にあります。
+2026-10-25 に Deepgram の改善プログラムの文書と料金のページを見ましたが、外れたときの単価の違いは書かれていませんでした(不明)。
+上の STT の見積もりは、料金のページで打ち消し線の付いた高いほうの単価($0.0077/分。手元の計測 `scripts/voice/e2e_audio_session.py` の「正価」と同じ)で数えているので、割引が無くても変わりません。
 
 ## 8. 失敗の扱い
 

@@ -296,6 +296,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 |---|---|---|---|
 | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud(URL は `wss://<project>.livekit.cloud`)。Web プロセスが部屋の接続トークンを発行し、音声ワーカーが部屋に入る | 可 |
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
+| `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](docs/design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
 | `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
