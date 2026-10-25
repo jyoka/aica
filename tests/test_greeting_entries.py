@@ -228,7 +228,8 @@ FEATURES = ("resume_upload", "voice_consult", "arcade")
 BODY = "お仕事探しの相談と、求人のご提案をします。下の「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」も使えます。"
 QUESTION = "ゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?"
 # jyoka/tasks#221 の見直し(2026-10-25)で、初回訪問 9 件すべてに出た形: 言い方がずれた本文と問い
-# 初回訪問の挨拶の返信(render の結果の entry が visit。to_messages は初回訪問の挨拶だけ、問いを入口のボタンの見出しにする)
+# 初回訪問の挨拶の返信(render の結果の entry が visit)。to_messages が問いを入口のボタンの見出しにするのは、挨拶のターン
+# (評価ではシナリオの event が visit の 1 ターン目)だけ
 FIRST = ALL | {"entry": "visit"}
 OLD_BODY = "お仕事探しの相談や求人のご提案ができます。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。"
 
@@ -236,19 +237,21 @@ OLD_BODY = "お仕事探しの相談や求人のご提案ができます。音�
 def test_line_greeting_is_counted_through_to_messages_and_must_be_two_messages():
     """LINE の通数は line_channel.to_messages をオフラインで通して数える(LIFF の設定の代わりに使えたものを渡す)。"""
     good = FIRST | {"bubbles": [BODY, QUESTION]}
-    assert line_message_counts([good], FEATURES) == [2]
+    assert line_message_counts([good], FEATURES, visit=True) == [2]
     assert line_greeting_violations(VISIT, [good], "line", FEATURES) == []
     three = FIRST | {"bubbles": [BODY, "ゲームは、遊びながら下書きを作れます。", "どれから始めますか?"]}
-    assert line_message_counts([three], FEATURES) == [3]
+    assert line_message_counts([three], FEATURES, visit=True) == [3]
     assert line_greeting_violations(VISIT, [three], "line", FEATURES) == ["T1: 初回訪問の挨拶が LINE で 3 通(2 通まで)"]
     # 入口のボタンが無い LINE(LIFF の設定が無い)では、吹き出しがそのまま数になる。使えない操作を付けたら断りの文も数える
-    assert line_message_counts([turn() | {"bubbles": three["bubbles"]}], ()) == [3]
-    assert line_message_counts([three], ()) == [5]
+    assert line_message_counts([turn() | {"bubbles": three["bubbles"]}], (), visit=True) == [3]
+    assert line_message_counts([three], (), visit=True) == [5]
     # Web の窓口と再訪は数えない(再訪の挨拶は別の決まり)
     assert line_greeting_violations(VISIT, [three], "web", FEATURES) == []
     assert line_greeting_violations(REVISIT, [three], "line", FEATURES) == []
-    # 初回訪問の挨拶でない返信は、同じ吹き出しとボタンでも見出しにしない(吹き出しの数 + ボタンの 1 通)
-    assert line_message_counts([good | {"entry": "revisit"}, good | {"entry": "A"}], FEATURES) == [3, 3]
+    # 挨拶のターンでない返信は、同じ吹き出しとボタンでも見出しにしない(吹き出しの数 + ボタンの 1 通)。
+    # 初回訪問で始まった会話の 2 ターン目(entry は visit のまま)も、再訪で始まった会話の 1 ターン目も
+    assert line_message_counts([good, good], FEATURES, visit=True) == [2, 3]
+    assert line_message_counts([good | {"entry": "revisit"}], FEATURES) == [3]
 
 
 def test_line_greeting_must_name_the_entries_with_the_button_words():
@@ -341,19 +344,34 @@ def test_line_follow_greeting_turns_the_entries_into_liff_buttons(tmp_path, monk
 
 def test_line_follow_greeting_arrives_as_two_messages_through_the_webhook(tmp_path, monkeypatch):
     """友だち追加から LINE に届くまで(webhook → ターン → to_messages)で、初回訪問の挨拶は 2 通: 本文と、問いを見出しにした
-    入口のボタン(render の結果の entry が visit のまま to_messages に届く)。"""
+    入口のボタン。同じ会話の次のターン(「まず相談する」の後の経験の1問。会話の入口は visit のまま)は挨拶ではないので、
+    同じ形(吹き出し 2 つと履歴書・音声のボタン)でも見出しにせず、問いは吹き出しのまま残る(答えは文字の選択肢)。"""
     _no_liff(monkeypatch)
     entries = ["voice_consult", "resume_upload"]
-    server, fake = _server(tmp_path, monkeypatch, Greeter(script=[lambda m: reply(
-                               GREETING, quick_replies=VISIT_MENU, actions=entries, buttons=[ARCADE_BUTTON])]),
+    ask = ["これまでにどんなお仕事をしましたか?", "職務経歴書や履歴書があれば、読み込むと早いです。"]
+    histories: list[list[str]] = []
+
+    def experience(messages):
+        histories.append([str(m.content) for m in messages])
+        return reply(ask, quick_replies=["接客", "事務", "今はいい"], actions=entries)
+
+    server, fake = _server(tmp_path, monkeypatch, Greeter(script=[
+                               lambda m: reply(GREETING, quick_replies=VISIT_MENU, actions=entries, buttons=[ARCADE_BUTTON]),
+                               experience]),
                            AICA_ID_KEY=ID_KEY, LINE_LIFF_ID=LIFF_ID, LINE_LIFF_CHANNEL_ID=CHANNEL,
                            AICA_INTERNAL_KEY=INTERNAL_KEY, **LIVEKIT_ENV)
     with TestClient(server.app) as client:
         _post(client, [_event("follow")])
-    ((_, body),) = fake.sent()
-    assert [m["type"] for m in body["messages"]] == ["text", "flex"]
-    assert body["messages"][0]["text"] == GREETING[0] and _heading(body["messages"][1]) == GREETING[1]
-    assert [i["action"]["label"] for i in body["messages"][1]["quickReply"]["items"]] == VISIT_MENU
+        _post(client, [_event("message", text="まず相談する", event_id="01EVENT0000000000000000002", token="reply-token-2")])
+    ((_, first), (_, second)) = fake.sent()
+    assert [m["type"] for m in first["messages"]] == ["text", "flex"]
+    assert first["messages"][0]["text"] == GREETING[0] and _heading(first["messages"][1]) == GREETING[1]
+    assert [i["action"]["label"] for i in first["messages"][1]["quickReply"]["items"]] == VISIT_MENU
+    ((*history, said),) = histories  # 2 ターン目は、初回訪問の挨拶で始まった同じ会話の続き(挨拶の後に本人の発言)
+    assert said == "まず相談する" and any("[イベント: 初回訪問" in c for c in history)
+    assert [m["type"] for m in second["messages"]] == ["text", "text", "flex"]
+    assert [m["text"] for m in second["messages"][:2]] == ask
+    assert _heading(second["messages"][2]) is None and second["messages"][2]["altText"] == "リンク: 音声で相談する、履歴書を読み込む"
 
 
 def test_line_follow_without_liff_greets_with_text_choices_only(tmp_path, monkeypatch):

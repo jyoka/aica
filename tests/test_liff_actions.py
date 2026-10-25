@@ -171,7 +171,7 @@ def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_th
     _liff_on(monkeypatch)
     r = {"entry": "visit", "bubbles": GREETING, "actions": ["voice_consult", "resume_upload"], "quick_replies": ["求人を探す", "まず相談する", "今はいい"],
          "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}], "cards": []}
-    msgs = to_messages(r, "")
+    msgs = to_messages(r, "", visit_greeting=True)
     assert [m["type"] for m in msgs] == ["text", "flex"]
     assert msgs[0]["text"] == GREETING[0] and "quickReply" not in msgs[0]
     flex = msgs[1]
@@ -182,24 +182,26 @@ def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_th
     # 前の挨拶(本文、問い、見出しの無いボタンの箱の 3 通)と同じ返信も、いまは 2 通になる
     old = r | {"bubbles": ["お仕事探しの相談や求人のご提案ができます。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。",
                            "どれから始めますか？"]}
-    assert len(to_messages(old, "")) == 2
+    assert len(to_messages(old, "", visit_greeting=True)) == 2
+    # 挨拶のターンかどうかは呼び出し元が決める。会話の入口(entry)が visit でも、挨拶のターンでなければ見出しにしない
+    assert [m["type"] for m in to_messages(r, "")] == ["text", "text", "flex"]
 
 
 def test_the_heading_is_only_used_when_it_keeps_the_order_and_a_plain_bubble(monkeypatch):
-    """見出しにするのは、初回訪問の挨拶で、ボタンがあり、求人が無く、吹き出しが 2 つ以上のときの最後の吹き出しだけ。
+    """見出しにするのは、初回訪問の挨拶のターンで、ボタンがあり、求人が無く、吹き出しが 2 つ以上のときの最後の吹き出しだけ。
     吹き出しが 1 つなら、本文の吹き出しをそのまま残す(ボタンだけのメッセージにしない)。求人があれば、問いを求人の後ろへ動かさない。"""
     _liff_on(monkeypatch)
     one = {"entry": "visit", "bubbles": ["遊びながら書類を作れます。"], "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}]}
-    msgs = to_messages(one, "")
+    msgs = to_messages(one, "", visit_greeting=True)
     assert [m["type"] for m in msgs] == ["text", "flex"] and _heading(msgs[1]) is None
     assert msgs[1]["altText"] == "リンク: ゲームで書類を作る"
     card = {"job_id": "a001", "title": "カフェ", "employer": "店", "reasons": ["近い"]}
     with_cards = {"entry": "visit", "bubbles": ["3件あります。", "気になるものはありますか?"], "cards": [card],
                   "buttons": [{"label": "応募の続き", "url": "/liff/apply?job=a001"}]}
-    assert [m.get("text") for m in to_messages(with_cards, "")][:2] == ["3件あります。", "気になるものはありますか?"]
+    assert [m.get("text") for m in to_messages(with_cards, "", visit_greeting=True)][:2] == ["3件あります。", "気になるものはありますか?"]
     joined = {"bubbles": ["読み取りました。", "希望の勤務地はどこですか?"],
               "buttons": [{"label": "読み取り結果を見る", "url": "/liff/resume?rid=0"}]}
-    msgs = to_messages(joined, "")  # 2 つの返信をつないだもの(server._joined。entry が無い)は見出しにしない
+    msgs = to_messages(joined, "")  # 2 つの返信をつないだもの(server._joined。履歴書の続きのターン)は見出しにしない
     assert [m["type"] for m in msgs] == ["text", "text", "flex"] and _heading(msgs[-1]) is None
     no_links = {"bubbles": ["一つ目。", "二つ目?"]}
     assert [m["text"] for m in to_messages(no_links, "")] == ["一つ目。", "二つ目?"]

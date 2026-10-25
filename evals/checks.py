@@ -1314,9 +1314,12 @@ LINE_COUNT_BASE = "https://line-count.invalid"
 GREETING_LINE_MAX = 2  # 初回訪問の挨拶は 2 通まで(本文と、問いを見出しにした入口のボタン)
 
 
-def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = ()) -> list[int]:
-    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。"""
-    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features))) for r in turns]
+def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = (), visit: bool = False) -> list[int]:
+    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。visit: 会話が初回訪問の挨拶で始まった
+    (シナリオの event が visit)。そのときだけ、1 ターン目を挨拶のターンとして数える(問いがボタンの見出しになる)。
+    2 ターン目からは、会話の入口が visit でも挨拶ではない(server._line_turn と同じ決め方)。"""
+    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features), visit_greeting=visit and i == 0))
+            for i, r in enumerate(turns)]
 
 
 def entry_labels(r: dict) -> dict[str, str]:
@@ -1336,7 +1339,7 @@ def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
     if channel != "line" or sc.get("event") != "visit" or not turns:
         return []
     first, out = turns[0], []
-    if (n := line_message_counts(turns[:1], features)[0]) > GREETING_LINE_MAX:
+    if (n := line_message_counts(turns[:1], features, visit=True)[0]) > GREETING_LINE_MAX:
         out.append(f"T1: 初回訪問の挨拶が LINE で {n} 通({GREETING_LINE_MAX} 通まで)")
     labels = {e: lb for e, lb in entry_labels(first).items() if e in features}
     if labels.get("arcade", line_channel.ARCADE_LABEL) != line_channel.ARCADE_LABEL:
@@ -1432,7 +1435,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "greeting_offers": greeting_offers(first) if first else [],
         "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         # 各ターンの返信が LINE で何通になるか(LINE の窓口の会話だけ。Web は None)
-        "line_messages": line_message_counts(turns, features) if channel == "line" else None,
+        "line_messages": line_message_counts(turns, features, sc.get("event") == "visit") if channel == "line" else None,
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,
