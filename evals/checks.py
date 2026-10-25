@@ -859,7 +859,8 @@ STUCK = re.compile(DONT_KNOW.pattern + r"|特に(ない|無い|なし|ありま�
                    r"|^それ以外(かな|です)?[。.!！]?$")
 # 探す条件を聞く問い(エリアは asks_area)。条件はまとめて1問で聞いてよい
 CONDITION_KEYS = ("time_band", "days_per_week", "min_wage", "min_annual_salary", "work_style", "start_timing")
-CONDITION_WORDS = re.compile(r"時間帯|曜日|働ける(日|時間|の)|シフト|勤務地|年収")
+# 時間帯・曜日・日数のよくある聞き方(「平日の夜と土日、どちらが」「週何回」「勤務時間」「1日何時間」)も数える。正規表現は目安
+CONDITION_WORDS = re.compile(r"時間帯|曜日|働ける(日|時間|の)|シフト|勤務地|年収|平日|土日|週末|週(に)?何(日|回)|勤務時間|何時間")
 
 
 def asks_conditions(r: dict) -> bool:
@@ -921,17 +922,35 @@ def consult_length_violations(turns: list[dict], user_msgs: list[str | None]) ->
     return out
 
 
+# 事情を話して探し始めた人に、探す前に聞いてよい問いの数(条件はまとめて1問で聞いてよく、条件の問いは2問まで)
+SITUATION_QUESTIONS_MAX = 2
+# 探す条件の問いとみなす言い方(asks_conditions に加えて。区分の確かめ「アルバイトで探しますか、正社員ですか?」と、扶養の範囲)。
+# 「パートでどんなことを実現したいですか?」は区分の確かめではない
+SITUATION_CONDITION_WORDS = re.compile(r"扶養|(アルバイト|バイト|パート|正社員)(・パート)?(で(探|よろし|いい)|か[、,]|と(正社員|アルバイト|バイト|パート))")
+
+
+def asks_situation_conditions(r: dict) -> bool:
+    """事情を話して探し始めた人に、探す前に聞いてよい問いか: 探す条件(asks_conditions)、区分・扶養(SITUATION_CONDITION_WORDS)、
+    区分の確かめ(Prompt の「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」。
+    greeting_track_violations と同じく、問いに「どちら」「どっち」があり、両方の区分の語がある)。"""
+    q = "".join(_question_part(b) for b in r["bubbles"])
+    return (asks_conditions(r) or bool(SITUATION_CONDITION_WORDS.search(q))
+            or bool(re.search(r"どちら|どっち", q) and all(w.search(q) for w in TRACK_WORDS.values())))
+
+
 def situation_start_violations(sc: dict, turns: list[dict], user_msgs: list[str | None]) -> list[str]:
     """事情を話して探し始めた人(sc["expect_no_consult"]。例: 「本業の後の空いた時間でバイトを探したい」)の判定
-    (利用者の決定、2026-10-26。Prompt の「相談」の入口): 相談に入れず、足りない条件だけを1問にまとめて聞いて、
-    答えを受けたターンで探す。(1) 相談に入った(consult_questions が入口を見つけた)ら違反。(2) 本人の最初の発言から
-    探すまでに2問目を聞いたら違反(2問目のターン)。本人が切り上げたら(今はいい・お礼)、そこで見るのをやめる。
-    アルバイト・パートで探す人のシナリオに付ける(正社員は、探す前に経歴と目的の1問も聞くので2問目の判定が合わない)。"""
+    (利用者の決定、2026-10-25、その読み方 2026-10-26。Prompt の「相談」の入口): 相談の掘り下げに入らず、足りない探す条件だけを
+    聞いて、早く探す。条件はまとめて1問で聞いてよく、条件の問いは2問まで(#221 の T-side-job の、時間帯 → エリア → T4 で提案は合格)。
+    (1) 相談に入った(consult_questions が入口を見つけた)ら違反。(2) 探すまでに、探す条件(asks_situation_conditions: 条件か区分・扶養)
+    でない問いを聞いたら違反(最初のターン)。(3) 本人の最初の発言から探すまでに3問目を聞いたら違反(3問目のターン)。
+    本人が切り上げたら(今はいい・お礼)、そこで見るのをやめる。アルバイト・パートで探す人のシナリオに付ける
+    (正社員は、探す前に経歴と目的の1問も聞くので(2)が合わない)。"""
     if not sc.get("expect_no_consult"):
         return []
     out = []
     if (q := consult_questions(turns, user_msgs)) is not None:
-        out.append(f"T{q['start']}: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)")
+        out.append(f"T{q['start']}: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)")
     first = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m), None)
     if first is None:
         return out
@@ -944,8 +963,12 @@ def situation_start_violations(sc: dict, turns: list[dict], user_msgs: list[str 
             break
         if _questions(turns[k]["bubbles"]):
             asked.append(k)
-    if len(asked) > 1:
-        out.append(f"T{asked[1] + 1}: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)")
+    other = next((k for k in asked if not asks_situation_conditions(turns[k])), None)
+    if other is not None:
+        out.append(f"T{other + 1}: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)")
+    if len(asked) > SITUATION_QUESTIONS_MAX:
+        out.append(f"T{asked[SITUATION_QUESTIONS_MAX] + 1}: 事情を話して探し始めた人に、探す前に{SITUATION_QUESTIONS_MAX + 1}問目を聞いた"
+                   f"(条件の問いは{SITUATION_QUESTIONS_MAX}問まで)")
     return out
 
 

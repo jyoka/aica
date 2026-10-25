@@ -10,7 +10,8 @@
 (5) 相談の長さ: 相談の問いは4問まで(4問目までに求人を見るかを聞く)。掘り下げは1つの項目に1回まで、「分からない」
     「特にない」が2回続いたら条件の1問へ、条件はまとめて1問で聞く(task 225。前は「目安は5、6問」で、jyoka/tasks#221 の
     C-consult-propose は8ターンで7問聞いて求人に届かなかった)。評価の判定 evals.checks.consult_questions の正例・負例も見る
-    事情を話して探し始めた人(T-side-job)は相談に入れず、足りない条件を1問で聞いて探す(evals.checks.situation_start_violations)
+    事情を話して探し始めた人(T-side-job、T-blank-parent)は相談に入れず、足りない条件だけを聞いて(2問まで)探す
+    (evals.checks.situation_start_violations)
 (6) playbook と Prompt の例文が、評価のペルソナの発言・経歴と重ならない(例文をなぞるだけで評価が良くならないように)
 LLM が playbook どおりに深く聞けるかは、評価(実 API、LLM ジャッジの深さの項目)で測る。
 """
@@ -545,8 +546,9 @@ def test_saved_conversations_before_the_change_ask_too_many_questions():
 
 
 
-# 事情を話して探し始めた人は相談に入れず、足りない条件だけを1問にまとめて聞いて探す(利用者の決定、2026-10-26。
-# jyoka/tasks#221 で、相談に入らずに条件を聞いて提案した T-side-job の会話が、16 件の中でいちばん滑らかだった)
+# 事情を話して探し始めた人は相談の掘り下げに入れず、足りない条件だけを聞いて早く探す。条件はまとめて1問で聞いてよく、
+# 条件の問いは2問まで(利用者の決定 2026-10-25、その読み方 2026-10-26。jyoka/tasks#221 で、相談に入らずに時間帯 → エリアを
+# 聞いて T4 で提案した T-side-job の会話が、16 件の中でいちばん滑らかだった。この会話は合格にする)
 SIDE_SAID = [None, "本業の後の空いた時間でバイトを探したい", "平日の19時以降か土日に、新宿あたりで働きたいです。",
              "ありがとう、考えます"]
 SIDE_ASK = "どのエリアで、何曜日の何時ごろ働けますか?"
@@ -556,14 +558,17 @@ def test_prompt_does_not_enter_a_consult_for_someone_who_explains_their_situatio
     entry = _between(PROMPT, "## 相談(playbook に沿って進める)", "- 入ったら、")
     assert "相談に入るのは、この2つのときだけ" in entry
     assert "迷いや相談したいことを言っていなければ相談に入らない" in entry
-    assert "足りないもの(エリアと、アルバイト・パートなら働ける時間帯・曜日)だけを1問にまとめて聞き" in entry
+    assert "目的ややりたいことの掘り下げは聞かず" in entry
+    assert "足りないもの(エリアと、アルバイト・パートなら働ける時間帯・曜日)だけを聞いて、早く探す" in entry
+    assert "条件はまとめて1問で聞いてよく" in entry and "条件の問いは2問まで" in entry
+    assert checks.SITUATION_QUESTIONS_MAX == 2
     # 前の読み方(条件が揃っていなければ相談に入る)は残っていない
     assert "揃っていれば、相談に入らず" not in entry and "または、本人が自分の状況や事情を話して探し始めたとき" not in entry
 
 
 def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path):
     """T-side-job の流れ: 区分を切り替え、エリアと時間帯・曜日を1問にまとめて聞き、答えを受けたターンで探す(T3)。
-    playbook は読まず、相談の1文(「一緒に整理」)も出さない。シナリオの期待(相談に入れない、T3 までに探す)を満たす。"""
+    playbook は読まず、相談の1文(「一緒に整理」)も出さない。シナリオの期待(相談に入れない、T4 までに探す)を満たす。"""
     sc = SCENARIOS["T-side-job"]
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
@@ -582,27 +587,59 @@ def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path)
     assert not any(playbooks_read(x) for x in turns) and turns[2]["cards"]
     r = conversation_checks(sc, turns, SIDE_SAID)
     assert r["violations"] == [], r["violations"]
-    assert r["consult_questions"] is None and r["offer_turn"] == 3 == sc["expect_offer_by"]
+    assert r["consult_questions"] is None and r["offer_turn"] == 3 <= sc["expect_offer_by"] == 4
     assert r["outcome_as_expected"] and r["outcomes"] == ["propose"]
+
+
+SEARCHED = t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])
 
 
 @pytest.mark.parametrize("turns, want", [
     # 1問にまとめて聞き、T3 で探した
-    ([GREETING, _q(SIDE_ASK), t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])], []),
-    # 時間帯とエリアを別々に聞いた(#221 の T-side-job。T4 で提案)→ 2問目のターンで違反
-    ([GREETING, _q("本業の後なら、何時ごろから働けますか?"), _q("どのエリアで探しますか?"),
-      t(["新宿の夜の求人です。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])],
-     ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]),
-    # 相談に入った(playbook を読み、目的から聞いた)→ 入口のターンと2問目のターンで違反
+    ([GREETING, _q(SIDE_ASK), SEARCHED], []),
+    # 時間帯とエリアを別々に聞いて T4 で提案した(#221 の T-side-job)。条件の問いは2問までなので合格
+    ([GREETING, _q("本業の後なら、何時ごろから働けますか?"), _q("どのエリアで探しますか?"), SEARCHED], []),
+    # 区分の確かめと条件の1問(どちらも探す条件の問い)
+    ([GREETING, _q("アルバイトで探しますか、正社員ですか?"), _q(SIDE_ASK), SEARCHED], []),
+    # 条件を1つずつ3問聞いた → 3問目のターンで違反
+    ([GREETING, _q("何時ごろから働けますか?"), _q("どのエリアで探しますか?"), _q("週に何日くらい働けますか?"), SEARCHED],
+     ["T4: 事情を話して探し始めた人に、探す前に3問目を聞いた(条件の問いは2問まで)"]),
+    # 相談の合図なしに、目的の掘り下げを1問挟んだ → そのターンで違反(2問以内でも)
+    ([GREETING, _q("本業の後にバイトをしたいと思ったのは、どんなきっかけからですか?"), _q(SIDE_ASK), SEARCHED],
+     ["T2: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)"]),
+    # 相談に入った(playbook を読み、目的から聞いた)→ 入口のターンと、条件でない問いのターンで違反
     ([GREETING, READ, _q(SIDE_ASK)],
-     ["T2: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)",
-      "T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]),
+     ["T2: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)",
+      "T2: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)"]),
 ])
 def test_situation_start_violations(turns, want):
     sc = {"expect_no_consult": True}
-    assert checks.situation_start_violations(sc, turns, SIDE_SAID[:len(turns)]) == want
+    said = SIDE_SAID[:2] + ["夜から", "新宿あたりがいいです。", "週2日くらいです。"]
+    assert checks.situation_start_violations(sc, turns, said[:len(turns)]) == want
     # 期待の無いシナリオ(相談のシナリオなど)では数えない
-    assert checks.situation_start_violations({}, turns, SIDE_SAID[:len(turns)]) == []
+    assert checks.situation_start_violations({}, turns, said[:len(turns)]) == []
+
+
+@pytest.mark.parametrize("question", ["アルバイトで探しますか、正社員ですか?", "アルバイト・パートか、正社員か、どちらで探しますか?",
+                                      "扶養の範囲で働きたいですか?",
+                                      # Prompt と undecided_chat.md が指定する区分の確かめの文
+                                      "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか？",
+                                      # 時間帯・曜日・日数のよくある聞き方
+                                      "平日の夜と土日、どちらが働きやすいですか?", "週何回くらい入れそうですか?",
+                                      "勤務時間のご希望はありますか?", "1日何時間くらい働けますか?"])
+def test_situation_start_counts_track_and_dependent_questions_as_conditions(question):
+    assert checks.asks_situation_conditions(_q(question))
+    # 区分の確かめ(または条件の1問)の後にエリアを聞いて T4 で探す会話は、決まりどおり(違反なし)
+    turns = [GREETING, _q(question), _q("どのエリアで探しますか?"), SEARCHED]
+    said = SIDE_SAID[:2] + ["アルバイトです。平日の夜か土日です。", "新宿あたりがいいです。"]
+    assert checks.situation_start_violations({"expect_no_consult": True}, turns, said) == []
+
+
+def test_situation_start_does_not_count_a_purpose_question_that_names_the_track():
+    # #221 の T-blank-parent の T2(相談に入った回の目的の問い)。区分の語を含むが、区分の確かめではない
+    assert not checks.asks_situation_conditions(_q("お子さんが小学校に上がったのを機に、パートでどんなことを実現したいですか？"))
+    # 「どちら」があっても、区分の語が片方だけなら区分の確かめではない
+    assert not checks.asks_situation_conditions(_q("パートで大事にしたいのは、収入とやりがいのどちらですか?"))
 
 
 def test_situation_start_stops_counting_when_the_person_opts_out():
@@ -611,24 +648,60 @@ def test_situation_start_stops_counting_when_the_person_opts_out():
     assert checks.situation_start_violations({"expect_no_consult": True}, turns, said) == []
 
 
+def _saved(name: str, case: str) -> dict:
+    from evals.run import recheck
+    doc = json.loads((EVALS / "baseline" / f"{name}.json").read_text(encoding="utf-8"))
+    return recheck(next(r for r in doc["runs"] if r["case"] == case)["detail"])
+
+
 def test_saved_side_job_conversations_are_rechecked_with_the_situation_rule():
     """保存済みの T-side-job の会話(費用なし)を今のシナリオの期待で見直す。#221 の回(相談に入らず、時間帯とエリアを
-    別々に聞いて T4 で提案)と、お礼の締めを直した回(同じ流れ)は2問目で違反、相談に入った回は入口でも違反になる。"""
-    from evals.run import recheck
-
-    def side_job(name: str) -> dict:
-        doc = json.loads((EVALS / "baseline" / f"{name}.json").read_text(encoding="utf-8"))
-        return recheck(next(r for r in doc["runs"] if r["case"] == "T-side-job")["detail"])
-
-    got = {name: side_job(name) for name in ("sim-20261025-230120", "sim-20261025-234745", "sim-20261025-234138")}
+    別々に聞いて T4 で提案)と、お礼の締めを直した回(同じ流れ)は合格。相談に入った回は、入口・目的の問い・3問目で違反になる。"""
+    got = {name: _saved(name, "T-side-job") for name in ("sim-20261025-230120", "sim-20261025-234745", "sim-20261025-234138")}
     assert {name: (r["offer_turn"], r["outcome_as_expected"]) for name, r in got.items()} == {
-        "sim-20261025-230120": (4, False), "sim-20261025-234745": (4, False), "sim-20261025-234138": (5, False)}
+        "sim-20261025-230120": (4, True), "sim-20261025-234745": (4, True), "sim-20261025-234138": (5, False)}
     situation = {name: [v for v in r["violations"] if "事情を話して" in v] for name, r in got.items()}
     assert situation == {
-        "sim-20261025-230120": ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"],
-        "sim-20261025-234745": ["T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"],
-        "sim-20261025-234138": ["T2: 事情を話して探し始めた人を相談に入れた(足りない条件を1問で聞いて探す)",
-                                "T3: 事情を話して探し始めた人に、探す前に2問目を聞いた(足りない条件は1問にまとめる)"]}
+        "sim-20261025-230120": [], "sim-20261025-234745": [],
+        "sim-20261025-234138": ["T2: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)",
+                                "T2: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)",
+                                "T4: 事情を話して探し始めた人に、探す前に3問目を聞いた(条件の問いは2問まで)"]}
+
+
+# T-blank-parent の本人の発言(「子どもが小学校に上がったので」は、迷いや相談したいことを含まない事情の発言)
+BLANK_SAID = [None, "子どもが小学校に上がったので、久しぶりにパートを探したい",
+              "平日の9時から14時まで、週3〜4日くらいで、吉祥寺あたりを希望しています。", "ありがとう、考えます"]
+
+
+def test_blank_parent_scenario_follows_the_situation_entry_rule():
+    """T-blank-parent の本人の最初の発言は、事情を話して探し始めた形(Prompt の例「この春に引っ越してきたので」と同じ)。
+    シナリオは Prompt の入口の決まりに合わせ、相談に入れない期待にした(前は consult_mode・measure_depth で、
+    決まりどおりに動くと「目的を確かめる前に求人を出した」の違反になり、相談に入るほうが評価で通りやすかった)。"""
+    sc = SCENARIOS["T-blank-parent"]
+    assert sc["expect_no_consult"] and not sc.get("consult_mode") and not sc.get("measure_depth")
+    assert not checks.CONSULT_SIGN.search(BLANK_SAID[1])
+    # 決まりどおりの会話: 足りない条件を1問で聞き、T3 で探す → 違反なし、期限(T4)までに探した
+    ask = _q("どのエリアで、何曜日の何時ごろ働けますか?")
+    found = t(["吉祥寺で、平日の昼間に働ける事務のパートです。"], [("recommend_jobs", {}, {})], cards=[{"job_id": "j1"}])
+    closing = t(["ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"])
+    r = conversation_checks(sc, [GREETING, ask, found, closing], BLANK_SAID)
+    assert [v for v in r["violations"] if "事情を話して" in v or "目的" in v] == []
+    assert r["consult_questions"] is None and r["offer_turn"] == 3 and r["outcome_as_expected"]
+    # 相談に入った会話は違反になる
+    r = conversation_checks(sc, [GREETING, READ, ask, found], BLANK_SAID)
+    assert "T2: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)" in r["violations"]
+
+
+def test_saved_blank_parent_conversations_entered_a_consult():
+    """保存済みの T-blank-parent の会話(費用なし)は、どれも T2 で相談に入って目的を聞き、期限(T4)までに探していない。"""
+    got = {name: _saved(name, "T-blank-parent") for name in ("sim-20261025-230120", "sim-20261025-234147")}
+    assert {name: (r["offer_turn"], r["outcome_as_expected"]) for name, r in got.items()} == {
+        "sim-20261025-230120": (7, False), "sim-20261025-234147": (6, False)}
+    for r in got.values():
+        assert [v for v in r["violations"] if "事情を話して" in v] == [
+            "T2: 事情を話して探し始めた人を相談に入れた(掘り下げずに、足りない条件だけを聞いて探す)",
+            "T2: 事情を話して探し始めた人に、探す前に条件でないことを聞いた(掘り下げずに、足りない条件だけを聞く)",
+            "T4: 事情を話して探し始めた人に、探す前に3問目を聞いた(条件の問いは2問まで)"]
 
 # ----------------------------- (6) 例文を評価のペルソナから離す -----------------------------
 
@@ -662,7 +735,7 @@ def _examples() -> dict[str, str]:
     return {
         "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
         "Prompt: 相談に入らない事情の発言": _between(PROMPT, "話して探し始めたとき(", ")は、"),
-        "Prompt: 事情を話した人に足りない条件を聞く1問": _between(PROMPT, "1問にまとめて聞き(例:", ")、"),
+        "Prompt: 事情を話した人に足りない条件を聞く1問": _between(PROMPT, "条件はまとめて1問で聞いてよく(例:", ")、"),
         "Prompt: 提案の一言": _between(PROMPT, "その一言を本人の話につなげる(例:", ")。"),
         "common: 提案の一言": _between(common, "経験とのつながりを伝える(例:", ")。"),
         "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),

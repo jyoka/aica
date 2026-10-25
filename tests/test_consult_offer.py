@@ -9,8 +9,8 @@ H の評価(evals/baseline/sim-20261004-113109.json)で、相談・ペルソナ�
 を確かめる。
 2026-10-26(task 225)で、相談の問いを4問までにした(4問目までに求人を見るかを聞く)。相談のペルソナは本人の1回目の発言で
 相談に入る(T2 が1問目)ので、期限 expect_offer_by は T5 にした。(c) は task 133 のときの期限(T8)で判定し直したものとして残す。
-同じ task 225 で、事情を話して探し始めた T-side-job は相談に入れないことにした(利用者の決定、2026-10-26)。足りない条件を
-1問で聞いて T3 で探すので、期限は T3 にした。
+同じ task 225 で、事情を話して探し始めた T-side-job と T-blank-parent は相談に入れないことにした(利用者の決定 2026-10-25、
+その読み方 2026-10-26)。足りない条件だけを聞き(条件の問いは2問まで)、T4 までに探すので、期限は T4 にした。
 """
 
 from __future__ import annotations
@@ -20,13 +20,20 @@ import json
 import pytest
 
 from dip_mcp.data import ROOT
-from evals.checks import CONSULT_QUESTIONS_MAX, conversation_checks, jobs_offer_turn
+from evals.checks import (
+    CONSULT_QUESTIONS_MAX,
+    SITUATION_QUESTIONS_MAX,
+    conversation_checks,
+    jobs_offer_turn,
+)
 from evals.run import SCENARIO_TURNS, recheck
 from evals.scenarios import load_scenarios
 
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
-CONSULT_PERSONAS = ("T-career-fulltime", "T-student-first", "T-blank-parent")
+CONSULT_PERSONAS = ("T-career-fulltime", "T-student-first")
+# 事情を話して探し始める(相談に入れない)ペルソナ
+SITUATION_PERSONAS = ("T-side-job", "T-blank-parent")
 # task 133 のときに相談から始まったペルソナ(H の見直しで当時の期限 T8 を当てる)
 H_CONSULT_PERSONAS = ("T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent")
 ASK = ["それ以外", "今はいい"]
@@ -133,10 +140,12 @@ def test_consult_personas_expect_an_offer_by_the_fourth_question():
     # 相談から始まらないペルソナと、相談の C-* は、これまでどおり記録した結果で見る
     for case in ("T-switch-to-fulltime", "C-consult-propose", "C-consult-only", "C-consult-switch"):
         assert SCENARIOS[case]["expect_outcome"] and "expect_offer_by" not in SCENARIOS[case], case
-    # 事情を話して探し始めた T-side-job は相談に入れず、U1 の答え(T2)で足りない条件を1問聞き、T3 で探す
-    side = SCENARIOS["T-side-job"]
-    assert side["expect_no_consult"] and not side.get("consult_mode") and side["expect_offer_by"] == 3
-    assert "expect_outcome" not in side and side["expect_offer_by"] < side.get("max_turns", SCENARIO_TURNS)
+    # 事情を話して探し始めた人は相談に入れず、U1 の答え(T2)と U2 の答え(T3)で足りない条件を聞き(2問まで)、T4 までに探す
+    for case in SITUATION_PERSONAS:
+        sc = SCENARIOS[case]
+        assert sc["expect_no_consult"] and not sc.get("consult_mode") and not sc.get("measure_depth"), case
+        assert sc["expect_offer_by"] == 2 + SITUATION_QUESTIONS_MAX == 4, case
+        assert "expect_outcome" not in sc and sc["expect_offer_by"] < sc.get("max_turns", SCENARIO_TURNS), case
     assert [sc["id"] for sc in SCENARIOS.values() if sc.get("expect_offer_by")] == list(H_CONSULT_PERSONAS)
 
 
@@ -146,7 +155,7 @@ def test_consult_personas_expect_an_offer_by_the_fourth_question():
 def test_h_conversations_rechecked_with_the_new_expectation():
     runs = {r["case"]: r for r in json.loads(H_BASELINE.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"}
     before = {case: runs[case]["metrics"]["outcome_as_expected"] for case in (*H_CONSULT_PERSONAS, "T-switch-to-fulltime")}
-    # task 133 のときの期限(T8)で判定し直す(今のシナリオの期限は T5、T-side-job は T3)
+    # task 133 のときの期限(T8)で判定し直す(今のシナリオの期限は T5、T-side-job と T-blank-parent は T4)
     after = {case: recheck(runs[case]["detail"], SCENARIOS[case] | ({"expect_offer_by": 8} if case in H_CONSULT_PERSONAS else {}))
              for case in before}
     assert before == {"T-career-fulltime": False, "T-side-job": True, "T-student-first": False,
