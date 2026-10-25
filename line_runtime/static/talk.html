@@ -191,21 +191,26 @@
     if (busy || !current) return;
     setBusy(true); disableChips();
     const col = talk.typingCol();
-    let stale = false;
+    let stale = false, reconsent = false;
     try {
       const res = await fetch("/api/event/stream", { method: "POST", headers: { "Content-Type": "application/json" },
                                                       body: JSON.stringify({ user_id: current, event, text, thread }) });
-      if (!res.ok) throw new Error(res.status + " " + await res.text());
-      await talk.readStream(res, (ev) => { onEvent(ev, col); if (ev.kind === "stale") stale = true; });
-      if (stale) {
-        if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
-        await redrawLatest();
+      if (res.status === 403) {  // 同意がまだ(別のタブで「すべて消す」をした、版が上がった): 開き直して同意の画面を出す
+        col.parentElement.remove(); if (text) input.value = text; reconsent = true;
+      } else {
+        if (!res.ok) throw new Error(res.status + " " + await res.text());
+        await talk.readStream(res, (ev) => { onEvent(ev, col); if (ev.kind === "stale") stale = true; });
+        if (stale) {
+          if (text) input.value = text;  // 送られなかった発言は入力欄に戻す(送り直すかは本人が決める)
+          await redrawLatest();
+        }
       }
     } catch (e) {
       talk.fail(col, "通信できませんでした。少し時間をおいて、もう一度お試しください。");
       console.error(e);
     }
     finally { setBusy(false); }
+    if (reconsent) start();
   }
 
   // 別のタブで新しい会話が始まっていた: 最新の会話を描き直す
@@ -451,11 +456,19 @@
   }
 
   // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
+  // 使い始める同意がまだなら(初めて開いたとき、版が上がったとき)、挨拶の前に同意の画面を出す。押すまで LLM を呼ばない
   async function start() {
     setBusy(true);
     let opened;
     try {
-      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread; setTrack(opened.search_track);
+      opened = await post("/api/talk/open", {}); current = opened.user; thread = opened.thread;
+      talk.setConsent(opened.consent);
+      if (opened.consent.needed.includes("terms")) {
+        log.innerHTML = "";  // 同意の後に、続きなら履歴を描き直し、新しい会話なら挨拶から描く
+        await talk.ask("terms", { cancel: false });
+        return start();  // 同意した: 開き直して挨拶から始める
+      }
+      setTrack(opened.search_track);
       if (opened.event == null) await restore();
     } catch (e) { sys("接続できませんでした。ページを開き直してください。"); console.error(e); return; }
     setBusy(false);

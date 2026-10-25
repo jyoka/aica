@@ -1,6 +1,7 @@
 """イベントの受け付けとターンの決まり(task 163)。POST /api/event(JSON)と POST /api/event/stream(NDJSON)が共通に使う。
 
-受け付け(accept): イベントの種類、空の発言・長すぎる発言(MAX_TEXT_CHARS)、アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn。
+受け付け(accept): イベントの種類、使い始める前の同意(line_runtime.consent)、空の発言・長すぎる発言(MAX_TEXT_CHARS)、
+アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn(同意がまだなら、その子の NeedsConsent)。
 ターン(run): プッシュの判定 → stale の照合 → 会話数を 1 つ数える → 最後の利用 → 知らせ → LineRuntime → 開いた記録、の順に進め、
 行(dict)を順に出す。Web サーバーは Cookie の照合と、HTTP(reply_of)と NDJSON への書き出しだけを受け持つ。
 評価が後で同じ手順を呼べるように、FastAPI には依存させない(docs/design/consolidate-resume-draft-and-event-turn.md)。
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 
 from dip_mcp import logic, profile, retention
 from dip_mcp.data import State
+from line_runtime import consent
 from line_runtime.quota import DailyQuota, limit_reply
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
@@ -26,6 +28,10 @@ MAX_TEXT_CHARS = 5000
 
 class BadTurn(ValueError):
     """受け付けないイベント(Web サーバーは 400 にする)。LineRuntime の ValueError も包む(元の例外は __cause__)。"""
+
+
+class NeedsConsent(BadTurn):
+    """使い始める前の同意(consent の terms)がまだ、または版が上がって取り直す(Web サーバーは 403 にする)。"""
 
 
 class TurnFailed(Exception):
@@ -63,7 +69,8 @@ class Turn:
 
 def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: int | None,
            new_conversation: bool = False, channel: str = "web", features: tuple[str, ...] = ()) -> Turn:
-    """LLM も会話数も使わない検証: イベント、空の発言・長すぎる発言、アップロードの事実。だめなら BadTurn。
+    """LLM も会話数も使わない検証: イベント、同意、空の発言・長すぎる発言、アップロードの事実。だめなら BadTurn。
+    同意がまだなら NeedsConsent(プッシュも含めて、同意の前は LLM を呼ばない。docs/design/privacy.md の 3.6)。
     new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき。挨拶とプッシュはいつも新しい会話)。
     channel・features: 今の窓口と、そこで使えるもの(エージェントに伝える)。"""
     if event not in EVENTS:
@@ -73,6 +80,8 @@ def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: i
         raise BadTurn(f"{event} には空でない text が必要です")
     if kind == "user" and len(text) > MAX_TEXT_CHARS:  # 長すぎる発言も、会話数を使う前・LLM を呼ぶ前に断る
         raise BadTurn(f"{event} の text は {MAX_TEXT_CHARS} 字までです")
+    if consent.needed(deps.state, user_id, "terms"):
+        raise NeedsConsent(consent.MISSING["terms"])
     facts = upload_facts(deps, user_id) if kind == "upload" else None
     return Turn(user_id=user_id, event=event, text=text, thread=thread, entry=entry, kind=kind, facts=facts,
                 new_conversation=new_conversation, channel=channel, features=tuple(features))

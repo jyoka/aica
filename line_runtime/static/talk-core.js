@@ -17,7 +17,13 @@
 //                               //   extra() は start の本文に足すもの = LIFF の ID トークン)。無ければ Web の /api/voice/…
 //     onVoiceClosed(done, started), // (任意)音声相談のシートを閉じたとき(done: まとめが届いた、started: 面談の部屋につながった)。
 //                               //   LIFF 画面がトークに戻る案内を出す
+//     consentApi,               // (任意)同意を記録する API(LINE の LIFF 画面: /api/liff/consent)。無ければ Web の /api/consent
+//     consentRefresh,           // (任意)同意の状態を読み直す API。null なら読み直さない(LIFF 画面: Web の Cookie の人を読まないように)
 //   });
+//
+// 同意(docs/design/privacy.md の 3.6): 画面は setConsent(サーバーの consent.view)で同意の状態と文言を渡す。
+// ask(kind) は、その同意がまだなら同意の画面を重ねて出し、「同意して…」で記録できたら true(やめたら false)。
+// 履歴書(resume)はファイルを選ぶ直前、音声(voice)はシートを開く直前に ask する。使い始める同意(terms)は画面が ask する。
 function createTalk(o) {
   const log = o.log;
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -220,6 +226,71 @@ function createTalk(o) {
   // ターンの途中とユーザーが決まる前は押せない(画面の setBusy から呼ぶ)
   function setEnabled(on) { plus.disabled = !on; if (!on) closeMenu(); }
 
+  // ---------- 同意の画面(使い始める、履歴書、音声。文言と版はサーバーの line_runtime.consent) ----------
+  let consent = null;  // { version, needed: [kind…], texts: {kind: {title, paragraphs, points, strong, button}}, links }
+  function setConsent(c) { consent = c || null; }
+  const needsConsent = (kind) => !!consent && consent.needed.includes(kind);
+  // サーバーが同意がまだと断った(403。別のタブで「すべて消す」をした、版が上がったなど): 次に使うときに同意の画面を出す
+  async function consentLost(kind) {
+    const url = o.consentRefresh === undefined ? "/api/consent" : o.consentRefresh;
+    if (url) { try { const r = await fetch(url); if (r.ok) { setConsent(await r.json()); return; } } catch (_) {} }
+    if (consent && !consent.needed.includes(kind)) consent.needed.push(kind);
+  }
+  const cSheet = el("div", "consent-sheet"); cSheet.id = "consent-sheet"; cSheet.hidden = true;
+  cSheet.setAttribute("role", "dialog"); cSheet.setAttribute("aria-modal", "true");
+  document.body.appendChild(cSheet);
+  // 同意の文(題、段落、箇条書き、太字、規約とポリシーへのリンク)と、「同意して…」(と、取り消せるときは「やめる」)
+  function consentBox(kind, onAgree, onCancel) {
+    const t = consent.texts[kind], box = el("div", "consent-box");
+    box.dataset.kind = kind;
+    box.appendChild(el("h2", null, t.title));
+    for (const p of t.paragraphs) box.appendChild(el("p", null, p));
+    if (t.points.length) { const ul = el("ul"); for (const p of t.points) ul.appendChild(el("li", null, p)); box.appendChild(ul); }
+    if (t.strong) box.appendChild(el("p", "strong", t.strong));
+    const links = el("p", "links");
+    consent.links.forEach((l, i) => {
+      if (i) links.append(" · ");
+      const a = el("a", null, l.label); a.href = l.url; a.target = "_blank"; a.rel = "noopener"; links.appendChild(a);
+    });
+    const err = el("p", "err"), btns = el("div", "consent-btns"), ok = el("button", "agree", t.button);
+    ok.type = "button"; ok.id = "consent-agree"; ok.onclick = () => onAgree(ok, err);
+    btns.appendChild(ok);
+    if (onCancel) { const no = el("button", "cancel", "やめる"); no.type = "button"; no.id = "consent-cancel"; no.onclick = onCancel; btns.appendChild(no); }
+    box.append(links, err, btns);
+    return box;
+  }
+  // 同意を記録する。記録できたら setConsent し直して true。版が変わっていた(409)なら新しい文言で出し直す
+  async function agree(kind) {
+    const res = await fetch(o.consentApi || "/api/consent", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ kind, version: consent.version, user_id: o.getUser() }) });
+    let d = null; try { d = await res.json(); } catch (_) {}
+    if (res.ok) { setConsent(d); return true; }
+    const e = new Error((d && typeof d.detail === "string" && d.detail) || "同意を記録できませんでした。もう一度お試しください。");
+    e.consent = res.status === 409 ? d.consent : null; throw e;
+  }
+  // kind の同意がまだなら同意の画面を出す。cancel: false なら「やめる」を出さない(使い始める同意)。
+  // gesture は「同意して…」を押したその場で呼ぶ(ファイルを選ぶ画面は、押した操作の中でしか開けないため)
+  function ask(kind, { cancel = true, gesture = null } = {}) {
+    if (!needsConsent(kind)) return Promise.resolve(true);
+    return new Promise((done) => {
+      const close = (v) => { cSheet.hidden = true; cSheet.replaceChildren(); done(v); };
+      let gestured = false;  // ファイルを選ぶ画面は 1 回だけ開く(記録に失敗して押し直しても、2 つ開かない)
+      const show = () => cSheet.replaceChildren(consentBox(kind, async (ok, err) => {
+        ok.disabled = true; err.textContent = "";
+        const no = cSheet.querySelector("#consent-cancel"); if (no) no.disabled = true;  // 記録している間は閉じない
+        if (gesture && !gestured) { gestured = true; gesture(); }
+        try { await agree(kind); close(true); }
+        catch (e) {
+          if (!e.consent) { err.textContent = e.message; ok.disabled = false; if (no) no.disabled = false; return; }
+          setConsent(e.consent);  // 版が上がっていた: 新しい版の文言で出し直す
+          if (!needsConsent(kind)) { close(true); return; }
+          show(); cSheet.querySelector(".err").textContent = e.message;
+        }
+      }, cancel ? () => close(false) : null));
+      show(); cSheet.hidden = false; cSheet.querySelector("#consent-agree").focus();
+    });
+  }
+
   // ---------- 履歴書のアップロード(resume-intake) ----------
   // アップロードそのものが本人の1ターン: 本人側にファイルの吹き出し(「履歴書(PDF)」。ファイル名は出さない)→
   // AI 側の「入力中」の間に /api/resume/upload で読み取り(dip の状態に保存。会話数を1つ使う)→
@@ -228,12 +299,20 @@ function createTalk(o) {
   const fileInput = el("input"); fileInput.type = "file"; fileInput.id = "resume-file"; fileInput.hidden = true;
   fileInput.accept = ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
   document.body.appendChild(fileInput);
-  function pickResume() { if (o.getUser() && !o.isBusy()) fileInput.click(); }
+  // 履歴書の同意がまだなら、ファイルを選ぶ直前に同意の画面を出す。「同意してファイルを選ぶ」でファイルを選ぶ画面を開き、
+  // 同意の記録が終わるまで、選んだファイルを送らない(記録できなければ送らない)
+  let resumeAgreed = null;
+  function pickResume() {
+    if (!o.getUser() || o.isBusy()) return;
+    if (!needsConsent("resume")) { fileInput.click(); return; }
+    resumeAgreed = ask("resume", { gesture: () => fileInput.click() });
+  }
   // 表示名はサーバー(RESUME_LABEL)と同じ。対応していない形式はサーバーが断るので、種類を決めつけない
   const fileLabel = (name) => (/\.pdf$/i.test(name) ? "履歴書(PDF)" : /\.(jpe?g|png)$/i.test(name) ? "履歴書(画像)" : "ファイル");
   fileInput.onchange = async () => {
     const f = fileInput.files[0]; fileInput.value = "";
     const user = o.getUser();
+    if (resumeAgreed) { const agreed = resumeAgreed; resumeAgreed = null; if (!(await agreed)) return; }
     if (!f || !user || o.isBusy()) return;
     o.showTalk?.(); o.setBusy(true);
     try { await o.beforeTurn?.(); } catch (e) { console.error(e); }
@@ -246,6 +325,7 @@ function createTalk(o) {
       const q = o.getThread?.() != null ? `?thread=${o.getThread()}` : "";  // 本番: 表示中の会話(替わっていたら読み取らない)
       const res = await fetch(`/api/resume/upload${q}`, { method: "POST", body: fd });
       if (res.status === 409) { col.parentElement.remove(); await o.onStale?.(); return; }
+      if (res.status === 403) await consentLost("resume");  // 同意がまだ: 次に選ぶときに同意の画面を出す
       if (!res.ok) { let m = res.status + ""; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
       d = await res.json();
       resumeConfirm({ shown: d.bubbles, view_url: d.view_url }, col);
@@ -333,6 +413,8 @@ function createTalk(o) {
   async function openVoice() {
     const user = o.getUser();
     if (!user || o.isBusy() || voice) return;
+    if (!(await ask("voice"))) return;  // 音声の同意(声が LiveKit、Deepgram、Cartesia にも届く)がまだなら、シートの前に示す
+    if (o.getUser() !== user || o.isBusy() || voice) return;
     o.showTalk?.();
     const v = voice = { user, since: null, roomName: null, room: null, agent: null, me: false, working: null,
                         ended: false, stalled: false, done: false, abort: new AbortController() };
@@ -342,6 +424,7 @@ function createTalk(o) {
     try {
       const res = await fetch(VOICE_API.start, { method: "POST", headers: { "Content-Type": "application/json" },
                                                  body: JSON.stringify({ user_id: user, ...(await VOICE_API.extra?.()) }) });
+      if (res.status === 403) await consentLost("voice");  // 同意がまだ: 閉じて開き直すと同意の画面を出す
       if (!res.ok) { let m = "音声相談を始められませんでした。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
       const t = await res.json();
       if (voice !== v) return;  // 準備の間に閉じた
@@ -462,5 +545,6 @@ function createTalk(o) {
   }
 
   return { el, now, scroll, yen, sys, me, meFile, botCol, typingCol, disableChips, fail, setWait, onStep, readStream,
-           jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled, voicePending, voiceShown };
+           jobCard, renderReply, resumeConfirm, pickResume, openVoice, closeVoice, setEnabled, voicePending, voiceShown,
+           setConsent, ask };
 }
