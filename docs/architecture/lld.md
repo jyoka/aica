@@ -85,11 +85,11 @@ flowchart TB
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
 | `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`LineLogin`、`liff_session`、`liff_session_user` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
-| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
+| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形、今の窓口の案内 | `LineReply`、`Button`、`LineState`、`channel_note`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限 | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する | `PRICES`、`cost_usd`、`Ledger`、`summarize` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
@@ -159,7 +159,12 @@ classDiagram
   10 回目の指示には、ツールを呼ばずに返信するよう添え書き(`LAST_CALL_NOTE`)を足します。それでもツールを呼んだら、11 回目はモデルを呼ばずに
   決まった返信(`TURN_LIMIT_REPLY`。うまくまとめられなかったので短く聞き直してほしい)でターンを終えます。この返信は LLM を呼んでいないので、
   費用台帳と画面の `llm` の行には載せません(`additional_kwargs` の `turn_limit`)
-- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます
+- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + 窓口 + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます。
+  窓口(`channel_note`)は state の `channel`(`web` / `line`)と `channel_features`(LINE で LIFF 画面で使えるもの)から作り、
+  LINE で使えないもの(履歴書の読み込み、音声相談、レジュメ・アーケード)は勧めず、`actions` も付けないよう書きます。
+  `channel` と `channel_features` は、ターンのたびに `turn.accept` → `LineRuntime.handle_stream` が入力と一緒に state に書きます
+  (Web と評価は既定の `web`。LINE の webhook と LIFF 画面からのターンは `line` と `line_channel.liff_features()`)。
+  窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
 - `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
 
@@ -1074,9 +1079,9 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `render` の項目 | LINE のメッセージ |
 |---|---|
 | `bubbles` | 1 つずつテキスト |
-| `actions` | `ACTION_NOTES` の文をテキストで足す。LINE ではファイルを選べず、音声相談もできないので、文で書くよう案内する |
+| `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` → `https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` → `…/voice`)を、`buttons` のボタンの後ろに足す。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
-| `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ) |
+| `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
@@ -1087,13 +1092,14 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 
 LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは HLD の 4.8):
 
-- 設定は `LINE_LIFF_ID` と `LINE_LOGIN_CHANNEL_ID` の両方です(`liff_configured`。リクエストのたびに環境変数を読む)。片方だけなら使わず、
+- 設定は `LINE_LIFF_ID` と `LINE_LIFF_CHANNEL_ID` の両方です(`liff_configured`。リクエストのたびに環境変数を読む。チャネル ID は前の名前の
+  `LINE_LOGIN_CHANNEL_ID` も読み、両方が違えば新しい名前を使って警告のログを出す。`login_channel_id`)。片方だけなら使わず、
   起動のときに警告のログを出します。両方あるのに `AICA_ID_KEY` が無い、短いときは `check_id_key` で起動を止めます
 - 殻(`_liff_shell`)は LIFF SDK(`https://static.line-scdn.net/liff/edge/2/sdk.js`)を読み、`liff.init({ liffId, withLoginOnExternalBrowser: true })`
   の後、`liff.getIDToken()` を `POST /api/liff/session` に送って、通れば同じ URL を読み直します。URL に `liff.state` があるときは、
   `liff.init` が本来の画面へ送るので何もしません。ログインしていなければ `liff.login`。読み直しても殻に戻ったとき(Cookie が付かない)は、
   10 秒以内の 2 回目で止めます(`sessionStorage`。`liff.login` から戻ってもログインしていないときも同じ)。`liff.state` があるのに 10 秒で送られなければ止めます。どの失敗も「LINE で本人を確かめられませんでした」と出して止まります
-- `LineLogin.verify`: `POST https://api.line.me/oauth2/v2.1/verify` に `id_token` と `client_id`(`LINE_LOGIN_CHANNEL_ID`)をフォームで送ります。
+- `LineLogin.verify`: `POST https://api.line.me/oauth2/v2.1/verify` に `id_token` と `client_id`(`login_channel_id()`)をフォームで送ります。
   200 でも、`iss` が `https://access.line.me`、`aud` がチャネル ID、`exp` が今より後、`sub` が `U` + 32 桁 hex でなければ None です。
   断られた(400)、つながらない(10 秒で打ち切り)ときも None です。トークンが 4,096 字を超えたら LINE に送りません。トークンと `sub` はログに出しません
 - 本人は `line_user(sub)` で、webhook のトークと同じ関数です。Cookie `aica_liff` の値は `l-….<期限の UNIX 秒>.<HMAC-SHA256>` で、
@@ -1101,6 +1107,23 @@ LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは H
   Cookie は `Max-Age` の無い、ブラウザを閉じたら消えるものです。HttpOnly、Secure、SameSite=Lax です。LIFF のエンドポイント URL は https だけなので Secure にしています
 - `POST /api/liff/session` は `Content-Type: application/json` でなければ 415 です(本文の無い型や `text/plain` は、ほかのサイトから事前の確認なしに送れるため)
 - 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
+
+LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 4.8):
+
+| ルート | 中身 |
+|---|---|
+| `GET /liff/line/voice` | 音声相談の画面(`_liff_voice_page`)。`talk-core.js` の `createTalk` を、`voiceApi`(`/api/liff/voice/…`、`extra` で `liff.getIDToken()` を足す)と `onVoiceClosed` つきで使う |
+| `GET /liff/line/resume/upload` | 履歴書の読み込みの画面(`_liff_upload_page`)。ファイルと `user_id` と `liff.getIDToken()` をフォームで送る |
+| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする |
+| `POST /api/liff/voice/start` | `{user_id, id_token}`。`_liff_api_user`(Cookie `aica_liff` が無ければ 401、本文のユーザーが違えば 403)→ LiveKit の設定(無ければ 503)→ `_liff_sub`(ID トークンを確かめ、`line_user(sub)` が本人でなければ 401)→ `_voice_token`(Web と同じ。会話数 1、IP は数えない)。部屋 → `(sub, 時刻)` を `app.state.line_voice_rooms` に覚える(1 時間より古いものは、始めるときと結果が届くときに捨てる。`_forget_old_voice_rooms`) |
+| `POST /api/liff/voice/wait` | Web の `/api/voice/wait` と同じ(`_voice_wait`)。返信のボタンの URL は `/liff/line/…` にする(`_liff_reply`) |
+| `POST /api/liff/resume/upload` | フォームの `user_id`、`id_token`、`file`。本人と `sub` を確かめてから `_read_resume`(Web の `/api/resume/upload` と同じ。会話数 1)。応答の後に `_line_upload_turn` |
+
+- `POST /api/voice/result` は、結果を記録してから部屋を `line_voice_rooms` から取り出し(`_line_voice_to`。同じ部屋の 2 回目は push しない)、`line_user(sub)` が結果のユーザーで、
+  Messaging API の設定があれば、応答の後に `_line_push` で同じ返信(`voice_reply`)を push します(`out["line"]`)
+- `_line_upload_turn` は、その人の `line_locks` の中で、入力中の表示 → `_line_turn(uid, "upload")`(`resume_upload` のターン。LINE の窓口)→
+  読み取りの確認と「読み取り結果を見る」のボタンの後に続きの返信をつないで(`_joined`)、1 回の push で送ります。ターンが失敗したら、確認と `FAILED_TEXT` を送ります
+- LINE の userId(`sub`)は `line_voice_rooms` と、応答の後の処理の引数にだけあり、保存もログもしません
 
 ### 4.12 LINE のアカウント連携
 

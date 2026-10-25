@@ -38,7 +38,7 @@ CHANNEL = "2000000000"  # LIFF を置いた LINE ログインのチャネルの 
 OTHER_CHANNEL = "2999999999"
 RAW_USER = "U" + "0123456789abcdef" * 2  # LINE の userId の形(U + 32 桁)
 WEB_USER = "w-00000000000000aa"  # 同じブラウザの Cookie の匿名ユーザー(切り替わってはいけない相手)
-LIFF_ENVS = (line_channel.LIFF_ID_ENV, line_channel.LOGIN_CHANNEL_ENV)
+LIFF_ENVS = (line_channel.LIFF_ID_ENV, line_channel.LOGIN_CHANNEL_ENV)  # 設定するもの(チャネル ID は前の名前でも読む)
 LINE_ENVS = ("LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "AICA_PUBLIC_URL")
 
 
@@ -83,7 +83,7 @@ def liff(tmp_path, monkeypatch):
     monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")
-    for k in LIFF_ENVS + LINE_ENVS:
+    for k in (*LIFF_ENVS, line_channel.LIFF_CHANNEL_ENV, *LINE_ENVS):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv(line_channel.ID_KEY_ENV, ID_KEY)
     monkeypatch.setenv(line_channel.LIFF_ID_ENV, LIFF_ID)
@@ -245,11 +245,11 @@ def test_line_buttons_open_the_liff_url_that_lands_on_the_liff_pages(liff):
         assert _client(server).get(line_channel.LIFF_PREFIX + page.removeprefix("/liff"),
                                    params={"rid": 1, "job": "a001"}).status_code == 200
 
-    # /liff/line の下に無い画面(レジュメ・アーケード)は、今までどおり公開 URL。公開 URL も無ければ出さない
-    arcade = {"bubbles": ["はい"], "buttons": [{"label": "ゲーム", "url": "/liff/arcade"}]}
-    (_, flex) = to_messages(arcade, "https://aica.example.test")
-    assert flex["contents"]["body"]["contents"][0]["action"]["uri"] == "https://aica.example.test/liff/arcade"
-    assert [m["type"] for m in to_messages(arcade, "")] == ["text"]
+    # レジュメ・アーケードも /liff/line の下にある(task 204)。公開 URL があっても LIFF URL で開く
+    arcade = {"bubbles": ["はい"], "buttons": [{"label": "ゲーム", "url": "/liff/arcade/harvest-of-work"}]}
+    for base in ("https://aica.example.test", ""):
+        (_, flex) = to_messages(arcade, base)
+        assert flex["contents"]["body"]["contents"][0]["action"]["uri"] == f"https://liff.line.me/{LIFF_ID}/arcade/harvest-of-work"
 
 
 def test_without_liff_settings_nothing_changes(liff, monkeypatch):
