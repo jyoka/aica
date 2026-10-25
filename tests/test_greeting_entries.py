@@ -4,6 +4,8 @@
 - dip の Prompt: 入口V と入口R が、挨拶の入口の決まりを指している
 - LINE の友だち追加の挨拶: 入口は LIFF 画面へのボタンになり、使えないもの(LiveKit が無いときの音声)は出ない。文字の選択肢も残る
 - 再訪(ゲームの下書きに空欄): 要約を読んでから、下書きの続きだけを勧める
+- 挨拶の言い方と並び(会話の改善 C (6/10)、task 227。evals/checks.py の greeting_wording_violations): 連絡した言い方をしない、
+  問いが最後、再訪は行動履歴を言い切らない・「今回も」は前に話した人だけ・勧めは問いと別の吹き出し・合計の字数
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from evals.checks import (
     conversation_checks,
     greeting_entry_violations,
     greeting_offers,
+    greeting_wording_violations,
 )
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import line_channel
@@ -90,6 +93,130 @@ def test_conversation_checks_report_the_greeting_offers_and_ask_for_the_new_menu
     assert any("「求人を探す」「まず相談する」が無い" in v for v in conversation_checks(sc, [old_menu], [None])["violations"])
 
 
+# ----------------------------- 挨拶の言い方と並び -----------------------------
+
+BROWSING = SCENARIOS["R-revisit-browsing"]  # 希望も区分も無く、行動履歴だけ
+TRACKED = SCENARIOS["R-revisit-track"]  # 記録された区分(アルバイト・パート)と行動履歴
+RESUME = ["resume_upload"]
+QUICK = ["カフェで探す", "別の仕事で探す", "まず相談する", "今はいい"]
+
+
+def said(bubbles, actions=()) -> dict:
+    return turn(actions, quick_replies=QUICK) | {"bubbles": list(bubbles)}
+
+
+def test_revisit_greeting_in_the_new_order_passes():
+    good = said(["おかえりなさい。履歴書を読み込むと、経歴を一から書かずに探せます。",
+                 "前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?"], RESUME)
+    assert greeting_wording_violations(TRACKED, [good], "アルバイト・パート") == []
+    assert greeting_wording_violations(BROWSING, [said(["おかえりなさい。", "最近はカフェのお仕事を見ていましたか?"])]) == []
+    # 前に希望を話した人には「今回も」と言ってよい。勧めの無い挨拶は、問いと同じ吹き出しでよい
+    prefs = SCENARIOS["R-revisit"]
+    assert greeting_wording_violations(prefs, [said(["おかえりなさい。前回は渋谷・日中のカフェでしたが、今回も同じですか?"])]) == []
+    # 締めくくりの「いつでもお声がけください」は、こちらから連絡した言い方ではない
+    assert greeting_wording_violations(prefs, [said(["おかえりなさい。いつでもお声がけください。", "今回も同じですか?"])]) == []
+
+
+def test_revisit_greeting_does_not_say_aica_reached_out():
+    """#221 の R-revisit-browsing T1 と R-revisit-track T1。トークを開いたのは本人で、aica は連絡していない。"""
+    browsing = said(["最近カフェのお仕事をご覧になっていたので、ご連絡しました。履歴書があれば、読み込むとお仕事探しが進めやすくなります。",
+                     "今回もカフェのお仕事を探していますか？"], RESUME)
+    assert greeting_wording_violations(BROWSING, [browsing]) == [
+        "T1: 挨拶でこちらから連絡した言い方をした(開いたのは本人): 最近カフェのお仕事をご覧になっていたので、ご連絡しました。",
+        "T1: 行動履歴に言い切りで触れた(問いの中で確認形に): 最近カフェのお仕事をご覧になっていたので、ご連絡しました。",
+        "T1: 前に話したことが無い人に「今回も」と言った"]
+    track = said(["お仕事を見ていただいていたので、お声がけしました。", "前回はアルバイトで探していましたが、カフェで探しますか?"])
+    assert greeting_wording_violations(TRACKED, [track], "アルバイト・パート") == [
+        "T1: 挨拶でこちらから連絡した言い方をした(開いたのは本人): お仕事を見ていただいていたので、お声がけしました。",
+        "T1: 行動履歴に言い切りで触れた(問いの中で確認形に): お仕事を見ていただいていたので、お声がけしました。"]
+    for phrase in ("ご連絡いたしました。", "お声掛けしました。", "声をおかけしました。", "ご連絡を差し上げました。",
+                   "ご連絡をしました。", "お知らせしました。", "ご連絡しております。", "お声がけしています。",
+                   "ご連絡させてもらいました。", "お声がけさせてもらいました。", "ご連絡させていただいております。"):
+        assert greeting_wording_violations(TRACKED, [said([phrase, "カフェで探しますか?"])], "アルバイト・パート"), phrase
+    # 求人が出たときの約束と、本人への問いと、仕組みの説明は、こちらから連絡した言い方ではない
+    for fine in (["新しい求人が出たらお知らせします。", "カフェで探しますか?"],
+                 ["新しい求人が出たらご連絡します。", "カフェで探しますか?"],
+                 ["おかえりなさい。", "応募先に連絡しましたか?"],
+                 ["おかえりなさい。", "応募先に連絡していますか?"],
+                 ["新着をお知らせしています。", "カフェで探しますか?"]):
+        assert greeting_wording_violations(TRACKED, [said(fine)], "アルバイト・パート") == [], fine
+    # 初回訪問の挨拶も同じ(連絡の理由はプッシュだけ)
+    assert greeting_wording_violations(VISIT, [said(["はじめまして。ご連絡しました。", "どれから始めますか?"])])
+
+
+def test_revisit_greeting_mentions_activity_only_inside_the_question():
+    """#221 の Q-job-question T1「最近、お仕事を見ていましたね。」は、見ていたことを言い切っている。"""
+    told = said(["最近、お仕事を見ていましたね。カフェのお仕事を探していますか？"])
+    assert greeting_wording_violations(BROWSING, [told]) == [
+        "T1: 行動履歴に言い切りで触れた(問いの中で確認形に): 最近、お仕事を見ていましたね。"]
+    # 敬語の言い切り(#221 の R-revisit-track T1 の形)も同じ
+    for told in ("おかえりなさい。最近お仕事を見ていただいていましたね。", "お仕事をご覧いただいていたので。"):
+        assert greeting_wording_violations(BROWSING, [said([told, "カフェで探しますか?"])]) == [
+            f"T1: 行動履歴に言い切りで触れた(問いの中で確認形に): {told.removeprefix('おかえりなさい。')}"], told
+    # 問いと同じ文に読点でつないでも、理由や言い切りの形なら言い切り(#221 の R-revisit-browsing T1 から連絡の言い方を消した形)
+    for told in ("最近カフェのお仕事をご覧になっていたので、カフェで探しますか？",
+                 "最近カフェのお仕事を見ていましたね、カフェで探しますか？",
+                 "お仕事を見ていただいていたので、カフェで探しますか?",
+                 "カフェのお仕事を見ていましたが、カフェで探しますか?",
+                 # 敬語、「んです」「ようなので」「ため」の形も同じ
+                 "最近カフェのお仕事を見ていらっしゃいましたね、カフェで探しますか？",
+                 "最近カフェのお仕事をご覧になっていたんですね、カフェで探しますか？",
+                 "最近カフェのお仕事を見ていたようなので、カフェで探しますか？",
+                 "最近カフェのお仕事をご覧になっていたため、カフェで探しますか？",
+                 "最近カフェのお仕事を見ていたことから、カフェで探しますか？"):
+        assert greeting_wording_violations(BROWSING, [said(["おかえりなさい。", told])]) == [
+            f"T1: 行動履歴に言い切りで触れた(問いの中で確認形に): {told}"], told
+    assert greeting_wording_violations(BROWSING, [said(["おかえりなさい。", "最近カフェのお仕事を見ていましたね、今回もカフェで探しますか？"])]) == [
+        "T1: 行動履歴に言い切りで触れた(問いの中で確認形に): 最近カフェのお仕事を見ていましたね、今回もカフェで探しますか？",
+        "T1: 前に話したことが無い人に「今回も」と言った"]
+    # 連体形で問いの中に入れるのと、見ていたこと自体を聞くのは確認の問い
+    for fine in ("前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?",
+                 "最近はカフェのお仕事を見ていましたか?",
+                 "最近カフェのお仕事を見ていましたか、それとも別のお仕事ですか？",
+                 "最近カフェのお仕事を見ていたんですか？",
+                 "最近カフェのお仕事を見ていたのでしょうか？"):
+        assert greeting_wording_violations(TRACKED, [said(["おかえりなさい。", fine])], "アルバイト・パート") == [], fine
+
+
+def test_the_question_comes_last_and_the_offer_comes_first():
+    # #221 の Q-job-question T1: 問いの後ろに勧めがある
+    after = said(["最近はカフェのお仕事を見ていましたか?", "履歴書や職務経歴書があれば、読み込むと早いです。"], RESUME)
+    assert greeting_wording_violations(BROWSING, [after]) == [
+        "T1: 挨拶の問いが最後に無い: 履歴書や職務経歴書があれば、読み込むと早いです。"]
+    # #221 の R-revisit T1: 勧めが問いと同じ吹き出しにある
+    packed = said(["前回は渋谷・日中のカフェを希望されていました。", "履歴書があれば、読み込むと早いです。今回も同じ条件で探しますか？"], RESUME)
+    assert greeting_wording_violations(SCENARIOS["R-revisit"], [packed]) == [
+        "T1: 入口の勧めを問いと同じ吹き出しに詰めた(勧めを先の吹き出しに): 履歴書があれば、読み込むと早いです。今回も同じ条件で探しますか？"]
+    # 下書きの続き(文字の選択肢)も入口の勧め
+    draft = turn(quick_replies=["空欄を埋める", "求人を探す", "今はいい"]) | {
+        "bubbles": ["おかえりなさい。ゲームで作った下書きに、数字の空欄が残っています。今日は何から進めますか?"]}
+    assert greeting_wording_violations(SCENARIOS["R-revisit-draft"], [draft])[0].startswith("T1: 入口の勧めを問いと同じ吹き出しに詰めた")
+    # 初回訪問も問いが最後
+    assert greeting_wording_violations(VISIT, [said(["どれから始めますか?", "音声での相談もできます。"])]) == [
+        "T1: 挨拶の問いが最後に無い: 音声での相談もできます。"]
+
+
+def test_revisit_greeting_total_length_depends_on_the_track():
+    """#221 の R-revisit-track T1 は、勧めと問いを 66 字の吹き出しに詰め、計 91 字だった。"""
+    packed = "履歴書や職務経歴書があれば、読み込むと早いです。前回はアルバイト・パートで探していましたが、最近見ていたカフェのお仕事で探しますか？"
+    long = said(["おかえりなさい。今日もお仕事探しをお手伝いします。", packed])
+    total = sum(map(len, long["bubbles"]))
+    assert total == 91
+    assert f"T1: 再訪の挨拶が計{total}字(90字まで)" in greeting_wording_violations(TRACKED, [long], "アルバイト・パート")
+    assert not any("字(" in v for v in greeting_wording_violations(TRACKED, [long], "正社員"))  # 正社員は 130 字まで
+    # 初回訪問は数えない(3 つの入口を文で伝えるため)
+    assert greeting_wording_violations(VISIT, [long]) == []
+
+
+def test_conversation_checks_report_the_greeting_wording():
+    bad = said(["お仕事を見ていただいていたので、お声がけしました。", "カフェで探しますか?"])
+    r = conversation_checks(TRACKED, [bad], [None])
+    assert "T1: 挨拶でこちらから連絡した言い方をした(開いたのは本人): お仕事を見ていただいていたので、お声がけしました。" in r["violations"]
+    # 挨拶でないシナリオ(プッシュ)は見ない: 連絡の理由を伝えるのはプッシュの決まり
+    push = SCENARIOS["B-exit"]
+    assert greeting_wording_violations(push, [said(["応募フォームの途中だったので、ご連絡しました。", "どこで止まりましたか?"])]) == []
+
+
 # ----------------------------- dip の Prompt -----------------------------
 
 
@@ -101,6 +228,16 @@ def test_entries_point_to_the_greeting_rules():
         assert "## 挨拶で3つの入口を案内する(初回訪問・再訪)" in p
     assert "「求人を探す / まず相談する / 今はいい」の3つ" in visit and "窓口で使えるものを全部" in visit
     assert "入口を1つだけ勧める" in revisit and "3つ全部は並べない" in revisit
+    # 「なぜ今連絡したか」はプッシュだけ。挨拶は「おかえりなさい」の側で、勧めを先、問いを最後
+    assert "「おかえりなさい。」で始め" in revisit and "勧めを先、確認の1問を最後に置く" in revisit
+    assert "- プッシュ(入口D)は、こちらから連絡する。最初の吹き出しで「なぜ今連絡したか」" in revisit
+    assert "「なぜ今連絡したか」は書かず、「ご連絡しました」「お声がけしました」" in revisit
+    assert "「今回も」は、前に本人が話したこと(stated_preferences の希望か、記録された区分)があるときだけ" in revisit
+    # D2: 条件がそろっている人には履歴書を勧めない。勧めるときは何が早くなるかを言う
+    assert "探す条件がそろっている人(区分が正社員でなく、stated_preferences に探す条件がある)には勧めない" in revisit
+    assert "履歴書を読み込むと、経歴を一から書かずに探せます。" in revisit
+    assert "読み込むと早いです。」のように1文添え" not in revisit
+    assert "アルバイト・パートと未定は90字まで、正社員は130字まで" in revisit
 
 
 # ----------------------------- LINE の友だち追加の挨拶 -----------------------------

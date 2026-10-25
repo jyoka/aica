@@ -315,7 +315,10 @@ def test_revisit_browsing_must_mention_once_and_not_list_jobs():
                     "最近カフェの求人を見ていましたね。どれか気になっていましたか?",  # 1通目の言及と追いかけの問いで1回
                     "最近カフェの求人を見ていましたね。今も探していらっしゃいますか?"):
         once = [dict(ok[0], bubbles=[mention]), ok[1]]
-        assert not any("行動" in v or "羅列" in v for v in _checks("R-revisit-browsing", once)), mention
+        found = _checks("R-revisit-browsing", once)
+        assert not any("触れていない" in v or "回触れた" in v or "羅列" in v for v in found), mention
+        # 言い切り(「見ていましたね」)は、1回でも挨拶の言い方の違反(task 227。問いの中で確認形にする)
+        assert any("言い切り" in v for v in found) is ("ね。" in mention), mention
     for listing in ("最近はカフェホール 渋谷道玄坂などを見ていましたか?", "最近3件の求人を見ていましたか?",
                     "最近はカフェやアパレル販売を見ていましたか?"):
         listed = [dict(ok[0], bubbles=[listing]), ok[1]]
