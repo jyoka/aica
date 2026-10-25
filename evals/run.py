@@ -7,7 +7,7 @@
 各シナリオを --repeat 回(既定1)くり返し、集計と比較は evalkit(リポジトリ直下の evalkit/)に任せる。
 結果は1回ごとに書き出す(途中で止めても、そこまでの結果は残る)。実 API を使うので費用がかかる。
 
-    ./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 8]
+    ./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 12]
     ./.venv/bin/python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade
 
 窓口: 既定は Web のトーク画面(--channel web)。--channel line は LINE のトークとして回す(エージェントの「窓口」が LINE になり、
@@ -16,7 +16,8 @@
 
 費用(PRD aica-v2-fulltime の予算 $5):
 - エージェントは本番のモデル(line_runtime.config.MODEL)。模擬ユーザーとジャッジは安いモデル(SIM_MODEL・JUDGE_MODEL)。
-- 1会話のエージェントのターンは --max-turns(既定8)まで。シナリオの max_turns が小さければそちら。
+- 1会話のエージェントのターンは、シナリオの max_turns(無ければ SCENARIO_TURNS = 8)まで。相談のシナリオは 12。
+  --max-turns(既定12)は全体の上限で、シナリオの値より小さければそちら。上限で切れた会話は結果の cut_at_cap に出る。
 - 実行ごとに費用台帳(evals/budget.jsonl、エージェント・模擬ユーザー・ジャッジの合計)の累計を出し、
   シナリオを始める前に累計が $4 に達していたら止める(evals/budget.py)。
 - PRD とは別の予算のカード(例: 会話の改善 (2/3) の $1)は、--ledger でそのカードの台帳を、--limit-usd で止める額を渡す。
@@ -58,7 +59,9 @@ from line_runtime import config, llm
 # 構造化出力と Responses API に対応している。Anthropic の場合は Haiku 4.5
 SIM_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
 JUDGE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
-MAX_TURNS = 8  # 1会話のエージェントのターンの上限(費用の上限)
+MAX_TURNS = 12  # 1会話のエージェントのターンの、評価全体の上限(費用の上限。--max-turns)
+# シナリオに max_turns が無いときの上限。相談のシナリオ(相談から提案、その後の反応まで見る)だけ scenarios.json で 12 にする
+SCENARIO_TURNS = 8
 CHANNELS = ("web", "line")  # line_runtime.agent.CHANNELS
 CHANNEL_FEATURES = ("resume_upload", "voice_consult", "arcade")  # --channel line の既定(LIFF と LiveKit の設定がある)
 
@@ -143,7 +146,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
                        features: tuple[str, ...] = ()) -> dict:
     from dip_mcp import logic
     from dip_mcp.data import State
-    from evals.checks import conversation_checks
+    from evals.checks import conversation_checks, conversation_end
     from evals.judge import judge
     from evals.scenarios import load_resume, prepare, upload_resume
     from line_runtime.runtime import EVENTS
@@ -155,7 +158,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
         if not gate["allowed"]:
             raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
         push_facts = gate["facts"]
-    cap = min(sc.get("max_turns", max_turns), max_turns)
+    cap = min(sc.get("max_turns", SCENARIO_TURNS), max_turns)
     trace_at = _trace_size()
     transcript, turns, user_msgs, seconds, marks = [], [], [], [], []
     upload = None
@@ -172,6 +175,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
     user_msgs.append(None)  # 1通目は AI 側から(本人の発言なし)
     await agent_turn(sc["event"], None, push_facts)
     script = sc.get("script") or []
+    ended_by_user = False  # 模擬ユーザー(か台本)が終えたか、何も返さなかった(False のまま上限に達したら、上限で切れた)
     while len(turns) < cap:
         if sc.get("upload_resume") and upload is None and _wants_upload(sc, turns[-1], len(turns)):
             facts = upload_resume(State(), sc)  # 本番の /api/resume/.../upload と同じく dip に保存してから
@@ -182,19 +186,23 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
             continue
         step = len(turns) - 1
         if step < len(script):  # 台本があるシナリオは、その返信を使う(確認したい操作を確実に起こすため)
-            nxt = {"text": script[step], "end": step == len(script) - 1}
+            # 台本の最後で会話を終える。script_then_persona のシナリオは、台本の後を模擬ユーザーが続ける
+            nxt = {"text": script[step], "end": step == len(script) - 1 and not sc.get("script_then_persona")}
         else:
             nxt = await sim_reply(client, sc["persona"], transcript)
         text = (nxt.get("text") or "").strip()
         if not text:  # 模擬ユーザーが何も返さなかった = 会話を離れた
+            ended_by_user = True
             break
         transcript.append({"who": "user", "text": text})
         user_msgs.append(text)
         await agent_turn("message", text)
         if nxt.get("end"):
+            ended_by_user = True
             break
     result = {"id": sc["id"], "user": sc["user"], "push_facts": push_facts, "channel": channel, "features": list(features),
               **conversation_checks(sc, turns, user_msgs, push_facts, upload, channel, features),
+              **conversation_end(len(turns), cap, ended_by_user),
               "upload_turn": upload["turn"] + 1 if upload else None,
               "latency_p50": round(statistics.median(seconds), 1), "latency_max": round(max(seconds), 1),
               **_usage(meter, marks), "transcript": transcript,
@@ -213,7 +221,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
-              "search_arg_violations": "down", "call_overlaps": "down",
+              "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -239,6 +247,7 @@ def to_run(r: dict, rep: int) -> dict:
                 "search_arg_violations": len(r.get("search_arg_violations", [])),
                 "call_overlaps": len(r.get("call_overlaps", [])),
                 "action_offers": len(r["action_offers"]),
+                "cut_at_cap": r.get("cut_at_cap"), "sim_leaks": len(r.get("sim_leaks", [])),
                 **{k: r[k] for k in ("latency_p50", "latency_max", "cost_usd", "llm_calls", "cache_hit_rate")},
                 **depth_of(r["id"], j), **{k: j.get(k) for k in ("tone", "design_fit")}}
     return {"case": r["id"], "rep": rep, "status": "ok", "metrics": metrics, "detail": r}
@@ -273,6 +282,11 @@ def report(doc: dict) -> str:
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("search_arg_violations", [])] or ["- なし"]
     lines += ["", "## 呼び出しの重複(save・playbook・検索。違反とは別に数える)", ""]
     lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("call_overlaps", [])] or ["- なし"]
+    lines += ["", "## ターンの上限で切れた会話(その後の提案や反応を見ていない)", ""]
+    lines += [f"- **{tag(r)}** T{r['detail']['turns']} で上限({r['detail']['turn_cap']})に達して切れた"
+              for r in runs if r["detail"].get("cut_at_cap")] or ["- なし"]
+    lines += ["", "## 模擬ユーザーが設定の指示文を発言にした(評価の崩れ。エージェントの違反ではない)", ""]
+    lines += [f"- **{tag(r)}** {v}" for r in runs for v in r["detail"].get("sim_leaks", [])] or ["- なし"]
     lines += ["", "## keywords の検索(最高値 - 中央値。SIM_PEAK 未満は部分一致だけ)", ""]
     lines += [f"- **{tag(r)}** 「{k['keywords']}」 {k['peak']} → {'意味検索' if k['semantic'] else '部分一致だけ'}"
               f"(候補 {k['candidates']} → {k['kept']} 件)"
@@ -498,8 +512,9 @@ async def main(only: str | None, use_judge: bool, repeat: int, max_turns: int, l
                 print(f"   FAILED: {type(e).__name__}: {e}", flush=True)
                 r = {"id": sc["id"], "error": f"{type(e).__name__}: {e}"}
             else:
-                print(json.dumps({x: r[x] for x in ("turns", "branch_turn", "outcomes", "track_ok", "violations",
-                                                      "latency_p50", "cost_usd")}, ensure_ascii=False), flush=True)
+                print(json.dumps({x: r[x] for x in ("turns", "ended_by", "branch_turn", "outcomes", "track_ok",
+                                                      "violations", "sim_leaks", "latency_p50", "cost_usd")},
+                                 ensure_ascii=False), flush=True)
             runs.append(to_run(r, rep))
 
         cases = [(sc, rep) for rep in range(repeat) for sc in scenarios]
@@ -529,7 +544,8 @@ if __name__ == "__main__":
     ap.add_argument("--only", help="回すシナリオの ID(カンマ区切り)")
     ap.add_argument("--judge", action="store_true", help="相談の深さの LLM ジャッジも回す(安いモデル)")
     ap.add_argument("--repeat", type=int, default=1, help="各シナリオの実行回数(ばらつきを見るときだけ増やす)")
-    ap.add_argument("--max-turns", type=int, default=MAX_TURNS, help="1会話のエージェントのターンの上限")
+    ap.add_argument("--max-turns", type=int, default=MAX_TURNS,
+                    help="1会話のエージェントのターンの、全体の上限(シナリオの max_turns、無ければ 8 より小さければこちら)")
     ap.add_argument("--judge-samples", type=int, default=None,
                     help="ジャッジが1つの会話を判定する回数(既定 evals.judge.JUDGE_SAMPLES = 2。まとめ方は evals/judge.py)")
     ap.add_argument("--channel", choices=CHANNELS, default="web", help="会話の窓口(web: Web のトーク画面 / line: LINE のトーク)")

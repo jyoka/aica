@@ -27,8 +27,18 @@ ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いら�
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
 # この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
 QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?[。!!]?")  # fullmatch で使う
-# 「考えます」「迷って」は断りに数えない(迷いのポイントを聞いて支援するのが正しく、wait を記録するのは違反)
+# 「考えます」「迷って」は断りに数えない(お礼つきなら短く締め、迷いを言っていれば迷いのポイントを聞く。
+# どちらも wait を記録するのは違反)
 REFUSAL = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
+# お礼か終わりの挨拶。迷いの言葉も問いも無ければ、会話の終わりの合図(Prompt の対話ルール。task 223 の D1)
+THANKS = re.compile(r"ありがと|今日はこれで")
+# 「考えます」「検討します」とその言い換え(「考えておきます」「考えたいと思います」「考えてみる」「考えとく」
+# 「検討いたします」)。お礼と一緒なら会話の終わり、お礼が無ければ迷いのサイン。
+# 「考えていて」「考えました」は含めない(事情の説明や、考えた後の返事)
+THINK_IT_OVER = re.compile(r"考え(ます|てみ|させて|ておき|たい|と[きく])|検討(しま|してみ|させて|しておき|いたしま|したい)")
+# 迷いを言っている言葉。お礼があっても、これがあれば迷いのサインで、迷いの点を1問聞いてよい
+# (「ありがとう、でも時給で迷うので考えます」「うーん、考えます」)
+HESITATION = re.compile(r"迷|悩|うーん|ううん|どうしよう|気にな|不安|心配|考え中|(?<![つ何れこ誰])でも|けど|けれど")  # 「いつでも」「何でも」「誰でも」は除く
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
 # 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
@@ -62,8 +72,9 @@ CONSULT_SIGN = re.compile(r"相談|何から始め|何をすれば|探し方が�
 SHOW_JOBS = re.compile(r"求人を?(見せて|見たい|出して|見る)")
 
 
-# 本人が相談を切り上げた・会話を終えた発言(これより前に相談を締めるのは打ち切り)
-CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度|ありがとう|今日はこれで|考えます")
+# 本人が相談を切り上げた発言(これと thanks_goodbye の発言より前に相談を締めるのは打ち切り)。
+# 迷いを言う「考えます」(「うーん、考えます」)は切り上げではない(迷いの点を1問聞く場面で、まだ締めない)
+CONSULT_CUTOFF = re.compile(r"今はいい|送らないで|やめ|あとで|いらない|また今度")
 # 保存済みの項目をもう一度聞いている質問(同じことを聞き直さない。再訪で前の希望を確認した後は、差分だけを受け取る)
 REASK = {
     "experience": re.compile(r"経験(は|が)?(あります|ありますか|を教えて)|これまで(に)?(どんな|何)"),
@@ -125,6 +136,46 @@ PROFILE_FOLLOW_UP = re.compile(r"具体的|もう少し|詳しく|例えば|た�
                                r"|それは(なぜ|どうして)|なぜそう|どうしてそう|そう(思|感じ)|他に|ほかに")
 BRANCH_TOOLS = {"recommend_jobs", "answer_job_question", "get_application_status", "resume_application_form",
                 "relax_conditions", "save_job"}
+
+
+def thanks_goodbye(m: str) -> bool:
+    """お礼か終わりの挨拶で、迷いの言葉も問いも無い発言(会話の終わりの合図。「ありがとう、考えます」「今日はこれで」)。"""
+    return bool(THANKS.search(m)) and not HESITATION.search(m) and "?" not in m and "\uff1f" not in m
+
+
+def thanks_and_think(m: str) -> bool:
+    """お礼つきの「考えます」(「ありがとう、考えます」)。迷いの問いを返さず、短く締める発言。
+    求人を頼んでいる発言(「ありがとう、考えます。求人を見せて」)は締めではない。"""
+    return thanks_goodbye(m) and bool(THINK_IT_OVER.search(m)) and not asks_for_jobs(m)
+
+
+def thanks_close_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """お礼つきの「考えます」への返信は、問いを返さず(迷いの候補を聞かない)、吹き出し2つまでで締め、求人を出さない。
+    出口(record_conversation_outcome)は、そのターンまでに記録している(提案したターンの記録でよい)。
+    締めの actions は音声相談(voice_consult)だけで、この会話でまだ履歴書・音声の提案を出していないときだけ
+    (「1つの会話で1回だけ」。T1 の挨拶の入口の案内は数えない)。
+    迷いを言っている「考えます」(「うーん、考えます」)は対象にしない(1問聞いてよい)。"""
+    out = []
+    for i, m in enumerate(user_msgs[:len(turns)]):
+        if not m or not thanks_and_think(m):
+            continue
+        r = turns[i]
+        if _questions(r["bubbles"]):
+            out.append(f"T{i + 1}: お礼つきの「考えます」に問いを返した(締めていない): {' / '.join(r['bubbles'])}")
+        if len(r["bubbles"]) > 2:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めが吹き出し{len(r['bubbles'])}つ(2つまで)")
+        if r["cards"]:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の後に求人を出した")
+        actions = r.get("actions") or []
+        if extra := [a for a in actions if a != "voice_consult"]:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めに音声相談以外の actions を付けた: {extra}")
+        offered = next((j for j in range(1, i) if set(turns[j].get("actions") or []) & set(ENTRY_ACTIONS)), None)
+        if "voice_consult" in actions and offered is not None:
+            out.append(f"T{i + 1}: お礼つきの「考えます」の締めで、T{offered + 1} に出した履歴書・音声の提案をもう一度出した"
+                       "(1つの会話で1回だけ)")
+        if not any(t["name"] == "record_conversation_outcome" for x in turns[:i + 1] for t in x["tools"]):
+            out.append(f"T{i + 1}: お礼つきの「考えます」で締めたのに、出口(record_conversation_outcome)を記録していない")
+    return out
 
 
 def asks_for_jobs(m: str) -> bool:
@@ -615,7 +666,7 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
         out.append(f"T{entry + 1}: 相談に入ったのに playbook(get_counseling_playbook)を読んでいない")
     for i in range(entry, len(turns)):
         m = user_msgs[i] or ""
-        if i > entry and (CONSULT_CUTOFF.search(m) or asks_for_jobs(m)):
+        if i > entry and (CONSULT_CUTOFF.search(m) or thanks_goodbye(m) or asks_for_jobs(m)):
             break
         names = [t["name"] for t in turns[i]["tools"]]
         if "record_conversation_outcome" in names and not turns[i]["cards"] and "recommend_jobs" not in names:
@@ -1252,6 +1303,162 @@ def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
     return out
 
 
+# 挨拶(初回訪問・再訪)は、本人がトークを開いたことへの返事。こちらから連絡した言い方(「ご連絡しました」「お声がけしました」
+# 「声をおかけしました」「お知らせしました」)はプッシュ(入口D)だけのもの
+# 「いつでもお声がけください」(本人に話しかけてもらう案内)と「求人が出たらご連絡します」「お知らせします」(この先の約束)と
+# 「応募先に連絡しましたか?」「連絡していますか?」(本人への問い)は、こちらから連絡した言い方ではない。
+# 過去・完了の形と、連絡・声かけの進行の形(「ご連絡しております」「お声がけしています」)を数える。
+# 「新着をお知らせしています」(仕組みの説明)は数えないので、お知らせは過去・完了の形だけ
+_CONTACT_STEM = r"(?:し|いたし|させて(?:いただ[きい]|もら[いっ]))"
+_CONTACT_DONE = r"(?:ました|た(?!ら|り|い))(?!か)"
+CONTACT_WORDING = re.compile(r"(?:ご?連絡を?(?:" + _CONTACT_STEM + r"|差し上げ|さしあげ)|お?声を?お?(?:が|か|掛)け" + _CONTACT_STEM + r")"
+                             r"(?:" + _CONTACT_DONE + r"|てい(?!ただ|(?:ます|る|ました)か)|てお(?=り)(?!(?:ります|りました)か))"
+                             r"|お知らせ" + _CONTACT_STEM + _CONTACT_DONE)
+# 再訪の挨拶の吹き出しの合計の目安(Prompt の「挨拶で3つの入口を案内する」と同じ値)。区分は挨拶のターンの区分
+GREETING_TOTAL_MAX = {"アルバイト・パート": 90, "正社員": 130, "未定": 90}
+# 前に本人が話したこと(希望か区分)があるときだけ使う言い方。行動履歴だけの人は、まだ何も話していない
+ONCE_AGAIN = re.compile(r"今回も")
+# 再訪の挨拶で、行動履歴を言い切りで告げる言い方(「見ていましたね」「ご覧になっていたので」「見てくださっていましたね」
+# 「見ていただいていたので」)。RECENT_ACTIVITY は「見ていただ」を除くので、敬語の形はここで足す。
+# 「探していました」は記録された区分の言い方(「前回はアルバイトで探していました」)にもなるので数えない
+STATED_ACTIVITY = re.compile(RECENT_ACTIVITY.pattern + r"|見てくださってい(?:た|まし)|気になってい(?:た|まし)"
+                             r"|(?:見て|ご覧)いただいてい(?:た|まし)")
+# 問いの文の中でも、行動履歴の後に理由や言い切りが続く形(「ご覧になっていたので、カフェで探しますか?」「見ていましたね、
+# 今回も…ですか?」「見ていらっしゃいましたね、」「ご覧になっていたんですね、」「見ていたようなので、」「ご覧になっていたため、」
+# 「見ていたことから、」)は言い切り。連体形(「最近見ていたカフェのお仕事で探しますか?」)と、行動そのものを聞く形(「見ていたんですか?」
+# 「見ていたのでしょうか?」「見ていましたか、それとも…ですか?」)は確認の問いなので数えない
+STATED_ACTIVITY_CLAUSE = re.compile(r"(?:" + STATED_ACTIVITY.pattern + r")(?:いまし)?(?:た|った)?"
+                                    r"(?:ので(?!しょう)|(?:こと)?から|ため|ね|よね|けど|けれど|が、"
+                                    r"|[んの](?:です|だ)(?!か)|よう(?:です|だ|なので)(?!か))")
+# 入口の勧めの文に出る語。問いと同じ吹き出しの、問いでない文にあれば、勧めを問いに詰めたとみなす
+OFFER_WORDS = re.compile(r"履歴書|職務経歴書|読み込|音声|話して伝え|ゲーム|書類|下書き|空欄")
+
+
+def _sentences(b: str) -> list[str]:
+    return [x for x in re.split(r"(?<=[。!！?？\n])", b) if x.strip()]
+
+
+def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAULT_TRACK) -> list[str]:
+    """挨拶の言い方と並び(docs/design/line-sim-scenarios.md の 15 章)。
+    初回訪問・再訪: こちらから連絡した言い方をしない。問いがあれば、最後の吹き出しを問いで終える。
+    再訪: 行動履歴には問いの中で触れ、言い切り(「見ていましたね」「ご覧になっていたので」)にしない。問いと同じ文に
+    読点でつないだ言い切り(「ご覧になっていたので、カフェで探しますか?」)も数える。「今回も」は
+    前に本人が話したこと(seed_preferences か seed_track)があるときだけ。入口を勧めたら、勧めの文は問いと別の吹き出しに置く。
+    吹き出しの合計は GREETING_TOTAL_MAX まで。"""
+    if not turns or sc.get("event") not in ("visit", "revisit"):
+        return []
+    bubbles = turns[0]["bubbles"]
+    out = []
+    if said := [x for b in bubbles for x in _sentences(b) if CONTACT_WORDING.search(x)]:
+        out.append(f"T1: 挨拶でこちらから連絡した言い方をした(開いたのは本人): {''.join(said)}")
+    if _questions(bubbles) and bubbles and not bubbles[-1].rstrip().endswith(("?", "？")):
+        out.append(f"T1: 挨拶の問いが最後に無い: {bubbles[-1]}")
+    if sc["event"] != "revisit":
+        return out
+    if told := [x for b in bubbles for x in _sentences(b) if STATED_ACTIVITY.search(x)
+                and (not _questions([x]) or STATED_ACTIVITY_CLAUSE.search(x))]:
+        out.append(f"T1: 行動履歴に言い切りで触れた(問いの中で確認形に): {''.join(told)}")
+    if not (sc.get("seed_preferences") or sc.get("seed_track")) and any(ONCE_AGAIN.search(b) for b in bubbles):
+        out.append("T1: 前に話したことが無い人に「今回も」と言った")
+    if greeting_offers(turns[0]) and bubbles and _questions(bubbles[-1:]) and any(
+            OFFER_WORDS.search(x) for x in _sentences(bubbles[-1]) if not _questions([x])):
+        out.append(f"T1: 入口の勧めを問いと同じ吹き出しに詰めた(勧めを先の吹き出しに): {bubbles[-1]}")
+    limit = GREETING_TOTAL_MAX.get(track, GREETING_TOTAL_MAX[DEFAULT_TRACK])
+    if (total := sum(len(b) for b in bubbles)) > limit:
+        out.append(f"T1: 再訪の挨拶が計{total}字({limit}字まで)")
+    return out
+
+
+# ----------------------------- 評価そのものの確かさ(エージェントの違反には数えない) -----------------------------
+
+# 模擬ユーザーが設定(ペルソナ)の指示文を発言にしたしるし。「〜と書く」「〜と答える」は設定の書き方で、本人の発言には出ない
+# (2026-10-25 の T-switch-to-fulltime の U2「次の質問に答えるときに、考え直して「…」と書きます。」。evals/baseline/ と
+# jyoka/tasks#221 の結果の本人の発言 約 500 で、当たったのはこの1つだけ)
+SIM_DIRECTION = re.compile(r"と(書|答え|言|伝え|選)(く|る|う|ぶ|える|きます|ます|います|えます|びます)(?=[。、!！]|$)"
+                           r"|と言って終え|この言い方のまま|次の(質問|返信)に答えるときに")
+
+
+def sim_leaks(user_msgs: list[str | None]) -> list[str]:
+    """模擬ユーザーが設定の指示文をそのまま発言にした発言(U は user_msgs の添字。U2 は T3 が答える発言)。
+    エージェントは指示文に答えることになり、その後の判定(区分の切り替えの期限など)が崩れる。見つかったら、
+    その発言を台本(script)にする。"""
+    return [f"U{i}: {m}" for i, m in enumerate(user_msgs) if m and SIM_DIRECTION.search(m)]
+
+
+def conversation_end(n_turns: int, cap: int, ended_by_user: bool) -> dict:
+    """会話がどう終わったか。ended_by_user は、模擬ユーザー(か台本)が終えたか、何も返さなかったか。
+    そうでなくエージェントのターンが上限に達していれば、上限で切れた(その後の提案や反応を評価が見ていない)。"""
+    cut = not ended_by_user and n_turns >= cap
+    return {"turn_cap": cap, "ended_by": "turn_cap" if cut else "user", "cut_at_cap": cut}
+
+
+# ----------------------------- 下書きの空欄の数字(下書きに書き込むのは本人。会話の改善 C (7/10)) -----------------------------
+
+DRAFT_LABEL = "下書きを見る"
+# 下書きの空欄の数字を聞く返信: 空欄か下書きに触れ、数を尋ねる語か数字(「2日で合っていますか?」の確認形)がある
+BLANK_TOPIC = re.compile(r"空欄|下書き")
+NUMBER_QUESTION = re.compile(r"何[日件人回割個社名台倍年円時%％]|何か月|何ヶ月|何パーセント|どのくらい|どれくらい|どれぐらい"
+                             r"|いくつ|[0-9０-９]")
+DIGIT = re.compile(r"[0-9０-９]")
+# 本人が数字を答えた: 数字を書いた(「十分」は数に数えない)。数字を示して確かめた問いには「はい」も答え
+NUMBER_ANSWER = re.compile(r"[0-9０-９]|[一二三四五六七八九十百千]+[日件人回割個社名台倍年円%％]")
+AFFIRM = re.compile(r"^(はい|そう|合って|その(とおり|通り))")
+
+
+def draft_buttons(r: dict) -> bool:
+    """その返信に「下書きを見る」(下書きの画面 /liff/arcade/draft を開くボタン)があるか。"""
+    return any(str(b.get("url", "")).startswith(ARCADE_DRAFT_PATH) for b in r.get("buttons") or [])
+
+
+def _blank_question(r: dict, said: str | None) -> bool:
+    """下書きの空欄の数字を聞く返信か(問いがあり、数を尋ねるか数字を示す。吹き出し全体で見る)。空欄か下書きに触れた返信か、
+    本人が空欄に触れた発言(said。「空欄を埋める」)への返信だけを数える(「週に何日働きたいですか?」は空欄の問いではない)。"""
+    text = "\n".join(r["bubbles"])
+    return bool(_questions(r["bubbles"]) and NUMBER_QUESTION.search(text)
+                and (BLANK_TOPIC.search(text) or BLANKS_REPLY.search(said or "")))
+
+
+def _answered_number(r: dict, m: str | None) -> bool:
+    """本人の発言 m が、返信 r の空欄の問いへの数字の答えか(「分からない」は答えではない)。"""
+    if not m or DONT_KNOW.search(m):
+        return False
+    m = m.strip()
+    return bool(NUMBER_ANSWER.search(m) or (AFFIRM.search(m) and DIGIT.search("\n".join(r["bubbles"]))))
+
+
+def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | None], channel: str = "web",
+                            features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """下書きの空欄の数字(baitoru_assistant.md の「ゲームで書類を作る」)。
+    - 「下書きを見る」は 1 つの会話で 1 回だけ
+    - 空欄の数字を聞いて本人が答えたら(数字か、数字を示した確認形に「はい」)、その返信に「下書きを見る」がある
+      (本人が画面で数字を入れる)。下書きの画面を開けない窓口(LIFF の無い LINE。features に arcade が無い)では問わない
+    - シナリオの expect_confirm_number(summary の履歴書にある、空欄と同じ行の数字。例「2日」)があれば、白紙で聞かず、
+      その数字を示して確かめる(本人がその数字を言うより前に、空欄の問いの返信にその数字がある。選択肢だけでは数えない)
+    空欄の問いは、本人が「空欄を埋める」を選んでも、エージェントが自分から聞いても(playbook の場面)同じに見る。"""
+    out = []
+    shown = [i for i, r in enumerate(turns) if draft_buttons(r)]
+    if len(shown) > 1:
+        out.append(f"T{shown[1] + 1}: 「{DRAFT_LABEL}」を1つの会話で{len(shown)}回出した(1回だけ)")
+    asked = [i for i, r in enumerate(turns)
+             if i and _blank_question(r, user_msgs[i] if i < len(user_msgs) else None)]  # T1 は挨拶かプッシュ(下書きの続きを勧めるだけ)
+    viewable = channel != "line" or "arcade" in features
+    for i in asked:
+        if i + 1 >= len(turns) or not _answered_number(turns[i], user_msgs[i + 1] if i + 1 < len(user_msgs) else None):
+            continue
+        if viewable and not draft_buttons(turns[i + 1]):
+            out.append(f"T{i + 2}: 空欄の数字を聞いて本人が答えた後に「{DRAFT_LABEL}」が無い(本人が下書きの画面で入れられない)")
+        break
+    started = next((i for i, m in enumerate(user_msgs[:len(turns)]) if m and BLANKS_REPLY.search(m)), None)
+    start = min((x for x in (started, asked[0] if asked else None) if x is not None), default=None)
+    if (want := sc.get("expect_confirm_number")) and start is not None:
+        said = next((k for k in range(start + 1, len(user_msgs)) if user_msgs[k] and want in user_msgs[k]), None)
+        confirmed = next((i for i in asked if want in "\n".join(turns[i]["bubbles"])), None)
+        if confirmed is None or (said is not None and said <= confirmed):
+            at = said if said is not None else start + 1
+            out.append(f"T{at}: 下書きの空欄を白紙で聞いた(summary にある「{want}」を示して確かめていない)")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
@@ -1289,6 +1496,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
             any("求人" in q for q in first["quick_replies"]) and any("相談" in q for q in first["quick_replies"])):
         violations.append(f"T1: 初回訪問の挨拶の選択肢に「求人を探す」「まず相談する」が無い: {first['quick_replies']}")
     violations += greeting_entry_violations(sc, turns, channel, features)
+    violations += greeting_wording_violations(sc, turns, tracks[0] if tracks else DEFAULT_TRACK)
+    violations += draft_number_violations(sc, turns, user_msgs, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1303,6 +1512,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
                                    sc.get("seed_preferences") if sc.get("expect_uses_preferences") else None)
     if sc.get("consult_mode"):
         violations += consult_violations(sc, turns, user_msgs)
+    violations += thanks_close_violations(turns, user_msgs)
     for i, m in enumerate(user_msgs):  # 「今はいい」「送らないで」の直後は、質問や求人を続けずに短く終える
         if m and QUICK_END.fullmatch(m.strip()) and i < len(turns) and (_questions(turns[i]["bubbles"]) or turns[i]["cards"]):
             violations.append(f"T{i + 1}: 「今はいい/送らないで」の後に質問や求人を続けた")
@@ -1335,6 +1545,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
+        "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,
@@ -1343,4 +1554,5 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),
         "call_overlaps": call_overlaps(turns, user_msgs),
+        "sim_leaks": sim_leaks(user_msgs),
     }

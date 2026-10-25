@@ -61,9 +61,12 @@ def entry_offer(summary: dict, usable: list[str]) -> str | None:
         return None
     knows_career = summary.get("uploaded_resume") or "experience" in (summary.get("stated_preferences") or {})
     draft = summary.get("arcade_draft")
+    # 履歴書は、経歴が探す役に立つとき(正社員か、探す条件をまだ話していない)だけ。条件がそろった人には勧めない(D2)
+    helps = summary.get("search_track") == "正社員" or not {"job_type", "area", "time_band"} & set(
+        summary.get("stated_preferences") or {})
     candidates = [("blanks", bool(draft and draft.get("blank_lines"))),
-                  ("resume_upload", not knows_career and not summary.get("consultation_summary")),
-                  ("voice_consult", not summary.get("consultation_summary")),
+                  ("resume_upload", not knows_career and not summary.get("consultation_summary") and helps),
+                  ("voice_consult", bool(knows_career) and not summary.get("consultation_summary")),
                   ("arcade", not draft and bool(summary.get("arcade_url")))]
     return next((k for k, hit in candidates if hit and (k == "blanks" or k in usable)), None)
 
