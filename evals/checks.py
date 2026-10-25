@@ -1098,9 +1098,15 @@ def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
 
 # 挨拶(初回訪問・再訪)は、本人がトークを開いたことへの返事。こちらから連絡した言い方(「ご連絡しました」「お声がけしました」
 # 「声をおかけしました」「お知らせしました」)はプッシュ(入口D)だけのもの
-# 「いつでもお声がけください」(本人に話しかけてもらう案内)と「求人が出たらお知らせします」(この先の約束)は、こちらから連絡した言い方ではない
-CONTACT_WORDING = re.compile(r"ご?連絡を?(?:し|いたし|させて|差し上げ|さしあげ)|お?声を?お?(?:が|か|掛)け(?:し|させ|いたし)"
-                             r"|お知らせ(?:し|いたし)ました")
+# 「いつでもお声がけください」(本人に話しかけてもらう案内)と「求人が出たらご連絡します」「お知らせします」(この先の約束)と
+# 「応募先に連絡しましたか?」「連絡していますか?」(本人への問い)は、こちらから連絡した言い方ではない。
+# 過去・完了の形と、連絡・声かけの進行の形(「ご連絡しております」「お声がけしています」)を数える。
+# 「新着をお知らせしています」(仕組みの説明)は数えないので、お知らせは過去・完了の形だけ
+_CONTACT_STEM = r"(?:し|いたし|させて(?:いただ[きい]|もら[いっ]))"
+_CONTACT_DONE = r"(?:ました|た(?!ら|り|い))(?!か)"
+CONTACT_WORDING = re.compile(r"(?:ご?連絡を?(?:" + _CONTACT_STEM + r"|差し上げ|さしあげ)|お?声を?お?(?:が|か|掛)け" + _CONTACT_STEM + r")"
+                             r"(?:" + _CONTACT_DONE + r"|てい(?!ただ|(?:ます|る|ました)か)|てお(?=り)(?!(?:ります|りました)か))"
+                             r"|お知らせ" + _CONTACT_STEM + _CONTACT_DONE)
 # 再訪の挨拶の吹き出しの合計の目安(Prompt の「挨拶で3つの入口を案内する」と同じ値)。区分は挨拶のターンの区分
 GREETING_TOTAL_MAX = {"アルバイト・パート": 90, "正社員": 130, "未定": 90}
 # 前に本人が話したこと(希望か区分)があるときだけ使う言い方。行動履歴だけの人は、まだ何も話していない
@@ -1110,6 +1116,13 @@ ONCE_AGAIN = re.compile(r"今回も")
 # 「探していました」は記録された区分の言い方(「前回はアルバイトで探していました」)にもなるので数えない
 STATED_ACTIVITY = re.compile(RECENT_ACTIVITY.pattern + r"|見てくださってい(?:た|まし)|気になってい(?:た|まし)"
                              r"|(?:見て|ご覧)いただいてい(?:た|まし)")
+# 問いの文の中でも、行動履歴の後に理由や言い切りが続く形(「ご覧になっていたので、カフェで探しますか?」「見ていましたね、
+# 今回も…ですか?」「見ていらっしゃいましたね、」「ご覧になっていたんですね、」「見ていたようなので、」「ご覧になっていたため、」
+# 「見ていたことから、」)は言い切り。連体形(「最近見ていたカフェのお仕事で探しますか?」)と、行動そのものを聞く形(「見ていたんですか?」
+# 「見ていたのでしょうか?」「見ていましたか、それとも…ですか?」)は確認の問いなので数えない
+STATED_ACTIVITY_CLAUSE = re.compile(r"(?:" + STATED_ACTIVITY.pattern + r")(?:いまし)?(?:た|った)?"
+                                    r"(?:ので(?!しょう)|(?:こと)?から|ため|ね|よね|けど|けれど|が、"
+                                    r"|[んの](?:です|だ)(?!か)|よう(?:です|だ|なので)(?!か))")
 # 入口の勧めの文に出る語。問いと同じ吹き出しの、問いでない文にあれば、勧めを問いに詰めたとみなす
 OFFER_WORDS = re.compile(r"履歴書|職務経歴書|読み込|音声|話して伝え|ゲーム|書類|下書き|空欄")
 
@@ -1121,7 +1134,8 @@ def _sentences(b: str) -> list[str]:
 def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAULT_TRACK) -> list[str]:
     """挨拶の言い方と並び(docs/design/line-sim-scenarios.md の 13 章)。
     初回訪問・再訪: こちらから連絡した言い方をしない。問いがあれば、最後の吹き出しを問いで終える。
-    再訪: 行動履歴には問いの中で触れ、言い切り(「見ていましたね」「ご覧になっていたので」)にしない。「今回も」は
+    再訪: 行動履歴には問いの中で触れ、言い切り(「見ていましたね」「ご覧になっていたので」)にしない。問いと同じ文に
+    読点でつないだ言い切り(「ご覧になっていたので、カフェで探しますか?」)も数える。「今回も」は
     前に本人が話したこと(seed_preferences か seed_track)があるときだけ。入口を勧めたら、勧めの文は問いと別の吹き出しに置く。
     吹き出しの合計は GREETING_TOTAL_MAX まで。"""
     if not turns or sc.get("event") not in ("visit", "revisit"):
@@ -1134,7 +1148,8 @@ def greeting_wording_violations(sc: dict, turns: list[dict], track: str = DEFAUL
         out.append(f"T1: 挨拶の問いが最後に無い: {bubbles[-1]}")
     if sc["event"] != "revisit":
         return out
-    if told := [x for b in bubbles for x in _sentences(b) if STATED_ACTIVITY.search(x) and not _questions([x])]:
+    if told := [x for b in bubbles for x in _sentences(b) if STATED_ACTIVITY.search(x)
+                and (not _questions([x]) or STATED_ACTIVITY_CLAUSE.search(x))]:
         out.append(f"T1: 行動履歴に言い切りで触れた(問いの中で確認形に): {''.join(told)}")
     if not (sc.get("seed_preferences") or sc.get("seed_track")) and any(ONCE_AGAIN.search(b) for b in bubbles):
         out.append("T1: 前に話したことが無い人に「今回も」と言った")
