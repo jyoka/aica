@@ -773,24 +773,40 @@ def test_web_searches_stop_at_the_limit_across_tools(monkeypatch):
     assert "全国で1303円" in asyncio.run(advisor.wage_average(area="東京"))
 
 
-def test_research_with_personal_values_is_refused_without_searching():
+def test_research_with_personal_values_is_refused_without_searching(monkeypatch):
     """調べものの問いに電話番号・メールアドレス・住所らしい所があれば、web で調べずに断る(問いは OpenAI を通って
     検索エンジンにも届くので。docs/design/privacy.md の 3.2)。表示も出さず、回数にも数えない。値は架空。"""
+    monkeypatch.setattr(config, "MAX_WEB_SEARCHES", 10)  # 調べる側の問いを全部流せるように
     room = _FakeRoom()
     client = _FakeResearchClient("答え")
     advisor = ResumeAdvisor(research_client_factory=lambda: client, wage_reference=REF, room=room)
     for call in (lambda: advisor.web_research(query="090-1234-5678 だれの番号"),
                  lambda: advisor.web_research(query="sample.user@example.com の持ち主"),
                  lambda: advisor.research_company(name="ナイトマート", hint="自宅のみほん市みほん町1丁目2-3の近くの店"),
-                 lambda: advisor.wage_average(area="みほん市3-5に住んでいる", job_type="コンビニ")):
+                 lambda: advisor.wage_average(area="みほん市3-5に住んでいる", job_type="コンビニ"),
+                 # 問いは LLM が書くので、住む言葉が無くても番地まである住所の形なら断る(本人が話した住所を書き写せるため)
+                 lambda: advisor.web_research(query="みほん市みほん町1-2-3 から近いコンビニバイト"),
+                 lambda: advisor.web_research(query="みほん町552 近くの飲食店の評判"),
+                 lambda: advisor.web_research(query="みほん町 552 近くの飲食店"),
+                 lambda: advisor.research_company(name="ナイトマート", hint="みほん市みほん町1-2-3の近く"),
+                 lambda: advisor.research_company(name="ナイトマート", hint="みほん市みほん町1丁目2-3の店"),
+                 lambda: advisor.research_company(name="ナイトマート", hint="大字みほん１２３４の店")):
         assert asyncio.run(call()) == PERSONAL_QUERY_REPLY
     assert client.calls == [] and room.published == [] and advisor.web_searches == 0
-    # ふつうの問い(会社名・エリア・職種)はそのまま調べる
-    asyncio.run(advisor.research_company(name="ナイトマート", hint="中野のコンビニ"))
-    asyncio.run(advisor.web_research(query="コンビニバイト 時給 2026年"))
-    # 住む言葉の無い店の所在地は住所とみなさない(task 211)
-    asyncio.run(advisor.research_company(name="ナイトマート", hint="みほん市みほん町1丁目2-3の店"))
-    assert len(client.calls) == 3 and advisor.web_searches == 3
+    # ふつうの問い(会社名・番地の無い地名・職種・資格)はそのまま調べる
+    for call in (lambda: advisor.research_company(name="ナイトマート", hint="中野のコンビニ"),
+                 lambda: advisor.web_research(query="新宿三丁目のカフェ バイトの評判"),
+                 lambda: advisor.research_company(name="カフェA", hint="西新宿1丁目の店"),
+                 lambda: advisor.web_research(query="コンビニバイト 時給 2026年"),
+                 lambda: advisor.web_research(query="簿記2級 難易度"),
+                 # 言葉の後ろの年や件数、店の名前の数は番地ではない
+                 lambda: advisor.web_research(query="東京都 最低賃金 2026"),
+                 lambda: advisor.web_research(query="宅建 合格率 2025"),
+                 lambda: advisor.web_research(query="コンビニバイト おすすめ 10選"),
+                 lambda: advisor.wage_average(area="東京23区", job_type="カフェ"),
+                 lambda: advisor.research_company(name="ローソンストア100")):
+        assert asyncio.run(call()) != PERSONAL_QUERY_REPLY
+    assert len(client.calls) == 10 and advisor.web_searches == 10
 
 
 REF = WageReference(

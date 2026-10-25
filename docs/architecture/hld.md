@@ -316,7 +316,7 @@ flowchart LR
     lr -- "livekit_token、config" --> vr
     dm -- "ResumeDraft、scrub_pii、personal_value、redact_personal" --> rd
     ri -- "ResumeDraft、envelope、scrub_pii" --> rd
-    vr -- "ResumeDraft、envelope、scrub_pii、personal_value" --> rd
+    vr -- "ResumeDraft、envelope、scrub_pii、has_pii、looks_like_address" --> rd
     lr -- "document_kind_of、redact_personal" --> rd
     ev -- "has_pii" --> rd
     lr -- "stages、draft" --> ra
@@ -1032,8 +1032,11 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   伏せたときは、画面が本人の吹き出しの下に「電話番号などは送らないようにしました」と出します。氏名はコードでは見分けられないので伏せません
 - system prompt に LINE のユーザーIDを載せません。ツールの `line_user_id` には `me` を入れさせ、`PinUserMiddleware` が会話のユーザーに置き換えます。
   dip のツールの結果にもユーザーIDは入りません
-- 音声アドバイザーの調べもの(`web_research`、`research_company`、`wage_average` の web の分)は、問いに電話、メール、住所らしい所があれば、
-  調べずに断ります(`personal_value`)。問いは OpenAI を通って検索エンジンにも届くからです
+- 音声アドバイザーの調べもの(`web_research`、`research_company`、`wage_average` の web の分)は、問いに電話、メールか、住所の形があれば、
+  調べずに断ります(`has_pii`、`looks_like_address`)。問いは OpenAI を通って検索エンジンにも届くからです。
+  問いは LLM が書くので、トークと違い、住む言葉が無くても番地まである住所の形(`みほん町552`)で断ります。番地の無い地名(`新宿三丁目のカフェ`)は調べます。
+  区切りの無い数 1 つは、すぐ前が `町`、`村`、`丁目`、`番地`、`大字` の名前などのときだけ番地とみなします。
+  キーワードの後ろの年や件数(`東京都 最低賃金 2026`、`おすすめ 10選`)、店の名前の数(`ローソンストア100`)は調べます
 - 音声相談の文字起こしは、本番ではファイルに残しません。下書きを作る間だけ音声ワーカーのメモリにあります。
   `data/voice-resume/` に書き出すのは、開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです
 - 保存したものには期間があり、掃除が機械で消します(4.6)。会話は最後のやりとりから 30 日、使われなくなった人は最後の利用から 180 日、
@@ -1045,8 +1048,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   INFO や DEBUG で本文を出しうるからです(`line_runtime/log_policy.py`。LLD の 8 章、[設計メモ](../design/privacy.md)の 3.4)
 - 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`、住所らしい所を探す `ADDRESS_LIKE` と、
   Resume Draft から電話、メール、郵便番号を消す `scrub_pii`(読み取り結果、下書き、dip への保存)があります。
-  dip は、本人の値を受け取るかを `personal_value`(電話、メール、住所。希望の保存、まとめを直す、フォームの続き)で決め、
+  dip は、本人の値を受け取るかを `personal_value`(電話、メール、住む言葉と一緒の住所。希望の保存、まとめを直す、フォームの続き)で決め、
   文の中を `redact_personal`(同じ 3 つ。相談の理由とまとめ、雇用区分の根拠)で伏せます。
+  音声相談の調べものの問いは `looks_like_address`(住む言葉が無くても住所の形)で断ります。
   どれも全角の数字やハイフンを `fold_pii` でそろえてから照合します
 - 住所らしい所は、同じ文に住んでいる所を言う言葉(「住んでいる」「住所」「在住」「自宅」「家は」「引っ越し」など)があるときだけ住所とみなします。
   「住所:」のような見出しだけの行は、次の行も同じ文とみなします(見出しと住所を別の行に書く連絡先の貼り付け)。

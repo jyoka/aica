@@ -368,7 +368,7 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
 | `schema.py` | Resume Draft の形と envelope(5.5) | `ResumeDraft`(と 5 つの部品の型)、`envelope`、`document_kind_of`、`FORMAT_VERSION`(`1.0`)、`FORMAT_VERSION_WITH_KIND`(`1.1`)、`PERSONAL_KEYS`、`DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`JST` |
-| `pii.py` | 電話、メール、住所、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`ADDRESS_LIKE`、`address_spans`(住所)、`personal_value`、`redact_personal`(電話、メール、住所)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
+| `pii.py` | 電話、メール、住所、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`ADDRESS_LIKE`、`address_spans`(住所)、`looks_like_address`(調べものの問いの住所の形)、`personal_value`、`redact_personal`(電話、メール、住所)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
 
 - `has_pii` と `redact_pii` は電話とメールを探します。希望、相談の記録の照合に使います。伏せた所には `REDACTED`(`[個人情報を削除]`)を入れます。
   `redact_pii` は、置き換えた後にまた当たる所が出なくなるまで(上限 `_REDACT_PASSES` 回)くり返します
@@ -413,7 +413,8 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
   - `RESIDENCE_WORDS`: `住所`、`住居`、`居住`、`在住`、`住ん`(住んでいる)、`住む`、`住み`(`住み込み` は除く)、`住まい`、`すんで`、`すまい`、`自宅`、`実家`、`家は`、`引っ越`、`引越`、`転居`。
     `住み込み` は働き方、`住宅`(住宅手当)は求人の条件なので入れません。引っ越しの仕事(`引っ越しのバイト`、`引越しスタッフ`)と、
     職業の `家は`(`専門家は`、`作家は`、`画家は`、`農家は`)も住む言葉にしません。住まいの `一軒家は`、`借家は` は住む言葉です。`から通う` も入れません(`新宿三丁目から通える` は検索の条件になるため)
-  - 住む言葉の無い地名、駅、丁目、番地の形は伏せず、`personal_value` でも個人情報とみなしません。`番地は言いたくないです` も伏せません
+  - 住む言葉の無い地名、駅、丁目、番地の形は伏せず、`personal_value` でも個人情報とみなしません。`番地は言いたくないです` も伏せません。
+    住む言葉の決まりは本人の文(トークの発言、dip の値)だけのものです。LLM が書く調べものの問いは `looks_like_address` で形だけを見ます(下)
   - 住む言葉のある文では、`ADDRESS_LIKE` に当たった住所の部分を伏せます。同じ文に検索の条件の丁目があれば、それも伏せます
     (`新宿三丁目に住んでいて、新宿三丁目5分以内で探して` は `[個人情報を削除]に住んでいて、[個人情報を削除]5分以内で探して`)。
     地名の後ろの空白 1 つの後ろの番地も伏せます(`新宿三丁目 5-1に住む` は `[個人情報を削除] [個人情報を削除]に住む`)。
@@ -421,8 +422,21 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 - `personal_value` は、値に電話、メール、住所らしい所(住む言葉と一緒のもの)があるかです。dip の希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、
   フォームの続き(`resume_form`)が、本人の値を受け取るかをこれで決めます。`redact_personal` は同じ 3 つを伏せます。
   相談の理由とまとめ(`record_outcome`)と、雇用区分の根拠(`set_search_track`)に使います。
-  トークの発言(`line_runtime.turn.accept`、`runtime.event_input`)も `redact_personal` で伏せ、音声アドバイザーの調べものの問いは
-  `personal_value` が真なら調べません(`voice_resume.advisor`)
+  トークの発言(`line_runtime.turn.accept`、`runtime.event_input`)も `redact_personal` で伏せます
+- `looks_like_address` は、住む言葉が無くても番地まである住所の形(`ADDRESS_LIKE`。3 つ組、`2番3号`、丁目と番地、地名の字の後ろの数の並び)があるかです。
+  音声アドバイザーの調べものの問いは、`has_pii` か `looks_like_address` が真なら調べません(`voice_resume.advisor._research`)。
+  `丁目`、`番地` の言葉だけの当たり(`新宿三丁目のカフェ`)と、丁目までの数(`西新宿1丁目の店`)は数えません。
+  区切りの無い数 1 つ(`みほん町552`)は、すぐ前(空白 1 つを越える)が町名の終わり(`_LOT_BEFORE`。`町`、`村`、`丁目`、`番地`、`大字`・`字` の名前)のときだけ数えます
+  (`大字みほん1234`、`みほん町字あおば 12` は断る)。`字` は前が `大`、市区町村郡の字、文の始まりか空白のときだけです(`漢字検定 2` は数えない)
+  - 理由: 問いは LLM が書き、OpenAI と検索エンジンに届きます。音声の文字起こしは伏せないので、本人が話した住所を LLM が住む言葉を外して
+    書き写せます(`みほん市みほん町1-2-3 から近いコンビニバイト`)。住む言葉の決まりは本人の文の中で検索の条件を残すためのもので、
+    外へ出る問いには当てはまりません(task 211)
+  - 数 1 つを町名の終わりの後ろだけにする理由: 問いはキーワードを空白で区切って書くので、言葉の後ろの年や件数、店の名前の数が
+    地名の字の後ろの数と同じ形になります(`東京都 最低賃金 2026`、`宅建 合格率 2025`、`コンビニバイト おすすめ 10選`、`東京23区`、`ローソンストア100`)。
+    本人は個人情報を何も言っていないのに断られ、書き直しようもないので、これらは調べます
+  - 伏せすぎ: 町名の終わりの後ろの数 1 つ(`下町 10選`)と、地名の字の後ろの 2 つ以上の数の並び(`東京都 最低賃金 2025-2026`)は断ります。
+    断ったときの `PERSONAL_QUERY_REPLY` は、個人情報を外した問いで調べ直すよう LLM に伝えます。`級` は単位として外します(`簿記2級`)
+  - 伏せ漏れ: 町名の終わりでない地名の後ろの数 1 つ(`みほん台12`、`北1条西2`)は断りません。区切りのある番地(`みほん台1-2`)は断ります
 - `scrub_pii` は Resume Draft の文字列から、電話、メール、郵便番号を消します。`PII_VALUE` より広く取ります
   (区切りが空白 1 つの電話番号、郵便番号も消す)。`SCRUB_PATTERNS` を順に当てるのを、元の文字列と `fold_pii` でそろえた文字の両方で行い、
   どちらかで消えた位置を元の文字列から消します(`fold_pii` は 1 文字を 1 文字に写すので位置は同じ)。元の文字列でも照合するのは、
@@ -684,7 +698,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
 | `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
 | `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
-| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メール、住所らしい所があれば(`personal_value`)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
+| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メールか、住む言葉が無くても住所の形があれば(`has_pii`、`looks_like_address`。1.8)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
 
@@ -2257,8 +2271,9 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
    住所らしい所は住む言葉と同じ文のときだけ伏せ、電話とメールはいつも伏せます(`::test_addresses_are_redacted_only_with_words_about_where_the_user_lives`)。
    system prompt にユーザーIDは無く、ツールは `me` のまま本人の分に届き、dip のツールの結果にもユーザーIDは入りません
    (`::test_system_prompt_has_no_user_id_and_tools_still_reach_this_user`、`::test_dip_tools_do_not_return_the_user_id`)。
-   音声相談の調べものの問いに個人情報らしい値があれば調べません
-   (`tests/voice/test_advisor.py::test_research_with_personal_values_is_refused_without_searching`)。
+   音声相談の調べものの問いに電話、メールか、住む言葉が無くても番地まである住所の形があれば調べず、番地の無い地名は調べます
+   (`tests/voice/test_advisor.py::test_research_with_personal_values_is_refused_without_searching`、
+   `tests/test_redact_before_send.py::test_research_queries_with_an_address_shape_are_personal_without_words_about_living`)。
    全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)。
    読み取りと下書きは、同じ LLM の出力から同じ形の Resume Draft を出し、全角で書いた電話、メール、郵便番号も消します。
    envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)。

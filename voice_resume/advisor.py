@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager
 
 from livekit.agents import Agent, function_tool
 
-from resume_draft.pii import personal_value
+from resume_draft.pii import has_pii, looks_like_address
 from voice_resume import config
 from voice_resume.jobs import (
     DEFAULT_TRACK,
@@ -756,10 +756,11 @@ class ResumeAdvisor(Agent):
         """web で調べて読み上げ用の答えを返す。1 回の相談で config.MAX_WEB_SEARCHES 回まで(費用の上限)。
 
         上限を超えたら調べず、表示も出さない(一瞬で消える表示を出さない)。失敗した回も 1 回に数える。
-        問い(subject。OpenAI を通って検索エンジンにも届く)に電話番号・メールアドレス・住所らしい所があれば、
-        調べずに PERSONAL_QUERY_REPLY を返す(表示も出さず、回数にも数えない)。
+        問い(subject。OpenAI を通って検索エンジンにも届く)に電話番号・メールアドレス・住所の形があれば、
+        調べずに PERSONAL_QUERY_REPLY を返す(表示も出さず、回数にも数えない)。問いは LLM が書くので、
+        本人の文と違い、住む言葉が無くても住所の形で断る(looks_like_address)。
         """
-        if personal_value(subject):
+        if has_pii(subject) or looks_like_address(subject):
             logger.info("調べものの問いに個人情報らしい値があるので調べません")
             return PERSONAL_QUERY_REPLY
         if self.web_searches >= config.MAX_WEB_SEARCHES:

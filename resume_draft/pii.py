@@ -3,7 +3,8 @@
 - 探す: has_pii / redact_pii(PII_VALUE。電話番号とメールアドレス)。トークの発言、相談の記録、保存する値の照合に使う
 - 住所: ADDRESS_LIKE / address_spans(住所らしい所。住む言葉 RESIDENCE_WORDS と同じ文のときだけ)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
   文の中で伏せるのは redact_personal(同じ 3 つ)で決める。dip の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
-  トークの発言(line_runtime.turn.accept)と、音声相談の調べものの問い(voice_resume.advisor)も同じ 3 つを伏せる・断る
+  トークの発言(line_runtime.turn.accept)も同じ 3 つを伏せる。音声相談の調べものの問い(voice_resume.advisor)は LLM が書いて外へ出るので、
+  電話、メールか、住む言葉が無くても住所の形があれば断る(has_pii / looks_like_address)
 - 消す: scrub_pii(SCRUB_PATTERNS。電話番号、メール、郵便番号)。Resume Draft の文字列から機械的に落とす
 どちらも照合の前に fold_pii で全角の数字・ハイフンなどを半角にそろえる(1文字を1文字に写すので、位置は元の文字列と同じ)。
 """
@@ -36,7 +37,8 @@ _PII_FOLD = str.maketrans(
 )
 
 # 住所らしい値(番地・丁目・「1-2-3」の形・地名の後ろの数の並び)。氏名はコードでは見分けられないので、Prompt で保存させない。
-# この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)。
+# 本人の文では、この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)。
+# LLM が書く調べものの問いは、住む言葉が無くてもこの形で断る(looks_like_address)。
 # 住む言葉と同じ文では、伏せ漏れしない側に倒す: 地名の字(漢字・カタカナ・ひらがな。「みほん町552」「大字みほん1234」
 # 「あおば町12の3」「西新宿2-8」)の直後の数の並び(1〜4桁の数を「-」「の」「番」「番地」「号」「丁目」でつないだもの。数が 1 つでも)を数える。
 # 外すのは、前が「週」「月」「給」「収」(「週3」「時給1200」「年収400」)か、最後の数のすぐ後ろが単位(万・円・か月・年・日・時・人・代・駅など。
@@ -46,7 +48,7 @@ _PII_FOLD = str.maketrans(
 # 3つ組(部屋番号まで続けた「1-2-3-405」も)は地名の後ろでなくても数える。日付(「2026-09-30」)は先頭が4桁なので数えない。
 # 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)
 _KANJI_NUM = "〇一二三四五六七八九十百千"
-_NOT_LOT = "万千円かカヵヶケ年月日時分秒歳才%％人名件回個本社店倍点週枚代駅つ位度kｋキhHｈ"  # 数のすぐ後ろにあれば番地ではない単位
+_NOT_LOT = "万千円かカヵヶケ年月日時分秒歳才%％人名件回個本社店倍点週枚代駅つ位度級kｋキhHｈ"  # 数のすぐ後ろにあれば番地ではない単位
 _PLACE_CHARS = "一-鿿々ヶァ-ヺぁ-ゖ"  # 地名の字(漢字・カタカナ・ひらがな)
 ADDRESS_LIKE = re.compile(
     r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?:[-－]\d{1,4})?(?![\d-])"
@@ -57,6 +59,10 @@ ADDRESS_LIKE = re.compile(
     r"|(?<![\d])\d{1,4}の\d{1,4}の\d{1,4}(?!\d)"
     r"|丁目|番地"
 )
+# 調べものの問い(looks_like_address)で、区切りの無い数 1 つを番地とみなす前の字: 町・村、丁目・番地の後ろ(「みほん町552」「みほん村 12」
+# 「西新宿三丁目2」)と、大字・字の名前の後ろ(「大字みほん1234」「みほん町字あおば 12」)。空白 1 つを越える。
+# 字は、前が「大」か市区町村郡の字か、文の始まり・空白のときだけ(「漢字」「数字」「赤字」は数えない)
+_LOT_BEFORE = re.compile(r"(?:[町村]|丁目|番地|(?:^|(?<=[\s大市区町村郡]))字[一-鿿々ヶァ-ヺぁ-ゖ]{1,8})\s?$")
 # 住んでいる所を言う言葉。ADDRESS_LIKE の当たりは、同じ文にこれがあるときだけ住所とみなす。
 # 駅の名前(「新宿三丁目」)や求人の勤務地、数の幅(「5-10人」)は ADDRESS_LIKE と同じ形になることがあり、
 # 形だけで住所と見分けると、求人の検索の条件(「新宿三丁目5分以内で探して」)が消えるため(docs/architecture/lld.md 1.8)。
@@ -138,6 +144,23 @@ def has_pii(text: str) -> bool:
 def personal_value(text: str) -> bool:
     """本人の値として受け取らない、個人情報らしい値か(電話番号・メールアドレスか、住む言葉と一緒の住所らしい所を含む)。"""
     return has_pii(text) or bool(_address_matches(fold_pii(text)))
+
+
+def looks_like_address(text: str) -> bool:
+    """住む言葉が無くても、番地まである住所の形(ADDRESS_LIKE)を含むか。外へ出る調べものの問い(LLM が書く)を断るのに使う。
+    住む言葉の決まりは本人の文の中で検索の条件を残すためのもので、LLM が書く問いには当てはまらない(docs/architecture/lld.md 1.8)。
+    番地の無い地名は数えない: 「丁目」「番地」の言葉だけの当たり(「新宿三丁目のカフェ」)と、丁目までの数(「西新宿1丁目」)。
+    区切りの無い数 1 つ(「みほん町552」)は、すぐ前が町名の終わり(_LOT_BEFORE)のときだけ数える。問いはキーワードを空白で区切るので、
+    言葉の後ろの年や件数(「最低賃金 2026」「おすすめ 10選」「東京23区」「ローソンストア100」)と紛れるため。"""
+    folded = fold_pii(text)
+    for m in ADDRESS_LIKE.finditer(folded):
+        if m.group() in ("丁目", "番地"):
+            continue
+        if m.group().isdigit() and (
+                folded.startswith("丁目", m.end()) or not _LOT_BEFORE.search(folded, max(0, m.start() - 12), m.start())):
+            continue
+        return True
+    return False
 
 
 def address_spans(text: str) -> list[tuple[int, int]]:

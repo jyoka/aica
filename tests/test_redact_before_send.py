@@ -4,7 +4,7 @@
   (Web と LINE の入口の turn.accept。handle を直に呼ぶ評価も runtime.event_input で伏せる)。画面には伏せたことを知らせる
 - system prompt に LINE のユーザーIDを載せない。ツールの line_user_id は PinUserMiddleware が会話のユーザーに固定する
 - dip のツールの結果にもユーザーIDは入らない(LLM に届かない)
-- 音声相談の調べものの問いに個人情報らしい値があれば、web で調べずに断る
+- 音声相談の調べものの問いに個人情報らしい値があれば、web で調べずに断る。問いは LLM が書くので、住所は住む言葉が無くても形で断る
 - 住所らしい所は、同じ文に住んでいる所を言う言葉があるときだけ伏せる。電話番号とメールアドレスはいつも伏せる
 - 伏せても、求人の検索と会話の流れは変わらない(ふつうの条件の言い方、駅の名前、丁目は伏せない。
   住所を伏せるのは住所の部分だけで、同じ文の検索の条件は残る)
@@ -27,7 +27,12 @@ from dip_mcp import server as dip_server
 from dip_mcp.data import State, load_jobs
 from line_runtime import turn
 from line_runtime.agent import PINNED_USER
-from resume_draft.pii import REDACTED, personal_value, redact_personal
+from resume_draft.pii import (
+    REDACTED,
+    looks_like_address,
+    personal_value,
+    redact_personal,
+)
 from tests.test_arcade import _free_port, browser  # noqa: F401  browser はフィクスチャ
 from tests.test_dip_summary_read import TOOL_ARGS
 from tests.test_handle import ScriptedModel, call, reply, run
@@ -201,10 +206,31 @@ def test_addresses_are_redacted_only_with_words_about_where_the_user_lives():
                  "自宅から一番近い店舗", "自宅の近くで時給は1,000円以上がいい", "家は新宿で、時給は1,200円以上",
                  "自宅の近くで、18:00から22:00まで働きたい", "自宅から近くで、朝6:30から", "自宅から近い所で、1日4〜5時間",
                  "自宅から近い所で、1日4～5時間", "家は駅から10分で、1日8h働きたい", "自宅は町田市で時給 1200",
-                 "自宅から近くで 3,000円"):
+                 "自宅から近くで 3,000円", "自宅の近くで簿記2級を活かしたい"):
         assert turn.accept(DEPS, "w-0123456789abcdef", "message", text, None).text == text, text
     t = turn.accept(DEPS, "w-0123456789abcdef", "message", "住所はみほん町2-3で月3-5回、年収400-500万円", None)
     assert t.text == f"住所は{REDACTED}で月3-5回、年収400-500万円"
+
+
+def test_research_queries_with_an_address_shape_are_personal_without_words_about_living():
+    """調べものの問いは LLM が書いて外へ出る(OpenAI と検索エンジン)。本人が話した住所を住む言葉を外して書き写せるので、
+    住む言葉が無くても番地まである住所の形なら looks_like_address が真(本人の文の personal_value は偽のまま)。
+    番地の無い地名、駅、丁目までの地名と、単位の付いた数は、今までどおり調べる。"""
+    for query in ("調べること: みほん市みほん町1-2-3 から近いコンビニバイト", "調べること: みほん町552 近くの飲食店の評判",
+                  "調べる会社・お店: ナイトマート(手がかり: みほん市みほん町1-2-3の近く)", "みほん町 552 の近く",
+                  "みほん市みほん町1丁目2-3の店", "大字みほん１２３４の店", "みほん町二番八号の店", "1-2-3-405",
+                  "みほん市3-5", "西新宿2-8", "大字みほん 1234", "みほん町字あおば 12", "みほん村 12", "西新宿三丁目2の店"):
+        assert looks_like_address(query), query
+        assert not personal_value(query), query
+    # 区切りの無い数 1 つは、すぐ前が町名の終わり(町・村・丁目・番地・大字や字の名前)のときだけ番地とみなす。
+    # 問いはキーワードを空白で区切るので、言葉の後ろの年や件数、店の名前の数は調べる
+    for query in ("調べること: 中野のコンビニ", "新宿三丁目のカフェ", "西新宿1丁目の店", "コンビニバイト 時給 2026年",
+                  "コンビニバイト 時給 2026", "簿記2級 難易度", "新宿駅から徒歩5分", "TOEIC 800点", "5-10人の店",
+                  "全国の、コンビニのアルバイト・パートの平均時給。", "18:00から22:00の求人",
+                  "調べること: 東京都 最低賃金 2026", "調べること: 宅建 合格率 2025", "調べること: コンビニバイト おすすめ 10選",
+                  "調べること: 東京23区の、カフェのアルバイト・パートの平均時給。", "調べる会社・お店: ローソンストア100\n",
+                  "第2新卒", "漢字検定 2", "マツモトキヨシ 新宿3号店"):
+        assert not looks_like_address(query), query
 
 
 def test_every_job_station_is_kept_with_or_without_eki():
