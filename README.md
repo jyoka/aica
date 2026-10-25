@@ -45,22 +45,23 @@ flowchart LR
 
 ## 動かし方
 
-必要なもの: Python 3.12、OpenAI の API キー。
+必要なもの: Python 3.12、Anthropic の API キー、OpenAI の API キー。
 
 ```bash
 # リポジトリ直下で
 python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-# リポジトリ直下の .env に OPENAI_API_KEY=... を書く(git には入らない)
+# リポジトリ直下の .env に ANTHROPIC_API_KEY=... と OPENAI_API_KEY=... を書く(git には入らない)
 ./.venv/bin/python -m line_runtime.server   # トーク画面 http://127.0.0.1:8030/ 、開発者画面 http://127.0.0.1:8030/dev
 ./.venv/bin/python -m pytest -q             # テスト(実 API を呼ばない)
 ```
 
-- 既定(`LINE_SIM_PROVIDER=openai`)では、`OPENAI_API_KEY` が無いと Web プロセスは起動の途中で止まります
+- 既定(`LINE_SIM_PROVIDER=anthropic`)では、`ANTHROPIC_API_KEY` が無いと Web プロセスは起動の途中で止まります。
+  `OPENAI_API_KEY` が無くても起動はしますが、履歴書の読み取り、意味検索、音声相談が失敗します
 - トーク画面を初めて開くと、まず同意の画面が出ます(「同意して始める」を押すまで実 API を呼びません)。
   押すと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
   開発者画面は、シナリオを選ぶまで呼びません。話すとターンごとに呼びます
-- `LINE_SIM_PROVIDER=anthropic` にすると、エージェントは Anthropic のモデルになります(`ANTHROPIC_API_KEY` が要る)。
-  履歴書の読み取り、意味検索、音声相談は常に OpenAI です
+- トーク(エージェント)、ゲームの AI、評価の模擬ユーザーとジャッジは Anthropic(Claude Sonnet 5.5、ゲームの中の反応は Claude Haiku 5.5)です。
+  `LINE_SIM_PROVIDER=openai` にすると、前のとおり OpenAI(`gpt-6-sol`)になります。履歴書の読み取り、意味検索、音声相談は常に OpenAI です
 
 ### 音声相談も使う
 
@@ -373,10 +374,10 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 
 | 環境変数 | 既定 | 用途 | `.env` |
 |---|---|---|---|
-| `OPENAI_API_KEY` | なし(必須) | エージェント、履歴書の読み取り、意味検索、音声アドバイザー、下書き | 可 |
-| `ANTHROPIC_API_KEY` | なし | `LINE_SIM_PROVIDER=anthropic` のとき | 可 |
-| `LINE_SIM_PROVIDER` | `openai` | LLM のプロバイダ(`openai`、`anthropic`)。エージェント、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
-| `LINE_SIM_MODEL` | `gpt-6-sol`(anthropic なら `claude-opus-5`) | エージェントのモデル | 不可 |
+| `ANTHROPIC_API_KEY` | なし(必須) | エージェント、ゲームの AI、評価の模擬ユーザーとジャッジ(既定の `LINE_SIM_PROVIDER=anthropic` のとき)。無いと起動の途中で止まる | 可 |
+| `OPENAI_API_KEY` | なし(必須) | 履歴書の読み取り、意味検索、音声アドバイザー、下書き。`LINE_SIM_PROVIDER=openai` ならエージェントとゲームの AI も | 可 |
+| `LINE_SIM_PROVIDER` | `anthropic` | LLM のプロバイダ(`anthropic`、`openai`)。エージェント、ゲームの AI、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
+| `LINE_SIM_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | エージェントとゲームのまとめのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
 | `LINE_SIM_PORT` | `8030` | Web サーバーのポート(コンテナでは `PORT`、既定 10000) | 不可 |
 | `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
@@ -405,7 +406,7 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `AICA_ARCADE_AI` | `1` | `0` にするとゲームの AI を止める(すべて簡易分析。保存はできる) | 可 |
 | `AICA_ARCADE_DAILY_AI_PLAYS` | 3 | 匿名ユーザーIDごとに、1 日に AI つきで始められる遊びの数。超えたら AI なしで始める | 可 |
 | `AICA_ARCADE_REACTIONS_PER_PLAY` | 50 | 1 回の遊びのゲームの中の反応の数。最後のまとめの 2 回は別に取っておく | 可 |
-| `AICA_ARCADE_QUICK_MODEL` | `gpt-6-luna`(anthropic なら `claude-haiku-4-5`) | ゲームの中の反応のモデル。最後のまとめは `LINE_SIM_MODEL` | 可 |
+| `AICA_ARCADE_QUICK_MODEL` | `claude-haiku-5-5`(openai なら `gpt-6-luna`) | ゲームの中の反応のモデル。最後のまとめは `LINE_SIM_MODEL` | 可 |
 
 LINE 公式アカウントで使うものです。LINE で試さないなら要りません。
 

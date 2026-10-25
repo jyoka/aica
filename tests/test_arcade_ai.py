@@ -1,6 +1,6 @@
 """レジュメ・アーケードの AI と下書き(docs/prd/resume-arcade.md の (3/3)、task 188)の台本テスト。実 API は呼ばない。
 
-LLM は台本のスタブ(OpenAI の SDK の形。server.arcade_client を差し替える)。画面と同じ API(/api/arcade/start → /ai → /save)
+LLM は台本のスタブ(Anthropic の SDK の形。server.arcade_client を差し替える)。画面と同じ API(/api/arcade/start → /ai → /save)
 から入り、本人から見える結果(API の返事、プロフィール、dip の要約、トークの履歴、下書きの画面)と、スタブに届いた入力を見る。
 - 事実の確かめ: 本人の答えに無い数字は空欄になり、置き換えた数が記録される。本人が書いた数字(1,200 と 1200、全角、三割)は消さない
 - 費用の上限: 1 回の遊びの反応の回数、1 人 1 日の AI つきの遊び、AI を止める設定、ターン数の上限、まとめの 4,000 字。どれも LLM を呼ばない
@@ -81,21 +81,25 @@ SCRIPT = {"Opening": opening, "Reaction": reaction, "Verdict": verdict,
 
 
 class StubLLM:
-    """OpenAI の SDK の形の偽物(responses.parse だけ)。出力の形(text_format)の名前で台本を引き、届いた入力を覚える。"""
+    """Anthropic の SDK の形の偽物(messages.parse だけ。既定のプロバイダ)。出力の形(output_format)の名前で台本を引き、
+    届いた入力と、思考と effort の送り方(thinking、output_config)を覚える。送り方が 400 にならないかは
+    tests/test_anthropic_request.py が偽の Anthropic で確かめる。"""
 
     def __init__(self, script: dict | None = None):
         self.script = dict(SCRIPT, **(script or {}))
         self.calls: list[dict] = []
-        self.responses = SimpleNamespace(parse=self._parse)
+        self.messages = SimpleNamespace(parse=self._parse)
 
-    async def _parse(self, *, model, instructions, input, text_format, max_output_tokens, reasoning, store):
-        assert store is False  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
-        self.calls.append({"model": model, "system": instructions, "user": input[0]["content"],
-                           "schema": text_format.__name__})
-        out = self.script[text_format.__name__](input[0]["content"])
-        return SimpleNamespace(output_parsed=text_format.model_validate(out),
-                               usage=SimpleNamespace(input_tokens=1500, output_tokens=200,
-                                                     input_tokens_details=SimpleNamespace(cached_tokens=0)))
+    async def _parse(self, *, model, max_tokens, system, messages, output_format, extra_body, output_config,
+                     thinking=None):
+        assert extra_body == {"cache_control": {"type": "ephemeral"}}  # キャッシュの区切り(最後と、system の後)
+        assert [b["cache_control"] for b in system] == [{"type": "ephemeral"}]
+        self.calls.append({"model": model, "system": system[0]["text"], "user": messages[0]["content"],
+                           "schema": output_format.__name__, "thinking": thinking, "effort": output_config["effort"]})
+        out = self.script[output_format.__name__](messages[0]["content"])
+        return SimpleNamespace(parsed_output=output_format.model_validate(out),
+                               usage=SimpleNamespace(input_tokens=1500, output_tokens=200, cache_read_input_tokens=0,
+                                                     cache_creation_input_tokens=0))
 
 
 @pytest.fixture
@@ -158,7 +162,9 @@ def test_start_answer_and_save_reach_the_profile_the_summary_and_the_talk(arc):
     assert v["ok"] and v["result"]["resume"]["experience"][0]["bullets"] == ["決済完了率を61%から68%に改善"]
     # 指示の文はサーバーが持つ(画面は送らない)。反応は安いモデル、最後のまとめは LINE_SIM_MODEL
     assert [x["schema"] for x in arc.llm.calls] == ["Opening", "Reaction", "Verdict"]
-    assert [x["model"] for x in arc.llm.calls] == ["gpt-6-luna", "gpt-6-luna", "gpt-6-sol"]
+    assert [x["model"] for x in arc.llm.calls] == ["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5"]
+    # 反応は思考を切り(Haiku 5.5 は disabled)、最後のまとめは思考を任せて effort low
+    assert [(x["thinking"], x["effort"]) for x in arc.llm.calls] == [({"type": "disabled"}, "low")] * 2 + [(None, "low")]
     assert "Honesty" in arc.llm.calls[1]["system"] and ANSWER in arc.llm.calls[1]["user"]
     assert [row["event"] for row in ledger(arc)][-3:] == [f"arcade:{GAME}:opening", f"arcade:{GAME}:reaction",
                                                           f"arcade:{GAME}:verdict"]
@@ -349,7 +355,7 @@ def test_the_daily_ai_plays_and_the_off_switch_start_without_ai(arc, monkeypatch
     p = start(arc.client)
     assert (p["ai"], p["reason"]) == (False, "disabled")
     monkeypatch.delenv("AICA_ARCADE_AI")
-    monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.delenv("ANTHROPIC_API_KEY")  # 既定のプロバイダ(anthropic)の鍵
     p = start(arc.client)
     assert (p["ai"], p["reason"]) == (False, "no_key")
     _offline(ai(arc.client, p["play"]), "ai_off")
@@ -426,7 +432,7 @@ def test_harvest_of_work_turn_and_final_use_the_server_prompts(arc):
     f = ai(arc.client, p["play"], "final", {"jobs": [{"company": "ペーパームーン", "lines": [{"text": "決済画面を刷新"}]}]},
            game="harvest-of-work")
     assert f["ok"] and f["result"]["experience"][0]["bullets"] == ["決済画面を刷新"]
-    assert [x["model"] for x in arc.llm.calls] == ["gpt-6-luna", "gpt-6-sol"]
+    assert [x["model"] for x in arc.llm.calls] == ["claude-haiku-5-5", "claude-sonnet-5-5"]
     _offline(ai(arc.client, p["play"], "verdict", {"jobs": [JOB]}, game="harvest-of-work"), "unknown_stage")
 
 

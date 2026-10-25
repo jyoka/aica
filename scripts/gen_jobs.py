@@ -19,7 +19,7 @@ from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, BaitoJob, Pay
 from line_runtime import config, llm
 from line_runtime.config import load_env
 
-MODEL = {"openai": "gpt-6-sol", "anthropic": "claude-opus-5"}
+MODEL = {"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5-5"}
 
 JOB_TYPES = [
     "飲食ホール", "飲食キッチン", "カフェ", "コンビニ", "スーパー・販売", "アパレル販売",

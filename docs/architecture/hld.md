@@ -121,8 +121,8 @@ flowchart LR
     lineapi[("LINE プラットフォーム<br/>Messaging API")]
     op(["運営者<br/>ターミナル"])
     aica["aica<br/>手元の Mac で動く 2 つのプロセス"]
-    openai[("OpenAI<br/>LLM、embedding、web 検索")]
-    anthropic[("Anthropic<br/>LLM(任意)")]
+    openai[("OpenAI<br/>履歴書と音声の LLM、embedding、web 検索")]
+    anthropic[("Anthropic<br/>トークとゲームの LLM")]
     livekit[("LiveKit Cloud<br/>音声の部屋")]
     deepgram[("Deepgram<br/>文字起こし")]
     cartesia[("Cartesia<br/>読み上げ")]
@@ -139,8 +139,8 @@ flowchart LR
     seeker -. "字体を読む(ゲーム)" .-> fonts
     livekit -- "音声" --> aica
     op -- "評価、費用台帳、起動" --> aica
-    aica -- "会話、読み取り、下書き、検索" --> openai
-    aica -. "LINE_SIM_PROVIDER=anthropic のとき" .-> anthropic
+    aica -- "トーク、ゲームの答え" --> anthropic
+    aica -- "読み取り、音声相談、下書き、検索" --> openai
     aica -- "音声" --> deepgram
     aica -- "読み上げる文" --> cartesia
 ```
@@ -152,14 +152,18 @@ flowchart LR
   LiveKit Cloud の Agent Observability(録音、文字起こし、ログを 30 日残す)には、ワーカーが `record=False` で何も送りません。
   プロジェクトの設定で有効かどうかと、プランは確かめていません([privacy.md](../design/privacy.md) の 6 章)
 
-LLM のプロバイダは `LINE_SIM_PROVIDER` で選びます(`line_runtime/config.py`)。
+LLM のプロバイダは `LINE_SIM_PROVIDER` で選びます(`line_runtime/config.py`)。既定は `anthropic` です(task 235。
+OpenAI のクレジットが切れがちなため。料金は `gpt-6-sol` と同じ入力 $2 / 出力 $10 per 1M)。`openai` にすれば元に戻ります。
 
-| 使うところ | `openai`(既定) | `anthropic` |
+| 使うところ | `anthropic`(既定) | `openai` |
 |---|---|---|
-| エージェント | `gpt-6-sol` | `claude-opus-5` |
-| エージェントの思考の深さ | `LINE_SIM_EFFORT`(既定 `low`) | 同じ |
-| 模擬ユーザー、ジャッジ(`evals/run.py`) | `gpt-6-luna` | `claude-haiku-4-5` |
+| エージェント | `claude-sonnet-5-5` | `gpt-6-sol` |
+| エージェントの思考の深さ | `LINE_SIM_EFFORT`(既定 `low`)。思考は任せる(adaptive) | `LINE_SIM_EFFORT` を reasoning に |
+| 模擬ユーザー、ジャッジ(`evals/run.py`) | `claude-sonnet-5-5`(利用者の決定) | `gpt-6-luna` |
+| ゲームの中の反応(`AICA_ARCADE_QUICK_MODEL`) | `claude-haiku-5-5` | `gpt-6-luna` |
 | 履歴書の読み取り、音声アドバイザー、下書き、意味検索 | 常に OpenAI | 常に OpenAI |
+
+Anthropic への送り方(思考、effort、構造化出力、キャッシュの区切り)は LLD の 1.1 と 7 章です。
 
 ## 3. 部品(C4 レベル 2)
 
@@ -1073,7 +1077,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 
 ### 同意
 
-[privacy.md](../design/privacy.md) の 3.6 です。海外の事業者(OpenAI など)に送るので、何をどの国へ送るかを先に示し、明示のボタンで同意を取ります。
+[privacy.md](../design/privacy.md) の 3.6 です。海外の事業者(Anthropic、OpenAI など)に送るので、何をどの国へ送るかを先に示し、明示のボタンで同意を取ります。
 文言と記録は `line_runtime/consent.py` の 1 か所です。
 
 | 場所 | 取り方 |

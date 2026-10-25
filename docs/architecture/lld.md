@@ -202,7 +202,17 @@ classDiagram
   窓口を `WEB_NO_VOICE_NOTE`(音声相談を勧めない)にします。Web の features が空(評価、テスト)なら 3 つとも使える扱いです
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
-- `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
+- `build_model` は `config.PROVIDER` で `ChatAnthropic`(既定)か `ChatOpenAI`(Responses API、`reasoning.effort`)を作ります。
+  `ChatAnthropic` は `claude-sonnet-5-5` に次を送ります(Claude Sonnet 5.5 で 400 になる組み合わせを避ける。`tests/test_anthropic_request.py`)
+  - 思考は `{"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}` と、ベータのヘッダー
+    `thinking-binding-controls-2026-08-01`。`disabled` は Sonnet 5.5 では 400 です。思考のブロックはそれを作ったときの system・tools・
+    前のメッセージに結びつき、2026-08-31 以降に作ったアカウントでは変わっていれば 400 です。最後の 1 回の添え書き
+    (`TurnCallLimitMiddleware`)と窓口の切り替えで system が変わるので、合わないブロックは捨てさせます
+  - `output_config.effort` は `LINE_SIM_EFFORT`(既定 `low`)。`none` にすると、思考を切る送り方(`llm.thinking_kwargs`。Sonnet 5.5 なら
+    `between_tools`)になり、`block_binding` は付けません。返信は `ProviderStrategy` が `output_config.format` にします。
+    ツールの強制(`tool_choice` の `any` / `tool`)は使いません(Sonnet 5.5 では 400)
+  - ツールの一覧は名前の順に固定し、キャッシュの区切りはツールの最後、system の最後、メッセージの最後の 3 か所です
+    (`AnthropicPromptCachingMiddleware`)。2 回目の呼び出しから、前の呼び出しの前置きをキャッシュから読みます
 
 ### 1.2 dip_mcp
 
@@ -484,7 +494,8 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | `harvest-of-work` | `turn`(水やりの質問と判定) | 反応 | 安いモデル | 思い出と答え |
 | `harvest-of-work` | `final`(収穫祭の書類と暦) | まとめ | `LINE_SIM_MODEL` | 送られた行と見出し |
 
-安いモデルは OpenAI なら `gpt-6-luna`、Anthropic なら `claude-haiku-4-5` で、`AICA_ARCADE_QUICK_MODEL` で替えられます。
+安いモデルは Anthropic(既定)なら `claude-haiku-5-5`、OpenAI なら `gpt-6-luna` で、`AICA_ARCADE_QUICK_MODEL` で替えられます。
+反応は思考を切り(Haiku 5.5 は `thinking: disabled` と effort `low`)、まとめは思考を任せて `LINE_SIM_EFFORT` にします(`line_runtime.llm.thinking_kwargs`)。
 事実の確かめは、数字を `resume_lines.check_numbers` で、引用を `quote_in` で見ます。強み・弱みの診断と評決の独白にもかけます。
 次の一手(`leads`、`next_season`)は提案なのでかけません。比べる元は本人が書いた欄だけです(事件ファイルの欄、職場の勤務先・役職・期間、
 行の文・引用・数字、答え)。行の番号(`e5`、`j1`)と強みのキーは入れません(入れると、AI が足した「5人」の 5 が `e5` に見つかるため)。
@@ -2136,7 +2147,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 
 | 呼び出し | 呼ぶところ | API とモデル | いつ | 台帳 |
 |---|---|---|---|---|
-| エージェント | `LineRuntime._turn` | OpenAI Responses `gpt-6-sol`(既定)か Anthropic `claude-opus-5` | ターンごとに 1 回以上(ツールを呼ぶたび) | 費用台帳 |
+| エージェント | `LineRuntime._turn` | Anthropic Messages `claude-sonnet-5-5`(既定)か OpenAI Responses `gpt-6-sol` | ターンごとに 1 回以上(ツールを呼ぶたび) | 費用台帳 |
 | 履歴書の読み取り | `resume_intake.extract._extract` | OpenAI Responses `gpt-6-sol`(`RESUME_INTAKE_MODEL`)。テキストのある PDF はテキストだけ(4.3) | アップロードごとに 1 回 | 費用台帳 |
 | 意味検索の問い合わせ | `dip_mcp.embedding._api_embed`(dip の子プロセス) | OpenAI Embeddings `text-embedding-3-large`、1024 次元、1 回 5 秒で打ち切り、1 回だけ再試行 | `recommend_jobs` の keywords ごとに 1 回(同じ文はプロセスの中で 512 件まで覚える) | なし(R19) |
 | 求人のベクトル | `scripts/gen_job_vectors.py` | 同上 | 人が回す | なし |
@@ -2148,7 +2159,8 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | 部屋 | ブラウザ、ワーカー | LiveKit Cloud | 相談ごと | なし |
 | LiveKit のブラウザ用ライブラリ | `talk-core.js` | jsDelivr の `livekit-client@2` | シートを開いたとき | -(R11) |
 | LINE の入力中の表示、返信、push | `server._line_user_events`(`line_channel.LineApi`) | LINE Messaging API(`api.line.me`)。1 回 10 秒で打ち切り | LINE のイベントごと。push は返信トークで返せなかったときだけ | なし。push は LINE 公式アカウントの月のメッセージ数に数えられる |
-| 模擬ユーザー、ジャッジ | `evals.run.sim_reply`、`evals.judge` | `gpt-6-luna`(既定)か `claude-haiku-4-5` | 評価のときだけ | 予算台帳 |
+| レジュメ・アーケードの AI | `resume_arcade.stages.run`(`line_runtime.llm.parse`) | 反応は Anthropic `claude-haiku-5-5`(既定)か `gpt-6-luna`、まとめは `LINE_SIM_MODEL` | 遊びの段ごと | 費用台帳 |
+| 模擬ユーザー、ジャッジ | `evals.run.sim_reply`、`evals.judge` | Anthropic `claude-sonnet-5-5`(既定)か `gpt-6-luna` | 評価のときだけ | 予算台帳 |
 
 外のサービスに残る量を減らす設定です([privacy.md](../design/privacy.md) の 3.2)。どれも呼ぶところで固定し、環境変数では変えません。
 
@@ -2165,7 +2177,25 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 最後の決まりは本物の API で確かめていない推測です([privacy.md](../design/privacy.md) の 3.2)。
 OpenAI の Zero Data Retention は申し込んでいません(人が決める)。
 
-料金表は `line_runtime/ledger.py` の `PRICES` が正で、評価の計測(`evals/meter.py`)も同じ表を使います(1M トークンあたり、`gpt-6-sol` は入力 $2、出力 $10、`gpt-6-luna` は $0.1、$0.5)。
+Anthropic(既定)への送り方です。SDK を直に呼ぶところ(`line_runtime.llm`。模擬ユーザー、ジャッジ、ゲームの AI)は、構造化出力
+(`messages.parse` の `output_format`。SDK が `output_config.format` にする)で受け、ツールの強制は使いません。
+`llm.thinking_kwargs` が effort を thinking と `output_config.effort` にします。
+
+| effort | `claude-sonnet-5-5` | `claude-haiku-5-5` | 使うところ |
+|---|---|---|---|
+| `none`(思考を切る) | `thinking: between_tools`、effort `low` | `thinking: disabled`、effort `low` | 模擬ユーザー、ゲームの中の反応 |
+| `low` など | thinking を送らない(adaptive)、その effort | 同じ | ジャッジ、ゲームのまとめ |
+
+キャッシュの区切り(5 分)は、system の後と最後(top-level の `cache_control`)の 2 か所です。指示が同じで答えだけが変わる呼び出し
+(ゲームの段)は指示を、会話が伸びる模擬ユーザーと同じ会話を 2 回見るジャッジは前の呼び出しの分を、2 回目からキャッシュから読みます。
+模擬ユーザーの最後がアシスタントの沈黙(音声の probe)なら、`SILENT_AGENT` を user として足します(assistant で終わると prefill として 400)。エージェント(1.1)と合わせて、
+送る中身が 400 にならないことと、2 回目からキャッシュを読むことは `tests/test_anthropic_request.py` が偽の Anthropic で確かめます。
+Anthropic の API は、商用の入出力を既定で学習に使わず、30 日以内に消します([privacy.md](../design/privacy.md) の 2.2)。
+
+料金表は `line_runtime/ledger.py` の `PRICES` が正で、評価の計測(`evals/meter.py`)も同じ表を使います(1M トークンあたり、`gpt-6-sol` と
+`claude-sonnet-5-5` は入力 $2、出力 $10、`gpt-6-luna` と `claude-haiku-5-5` は $0.1、$0.5。`claude-haiku-5-5` はプロンプトが 100K トークンを
+超えると $0.5、$2.5)。モデル名は一番長く一致する名前で引きます。キャッシュの書き込みは入力の 1.25 倍、読みは 0.1 倍(Sonnet 5.5 なら $0.20)です。
+評価の計測は `messages.parse`(模擬ユーザーとジャッジ)も包みます(`create` を通らないため)。
 web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同じ単価が別にあります(R13)。
 
 ### 7.1 音声の部品の設定

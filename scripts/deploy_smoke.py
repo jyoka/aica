@@ -15,7 +15,8 @@
 公開 URL では、http が https に飛ぶことも確かめる。--cookie に前回の匿名ユーザーIDを渡すと、同じブラウザで開き直したときと
 同じになる(最後のやりとりから 30 分を過ぎていれば再訪の挨拶。--expect revisit で確かめる)。
 
-API キーはリポジトリ直下の .env か環境変数から読む(line_runtime.config.load_env)。docker と OPENAI_API_KEY が要る。
+API キーはリポジトリ直下の .env か環境変数から読む(line_runtime.config.load_env)。docker と、LLM のプロバイダの鍵
+(既定の LINE_SIM_PROVIDER=anthropic なら ANTHROPIC_API_KEY)が要る。
 """
 
 from __future__ import annotations
@@ -152,11 +153,12 @@ def greet(base: str, uid: str, expect: str | None) -> tuple[dict, str]:
 
 
 def check_no_key(texts: list[str]) -> None:
-    key = os.environ.get("OPENAI_API_KEY", "")
-    if len(key) < 8:
-        step("skip: OPENAI_API_KEY が手元に無いので、画面にキーが出ないかは確かめていません")
-        return
-    check(not any(key in t for t in texts), "画面と返信に OPENAI_API_KEY の値が出てこない")
+    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        key = os.environ.get(name, "")
+        if len(key) < 8:
+            step(f"skip: {name} が手元に無いので、画面にその値が出ないかは確かめていません")
+            continue
+        check(not any(key in t for t in texts), f"画面と返信に {name} の値が出てこない")
 
 
 def check_https_redirect(base: str) -> None:
@@ -219,8 +221,9 @@ def local_smoke(image: str, build: bool) -> None:
     check(docker("run", "--rm", "--entrypoint", "python", image, "-c",
                  "import pathlib; print(pathlib.Path('/app/.env').exists())") == "False",
           "image に .env が入っていない")
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SmokeFailed("OPENAI_API_KEY がありません(.env か環境変数)")
+    need = "OPENAI_API_KEY" if os.environ.get("LINE_SIM_PROVIDER") == "openai" else "ANTHROPIC_API_KEY"
+    if not os.environ.get(need):
+        raise SmokeFailed(f"{need} がありません(.env か環境変数)。無いと Web プロセスが起動の途中で止まります")
 
     tag = secrets.token_hex(4)
     name, volume, port = f"aica-smoke-{tag}", f"aica-smoke-{tag}", free_port()

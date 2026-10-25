@@ -1,9 +1,10 @@
 """求人ごとの Q&A(案件単位の FAQ)を架空で生成して fixtures/job_faq.json に足す。
 
 すでに Q&A がある求人(手で書いたものを含む)は上書きしない。実 API を使うので費用がかかる
-(Sonnet 5 で 60 件ほど、約 $0.5 の見込み。gpt-6-sol も同じ単価)。回す前に承認を得ること。
+(60 件ほどで約 $0.5 の見込み(Sonnet 5 のときの見積もり)。既定の claude-sonnet-5-5 も gpt-6-sol も同じ単価)。
+回す前に承認を得ること。モデルは LINE_SIM_PROVIDER のプロバイダのものを渡す。
 
-    ./.venv/bin/python -m scripts.gen_job_faq [--model gpt-6-sol] [--dry-run]
+    ./.venv/bin/python -m scripts.gen_job_faq [--model claude-sonnet-5-5] [--dry-run]
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ async def main(model: str, dry_run: bool) -> None:
 if __name__ == "__main__":
     load_env()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default={"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5"}[config.PROVIDER])
+    ap.add_argument("--model", default={"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5-5"}[config.PROVIDER])
     ap.add_argument("--dry-run", action="store_true", help="何件を生成するかだけ表示する(API を呼ばない)")
     args = ap.parse_args()
     asyncio.run(main(args.model, args.dry_run))

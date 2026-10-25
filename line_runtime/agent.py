@@ -18,7 +18,7 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from line_runtime import config
+from line_runtime import config, llm
 
 PLATFORM_PROMPT = """あなたは LINE 公式アカウントの AI アシスタント(AIモード)です。トークルームでユーザーと1対1で話します。
 事業者から渡された「対話シナリオ」とツールに従って会話します。事業者のツールが返した事実以外を、事実として話しません。
@@ -166,6 +166,10 @@ class TurnCallLimitMiddleware(AgentMiddleware):
         return await handler(request)
 
 
+THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
+ANTHROPIC_THINKING = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+
+
 def build_model(model: str | None = None, effort: str | None = None) -> BaseChatModel:
     if config.PROVIDER == "openai":
         # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動。
@@ -174,15 +178,31 @@ def build_model(model: str | None = None, effort: str | None = None) -> BaseChat
         return ChatOpenAI(model=model or config.MODEL, max_tokens=16000, use_responses_api=True,
                           reasoning={"effort": effort or config.EFFORT},
                           store=False, include=["reasoning.encrypted_content"])
-    return ChatAnthropic(model=model or config.MODEL, max_tokens=16000, thinking={"type": "adaptive"},
-                         output_config={"effort": effort or config.EFFORT})
+    # 思考は任せて(adaptive)、深さは effort(既定 low)で決める。Claude Sonnet 5.5 は思考を切る disabled が 400 で、
+    # 構造化出力(LineReply)とツールを一緒に使うときは思考を残すのが Anthropic の勧め。構造化出力は ProviderStrategy が
+    # output_config.format にする(ツールの強制は使わない。tool_choice の any / tool も Sonnet 5.5 では 400)。
+    # 思考のブロックは、それを作ったときの system・tools・前のメッセージに結びつく(2026-08-31 以降に作ったアカウントでは、
+    # 変わっていれば 400)。最後の 1 回の添え書き(TurnCallLimitMiddleware)と窓口の切り替えで system が変わるので、
+    # 合わないブロックは 400 にせず捨てさせる(drop_block。ベータのヘッダーが要る。adaptive のときだけ付けられる)。
+    # LINE_SIM_EFFORT=none(思考を切る)と、effort を受けない古いモデルは llm.thinking_kwargs の送り方にする
+    if not llm.anthropic_key():
+        # ChatAnthropic は鍵が無くても作れて、最初の返事で初めて失敗する。ChatOpenAI と同じく起動の途中で止める
+        raise ValueError("ANTHROPIC_API_KEY がありません(LINE_SIM_PROVIDER=anthropic。リポジトリ直下の .env に書く)")
+    name = model or config.MODEL
+    kw = llm.thinking_kwargs(name, effort or config.EFFORT)
+    if "output_config" in kw and "thinking" not in kw:
+        kw |= {"thinking": ANTHROPIC_THINKING, "betas": [THINKING_BINDING_BETA]}
+    return ChatAnthropic(model=name, max_tokens=16000, **kw)
 
 
 def build_agent(tools, scenarios: dict[str, str], model=None, checkpointer=None):
     return create_agent(
         model or build_model(),
-        tools,
-        # シナリオを差し込んでから(外側)、キャッシュ指定を付ける(内側)。OpenAI のモデルには何もしない。
+        # ツールの一覧は名前の順に固定する(順が変わると、キャッシュの読みが 0 になる。Anthropic は tools → system →
+        # messages の順に前から一致を見る)
+        sorted(tools, key=lambda t: t.name),
+        # シナリオを差し込んでから(外側)、キャッシュ指定を付ける(内側)。キャッシュの区切りは、ツールの最後、system の
+        # 最後、メッセージの最後の 3 か所(AnthropicPromptCachingMiddleware)。OpenAI のモデルには何もしない。
         # 1ターンのモデルの呼び出しの回数に上限をかける(シナリオの後に最後の1回の添え書きを足す)。
         # ツールの line_user_id は会話のユーザーに固定する(LLM の渡す値は信じない)
         middleware=[ScenarioMiddleware(scenarios), TurnCallLimitMiddleware(),

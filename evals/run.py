@@ -15,7 +15,8 @@
 返信は render の結果のまま判定する(LINE のメッセージにする to_messages はオフラインのテストが見る)。
 
 費用(PRD aica-v2-fulltime の予算 $5):
-- エージェントは本番のモデル(line_runtime.config.MODEL)。模擬ユーザーとジャッジは安いモデル(SIM_MODEL・JUDGE_MODEL)。
+- エージェントは本番のモデル(line_runtime.config.MODEL)。模擬ユーザーとジャッジは SIM_MODEL・JUDGE_MODEL
+  (OpenAI なら安いモデル、Anthropic ならエージェントと同じ Claude Sonnet 5.5)。
 - 1会話のエージェントのターンは、シナリオの max_turns(無ければ SCENARIO_TURNS = 8)まで。相談のシナリオは 12。
   --max-turns(既定12)は全体の上限で、シナリオの値より小さければそちら。上限で切れた会話は結果の cut_at_cap に出る。
 - 実行ごとに費用台帳(evals/budget.jsonl、エージェント・模擬ユーザー・ジャッジの合計)の累計を出し、
@@ -24,7 +25,7 @@
 
 事実性(作り話)と雇用区分の切り替え(set_search_track)は evals/checks.py がコードで判定する。
 --judge は相談の深さ(目的・掘り下げ・選択肢・提案理由を根拠の発言つき)とトーンを LLM ジャッジで見る(evals/judge.py)。
-ジャッジは1つの会話を --judge-samples 回(既定2)判定してまとめる(点数の揺れを抑える。1回あたり約 $0.0003)。
+ジャッジは1つの会話を --judge-samples 回(既定2)判定してまとめる(点数の揺れを抑える。1回あたり gpt-6-luna で約 $0.0003、Claude Sonnet 5.5 はその約 20 倍)。
 深さの4項目は、相談・ペルソナのシナリオ(scenarios.json の measure_depth)でだけ数える(ほかは None)。
     python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.json
 
@@ -54,11 +55,12 @@ from aggregate import summary_md  # isort: skip
 from evals import budget
 from line_runtime import config, line_channel, llm
 
-# 模擬ユーザーとジャッジは安いモデル。OpenAI の料金表(https://developers.openai.com/api/docs/pricing、2026-09-29 確認)
-# で gpt-6-luna は入力 $0.10 / 出力 $0.50(1M トークン)で、本番の gpt-6-sol($2.00 / $10.00)の 1/20。
-# 構造化出力と Responses API に対応している。Anthropic の場合は Haiku 4.5
-SIM_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
-JUDGE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}
+# 模擬ユーザーとジャッジのモデル。OpenAI は安い gpt-6-luna(入力 $0.10 / 出力 $0.50 per 1M。OpenAI の料金表
+# https://developers.openai.com/api/docs/pricing、2026-09-29 確認)で、本番の gpt-6-sol($2.00 / $10.00)の 1/20。
+# Anthropic は利用者の決定(task 235)でエージェントと同じ Claude Sonnet 5.5($2.00 / $10.00、キャッシュの読み $0.20)。
+# 模擬ユーザーは思考を切り(llm.thinking_kwargs の "none")、ジャッジは effort low。どちらもキャッシュの区切りを付ける
+SIM_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-sonnet-5-5"}
+JUDGE_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-sonnet-5-5"}
 MAX_TURNS = 12  # 1会話のエージェントのターンの、評価全体の上限(費用の上限。--max-turns)
 # シナリオに max_turns が無いときの上限。相談のシナリオ(相談から提案、その後の反応まで見る)だけ scenarios.json で 12 にする
 SCENARIO_TURNS = 8
@@ -93,6 +95,9 @@ def _format_agent(r: dict, channel: str = "web") -> str:
     return "\n".join(parts)
 
 
+SILENT_AGENT = "(アシスタントは何も言いませんでした)"
+
+
 class SimTurn(BaseModel):
     text: str = Field(description="ユーザーとして送る返信(1〜2文)")
     end: bool = Field(description="この返信で会話を終えるなら true")
@@ -102,6 +107,10 @@ async def sim_reply(client, persona: str, transcript: list[dict]) -> dict:
     """模擬ユーザーの次の発言。構造化出力で受け取り(自由記述の JSON は壊れやすい)、空なら1回だけ取り直す。"""
     # どのシナリオも AI 側の1通目から始まるので、模擬ユーザーから見て user から始まる
     msgs = [{"role": "user" if t["who"] == "agent" else "assistant", "content": t["text"]} for t in transcript]
+    if msgs and msgs[-1]["role"] == "assistant":
+        # アシスタントが黙った(音声の probe で、言うことの無いターン)。最後が assistant だと prefill として扱われ、
+        # Claude Sonnet 5.5 は 400 を返すので、黙ったことを user の側に書いて終える
+        msgs.append({"role": "user", "content": SILENT_AGENT})
     for _ in range(2):
         turn = await llm.parse(client, model=SIM_MODEL[config.PROVIDER], max_tokens=1000, schema=SimTurn,
                                system=SIM_SYSTEM.format(persona=persona), messages=msgs)

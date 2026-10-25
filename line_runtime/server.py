@@ -744,7 +744,8 @@ def _arcade_ai_off_reason(user: str) -> str | None:
     """AI つきで始められない理由(止めている、API キーが無い、1 日の回数を使い切った)。始められれば None。"""
     if os.environ.get(ARCADE_AI_ENV, "1").strip() == "0":
         return "disabled"
-    if not os.environ.get(PROVIDER_KEYS.get(config.PROVIDER, ""), "").strip():
+    if not (llm.anthropic_key() if config.PROVIDER == "anthropic"
+            else os.environ.get(PROVIDER_KEYS.get(config.PROVIDER, ""), "").strip()):
         return "no_key"
     limit = _arcade_daily_limit()
     if 0 < limit <= app.state.quota.daily_used(ARCADE_DAILY_KIND, user):

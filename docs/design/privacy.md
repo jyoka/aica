@@ -24,7 +24,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 消し方 | 毎日 1 回の掃除で期間を過ぎたものを消し、SQLite は VACUUM する(3.3) | 消した行がファイルの空き領域に残らないように |
 | ログ | ID、種類、件数、有無、例外の型名だけ。値は出さない(3.4) | ログはホスティングの保持の決まりで残り、本人が消せない |
 | AI Gateway | 本文のログを残さない。キャッシュも使わない(3.5)。**利用者が決めたこと** | ゲートウェイに本文が残ると、個人情報が Cloudflare にも残る |
-| 同意 | Web は最初にトークを開いたとき、LINE は最初の発言の前に、明示のボタンで取る。履歴書と音声は使う直前にもう一度示す(3.6) | 海外の事業者(OpenAI など)に送るので、何をどの国へ送るかを先に示して同意を取る |
+| 同意 | Web は最初にトークを開いたとき、LINE は最初の発言の前に、明示のボタンで取る。履歴書と音声は使う直前にもう一度示す(3.6) | 海外の事業者(Anthropic、OpenAI など)に送るので、何をどの国へ送るかを先に示して同意を取る |
 | 本人が見る、消す | Web はプロフィール画面に「書き出す」を足す。LINE は「データを見る」「データを消す」のコマンドを足す(3.7) | 今の LINE のユーザーは、プロフィール画面を開けず、見ることも消すこともできない |
 
 ### 人が決めること
@@ -84,8 +84,8 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 1 | 履歴書・職務経歴書のファイル本体(PDF、JPEG、PNG、10MB まで)。氏名、住所、写真、生年月日、電話、メール、学歴、職歴を含みうる | OpenAI(Responses API に base64 で埋め込む) | しない(メモリだけ) | - | `line_runtime/server.py:955`、`:966`、`resume_intake/extract.py:64-70`、`:94-100` |
 | 2 | 履歴書のファイル名(氏名が入りがち) | OpenAI(PDF のときだけ `filename` に入る) | しない。トークには「履歴書(PDF)」のような種類だけ | - | `resume_intake/extract.py:69`、`line_runtime/server.py:950-952`、`:979` |
 | 3 | 履歴書の読み取り結果(学歴、職歴、勤務先、資格、自己 PR など)。`personal` は空、電話、メール、郵便番号は消す。氏名や住所が出力に混ざったときは、コードでは消えない | 毎ターン、要約の `uploaded_resume` として LLM へ(エージェントと音声アドバイザー) | `data/state.json` の `resume_upload`(最新の 1 件) | プロフィールで履歴書を消す、「すべて消す」まで | `resume_intake/extract.py:27-28`、`:102`、`dip_mcp/logic.py:1044-1057`、`:1087-1092`、`dip_mcp/profile.py:229-242` |
-| 4 | Web のトークの本文 | OpenAI か Anthropic(`LINE_SIM_PROVIDER`)。今の会話の全文を毎ターン送る | `data/line_checkpoints.db` | 「すべて消す」、履歴書を消したときまで。それ以外は消さない | `line_runtime/runtime.py:69-75`、`:142`、`:321-329`、`line_runtime/agent.py:98-104` |
-| 5 | LINE のトークの本文 | LINE プラットフォーム(本人が LINE で送る)、OpenAI か Anthropic | 4 と同じ | 4 と同じ | `line_runtime/server.py:481-496`、`:555-575` |
+| 4 | Web のトークの本文 | Anthropic(既定。`LINE_SIM_PROVIDER=openai` なら OpenAI)。今の会話の全文を毎ターン送る | `data/line_checkpoints.db` | 「すべて消す」、履歴書を消したときまで。それ以外は消さない | `line_runtime/runtime.py:69-75`、`:142`、`:321-329`、`line_runtime/agent.py:98-104` |
+| 5 | LINE のトークの本文 | LINE プラットフォーム(本人が LINE で送る)、Anthropic(既定)か OpenAI | 4 と同じ | 4 と同じ | `line_runtime/server.py:481-496`、`:555-575` |
 | 6 | LINE の userId(LINE が付ける本人の ID) | LINE(返信と push の宛先) | しない。処理の間だけメモリ | - | `line_runtime/server.py:481-485`、`line_runtime/line_channel.py:5-7` |
 | 7 | aica のユーザーID(`w-…`、`l-…`) | LLM(system prompt)、LiveKit Cloud(参加者の identity と metadata) | `data/` のすべてのファイルのキー | ユーザーのデータが残る間 | `line_runtime/agent.py:72-75`、`voice_resume/livekit_token.py:43-48`、`line_runtime/line_channel.py:100-105` |
 | 8 | Cookie `aica_uid` | - | 本人のブラウザ | 最初の発行から 400 日。発行のときにしか書かないので、使い続けても延びない | `line_runtime/server.py:97-114` |
@@ -115,8 +115,8 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 
 | サービス | 送るもの(2.1 の #) | 事業者の国 | 学習に使うか | 先方での保持 | 減らせる設定 | 今の設定 |
 |---|---|---|---|---|---|---|
-| OpenAI | 1、2、3、4、5、7、10(`VOICE_RESUME_STT_PROVIDER=openai` のときだけ)、11、13、14〜16、21、22 | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
-| Anthropic | 4、5、7、14〜16、22(`LINE_SIM_PROVIDER=anthropic` のときだけ) | 米国 | 商用 API は既定で使わない(要確認) | 既定で 30 日以内に消す。違反と判定された会話は最長 2 年 | Zero Data Retention の契約 | 既定 |
+| OpenAI | 1、2、3(音声相談)、7、10(`VOICE_RESUME_STT_PROVIDER=openai` のときだけ)、11、13、14〜16(音声相談)、21。4、5、22 とゲームの答えは `LINE_SIM_PROVIDER=openai` のときだけ | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
+| Anthropic | 3、4、5、7、14〜16、22、ゲームの答え(既定の `LINE_SIM_PROVIDER=anthropic`。task 235) | 米国 | 商用 API は既定で使わない(本人がフィードバックを送ったときなどを除く。2026-10-26 に確かめた) | 既定で 30 日以内に消す。安全のための自動の判定で違反とされた会話は最長 2 年、判定の点数は最長 7 年。30 日の保持が必須の「Covered Models」(Mythos 級)に、使う Claude Sonnet 5.5 と Haiku 5.5 の名前は無い | Zero Data Retention の契約 | 既定 |
 | Deepgram | 10 | 米国 | 改善プログラム(Model Improvement Program)に既定で入る。外れると割引がなくなる | 不明 | リクエストに `mip_opt_out=true` | 指定していない |
 | Cartesia | 12 | 米国 | 不明 | 不明。Zero Data Retention はエンタープライズの契約だけ | Zero Data Retention | 既定 |
 | LiveKit Cloud | 7、10 | 米国(データの地域はプロジェクトを作るときに選ぶ) | 未確認。前は「無料プランは、匿名化したデータを turn detector の改善に長く残すことがある」と書いたが、2026-10-25 に利用者が公式ページで確かめられなかった | 音声は転送のためにメモリで扱い、残さない。Agent Observability が有効なら、録音、文字起こし、ログを 30 日 | `AgentSession.start(record=False)`。有料プラン | `record` を指定していない(`voice_resume/agent.py:132`) |
@@ -350,7 +350,7 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 
 > aica は、AI がお仕事探しの相談にのるサービスです。始める前に、次のことをご確認ください。
 >
-> - 書いた内容は、返事を作るために米国の OpenAI(設定によっては Anthropic)に送ります。学習には使われません
+> - 書いた内容は、返事を作るために米国の Anthropic に送ります。求人を探す言葉は、米国の OpenAI にも送ります。どちらも学習には使わないとされています
 > - 会話は最後のやりとりから 30 日、希望などのプロフィールは最後のご利用から 180 日で消えます
 > - Web: プロフィール画面の「すべて消す」で、いつでも消せます
 > - LINE: トークで「データを消す」と送れば、いつでも消せます
@@ -489,7 +489,9 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 2026-10-25 に確かめました。
 
 - OpenAI: [Your data](https://developers.openai.com/api/docs/guides/your-data)(学習に使わない、不正利用の監視のログは最長 30 日、Responses API の保持は 30 日、Zero Data Retention)
-- Anthropic: [How long do you store my organization's data?](https://privacy.claude.com/en/articles/7996866)(既定で 30 日以内に消す、違反と判定されたものは最長 2 年)
+- Anthropic: [How long do you store my organization's data?](https://privacy.claude.com/en/articles/7996866)(既定で 30 日以内に消す、違反と判定されたものは最長 2 年。2026-07-01 更新)、
+  [Is my data used for model training?](https://privacy.claude.com/en/articles/7996868)(商用の製品の入出力は既定で学習に使わない。2026-08-18 更新)、
+  [Data retention practices for Covered Models](https://privacy.claude.com/en/articles/15425996)(Mythos 級のモデルは 30 日保持。2026-10-26 に確かめた)
 - Deepgram: [The Deepgram Model Improvement Partnership Program](https://developers.deepgram.com/docs/the-deepgram-model-improvement-partnership-program)(`mip_opt_out=true`、外れると割引がなくなる)
 - Cartesia: [Zero Data Retention](https://docs.cartesia.ai/enterprise/zero-data-retention)(エンタープライズの契約だけ)
 - LiveKit: [Agent insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights/)(録音と文字起こしを 30 日、`record=False`)、[Security overview](https://livekit.com/security/overview)、[Pricing](https://livekit.com/pricing)(Build プランは無料で、無料の枠が上限。2026-10-25 に利用者が確かめた)。無料プランのデータを改善に使うという記述は、確かめられなかった(未確認)
