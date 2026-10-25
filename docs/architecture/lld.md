@@ -84,7 +84,7 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_mic_check`、`liff_mic_check_log` |
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
@@ -422,6 +422,8 @@ flowchart LR
 | `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
 | `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
 | `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
+| `GET /liff/line/mic-check` | `liff_line_mic_check` | -(本人を決めない) | - | -(マイクの確認。LIFF の設定が無ければ 404) |
+| `POST /api/liff/mic-check` | `liff_mic_check_log` | -(本人を決めない) | - | ログに 1 行(`line_runtime.mic_check`)。決まった項目の外は 422、JSON でなければ 415 か 422、1 日 500 行を超えたら 429。LIFF の設定が無ければ 404 |
 | `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳、連携の表 |
 | `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | dip の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
 | `GET /api/dev/link` | `dev_link` | Cookie | - | -(開発者画面の「アカウント連携」。匿名ユーザーIDと `dip_id`) |
@@ -1102,6 +1104,22 @@ LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは H
 - `POST /api/liff/session` は `Content-Type: application/json` でなければ 415 です(本文の無い型や `text/plain` は、ほかのサイトから事前の確認なしに送れるため)
 - 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
 
+LIFF の中でマイクを試す画面(`/liff/line/mic-check`、task 205。手順は README の「LINE の中でマイクが使えるかを確かめる」):
+
+- 音声相談を LINE から使えるかを決める前に、LIFF の画面の中でマイクと WebRTC が使えるかを人が実機で確かめるための画面です。
+  本人のデータを読み書きしないので、本人を決めません(Cookie を発行も要求もしない)。LINE では `https://liff.line.me/<LIFF ID>/mic-check` で開きます
+- 画面の部品は `static/mic-check.js` です。`liff.init({ liffId })`(外のブラウザでもログインを求めない)の後、`liff.getOS()`、`liff.isInClient()`、
+  `liff.getLineVersion()`、`liff.getVersion()`、`liff.getContext().viewType` を出します。「マイクを試す」で
+  `getUserMedia({ audio })` を呼び、許可されたら 5 秒、`AnalyserNode` で音の大きさの最大(0 から 1)を測ります。断られたら `NotAllowedError`、
+  ほかの失敗はエラーの名前(`DOMException` の `name`、LIFF のエラーの `code`)を出します。`AudioContext` は押した操作の中で(`await` の前に)作り、
+  その状態(`audio_state`)も記録します。`liff.init` と `AudioContext.resume()` は 5 秒まで待ち、止まっても結果を送ります(`liff.init` が止まったら `liff_error` は `Timeout`。後から通ったら、画面の結果は消さずに `Timeout` を「遅れて終わった」に替え、LIFF の環境と外のブラウザのボタンを出し直す。サーバーの記録は押したときの 1 回のまま)
+- WebRTC は `RTCPeerConnection`(ICE のサーバーなし)にマイクの音を足して offer を作り、手元の ICE の候補を 3 秒まで数えます。どこにもつなぎません。
+  LiveKit は音声相談と同じ `livekit-client` を読み、`isBrowserSupported()` を見ます。LiveKit の部屋にはつなぎません
+- 結果は `POST /api/liff/mic-check` に 1 回だけ送り、サーバーは `line_runtime.mic_check` のログに `LIFF のマイクの確認: {…}` の 1 行を書きます。
+  受ける項目は `MicCheckIn` に決めた分だけ(`extra="forbid"`)で、声や文字起こしを載せる項目はありません。本人と IP は書きません。
+  Web サーバーはログの設定をしないので、このロガーだけ INFO を標準エラーに出す handler を持ちます
+- LINE のアプリの中(`isInClient()`)で `liff.init` が通ったときだけ、「外のブラウザで同じ確認を開く」(`liff.openWindow({ url, external: true })`)を出します
+
 ### 4.12 LINE のアカウント連携
 
 HLD の 4.10 の中身です。決定は [ADR-0007](../adr/0007-line-account-link-table.md) にあります。LINE の Messaging API の
@@ -1760,6 +1778,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`::test_a_rejected_id_token_is_nobody_and_never_falls_back_to_the_web_user`)。LINE が 200 で答えても、発行元、`aud`、期限、`sub` の形を
     もう一度見ます。LIFF の設定が無ければ `/liff/line/…` は 404 で、ほかは今までどおりです。殻の画面はブラウザで、偽物の LIFF SDK を使って
     動かします(`::test_the_liff_page_in_a_browser`)
+24. LIFF の中でマイクを試す画面は、偽物の LIFF SDK と偽物の `getUserMedia` で、許可、拒否(`NotAllowedError`)、エラー(`NotFoundError`)、
+    `getUserMedia` が無いときを動かし、結果とエラーの名前が画面に出て、サーバーには結果の 1 回だけを送ります
+    (`tests/test_liff.py::test_the_mic_check_page_in_a_browser`)。ログの受け口は決まった項目の外(声、文字起こし、ユーザーID)を 422 で断り、
+    ログには結果の 1 行だけが残ります(`::test_the_mic_check_log_keeps_one_result_line_and_nothing_else`)
 
 ## 10. テストと評価の仕組み
 

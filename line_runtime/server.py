@@ -38,12 +38,17 @@ accountLink の画面に送る。LINE から accountLink の webhook が来た�
 LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID があるときだけ、/liff/line/… を開く(無ければ 404)。
 ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
 (POST /api/liff/session が確かめて、署名つきの Cookie aica_liff を返す)。Web のブラウザの /liff/… は今までどおり Cookie の匿名ユーザーID。
+
+LIFF の中でマイクを試す画面(task 205): /liff/line/mic-check。LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と
+WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エラー名、音の大きさ、LIFF の環境)だけを POST /api/liff/mic-check が
+ログに 1 行書く。声もその文字起こしも送らない・残さない。本人を決めない(本人のデータを読み書きしない)。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import re
@@ -53,7 +58,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import (
@@ -74,7 +79,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dip_mcp import accounts, behavior, logic, profile
 from dip_mcp.data import State, load_jobs
@@ -271,12 +276,13 @@ async def dev(request: Request):
 
 
 SHARED_STATIC = {"talk-core.js", "talk-core.css"}  # / と /dev が共通に使うトークの部品
+LIFF_STATIC = {"mic-check.js"}  # LIFF の中でマイクを試す画面(/liff/line/mic-check)
 
 
 @app.get("/static/{name}")
 async def shared_static(name: str):
-    """トークルームの共通部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)。"""
-    if name not in SHARED_STATIC:
+    """トークルームの共通部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)と、マイクを試す画面の部品。"""
+    if name not in SHARED_STATIC | LIFF_STATIC:
         raise HTTPException(404)
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
@@ -1260,6 +1266,83 @@ async def liff_line_submit(request: Request, job: str = Form(...)):
     """LINE のアプリで開いた応募フォームの送信。本人の Cookie が無い・期限切れなら 401(確定しない)。"""
     user = _liff_page_user(request)
     return _liff_unauthorized("応募フォーム") if user is None else _apply_submit(user, job)
+
+
+# ----------------------------- LIFF の中でマイクを試す画面(/liff/line/mic-check、task 205) -----------------------------
+# LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と WebRTC が使えるかを、人が実機で確かめる。
+# 画面(static/mic-check.js)はマイクの許可を求め、使えたか・断られたか・エラー名、音の入力の大きさ、LIFF の環境を出し、
+# 結果だけを POST /api/liff/mic-check に送る。声もその文字起こしも送らない(受け口は決まった項目の外を 422 で断る)。
+# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。LIFF の設定が無ければ 404。
+
+mic_log = logging.getLogger("line_runtime.mic_check")
+mic_log.setLevel(logging.INFO)
+if not mic_log.handlers:  # Web サーバーはログの設定をしない(WARNING より下は出ない)ので、この 1 行だけは標準エラーに出す
+    _mic_handler = logging.StreamHandler()
+    _mic_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    mic_log.addHandler(_mic_handler)
+LIVEKIT_CLIENT = "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"  # 音声相談と同じ(talk-core.js)
+MIC_CHECK_DAILY_LIMIT = 500  # 1 日にログに書く数の上限(本人を決めない口なので、ログをあふれさせない)
+_mic_checks: dict[str, int] = {}
+_ErrorName = Annotated[str, Field(max_length=40, pattern=r"^[A-Za-z0-9_]*$")]  # エラーの名前(NotAllowedError、LIFF の INIT_FAILED や 400 など)
+_Version = Annotated[str, Field(max_length=32, pattern=r"^[0-9A-Za-z._-]*$")]
+
+
+class MicCheckIn(BaseModel):
+    """マイクを試した結果。決まった項目だけを受ける(ほかの項目があれば 422。声や文字起こしを載せる場所を作らない)。"""
+    model_config = ConfigDict(extra="forbid")
+
+    mic: Literal["allowed", "denied", "error", "unsupported"]
+    mic_error: _ErrorName = ""
+    level: float = Field(0, ge=0, le=1)  # 試した間の音の入力の大きさの最大(0 から 1)
+    audio_state: Literal["running", "suspended", "closed", "interrupted", ""] = ""  # 音を測った AudioContext の状態
+    webrtc: Literal["ok", "error", "unsupported"]
+    webrtc_error: _ErrorName = ""
+    candidates: int = Field(0, ge=0, le=99)  # 手元の ICE の候補の数(外の STUN/TURN は使わない)
+    livekit: Literal["supported", "unsupported", "not_loaded"]
+    os: Literal["ios", "android", "web", ""] = ""  # liff.getOS()
+    in_client: bool | None = None  # liff.isInClient()
+    line_version: _Version = ""  # liff.getLineVersion()
+    liff_version: _Version = ""  # liff.getVersion()
+    view_type: Literal["compact", "tall", "full", "frame", "full-flex", ""] = ""  # liff.getContext().viewType
+    liff_error: _ErrorName = ""  # liff.init が失敗したときのエラーの名前
+    secure_context: bool
+    user_agent: str = Field("", max_length=300)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/mic-check", response_class=HTMLResponse)
+async def liff_line_mic_check():
+    """LIFF の中でマイクを試す画面。LINE では https://liff.line.me/<LIFF ID>/mic-check で開く。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    conf = json.dumps({"liffId": line_channel.liff_id(), "livekitClient": LIVEKIT_CLIENT}).replace("<", "\\u003c")
+    body = f"""<p>音声相談で使うマイクと通話の部品が、この画面で使えるかを確かめます。声は送らず、残しません。
+送るのは結果(使えたか、エラーの名前、音の大きさ、LINE の版など)だけです。</p>
+<button type="button" id="mic-start">マイクを試す</button>
+<p id="mic-status" aria-live="polite">「マイクを試す」を押すと、マイクの許可を求めます。5 秒ほど声を出してください。</p>
+<meter id="mic-level" min="0" max="1" value="0" style="width:100%;height:24px"></meter>
+<pre id="mic-result" style="white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;font-size:13px"></pre>
+<p id="mic-external-wrap" hidden><button type="button" id="mic-external">外のブラウザで同じ確認を開く</button></p>
+<script>window.MIC_CHECK = {conf};</script>
+<script src="{LIFF_SDK}" charset="utf-8"></script>
+<script src="/static/mic-check.js"></script>"""
+    return HTMLResponse(_page("マイクの確認", body), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/liff/mic-check")
+async def liff_mic_check_log(body: MicCheckIn, request: Request):
+    """マイクを試した結果を、サーバーのログに 1 行だけ書く(本人、IP は書かない)。JSON の本文だけ(ほかのサイトのフォームから書かせない)。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(415, "JSON で送ってください")
+    day = datetime.now(UTC).date().isoformat()
+    if _mic_checks.get(day, 0) >= MIC_CHECK_DAILY_LIMIT:
+        raise HTTPException(429, "今日はこれ以上記録できません")
+    if day not in _mic_checks:  # 前の日の数は捨てる
+        _mic_checks.clear()
+    _mic_checks[day] = _mic_checks.get(day, 0) + 1
+    mic_log.info("LIFF のマイクの確認: %s", json.dumps(body.model_dump(), ensure_ascii=False))
+    return {"ok": True}
 
 
 def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:
