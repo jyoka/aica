@@ -111,7 +111,7 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`profile_export`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook、ゲームの AI と下書き(4.10 の終わり) | `arcade_start`、`arcade_ai`、`arcade_save`、`arcade_client`、`liff_arcade_draft`、`_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`profile_export`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`_line_data`、`_forget_all`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit`、`liff_line_voice`、`liff_line_resume_upload`、`liff_line_arcade`、`liff_voice_start`、`liff_voice_wait`、`liff_resume_upload`、`_voice_token`、`_line_push`、`liff_line_mic_check`、`liff_mic_check_log`、`legal_page`、`DEMO_FORM_VALUES` |
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
@@ -125,6 +125,7 @@ flowchart TB
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
 | `llm.py` | 模擬ユーザー、ジャッジ、ゲームの AI が SDK を直接呼ぶところの、プロバイダの違いの吸収。`parse(with_usage=True)` は使った量も返す(費用台帳の形) | `client`、`parse`、`usage_of`、`text` |
 | `config.py` | 設定と `.env` の読み込み | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
+| `legal.py` | 利用規約とプライバシーポリシーの画面と版(4.10)。原文 `docs/legal/*.md` を HTML にする(見出し、段落、箇条書き、表、太字、リンクだけ)。FastAPI に依存しない | `TERMS_VERSION`、`PRIVACY_VERSION`、`versions`、`DOCS`、`URLS`、`DEMO_NOTE`、`page`、`to_html`、`footer_html`、`links_html`、`version_in` |
 | `static/` | 画面。`talk.html`(トーク画面)、`dev.html`(開発者画面)、共通部品 `talk-core.js`、`talk-core.css` | - |
 | `static/arcade/` | レジュメ・アーケード(4.10 の終わり)。ハブ `resume-arcade.html`、8 本のゲーム `<game>.html`、日本語の答えの判定の共通部品 `arcade-ja.js`、AI と保存の API を呼ぶ共通部品 `arcade-ai.js` | - |
 
@@ -259,8 +260,8 @@ OpenAI Realtime の構成から作り直しました)。
                                                         ├ TTS: Cartesia sonic-3.5(日本語のボイス、速さ 0.9)
                                                         ├ ターンの判定: Silero VAD + 多言語の turn detector
                                                         ├ dip: dip_mcp を相談ごとに stdio の子プロセスで起動
-                                                        └ 終わり: 下書きなどを data/voice-resume/ に書き、
-                                                           POST /api/voice/result でトークへ結果を返す
+                                                        └ 終わり: 下書きを作り、POST /api/voice/result でトークへ結果を返す
+                                                           (data/voice-resume/ に書くのは開発のときだけ)
 ```
 
 | モジュール | 役割 | 主な名前 |
@@ -271,13 +272,13 @@ OpenAI Realtime の構成から作り直しました)。
 | `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
 | `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
 | `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
-| `outputs.py` | 相談の終わりに 4 つのファイルを書く(5.4) | `write_outputs`、`history_transcript` |
+| `outputs.py` | 相談の終わりに下書きと求人の提案を作る。4 つのファイルを書くのは `WRITE_FILES` のときだけ(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
 | `livekit_token.py` | 部屋の接続トークンの発行。Web サーバーが使う | `configured`、`issue_token`、`TOKEN_TTL`(5 分) |
 | `stt.py` | STT の作り分け | `create_stt` |
 | `flow.py`、`stt_eval.py` | 文字起こしから会話の流れを確かめるチェッカーと、STT の聞き取りの台本(テストと評価で使う) | `verify_flow`、`count_experience_probes`、`find_leading_questions`、`score_transcripts` |
 | `wages.py` | 平均時給の参考データ(`data/wage_reference.json`) | `load_reference`、`answer_from_reference` |
-| `config.py` | 設定(7.1)と `.env` の読み込み | `OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
+| `config.py` | 設定(7.1)と `.env` の読み込み | `WRITE_FILES`、`OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
 | `results/` | 画面の証跡(PNG) | - |
 
 ```mermaid
@@ -476,6 +477,7 @@ flowchart LR
 | `GET /healthz` | `healthz` | - | - | -(ヘルスチェック。Cookie も発行しない) |
 | `GET /`、`GET /dev` | `index`、`dev` | Cookie を発行するか、同じ ID で書き直す(`_issue`) | - | Cookie(180 日) |
 | `GET /static/{name}` | `shared_static` | - | - | -(`talk-core.js`、`talk-core.css` だけ) |
+| `GET /legal/{name}` | `legal_page` | -(Cookie を発行も要求もしない) | - | -(`terms` は利用規約、`privacy` はプライバシーポリシー。原文は `docs/legal/`。ほかの名前は 404) |
 | `GET /static/arcade/{name}` | `arcade_static` | - | - | -(`arcade-ja.js`、`arcade-ai.js` だけ。`ARCADE_STATIC`) |
 | `GET /liff/arcade` | `liff_arcade` | -(Cookie を発行も要求もしない) | - | -(ハブ) |
 | `GET /liff/arcade/{game}` | `liff_arcade_game` | -(同上) | - | -(ゲーム。`ARCADE_GAMES` に無い名前は 404) |
@@ -500,7 +502,7 @@ flowchart LR
 | `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
 | `PUT`、`DELETE /api/profile/track` | `profile_track`、`profile_track_delete` | Cookie + 書き込みの枠 | - | 雇用区分、知らせ |
 | `DELETE /api/profile/resume` | `profile_resume_delete` | Cookie + 書き込みの枠 | - | 会話を閉じてから読み取り結果を消す(4.6) |
-| `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` のファイルを消す。無ければ 404 |
+| `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` に書き出したファイルがあれば消す。無ければ 404 |
 | `DELETE /api/profile/saved/{job_id}` | `profile_unsave` | Cookie + 書き込みの枠 | - | 保存の取り消し、知らせ |
 | `POST /api/profile/forget` | `profile_forget` | Cookie | - | 「すべて消す」(4.6) |
 | `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
@@ -511,7 +513,7 @@ flowchart LR
 | `POST /api/resume/upload` | `resume_upload` | 本人 | 1 | 読み取り結果、費用台帳。形式が違えば 400、10MB を超えたら 413、会話が替わっていれば 409、上限なら 429、API の失敗は 502 |
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
-| `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。入力値は保存しない |
+| `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れる。入力値は読まず、保存しない |
 | `POST /api/liff/session` | `liff_session` | LIFF の ID トークン(LINE の検証) | - | Cookie `aica_liff`。確かめられなければ 401 で Cookie を消す。JSON でなければ 415。LIFF の設定が無ければ 404 |
 | `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
 | `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
@@ -769,11 +771,13 @@ sequenceDiagram
         A->>O: web_research、research_company(本人が聞いたとき)
     end
     A->>O: finalize_interview から write_outputs、build_draft(下書き)
-    A->>F: 下書き(json、md)、文字起こし、求人の提案
+    opt WRITE_FILES(開発のときだけ。既定は書かない)
+        A->>F: 下書き(json、md)、文字起こし、求人の提案
+    end
     A->>K: データチャネルで draft
     A->>S: POST /api/voice/result(内部の鍵)
     alt 410(すべて消した後)
-        A->>F: 書いたファイルを消す
+        A->>F: 書いたファイルがあれば消す
     else 届いたか、ほかの失敗
         A->>D: record_conversation_outcome(propose か consult、相談のまとめ、部屋つき)
     end
@@ -786,7 +790,8 @@ sequenceDiagram
 - Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
   `LineRuntime.add_voice_result` で今の会話に足し、待っているシート(`voice_ready` の `Condition`)に知らせます
 - トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)。ただし、通話の途中で
-  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)
+  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)。既定ではファイルに書き出さないので、下書きはどこにも残りません。
+  締めの返答も「保存した」とは言わず、残せなかったことを伝えます(`finalize_interview`)
 
 ### 4.5 音声アドバイザーの決まり
 
@@ -858,9 +863,9 @@ sequenceDiagram
     部屋の名前が付き、dip はその部屋が `forgotten_voice_rooms` にあれば何も書かずに断ります。判定は書き込みと同じ `state.update` の中
     (状態のファイルのロックの中)で行うので、「すべて消す」と書き込みが同時に来ても、間に合わない時間がありません(`logic._room_forgotten`)
   - 断られたら、アドバイザーは保存できなかったとだけ扱い、会話は続けます(今の保存の失敗と同じ。区分は切り替えません)
-  - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルも消します
-    (`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、ファイルが
-    残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
+  - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルがあれば
+    消します(`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、
+    ファイルは開発で書き出したときだけ残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
   - トークのツールは部屋を渡さないので、今までどおり書けます。消した後に始めた部屋の書き込みも通ります
 - 履歴書を消す(`profile_resume_delete`)ときは、`close_conversation` で空の会話 n+1 を書いてから、それまでの会話をすべて消し、
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
@@ -1169,6 +1174,19 @@ sequenceDiagram
 - 画面の証跡は `voice_resume/results/talk-voice-sheet-20260929-*.png` です。LiveKit のライブラリを代役にして、結果の受け取りから
   トークへの描画までを通したもので、実際の音声は使っていません
 
+利用規約とプライバシーポリシー(task 207。原文と版の決まりは [docs/legal/README.md](../legal/README.md)):
+
+- 原文は `docs/legal/terms.md` と `docs/legal/privacy-policy.md` だけです。`GET /legal/terms`、`GET /legal/privacy` は、`legal.page` が原文を HTML にして出します。
+  原文どうしのリンクは画面の URL に、http(s) のリンクは別のタブに、ほかの相対パスは文字にします。原文の mtime が変わったら描き直します
+- Docker の image には `docs/` のうち `docs/legal/` だけを入れます(`.dockerignore`)
+- 開ける所: トーク画面のヘッダーの下の 1 行(テスト用の公開で、求人は架空のデモだという文と、2 つのリンク)、LIFF 画面の下(`_page` の `legal_links`。
+  殻、読み取り結果、下書き、応募フォーム、履歴書の読み込み、マイクの確認)、LINE の音声相談の画面の下、アーケードのハブの下。
+  どれも別のタブで開き、開いている画面を離れません。dip のログインと偽物の LINE の画面は aica ではない役なので置きません
+- 版は `legal.TERMS_VERSION`、`legal.PRIVACY_VERSION`(今はどちらも 1.0)で、原文の「版」の行と同じです。同意の記録(個人情報の task 8/12)はこの値を残し、
+  版が上がったら同意を取り直します
+- 応募フォームの続き(`/liff/apply`、`/liff/line/apply`)は体験の画面です。架空の求人であることと「本物の情報は入れないでください」を出し、
+  欄には `DEMO_FORM_VALUES` の架空の値(氏名は「山田 太郎」など。無い項目は「架空の値」)を入れておきます。送ると「応募の体験を終えました」と出します
+
 開発者画面(`/dev`。評価と説明のため。3 列。合言葉などの制限は無い):
 
 - 左: シナリオを選ぶ(1 通目の出どころ、つまり挨拶(初回訪問、再訪)と dip のプッシュでまとめた一覧)、dip から見た状態
@@ -1441,7 +1459,7 @@ sequenceDiagram
 | `data/costs.jsonl` | `Ledger.record`(追記)、`Ledger.fold_old`(書き直し) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
 | `data/quota.json` | `DailyQuota._save` | `DailyQuota.__init__` | JSON(5.3) |
 | `data/line_events.json` | `line_channel.SeenEvents.first_time` | `SeenEvents.__init__` | 受けた webhook のイベントの ID の JSON の配列(直近 2,000 件、4.11) |
-| `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs` | Web サーバー(消すだけ)、人 | 5.4 |
+| `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs`(`VOICE_RESUME_WRITE_FILES=1` のときだけ。既定は書かない) | Web サーバー(消すだけ)、人 | 5.4 |
 | `data/resume_intake/` | `resume_intake.cli`、`run_samples` | 人 | 読み取り結果の JSON と比較の Markdown |
 | `evals/results/` | `evals.run` | `evalkit`、人 | 5.6。git に入れない |
 | `evals/budget.jsonl` | `budget.record`(追記) | `budget.check`、`python -m evals.budget` | JSON Lines(5.6)。git に入れる |
@@ -1575,7 +1593,14 @@ sequenceDiagram
 
 ### 5.4 音声相談の出力(`data/voice-resume/`)
 
-`outputs.write_outputs` が、相談ごとに日本時間の時刻(`YYYYmmdd-HHMMSS`)を付けて 4 つのファイルを書きます。
+本番では書き出しません(既定)。書き出すのは、開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです(`config.WRITE_FILES`)。
+理由: 同じ下書きは dip の状態の `voice_results` に入ります。文字起こしは下書きを作った後に使いません([privacy.md](../design/privacy.md) の 3.3)。
+
+- 既定では、`outputs.write_outputs` は下書きの envelope、Markdown、求人の提案を作って返すだけです。置き場のディレクトリも作りません
+- 既定の結果の `files` は空です。トークへ送る `files` も、dip の状態の `voice_results` の `files` も空になります
+- 下書きの Markdown は、トークが受け取った結果として dip の状態に入ります(`logic.record_voice_result`)
+
+書き出すときは、相談ごとに日本時間の時刻(`YYYYmmdd-HHMMSS`)を付けて 4 つのファイルを書きます。
 
 | ファイル | 中身 |
 |---|---|
@@ -1584,7 +1609,7 @@ sequenceDiagram
 | `transcript-<時刻>.json` | 文字起こし `[{role, text}]` |
 | `job-proposal-<時刻>.json` | `preferences`(本人の希望)、`recommend_args`(最後の検索の条件)、`relaxed`(外した条件)、`search_attempts`(検索の経緯)、`proposed_job_ids`、`jobs` |
 
-ファイルの絶対パスは結果の `files` に入り、dip の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
+書き出したときは、ファイルの絶対パスが結果の `files` に入り、dip の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
 
 ### 5.5 Resume Draft
 
@@ -1925,6 +1950,7 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 | ターンの判定 | `VOICE_RESUME_MIN_ENDPOINTING_DELAY`、`VOICE_RESUME_MAX_ENDPOINTING_DELAY` | 0.8 秒、6 秒 |
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
 | 結果を返す先 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` |
+| ファイルの書き出し | `VOICE_RESUME_WRITE_FILES` | 書かない。`1` のときだけ書く(開発用。5.4) |
 | 出力先 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume/` |
 | 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消し、ジョブを終える(`agent.SessionGuard`。ジョブの終わりにトークへ `ended` を知らせる) |
 | 1 回の相談の web の調べもの | `VOICE_RESUME_MAX_WEB_SEARCHES` | 5 回(`web_research`、`wage_average`、`research_company` の合計) |
@@ -1974,18 +2000,34 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 | dip の要約か playbook が読めない(音声) | 確認なし、`FALLBACK_PLAYBOOK` で始める | `prepare_advisor`、`advisor_instructions` |
 | 求人の検索の失敗(音声) | 警告のログを出し、LLM に伝えて会話を締めさせる | `ResumeAdvisor.propose_jobs` |
 | 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
-| 下書きの保存の失敗 | LLM に謝らせる。トークへは送らない | `finalize_interview` |
+| 下書きの保存の失敗 | 決まった文で LLM に謝らせる(例外の文は LLM にも渡さない)。トークへは送らない | `finalize_interview` |
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
-| 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20。「すべて消す」の前の部屋なら dip が断る) | 同上 |
+| 結果をトークに届けられない(ほか) | 警告のログだけ。会話の段階の結果は記録する(「すべて消す」の前の部屋なら dip が断る)。下書きは開発で書き出したときだけファイルに残る(R20) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
 | LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
 | LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
-| LINE のターンの途中の失敗 | `FAILED_TEXT` を返す。使ったターンは返さない | `server._line_turn`、`_line_user_events` |
+| LINE のターンの途中の失敗 | `FAILED_TEXT` を返す。使ったターンは返さない。ログは例外の型名だけ | `server._line_turn`、`_line_user_events`、`_line_upload_turn` |
 | LINE の返信トークで返せない(断られた、つながらない) | push で返す | `LineApi.send`、`LineApi._post` |
 | LINE の返信の応答が来ない | 届いたかもしれないので push しない(警告のログ) | `LineApi.send` |
 | LINE がメッセージの形を断った | `FAILED_TEXT` だけを push する。それも届かなければ警告のログだけ(本文とユーザーIDは出さない) | `LineApi.send` |
 | `data/line_events.json` が壊れている | 警告のログを出し、空から始める | `SeenEvents.__init__` |
 | 評価の 1 シナリオの失敗 | その回を `status: error` にして次へ。払った分は予算台帳に載せる | `evals.run.main` の `run_one`、`to_run`、`run_cases` |
+
+### ログに値を出さない
+
+ログに出してよいのは、ユーザーID、イベントや処理の種類、件数、値があるかないか、例外の型名だけです([設計メモ](../design/privacy.md)の 3.4)。
+ログはホスティングの決まりで残り、本人が消せないからです。新しくログを足すときも、この決まりに従います。
+
+- 本人の発言、希望、文字起こし、ファイル名は出しません。値は「あり / なし」や項目の数にします(例: 面談の開始の `前回の希望=あり(2 項目)`)
+- 例外は `type(exc).__name__` だけを出し、例外の文も `logger.exception` のトレースバックも出しません。API のエラーの文に送った本文が、
+  `ValidationError` の文にモデルの出力が入ることがあるからです。LLM に返すツールの結果にも、例外の文を入れません
+- 本番では SDK のロガー(`livekit`、`openai`、`anthropic`、`httpx`、`httpcore`、`aiosqlite`、`langchain`、`langgraph`、`mcp` など。
+  一覧は `log_policy.SDK_LOGGERS`)を WARNING にします(`log_policy.quiet_sdk_loggers`)。INFO や DEBUG で、送った本文や応答、
+  会話の保存の中身を出しうるからです。Web プロセスは起動でいつも(`server.main`)、音声ワーカーは `start`(コンテナが使う)のときだけ
+  (`voice_resume.agent.configure_logging`)にします。手元の `dev` は livekit-agents の既定のまま、SDK の INFO も出ます。
+  livekit-agents の CLI は、レベルの無い自分とプラグインのロガーを起動のレベルにするので、もうある下のロガーにもレベルを付け、
+  後から読み込むプラグイン(Deepgram の STT はジョブの中で読む)は登録のときに WARNING にします
+- uvicorn のアクセスログ(IP、パス、クエリ)は残します。値は 10 分で切れる linkToken と番号だけです
 
 ## 9. 守る約束(テストで確かめているもの)
 
@@ -2080,7 +2122,22 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     費用台帳は 90 日を過ぎた行が日ごとの合計になり、合計は変わりません(`::test_ledger_rows_older_than_90_days_become_one_daily_total_without_user_ids`)。
     掃除は起動時と定期に走り、進行中のターンを待ち、CLI は内部の鍵で内部の口を呼ぶだけです。Cookie は画面を開くたびに同じ ID で 180 日に
     書き直します(`::test_cookie_lasts_180_days_and_every_open_rewrites_the_same_id`)
-27. プロフィールの「データを書き出す」は、本人と同じ Cookie のシナリオユーザーの、プロフィール、`state.json` の行、連携、会話、費用台帳の行を
+27. ログに値を出しません。架空の目印の値(住所と電話番号)を、本人の発言、前に話した希望、文字起こし、API のエラーの文に入れて、
+    音声相談の開始、各ツールの失敗、下書きの失敗、LINE のターンとイベントの失敗、LIFF で読み込んだ履歴書の続きのターンの失敗を
+    動かしても、ログにその値は出ず、例外の型名だけが出ます。下書きの失敗のツールの結果にも例外の文は入りません。本番の音声ワーカー
+    (`start`)と Web プロセスでは、SDK のロガーと、後から登録した livekit-agents のプラグインのロガーが INFO を出しません
+    (`tests/test_log_privacy.py`)
+28. 音声相談は、既定では文字起こし、下書き、求人の提案をファイルに書き出さず、下書きは dip の状態に入ってトークに届きます
+    (`tests/voice/test_outputs.py::test_by_default_nothing_is_written_but_the_draft_is_returned`、`tests/test_voice_track.py` の `_draft`)。
+    書き出すのは `VOICE_RESUME_WRITE_FILES=1` のときだけです(`tests/voice/test_outputs.py::test_writing_files_is_off_unless_the_setting_is_1`)
+
+29. 利用規約とプライバシーポリシーの原文に【】が無く、原文の「版」は `line_runtime.legal` の版の定数と同じです
+    (`tests/test_legal.py::test_the_originals_have_no_blanks_and_carry_the_version_constants`)。トーク画面と LIFF 画面から開け、
+    ブラウザでリンクを押すと別のタブで開きます(`::test_the_talk_screen_and_liff_screens_link_to_the_terms_and_policy`、
+    `::test_the_talk_screen_opens_the_terms_and_policy_in_a_browser`)。応募フォームの体験は欄に架空の値が入り、送った値はどのファイルにも残りません
+    (`::test_the_apply_form_is_a_demo_with_made_up_values_that_are_not_kept`)
+
+30. プロフィールの「データを書き出す」は、本人と同じ Cookie のシナリオユーザーの、プロフィール、`state.json` の行、連携、会話、費用台帳の行を
     1 つの JSON のファイルで返し、他人の分は入りません。見るだけで状態のファイルを変えません
     (`tests/test_profile_export.py::test_export_is_one_json_file_of_everything_saved_for_this_browser_and_nothing_of_others`)。
     Cookie が無ければ 401 で、話す前の人のユーザーは作りません(`::test_export_needs_the_browser_cookie_and_creates_no_user`)。

@@ -9,6 +9,7 @@ finalize_interview)を呼ぶ。dip は本物の MCP サーバー(stdio)、トー
 (3) 正社員の面談の下書きは document_kind=職務経歴書・format_version 1.1 で、職務要約と成果が入る。アルバイトは履歴書
 (4) 書類の呼び方が、区分ごとに入口(「+」メニュー)・アドバイザー・吹き出し・ボタン・ページの題・本文の見出しでそろう
 (5) 面談の途中で「すべて消す」をしたら、その面談の結果で dip の記録を作り直さない。その後に話した区分と希望も dip が断る
+(6) 既定では data/voice-resume/ にファイルを書き出さず、下書きは dip の状態に入ってトークに届く(docs/design/privacy.md の 3.3)
 """
 
 from __future__ import annotations
@@ -103,6 +104,7 @@ def talk(served, advised, tmp_path, monkeypatch):  # noqa: F811
     """トーク(本物の HTTP サーバー)と、そこへ結果を送る音声ワーカーの設定。(URL, サーバー)"""
     monkeypatch.setattr(voice_config, "TALK_URL", served)
     monkeypatch.setattr(voice_config, "OUT_DIR", tmp_path / "voice-out")
+    monkeypatch.setattr(voice_config, "WRITE_FILES", False)  # 既定(書き出さない)
     return served, advised
 
 
@@ -132,11 +134,12 @@ def _interview(uid: str, steps, room: Room | None = None):
     return asyncio.run(run())
 
 
-def _files(advisor) -> tuple[dict, str]:
-    """書き出した下書き(JSON と Markdown)。"""
-    paths = [Path(p) for p in advisor.finalized["files"]]
-    env = json.loads(next(p for p in paths if p.suffix == ".json" and p.name.startswith("resume-draft")).read_text("utf-8"))
-    return env, next(p for p in paths if p.suffix == ".md").read_text("utf-8")
+def _draft(advisor, server, uid: str) -> tuple[dict, str]:
+    """面談の下書き(JSON と、dip の状態に入った Markdown)。既定ではファイルに書き出さないので、ファイルは無い。"""
+    assert advisor.finalized["files"] == [] and not voice_config.OUT_DIR.exists()
+    rec = logic.voice_results_since(server.state, uid, 0)[-1]
+    assert rec["draft_markdown"] == advisor.finalized["markdown"] and rec["files"] == []
+    return advisor.finalized["resume"], rec["draft_markdown"]
 
 
 # ----------------------------- (1) 区分に合った音声版の playbook -----------------------------
@@ -289,7 +292,7 @@ def test_voice_switches_to_fulltime_saves_what_was_said_and_drafts_a_career_shee
     assert "職務経歴書の下書き" in done and advisor.delivered_to_talk
     assert stub.calls[0]["instructions"] == CAREER_DRAFTER_SYSTEM
     assert "職務経歴書の下書きを作ってください" in stub.calls[0]["input"][0]["content"]
-    env, md = _files(advisor)
+    env, md = _draft(advisor, server, uid)
     assert env["format_version"] == "1.1" and env["document_kind"] == "職務経歴書"
     assert env["resume"]["job_summary"].startswith("法人営業を6年") and env["resume"]["work_history"][0]["achievements"]
     assert md.startswith("# 職務経歴書(下書き)")
@@ -331,7 +334,7 @@ def test_a_parttime_interview_still_drafts_a_resume(talk, monkeypatch):
     assert "希望年収の下限" in proposed and "min_annual_salary" not in summary["stated_preferences"]
     assert summary["stated_preferences"]["time_band"]["value"] == "夕方"  # 負例: 区分に合う条件はそのまま保存する
     assert stub.calls[0]["instructions"] == DRAFTER_SYSTEM
-    env, md = _files(advisor)
+    env, md = _draft(advisor, server, uid)
     assert env["format_version"] == "1.1" and env["document_kind"] == "履歴書"
     assert md.startswith("# 履歴書(下書き)") and "## 学歴" in md and "みほん高校" in md
     got = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "timeout": 0}).json()["results"][0]
@@ -397,7 +400,7 @@ def test_the_document_is_called_the_same_everywhere_in_a_track(talk, monkeypatch
     assert got["buttons"][0]["label"] == f"{doc}の下書きを見る"
     page = client.get("/liff/voice/draft", params={"rid": 0}).text
     assert f"<title>{doc}の下書き</title>" in page and f"# {doc}(下書き)" in page
-    _, md = _files(advisor)
+    _, md = _draft(advisor, server, uid)
     assert md.startswith(f"# {doc}(下書き)")
     for other in others:  # もう一方の書類の名前は、結果のどこにも出ない
         assert not any(other in b for b in got["bubbles"]) and other not in got["buttons"][0]["label"]
@@ -432,6 +435,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
     届いても、トークにも dip にも記録を作り直さない(ワーカーは会話の結果も記録しない)。その面談で書き出した下書き・文字起こしのファイルも消す。
     負例: 消した後に始めた面談の結果は、これまでどおり届く。"""
     url, server = talk
+    monkeypatch.setattr(voice_config, "WRITE_FILES", True)  # 書き出したファイルも消すことを確かめる(開発のとき)
     client, uid = _browser_user(url, server)
     monkeypatch.setattr(advisor_module, "_default_client", lambda: DraftStub(RESUME_DRAFT))
     room = client.post("/api/voice/start", json={"user_id": uid}).json()["room"]
@@ -444,7 +448,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
 
     advisor, _, (reply,), summary = _interview(uid, [talk_then_forget], room=Room(room))
     assert advisor.forgotten and not advisor.delivered_to_talk
-    assert not any(Path(f).exists() for f in advisor.finalized["files"])  # 文字起こし・下書きのファイルも残さない
+    assert advisor.finalized["files"] and not any(Path(f).exists() for f in advisor.finalized["files"])  # 文字起こし・下書きのファイルも残さない
     assert "残していません" in reply
     user = server.state.user(uid)
     assert user.get("voice_results", []) == [] and user.get("outcomes") == [] and user.get("preferences") is None
@@ -460,7 +464,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
 
     advisor, _, _, _ = _interview(uid, [finalize], room=Room(new_room))
     assert advisor.delivered_to_talk and not advisor.forgotten
-    assert all(Path(f).exists() for f in advisor.finalized["files"])
+    assert advisor.finalized["files"] and all(Path(f).exists() for f in advisor.finalized["files"])
     assert [r["room"] for r in logic.voice_results_since(server.state, uid, 0)] == [new_room]
 
 

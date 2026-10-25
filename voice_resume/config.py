@@ -1,4 +1,4 @@
-"""voice-resume の設定。モデル名・ボイス・ターン判定・出力先・.env 読み込み。
+"""voice-resume の設定。モデル名・ボイス・ターン判定・出力先(既定は書き出さない)・.env 読み込み。
 
 構成(タスク 31 で Realtime から作り直し):
 - STT: Deepgram nova-3(日本語)+ バイト用語の keyterm 登録。タスク 37 の比較
@@ -77,7 +77,11 @@ MAX_WEB_SEARCHES = int(os.environ.get("VOICE_RESUME_MAX_WEB_SEARCHES", "5"))
 # トークのシミュレーター(line_runtime.server)。面談の結果(求人・下書き)をトークへ戻す先
 TALK_URL = os.environ.get("VOICE_RESUME_TALK_URL", "http://127.0.0.1:8030")
 
-# 面談ごとの下書き・文字起こし・求人提案(個人の話を含むので data/ の下。git には入らない)
+# 面談ごとの下書き・文字起こし・求人提案を OUT_DIR に書き出すか。`1` のときだけ書く(開発用)。
+# 既定は書かない: 同じ下書きは dip の状態(voice_results)に入り、文字起こしは下書きを作った後に使わない
+# (docs/design/privacy.md の 3.3)
+WRITE_FILES = os.environ.get("VOICE_RESUME_WRITE_FILES", "").strip() == "1"
+# 書き出す先(個人の話を含むので data/ の下。git には入らない)
 OUT_DIR = Path(os.environ.get("VOICE_RESUME_OUT_DIR", ROOT / "data" / "voice-resume"))
 # scripts/voice/ の評価・E2E の成果物(残して比べるもの)
 RESULTS_DIR = ROOT / "voice_resume" / "results"

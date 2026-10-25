@@ -18,7 +18,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 履歴書を送る前に消すもの | ファイル名を送らない。写真と個人欄は、送る前に本人に隠してもらう案内と同意で扱う。次の段階で、PDF にテキストがあるときは画像を外してテキストだけを送る(3.2) | 氏名と住所はコードでは確実に見分けられない。画像の上で消すのは書式に左右される |
 | トークの本文 | 電話、メール、住所らしい所を、会話に入れる前に伏せる(3.2) | aica はこれらを使わない。LLM にも会話の保存にも要らない |
 | system prompt の LINE のユーザーID | 外す(3.2) | `PinUserMiddleware` がツールの `line_user_id` を固定しているので、LLM が知る必要がない |
-| 外部サービスの保持 | OpenAI の `store` を切る。Deepgram の改善プログラムから外れる。LiveKit の録音を切り、有料プランにする。Cartesia の扱いを確かめる。本番の STT は Deepgram に固定する(3.2) | 設定とプランで、各社に残る量と学習への利用が減る |
+| 外部サービスの保持 | OpenAI の `store` を切る。Deepgram の改善プログラムから外れる。LiveKit の録音を切る(プランは無料の Build のまま。利用者の決定)。Cartesia は確かめずに使う(利用者の決定)。本番の STT は Deepgram に固定する(3.2) | 設定とプランで、各社に残る量と学習への利用が減る |
 | 保存する期間 | 会話は最後のやりとりから 30 日。使われなくなったユーザーは最後の利用から 180 日。費用台帳の ID は 90 日(3.3) | 30 分で会話は切れ、次の会話は要約から始まる。古い会話は機能に使っていない |
 | 音声相談のファイル | 本番では `data/voice-resume/` に書き出さない(3.3) | 同じ下書きは dip の状態にある。文字起こしは下書きを作った後は使わない |
 | 消し方 | 毎日 1 回の掃除で期間を過ぎたものを消し、SQLite は VACUUM する(3.3) | 消した行がファイルの空き領域に残らないように |
@@ -41,6 +41,25 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 - LiveKit Cloud を有料プランにするか。無料プランのままなら、ポリシーに改善への利用を書く(3.2「音声」)
 - Cartesia の学習と保持の扱いを確かめた結果、そのまま使うか(3.2「音声」)
 - 法律の確認を誰に頼むか(弁護士など)
+
+#### 利用者の決定(2026-10-25)
+
+上の項目への利用者の答えです(jyoka/tasks#207 のコメント)。task 207 で `docs/legal/` に入れ、版 1.0 にしました。
+決定に無かった【】の値は、[docs/legal/README.md](../legal/README.md) の「仮に決めたこと」にあります。
+
+| 項目 | 決定 |
+|---|---|
+| 公開の性格 | 商用ではなく、テスト用の公開。規約とポリシーの冒頭にそう書く |
+| 運営者 | 個人(利用者本人)。表に出す名前は仮の名前「aica 運営者(個人)」。代表者の欄は作らない |
+| 住所 | 載せない。ポリシーに「ご請求があれば遅滞なくお知らせします」と書く |
+| 問い合わせの窓口 | 仮のメールアドレス `contact@example.com` |
+| 求人 | 架空のデモ。規約と画面に「架空の求人で、実際の応募にはならない」と書く。連携先の求人サービスもシミュレーションのまま(第三者提供にならない) |
+| 応募フォームの入力欄 | 上の推奨(欄を外す)は採らない。欄は残し、架空の値(例: 山田 太郎)を最初から入れ、「本物の情報は入れないでください」と書く。送られた値は保存しない |
+| 保存期間 | 推奨どおり。会話 30 日、使われなくなったユーザー 180 日、費用台帳の ID 90 日 |
+| OpenAI の Zero Data Retention | 申し込まない |
+| LiveKit のプラン | 無料の Build プランのまま。3.2「音声」の LiveKit の改善への利用は公式ページで確かめられなかったので、ポリシーには書かない |
+| Cartesia | 学習と保持の扱いは確かめず、そのまま使う。ポリシーには音声の生成に使う外部サービスとして載せ、扱いは確かめていないと書く |
+| 法律の確認 | 利用者本人がする。task 207 は確定版の下書きまで |
 
 ## 1. 前提
 
@@ -86,7 +105,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 22 | 画面で直したときの知らせ(直した値) | 次のターンで LLM へ | `data/state.json` の `profile_changes`(最大 20) | 渡し終えたら消す | `dip_mcp/profile.py:91-104`、`:312-319` |
 | 23 | ログ | ホスティングのログ(公開後) | 標準出力 | ホスティングの決まり(不明) | 3.4 の表 |
 | 24 | 将来: LLM への全リクエスト | Cloudflare AI Gateway | - | 3.5 の決まりで、本文は残さない | - |
-| 25 | 応募フォームの続きの入力値(`/liff/apply`)。残りの項目名が「氏名」「電話番号」などのことがあり、その欄が必須の入力になる | - | しない。受け取って捨て、応募の確定だけを書く | - | `line_runtime/server.py:1033-1047`、`:1051-1059` |
+| 25 | 応募フォームの続きの入力値(`/liff/apply`)。残りの項目名が「氏名」「電話番号」などのことがあり、その欄が必須の入力になる。task 207 から、欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れ、「本物の情報は入れないでください」と出す | - | しない。受け取って捨て、応募の確定だけを書く | - | `line_runtime/server.py` の `_apply_form_page`、`_apply_submit` |
 
 `data/dip_summaries.db`(`dip_mcp/summarize.py:30`)は、#18 の元データ(`data/dip_events.db`)からバッチで作る会員ごとの要約です。#18 の元データと同じ扱いにします(連携した人の行動だけが入る)。
 LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付ける乱数で、ユーザーが分からないので個人情報に入れません(`line_runtime/line_channel.py:108-112`)。
@@ -100,7 +119,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | Anthropic | 4、5、7、14〜16、22(`LINE_SIM_PROVIDER=anthropic` のときだけ) | 米国 | 商用 API は既定で使わない(要確認) | 既定で 30 日以内に消す。違反と判定された会話は最長 2 年 | Zero Data Retention の契約 | 既定 |
 | Deepgram | 10 | 米国 | 改善プログラム(Model Improvement Program)に既定で入る。外れると割引がなくなる | 不明 | リクエストに `mip_opt_out=true` | 指定していない |
 | Cartesia | 12 | 米国 | 不明 | 不明。Zero Data Retention はエンタープライズの契約だけ | Zero Data Retention | 既定 |
-| LiveKit Cloud | 7、10 | 米国(データの地域はプロジェクトを作るときに選ぶ) | 無料プランは、匿名化したデータを turn detector の改善に長く残すことがある | 音声は転送のためにメモリで扱い、残さない。Agent Observability が有効なら、録音、文字起こし、ログを 30 日 | `AgentSession.start(record=False)`。有料プラン | `record` を指定していない(`voice_resume/agent.py:132`) |
+| LiveKit Cloud | 7、10 | 米国(データの地域はプロジェクトを作るときに選ぶ) | 未確認。前は「無料プランは、匿名化したデータを turn detector の改善に長く残すことがある」と書いたが、2026-10-25 に利用者が公式ページで確かめられなかった | 音声は転送のためにメモリで扱い、残さない。Agent Observability が有効なら、録音、文字起こし、ログを 30 日 | `AgentSession.start(record=False)`。有料プラン | `record` を指定していない(`voice_resume/agent.py:132`) |
 | LINE(LINE ヤフー) | 5、6、返信の本文 | 日本 | - | LINE の決まりによる(不明) | - | - |
 | jsDelivr | 本人の IP(音声相談のシートが JS を読むとき) | - | - | 不明 | 自分で JS を配る(R11) | CDN から読む(`line_runtime/static/talk-core.js:267`) |
 | Render(公開の予定) | `data/` のすべて、ログ | 米国 | - | ディスクとログ、バックアップの保持は契約による(不明) | - | まだ配置していない |
@@ -167,11 +186,13 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 - **推奨**
   - Deepgram: `mip_opt_out=true` を付ける。割引がなくなる分の費用は、LLD の 7.2 の見積もりに足す
   - LiveKit: `session.start(..., record=False)` を付ける(`voice_resume/agent.py:132`)。LiveKit Cloud のプロジェクトの設定でも録音を切る
-  - LiveKit のプラン: **公開では有料プランにする。** 2.2 のとおり、無料プランでは、匿名化したデータを turn detector の改善に長く残すことがあります。
-    無料プランのままでは、3.1 の原則 3(学習に使わせない)を満たせず、ポリシーの「学習に使わない設定で送る」とも食い違います。
-    無料プランのまま公開するなら、ポリシー 5 の LiveKit の行に「匿名化したうえで、LiveKit のモデルの改善に使われることがある」と書きます。どちらにするかは人が決めます(「人が決めること」)
+  - LiveKit のプラン: 前の推奨は「公開では有料プランにする」でした。無料プランでは匿名化したデータを turn detector の改善に長く残すことがある、と見たためです。
+    **決定(利用者): 無料の Build プランのまま。** その記述は公式ページで確かめられなかった(未確認)ので、ポリシーには書きません(2.2、「利用者の決定」)。
+    Build プランは毎月の無料の枠が上限で、超えても請求されません。Agent Observability が有効だと、録音と文字起こしがセッションの後 30 日残ります。
+    録音は `record=False` で止めます(jyoka/tasks#209)
   - Cartesia: 送る文はアドバイザーの文ですが、本人の話をくり返すことがあります(2.1 の #12)。**公開の前に、Cartesia の規約で、API で受けた文を学習に使うかと保持の期間を確かめる。**
-    学習に使わないと確かめられたら既定のまま使います。使う、または分からないなら、ポリシー 5 にそう書くか、Zero Data Retention(エンタープライズの契約)か別の読み上げに替えるかを人が決めます
+    学習に使わないと確かめられたら既定のまま使います。使う、または分からないなら、ポリシー 5 にそう書くか、Zero Data Retention(エンタープライズの契約)か別の読み上げに替えるかを人が決めます。
+    **決定(利用者): 確かめずに、そのまま使う。** ポリシー 5 には、学習と保持は Cartesia の決まりにより、運営者は確かめていないと書きました
   - STT の提供元: **本番では Deepgram に固定する(`VOICE_RESUME_STT_PROVIDER=deepgram`、既定のまま)。** `openai` にすると声そのものが OpenAI に届きます(2.1 の #10)。
     `openai` に替えるなら、ポリシー 5 の OpenAI の「送る情報」に「声」を足し、音声相談の同意の文言も直します
 - LiveKit の参加者の metadata の `user_id` は、匿名ユーザーIDのままにします。名前ではなく、ワーカーがどのユーザーかを知るのに要るためです
@@ -454,7 +475,8 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 - 外部サービスの保持(7 章)は公開文書で確かめただけです。契約、プラン、プロジェクトの設定は見ていません
 - OpenAI の Responses API の `store` の既定値は、データの扱いのページでは明記されていません。API リファレンスでは既定が有効とされます(このメモでは確かめきれていない)
 - このプロジェクトの LiveKit Cloud で Agent Observability が有効か、どのプランか、データの地域がどこかは見ていません
-- Cartesia が API で受けた文を学習に使うか、どれだけ保持するかは、公開文書で見つけられていません(2.2 で「不明」)
+- Cartesia が API で受けた文を学習に使うか、どれだけ保持するかは、公開文書で見つけられていません(2.2 で「不明」)。利用者は確かめずに使うと決めました
+- LiveKit Cloud の無料プランのデータを改善に使うかは、確かめられていません(2.2 で「未確認」)
 - livekit-agents が INFO で発話の文を出すかは確かめていません
 - Render のログ、ディスク、バックアップの保持と、ディスクの暗号化は確かめていません
 - LINE の Messaging API で、LINE 側にメッセージがどれだけ残るかは確かめていません
@@ -470,6 +492,6 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 - Anthropic: [How long do you store my organization's data?](https://privacy.claude.com/en/articles/7996866)(既定で 30 日以内に消す、違反と判定されたものは最長 2 年)
 - Deepgram: [The Deepgram Model Improvement Partnership Program](https://developers.deepgram.com/docs/the-deepgram-model-improvement-partnership-program)(`mip_opt_out=true`、外れると割引がなくなる)
 - Cartesia: [Zero Data Retention](https://docs.cartesia.ai/enterprise/zero-data-retention)(エンタープライズの契約だけ)
-- LiveKit: [Agent insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights/)(録音と文字起こしを 30 日、`record=False`、無料プランの扱い)、[Security overview](https://livekit.com/security/overview)
+- LiveKit: [Agent insights in LiveKit Cloud](https://docs.livekit.io/deploy/observability/insights/)(録音と文字起こしを 30 日、`record=False`)、[Security overview](https://livekit.com/security/overview)、[Pricing](https://livekit.com/pricing)(Build プランは無料で、無料の枠が上限。2026-10-25 に利用者が確かめた)。無料プランのデータを改善に使うという記述は、確かめられなかった(未確認)
 - Cloudflare: [AI Gateway Logging](https://developers.cloudflare.com/ai-gateway/observability/logging/)(`cf-aig-collect-log`、`cf-aig-collect-log-payload`)
 - 個人情報保護委員会: 「生成 AI サービスの利用に関する注意喚起等について」(2023-06-02)。個人情報を含むプロンプトは利用目的の範囲か確かめ、提供事業者が機械学習に使わないことを確かめる

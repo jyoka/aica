@@ -213,7 +213,7 @@ def test_the_liff_apply_form_needs_the_verified_user(liff):
     server, _ = liff
     client = _client(server)
     r = client.post("/liff/line/apply", data={"job": "a002"})
-    assert r.status_code == 401 and "応募しました" not in r.text
+    assert r.status_code == 401 and server.APPLY_DONE_TEXT not in r.text
     assert _session(client, "good").status_code == 200
     r = client.post("/liff/line/apply", data={"job": "a002"})  # 確かめた本人に、入力途中の応募が無い
     assert r.status_code == 404 and "入力途中の応募はありません" in r.text
