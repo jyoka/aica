@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from dip_mcp.data import ROOT, load_jobs
 from dip_mcp.logic import AREAS, CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
+from line_runtime import line_channel
 from resume_draft.pii import PII_VALUE as DIP_PII_VALUE
 from resume_draft.pii import fold_pii, has_pii
 
@@ -39,6 +40,8 @@ THINK_IT_OVER = re.compile(r"考え(ます|てみ|させて|ておき|たい|と
 # 迷いを言っている言葉。お礼があっても、これがあれば迷いのサインで、迷いの点を1問聞いてよい
 # (「ありがとう、でも時給で迷うので考えます」「うーん、考えます」)
 HESITATION = re.compile(r"迷|悩|うーん|ううん|どうしよう|気にな|不安|心配|考え中|(?<![つ何れこ誰])でも|けど|けれど")  # 「いつでも」「何でも」「誰でも」は除く
+# 絵文字(記号の絵文字・顔・物・旗など)。ボタンと選択肢の文言に使わない(トークの決まりの「絵文字なし」、task 231 の D3)
+EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
 # dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
 # 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
@@ -201,8 +204,10 @@ def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     for b in r["bubbles"]:
         if len(b) > rules["bubble_max"]:
             v.append(f"吹き出しが{len(b)}字({rules['bubble_max']}字以内)")
-    if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、文字で答えたい人の選択肢が無い
-        v.append(f"操作ボタン({'/'.join(r['actions'])})に「文字で話す」などの選択肢が無い")
+    if r.get("actions") and not r["quick_replies"]:  # 履歴書・音声のボタンだけだと、ボタンを使わない人の選択肢が無い
+        v.append(f"操作ボタン({'/'.join(r['actions'])})に文字の選択肢(答えの候補や「今はいい」)が無い")
+    if emoji := [x for x in [b.get("label", "") for b in r.get("buttons") or []] + list(r["quick_replies"]) if EMOJI.search(x)]:
+        v.append(f"ボタンや選択肢に絵文字がある(トークの決まりは絵文字なし): {emoji}")
     if len(r["cards"]) > JOBS_MAX:
         v.append(f"求人カードが{len(r['cards'])}件(最大3)")
     if any(not c.get("reasons") for c in r["cards"]):
@@ -1459,6 +1464,48 @@ def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | N
     return out
 
 
+# LINE の通数(task 231): 返信を LINE のメッセージにする line_channel.to_messages をオフラインで通して数える。
+# LIFF の設定の代わりに、その会話で使えたもの(features)を渡す。公開 URL は数えるためだけの仮のもの(どこにも送らない)
+LINE_COUNT_BASE = "https://line-count.invalid"
+GREETING_LINE_MAX = 2  # 初回訪問の挨拶は 2 通まで(本文と、問いを見出しにした入口のボタン)
+
+
+def line_message_counts(turns: list[dict], features: list[str] | tuple[str, ...] = (), visit: bool = False) -> list[int]:
+    """各ターンの返信が LINE で何通になるか(line_channel.to_messages の数)。visit: 会話が初回訪問の挨拶で始まった
+    (シナリオの event が visit)。そのときだけ、1 ターン目を挨拶のターンとして数える(問いがボタンの見出しになる)。
+    2 ターン目からは、会話の入口が visit でも挨拶ではない(server._line_turn と同じ決め方)。"""
+    return [len(line_channel.to_messages(r, LINE_COUNT_BASE, tuple(features), visit_greeting=visit and i == 0))
+            for i, r in enumerate(turns)]
+
+
+def entry_labels(r: dict) -> dict[str, str]:
+    """その返信が出した入口と、LINE のボタンの文言(actions は LIFF_ACTIONS、ゲームは buttons の label)。"""
+    labels = {a: line_channel.LIFF_ACTIONS[a][0] for a in ENTRY_ACTIONS if a in (r.get("actions") or [])}
+    for b in r.get("buttons") or []:
+        url = str(b.get("url", ""))
+        if url.startswith(ARCADE_PATH) and not url.startswith(ARCADE_DRAFT_PATH):
+            labels.setdefault("arcade", str(b.get("label", "")).strip())
+    return labels
+
+
+def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
+                             features: list[str] | tuple[str, ...] = ()) -> list[str]:
+    """LINE の初回訪問の挨拶(docs/design/line-sim-scenarios.md の 12 章): 2 通まで。入口のボタンの文言は、
+    ゲームの文言(line_channel.ARCADE_LABEL)と同じで、本文(吹き出し)に同じ言い方で出ている。"""
+    if channel != "line" or sc.get("event") != "visit" or not turns:
+        return []
+    first, out = turns[0], []
+    if (n := line_message_counts(turns[:1], features, visit=True)[0]) > GREETING_LINE_MAX:
+        out.append(f"T1: 初回訪問の挨拶が LINE で {n} 通({GREETING_LINE_MAX} 通まで)")
+    labels = {e: lb for e, lb in entry_labels(first).items() if e in features}
+    if labels.get("arcade", line_channel.ARCADE_LABEL) != line_channel.ARCADE_LABEL:
+        out.append(f"T1: ゲームのボタンの文言が「{labels['arcade']}」(「{line_channel.ARCADE_LABEL}」)")
+    body = "".join(first["bubbles"])
+    if missing := [lb for lb in labels.values() if lb not in body]:
+        out.append(f"T1: 入口のボタンの名前が本文に無い(言い方がずれている): {missing}")
+    return out
+
+
 def action_offers(turns: list[dict]) -> list[dict]:
     """履歴書・音声の提案(actions)が出たターンと種類(頻度と場面を見るため。違反ではない)。"""
     return [{"turn": i + 1, "actions": r["actions"]} for i, r in enumerate(turns) if r.get("actions")]
@@ -1498,6 +1545,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     violations += greeting_entry_violations(sc, turns, channel, features)
     violations += greeting_wording_violations(sc, turns, tracks[0] if tracks else DEFAULT_TRACK)
     violations += draft_number_violations(sc, turns, user_msgs, channel, features)
+    violations += line_greeting_violations(sc, turns, channel, features)
     if sc.get("expect_uses_preferences") and first:
         seeds = [str(v) for v in (sc.get("seed_preferences") or {}).values()]
         if not any(v in "\n".join(first["bubbles"]) for v in seeds):
@@ -1546,6 +1594,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
         "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
+        # 各ターンの返信が LINE で何通になるか(LINE の窓口の会話だけ。Web は None)
+        "line_messages": line_message_counts(turns, features, sc.get("event") == "visit") if channel == "line" else None,
         "outcomes": outcomes,
         "outcome_recorded": bool(outcomes),
         "outcome_as_expected": as_expected,

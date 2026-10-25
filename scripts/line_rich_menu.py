@@ -74,15 +74,17 @@ def items() -> list[Item]:
     def uri(label: str, subpath: str) -> dict:
         return {"type": "uri", "label": label, "uri": line_channel.liff_page_url(subpath)}
 
+    def liff_item(key: str, sub: str) -> Item:  # 文言はトークのボタン(LIFF_ACTIONS)と同じ
+        label, subpath = line_channel.LIFF_ACTIONS[key]
+        return Item(key, label, sub, uri(label, subpath))
+
     out = []
     if "voice_consult" in features:
-        out.append(Item("voice_consult", "音声で相談", "話して伝える(約5分)",
-                        uri("音声で相談", line_channel.LIFF_ACTIONS["voice_consult"][1])))
-    out.append(Item("resume_upload", "履歴書を読み込む", "PDF・写真から",
-                    uri("履歴書を読み込む", line_channel.LIFF_ACTIONS["resume_upload"][1])))
+        out.append(liff_item("voice_consult", "話して伝える(約5分)"))
+    out.append(liff_item("resume_upload", "PDF・写真から"))
     if "arcade" in features:
-        out.append(Item("arcade", "ゲームで書類を作る", "遊びながら書類づくり",
-                        uri("ゲームで書類を作る", line_channel.ARCADE_PATH.removeprefix("/liff/"))))
+        out.append(Item("arcade", line_channel.ARCADE_LABEL, "遊びながら下書きを作る",
+                        uri(line_channel.ARCADE_LABEL, line_channel.ARCADE_PATH.removeprefix("/liff/"))))
     out.append(Item("jobs", JOBS_TEXT, "条件を聞いて探します", {"type": "message", "label": JOBS_TEXT, "text": JOBS_TEXT}))
     return out
 

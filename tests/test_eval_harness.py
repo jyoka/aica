@@ -222,7 +222,7 @@ class CareerAgent(BaseChatModel):
             msg = call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb")
         elif "転職" in text:  # 経歴の要る場面で、履歴書の操作を出す
             msg = reply(["正社員のお仕事で考えますね。職務経歴書があれば、読み込むと早いです。", "なぜ今、転職を考えているのですか?"],
-                        quick_replies=["文字で話す", "今はいい"], actions=["resume_upload"])
+                        quick_replies=["新しい企画をしたい", "今はいい"], actions=["resume_upload"])
         else:
             msg = reply(["正社員のお仕事で考えますね。なぜ今、転職を考えているのですか?"], quick_replies=["今はいい"])
         return ChatResult(generations=[ChatGeneration(message=msg)])
