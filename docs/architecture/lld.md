@@ -188,7 +188,7 @@ classDiagram
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
-| 本人が話した希望と、本人について | `PREFERENCE_KEYS`、`FULLTIME_PREFERENCE_KEYS`、`PREFERENCE_VALUE_MAX`、`ADDRESS_LIKE`、`address_spans`、`save_preferences` |
+| 本人が話した希望と、本人について | `PREFERENCE_KEYS`、`FULLTIME_PREFERENCE_KEYS`、`PREFERENCE_VALUE_MAX`、`save_preferences`。個人情報らしい値かは `resume_draft.pii.personal_value`(1.8) |
 | 雇用区分 | `TRACKS`、`search_track`、`track_history`、`set_search_track` |
 | 相談の playbook | `PLAYBOOK_FILES`、`CHANNELS`、`CONVERSATION_RULES`、`VOICE_CONVERSATION_RULES`、`counseling_playbook` |
 | 音声相談の結果 | `record_voice_result`、`voice_results_since`、`voice_result`、`record_voice_room`、`voice_room_forgotten` |
@@ -323,9 +323,14 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
 | `schema.py` | Resume Draft の形と envelope(5.5) | `ResumeDraft`(と 5 つの部品の型)、`envelope`、`document_kind_of`、`FORMAT_VERSION`(`1.0`)、`FORMAT_VERSION_WITH_KIND`(`1.1`)、`PERSONAL_KEYS`、`DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`JST` |
-| `pii.py` | 電話、メール、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
+| `pii.py` | 電話、メール、住所、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`ADDRESS_LIKE`、`address_spans`(住所)、`personal_value`、`redact_personal`(電話、メール、住所)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
 
 - `has_pii` と `redact_pii` は電話とメールを探します。トークの発言、希望、相談の記録の照合に使います
+- `ADDRESS_LIKE` は住所らしい所(番地、丁目、`1-2-3` の形、市区町村名の直後の `3-5` の形)です。年収や日付の幅(`400-500万円`、`3-6か月`、`2026-09-30`)は数えません。
+  `address_spans` は、当たった所を区切り(空白、句読点、括弧)までの語に広げた範囲です
+- `personal_value` は、値に電話、メール、住所らしい所があるかです。dip の希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、
+  フォームの続き(`resume_form`)が、本人の値を受け取るかをこれで決めます。`redact_personal` は同じ 3 つを伏せます。
+  相談の理由とまとめ(`record_outcome`)と、雇用区分の根拠(`set_search_track`)に使います
 - `scrub_pii` は Resume Draft の文字列から、電話、メール、郵便番号を消します。`PII_VALUE` より広く取ります
   (区切りが空白 1 つの電話番号、郵便番号も消す)。`SCRUB_PATTERNS` を順に当てるのを、元の文字列と `fold_pii` でそろえた文字の両方で行い、
   どちらかで消えた位置を元の文字列から消します(`fold_pii` は 1 文字を 1 文字に写すので位置は同じ)。元の文字列でも照合するのは、
@@ -484,8 +489,10 @@ flowchart LR
   エージェントが指定し直せるようにするためです
 - 保存のツールは、受け付けなかった項目と理由を返します(`save_preferences` は `rejected` と `note`、`resume_form` は `rejected_pii` と `note`)
 - `record_outcome` は、`wait` の理由に `REFUSAL_WORDS` の断りの言葉が無ければ記録しません。相談のまとめが 200 字を超えても記録しません。
-  理由とまとめからは電話、メール、住所らしい所を消します(`redact_pii`、`address_spans`)
-- `set_search_track` は根拠の発言が空なら記録しません。根拠からは電話とメールを消し、200 字で切ります
+  理由とまとめからは電話、メール、住所らしい所を消します(`redact_personal`)
+- `set_search_track` は根拠の発言が空なら記録しません。根拠からは電話、メール、住所らしい所を消し(`redact_personal`)、200 字で切ります
+- `resume_form` は、`PII_FIELDS` の項目と、値に電話、メール、住所らしい所を含む項目(`personal_value`)を `rejected_pii` に入れ、
+  「入力済み」にしません(`form_fill` に書かない)。残りは LIFF 画面で入れてもらいます
 
 Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
@@ -1716,8 +1723,10 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 9. 個人情報: 読み取り結果と下書きの `personal` は空です(`test_save_resume_upload_blanks_personal_and_scrubs_pii`、
    `tests/voice/test_drafter.py::test_finalize_envelope_has_blank_personal`)。希望には電話、メール、住所らしい値を保存しません
    (`tests/test_dip.py::test_preferences_reject_unknown_keys_and_pii`、`::test_preferences_accept_numbers_and_reject_addresses`)。
-   フォーム(`logic.resume_form`)が断るのは、個人情報の項目名と、値の電話とメールです。住所らしい値は断りません
-   (`::test_resume_form_rejects_pii_in_values_of_other_fields`、R7)。
+   フォーム(`logic.resume_form`)は、個人情報の項目名と、値の電話、メール、住所らしい所を断ります
+   (`::test_resume_form_rejects_pii_in_values_of_other_fields`、`::test_resume_form_rejects_address_like_values`)。
+   希望の保存、まとめを直す、フォーム、雇用区分の根拠は、同じ決まり(`resume_draft/pii.py`)で見分けます
+   (`tests/test_isolation.py::test_one_address_rule_for_preferences_summary_form_and_track`)。
    全角の電話番号も `has_pii` で見つけます(`test_fullwidth_and_long_vowel_phone_numbers_are_caught`)。
    読み取りと下書きは、同じ LLM の出力から同じ形の Resume Draft を出し、全角で書いた電話、メール、郵便番号も消します。
    envelope の形(`format_version` を含む)と、LLM に送るスキーマは固定値と同じです(`tests/test_resume_draft.py`)

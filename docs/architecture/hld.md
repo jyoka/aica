@@ -296,7 +296,7 @@ flowchart LR
     lr -- "scenarios(開発者画面)" --> ev
     lr --> ri
     lr -- "livekit_token、config" --> vr
-    dm -- "ResumeDraft、scrub_pii、has_pii" --> rd
+    dm -- "ResumeDraft、scrub_pii、personal_value、redact_personal" --> rd
     ri -- "ResumeDraft、envelope、scrub_pii" --> rd
     vr -- "ResumeDraft、envelope、scrub_pii" --> rd
     lr -- "document_kind_of" --> rd
@@ -791,13 +791,16 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 
 - 履歴書と下書きの `personal`(氏名、住所、電話、メール、生年月日)は、何が来ても空で保存します
 - 希望とプロフィールの値は、決まった項目だけを受け付け、電話、メール、住所らしい値は保存しません(`logic.save_preferences`)
+- 応募フォームの続きは、個人情報の項目と、値に電話、メール、住所らしい所を含む項目をトークで受け取らず、LIFF 画面を案内します(`logic.resume_form`)
 - 履歴書のファイル本体とファイル名は保存しません
 - レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。答えはそのブラウザの localStorage にだけ残り、サーバーには送りません(4.11)
 - 本人がトークに書いた文は、そのまま会話に保存し、LLM のプロバイダに送ります。個人情報が書かれても消しません
 - 音声相談の文字起こしは `data/voice-resume/` に保存します
-- 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`(トークの発言、希望、相談の記録)と、
+- 個人情報の決まりは `resume_draft/pii.py` の 1 か所です。電話とメールを探す `has_pii`、住所らしい所を探す `ADDRESS_LIKE` と、
   Resume Draft から電話、メール、郵便番号を消す `scrub_pii`(読み取り結果、下書き、dip への保存)があります。
-  どちらも全角の数字やハイフンを `fold_pii` でそろえてから照合します
+  dip は、本人の値を受け取るかを `personal_value`(電話、メール、住所。希望の保存、まとめを直す、フォームの続き)で決め、
+  文の中を `redact_personal`(同じ 3 つ。相談の理由とまとめ、雇用区分の根拠)で伏せます。
+  どれも全角の数字やハイフンを `fold_pii` でそろえてから照合します
 
 ### ユーザーの分離
 

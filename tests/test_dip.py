@@ -167,6 +167,22 @@ def test_resume_form_rejects_pii_in_values_of_other_fields(state):
     assert not state.user("sim-exit").get(behavior.WRITES)  # 何も書かない
 
 
+@pytest.mark.parametrize("value", ["渋谷区神南1-2-3", "みほん市みほん町3丁目", "みほん町３－５", "東京都みほん市1-2-3から通う"])
+def test_resume_form_rejects_address_like_values(state, value):
+    """住所らしい値は、項目名が個人情報の項目でなくても受け取らない(希望の保存・まとめと同じ決まり)。"""
+    r = logic.resume_form(state, "sim-exit", "a002", {"希望開始日": value})
+    assert r["rejected_pii"] == ["希望開始日"] and "希望開始日" in r["remaining_fields"]
+    assert r["liff_url"].startswith("/liff/apply") and "個人情報" in r["note"]
+    assert "希望開始日" not in logic.form_exit(state, "sim-exit")["completed_fields"]
+    assert not state.user("sim-exit").get(behavior.WRITES)  # 「入力済み」にしない
+
+
+@pytest.mark.parametrize("value", ["2026-10-01から", "1-2週間後", "来週から"])
+def test_resume_form_accepts_dates_and_ranges_that_are_not_addresses(state, value):
+    r = logic.resume_form(state, "sim-exit", "a002", {"希望開始日": value})
+    assert r["rejected_pii"] == [] and "希望開始日" not in r["remaining_fields"]
+
+
 def test_outcome_reason_is_scrubbed_of_pii(state):
     logic.record_outcome(state, "sim-yoru", "consult", "電話は090-1234-5678、メールは a.b@example.com", 0.5)
     reason = state.user("sim-yoru")["outcomes"][-1]["reason"]

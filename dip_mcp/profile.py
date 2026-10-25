@@ -23,7 +23,7 @@ import json
 
 from dip_mcp import behavior, logic
 from dip_mcp.data import State, now
-from resume_draft.pii import fold_pii, has_pii
+from resume_draft.pii import personal_value
 from resume_draft.schema import document_kind_of
 
 # 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
@@ -135,7 +135,7 @@ def edit_summary(state: State, line_user_id: str, text: str) -> dict:
     text = str(text or "").strip()
     if not text:
         return {"error": "empty", "message": ERRORS["empty"]}
-    if has_pii(text) or logic.ADDRESS_LIKE.search(fold_pii(text)):
+    if personal_value(text):
         return {"error": "personal_info", "message": ERRORS["personal_info"]}
     if len(text) > logic.CONSULTATION_SUMMARY_MAX:
         return {"error": "too_long", "message": f"{logic.CONSULTATION_SUMMARY_MAX}字以内で入力してください。"}
