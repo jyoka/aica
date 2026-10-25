@@ -135,9 +135,9 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
-        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        reply(["何から始めるか、一緒に整理しましょう。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         switch_and_read(uid, BAITO, "空いた時間のアルバイト"),
-        reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
               quick_replies=["生活費の足しに", "経験を積みたい", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"purpose": "働く経験を積みたい",
                                                                           "wants": "人と話す接客"}}),
@@ -195,14 +195,14 @@ def test_consult_from_a_sign_of_being_lost_digs_instead_of_listing_job_types(tmp
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(uid, BAITO, "バイトを探したいけど、何から始めればいいか分からない"),
-        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+        reply(["アルバイトで何から始めるか、一緒に整理しましょう。",
                "今回、バイトを探そうと思ったのはなぜですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {
             "purpose": "生活費の足し", "experience": "コンビニで半年"}}),
         reply(["生活費の足しにしたいのですね。コンビニで半年されていたんですね。",
                "コンビニの仕事で、楽しかったのはどんな場面でしたか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"wants": "お客さんと話すこと"}}),
-        reply(["お客さんと話すのが楽しかったのですね。", "例えば、どんな話をしたときに楽しいと感じましたか?"],
+        reply(["例えば、お客さんとどんな話をしたときに楽しいと感じましたか?"],
               quick_replies=["常連さんとの世間話", "今はいい"]),
     ])
     said = [None, "バイトを探したいけど、何から始めればいいか分からない", "生活費の足しに。コンビニで半年やっていました",
@@ -233,10 +233,10 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
-        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        reply(["何から始めるか、一緒に整理しましょう。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         switch_and_read(uid, BAITO, "バイトは未経験です",
                         ("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}})),
-        reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
               quick_replies=[]),
         call("record_conversation_outcome", {"line_user_id": uid, "outcome": "consult", "reason": "相談のみ",
                                              "confidence": 0.7}),
@@ -258,7 +258,7 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         playbook("未定"),
-        reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
+        reply(["何から始めるか、一緒に整理しましょう。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
         reply(["居酒屋のホールを1年されていたんですね。", "今回、お仕事を探そうと思ったきっかけは何ですか?"],
               quick_replies=[]),

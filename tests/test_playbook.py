@@ -202,12 +202,12 @@ def career_script(third: dict | None = None) -> list:
         call("get_user_conversation_summary", {"line_user_id": UID}),
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(UID, SEISHAIN, SAID[1]),
-        reply(["正社員のお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+        reply(["正社員の転職について、一緒に整理しましょう。",
                "履歴書では法人営業を4年、プロダクトマネージャーを4年されていたんですね。そのうえで、なぜ今、転職を考えているのですか?"],
               quick_replies=["企画の幅を広げたい", "営業の経験を活かしたい", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {
             "purpose": "新しいプロダクトを最初から企画する経験を積みたい"}}),
-        reply(["新しいプロダクトを最初から企画する経験を積みたいのですね。", "そう感じたのは、どんな場面でしたか?"],
+        reply(["新しいプロダクトを最初から企画したいと感じたのは、どんな場面でしたか?"],
               quick_replies=[]),
     ]
     if third is not None:
@@ -323,13 +323,13 @@ def test_switching_track_mid_conversation_rereads_the_playbook(tmp_path):
     その会話の決まり(吹き出しの字数)と保存先で続ける。条件だけ(相談に入っていない)のアルバイト・パートへの
     切り替えでは playbook を読まない(task 132: 呼び出しを重ねない)。"""
     said = [None, "渋谷あたりでカフェのバイトを探しています", "やっぱり正社員で探したいです。販売の仕事で店長を目指したい"]
-    long = ("正社員のお仕事で考えますね。カフェのホールでの経験を、販売の店長を目指すお仕事につなげられるように、"
-            "正社員の求人を探す前に、目的や強み、条件をいくつか伺いながら一緒に整理します。")
+    long = ("正社員で、合うお仕事を考えますね。カフェのホールでの経験を、販売の店長を目指すお仕事につなげられるように、"
+            "正社員の求人を探す前に、目的や強み、条件を何から始めるか、一緒に整理しましょう。")
     assert 80 < len(long) <= 120
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": said[1]}),
-        reply(["アルバイト・パートのお仕事で考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=[]),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", "カフェでのお仕事の経験はありますか?"], quick_replies=[]),
         switch_and_read(UID, SEISHAIN, said[2]),
         reply([long, "店長を目指したいと思ったのは、なぜですか?"], quick_replies=[]),
     ])
@@ -380,7 +380,7 @@ def length_script(after_dig: list) -> list:
     return [
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(UID, BAITO, LENGTH_SAID[1]),
-        reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
+        reply(["アルバイトで何から始めるか、一緒に整理しましょう。",
                "勉強と並行して働きたいと思ったのは、どんな理由からですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"purpose": "介護の資格の学費を自分でまかないたい"}}),
         reply(["学費を自分でまかないたいのですね。", "学費のほかに、このパートで得たいことはありますか?"],
@@ -390,7 +390,7 @@ def length_script(after_dig: list) -> list:
     ]
 
 
-CONDITIONS = reply(["介護の現場を見ておきたいのですね。", "勉強の時間を除くと、働ける曜日・時間帯と、通いやすいエリアを教えてもらえますか?"],
+CONDITIONS = reply(["介護の現場を見ておくために、勉強の時間を除いて働ける曜日・時間帯と、通いやすいエリアを教えてもらえますか?"],
                    quick_replies=["平日の日中", "今はいい"])
 SAVE_CONDITIONS = call("save_user_preferences", {"line_user_id": UID, "preferences": {
     "time_band": "日中", "days_per_week": "週2日", "area": "大宮"}})
@@ -435,12 +435,12 @@ def test_digging_twice_and_asking_conditions_one_by_one_is_caught(tmp_path):
     """前の決まり(目的とやりたいことを最低1回ずつ掘り下げ、条件を1つずつ聞く)のままの5問目の提案は、評価の判定が捕まえる。"""
     said = [*LENGTH_SAID[:4], "利用者さんとの関わり方を、近くで見てみたいです", "平日の日中、週2日くらいです", "大宮あたりです"]
     model = ConsultModel(script=length_script([
-        reply(["介護の現場を見ておきたいのですね。", "『現場を見ておきたい』というのは、例えばどんなことですか?"],
+        reply(["『現場を見ておきたい』というのは、例えばどんなことですか?"],
               quick_replies=[]),
         reply(["利用者さんとの関わり方を近くで見たいのですね。", "勉強の時間を除くと、働けるのはいつですか?"],
               quick_replies=["平日の日中", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "日中", "days_per_week": "週2日"}}),
-        reply(["平日の日中、週2日ですね。", "通いやすいエリアはどのあたりですか?"], quick_replies=[]),
+        reply(["通いやすいエリアはどのあたりですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {"area": "大宮"}}),
         reply(["大宮の平日日中・週2日で整理しました。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
@@ -456,7 +456,7 @@ def _q(text: str, **kw) -> dict:
 
 
 GREETING = t(["はじめまして。どうしますか?"], quick_replies=MENU)
-READ = t(["いくつか伺いながら一緒に整理します。", "今回バイトを探そうと思ったきっかけは何ですか?"], [_read(BAITO)])
+READ = t(["何から始めるか、一緒に整理しましょう。", "今回バイトを探そうと思ったきっかけは何ですか?"], [_read(BAITO)])
 ASK_JOBS = _q("この内容で求人を見ますか?", quick_replies=("求人を見る", "もう少し相談したい", "今はいい"))
 DIG = [_q("どんな場面でそう感じましたか?"), _q("ほかに、やってみたいことはありますか?"),
        _q("避けたいことはありますか?"), _q("今の生活で変えたいことはありますか?")]
@@ -573,7 +573,7 @@ def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path)
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         call("set_search_track", {"line_user_id": UID, "track": BAITO, "evidence": SIDE_SAID[1]}),
-        reply(["アルバイト・パートのお仕事で考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "今はいい"]),
+        reply(["アルバイト・パートで、合うお仕事を考えますね。", SIDE_ASK], quick_replies=["平日の夜", "土日", "今はいい"]),
         calls(("save_user_preferences", {"line_user_id": UID, "preferences": {"time_band": "平日の19時以降か土日",
                                                                                      "area": "新宿あたり"}}),
               ("recommend_jobs", {"line_user_id": UID, "employment_type": BAITO, "area": "新宿", "time_band": "夜"}),

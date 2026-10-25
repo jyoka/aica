@@ -168,7 +168,7 @@ def test_weak_signal_asks_one_question_instead_of_switching(tmp_path):
         reply(["経験を活かしたいのですね。", CONFIRM], quick_replies=["正社員", "空いた時間のアルバイト", "今はいい"]),
         switch("正社員", answer),
         call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb"),
-        reply(["正社員のお仕事で考えますね。", "これまでの経験で、特に活かしたいのはどんなことですか?"],
+        reply(["正社員で、合うお仕事を考えますね。", "これまでの経験で、特に活かしたいのはどんなことですか?"],
               quick_replies=[]),
     ])
     user_msgs = [None, weak, answer]
@@ -231,7 +231,7 @@ def test_undo_in_conversation_returns_to_the_previous_track(tmp_path):
 
     model = TrackModel(script=[
         switch("正社員", "正社員で探したい"),
-        reply(["正社員のお仕事で考えますね。", "どんなお仕事を考えていますか?"], quick_replies=[]),
+        reply(["正社員で、合うお仕事を考えますね。", "どんなお仕事を考えていますか?"], quick_replies=[]),
         call("get_user_conversation_summary", {"line_user_id": UID}, "sum"),
         undo_from_history,
         reply(["承知しました。アルバイトに戻して考えますね。", "働きたい時間帯はありますか?"],
@@ -272,7 +272,7 @@ def test_revisit_greeting_starts_from_the_recorded_track(tmp_path):
     model = TrackModel(script=[
         WELCOME,
         switch("正社員", "転職を考えています"),
-        reply(["正社員のお仕事で考えますね。", "転職で一番変えたいことは何ですか?"], quick_replies=[]),
+        reply(["正社員で、合うお仕事を考えますね。", "転職で一番変えたいことは何ですか?"], quick_replies=[]),
         greet_from_track, greet_from_track,
     ])
     *_, again = run(model, [(UID, "visit", None), (UID, "message", "転職を考えています"), (UID, "revisit", None)],
@@ -309,7 +309,7 @@ def test_another_browser_cannot_switch_someone_elses_track(tmp_path, monkeypatch
         assert ua != ub
 
         model.script += [switch("正社員", "正社員で探したい", uid=ua),  # A の匿名ユーザーIDが決まってから台本を用意する
-                         reply(["正社員のお仕事で考えますね。", "どんなお仕事を考えていますか?"], quick_replies=["今はいい"])]
+                         reply(["正社員で、合うお仕事を考えますね。", "どんなお仕事を考えていますか?"], quick_replies=["今はいい"])]
         r = a.post("/api/event", json={"user_id": ua, "event": "message", "text": "正社員で探したい"})
         assert r.status_code == 200 and [t["name"] for t in r.json()["tools"]] == ["set_search_track"]
 
