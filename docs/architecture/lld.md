@@ -2262,7 +2262,7 @@ python3 -m unittest discover -s evalkit  # evalkit
 ### 評価(実 API を使う、費用がかかる)
 
 ```bash
-./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 8]
+./.venv/bin/python -m evals.run [--only B-exit,T-side-job] [--judge] [--repeat 2] [--max-turns 12]
 ./.venv/bin/python -m evals.run --rejudge evals/baseline/sim-20260929-100418.json
 python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.json
 ./.venv/bin/python -m evals.search_eval eval     # 意味検索の再現率(保存済みのベクトルでオフライン)
@@ -2270,7 +2270,8 @@ python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.j
 
 - 採点はコード(`evals/checks.py`)が中心です。LLM ジャッジは `--judge` のときだけです
 - 比べるときは evalkit の `diff` を使い、ノイズ幅を超えた差だけを改善か悪化とします
-- 1 会話のエージェントのターンは `--max-turns`(既定 8)までです。シナリオの `max_turns` が小さければ、そちらを使います
+- 1 会話のエージェントのターンは、シナリオの `max_turns`(無ければ 8)までです。相談のシナリオ 5 件は 12 です。`--max-turns`(既定 12)は全体の上限で、シナリオの値より小さければ、そちらを使います
+- 上限で切れた会話は、結果の `cut_at_cap` と md の「ターンの上限で切れた会話」に出ます。模擬ユーザーが設定の指示文を発言にしたら、`sim_leaks` に出ます
 
 ### 履歴書の読み取り(実 API を使う、費用がかかる)
 
