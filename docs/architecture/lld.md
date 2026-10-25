@@ -89,7 +89,7 @@ flowchart TB
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
-| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
+| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限 | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する | `PRICES`、`cost_usd`、`Ledger`、`summarize` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
@@ -139,18 +139,26 @@ classDiagram
     class ScenarioMiddleware {
         awrap_model_call: 指示に dip の Prompt とユーザーIDを足す
     }
+    class TurnCallLimitMiddleware {
+        awrap_model_call: 1 ターンのモデルの呼び出しを 10 回までにする
+    }
     class PinUserMiddleware {
         awrap_tool_call: line_user_id を会話のユーザーに固定する
     }
     LineRuntime --> Ledger
     LineRuntime ..> LineReply : 構造化出力
     LineRuntime ..> ScenarioMiddleware : build_agent
+    LineRuntime ..> TurnCallLimitMiddleware : build_agent
     LineRuntime ..> PinUserMiddleware : build_agent
 ```
 
 エージェントは `build_agent` が LangChain の `create_agent` で作ります。
 
-- middleware は外側から `ScenarioMiddleware`、`AnthropicPromptCachingMiddleware`(OpenAI では何もしない)、`PinUserMiddleware` の順です
+- middleware は外側から `ScenarioMiddleware`、`TurnCallLimitMiddleware`、`AnthropicPromptCachingMiddleware`(OpenAI では何もしない)、`PinUserMiddleware` の順です
+- `TurnCallLimitMiddleware` は、1 ターン(最後の本人の入力より後)のモデルの呼び出しを `MAX_MODEL_CALLS_PER_TURN`(10)回までにします。
+  10 回目の指示には、ツールを呼ばずに返信するよう添え書き(`LAST_CALL_NOTE`)を足します。それでもツールを呼んだら、11 回目はモデルを呼ばずに
+  決まった返信(`TURN_LIMIT_REPLY`。うまくまとめられなかったので短く聞き直してほしい)でターンを終えます。この返信は LLM を呼んでいないので、
+  費用台帳と画面の `llm` の行には載せません(`additional_kwargs` の `turn_limit`)
 - `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
 - `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
@@ -488,7 +496,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
 | `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
 | `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
-| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す |
+| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
 
@@ -500,7 +508,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | ワーカー → 画面 | `jobs` | 検索の結果(`jobs`、`total`) |
 | ワーカー → 画面 | `track` | 切り替えた雇用区分 |
 | ワーカー → 画面 | `draft` | 下書き(`document_kind`、`markdown`、`files`) |
-| 画面 → ワーカー | `end` | 「面談を終える」。ワーカーは `finalize_interview` を呼ぶよう指示して返信を作らせる |
+| 画面 → ワーカー | `end` | 「面談を終える」。ワーカーは `finalize_interview` を呼ぶよう指示して返信を作らせる。返信は相談ごとに 1 回だけで、2 回目からと時間切れの締めの後の `end` には返信しない(`agent.SessionGuard`)。その返信で下書きを保存できなかったら、時間切れのときに保存させる |
 
 ## 4. 主な流れ
 
@@ -557,7 +565,7 @@ sequenceDiagram
 - `render` は、会話の中のツールの結果と音声相談の結果から `CARD_KEYS` を持つものを拾い、モデルの `job_ids` のうち拾えたものだけをカードにします。
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
 
-Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と空の発言の確かめ、アップロードの事実
+Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と、空の発言・長すぎる発言(`MAX_TEXT_CHARS`、5000 字)の確かめ、アップロードの事実
 (`upload_facts`))を呼び、`turn.run` でターンを進めます。`run` は、プッシュなら上限に空きがあるかと `push_trigger` → `stale_thread` →
 `try_take` → `profile_notice` → LineRuntime の順に進み、行を順に出します。返信が返ったら `record_open` が、渡した知らせを消し
 (`profile.take_changes`)、本番のトーク画面(`thread` あり)の挨拶なら開いた記録を残し、読み取れなかったアップロードの事実を捨てます。
@@ -1266,13 +1274,22 @@ sequenceDiagram
 - 匿名ユーザーIDの数の上限は、会話のほか、シナリオの開始とプロフィールの書き換えにも効きます(`_admit`、超えると 429)
 - IPv6 は /64 を 1 つの IP として数えます。家庭の回線でも /64 以上をもらえるので、送信元のアドレスを替えて迂回できないようにするためです。
   IPv4 と IPv4 射影アドレス(`::ffff:1.2.3.4`)は 1 アドレスずつで、射影アドレスは元の IPv4 と同じ IP です
-- IP は既定で接続元の IP です。`X-Forwarded-For` は本人が書き換えられるので見ません。Render のようにプロキシの後ろに置くときは
+- IP は既定で接続元の IP です。`X-Forwarded-For` は本人が書き換えられるので見ません。Render や cloudflared のトンネルのようにプロキシの後ろに置くときは
   `AICA_TRUST_PROXY=1` にし(Render なら Environment に設定)、プロキシが付けた最後の値だけを使います。付けないと全員がプロキシの IP として数えられ、IP の上限ですぐ止まります
 - 上限を超えたら LLM を呼ばず、「本日のご利用回数の上限に達した、明日また使える」という案内を返します(返信に `limited: true`)。
   IP の上限は「この回線からの」、全体の上限は「本日はたくさんのご利用があり」と、どの上限か分かる文にします(`limit_reply`)
 - プッシュは、上限に空きが無ければ dip に聞く前に送らないと決めます。履歴書のアップロードと音声相談の開始は 429 です。空の発言は数える前に 400 で断ります
 - 当日の数は `data/quota.json` にあるので、再起動しても消えません。IP の数は当日の分だけです
 - 対象は Web の API だけです。評価(`evals.run`)は `LineRuntime` を直接使うので、上限はかかりません
+
+1 ターンの費用は、次の 2 つで縛ります(task 199)。どちらも 1 日のターンの上限の「1 ターン約 $0.05」が崩れないようにするためです。
+
+- 発言の長さ: `turn.MAX_TEXT_CHARS`(5000 字)を超える発言は、ターンを数える前に 400 で断ります(LINE の webhook も同じ `turn.accept` を通り、
+  何も返しません)。LINE のテキストメッセージの上限と同じ値です。Web のトーク画面の入力欄も `maxlength` で同じ長さにしています
+- モデルの呼び出し: 1 ターン 10 回まで(`TurnCallLimitMiddleware`、1.1)。評価の記録では、1 ターンのツールの呼び出しは多くて 5 回でした。
+  これは評価にもかかります
+- 残る課題: 会話の記録は刈り込まず、毎回すべて送り直します。会話が長く続くと 1 回の入力が大きくなります(会話は 30 分空くと替わり、
+  1 人 1 日 50 ターンまで)。費用台帳を使った 1 日の費用の上限もありません
 
 ### 5.4 音声相談の出力(`data/voice-resume/`)
 
@@ -1602,6 +1619,8 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
 | 結果を返す先 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` |
 | 出力先 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume/` |
+| 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消す(`agent.SessionGuard`) |
+| 1 回の相談の web の調べもの | `VOICE_RESUME_MAX_WEB_SEARCHES` | 5 回(`web_research`、`wage_average`、`research_company` の合計) |
 
 STT は聞き間違い(「時給の下限」が「地球の加減」になるなど)を比べて nova-3 と keyterm に決めました(旧リポジトリの task 37、
 `scripts/voice/eval_stt.py`)。

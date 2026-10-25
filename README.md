@@ -105,7 +105,10 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
    cloudflared tunnel --url http://127.0.0.1:8030            # 2 つ目のターミナル。https://<ランダム>.trycloudflare.com が出る
    ```
 
-5. 出た URL を `.env` の `AICA_PUBLIC_URL` に書き(例 `AICA_PUBLIC_URL=https://xxxx.trycloudflare.com`)、Web サーバーを起動し直す
+5. 出た URL を `.env` の `AICA_PUBLIC_URL` に書き(例 `AICA_PUBLIC_URL=https://xxxx.trycloudflare.com`)、
+   `.env` に `AICA_TRUST_PROXY=1` も書いて、Web サーバーを起動し直す。
+   トンネル越しの接続元は全員 `127.0.0.1` なので、これが無いと全員が 1 つの IP として数えられます。
+   1 人が Cookie を替えて匿名ユーザーIDを 20 個使うと、ほかの新しい Web の利用者はその日ずっと 429 になります(下の「設定」のターン数の上限)
 6. LINE Developers の「Messaging API設定」で、Webhook URL を `https://xxxx.trycloudflare.com/line/webhook` にし、
    「Webhookの利用」をオンにして「検証」を押す(成功と出れば、署名とつながりが合っています)
 7. 同じ画面の QR コードで友だち追加すると、挨拶が届きます。あとはトークに書けば、エージェントが返します
@@ -116,6 +119,9 @@ LINE 公式アカウントからも、Web のトーク画面と同じ会話が�
 - 求人カードのボタンと LIFF 画面へのリンクは、LINE の中のブラウザで `AICA_PUBLIC_URL` の画面を開きます。LIFF 画面は Cookie で
   本人を決めるので、LINE のユーザーの画面にはなりません(今は LINE でこのリンクが出る流れはありません。[HLD の 4.8](docs/architecture/hld.md#48-line-のトークmessaging-api))
 - ターン数の上限は LINE のユーザーごとと全体で数えます。IP ごとの上限は LINE にはかかりません
+- `AICA_TRUST_PROXY=1` のとき、IP は `X-Forwarded-For` の最後の値です。Cloudflare は本人が送った値の最後に、Cloudflare へつないだ接続元を足します
+  ([Cloudflare の HTTP ヘッダー](https://developers.cloudflare.com/fundamentals/reference/http-headers/))。
+  本人が書いた値は見ないので、書き換えても IP の上限を迂回できません。トンネルを止めて手元だけで使うときは、`.env` から消してかまいません
 
 ### アカウント連携を試す
 
@@ -216,7 +222,7 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `AICA_DAILY_NEW_IDS_PER_IP` | 20 | 同じ IP から 1 日に使える匿名ユーザーIDの数 | 可 |
 | `AICA_DAILY_TURN_LIMIT_TOTAL` | 1000 | 全体のターン数の合計 | 可 |
 | `AICA_DAILY_NEW_IDS_TOTAL` | 300 | 全体で 1 日に使える匿名ユーザーIDの数 | 可 |
-| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くときに使う | 可 |
+| `AICA_TRUST_PROXY` | なし | `1` のときだけ、IP を `X-Forwarded-For` の最後の値から取る。プロキシの後ろに置くとき(Render、cloudflared のトンネル)に使う。無いと全員がプロキシの IP として数えられる | 可 |
 
 LINE 公式アカウントで使うものです。LINE で試さないなら要りません。
 
@@ -237,6 +243,8 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
+| `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
+| `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
 | `VOICE_RESUME_*`(モデル、ボイス、ターンの判定) | [LLD の 7.1](docs/architecture/lld.md#71-音声の部品の設定) | STT、LLM、読み上げの設定 | 不可 |
 
 ## 文書

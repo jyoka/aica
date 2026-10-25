@@ -333,6 +333,8 @@ class LineRuntime:
                         msgs = update.get("messages", []) if isinstance(update, dict) else []
                         if node == "model":
                             for m in msgs:
+                                if m.additional_kwargs.get("turn_limit"):
+                                    continue  # 1ターンの呼び出しの上限で、LLM を呼ばずに返した返信(費用台帳に載せない)
                                 calls = getattr(m, "tool_calls", None) or []
                                 for c in calls:
                                     args[c["id"]] = c["args"]
