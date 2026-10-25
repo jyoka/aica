@@ -1096,6 +1096,29 @@ def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
     return out
 
 
+# ----------------------------- 評価そのものの確かさ(エージェントの違反には数えない) -----------------------------
+
+# 模擬ユーザーが設定(ペルソナ)の指示文を発言にしたしるし。「〜と書く」「〜と答える」は設定の書き方で、本人の発言には出ない
+# (2026-10-25 の T-switch-to-fulltime の U2「次の質問に答えるときに、考え直して「…」と書きます。」。evals/baseline/ と
+# jyoka/tasks#221 の結果の本人の発言 約 500 で、当たったのはこの1つだけ)
+SIM_DIRECTION = re.compile(r"と(書|答え|言|伝え|選)(く|る|う|ぶ|える|きます|ます|います|えます|びます)(?=[。、!！]|$)"
+                           r"|と言って終え|この言い方のまま|次の(質問|返信)に答えるときに")
+
+
+def sim_leaks(user_msgs: list[str | None]) -> list[str]:
+    """模擬ユーザーが設定の指示文をそのまま発言にした発言(U は user_msgs の添字。U2 は T3 が答える発言)。
+    エージェントは指示文に答えることになり、その後の判定(区分の切り替えの期限など)が崩れる。見つかったら、
+    その発言を台本(script)にする。"""
+    return [f"U{i}: {m}" for i, m in enumerate(user_msgs) if m and SIM_DIRECTION.search(m)]
+
+
+def conversation_end(n_turns: int, cap: int, ended_by_user: bool) -> dict:
+    """会話がどう終わったか。ended_by_user は、模擬ユーザー(か台本)が終えたか、何も返さなかったか。
+    そうでなくエージェントのターンが上限に達していれば、上限で切れた(その後の提案や反応を評価が見ていない)。"""
+    cut = not ended_by_user and n_turns >= cap
+    return {"turn_cap": cap, "ended_by": "turn_cap" if cut else "user", "cut_at_cap": cut}
+
+
 # ----------------------------- 下書きの空欄の数字(下書きに書き込むのは本人。会話の改善 C (7/10)) -----------------------------
 
 DRAFT_LABEL = "下書きを見る"
@@ -1252,4 +1275,5 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),
         "call_overlaps": call_overlaps(turns, user_msgs),
+        "sim_leaks": sim_leaks(user_msgs),
     }
