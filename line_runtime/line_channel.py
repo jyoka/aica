@@ -399,23 +399,32 @@ def _labeled(items: list[str]) -> list[str]:
     return [x.strip() for x in items if isinstance(x, str) and x.strip()]
 
 
+# 挨拶のターンで、入口のボタンの見出しにする吹き出し(初回訪問は最後の問い、再訪は最初の挨拶と勧め)
+GREETING_HEADINGS = {"visit": -1, "revisit": 0}
+
+
 def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, ...] | None = None,
-                visit_greeting: bool = False) -> list[dict]:
+                greeting: str | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト
     - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
       へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
-    - 初回訪問の挨拶のターン(visit_greeting)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出し
-      (「どれから始めますか?」)を入口のボタンの見出しにする(task 231。挨拶が「本文」と「問い + 入口のボタン」の 2 通になる)。
-      ほかの返信は見出しにしない: 再訪の確認の1問(「はい」で答える)や、同じ会話の後のターンの経験の1問の答えは、ボタンではなく
-      文字の選択肢なので、問いがボタンの見出しになると答えではないボタンの上に問いが載る。返信の entry は会話の入口で、
-      初回訪問で始まった会話のどのターンでも visit なので、挨拶のターンかどうかの印には使わない
+    - 挨拶のターン(greeting)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、吹き出しの 1 つを入口のボタンの見出しにする。
+      初回訪問(visit)は最後の吹き出し(「どれから始めますか?」)を見出しにする(task 231。「本文」と「問い + 入口のボタン」の 2 通)。
+      再訪(revisit)は最初の吹き出し(「おかえりなさい。」と勧めの1文)を見出しにし、ボタンの箱を先に置く(task 234。
+      「挨拶と勧め + 入口のボタン」と「確認の1問」の 2 通)。確認の1問は「はい」で答える問いなので、答えではないボタンの
+      見出しにせず、文字の選択肢と一緒に最後に残す。勧めの文はボタンのすぐ上に載る。吹き出しが 1 つの再訪の挨拶も、
+      ボタンの箱(見出しなし)を先に置き、問いを最後に残す。
+      ほかの返信は見出しにしない: 同じ会話の後のターンの経験の1問の答えは、ボタンではなく文字の選択肢なので、問いがボタンの
+      見出しになると答えではないボタンの上に問いが載る。返信の entry は会話の入口で、その会話のどのターンでも同じなので、
+      挨拶のターンかどうかの印には使わない
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。
     features は LINE で使えるもの(既定は liff_features()。評価が LINE の通数を数えるときに、設定の代わりに渡す)。
-    visit_greeting は、このターンが初回訪問の挨拶か(ターンの種類が greet で入口が visit。呼び出し元が turn.Turn から決める)。"""
+    greeting は、このターンが挨拶なら入口("visit" / "revisit")、挨拶でなければ None(ターンの種類が greet のときの入口。
+    呼び出し元が turn.Turn から決める)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
     features = liff_features() if features is None else tuple(features)
     actions = [a for a in dict.fromkeys(reply.get("actions") or []) if a in LIFF_ACTIONS]
@@ -437,14 +446,18 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
         buttons = [b for b in buttons if b not in dropped]
     links = [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
     links += [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
-    heading = bubbles.pop() if visit_greeting and links and not flex and len(bubbles) >= 2 else None
-    texts = bubbles + notes
+    headed = greeting in GREETING_HEADINGS and links and not flex and len(bubbles) >= 2
+    heading = bubbles.pop(GREETING_HEADINGS[greeting]) if headed else None
+    # 再訪の挨拶は、ボタンの箱を先に置き、確認の1問を最後に残す(吹き出しが 1 つでも。使えない操作の断りの文は問いの前)
+    lead = greeting == "revisit" and bool(links) and not flex
+    texts = notes + bubbles if lead else bubbles + notes
     if links:
         flex.append(_buttons_message(links, heading))
     room = MAX_MESSAGES - len(flex)
     if len(texts) > room:
         texts = [*texts[: room - 1], "\n\n".join(texts[room - 1:])]
-    messages = [_text(t) for t in texts] + flex
+    messages = [_text(t) for t in texts]
+    messages = flex + messages if lead else messages + flex
     if not messages:  # 送るものが無い(吹き出しが空): 入力中の表示のまま黙らない
         messages = [_text(FAILED_TEXT)]
     if quick := _labeled(reply.get("quick_replies") or []):

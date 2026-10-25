@@ -237,6 +237,7 @@ classDiagram
 | 見出し | 主な関数と定数 |
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
+| 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
 | 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
@@ -341,7 +342,7 @@ classDiagram
 |---|---|
 | `run.py` | 評価のハーネス。模擬ユーザーとエージェントを会話させて採点する(4.7)。`--rejudge` で保存した会話をジャッジだけで判定し直す |
 | `scenarios.json`、`scenarios.py` | シナリオの一覧(15 件)と、始める前の準備(`prepare`、`upload_resume`、`load_resume`)。開発者画面と共通 |
-| `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
+| `checks.py` | コードの判定。形式(`turn_violations`、`FORMAT_RULES`)、事実性(`fact_violations`)、希望の保存(`preference_violations`)、聞き直し、相談、条件の問い(`condition_question_violations`。1 問に 1 つ、必ず選択肢)、雇用区分(`track_expectations`)、アップロード、`conversation_checks` |
 | `judge.py` | LLM ジャッジ。相談の深さの 4 項目、トーン、設計への合い方(`design_fit`)、ひとこと(`comment`)。`samples` 回(既定 2)判定してまとめる |
 | `meter.py` | Anthropic と OpenAI の SDK の呼び出しをクラスごと包んで、トークンと費用を数える(評価だけで使う) |
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
@@ -698,6 +699,8 @@ flowchart LR
 
 - 本人の行動を読むツールは、`behavior.view`(要約に、会話の中で書いた分を重ねたもの)だけを読みます。行動の元データは読みません(5.8)。
   `get_user_conversation_summary`(連携している人)と `get_application_status` は、要約を作った時刻 `as_of` を返します
+- `get_user_conversation_summary` は、条件の問いの選択肢の候補 `condition_options` も返します(連携していない人にも)。`set_search_track` は、
+  区分を切り替えたときだけ、切り替えた後の区分の `condition_options` を返します(給与の区切りは区分で変わるので、要約を読み直さずに聞けるように。4.9)
 - Prompt `baitoru_assistant(entry)` は `prompts/baitoru_assistant.md` に、`entries.json` の入口の文(無い入口は `A`)を足して返します
 - Resource `baitoru://faq` は `fixtures/faq.json` をそのまま返します
 - 一覧に無い職種、エリア、属性の値は、0 件で返さずに `error` と使える値の一覧を返します(`_job_type_error`、`_area_error`、`_filters_error`)。
@@ -1286,7 +1289,7 @@ sequenceDiagram
 
 - 入口は、初回の挨拶の選択肢「まず相談する」と、本人が迷いや相談したいことを話したとき(「何から始めれば」「自分に合うのが分からない」)だけです。
   条件だけを言ったときは相談に入りません。本人が自分の状況や事情を話して探し始めたときも相談に入らず、掘り下げずに足りない条件
-  (エリアと、アルバイト・パートなら時間帯・曜日)だけを聞いて探します。条件はまとめて 1 問で聞いてよく、2 問までです。区分の確かめ(「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」)も条件の問いに数えます(評価は `situation_start_violations`。
+  (エリアと、アルバイト・パートなら時間帯・曜日)だけを聞いて探します。条件は 1 問に 1 つで選択肢を付け、2 問までです。区分の確かめ(「正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?」)も条件の問いに数えます(評価は `situation_start_violations`。
   [設計メモの 18 章](../design/line-sim-scenarios.md))
 - 入ったターンで今の区分の playbook を読みます。区分が変わったターン(切り替え、取り消し)では、新しい区分で読み直します
 - playbook には「明らかにすること」と「掘り下げ方」だけを書き、次に何を聞くか(順番)は決めません
@@ -1296,7 +1299,7 @@ sequenceDiagram
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯、曜日、エリア)、興味と得意、経験、不安 |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
-| `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、時間帯、日数など)はまとめて 1 問で聞いてよい。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
+| `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
 - playbook と dip の Prompt の例文は、評価のペルソナの発言と経歴に重ならない例にします(`tests/test_playbook.py` が確かめる)
 - 会話の決まり(`CONVERSATION_RULES`)は、アルバイト・パートと未定が v1 のまま(吹き出し 80 字、本人の 3 回目の返信までに会話の段階に入る)です。
@@ -1304,6 +1307,41 @@ sequenceDiagram
 - 話した内容は `save_user_preferences` で本人の言葉のまま保存し、そのまま求人の提案の条件にします。言い直しは要りません
 - 「今はいい」なら提案なしで終えます。途中で「求人を見せて」と言えば、その時点までの内容ですぐ提案に切り替えます。
   エリアだけは最低限の条件なので、まだ分からなければエリアの 1 問だけを聞いてから探します。分かっている経験とやりたいことは `keywords` に入れます
+
+#### 条件の問いの選択肢
+
+探す条件(エリア、職種、時給か年収、時間帯と曜日、週の日数、正社員なら働き方と時期)の問いは、1 問に 1 つだけ聞き、必ず選択肢を付けます
+(dip の Prompt の対話ルールの「条件の問い」、playbook の「探す条件」)。条件の問いは、選択肢なしでよい「自由な問い」に当たりません。
+LINE の実機(2026-10-26)で、エリアと年収の下限を 1 問で聞き、選択肢が無かったため(利用者の決定、2026-10-26。[設計メモの 22 章](../design/line-sim-scenarios.md))。
+
+エージェントが候補を作れずに選択肢を外さないよう、dip の要約に候補 `condition_options` を載せます(`logic.condition_options`。LLM を使わない)。
+項目の名前は `save_user_preferences` の項目と同じです。
+
+| 項目 | 候補 | 区分 |
+|---|---|---|
+| `area` | 本人が話したエリア(`stated_preferences` の area にある地名と駅名)、行動の傾向(`tendency` の area)、直近の応募のエリアの順。3 つに足りなければ、その区分の求人に多いエリアで埋める(同じ数なら `AREAS` の順) | すべて |
+| `job_type` | 行動の傾向と直近の応募の職種(区分の一覧にあるものだけ)。足りなければ区分の求人に多い職種。相談に入っていないときの「どんなお仕事を探しますか?」にだけ使う(相談の途中の仕事の方向は playbook のとおり本人の話から作る) | すべて |
+| `min_wage` | 「時給1200円〜」「時給1400円〜」「時給1600円〜」「こだわらない」 | アルバイト・パート |
+| `min_annual_salary` | 「400万円〜」「500万円〜」「600万円〜」「こだわらない」 | 正社員 |
+| `time_band` / `days_per_week` | 「平日の日中」「夕方から」「土日」/「週2〜3日」「週4日以上」 | アルバイト・パート |
+| `work_style` / `start_timing` | 「在宅もできる」「土日祝休み」「残業少なめ」/「すぐにでも」「3か月以内」「半年以内」 | 正社員 |
+
+区分が未定のときは `area` と `job_type` だけです(未定の playbook のとおり、給与と時間帯は区分が決まってから聞く)。
+
+給与の区切り(`PAY_STEPS`)は、求人データ(`fixtures`、2026-10-26 時点)の分布から決めました。どの区切りも求人を絞り、一番上の区切りでも
+区分の求人の 15% 以上が残るようにしています(`tests/test_condition_options.py` が確かめる)。
+
+| 区分 | 比べる値 | 求人の数 | 区切りごとに残る求人 |
+|---|---|---|---|
+| アルバイト・パート | 時給の下限(`Pay.min`。1,120〜2,400 円) | 63 | 1,200 円〜 57 件(90%)、1,400 円〜 33 件(52%)、1,600 円〜 17 件(27%) |
+| 正社員 | 年収の見込みの中央値(`annual_pay_mid`。月給は 12 か月分。288〜800 万円) | 40 | 400 万円〜 28 件(70%)、500 万円〜 18 件(45%)、600 万円〜 8 件(20%) |
+
+- 区切りは、区分の求人のおよそ 7〜9 割、半分、2〜3 割が残る、切りのよい値です。押すたびに結果が目に見えて変わり、どれを押しても 0 件にならない幅にしました
+- アルバイト・パートは、カード(jyoka/tasks#233)の例(1,100 円〜)より 100 円上げました。時給の一番低い求人が 1,120 円なので、1,100 円の区切りでは 1 件も絞れません
+- 求人データが変わって区切りが合わなくなったら、テストが落ちます。そのときは表を作り直して値を選び直します
+- 時給・年収の問いは、区切り 3 つと「こだわらない」で選択肢の上限(4 つ)になります。評価は、時給・年収の問いだけ「こだわらない」を「今はいい」と同じ逃げ道に数えます
+  (`evals.checks.PAY_ESCAPE`)。選ばれた区切りの数字を `min_wage` / `min_annual_salary` に渡し、「こだわらない」なら渡しません
+- 区切りの金額は求人の事実ではないので、評価の作り話の判定(`fact_violations`)は、`condition_options` の金額を根拠にしません
 
 選択肢の決まりです。
 
@@ -1471,7 +1509,9 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
     本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
-    保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです
+    保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです。
+    ただし新しい会話を始めるときに、同意の後の挨拶がまだ返っていなければ(`logic.greeting_due`)、テキストは友だち追加と同じ
+    挨拶のターンにします(下の「同意」)
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
     `logic.record_talk_open` で記録します(ブロックを解いてもう一度友だち追加すると再訪)
   - ターンの途中の失敗(`BadTurn`、`TurnFailed`、ほかの例外)と、LINE のメッセージにする途中の失敗は `FAILED_TEXT` を返します
@@ -1490,10 +1530,11 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
-- 初回訪問の挨拶のターン(引数 `visit_greeting`)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出しをボタンの Flex の見出し(`header`)と `altText` にします。
-  問いとその答えの入口のボタンが 1 つのメッセージになり、挨拶が 2 通になります。ほかの返信(再訪の挨拶、同じ会話の後のターンの経験を聞く 1 問など)は見出しにしません。
-  問いの答えがボタンではないからです。挨拶のターンかどうかは `server._line_turn` が受け付けたターンの種類(`greet`)と入口(`visit`)で決めて渡します。
-  `render` の `entry` は会話の入口で、同じ会話の後のターンでも `visit` のままなので使いません(`docs/design/line-sim-scenarios.md` の 12 章)
+- 挨拶のターン(引数 `greeting` が `visit` か `revisit`)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、吹き出しの 1 つをボタンの Flex の見出し(`header`)と `altText` にします(`GREETING_HEADINGS`)。
+  初回訪問は最後の吹き出し(問い)を見出しにし、問いとその答えの入口のボタンが 1 つのメッセージになります。再訪は最初の吹き出し(挨拶と勧めの 1 文)を見出しにして
+  ボタンの Flex を先に置き、確認の 1 問を最後のメッセージに残します(確認の 1 問の答えはボタンではないため)。どちらも挨拶が 2 通になります。
+  ほかの返信(同じ会話の後のターンの経験を聞く 1 問など)は見出しにしません。挨拶のターンかどうかは `server._line_turn` が受け付けたターンの種類(`greet`)と入口で決めて渡します。
+  `render` の `entry` は会話の入口で、同じ会話の後のターンでも同じなので使いません(`docs/design/line-sim-scenarios.md` の 12 章)
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
 - 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
@@ -1507,8 +1548,17 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   クイックリプライ「同意して始める」を付けます(`consent_messages`)。postback のデータは `aica-consent=<版の tag>` で、押した文がトークに出ます
 - 同意の前のテキストと「アカウント連携」にも同じものを返します。発言はターンに流さず、会話にも dip の状態にも残しません。
   「同意して始める」と文で送っても同意になりません(postback だけ)。「データを見る」「データを消す」「連携解除」は同意の前もできます
-- 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を
-  返します。版が違えば記録せず、`consent.STALE` を前に付けて示し直します。もう同意していれば何も返しません(二度押し)
+- 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、`logic.await_greeting` で挨拶を待つ印
+  (`greeting_due`)を付けてから、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を返します。版が違えば記録せず、
+  `consent.STALE` を前に付けて示し直します
+- 挨拶が返ったら(`_line_turn` の `record_talk_open`)、印を外します。挨拶が失敗した(LLM の例外で `FAILED_TEXT`)、上限で返らなかった
+  ときは印が残り、次のテキストは本人の発言のターンにせず、挨拶のターン(`follow`)にします(`_line_turn`。書いた文は会話に入れません)。
+  入口 A の会話にしないためです(task 232)。今の会話に続けるとき(30 分以内に返信のある会話。リッチメニューから履歴書を読み込んだ後など)は、
+  会話を切らないよう、今までどおり発言のターンにします
+- 「同意して始める」と同じ文のテキスト(前後の空白は除く)は、`_line_kind` が `consent` にします。会話に本人の発言として入れません。
+  同意の前は同意の要点を示し直し、同意の後は postback と同じに扱います
+- もう同意している人の `consent`(前のボタンの押し直し、その文)には、挨拶のターンを返します(dip が決める初回訪問か再訪)。
+  ただし印が無く、今の会話が返った挨拶だけで続いているとき(`_just_greeted`。挨拶の直後の二度押し)は、何も返しません
 - LIFF 画面の履歴書と音声は、使う直前に同意を取ります。履歴書の画面は、同意がまだなら同意の文と「同意してファイルを選ぶ」を出し、
   ファイルを選ぶ欄を隠します。押すと `POST /api/liff/consent` で記録して欄を出します。音声相談の画面は `talk-core.js` の `ask` で、
   シートを開く前に同意の画面を出します(`consentApi: "/api/liff/consent"`)。どちらも、使い始める同意がまだなら、LINE のトークで
@@ -1728,6 +1778,7 @@ sequenceDiagram
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
+| `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |
 | `resume_upload`、`resume_upload_seq` | 最新の読み取り結果(5.5 の envelope に `id`、`uploaded_at`、`file` を足した形)と次の番号 | `save_resume_upload` |
 | `voice_results`、`voice_result_seq` | `{id, at, cards, draft_markdown, files, preferences, room, document_kind}` と次の番号 | `record_voice_result` |
 | `voice_rooms`、`forgotten_voice_rooms` | 発行した部屋と、「すべて消す」の前の部屋(それぞれ直近 20) | `record_voice_room`、`forget_all` |
@@ -2418,6 +2469,10 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 30. 同意の前は LLM を呼ばず、状態に書きません。Web は挨拶の前に同意の画面を出し、ターンは 403 です
     (`tests/test_consent.py::test_web_talk_asks_before_the_greeting_and_calls_no_llm_until_agreed`)。LINE は友だち追加と最初の発言の前に
     「同意して始める」の postback を返し、押したら挨拶します(`::test_line_asks_on_follow_and_before_the_first_message_then_greets_after_the_button`)。
+    同意の後の挨拶が失敗しても、次に押す、その文を送る、何か書く、のどれでも挨拶から始まり、入口 A にしません
+    (`::test_line_greets_after_the_consent_even_when_the_first_greeting_failed`、
+    `::test_line_revisit_greets_when_the_consent_text_arrives_after_a_failed_greeting`)。同意した後に前のボタンを押し直しても
+    挨拶します(`::test_line_pressing_the_old_consent_button_again_greets`)。
     履歴書と音声は使う直前に同意を取り、その前は読み取りにも部屋にも進みません(`::test_resume_and_voice_ask_again_right_before_use`、
     `::test_liff_resume_and_voice_ask_for_their_own_consent`、画面は `::test_talk_screen_consent_flow_in_the_browser`)。
     同意は版つきで記録し、版が上がったら取り直します(`::test_record_keeps_the_version_and_a_new_version_asks_again`)。

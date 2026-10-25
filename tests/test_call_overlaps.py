@@ -57,9 +57,10 @@ def test_prompt_and_playbook_say_how_to_avoid_overlapping_calls():
     assert "本人が1つの返信で話したことは、1回の save_user_preferences にまとめる" in section
     assert "詳しく言っただけの答えでは、そのためだけに save_user_preferences を呼ばない" in section
     assert "新しい項目と、言い直した条件(エリア・時間帯など)は、そのターンで保存する" in section
-    # 検索: 揃った条件は1回、絞り込みは条件をまとめて聞く
+    # 検索: 揃った条件は1回、絞り込みは条件を1問に1つ聞き(task 233。task 132 ではまとめて1問)、答えが揃ってから1回で探す
     assert "求人が返ったら、職種や条件を1つずつ変えて探し直さない" in section
-    assert "まだ分かっていない条件(エリア・時間帯・曜日など)をまとめて1問で聞き" in section
+    assert "まだ分かっていない条件(エリア・時間帯・曜日など)を1問に1つ、選択肢を付けて聞き" in section
+    assert "答えの条件を全部入れて1回で探す。条件を1つ聞くたびに探し直さない" in section
     # playbook: 相談に入ったターン・相談の途中か一度読んだ後で区分が変わったターン・正社員に切り替えたターンだけ
     assert ("playbook を読むのは、相談に入ったターン、相談の途中か一度 playbook を読んだ後で区分が変わったターン、"
             "正社員に切り替えたターンだけ") in section
@@ -114,8 +115,8 @@ def consult_script(h: bool) -> list:
         call(*save({"wants": "パン屋で働いてみたい"})) if h else call(*save({"wants": "パン屋で働いてみたい", "purpose": PURPOSE})),
         reply(["パン屋で働いてみたいのですね。", "パン屋のどんなところに惹かれますか?"], quick_replies=[]),
         *([call(*save({"wants": WANTS}))] if h else []),
-        reply(["働ける時間帯とエリアはどのあたりですか?"],
-              quick_replies=["平日の夕方", "今はいい"]),
+        reply(["働けるのは、いつごろですか?"],  # 条件は1問に1つ(task 233)。本人がエリアも一緒に答える
+              quick_replies=["平日の夕方", "土日", "今はいい"]),
         *([call(*save({"time_band": "夕方", "area": "池袋"}), "s1"), call(*save({"time_band": "平日の夕方"}), "s2")] if h
           else [call(*save({"time_band": "平日の夕方", "area": "池袋", "wants": WANTS}))]),
         reply(["家賃の分を払いたい・パン屋・池袋の平日夕方で整理しました。", "この内容で求人を見ますか?"],
@@ -210,9 +211,9 @@ def search_script(h: bool) -> tuple[list, list]:
             search({"time_band": "日中"}, job_type="カフェ", area="渋谷", time_band="日中"),
             lambda msgs: reply(["渋谷・日中のカフェです。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         ]
-    else:  # 直した決まり: まだ分かっていない勤務地と時間帯をまとめて1問で聞き、答えの条件を全部入れて1回で探す
+    else:  # 直した決まり: 条件を1問に1つ聞き(task 233)、答えの条件を全部入れて1回で探す。本人は時間帯も一緒に答えた
         script += [
-            reply(["勤務地と時間帯は、どのあたりがよいですか?"], quick_replies=["渋谷の日中", "今はいい"]),
+            reply(["勤務地はどのあたりがよいですか?"], quick_replies=["渋谷", "新宿", "今はいい"]),
             search({"area": "渋谷", "time_band": "日中"}, job_type="カフェ", area="渋谷", time_band="日中"),
             lambda msgs: reply(["渋谷・日中のカフェです。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         ]

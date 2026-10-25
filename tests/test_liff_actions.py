@@ -171,7 +171,7 @@ def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_th
     _liff_on(monkeypatch)
     r = {"entry": "visit", "bubbles": GREETING, "actions": ["voice_consult", "resume_upload"], "quick_replies": ["求人を探す", "まず相談する", "今はいい"],
          "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}], "cards": []}
-    msgs = to_messages(r, "", visit_greeting=True)
+    msgs = to_messages(r, "", greeting="visit")
     assert [m["type"] for m in msgs] == ["text", "flex"]
     assert msgs[0]["text"] == GREETING[0] and "quickReply" not in msgs[0]
     flex = msgs[1]
@@ -182,7 +182,7 @@ def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_th
     # 前の挨拶(本文、問い、見出しの無いボタンの箱の 3 通)と同じ返信も、いまは 2 通になる
     old = r | {"bubbles": ["お仕事探しの相談や求人のご提案ができます。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。",
                            "どれから始めますか？"]}
-    assert len(to_messages(old, "", visit_greeting=True)) == 2
+    assert len(to_messages(old, "", greeting="visit")) == 2
     # 挨拶のターンかどうかは呼び出し元が決める。会話の入口(entry)が visit でも、挨拶のターンでなければ見出しにしない
     assert [m["type"] for m in to_messages(r, "")] == ["text", "text", "flex"]
 
@@ -192,13 +192,13 @@ def test_the_heading_is_only_used_when_it_keeps_the_order_and_a_plain_bubble(mon
     吹き出しが 1 つなら、本文の吹き出しをそのまま残す(ボタンだけのメッセージにしない)。求人があれば、問いを求人の後ろへ動かさない。"""
     _liff_on(monkeypatch)
     one = {"entry": "visit", "bubbles": ["遊びながら書類を作れます。"], "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}]}
-    msgs = to_messages(one, "", visit_greeting=True)
+    msgs = to_messages(one, "", greeting="visit")
     assert [m["type"] for m in msgs] == ["text", "flex"] and _heading(msgs[1]) is None
     assert msgs[1]["altText"] == "リンク: ゲームで書類を作る"
     card = {"job_id": "a001", "title": "カフェ", "employer": "店", "reasons": ["近い"]}
     with_cards = {"entry": "visit", "bubbles": ["3件あります。", "気になるものはありますか?"], "cards": [card],
                   "buttons": [{"label": "応募の続き", "url": "/liff/apply?job=a001"}]}
-    assert [m.get("text") for m in to_messages(with_cards, "", visit_greeting=True)][:2] == ["3件あります。", "気になるものはありますか?"]
+    assert [m.get("text") for m in to_messages(with_cards, "", greeting="visit")][:2] == ["3件あります。", "気になるものはありますか?"]
     joined = {"bubbles": ["読み取りました。", "希望の勤務地はどこですか?"],
               "buttons": [{"label": "読み取り結果を見る", "url": "/liff/resume?rid=0"}]}
     msgs = to_messages(joined, "")  # 2 つの返信をつないだもの(server._joined。履歴書の続きのターン)は見出しにしない
@@ -207,18 +207,39 @@ def test_the_heading_is_only_used_when_it_keeps_the_order_and_a_plain_bubble(mon
     assert [m["text"] for m in to_messages(no_links, "")] == ["一つ目。", "二つ目?"]
 
 
-def test_the_revisit_greeting_keeps_the_question_out_of_the_button_heading(monkeypatch):
-    """再訪の挨拶(Prompt の「再訪の挨拶の並び」の例そのまま)は見出しにしない。確認の1問は「はい」で答える問いなので、
-    答えではない「履歴書を読み込む」のボタンの見出しにすると、問いと答えがずれ、勧めの文がボタンから離れる。"""
+def test_the_revisit_greeting_puts_the_offer_over_the_buttons_and_the_question_last(monkeypatch):
+    """再訪の挨拶(task 234。Prompt の「再訪の挨拶の並び」の例)は LINE で 2 通: 挨拶と勧めの1文を見出しにした入口のボタンの箱と、
+    確認の1問。確認の1問は「はい」で答える問いなので、答えではないボタンの見出しにせず、文字の選択肢と一緒に最後に残す。
+    勧めの文はボタンのすぐ上に載る。ボタンの文言はリッチメニューと同じ(LIFF_ACTIONS と ARCADE_LABEL)。"""
     _liff_on(monkeypatch)
-    r = {"entry": "revisit", "bubbles": ["おかえりなさい。履歴書を読み込むと、経歴を一から書かずに探せます。",
-                                         "前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?"],
-         "actions": ["resume_upload"], "quick_replies": ["はい", "ほかの条件で探す", "今はいい"], "buttons": [], "cards": []}
-    msgs = to_messages(r, "")
-    assert [m["type"] for m in msgs] == ["text", "text", "flex"]
-    assert [m["text"] for m in msgs[:2]] == r["bubbles"]
-    assert _heading(msgs[2]) is None and msgs[2]["altText"] == "リンク: 履歴書を読み込む"
-    assert [i["action"]["label"] for i in msgs[2]["quickReply"]["items"]] == ["はい", "ほかの条件で探す", "今はいい"]
+    welcome = "おかえりなさい。履歴書を読み込むと、経歴を一から書かずに探せます。"
+    question = "前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?"
+    r = {"entry": "revisit", "bubbles": [welcome, question], "actions": ["voice_consult", "resume_upload"],
+         "quick_replies": ["はい", "ほかの条件で探す", "今はいい"],
+         "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}], "cards": []}
+    msgs = to_messages(r, "", greeting="revisit")
+    assert [m["type"] for m in msgs] == ["flex", "text"]
+    assert _heading(msgs[0]) == welcome and msgs[0]["altText"] == welcome and "quickReply" not in msgs[0]
+    assert [b["action"]["label"] for b in msgs[0]["contents"]["body"]["contents"]] == [
+        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+    assert msgs[1]["text"] == question
+    assert [i["action"]["label"] for i in msgs[1]["quickReply"]["items"]] == ["はい", "ほかの条件で探す", "今はいい"]
+    # 挨拶のターンでなければ、前の組み立て(吹き出し 2 つとボタンの箱の 3 通)
+    assert [m["type"] for m in to_messages(r, "")] == ["text", "text", "flex"]
+    # 勧めの無い 1 つの吹き出しは、見出しにせず残す。ボタンの箱を先に、問いを最後に(選択肢は問いに付く)
+    one = r | {"bubbles": [f"おかえりなさい。{question}"]}
+    msgs = to_messages(one, "", greeting="revisit")
+    assert [m["type"] for m in msgs] == ["flex", "text"] and _heading(msgs[0]) is None and "quickReply" in msgs[1]
+    # 使えない操作を付けてしまったときの断りの文は、問いの前(問いが最後のまま)
+    _liff_on(monkeypatch, voice=False)
+    msgs = to_messages(r, "", greeting="revisit")
+    assert [m["type"] for m in msgs] == ["flex", "text", "text"]
+    assert msgs[1]["text"] == line_channel.ACTION_NOTES["voice_consult"] and msgs[2]["text"] == question
+    assert "quickReply" in msgs[2]
+    # ボタンの使えない LINE(LIFF が無い)では、吹き出しがそのまま
+    _no_liff(monkeypatch)
+    plain = r | {"actions": [], "buttons": []}
+    assert [m["text"] for m in to_messages(plain, "", greeting="revisit")] == [welcome, question]
 
 
 def test_line_buttons_have_no_emoji_and_use_the_greetings_words():

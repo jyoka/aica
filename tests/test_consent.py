@@ -16,12 +16,19 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from dip_mcp import logic
 from dip_mcp.data import State
 from line_runtime import consent, legal, line_channel
 from line_runtime.line_channel import line_user
 from line_runtime.runtime import LineRuntime
-from tests.test_handle import ScriptedModel
-from tests.test_liff_actions import _liff_client, line_liff  # noqa: F401  line_liff はフィクスチャ
+from tests.test_handle import ScriptedModel, reply
+from tests.test_liff_actions import (  # noqa: F401  line_liff はフィクスチャ
+    CHANNEL,
+    INTERNAL_KEY,
+    LIFF_ID,
+    _liff_client,
+    line_liff,
+)
 from tests.test_line_webhook import (
     RAW_OTHER,
     RAW_USER,
@@ -295,6 +302,124 @@ def test_line_button_from_an_old_version_asks_again(tmp_path, monkeypatch):
     assert old[0]["text"].startswith(consent.STALE) and old[0]["quickReply"]["items"][0]["action"]["data"].endswith(consent.tag())
     assert "米国の OpenAI" in typed[0]["text"]
     assert uid not in server.state.user_ids()
+
+
+def _fail_greeting(_messages):
+    raise RuntimeError("API が落ちた")  # 挨拶の LLM の呼び出しが失敗した(クレジット切れなど)
+
+
+def _consent_pb(event_id: str, token: str = "reply-token-1") -> dict:
+    return _event("postback", event_id=event_id, token=token) | {"postback": {"data": "aica-consent=" + consent.tag()}}
+
+
+def _conversation(client, server, uid: str) -> dict:
+    return client.portal.call(server.app.state.rt.conversation, uid)
+
+
+@pytest.mark.parametrize("then", ["button", "button-text", "other-text"])
+def test_line_greets_after_the_consent_even_when_the_first_greeting_failed(tmp_path, monkeypatch, then):
+    """task 232: 同意の postback の後の挨拶が失敗した(LLM の例外)。その後に本人が「同意して始める」を押す、その文を送る
+    (失敗の文が「もう一度送ってください」で、クイックリプライはもう消えている)、何か書く。どれでも、次の返信は初回訪問の
+    挨拶(3 つの入口)で始まり、入口 A(本人の発言から始まる会話)にしない。「同意して始める」の文は会話に入らない。"""
+    for k in ("LINE_LOGIN_CHANNEL_ID", *line_channel.LIVEKIT_ENVS):
+        monkeypatch.delenv(k, raising=False)
+    uid = line_user(RAW_USER)
+    seen: list[list] = []
+
+    def visit(messages):
+        seen.append(messages)
+        return greet(messages)
+
+    model = Greeter(script=[_fail_greeting, visit])
+    server, fake = _line_server(tmp_path, monkeypatch, model, LINE_LIFF_ID=LIFF_ID, LINE_LIFF_CHANNEL_ID=CHANNEL,
+                                AICA_INTERNAL_KEY=INTERNAL_KEY, **LIVEKIT_ENV)
+    nxt = {"button": _consent_pb("01EVENT0000000000000000003", "reply-token-3"),
+           "button-text": _event("message", text="同意して始める", event_id="01EVENT0000000000000000003",
+                                 token="reply-token-3"),
+           "other-text": _event("message", text="渋谷で日中", event_id="01EVENT0000000000000000003",
+                                token="reply-token-3")}[then]
+    with TestClient(server.app) as client:
+        _post(client, [_event("follow")])
+        _post(client, [_consent_pb("01EVENT0000000000000000002", "reply-token-2")])
+        assert not consent.needed(server.state, uid, "terms")  # 同意は記録した
+        assert not server.state.user(uid).get("talk_opens")  # 挨拶は返っていない: まだ挨拶を済ませていない
+        _post(client, [nxt])
+        conv = _conversation(client, server, uid)
+    assert model.script == []
+    _, failed, greeting = _messages(fake)
+    assert failed == [{"type": "text", "text": line_channel.FAILED_TEXT}]
+    # 次の返信は初回訪問の挨拶: 入口のボタン(ゲーム、音声相談、履歴書)と、文字の選択肢
+    (flex,) = [m for m in greeting if m["type"] == "flex"]
+    assert [b["action"]["label"] for b in flex["contents"]["body"]["contents"]] == [
+        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+    (messages,) = seen
+    assert "入口V(初回訪問)" in messages[0].content
+    humans = [m.content for m in messages if m.type == "human"]
+    assert len(humans) == 1 and humans[0].startswith("[イベント: 初回訪問")  # 本人の発言から始めない(入口 A にしない)
+    assert conv["greeted"] and [t["user"] for t in conv["turns"]] == [None]
+    assert len(server.state.user(uid)["talk_opens"]) == 1  # 挨拶が返ったので、次からは再訪
+
+
+def test_line_revisit_greets_when_the_consent_text_arrives_after_a_failed_greeting(tmp_path, monkeypatch):
+    """task 232 の実機の流れ: 前に使った人が同意し、再訪の挨拶が失敗した。本人が「同意して始める」を文で送っても、
+    返信は再訪の挨拶(要約を読む)で、「始めましょう。…」のような入口 A の返事ではない。"""
+    uid = line_user(RAW_USER)
+    seen: list[list] = []
+
+    def revisit(messages):
+        seen.append(messages)
+        return greet(messages)
+
+    model = Greeter(script=[_fail_greeting, revisit, revisit])  # 再訪の挨拶は、要約を読んでから返す(2 回)
+    server, fake = _line_server(tmp_path, monkeypatch, model)
+    server.state.update(uid, lambda u: u.__setitem__("talk_opens", ["2026-10-25T15:28:09+09:00"]))  # 前に挨拶を受けた
+    with TestClient(server.app) as client:
+        _post(client, [_consent_pb("01EVENT0000000000000000002", "reply-token-2")])
+        _post(client, [_event("message", text="同意して始める", event_id="01EVENT0000000000000000003",
+                              token="reply-token-3")])
+        conv = _conversation(client, server, uid)
+    assert model.script == []
+    failed, greeting = _messages(fake)
+    assert failed == [{"type": "text", "text": line_channel.FAILED_TEXT}]
+    assert greeting[0]["text"].startswith("おかえりなさい")
+    assert "入口R(再訪)" in seen[-1][0].content
+    assert all(m.content != "同意して始める" for ms in seen for m in ms if m.type == "human")
+    assert conv["greeted"] and [t["user"] for t in conv["turns"]] == [None]
+
+
+def test_line_pressing_the_old_consent_button_again_greets(tmp_path, monkeypatch):
+    """task 232: 同意して挨拶を受け、話した後に、前の「同意して始める」をもう一度押した。返信は再訪の挨拶(入口 A にしない)。
+    挨拶の直後の二度押し(トークの最後が挨拶のまま)は、何も返さない。"""
+    uid = line_user(RAW_USER)
+    model = Greeter(script=[greet, reply(["渋谷の日中ですね。"]), greet, greet])
+    server, fake = _line_server(tmp_path, monkeypatch, model)
+    with TestClient(server.app) as client:
+        _post(client, [_consent_pb("01EVENT0000000000000000002", "reply-token-2")])
+        _post(client, [_event("message", text="渋谷で日中", event_id="01EVENT0000000000000000003", token="reply-token-3")])
+        _post(client, [_consent_pb("01EVENT0000000000000000004", "reply-token-4")])
+        _post(client, [_consent_pb("01EVENT0000000000000000005", "reply-token-5")])  # 挨拶の直後の二度押し
+        conv = _conversation(client, server, uid)
+    visit, answer, again = _messages(fake)
+    assert visit[0]["text"].startswith("こんにちは") and answer[0]["text"] == "渋谷の日中ですね。"
+    assert again[0]["text"].startswith("おかえりなさい")  # 再訪の挨拶で、新しい会話を始めた
+    assert model.script == []  # 二度押しでは LLM を呼ばない(呼べば台本が尽きて、失敗の文が 4 通目に届く)
+    assert conv["greeted"] and [t["user"] for t in conv["turns"]] == [None]
+
+
+def test_line_waiting_greeting_does_not_cut_a_conversation_that_continues(tmp_path, monkeypatch):
+    """挨拶を待つ印が残っていても(同意の後の挨拶は失敗し、リッチメニューから履歴書を読み込んで話し始めた、など)、
+    30 分以内に返信のある会話への発言は、今までどおりその会話に続ける(挨拶で会話を切らない)。"""
+    uid = line_user(RAW_USER)
+    model = Greeter(script=[greet, reply(["渋谷の日中ですね。"]), reply(["土日も探しますね。"])])
+    server, fake = _line_server(tmp_path, monkeypatch, model)
+    with TestClient(server.app) as client:
+        _post(client, [_consent_pb("01EVENT0000000000000000002", "reply-token-2")])
+        _post(client, [_event("message", text="渋谷で日中", event_id="01EVENT0000000000000000003", token="reply-token-3")])
+        logic.await_greeting(server.state, uid)  # 印が残っているとする
+        _post(client, [_event("message", text="土日も", event_id="01EVENT0000000000000000004", token="reply-token-4")])
+        conv = _conversation(client, server, uid)
+    assert model.script == [] and _messages(fake)[-1][0]["text"] == "土日も探しますね。"
+    assert [t["user"] for t in conv["turns"]] == [None, "渋谷で日中", "土日も"]
 
 
 def test_line_data_commands_work_before_consent(tmp_path, monkeypatch):
