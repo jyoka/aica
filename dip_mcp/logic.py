@@ -120,7 +120,7 @@ ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケー�
 
 def _profile_summary(user: dict) -> dict:
     """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
-    ゲームの URL は Web のユーザーにだけ載せる(LINE で開いても本人にならないため。arcade.game_url)。"""
+    ゲームの URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる(LINE では LIFF 画面で開くため。arcade.game_url)。"""
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
            "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
@@ -810,19 +810,27 @@ def _preference_error(key: str, value) -> str | None:
     return None
 
 
-def save_preferences(state: State, line_user_id: str, preferences: dict[str, str | int]) -> dict:
+def save_preferences(state: State, line_user_id: str, preferences: dict[str, str | int],
+                     room: str | None = None) -> dict:
     """本人が会話で話した希望と、本人について分かったこと(目的・強みなど)を保存する(次の会話の要約で返す)。
-    決まった項目だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は保存しない。値は文字列にそろえる。"""
+    決まった項目だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は保存しない。値は文字列にそろえる。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら何も保存しない。"""
     errors = {k: e for k, v in preferences.items() if (e := _preference_error(k, v))}
     rejected = list(errors)
     keep = {k: str(v).strip() for k, v in preferences.items() if k not in rejected and str(v).strip()}
+    forgotten = False
 
     def apply(u):
+        nonlocal forgotten
+        if forgotten := _room_forgotten(u, room):
+            return
         prefs = u.setdefault("preferences", {})
         for k, v in keep.items():
             prefs[k] = {"value": v, "at": now(line_user_id).isoformat()}
 
     state.update(line_user_id, apply)
+    if forgotten:
+        return {"saved": [], "rejected": [], "error": FORGOTTEN_ROOM_ERROR}
     out = {"saved": list(keep), "rejected": rejected}
     if rejected:
         notes = []
@@ -858,10 +866,12 @@ def track_history(user: dict) -> list[dict]:
              "undo": h["undo"]} for h in (user.get("track_history") or [])[-TRACK_HISTORY_IN_SUMMARY:]]
 
 
-def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False) -> dict:
+def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False,
+                     room: str | None = None) -> dict:
     """雇用区分を切り替えて履歴に残す。evidence は根拠になった本人の発言そのまま。
     根拠の電話番号・メールアドレス・住所らしい所は伏せる(redact_personal)。
-    undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。"""
+    undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら記録しない。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
     evidence = redact_personal(str(evidence or "").strip())[:EVIDENCE_MAX]
@@ -871,6 +881,9 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
     result: dict = {}
 
     def apply(u):
+        if _room_forgotten(u, room):
+            result["error"] = FORGOTTEN_ROOM_ERROR
+            return
         history = u.get("track_history") or []
         current = search_track(u)
         if undo:
@@ -935,6 +948,8 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
 
 
 VOICE_ROOMS_KEPT = 20  # 覚えておく音声相談の部屋の数(「すべて消す」の前に始めた面談の結果を見分けるため)
+VOICE_ROOM_ARG = "room"  # 音声ワーカーが書き込むツールに渡す部屋の引数名(dip_mcp/server.py。トークの AI には見せない)
+FORGOTTEN_ROOM_ERROR = "この通話の途中で、本人が覚えていることをすべて消したので、記録しません。"
 
 
 def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None,
@@ -1015,7 +1030,14 @@ def record_voice_room(state: State, line_user_id: str, room: str) -> None:
 
 def voice_room_forgotten(state: State, line_user_id: str, room: str | None) -> bool:
     """「すべて消す」の前に始めた面談の部屋か(その結果で dip の記録を作り直さない)。"""
-    return bool(room) and room in state.user(line_user_id).get("forgotten_voice_rooms", [])
+    return _room_forgotten(state.user(line_user_id), room)
+
+
+def _room_forgotten(user: dict, room: str | None) -> bool:
+    """1 人の dict で見る voice_room_forgotten。音声ワーカーの書き込み(希望・雇用区分・会話の結果)は、state.update の
+    中(書き込みと同じロックの中)でこれを見て断る。面談の途中で「すべて消す」をした後に、その通話で話したことを残さないため
+    (docs/design/privacy.md の 3.8 の案 A)。"""
+    return bool(room) and room in user.get("forgotten_voice_rooms", [])
 
 
 # ----------------------------- アップロードした履歴書(resume-intake の読み取り結果) -----------------------------
@@ -1085,10 +1107,11 @@ CONSULTATION_SUMMARY_MAX = 200  # 相談のまとめの字数の上限
 
 
 def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float,
-                   summary: str | None = None) -> dict:
+                   summary: str | None = None, room: str | None = None) -> dict:
     """会話の結果を記録する。summary は相談のまとめ(200字以内。本人の発言に基づく事実と、次に確かめることだけ)。
     まとめは次の会話(チャット・音声)の要約の consultation_summary に出る。200字を超えたら何も記録しない
-    (書き直して呼び直してもらう。途中で切ると「次に確かめること」が落ちるため)。"""
+    (書き直して呼び直してもらう。途中で切ると「次に確かめること」が落ちるため)。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら記録しない。"""
     if outcome not in OUTCOMES:
         return {"error": f"outcome は {OUTCOMES} のいずれか"}
     if outcome == "wait" and not REFUSAL_WORDS.search(reason or ""):  # 断っていない人を wait にしない
@@ -1106,8 +1129,15 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
            "confidence": max(0.0, min(1.0, confidence))}
     if summary:
         rec["summary"] = redact_personal(summary)
-    state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
-    return {"recorded": rec}
+    forgotten = False
+
+    def apply(u):
+        nonlocal forgotten
+        if not (forgotten := _room_forgotten(u, room)):
+            u.setdefault("outcomes", []).append(rec)
+
+    state.update(line_user_id, apply)
+    return {"error": FORGOTTEN_ROOM_ERROR} if forgotten else {"recorded": rec}
 
 
 def consultation_summary(user: dict) -> dict | None:

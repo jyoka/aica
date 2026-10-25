@@ -365,7 +365,7 @@ button{font:inherit}
       </div>
       <p class="gen-note" id="genNote"></p>
       <p class="gen-note" id="saveNote" role="status"></p>
-      <div class="btn-row" id="savedRow" hidden><a class="btn" id="draftLink" target="_blank" rel="noopener">下書きを見る</a><a class="btn" href="/">トークに戻る</a><button class="btn" id="btnWipeLocal">このブラウザの答えを消す</button></div>
+      <div class="btn-row" id="savedRow" hidden><a class="btn" id="draftLink" target="_blank" rel="noopener">下書きを見る</a><a class="btn" id="talkLink" href="/">トークに戻る</a><button class="btn" id="btnWipeLocal">このブラウザの答えを消す</button></div>
       <label for="mdFallback" id="mdFallbackLbl" hidden class="gen-note">ここではコピーできませんでした。下のMarkdownを選択してあります。Ctrl/Cmd+Cでコピーしてください。</label>
       <textarea id="mdFallback" readonly hidden></textarea>
     </div>
@@ -2375,6 +2375,8 @@ function renderSaveRow() {
   $('docKind').value = docKind();
   $('savedRow').hidden = !(can && S.saved);
   if (S.saved) $('draftLink').href = S.saved.url;
+  /* LINE のアプリで開いたとき(arcade-ai.js の AICA_LIFF)は、Web のトークではなく LINE のトークに戻る */
+  if (window.AICA_LIFF && window.liff) $('talkLink').onclick = (e) => { e.preventDefault(); window.liff.closeWindow(); };
   $('saveNote').textContent = !can ? (S.mode !== 'sample' ? 'この畑はプロフィールに保存できません（トーク画面を開いてから作った畑だけ保存できます）。「Markdownでコピー」で書き写せます。' : '')
     : S.saved ? 'プロフィールに保存済みです。答えを直したら、もう一度保存できます。' : '保存すると、トークのAIとプロフィールで、この下書きを使えます。';
 }

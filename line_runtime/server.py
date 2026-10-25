@@ -19,6 +19,7 @@ LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip
   (他人のユーザーIDを本文に入れても 403)。ID を名乗るだけでは読めない・話せない・会話数の上限も迂回できない。
 - 本人のデータを指す URL にユーザーIDを載せない。API はユーザーIDを本文で受け取り、画面(LIFF)は Cookie から本人を決める。
 - サーバー間の経路(音声ワーカー → POST /api/voice/result と /api/voice/session)は、Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。
+  音声相談の設定(LIVEKIT_*)があるのに鍵が無い・短ければ、起動で止まる(line_channel.check_internal_key)。
 
 会話数の上限(line_runtime.quota): 1日あたりのターン数に、匿名IDごと・IP ごと・全体の上限があり、超えたら LLM を呼ばずに
 丁寧に打ち切る。IP ごとの上限で、Cookie を作り直して匿名IDごとの上限を迂回する道を閉じる(IP の取り方は _client_ip、
@@ -35,9 +36,15 @@ accountLink の画面に送る。LINE から accountLink の webhook が来た�
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 
+LINE で見る、消す(docs/design/privacy.md の 3.7): 「データを見る」と送ると、プロフィール画面と同じ中身をテキストで返す。
+「データを消す」と送ると、消す範囲と確かめのクイックリプライ(postback)を返し、「すべて消す」を押したら Web の「すべて消す」と
+同じ処理(_forget_all)をする。どちらも LLM を呼ばず、会話数も数えない。友だち解除(unfollow。ブロック)では消さない
+(間違えて押すこともあり、解除すれば前の続きから使えるため。使われなくなったユーザーの期間で消す掃除に任せる)。
+
 レジュメ・アーケード(task 187、188。docs/prd/resume-arcade.md): ゲームの画面(/liff/arcade…)は Cookie を発行も要求もしない。
 ハブに出す 2 本は、AI と下書きの API(/api/arcade/start、/ai、/save)を Cookie の本人として呼ぶ。画面は指示の文を送らず、
 LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(dip_mcp.arcade)と人ごとの 1 日の回数。
+LINE のアプリで開いたゲーム(/liff/line/arcade/…)は、同じ中身の /api/liff/arcade/… を LIFF の本人(LINE のユーザー)として呼ぶ(task 219)。
 
 LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID とチャネル ID があるときだけ、/liff/line/… を開く(無ければ 404)。
 ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
@@ -47,13 +54,18 @@ LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID とチャネル I
 LINE のトークから LIFF 画面で使う操作(task 204): 返信の actions は LINE では LIFF 画面へのボタンになり、音声相談(/liff/line/voice)、
 履歴書の読み込み(/liff/line/resume/upload)、レジュメ・アーケード(/liff/line/arcade)を LINE の本人として開く。音声相談の結果と、
 履歴書の確認と続きの返事は、その本人の LINE のトークに push で届く。push の宛先(LINE の userId)は、操作を始めるときに LIFF の
-ID トークンをもう一度確かめて受け取り、届けるまでメモリにだけ置く(保存しない)。ゲームの AI と下書きの API は今も Cookie の
-匿名ユーザーIDの本人で呼ぶので、LIFF の中のゲームは AI なしの簡易分析で遊べて、保存はできない(dip も LINE のユーザーには
-ゲームの URL を渡さない。dip_mcp.arcade.game_url)。
+ID トークンをもう一度確かめて受け取り、届けるまでメモリにだけ置く(保存しない)。
+
+LINE のアプリで遊ぶゲーム(task 219): LIFF の設定があれば、dip は LINE のユーザーにもゲームの URL を渡し(dip_mcp.arcade.game_url)、
+LINE のトークでは LIFF URL のボタンになる。LIFF の中のゲームは、AI と保存を LIFF の本人で呼び(/api/liff/arcade/…。回数の上限は
+Web と同じ)、保存した下書きはその LINE のユーザーのものになる。保存の知らせは、その本人の LINE のトークに 1 回 push で届く。
 
 LIFF の中でマイクを試す画面(task 205): /liff/line/mic-check。LINE のアプリの LIFF 画面で、音声相談に要るマイク(getUserMedia)と
 WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エラー名、音の大きさ、LIFF の環境)だけを POST /api/liff/mic-check が
 ログに 1 行書く。声もその文字起こしも送らない・残さない。本人を決めない(本人のデータを読み書きしない)。
+
+利用規約とプライバシーポリシー(task 207): GET /legal/terms と GET /legal/privacy。原文は docs/legal/ の Markdown で、
+line_runtime.legal が HTML にする。Cookie を発行も要求もしない。トーク画面と LIFF 画面の下から開ける(legal.footer_html)。
 """
 
 from __future__ import annotations
@@ -67,7 +79,7 @@ import re
 import secrets
 import time
 from collections import defaultdict
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -94,16 +106,18 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from dip_mcp import accounts, arcade, behavior, logic, profile
+from dip_mcp import accounts, arcade, behavior, logic, profile, retention
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, line_channel, llm, turn
+from line_runtime import config, fake_line, legal, line_channel, llm, purge, turn
 from line_runtime.arcade_reply import arcade_reply
+from line_runtime.log_policy import quiet_sdk_loggers
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
     ip_ids_limit,
     ip_limit,
+    today,
     total_ids_limit,
     total_limit,
 )
@@ -125,7 +139,8 @@ state = State()
 # ブラウザごとの匿名ユーザーID(Cookie)。ブラウザ側には ID しか置かず、状態はすべてサーバー側でこの ID にひも付く。
 ANON_COOKIE = "aica_uid"
 ANON_ID = re.compile(r"w-[0-9a-f]{16}")
-ANON_COOKIE_MAX_AGE = 400 * 24 * 3600  # ブラウザが Cookie を保持できる上限(約400日)いっぱい
+# 最後に画面を開いた日から 180 日(使われなくなった人の dip の状態を消す期間と同じ。dip_mcp.retention.USER_TTL)
+ANON_COOKIE_MAX_AGE = 180 * 24 * 3600
 
 
 def _anon(request: Request) -> str | None:
@@ -140,12 +155,12 @@ SECURE_COOKIE_ENV = "AICA_SECURE_COOKIE"
 
 def _issue(request: Request, response: Response) -> str:
     """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。
-    発行するのは画面を開いたとき(GET / と GET /dev)だけ。API は発行しない(Cookie が無ければ 401)。"""
-    uid = _anon(request)
-    if uid is None:
-        uid = f"w-{secrets.token_hex(8)}"
-        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
-                            secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
+    あれば同じ ID で Cookie を書き直し、期限を今日から ANON_COOKIE_MAX_AGE に延ばす(毎日使う人が 181 日目に ID を
+    失わないように。期限は「最後に画面を開いた日から」になる。docs/design/privacy.md の 3.3 の注)。
+    発行と書き直しは画面を開いたとき(GET / と GET /dev)だけ。API は発行も書き直しもしない(Cookie が無ければ 401)。"""
+    uid = _anon(request) or f"w-{secrets.token_hex(8)}"
+    response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
+                        secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
     return uid
 
 
@@ -186,13 +201,14 @@ def _page_user(request: Request, scenario_user: str | None) -> str:
 
 
 # サーバー間の経路(音声ワーカー → POST /api/voice/result)の共有鍵。ブラウザの Cookie ではなくこれで守る。
-# 設定が無ければ、その経路はすべて断る(鍵なしで開けない)。
-INTERNAL_KEY_ENV = "AICA_INTERNAL_KEY"
+# 設定が無ければ、その経路はすべて断る(鍵なしで開けない)。音声相談の設定があるのに無い・短ければ、起動で止める
+# (lifespan の line_channel.check_internal_key)。
+INTERNAL_KEY_ENV = line_channel.INTERNAL_KEY_ENV
 
 
 def _require_internal(request: Request) -> None:
     """Authorization: Bearer <AICA_INTERNAL_KEY> の呼び出しだけを通す(無い・違う・サーバーに鍵が無いなら 401)。"""
-    key = os.environ.get(INTERNAL_KEY_ENV, "")
+    key = os.environ.get(INTERNAL_KEY_ENV, "").strip()  # 起動の確かめ(check_internal_key)と同じく、前後の空白は除く
     got = request.headers.get("authorization", "")
     if not key or not secrets.compare_digest(got.encode(), f"Bearer {key}".encode()):
         raise HTTPException(401, "サーバー間の共有鍵がありません")
@@ -222,9 +238,11 @@ def _admit(request: Request, user_id: str) -> None:
 
 
 def _profile_writer(request: Request) -> str:
-    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。"""
+    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。
+    書き換えは最後の利用として記録する(期間で消す掃除が数える。dip_mcp.retention)。"""
     user_id = _owner(request)
     _admit(request, user_id)
+    retention.touch(state, user_id)
     return user_id
 
 
@@ -256,6 +274,7 @@ class EventIn(BaseModel):
 async def lifespan(app: FastAPI):
     config.load_env()
     line_channel.check_id_key()  # LINE の設定があるのに AICA_ID_KEY が無い・短ければ、ここで止める
+    line_channel.check_internal_key()  # 音声相談の設定があるのに AICA_INTERNAL_KEY が無い・短ければ、ここで止める
     app.state.quota = DailyQuota(daily_limit(), config.DATA_DIR / "quota.json", ip_limit=ip_limit(),
                                  ip_ids=ip_ids_limit(), total_limit=total_limit(), total_ids=total_ids_limit())
     app.state.voice_ready = {}  # ユーザー → 音声相談の結果が届いたことを待っているシートへ知らせる Condition
@@ -263,14 +282,53 @@ async def lifespan(app: FastAPI):
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
+    app.state.line_forget_asks = {}  # LINE のユーザー → 「データを消す」の確かめ(番号、期限の monotonic 秒)。1 回だけ使える
     app.state.line_voice_rooms = {}  # LIFF から始めた音声相談の部屋 → (LINE の userId, 始めた時刻)。結果を push する宛先。メモリだけ
     app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
-        yield
+        app.state.purge_lock = asyncio.Lock()  # 起動時・定期・内部の口の掃除を重ねない
+        await _purge_logged()  # 起動時の掃除(落ちても起動は止めない)
+        daily = asyncio.create_task(_purge_daily())
+        try:
+            yield
+        finally:
+            daily.cancel()
+            with suppress(asyncio.CancelledError):  # 走っている掃除を止めてから会話の DB を閉じる
+                await daily
+
+
+async def _purge() -> dict:
+    """期間で消す掃除(line_runtime.purge)。この Web プロセスの中で、ユーザーごとに user_lock を取って消す。"""
+    async with app.state.purge_lock:
+        return await purge.purge(app.state.rt, state, scenario_users=_scenario_users(),
+                                 unread_uploads=app.state.unread_uploads, voice_ready=app.state.voice_ready,
+                                 remove_files=_remove_voice_files)
+
+
+async def _purge_logged() -> None:
+    try:
+        await _purge()
+    except Exception as e:  # noqa: BLE001  掃除の失敗で Web プロセスを止めない(次の回にやり直す)
+        purge.log.error("期間で消す掃除が失敗しました: %s", type(e).__name__)
+
+
+async def _purge_daily() -> None:
+    """1 日 1 回の掃除(起動時の掃除の EVERY 後から)。"""
+    while True:
+        await asyncio.sleep(purge.EVERY.total_seconds())
+        await _purge_logged()
 
 
 app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
+
+
+@app.post(purge.INTERNAL_PATH)
+async def internal_purge(request: Request):
+    """期間で消す掃除を今すぐ走らせる(手で走らせる CLI python -m line_runtime.purge が呼ぶ)。消した数を返す。
+    Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。消す処理は定期の掃除と同じく、この Web プロセスの中で行う。"""
+    _require_internal(request)
+    return await _purge()
 
 
 @app.get("/healthz")
@@ -307,9 +365,18 @@ async def shared_static(name: str):
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/legal/{name}", response_class=HTMLResponse)
+async def legal_page(name: str):
+    """利用規約(terms)とプライバシーポリシー(privacy)。原文は docs/legal/。だれでも開ける(Cookie を発行も要求もしない)。"""
+    if name not in legal.DOCS:
+        raise HTTPException(404)
+    return HTMLResponse(legal.page(name), headers={"Cache-Control": "no-cache"})
+
+
 # レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。ゲームの名前はファイル名と同じ。
 # 画面そのものは Cookie を発行も要求もしない(本人のデータを読み書きしない)。ハブに出す 2 本は、AI と保存の API(/api/arcade/…。
 # 下の「レジュメ・アーケードの AI と下書き」)を、ほかの LIFF 画面と同じく Cookie の匿名IDの本人として呼ぶ。
+# LINE のアプリで開いたとき(/liff/line/arcade/…)は、LIFF の本人の API(/api/liff/arcade/…。下の「LINE のアプリで遊ぶゲームの AI と下書き」)。
 ARCADE = STATIC / "arcade"
 ARCADE_SHIPPED = arcade.GAMES  # ハブに出す(案内の部品がそろい、AI と保存がつながったもの)
 ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする(AI を使わず、本人のデータも読み書きしない)
@@ -336,12 +403,16 @@ async def liff_arcade_draft(rid: int, request: Request, scenario_user: str | Non
     """ゲームで作った下書きを見て、直す画面(トークの「下書きを見る」、プロフィールのリンク先)。本人は Cookie から決める。
     rid はその下書きの番号: ゲームごとに最新の 1 件だけを持つので、あとで同じゲームで作り直したか消した下書きのリンクは開かない。
     「draft」はゲームの名前に使わない(このルートを {game} より先に登録する)。"""
-    user = _page_user(request, scenario_user)
+    return _arcade_draft_page(_page_user(request, scenario_user), rid, scenario_user)
+
+
+def _arcade_draft_page(user: str, rid: int, scenario_user: str | None = None, action: str = arcade.DRAFT_PATH):
+    """下書きの画面(Web と LINE のアプリで共通)。action は直した書類を送る先(LINE のアプリでは /liff/line/arcade/draft)。"""
     rec = arcade.draft(state, user, rid)
     if rec is None:
         return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。同じゲームで作り直したか、消した"
                                   "下書きです。最新の下書きは、プロフィールから開けます。</p>"), status_code=404)
-    return _page(f"{rec['document_kind']}の下書き", _arcade_draft_html(rec, scenario_user))
+    return HTMLResponse(_page(f"{rec['document_kind']}の下書き", _arcade_draft_html(rec, scenario_user, action)))
 
 
 @app.post("/liff/arcade/draft", response_class=HTMLResponse)
@@ -351,16 +422,21 @@ async def liff_arcade_draft_edit(request: Request, rid: int = Form(...),
     """下書きの画面で本人が直した書類を保存する(保存と同じ決まり: scrub_pii、長さの上限、Resume Draft の形)。"""
     user = _page_user(request, scenario_user or None)
     _admit(request, user)
+    return _arcade_draft_edit(user, rid, markdown, scenario_user)
+
+
+def _arcade_draft_edit(user: str, rid: int, markdown: str, scenario_user: str = "", action: str = arcade.DRAFT_PATH):
     rec = arcade.draft(state, user, rid)
     if rec is None or not markdown.strip():
         return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
     out = profile.edit_arcade_draft(state, user, rid, arcade_draft.to_envelope(markdown, rec["document_kind"]))
     if "error" in out:
         return HTMLResponse(_page("ゲームで作った下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
-    return _page(f"{out['document_kind']}の下書き", "<p class='job'>保存しました。</p>" + _arcade_draft_html(out, scenario_user))
+    return HTMLResponse(_page(f"{out['document_kind']}の下書き",
+                              "<p class='job'>保存しました。</p>" + _arcade_draft_html(out, scenario_user, action)))
 
 
-def _arcade_draft_html(rec: dict, scenario_user: str | None) -> str:
+def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcade.DRAFT_PATH) -> str:
     """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
     todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
     return (f"<p>ゲーム({escape(arcade.GAME_NAMES.get(rec['game'], rec['game']))})で、あなたの答えから作った"
@@ -370,7 +446,7 @@ def _arcade_draft_html(rec: dict, scenario_user: str | None) -> str:
                if todo else "")
             + "<pre id='draft-md' style='white-space:pre-wrap;background:#fff;border-radius:10px;padding:12px;"
               f"font-size:13px'>{escape(rec['markdown'])}</pre>"
-            "<form method='post' action='/liff/arcade/draft'>"
+            f"<form method='post' action='{escape(action)}'>"
             f"<input type='hidden' name='rid' value='{rec['id']}'>"
             f"<input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
             "<label for='draft-edit'>書類を直す(数字の空欄を埋める、行を書き換える)</label>"
@@ -443,6 +519,7 @@ async def talk_track_undo(body: UndoIn, request: Request):
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
     _admit(request, body.user_id)
+    retention.touch(state, body.user_id)
     async with app.state.rt.user_lock(body.user_id):
         r = profile.undo_switch(state, body.user_id, body.id)
     if "error" in r:
@@ -477,6 +554,7 @@ async def start_scenario(scenario_id: str, request: Request):
     _admit(request, user)
     async with app.state.rt.user_lock(user):
         prepare(state, sc, user)
+    retention.touch(state, user)
     return {"user": user, "event": sc["event"]}
 
 
@@ -633,14 +711,21 @@ async def arcade_start(body: ArcadeStartIn, request: Request):
         return {"play": None, "ai": False, "reason": "no_user", "track": None, "document_kind": None, "jobs": []}
     user = _page_user(request, body.scenario_user)
     _admit(request, user)
+    return _arcade_start(user, game, _client_ip(request))
+
+
+def _arcade_start(user: str, game: str, ip: str | None) -> dict:
+    """遊びを始める(Web と LIFF 画面で共通)。AI つきにできれば、ターンを 1 つと 1 日の AI つきの遊びを 1 回使う。
+    ip は会話数の IP ごとの上限を数える IP(LINE のユーザーは IP ごとには数えないので None)。"""
     reason = _arcade_ai_off_reason(user)
     if reason is None:
-        if app.state.quota.try_take(user, _client_ip(request)) is not None:
+        if app.state.quota.try_take(user, ip) is not None:
             reason = "turn_limit"
         elif not app.state.quota.take_daily(ARCADE_DAILY_KIND, user, _arcade_daily_limit()):
-            app.state.quota.refund(user, _client_ip(request))
+            app.state.quota.refund(user, ip)
             reason = "daily_limit"
     rec = arcade.start_play(state, user, game, ai=reason is None)
+    retention.touch(state, user)  # ゲームを始めたのも最後の利用(期間で消す掃除が数える)
     return {"play": rec["id"], "ai": rec["ai"], "reason": reason, "track": logic.search_track(state.user(user)),
             "document_kind": arcade.document_kind(state, user), "jobs": _resume_jobs(user)}
 
@@ -653,7 +738,11 @@ def _offline(reason: str) -> dict:
 async def arcade_ai(body: ArcadeAiIn, request: Request):
     """ゲームの段を 1 回、AI で進める。だめなとき(番号が無い・ほかの人の番号・AI なしの遊び・24 時間を過ぎた・回数を使い切った・
     まとめの行が多すぎる・形が違う・LLM が失敗した)は ok: false で、画面はその段を簡易分析で続ける。"""
-    user = _page_user(request, body.scenario_user)
+    return await _arcade_ai(_page_user(request, body.scenario_user), body)
+
+
+async def _arcade_ai(user: str, body: ArcadeAiIn) -> dict:
+    """ゲームの段を 1 回、AI で進める(Web と LIFF 画面で共通。回数の上限も同じ)。"""
     st = arcade_stages.stage(body.game, body.stage)
     if st is None:
         return _offline("unknown_stage")
@@ -681,10 +770,22 @@ async def arcade_save(body: ArcadeSaveIn, request: Request):
     """できた書類を下書きとして保存する(そのゲームの前の下書きを置き換える)。本人の有効な遊びの番号が要る(無い・ほかの人の
     番号なら 403)。書類の種類は雇用区分で決め、未定なら本人が選んだもの(選んでいなければ 400)。雇用区分は変えない。
     今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。"""
-    game = _arcade_game(body.game)
+    _arcade_game(body.game)
     user = _page_user(request, body.scenario_user)
+    rec, reply = _arcade_save(user, body)
+    talk = await app.state.rt.add_arcade_result(user, reply)
+    return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": rec["document_kind"],
+            "blanks": arcade.blanks(rec), "talk": talk}
+
+
+ARCADE_SAVE_FORBIDDEN = "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください"
+
+
+def _arcade_save(user: str, body: ArcadeSaveIn) -> tuple[dict, dict]:
+    """下書きを保存する(Web と LIFF 画面で共通)。保存した記録と、トークに続ける返信(arcade_reply)を返す。"""
+    game = _arcade_game(body.game)
     if arcade.play(state, user, game, body.play) is None:
-        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+        raise HTTPException(403, ARCADE_SAVE_FORBIDDEN)
     kind = arcade.document_kind(state, user, body.document_kind)
     if kind is None:
         raise HTTPException(400, "職務経歴書にするか、履歴書の自己PRにするかを選んでください")
@@ -692,10 +793,9 @@ async def arcade_save(body: ArcadeSaveIn, request: Request):
         raise HTTPException(400, "書類が空です")
     rec = arcade.save_draft(state, user, game, body.play, arcade_draft.to_envelope(body.markdown, kind))
     if rec is None:
-        raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
-    talk = await app.state.rt.add_arcade_result(user, arcade_reply(user, rec))
-    return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": kind,
-            "blanks": arcade.blanks(rec), "talk": talk}
+        raise HTTPException(403, ARCADE_SAVE_FORBIDDEN)
+    retention.touch(state, user)
+    return rec, arcade_reply(user, rec)
 
 
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
@@ -716,17 +816,22 @@ def line_login() -> line_channel.LineLogin:
 
 
 def _line_kind(e: dict) -> str | None:
-    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link と
-    解除 unlink)、友だち追加(follow)、アカウント連携の結果(account_link)。ほかは None(無視する)。
-    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。"""
+    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
+    解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
+    「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)。ほかは None(無視する)。
+    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
+    友だち解除(unfollow)も None: 受けても消さない(docs/design/privacy.md の 3.7。期間で消す掃除に任せる)。"""
     src = e.get("source") or {}
     if src.get("type") != "user" or not src.get("userId") or e.get("mode", "active") != "active":
         return None
     msg = e.get("message") or {}
     if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
-        return line_channel.link_command(str(msg["text"])) or "message"
+        text = str(msg["text"])
+        return line_channel.link_command(text) or line_channel.data_command(text) or "message"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
+    if e.get("type") == "postback" and (pb := line_channel.forget_postback(str((e.get("postback") or {}).get("data") or ""))):
+        return pb[0]
     return "follow" if e.get("type") == "follow" else None
 
 
@@ -768,16 +873,19 @@ async def _line_user_events(line_uid: str, events: list[dict]) -> None:
             await api.loading(line_uid)
             try:
                 messages = await _line_messages(api, line_uid, uid, _line_kind(e), e)
-            except Exception:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
-                line_channel.log.exception("LINE のイベントを処理できませんでした(%s)", uid)
+            except Exception as err:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
+                # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+                line_channel.log.error("LINE のイベントを処理できませんでした(%s): %s", uid, type(err).__name__)
                 messages = line_channel.to_messages({"bubbles": [line_channel.FAILED_TEXT]})
             if messages:
                 await api.send(e.get("replyToken"), line_uid, messages)
 
 
 async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kind: str, e: dict) -> list[dict] | None:
-    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)は LLM を使わず、会話数も数えない。
-    ほかは会話のターン(返すものが無ければ None)。"""
+    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)と、データを見る、消すは LLM を使わず、
+    会話数も数えない。ほかは会話のターン(返すものが無ければ None)。"""
+    if kind in ("view_data", "forget_data", "forget_confirm", "forget_cancel"):
+        return await _line_data(uid, kind, e)
     if kind == "account_link":
         return line_channel.texts(account_link(uid, e["link"]))
     if kind == "link":
@@ -802,6 +910,34 @@ async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -
         return line_channel.texts(line_channel.LINK_UNAVAILABLE_TEXT)
     accounts.of(state).record_link_token(uid, token)
     return line_channel.link_messages(base, token)
+
+
+async def _line_data(uid: str, kind: str, e: dict) -> list[dict]:
+    """データを見る、消す(docs/design/privacy.md の 3.7)。消すのは、直前の「データを消す」で出した確かめ(1 回だけ、
+    FORGET_CONFIRM_SECONDS まで)の「すべて消す」が押されたときだけ。範囲は Web の「すべて消す」と同じ(_forget_all)。"""
+    asks = app.state.line_forget_asks
+    now = time.monotonic()
+    for u in [u for u, (_, until) in asks.items() if until <= now]:  # 期限の切れた確かめを捨てる(覚えすぎない)
+        del asks[u]
+    if kind == "view_data":
+        rt = app.state.rt
+        async with rt.user_lock(uid):  # 進行中のターンが書き終えてから読む
+            talked = await rt.current_thread(uid) > 0
+            view = _profile_view(uid)
+        return line_channel.data_view_messages(view, talked=talked, linked=behavior.dip_id(state, uid) is not None)
+    if kind == "forget_data":
+        nonce = secrets.token_urlsafe(16)
+        asks[uid] = (nonce, now + line_channel.FORGET_CONFIRM_SECONDS)
+        return line_channel.forget_ask_messages(nonce)
+    if kind == "forget_cancel":
+        asks.pop(uid, None)
+        return line_channel.texts(line_channel.FORGET_CANCELLED_TEXT)
+    _, nonce = line_channel.forget_postback(str(e["postback"]["data"]))
+    if uid not in asks or not secrets.compare_digest(asks[uid][0], nonce):  # 前の確かめ: 今の確かめは残す
+        return line_channel.texts(line_channel.FORGET_EXPIRED_TEXT)
+    del asks[uid]
+    await _forget_all(uid)
+    return line_channel.texts(line_channel.FORGOT_TEXT)
 
 
 def account_link(uid: str, link: dict) -> str:
@@ -856,7 +992,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     try:
         reply = await turn.reply_of(deps, t)
     except (turn.BadTurn, turn.TurnFailed) as err:
-        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, _error_text(err))
+        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, type(err.__cause__ or err).__name__)
         return {"bubbles": [line_channel.FAILED_TEXT]}
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
@@ -886,14 +1022,14 @@ def _login_form(link_token: str, message: str = "") -> str:
 
 def _bad_link_page() -> HTMLResponse:
     return HTMLResponse(_page("dip にログイン", "<p>このリンクは使えません。LINE のトークから、もう一度「アカウント連携」と"
-                                               "送ってください。</p>"), status_code=400)
+                                               "送ってください。</p>", legal_links=False), status_code=400)
 
 
 @app.get(line_channel.LINK_LOGIN_PATH, response_class=HTMLResponse)
 async def dip_login_page(link_token: Annotated[str, Query(alias="linkToken")] = ""):
     if not LINK_TOKEN_FORM.fullmatch(link_token):
         return _bad_link_page()
-    return _page("dip にログイン", _login_form(link_token))
+    return _page("dip にログイン", _login_form(link_token), legal_links=False)
 
 
 @app.post(line_channel.LINK_LOGIN_PATH)
@@ -906,7 +1042,7 @@ async def dip_login(link_token: Annotated[str, Form(alias="linkToken")] = "", lo
     acc = accounts.of(state)
     r = await asyncio.to_thread(acc.login, login_id, password)  # ハッシュの計算は遅いので、ほかの要求を止めない
     if "error" in r:
-        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]])),
+        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]]), legal_links=False),
                             status_code=429 if r["error"] == "locked" else 401)
     nonce = acc.issue_nonce(r["dip_id"], link_token)
     base = FAKE_ACCOUNT_LINK_PATH if app.state.fake_line.knows(link_token) else line_channel.ACCOUNT_LINK_URL
@@ -951,9 +1087,10 @@ async def fake_line_account_link(request: Request, link_token: Annotated[str, Qu
     opener = _owner(request)
     event = app.state.fake_line.open_account_link(link_token, nonce, opener)
     if event is None:
-        return HTMLResponse(_page("アカウント連携", "<p>このリンクは使えません。</p>", "偽物の LINE"), status_code=404)
+        return HTMLResponse(_page("アカウント連携", "<p>このリンクは使えません。</p>", "偽物の LINE", legal_links=False), status_code=404)
     text = account_link(event["source"]["userId"], event["link"])
-    return _page("アカウント連携", f"<p>{escape(text)}</p><p><a href='/'>トークに戻る</a></p>", "偽物の LINE")
+    return _page("アカウント連携", f"<p>{escape(text)}</p><p><a href='/'>トークに戻る</a></p>", "偽物の LINE",
+                 legal_links=False)
 
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
@@ -1082,29 +1219,63 @@ async def profile_unsave(job_id: str, request: Request):
     return _profile_view(user_id)
 
 
+# 「データを書き出す」のファイルの説明(ファイルの先頭に入れる)
+EXPORT_ABOUT = ("aica が保存している、あなたのデータです。profile はプロフィール画面と同じ内容、stored は保存しているそのままの形、"
+                "conversations はこれまでの会話(最後のやりとりから 30 日まで残ります)、costs は AI を使った費用の記録です。")
+
+
+@app.get("/api/profile/export")
+async def profile_export(request: Request):
+    """データを書き出す(開示。docs/design/privacy.md の 3.7): 本人の保存内容を 1 つの JSON のファイルで返す。
+    範囲は「すべて消す」と同じ(本人と、同じ Cookie の /dev のシナリオ利用者)。dip の状態の行、連携、会話、費用台帳の行。
+    見るだけなので、最後の利用に数えず、dip の状態にユーザーを作らない。LLM は呼ばず、会話数も使わない。"""
+    user_id = _owner(request)
+    rt = app.state.rt
+    async with AsyncExitStack() as locks:  # 進行中のターンが書き終えてから読む(「すべて消す」と同じ人たち、同じ順)
+        for uid in _own_users(user_id):
+            await locks.enter_async_context(rt.user_lock(uid))
+        data = {"service": "aica", "about": EXPORT_ABOUT, "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "user_id": user_id, "profile": _profile_view(user_id),
+                "stored": await asyncio.to_thread(profile.stored, state, user_id),
+                "conversations": await rt.conversations_of(user_id),
+                "costs": await asyncio.to_thread(rt.ledger.rows_of, user_id)}
+    name = f"aica-data-{today(datetime.now(UTC))}.json"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
     """すべて消す: dip の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
-    次に開くと初回訪問として始まる。会話数の上限の数と費用台帳は消さない(消すと上限を逃れられるため)。
+    次に開くと初回訪問として始まる。会話数の上限の数は消さない(消すと上限を逃れられるため)。費用台帳は、その人の行の
+    ユーザーIDを外す(金額とトークン数は残す。docs/design/privacy.md の 3.3)。
     同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
     会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
-    anon = _owner(request)
+    await _forget_all(_owner(request))
+    return {"forgotten": True}
+
+
+def _own_users(anon: str) -> list[str]:
+    """本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。名前の順
+    (この順で user_lock を取る)。「すべて消す」と「データを書き出す」の範囲。"""
+    return sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
+                   *(f"{anon}:{s}" for s in _scenario_users())})
+
+
+async def _forget_all(anon: str) -> None:
+    """すべて消す(Web のプロフィール画面と、LINE の「データを消す」の確かめ)。anon は本人のユーザーID(w-… か l-…)。"""
     rt = app.state.rt
-    # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
-    # どのユーザーも、進行中のターンが終わってから消す
-    users = sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
-                    *(f"{anon}:{s}" for s in _scenario_users())})
+    users = _own_users(anon)  # どのユーザーも、進行中のターンが終わってから消す
     async with AsyncExitStack() as locks:
         for uid in users:
             await locks.enter_async_context(rt.user_lock(uid))
         for uid in users:
             await rt.forget(uid)
         out = profile.forget_all(state, anon)
+        await asyncio.to_thread(rt.ledger.forget, anon)  # 進行中のターンが書いた行も外すよう、ロックの中で
     for uid in users:
         app.state.unread_uploads.pop(uid, None)
     _remove_voice_files(out["files"])
-    return {"forgotten": True}
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
@@ -1193,6 +1364,7 @@ def _voice_token(user_id: str, ip: str | None) -> dict:
     limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)  # 音声相談を始めたのも最後の利用
     token = issue_token(user_id)
     rooms.issue(user_id, token["room"])
     logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
@@ -1242,6 +1414,7 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
     if logic.voice_room_forgotten(state, body.user_id, body.room):
         _line_voice_to(body.room)  # 届けない宛先は忘れる
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
+    retention.touch(state, body.user_id)  # 音声相談の結果も最後の利用(期間で消す掃除が数える)
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
@@ -1329,6 +1502,7 @@ async def _read_resume(user_id: str, file: UploadFile, ip: str | None, thread: i
     limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)
     try:
         draft, usage = await extract_bytes(name, data, resume_client())
     except Exception as e:  # API のエラーは画面に理由を出す
@@ -1406,15 +1580,26 @@ async def liff_form(job: str, request: Request, scenario_user: str | None = None
     return _apply_form_page(_page_user(request, scenario_user), job, scenario_user)
 
 
+# 応募フォームの体験(求人は架空のデモ。docs/legal/terms.md の第 1 条)。欄は残し、架空の値を最初から入れておく。
+# 本物の情報を入れないよう画面に書き、送られた値は保存しない(docs/legal/privacy-policy.md の 2)。
+DEMO_FORM_VALUES = {"氏名": "山田 太郎", "電話番号": "090-0000-0000", "メールアドレス": "taro@example.com",
+                    "住所": "みほん市みほん町1-2-3", "生年月日": "2000-01-01", "年齢": "26", "希望開始日": "すぐに"}
+DEMO_FORM_OTHER = "架空の値"  # 上に無い項目
+APPLY_DEMO_NOTE = ("架空の求人のデモです。応募しても、実際の応募にはなりません。欄には架空の値を入れてあります。"
+                   "本物の情報は入れないでください。送った値は保存しません。")
+APPLY_DONE_TEXT = "応募の体験を終えました。架空の求人なので、実際の応募にはなりません。店舗から連絡は来ません。"
+
+
 def _apply_form_page(user: str, job: str, scenario_user: str | None = None) -> HTMLResponse | str:
     j = load_jobs().get(job)
     exit_ = logic.form_exit(state, user)
     if j is None or exit_ is None or exit_["job_id"] != job:
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
     fields = "".join(
-        f'<label>{escape(f)}<input name="f_{escape(f)}" required placeholder="(シミュレーションなので架空の値で)"></label>'
-        for f in exit_["remaining_fields"])
-    body = (f"<p class='job'>{escape(j.title)}<br><small>{escape(j.employer)}</small></p>"
+        f'<label>{escape(f)}<input name="f_{escape(f)}" required value="{escape(DEMO_FORM_VALUES.get(f, DEMO_FORM_OTHER))}">'
+        "</label>" for f in exit_["remaining_fields"])
+    body = (f"<p class='demo'>{escape(APPLY_DEMO_NOTE)}</p>"
+            f"<p class='job'>{escape(j.title)}<br><small>{escape(j.employer)}</small></p>"
             f"<p>入力済み: {escape('、'.join(exit_['completed_fields']))}</p>"
             f"<form method='post'><input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
             f"<input type='hidden' name='job' value='{escape(job)}'>{fields}<button>応募する</button></form>")
@@ -1430,9 +1615,9 @@ def _apply_submit(user: str, job: str) -> HTMLResponse | str:
     exit_ = logic.form_exit(state, user)
     if exit_ is None or exit_["job_id"] != job:  # 入力途中の応募が無ければ確定しない(状態にも書かない)
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
-    # 入力値は保存しない(シミュレーション)。応募の確定だけを dip の状態に反映する。
+    # 入力値は受け取っても読まない・保存しない(架空のデモ)。応募の確定だけを dip の状態に反映する。
     logic.submit_application(state, user, job)
-    return _page("応募完了", "<p>応募しました。店舗からの連絡をお待ちください。</p><p>このタブを閉じてトークに戻れます。</p>")
+    return _page("応募の体験", f"<p>{escape(APPLY_DONE_TEXT)}</p><p>このタブを閉じてトークに戻れます。</p>")
 
 
 # ----------------------------- LINE のアプリで開く LIFF 画面(/liff/line/…) -----------------------------
@@ -1627,8 +1812,9 @@ async def _line_upload_turn(uid: str, to: str, shown: dict) -> None:
         await api.loading(to)
         try:
             reply = await _line_turn(uid, "upload", {})
-        except Exception:  # noqa: BLE001  確認だけでも届ける
-            line_channel.log.exception("履歴書の続きのターンを進められませんでした(%s)", uid)
+        except Exception as err:  # noqa: BLE001  確認だけでも届ける
+            # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+            line_channel.log.error("履歴書の続きのターンを進められませんでした(%s): %s", uid, type(err).__name__)
             reply = {"bubbles": [line_channel.FAILED_TEXT]}
         if await api.push(to, line_channel.to_messages(_joined(shown, reply))) != line_channel.OK:
             line_channel.log.warning("LINE のトークに履歴書の続きを届けられませんでした(%s)", uid)
@@ -1723,7 +1909,8 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 .col{{display:flex;flex-direction:column;gap:4px;max-width:80%}}.who,.time{{font-size:11px;color:#fff}}
 .bubble{{background:#fff;padding:8px 12px;border-radius:16px;font-size:14.5px;white-space:pre-wrap}}
 .liff a{{display:block;background:#fff;border-radius:10px;padding:10px;color:var(--chip);margin-left:40px}}
-.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}</style>
+.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}
+{legal.FOOTER_CSS}.legal,.legal a{{color:#fff}}</style>
 </head><body><header>🎤 音声で相談(LINE)</header><main>
 <p class="intro">アドバイザーと話しながら、希望と経験を5分ほどで伺います。終わると、話した内容のまとめと求人が LINE のトークに届きます。
 氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。</p>
@@ -1731,6 +1918,7 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 <p id="liff-status"></p><div id="log"></div><form id="talk-form" hidden></form>
 <button class="go" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
 </main>
+{legal.footer_html()}
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script src="/static/talk-core.js"></script>
 <script>
@@ -1819,9 +2007,92 @@ async def liff_line_arcade(request: Request):
     return _liff_shell("レジュメ・アーケード") if _liff_page_user(request) is None else await liff_arcade()
 
 
+@app.get(f"{line_channel.LIFF_PREFIX}/arcade/draft", response_class=HTMLResponse)
+async def liff_line_arcade_draft(rid: int, request: Request):
+    """LINE のアプリで開く、ゲームで作った下書きの画面(トークに届いた「下書きを見る」。{game} より先に登録する)。"""
+    user = _liff_page_user(request)
+    return _liff_shell("ゲームで作った下書き") if user is None else _arcade_draft_page(user, rid, action=LIFF_ARCADE_DRAFT)
+
+
+@app.post(f"{line_channel.LIFF_PREFIX}/arcade/draft", response_class=HTMLResponse)
+async def liff_line_arcade_draft_edit(request: Request, rid: int = Form(...),
+                                      markdown: str = Form("", max_length=arcade_draft.MARKDOWN_MAX)):
+    """LINE のアプリで開いた下書きの画面で、本人が直した書類を保存する。本人の Cookie が無い・期限切れなら 401(保存しない)。"""
+    user = _liff_page_user(request)
+    if user is None:
+        return _liff_unauthorized("ゲームで作った下書き")
+    return _arcade_draft_edit(user, rid, markdown, action=LIFF_ARCADE_DRAFT)
+
+
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade/{{game}}")
 async def liff_line_arcade_game(game: str, request: Request):
-    return _liff_shell("レジュメ・アーケード") if _liff_page_user(request) is None else await liff_arcade_game(game)
+    """LINE のアプリで開くゲーム。AI と保存につながったゲームには、LIFF の設定(window.AICA_LIFF)と LIFF SDK を入れる
+    (arcade-ai.js が、LIFF の本人の API /api/liff/arcade/… を呼び、保存のときに ID トークンを送る)。"""
+    if _liff_page_user(request) is None:
+        return _liff_shell("レジュメ・アーケード")
+    if game not in ARCADE_SHIPPED:
+        return await liff_arcade_game(game)
+    conf = json.dumps({"liffId": line_channel.liff_id()}).replace("<", "\\u003c")
+    head = f'<script src="{LIFF_SDK}" charset="utf-8" defer></script>\n<script>window.AICA_LIFF = {conf};</script>\n</head>'
+    html = (ARCADE / f"{game}.html").read_text(encoding="utf-8").replace("</head>", head, 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+# ----------------------------- LINE のアプリで遊ぶゲームの AI と下書き -----------------------------
+# LINE のアプリで開いたゲーム(/liff/line/arcade/…)が呼ぶ。中身は Web の /api/arcade/… と同じ(回数の上限も同じ)で、本人だけが違う:
+# Cookie の匿名IDではなく、LIFF で確かめた LINE の本人(Cookie aica_liff の l-…。無い・期限切れなら 401)。scenario_user は見ない。
+# 会話数は LINE のユーザーごとと全体で数え、IP ごとには数えない(LINE のトークと同じ)。
+# 保存したら、Web と同じく今の会話に「下書きができました」を足し、その本人の LINE のトークに同じ返信を 1 回 push する
+# (保存 1 回につき 1 通。月のメッセージ数に数えられる)。push の宛先(LINE の userId)は、保存の本文の ID トークンを
+# LINE に確かめて受け取り、届けるまでメモリにだけ置く。確かめられなければ保存だけして、push はしない(本人の書類を失わないため)。
+# 保存は何度でもできる(AI なしの遊びは会話数も使わない)ので、push は 1 人 1 日 ARCADE_DAILY_PUSHES 通まで(月の枠を守る)。
+# 超えた保存も下書きと会話には入る(LINE のトークに知らせが届かないだけ)。
+
+LIFF_ARCADE_DRAFT = f"{line_channel.LIFF_PREFIX}/arcade/draft"
+ARCADE_PUSH_KIND = "arcade_line_push"
+ARCADE_DAILY_PUSHES = 3  # 1 人 1 日のゲームの保存の知らせ(1 日の AI つきの遊びの既定と同じ数)
+
+
+class LiffArcadeSaveIn(ArcadeSaveIn):
+    id_token: str = Field("", max_length=line_channel.MAX_ID_TOKEN_CHARS)
+
+
+def _liff_arcade_user(request: Request) -> str:
+    user = _liff_page_user(request)
+    if user is None:
+        raise HTTPException(401, LIFF_FAILED_TEXT)
+    return user
+
+
+@app.post("/api/liff/arcade/start")
+async def liff_arcade_start(body: ArcadeStartIn, request: Request):
+    return _arcade_start(_liff_arcade_user(request), _arcade_game(body.game), None)
+
+
+@app.post("/api/liff/arcade/ai")
+async def liff_arcade_ai(body: ArcadeAiIn, request: Request):
+    return await _arcade_ai(_liff_arcade_user(request), body)
+
+
+@app.post("/api/liff/arcade/save")
+async def liff_arcade_save(body: LiffArcadeSaveIn, request: Request, background: BackgroundTasks):
+    """LINE のアプリで遊んだゲームの書類を、LINE の本人の下書きとして保存する(決まりは /api/arcade/save と同じ)。
+    line: その本人の LINE のトークに知らせを送るか(Messaging API の設定があり、ID トークンがその本人のものだったとき)。"""
+    user = _liff_arcade_user(request)
+    rec, reply = _arcade_save(user, body)  # 保存できないとき(403、400)は、LINE に ID トークンを確かめに行かない
+    talk = await app.state.rt.add_arcade_result(user, reply)
+    line = False
+    if line_channel.configured():  # Messaging API の設定が無ければ送れないので、ID トークンも確かめない
+        to = await line_login().verify(body.id_token) if body.id_token else None
+        if to is None or line_channel.line_user(to) != user:  # 確かめられない、別の人の ID トークン: 送らない
+            line_channel.log.warning("LIFF の ID トークンを確かめられないので、ゲームの下書きの知らせを LINE のトークに送りません(%s)", user)
+        elif not app.state.quota.take_daily(ARCADE_PUSH_KIND, user, ARCADE_DAILY_PUSHES):
+            line_channel.log.warning("今日のゲームの下書きの知らせを送り切ったので、LINE のトークに送りません(%s)", user)
+        else:
+            line = True
+            background.add_task(_line_push, user, to, reply)
+    return {"draft": rec["id"], "view_url": LIFF_ARCADE_DRAFT + "?" + urlencode({"rid": rec["id"]}),
+            "document_kind": rec["document_kind"], "blanks": arcade.blanks(rec), "talk": talk, "line": line}
 
 
 # ----------------------------- LIFF の中でマイクを試す画面(/liff/line/mic-check、task 205) -----------------------------
@@ -1901,21 +2172,31 @@ async def liff_mic_check_log(body: MicCheckIn, request: Request):
     return {"ok": True}
 
 
-def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:
+def _page(title: str, body: str, site: str = "LIFF・dip の画面", legal_links: bool = True) -> str:
+    """LIFF と dip の画面の枠。aica の画面(legal_links)なら、下にテスト用の公開であることと、規約とポリシーへのリンクを置く。
+    dip のログインと偽物の LINE の画面は、aica ではない役の画面なので置かない。"""
+    footer = legal.footer_html() if legal_links else ""
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>
 <style>body{{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:#f4f6f8;color:#111}}
 header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{padding:16px;max-width:480px;margin:auto}}
 .job{{background:#fff;border-radius:10px;padding:12px;font-weight:700}}label{{display:block;margin:12px 0;font-size:14px}}
 input{{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px;font-size:16px;border:1px solid #ccd;border-radius:8px}}
-button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}</style>
-</head><body><header>{title}({site})</header><main>{body}</main></body></html>"""
+button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}
+.demo{{background:#fff7e6;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6}}{legal.FOOTER_CSS}</style>
+</head><body><header>{title}({site})</header><main>{body}</main>{footer}</body></html>"""
 
 
-if __name__ == "__main__":
+def main() -> None:
     import uvicorn
 
+    # SDK(OpenAI、Anthropic、httpx など)の INFO や DEBUG のログに、送った本文が出ないように(docs/design/privacy.md の 3.4)
+    quiet_sdk_loggers()
     # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。
     # ワーカーは 1 つ(会話数の上限と状態を 1 つのプロセスで持つ)。コンテナでは LINE_SIM_HOST=0.0.0.0(scripts/container_start.sh)
     uvicorn.run(app, host=os.environ.get("LINE_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("LINE_SIM_PORT", "8030")),
                 proxy_headers=False)
+
+
+if __name__ == "__main__":
+    main()

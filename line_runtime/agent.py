@@ -71,7 +71,8 @@ LINE_FEATURES = {
                       "履歴書・職務経歴書のファイルの読み込みは、LINE では使えない。勧めず、resume_upload も付けない。経歴は文で聞く。"),
     "voice_consult": ("voice_consult を付けると、音声相談の LINE の画面(LIFF)を開くボタンになる。",
                       "音声相談は、LINE では使えない。勧めず、voice_consult も付けない。"),
-    "arcade": ("事業者のツールが返したレジュメ・アーケード(/liff/arcade)の URL は、LINE の画面(LIFF)で開くボタンにできる。",
+    "arcade": (("summary の arcade_url(レジュメ・アーケード)は、LINE の画面(LIFF)で開くボタンになる。ゲームの AI と下書きの保存も"
+                "この本人として使え、保存するとこのトークに知らせが届く。"),
                "レジュメ・アーケード(/liff/arcade)は、LINE では開けない。勧めず、ボタンも付けない。"),
 }
 

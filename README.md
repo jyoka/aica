@@ -71,7 +71,8 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 
 - 2 つのプロセスは、リポジトリ直下で同じ venv と同じ `.env` を使います
-- `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)。
+  音声相談の設定(`LIVEKIT_*`)があるのに無い、短い(32 文字未満)と、Web プロセスも音声ワーカーも起動で止まります
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
 - 1 人が開ける音声相談は同時に 1 つまでです(Web プロセスを再起動した直後は、再起動の前から続いている相談を数えません)。
   音声ワーカーが同時に受ける相談は `VOICE_RESUME_MAX_JOBS`(既定 4)までです。
@@ -88,8 +89,9 @@ Render のサービスを作る手順と、運営者がする操作は [docs/dep
 
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。トークで使えるのは、テキストの会話と、友だち追加の挨拶と、
 アカウント連携(下の「アカウント連携を試す」)です。履歴書の読み込みと音声相談は、LIFF の設定(下の「LINE で LIFF 画面を開く」)があれば、トークのボタンから LIFF 画面で使えます。
-結果は LINE のトークに届きます。レジュメ・アーケードも LIFF 画面で開けますが、今は dip が LINE のユーザーにゲームの URL を渡さないので、
-エージェントはそのボタンを出しません([PRD](docs/prd/resume-arcade.md) の「LINE のとき」)。
+結果は LINE のトークに届きます。レジュメ・アーケードも、LIFF の設定があれば dip が LINE のユーザーにゲームの URL を渡すので、
+エージェントがトークにゲームのボタンを出します。LIFF 画面のゲームは AI と保存を LINE の本人で使え、保存すると LINE のトークに知らせが届きます
+([PRD](docs/prd/resume-arcade.md) の「LINE のとき」)。
 トークに直接送ったファイルと写真は読みません。LIFF の設定が無いときは、エージェントにも「LINE では使えない」と伝え、
 それでも勧めたときは文で書くよう案内します。
 LIFF の中でマイクが使えるかは、下の「LINE の中でマイクが使えるかを確かめる」の手順で実機で確かめます。
@@ -185,10 +187,10 @@ LINE のトークに出るボタン(履歴書の読み込み、音声相談、�
   |---|---|---|
   | 音声相談 | `/voice` | Web と同じ音声相談のシート。終わると、まとめと求人と下書きのボタンが LINE のトークに届く |
   | 履歴書の読み込み | `/resume/upload` | ファイル(PDF / JPEG / PNG)を選んで読み取る。確認とエージェントの次の 1 問が LINE のトークに届く |
-  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム。AI と保存の API は Cookie の匿名ユーザーIDの本人で呼ぶので、LIFF の中では簡易分析で遊べて、保存はできない |
-  | 応募フォームの続き、読み取り結果、下書き | `/apply?job=…`、`/resume?rid=…`、`/voice/draft?rid=…` | Web と同じ画面 |
-- トークに届けるのは push です(LINE 公式アカウントの月のメッセージ数に数えられます)。宛先の LINE の userId は、操作を始めるときに
-  ID トークンからもらい、届けるまでメモリにだけ置きます。面談の途中で Web サーバーを起動し直すと、そのまとめはトークに届きません(会話には入ります)
+  | レジュメ・アーケード | `/arcade`、`/arcade/<ゲーム>` | Web と同じゲーム。AI(回数の上限は Web と同じ)と保存は LINE の本人で使う。保存すると「下書きができました」と「下書きを見る」が LINE のトークに届く |
+  | 応募フォームの続き、読み取り結果、下書き | `/apply?job=…`、`/resume?rid=…`、`/voice/draft?rid=…`、`/arcade/draft?rid=…` | Web と同じ画面 |
+- トークに届けるのは push です(LINE 公式アカウントの月のメッセージ数に数えられます。ゲームは保存 1 回につき 1 通で、1 人 1 日 3 通まで)。宛先の LINE の userId は、操作を始めるとき
+  (ゲームは保存するとき)に ID トークンからもらい、届けるまでメモリにだけ置きます。面談の途中で Web サーバーを起動し直すと、そのまとめはトークに届きません(会話には入ります)
 - 確かめた本人は、署名つきの Cookie で覚えます。ブラウザ(LINE の中のブラウザ)を閉じるまでで、長くても 1 時間です。
   過ぎたら、開いたときにもう一度 ID トークンで確かめます。1 時間を過ぎてから応募フォームを送ると、入力は残らず、開き直しになります
 - ID トークンを確かめられない(LINE が断った、期限切れ、別のチャネルのトークン)ときは「本人を確かめられませんでした」と出して止まり、
@@ -287,6 +289,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
 | `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |
 | `python -m line_runtime.ledger [--date 2026-09-27] [--by-user-id] [--json]` | 費用台帳を人と日ごとに表で集計する(合計の行つき)。`--by-user-id` はシナリオユーザーを匿名ユーザーIDにまとめない | 使わない |
+| `python -m line_runtime.purge [--url https://…]` | 期間で消す掃除を今すぐ走らせる。動いている Web プロセス(既定 `http://127.0.0.1:8030`)の内部の口を `AICA_INTERNAL_KEY` で呼ぶだけで、このコマンドは何も消さない。掃除は Web プロセスが起動時と 1 日 1 回、自分でも走らせる | 使わない |
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
@@ -304,6 +307,17 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 **`.env` で効くのは、下の表で「`.env` 可」としたものだけです。** ほかは起動のときに読むので、コマンドの前に環境変数として渡します
 (例: `SIM_NOW=2026-10-01T09:00:00+09:00 ./.venv/bin/python -m line_runtime.server`)。理由は
 [review-2026-10.md の R21](docs/architecture/review-2026-10.md#r21-設定の一部が-env-では効かない)にあります。
+
+保存する期間は環境変数ではなく、コードの定数です(数の理由は [docs/design/privacy.md](docs/design/privacy.md) の 3.3)。
+Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消します。
+
+| 消すもの | 期間 | 定数 |
+|---|---|---|
+| 会話(`data/line_checkpoints.db`) | 会話ごとに、最後のやりとりから 30 日 | `line_runtime.purge.CONVERSATION_TTL` |
+| 使われなくなった人(`data/state.json` の行、連携、音声の下書きのファイル) | 最後の利用から 180 日 | `dip_mcp.retention.USER_TTL` |
+| 「すべて消す」で持ち越した部屋の名前 | 消した時刻から 1 日 | `dip_mcp.retention.FORGOTTEN_ROOMS_TTL` |
+| 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする。「すべて消す」では、すぐにその人のユーザーIDを外す(金額は残す) | `line_runtime.ledger.ID_TTL` |
+| Cookie `aica_uid` | 最後に画面を開いた日から 180 日 | `line_runtime.server.ANON_COOKIE_MAX_AGE` |
 
 | 環境変数 | 既定 | 用途 | `.env` |
 |---|---|---|---|
@@ -361,9 +375,10 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](docs/design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
-| `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
+| `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
-| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
+| `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは dip の状態に入り、トークに届く([privacy.md](docs/design/privacy.md) の 3.3) | 不可 |
+| `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | `VOICE_RESUME_WRITE_FILES=1` のときの、下書き、文字起こし、求人の提案の置き場 | 不可 |
 | `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
 | `VOICE_RESUME_MAX_JOBS` | 4 | 音声ワーカーが同時に受ける相談の数。超えた部屋にはアドバイザーが入らない(`dev` でも) | 不可 |
@@ -385,6 +400,6 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](docs/design/privacy.md) |
-| 利用規約とプライバシーポリシーの下書き(公開前に人が確認する) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md) |
+| 利用規約とプライバシーポリシー(版 1.0。画面は `/legal/terms`、`/legal/privacy`。法律の確認は利用者がする) | [docs/legal/terms.md](docs/legal/terms.md)、[docs/legal/privacy-policy.md](docs/legal/privacy-policy.md)、[docs/legal/README.md](docs/legal/README.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](docs/deploy/render.md) |

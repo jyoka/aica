@@ -8,7 +8,8 @@ finalize_interview)を呼ぶ。dip は本物の MCP サーバー(stdio)、トー
 (2) 音声で区分が切り替わり、dip に記録される(根拠の発言そのまま)。指示の playbook も入れ替わる。話した内容が保存項目に入る
 (3) 正社員の面談の下書きは document_kind=職務経歴書・format_version 1.1 で、職務要約と成果が入る。アルバイトは履歴書
 (4) 書類の呼び方が、区分ごとに入口(「+」メニュー)・アドバイザー・吹き出し・ボタン・ページの題・本文の見出しでそろう
-(5) 面談の途中で「すべて消す」をしたら、その面談の結果で dip の記録を作り直さない
+(5) 面談の途中で「すべて消す」をしたら、その面談の結果で dip の記録を作り直さない。その後に話した区分と希望も dip が断る
+(6) 既定では data/voice-resume/ にファイルを書き出さず、下書きは dip の状態に入ってトークに届く(docs/design/privacy.md の 3.3)
 """
 
 from __future__ import annotations
@@ -103,6 +104,7 @@ def talk(served, advised, tmp_path, monkeypatch):  # noqa: F811
     """トーク(本物の HTTP サーバー)と、そこへ結果を送る音声ワーカーの設定。(URL, サーバー)"""
     monkeypatch.setattr(voice_config, "TALK_URL", served)
     monkeypatch.setattr(voice_config, "OUT_DIR", tmp_path / "voice-out")
+    monkeypatch.setattr(voice_config, "WRITE_FILES", False)  # 既定(書き出さない)
     return served, advised
 
 
@@ -132,11 +134,12 @@ def _interview(uid: str, steps, room: Room | None = None):
     return asyncio.run(run())
 
 
-def _files(advisor) -> tuple[dict, str]:
-    """書き出した下書き(JSON と Markdown)。"""
-    paths = [Path(p) for p in advisor.finalized["files"]]
-    env = json.loads(next(p for p in paths if p.suffix == ".json" and p.name.startswith("resume-draft")).read_text("utf-8"))
-    return env, next(p for p in paths if p.suffix == ".md").read_text("utf-8")
+def _draft(advisor, server, uid: str) -> tuple[dict, str]:
+    """面談の下書き(JSON と、dip の状態に入った Markdown)。既定ではファイルに書き出さないので、ファイルは無い。"""
+    assert advisor.finalized["files"] == [] and not voice_config.OUT_DIR.exists()
+    rec = logic.voice_results_since(server.state, uid, 0)[-1]
+    assert rec["draft_markdown"] == advisor.finalized["markdown"] and rec["files"] == []
+    return advisor.finalized["resume"], rec["draft_markdown"]
 
 
 # ----------------------------- (1) 区分に合った音声版の playbook -----------------------------
@@ -289,7 +292,7 @@ def test_voice_switches_to_fulltime_saves_what_was_said_and_drafts_a_career_shee
     assert "職務経歴書の下書き" in done and advisor.delivered_to_talk
     assert stub.calls[0]["instructions"] == CAREER_DRAFTER_SYSTEM
     assert "職務経歴書の下書きを作ってください" in stub.calls[0]["input"][0]["content"]
-    env, md = _files(advisor)
+    env, md = _draft(advisor, server, uid)
     assert env["format_version"] == "1.1" and env["document_kind"] == "職務経歴書"
     assert env["resume"]["job_summary"].startswith("法人営業を6年") and env["resume"]["work_history"][0]["achievements"]
     assert md.startswith("# 職務経歴書(下書き)")
@@ -331,7 +334,7 @@ def test_a_parttime_interview_still_drafts_a_resume(talk, monkeypatch):
     assert "希望年収の下限" in proposed and "min_annual_salary" not in summary["stated_preferences"]
     assert summary["stated_preferences"]["time_band"]["value"] == "夕方"  # 負例: 区分に合う条件はそのまま保存する
     assert stub.calls[0]["instructions"] == DRAFTER_SYSTEM
-    env, md = _files(advisor)
+    env, md = _draft(advisor, server, uid)
     assert env["format_version"] == "1.1" and env["document_kind"] == "履歴書"
     assert md.startswith("# 履歴書(下書き)") and "## 学歴" in md and "みほん高校" in md
     got = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "timeout": 0}).json()["results"][0]
@@ -397,7 +400,7 @@ def test_the_document_is_called_the_same_everywhere_in_a_track(talk, monkeypatch
     assert got["buttons"][0]["label"] == f"{doc}の下書きを見る"
     page = client.get("/liff/voice/draft", params={"rid": 0}).text
     assert f"<title>{doc}の下書き</title>" in page and f"# {doc}(下書き)" in page
-    _, md = _files(advisor)
+    _, md = _draft(advisor, server, uid)
     assert md.startswith(f"# {doc}(下書き)")
     for other in others:  # もう一方の書類の名前は、結果のどこにも出ない
         assert not any(other in b for b in got["bubbles"]) and other not in got["buttons"][0]["label"]
@@ -432,6 +435,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
     届いても、トークにも dip にも記録を作り直さない(ワーカーは会話の結果も記録しない)。その面談で書き出した下書き・文字起こしのファイルも消す。
     負例: 消した後に始めた面談の結果は、これまでどおり届く。"""
     url, server = talk
+    monkeypatch.setattr(voice_config, "WRITE_FILES", True)  # 書き出したファイルも消すことを確かめる(開発のとき)
     client, uid = _browser_user(url, server)
     monkeypatch.setattr(advisor_module, "_default_client", lambda: DraftStub(RESUME_DRAFT))
     room = client.post("/api/voice/start", json={"user_id": uid}).json()["room"]
@@ -444,7 +448,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
 
     advisor, _, (reply,), summary = _interview(uid, [talk_then_forget], room=Room(room))
     assert advisor.forgotten and not advisor.delivered_to_talk
-    assert not any(Path(f).exists() for f in advisor.finalized["files"])  # 文字起こし・下書きのファイルも残さない
+    assert advisor.finalized["files"] and not any(Path(f).exists() for f in advisor.finalized["files"])  # 文字起こし・下書きのファイルも残さない
     assert "残していません" in reply
     user = server.state.user(uid)
     assert user.get("voice_results", []) == [] and user.get("outcomes") == [] and user.get("preferences") is None
@@ -460,8 +464,114 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
 
     advisor, _, _, _ = _interview(uid, [finalize], room=Room(new_room))
     assert advisor.delivered_to_talk and not advisor.forgotten
-    assert all(Path(f).exists() for f in advisor.finalized["files"])
+    assert advisor.finalized["files"] and all(Path(f).exists() for f in advisor.finalized["files"])
     assert [r["room"] for r in logic.voice_results_since(server.state, uid, 0)] == [new_room]
+
+
+def test_writes_after_forget_all_in_the_same_call_are_refused(talk, livekit):  # noqa: F811
+    """R7(docs/design/privacy.md の 3.8 の案 A): 面談の途中で本人が「すべて消す」をしたら、その通話でその後に話した
+    雇用区分と希望は、dip が断って状態に残さない。アドバイザーは保存できなかったとだけ扱い、会話は続ける。
+    負例: 消した後に始めた面談の書き込みは、これまでどおり通る。"""
+    url, server = talk
+    client, uid = _browser_user(url, server)
+    room = client.post("/api/voice/start", json={"user_id": uid}).json()["room"]
+
+    async def forget_then_talk(a):
+        assert client.post("/api/profile/forget").json() == {"forgotten": True}
+        saved = await a.save_user_preferences(purpose="生活費の足しに", area="新宿")
+        switched = await a.set_search_track(SEISHAIN, "正社員で探したいです")
+        return saved, switched
+
+    advisor, _, ((saved, switched),), summary = _interview(uid, [forget_then_talk], room=Room(room))
+    assert "保存しました" not in saved and "保存できませんでした" in saved
+    assert "切り替えられませんでした" in switched and advisor.track == MITEI
+    user = server.state.user(uid)
+    assert user.get("preferences") is None and user.get("track_history") is None
+    assert summary["stated_preferences"] == {} and summary["search_track"] == MITEI
+
+    # 負例: 消した後に始めた面談の書き込みは、これまでどおり通る
+    server.app.state.voice_rooms.release(uid, room)
+    new_room = client.post("/api/voice/start", json={"user_id": uid}).json()["room"]
+
+    async def talk_(a):
+        return (await a.save_user_preferences(purpose="生活費の足しに"),
+                await a.set_search_track(SEISHAIN, "正社員で探したいです"))
+
+    advisor, _, ((saved, switched),), summary = _interview(uid, [talk_], room=Room(new_room))
+    assert "保存しました: 目的" in saved and "切り替えました" in switched
+    assert summary["stated_preferences"]["purpose"]["value"] == "生活費の足しに"
+    assert summary["search_track"] == SEISHAIN
+
+
+def test_dip_refuses_every_write_of_a_forgotten_room(tmp_path):
+    """dip の側: 「すべて消す」の前に始めた部屋を付けた書き込み(希望・雇用区分・会話の結果)は、何も残さずに断る。
+    負例: 部屋を付けないトークの書き込みと、消した後に始めた部屋の書き込みは通る。"""
+    from dip_mcp import profile
+    from dip_mcp.data import State
+
+    state, uid, old, new = State(tmp_path / "state.json"), "w-7777777777777777", "voice-resume-old", "voice-resume-new"
+    logic.record_voice_room(state, uid, old)
+    profile.forget_all(state, uid)
+    logic.record_voice_room(state, uid, new)
+    assert logic.save_preferences(state, uid, {"purpose": "生活費の足しに"}, room=old) == {
+        "saved": [], "rejected": [], "error": logic.FORGOTTEN_ROOM_ERROR}
+    assert logic.set_search_track(state, uid, SEISHAIN, "正社員で探したいです", room=old) == {
+        "error": logic.FORGOTTEN_ROOM_ERROR}
+    assert logic.record_outcome(state, uid, "consult", "相談した", 1.0, "生活費の足しに探している。", room=old) == {
+        "error": logic.FORGOTTEN_ROOM_ERROR}
+    user = state.user(uid)
+    assert not user.get("preferences") and not user.get("track_history") and not user.get("outcomes")
+
+    for room, track in ((None, SEISHAIN), (new, BAITO)):
+        assert logic.save_preferences(state, uid, {"purpose": "生活費の足しに"}, room=room)["saved"] == ["purpose"]
+        assert logic.set_search_track(state, uid, track, "そう探したいです", room=room)["changed"]
+        assert "recorded" in logic.record_outcome(state, uid, "consult", "相談した", 1.0, room=room)
+    assert len(state.user(uid)["outcomes"]) == 2
+
+
+def test_a_write_that_lands_while_forget_all_is_running_is_refused(tmp_path):
+    """「すべて消す」が 1 人の行を初期に戻した直後(連携を外すなど、まだ終わっていない間)に届いた、消す前の部屋の書き込みも断る。
+    行を戻すことと、消す前の部屋を残すことは、同じロックの中で行う(間の時間に書き込みが通らないように)。"""
+    from dip_mcp import profile
+    from dip_mcp.data import State
+
+    state, uid, room = State(tmp_path / "state.json"), "w-8888888888888888", "voice-resume-old"
+    logic.record_voice_room(state, uid, room)
+    got = []
+    reset_user = state.reset_user
+
+    def reset_then_the_worker_writes(*args, **kwargs):
+        before = reset_user(*args, **kwargs)
+        got.append(logic.save_preferences(state, uid, {"wants": "残業少なめ"}, room=room))
+        got.append(logic.set_search_track(state, uid, SEISHAIN, "正社員で探したいです", room=room))
+        got.append(logic.record_outcome(state, uid, "consult", "相談した", 1.0, room=room))
+        return before
+
+    state.reset_user = reset_then_the_worker_writes
+    profile.forget_all(state, uid)
+    assert [r.get("error") for r in got] == [logic.FORGOTTEN_ROOM_ERROR] * 3
+    user = state.user(uid)
+    assert user["forgotten_voice_rooms"] == [room]
+    assert not user.get("preferences") and not user.get("track_history") and not user.get("outcomes")
+
+
+def test_the_chat_ai_does_not_see_the_room_argument(tmp_path, monkeypatch):
+    """部屋は音声ワーカーだけが渡す引数: dip の書き込むツールは受け取るが、トークの AI に渡すツールの引数には出さない。"""
+    from dip_mcp import server
+    from line_runtime.runtime import LineRuntime
+    from tests.test_handle import ScriptedModel
+
+    writes = {t.name for t in asyncio.run(server.mcp.list_tools()) if logic.VOICE_ROOM_ARG in t.inputSchema["properties"]}
+    assert writes == {"save_user_preferences", "set_search_track", "record_conversation_outcome"}
+    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+
+    async def chat_tools():
+        async with LineRuntime(model=ScriptedModel(), in_memory=True) as rt:
+            return rt.tools
+
+    tools = asyncio.run(chat_tools())
+    assert writes <= {t.name for t in tools}
+    assert not [t.name for t in tools if logic.VOICE_ROOM_ARG in t.args]
 
 
 # ----------------------------- 区分を切り替えた後の受け渡し(レビューの指摘) -----------------------------

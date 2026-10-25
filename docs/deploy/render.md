@@ -50,7 +50,8 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
 - `AICA_TRUST_PROXY=1` と `AICA_INTERNAL_KEY`(乱数)は Blueprint が入れます。`AICA_INTERNAL_KEY` は同じコンテナの Web プロセスと
-  音声ワーカーが同じ値を読むので、そろえる手間はありません
+  音声ワーカーが同じ値を読むので、そろえる手間はありません。音声相談の設定(`LIVEKIT_*`)があるのに `AICA_INTERNAL_KEY` が無い、
+  短い(32 文字未満)ときは、Web プロセスも音声ワーカーも起動で止まります。ダッシュボードで作るときは、忘れずに長い乱数を入れます
 - Blueprint を使わずにダッシュボードで作るときは、下の「環境変数」の表と、Health Check Path `/healthz`、
   ディスクの Mount Path `/app/data` を同じに設定します。Docker Command は空のままにします(`Dockerfile` の CMD を使う)
 
@@ -180,7 +181,7 @@ LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKi
 |---|---|---|
 | `/app/data/line_checkpoints.db` | 会話 | 本人が「すべて消す」。履歴書を消すと、その前の会話も消える |
 | `/app/data/state.json`、`dip_*.db` | プロフィール(希望、経歴、履歴書の読み取り結果、保存した求人、応募) | 本人が消す、「すべて消す」 |
-| `/app/data/voice-resume/` | 音声相談の下書きと文字起こし | 本人が下書きを消す、「すべて消す」 |
+| `/app/data/voice-resume/` | 本番では書かない。`VOICE_RESUME_WRITE_FILES` を付けないと、音声相談の下書きと文字起こしをファイルに書き出さない(下書きは `state.json` に入る) | - |
 | `/app/data/costs.jsonl` | 匿名ユーザーIDごとの費用 | 消さない(上限を逃れられないように) |
 | `/app/data/quota.json` | 当日のターン数と、当日の接続元の IP | 日付(日本時間)が変わった後、最初にターンかプロフィールの書き込みがあったときに書き直されて消える(それまではファイルに残る) |
 | Render のアクセスログ | 要求のパス、時刻、接続元など | Render の保存の期間による(不明。Render の設定と規約で確かめる) |

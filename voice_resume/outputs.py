@@ -1,4 +1,7 @@
-"""面談の終わりに out/ へ書き出す成果物。
+"""面談の終わりに作る成果物。config.WRITE_FILES(VOICE_RESUME_WRITE_FILES=1、開発用)のときだけ OUT_DIR へ書き出す。
+
+既定は書き出さない。下書きはトーク経由で dip の状態(voice_results)に入る(docs/design/privacy.md の 3.3)。
+書き出すときのファイル:
 
 - resume-draft-<ts>.json / .md: 下書き(履歴書か職務経歴書。形は docs/architecture/lld.md の 5.5 の format_version 1.1)
 - transcript-<ts>.json: 文字起こし
@@ -42,8 +45,9 @@ async def write_outputs(
     source: str = "voice-interview",
     document_kind: str = DEFAULT_DOCUMENT_KIND,
 ) -> dict:
-    """下書き(document_kind の書類)を生成して out/ に保存し、{resume, markdown, proposal, files} を返す。
+    """下書き(document_kind の書類)を生成し、{resume, markdown, proposal, files, stamp} を返す。
 
+    config.WRITE_FILES のときだけ OUT_DIR に書き出す。書かないときの files は空。
     client は AsyncOpenAI(テストではスタブ)。
     """
     draft = await build_draft(transcript, client, document_kind=document_kind)
@@ -59,8 +63,12 @@ async def write_outputs(
         "jobs": proposed_jobs or [],
     }
 
-    config.OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now(JST).strftime("%Y%m%d-%H%M%S")
+    result = {"resume": env, "markdown": markdown, "proposal": proposal, "files": [], "stamp": stamp}
+    if not config.WRITE_FILES:
+        return result
+
+    config.OUT_DIR.mkdir(parents=True, exist_ok=True)
     files = {
         "resume_json": config.OUT_DIR / f"resume-draft-{stamp}.json",
         "resume_md": config.OUT_DIR / f"resume-draft-{stamp}.md",
@@ -75,10 +83,5 @@ async def write_outputs(
     files["proposal"].write_text(
         json.dumps(proposal, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return {
-        "resume": env,
-        "markdown": markdown,
-        "proposal": proposal,
-        "files": [str(p) for p in files.values()],
-        "stamp": stamp,
-    }
+    result["files"] = [str(p) for p in files.values()]
+    return result

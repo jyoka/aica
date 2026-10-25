@@ -27,7 +27,7 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from dip_mcp.logic import liff_url
+from dip_mcp.logic import VOICE_ROOM_ARG, liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
@@ -124,6 +124,16 @@ def dip_connection() -> dict:
             "cwd": str(config.ROOT), "env": dict(os.environ)}
 
 
+def chat_tools(tools: list) -> list:
+    """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。"""
+    for tool in tools:
+        schema = tool.args_schema
+        if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
+            props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
+            tool.args_schema = schema | {"properties": props}
+    return tools
+
+
 class LineRuntime:
     def __init__(self, model=None, in_memory: bool = False, ledger: Ledger | None = None) -> None:
         self._model = model
@@ -140,7 +150,7 @@ class LineRuntime:
     async def __aenter__(self) -> Self:
         client = MultiServerMCPClient({"dip": dip_connection()})
         session = await self._stack.enter_async_context(client.session("dip"))
-        self.tools = await load_mcp_tools(session)
+        self.tools = chat_tools(await load_mcp_tools(session))
         scenarios = {}
         for entry in EVENTS.values():
             msgs = await load_mcp_prompt(session, "baitoru_assistant", arguments={"entry": entry[0]})
@@ -271,11 +281,70 @@ class LineRuntime:
         await self._erase(user_id, keep=n + 1)
 
     async def forget(self, user_id: str) -> None:
-        """そのユーザーの会話(チェックポイント)をすべて、1つのトランザクションで消す(プロフィールの「すべて消す」)。
-        次の会話は1番から。途中で失敗したら何も消えていない(もう一度押せばやり直せる)。
+        """そのユーザーの会話(チェックポイント)をすべて、1つのトランザクションで消す(プロフィールの「すべて消す」と、
+        期間で消す掃除のユーザー)。次の会話は1番から。途中で失敗したら何も消えていない(もう一度押せばやり直せる)。
         呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
         await self._erase(user_id)
-        self._threads[user_id] = 0
+        self._threads.pop(user_id, None)  # 次に参照したとき、残りの会話(無いので 0)から数え直す
+
+    async def conversations_of(self, person_id: str) -> list[dict]:
+        """その人の会話のすべて(プロフィールの「データを書き出す」)。シナリオユーザー(「匿名ID:シナリオユーザー」)の会話も入る。
+        1 つの会話は {user_id, thread, last_at, turns}。turns は画面に描き直す形(history)。本人の会話を先に、番号の順。LLM は呼ばない。"""
+        await self._saver.setup()
+        async with self._saver.lock, self._saver.conn.execute(
+                "SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id > ? AND thread_id < ?",
+                (f"{person_id}:", f"{person_id};")) as cur:
+            threads = [row[0] for row in await cur.fetchall()]
+        out = []
+        for thread_id in threads:
+            user_id, _, n = thread_id.rpartition(":")
+            if not n.isdigit():
+                continue
+            cfg = {"configurable": {"thread_id": thread_id}}
+            messages = (await self.agent.aget_state(cfg)).values.get("messages", [])
+            at = await self._last_at(thread_id)
+            out.append({"user_id": user_id, "thread": int(n), "last_at": at.isoformat() if at else None,
+                        "turns": history(messages, user_id)})
+        return sorted(out, key=lambda c: (c["user_id"] != person_id, c["user_id"], c["thread"]))
+
+    async def _last_at(self, thread_id: str) -> datetime | None:
+        """その会話の最後のやりとり(最新のチェックポイントの保存時刻、UTC)。会話が無ければ None。"""
+        tup = await self._saver.aget_tuple({"configurable": {"thread_id": thread_id}})
+        return datetime.fromisoformat(tup.checkpoint["ts"]) if tup else None
+
+    async def old_threads(self, cutoff: datetime) -> list[str]:
+        """最後のやりとりが cutoff より前の会話の thread_id(期間で消す掃除が、会話ごとに消す)。"""
+        await self._saver.setup()
+        async with self._saver.lock, self._saver.conn.execute("SELECT DISTINCT thread_id FROM checkpoints") as cur:
+            threads = [row[0] for row in await cur.fetchall()]
+        return [t for t in threads if (at := await self._last_at(t)) is not None and at < cutoff]
+
+    async def erase_old_thread(self, thread_id: str, cutoff: datetime) -> bool:
+        """その会話の記録を1つのトランザクションで消す。消す前に、最後のやりとりが今も cutoff より前かを確かめ直す
+        (掃除が対象を決めた後に続いていたら消さない)。今の会話を消しても番号は戻さない(_threads はそのまま。
+        次にトークを開くと、返信の無い会話として新しい会話から始まる)。
+        呼び出し元が、その会話のユーザーの user_lock の中で呼ぶ。"""
+        at = await self._last_at(thread_id)
+        if at is None or at >= cutoff:
+            return False
+        saver = self._saver
+        async with saver.lock, saver.conn.cursor() as cur:
+            try:
+                for table in CONVERSATION_TABLES:
+                    await cur.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
+                await saver.conn.commit()
+            except BaseException:
+                await saver.conn.rollback()
+                raise
+        return True
+
+    async def vacuum(self) -> None:
+        """会話の DB を詰める(消した行がファイルの空き領域に残らないように。期間で消す掃除の後)。
+        AsyncSqliteSaver は WAL で書くので、VACUUM の後に WAL も本体に書き戻して空にする(WAL のファイルにも残さない)。"""
+        await self._saver.setup()
+        async with self._saver.lock:
+            await self._saver.conn.execute("VACUUM")
+            await self._saver.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
                      talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False,

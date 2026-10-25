@@ -59,12 +59,22 @@ def clock() -> datetime:
 
 
 LINE_USER = re.compile(r"l-[0-9a-f]{16}")  # LINE のユーザーID の形(作るのは line_runtime.line_channel.line_user だけ)
+# LINE のアプリでゲームを開く LIFF の設定(line_runtime.line_channel の LIFF_ID_ENV、LIFF_CHANNEL_ENV、LOGIN_CHANNEL_ENV と同じ名前)。
+# dip は line_runtime を import しないので、名前をここにも持つ(同じ答えになることは tests/test_arcade_liff.py が確かめる)
+LIFF_ID_ENV = "LINE_LIFF_ID"
+LIFF_CHANNEL_ENVS = ("LINE_LIFF_CHANNEL_ID", "LINE_LOGIN_CHANNEL_ID")
 
 
 def is_line_user(line_user_id: str) -> bool:
-    """LINE のユーザーか。LINE で LIFF 画面を開くと Cookie が無く本人にならない(HLD の 4.8)ので、ゲームの URL を渡さない。
+    """LINE のユーザーか。LINE のユーザーは、ゲームを LINE のアプリの LIFF 画面(/liff/line/arcade…)で開き、LIFF の ID トークンで
+    確かめた本人として AI と保存を使う(HLD の 4.8)。LIFF の設定が無ければ LINE で開けないので、ゲームの URL を渡さない(game_url)。
     ユーザーIDの形で扱いを分ける先例は data.uses_sim_clock。"""
     return LINE_USER.fullmatch(line_user_id) is not None
+
+
+def liff_configured() -> bool:
+    """LINE のアプリで LIFF 画面を開けるか(LIFF ID とチャネル ID の両方がある。line_runtime.line_channel.liff_configured と同じ決まり)。"""
+    return bool(os.environ.get(LIFF_ID_ENV, "").strip() and any(os.environ.get(k, "").strip() for k in LIFF_CHANNEL_ENVS))
 
 
 def _metric(u: dict, key: str, n: int = 1) -> None:
@@ -232,10 +242,11 @@ def draft_url(line_user_id: str, draft_id: int) -> str:
 
 
 def game_url(line_user_id: str, game: str | None = None) -> str | None:
-    """エージェントがボタンにするゲームの URL(dip が作る。エージェントには書かせない)。LINE のユーザーには None。"""
+    """エージェントがボタンにするゲームの URL(dip が作る。エージェントには書かせない)。LINE のユーザーには、LIFF の設定が
+    あるときだけ返す(LINE のメッセージでは LIFF URL のボタンになる。line_runtime.line_channel.to_messages)。無ければ None。"""
     from dip_mcp.logic import liff_url
 
-    if is_line_user(line_user_id):
+    if is_line_user(line_user_id) and not liff_configured():
         return None
     return liff_url(f"{HUB_PATH}/{game}" if game else HUB_PATH, line_user_id)
 

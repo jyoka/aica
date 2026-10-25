@@ -59,7 +59,8 @@ class Clock:
 
 
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
-           "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
+           "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret",
+           "AICA_INTERNAL_KEY": "offline-test-internal-key-offline-test"}  # 音声相談の設定があれば、無いと起動で止まる
 QUOTA_ENVS = ("AICA_DAILY_TURN_LIMIT_PER_IP", "AICA_DAILY_NEW_IDS_PER_IP", "AICA_DAILY_TURN_LIMIT_TOTAL",
               "AICA_DAILY_NEW_IDS_TOTAL", "AICA_TRUST_PROXY")
 
@@ -325,7 +326,7 @@ TUNNEL_PEER = ("127.0.0.1", 50000)
 # その手順で .env に書く鍵(ダミー値)。load_env より先に入れておくので、本物の .env の値は入らない
 TUNNEL_ENV = {"LINE_CHANNEL_SECRET": "offline-test-secret", "LINE_CHANNEL_ACCESS_TOKEN": "offline-test-token",
               "AICA_ID_KEY": "offline-test-id-key-" + "0" * 32, "AICA_PUBLIC_URL": "https://aica.example.test",
-              "AICA_INTERNAL_KEY": "offline-test-internal-key", **LIVEKIT}
+              **LIVEKIT}
 
 
 def _tunnel_server(tmp_path, monkeypatch, **env: str):
