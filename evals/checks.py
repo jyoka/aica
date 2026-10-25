@@ -24,7 +24,18 @@ FORMAT_RULES = {track: dict(rules) for track, rules in CONVERSATION_RULES.items(
 JOB_TYPE_NAMES = set(JOB_TYPES) | set(FULLTIME_JOB_TYPES)
 DEFAULT_TRACK = "未定"
 FULLTIME_TRACK = "正社員"
-ESCAPE = re.compile(r"今はいい|それ以外|やめ|待つ|考え中|いらない|大丈夫|特にない|あとで")
+# 質問の選択肢の逃げ道は「今はいい」1つ(Prompt の対話ルール。task 226)。入口D(応募フォームの離脱)だけは、
+# 入口の指示どおり「やめた」が断りの選択肢になる
+ESCAPE = re.compile(r"今はいい|やめた")
+# 答えの候補にならない選択肢(押しても中身の無い発言になるか、詰まった答えを誘う)。fullmatch で使う。
+# 問いの選択肢がこれだけなら「逃げ道だけ」(#221 の直す所 4: 87 ターン中 28 ターン)
+NON_ANSWER = re.compile(r"(今はいい|それ以外|その他|特に(ない|無い|なし)|思いつかない|思い浮かばない|分からない|わからない"
+                        r"|まだ決めていない)(です)?[。]?")
+# 「今はいい」のほかの逃げ道(逃げ道は「今はいい」1つにする)。fullmatch で使う。
+# 「まだ決めていない」(区分や働き始める時期の問い)と「分からない」(空欄の数字の問い)は答えになるので、候補と一緒なら数えない
+EXTRA_ESCAPE = re.compile(r"(それ以外|その他|特に(ない|無い|なし)|思いつかない|思い浮かばない)(です)?[。]?")
+# 「文字で話す」の選択肢(LINE ではもともと文字で話しているので、押すと答えが1ターン遅れるだけ。#221 の直す所 11)
+TEXT_MODE = re.compile(r"文字で(話す|答える|入力する|伝える)")
 STOP_REQUEST = re.compile(r"送らないで")  # この直後だけは、選択肢を付けずに「承知しました」で終えてよい
 # この一言が発言そのもののときだけ断りとみなす(「今はいいのが見つからなくて」のような部分一致は断りではない)
 QUICK_END = re.compile(r"(もう)?(今はいい|送らないで)(です|かな)?[。!!]?")  # fullmatch で使う
@@ -191,6 +202,15 @@ def _questions(bubbles: list[str]) -> int:
     return sum(b.count("?") + b.count("\uff1f") for b in bubbles)  # 半角 / 全角の疑問符
 
 
+def escape_only(r: dict) -> bool:
+    """問いの選択肢が逃げ道だけか(「それ以外 / 今はいい」「思いつかない / それ以外 / 今はいい」「今はいい」だけ)。
+    答えの候補が無いので、押しても答えにならない(候補が作れない自由な問いは、選択肢を付けずに文で答えてもらう)。
+    履歴書・音声の提案(actions)を付けたターンは数えない(ボタンが答え方の候補になり、「今はいい」だけでよい)。"""
+    quick = r["quick_replies"]
+    return (bool(_questions(r["bubbles"]) and quick) and not r.get("actions")
+            and all(NON_ANSWER.fullmatch(q.strip()) for q in quick))
+
+
 def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     """1ターンの形式の判定。質問の数と吹き出しの字数は、そのターンの雇用区分(track)の決まり(FORMAT_RULES)で見る。"""
     rules = FORMAT_RULES.get(track, FORMAT_RULES[DEFAULT_TRACK])
@@ -200,7 +220,13 @@ def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     if len(r["quick_replies"]) > QUICK_MAX:
         v.append(f"選択肢が{len(r['quick_replies'])}個(最大4)")
     if _questions(r["bubbles"]) and r["quick_replies"] and not any(ESCAPE.search(q) for q in r["quick_replies"]):
-        v.append(f"質問の選択肢に逃げ道(今はいい/それ以外)がない: {r['quick_replies']}")
+        v.append(f"質問の選択肢に逃げ道(今はいい)がない: {r['quick_replies']}")
+    if escape_only(r):
+        v.append(f"質問の選択肢が逃げ道だけ(答えの候補が無い): {r['quick_replies']}")
+    elif _questions(r["bubbles"]) and (extra := [q for q in r["quick_replies"] if EXTRA_ESCAPE.fullmatch(q.strip())]):
+        v.append(f"「今はいい」のほかに中身の無い逃げ道がある(逃げ道は「今はいい」1つ): {extra}")
+    if text := [q for q in r["quick_replies"] if TEXT_MODE.search(q)]:
+        v.append(f"「文字で話す」の選択肢がある(トークではそのまま書けば答えられる): {text}")
     for b in r["bubbles"]:
         if len(b) > rules["bubble_max"]:
             v.append(f"吹き出しが{len(b)}字({rules['bubble_max']}字以内)")
@@ -1666,7 +1692,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     if "wait" in outcomes and not any(REFUSAL.search(m or "") for m in user_msgs):
         violations.append("断られていないのに wait を記録した(終わりの挨拶を拒否と取り違えている)")
     stopped_last = len(user_msgs) >= len(turns) > 0 and bool(STOP_REQUEST.search(user_msgs[len(turns) - 1] or ""))
-    if turns and not turns[-1]["quick_replies"] and not stopped_last:
+    # 候補が作れない自由な問い(文で答えてもらう問い)は、選択肢なしで終えてよい(Prompt の対話ルール。task 226)
+    if turns and not turns[-1]["quick_replies"] and not _questions(turns[-1]["bubbles"]) and not stopped_last:
         violations.append(f"T{len(turns)}: 最後の返信に選択肢がない(次に開いた人が書くしかない)")
     if sc.get("expect_menu") and first and not (
             any("求人" in q for q in first["quick_replies"]) and any("相談" in q for q in first["quick_replies"])):
@@ -1733,6 +1760,8 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "offer_turn": offer_turn,
         # 相談に入ってから求人を見るかを聞くまでの問い(consult_questions。相談に入っていなければ None)
         "consult_questions": consult_questions(turns, user_msgs),
+        # 問いの選択肢が逃げ道だけのターン(違反にも数える。#221 では 87 ターン中 28 ターン)
+        "escape_only_turns": [i + 1 for i, r in enumerate(turns) if escape_only(r)],
         "violations": violations + fabrications,
         "fabrications": fabrications,
         "search_arg_violations": search_arg_violations(turns, user_msgs),

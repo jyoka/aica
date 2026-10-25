@@ -36,7 +36,7 @@ CONSULT_PERSONAS = ("T-career-fulltime", "T-student-first")
 SITUATION_PERSONAS = ("T-side-job", "T-blank-parent")
 # task 133 のときに相談から始まったペルソナ(H の見直しで当時の期限 T8 を当てる)
 H_CONSULT_PERSONAS = ("T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent")
-ASK = ["それ以外", "今はいい"]
+ASK = []
 OFFER = ["求人を見る", "もう少し相談したい", "今はいい"]
 
 

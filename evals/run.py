@@ -225,7 +225,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
 # 良い向き(evalkit の diff で改善/悪化を判定するのに使う)
 DIRECTIONS = {"branch_within_3": "up", "outcome_recorded": "up", "outcome_as_expected": "up", "violations": "down",
               "search_arg_violations": "down", "call_overlaps": "down", "cut_at_cap": "down", "sim_leaks": "down",
-              "consult_offer_at": "down", "greeting_line_messages": "down",
+              "consult_offer_at": "down", "greeting_line_messages": "down", "escape_only_options": "down",
               "fabrications": "down", "track_ok": "up", "cache_hit_rate": "up", "llm_calls": "down",
               "latency_p50": "down", "latency_max": "down", "cost_usd": "down",
               "depth_purpose": "up", "depth_dig": "up", "depth_options": "up", "depth_reasons": "up",
@@ -254,6 +254,8 @@ def to_run(r: dict, rep: int) -> dict:
                 "cut_at_cap": r.get("cut_at_cap"), "sim_leaks": len(r.get("sim_leaks", [])),
                 # 相談で求人を見るかを聞いたのが何問目か(相談に入らなかった・聞かなかった回は None。4 以下が決まり)
                 "consult_offer_at": (r.get("consult_questions") or {}).get("offer_at"),
+                # 問いの選択肢が逃げ道だけ(「それ以外 / 今はいい」など)のターンの数(違反の内数。0 が決まり)
+                "escape_only_options": len(r.get("escape_only_turns", [])),
                 # 初回訪問の挨拶が LINE で何通か(LINE の初回訪問だけ。ほかは None)
                 "greeting_line_messages": r["line_messages"][0] if r.get("line_messages")
                 and (r.get("turn_log") or [{}])[0].get("entry") == "visit" else None,
