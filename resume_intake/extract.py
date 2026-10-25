@@ -12,14 +12,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
-import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from pypdf import PdfReader, apply_configuration
-from pypdf.generic import StreamObject
+from pypdf.generic import ContentStream, StreamObject
 
 from resume_draft.pii import scrub_pii
 from resume_draft.schema import ResumeDraft, envelope
@@ -66,8 +65,6 @@ MAX_PDF_PAGES = 10
 MAX_PDF_CONTENT_BYTES = 1_000_000
 MAX_PDF_TEXT_CHARS = 40_000  # 取り出したテキストの合計(行末の空白を詰めた後)
 MAX_FORM_DEPTH = 8  # Form XObject の入れ子の深さ
-# 描画の命令の中の「/名前 Do」(画像か Form XObject を描く)。文字列の中の偶然の一致は数えすぎる側(上限に早く届く)に倒れる
-_DO = re.compile(rb"/([^\s/\[\]()<>{}%]+)\s*Do(?![^\s/\[\]()<>{}%])")
 # 取り出したテキストの前に付ける見出し。モデルにファイルではなくテキストだと伝える。
 # JIS の様式のような表は、見出しの「年」「月」が列の上にだけあり、行には数字しか残らない(サンプルの比べで
 # period が「2017  4」になった)。年と月を付けて書くよう、テキストのときだけ添える
@@ -160,6 +157,7 @@ class _Budget:
         self.decoded = cap
         self.expanded = cap
         self.seen: set[int] = set()  # 調べ終わった Form XObject(ページをまたいで同じものを数え直さない)
+        self.calls: dict[int, tuple[int, Counter]] = {}  # Form XObject → (中身の大きさ, 呼ぶ名前ごとの回数)
 
     def take(self, kind: str, n: int) -> None:
         left = getattr(self, kind) - n
@@ -189,28 +187,38 @@ def _scan(page, budget: _Budget) -> bool:
             # BI … EI の画像(誤って当たっても、ファイルをそのまま送るだけ)
             has_image |= b"BI" in form_data or any(x.get("/Subtype") == "/Image" for x in _xobjects(obj).values())
             stack.append(obj)
-    budget.take("expanded", _expanded(data, _xobjects(page), budget.cap))
+    calls = _do_calls(contents) if contents is not None else Counter()
+    budget.take("expanded", _expanded(len(data), calls, _xobjects(page), page.pdf, budget))
     return has_image
 
 
-def _expanded(data: bytes, xobjects: dict, cap: int, depth: int = 0, calling: frozenset = frozenset()) -> int:
-    """描画の命令を解析する大きさ。呼ぶ Form XObject の中身を、呼んだ回数だけ足す(pypdf は呼ぶたびに解析し直す)。
-    cap を超えたら、入れ子が深すぎたら、Form が自分を呼べば _Unfit。"""
+def _expanded(size: int, calls: Counter, xobjects: dict, reader, budget: _Budget, depth: int = 0,
+              calling: frozenset = frozenset()) -> int:
+    """描画の命令を解析する大きさ。命令そのものの大きさ size に、呼ぶ Form XObject の中身を呼んだ回数だけ足す
+    (pypdf は呼ぶたびに解析し直す)。上限を超えたら、入れ子が深すぎたら、Form が自分を呼べば _Unfit。"""
     if depth > MAX_FORM_DEPTH:
         raise _Unfit
-    size = len(data)
-    for raw, calls in Counter(_DO.findall(data)).items():
-        name = "/" + re.sub(rb"#([0-9A-Fa-f]{2})", lambda m: bytes([int(m[1], 16)]), raw).decode("utf-8", "replace")
+    for name, n in calls.items():
         form = xobjects.get(name)
         if form is None or form.get("/Subtype") != "/Form":
             continue
         if id(form) in calling:
             raise _Unfit
+        if id(form) not in budget.calls:  # 同じ Form は 1 回だけ解析する(展開した大きさは _scan が decoded で数えた)
+            stream = ContentStream(form, reader)
+            budget.calls[id(form)] = (len(stream.get_data()), _do_calls(stream))
+        form_size, form_calls = budget.calls[id(form)]
         inner = _xobjects(form) if "/Resources" in form else xobjects  # /Resources の無い Form は呼んだ側のものを使う
-        size += calls * _expanded(form.get_data(), inner, cap, depth + 1, calling | {id(form)})
-        if size > cap:
+        size += n * _expanded(form_size, form_calls, inner, reader, budget, depth + 1, calling | {id(form)})
+        if size > budget.cap:
             raise _Unfit
     return size
+
+
+def _do_calls(stream: ContentStream) -> Counter:
+    """描画の命令が Do(画像か Form XObject を描く)で呼ぶ名前ごとの回数。テキストを取り出すときと同じ pypdf の字句の解析で
+    数えるので、名前と Do の間のコメントや空白の字、#xx で書いた名前も、pypdf が呼ぶとおりに数える。"""
+    return Counter(args[0] for args, op in stream.operations if op == b"Do" and args)
 
 
 def _check_fonts(owner) -> None:

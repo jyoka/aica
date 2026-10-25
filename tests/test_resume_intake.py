@@ -300,6 +300,12 @@ def test_pdf_too_large_to_parse_is_sent_as_file(monkeypatch, cap):
         # 1 回の解析は 10KB ほどでも、呼ぶたびに解析し直すので、合計で 4MB を解析することになる
         ("小さな Form XObject を何度も呼ぶ", crafted_pdf(TEXT_OPS + b"/Fm0 Do " * 400,
                                                     forms={"/Fm0": (TEXT_OPS * 120, None)})),
+        # 名前と Do の間にコメントや、PDF の空白の字(改ページ、CR だけの改行)をはさんでも、pypdf は Form を呼ぶ
+        *((f"小さな Form XObject を何度も呼ぶ(名前と Do の間に {sep!r})",
+           crafted_pdf(TEXT_OPS + (b"/Fm0" + sep + b"Do\n") * 400, forms={"/Fm0": (TEXT_OPS * 120, None)}))
+          for sep in (b"%c\n", b"\r%x\r\n", b"\f", b" % Do\r")),
+        ("小さな Form XObject を何度も呼ぶ(名前を #xx で書く)",
+         crafted_pdf(TEXT_OPS + b"/F#6d0 Do\n" * 400, forms={"/Fm0": (TEXT_OPS * 120, None)})),
     ],
 )
 def test_crafted_pdf_is_rejected_cheaply(label, data):
@@ -314,6 +320,7 @@ def test_forms_without_text_and_cid_font_with_to_unicode_keep_text_only():
     """テキストの無い Form XObject(罫線など。入れ子 8 段まで)と、ToUnicode のある Identity-H のフォントは、
     テキストだけを送る。"""
     assert pdf_text(crafted_pdf(TEXT_OPS + b"/Fm0 Do", forms={"/Fm0": (LINE_OPS, None)})) == WORK_TEXT
+    assert pdf_text(crafted_pdf(TEXT_OPS + b"/Fm0%c\nDo\n" * 3, forms={"/Fm0": (LINE_OPS, None)})) == WORK_TEXT
     assert pdf_text(crafted_pdf(TEXT_OPS + b"/Fm Do", forms=_nested_forms(8))) == WORK_TEXT
     text = "".join(chr(g) for g in range(0x21, 0x7E))
     assert pdf_text(crafted_pdf(CID_OPS, cid_font="/Identity-H", to_unicode=True)) == text
