@@ -10,7 +10,7 @@ import re
 from decimal import Decimal
 
 from dip_mcp.data import ROOT, load_jobs
-from dip_mcp.logic import CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
+from dip_mcp.logic import AREAS, CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
 from line_runtime import line_channel
 from resume_draft.pii import PII_VALUE as DIP_PII_VALUE
 from resume_draft.pii import fold_pii, has_pii
@@ -677,10 +677,19 @@ def consult_violations(sc: dict, turns: list[dict], user_msgs: list[str]) -> lis
         if "record_conversation_outcome" in names and not turns[i]["cards"] and "recommend_jobs" not in names:
             out.append(f"T{i + 1}: 本人が切り上げる前に相談を締めた")
             break
-    for i in range(entry, min(len(turns), len(user_msgs))):  # 相談の途中でも「求人を見せて」には、そのターンで求人を出す
+    def searched(k: int) -> bool:
+        return bool(turns[k]["cards"] or SEARCH_TOOLS & {t["name"] for t in turns[k]["tools"]})
+
+    # 相談の途中でも「求人を見せて」には、そのターンで求人を出す。エリアが分からなければ、エリアの1問だけを聞いて
+    # 次のターンで探す(task 224。ほかの条件を聞き足すのは違反のまま)
+    for i in range(entry, min(len(turns), len(user_msgs))):
         m = user_msgs[i] or ""
-        if m and asks_for_jobs(m) and not (turns[i]["cards"] or {"recommend_jobs", "relax_conditions"}
-                                           & {t["name"] for t in turns[i]["tools"]}):
+        if not (m and asks_for_jobs(m)) or searched(i):
+            continue
+        nxt = (user_msgs[i + 1] if i + 1 < len(user_msgs) else None) or ""
+        if asks_area(turns[i]) and (other := asks_other_conditions(turns[i])):
+            out.append(f"T{i + 1}: 「求人を見せて」の後に、エリアのほかの条件({', '.join(other)})も聞いた")
+        elif not (asks_area(turns[i]) and (i + 1 >= len(turns) or searched(i + 1) or REFUSAL.search(nxt))):
             out.append(f"T{i + 1}: 「求人を見せて」の後に求人を探さなかった")
     saved = {k for r in turns for t in r["tools"] if t["name"] == "save_user_preferences"
              for k in (t["args"].get("preferences") or {})}
@@ -1097,6 +1106,153 @@ def search_arg_violations(turns: list[dict], user_msgs: list[str | None]) -> lis
         if not ok:
             out.append(f"T{i + 1}: 本人の「{rx.search(user_msgs[k]).group(0)}」を recommend_jobs の {arg} に当てていない"
                        f"({arg}={v})")
+    return out + experience_keyword_violations(turns)
+
+
+# ----------------------------- 最初の求人はエリアが分かってから(task 224) -----------------------------
+
+# dip が area に受ける地名と、求人の駅名(「中野駅」の「中野」)。本人の発言・要約にあれば、エリアは分かっている
+AREA_NAMES = set(AREAS) | {j.station.removesuffix("駅") for j in load_jobs().values() if j.station}
+# エリアを聞く問い(保存済みの聞き直しの REASK["area"] に、「エリア」「最寄り」「働く場所」などの言い方を足す)。
+# 「どちらで探しますか?」は区分の問い(正社員とアルバイト)にも、「どこが気になりますか?」は迷いの問いにも使うので数えない
+# 「どのあたりで、どんなお仕事を探しますか?」のように、読点で別の条件を続けるものもエリアの問い
+AREA_ASK = re.compile(REASK["area"].pattern + r"|エリア|最寄り|どこで|(どの|どちらの)駅|(働く|働きたい|通える|通いやすい)(場所|駅)"
+                      r"|(どの|どこの?)(辺り?|あたり)で[、,]")
+# 本人がエリアを問わないと言った(このときはエリアなしで探してよい)。在宅・リモートの仕事はエリアが要らない
+_NO_PREFERENCE = r"問わ|こだわ(ら|りませ|りは?(な|無|ありませ))|特に(な|無)"
+AREA_ANY = re.compile(rf"どこでも|(エリア|場所|勤務地|地域|駅)[^。!！?？]{{0,6}}({_NO_PREFERENCE})")
+# 在宅・リモートで働きたいという言い方。「在宅じゃなくて」「リモートは無理なので」「在宅ワークはしたくない」のように
+# 在宅を外す言い方は数えない。同じ発言に地名があれば(「リモートは週2日、場所は渋谷」)、エリアは分かっている(_area_open)
+AREA_REMOTE = re.compile(r"(在宅|リモート)(?![^。!！?？、,]{0,8}(じゃ|では|でな|無理|苦手|したくな|興味(な|無|は?ありませ)"
+                         r"|嫌|いや|不要|いらな|だめ|ダメ))")
+# エリアの問いへの「特にないです」「問いません」も、エリアを問わない答え。ただし地名のある答え(「渋谷で。仕事内容は
+# 特にこだわりません」)は、エリアの後に別の条件を問わないと言ったものなので数えない
+AREA_ANY_REPLY = re.compile(rf"{_NO_PREFERENCE}|どこでも")
+
+
+def asks_area(r: dict) -> bool:
+    """その返信がエリアを聞く問い(疑問符のある文に AREA_ASK)を含むか。"""
+    return any(AREA_ASK.search(_question_part(b)) for b in r["bubbles"])
+
+
+# エリアのほかに探す条件を聞く問い(「求人を見せて」の後は、エリアの1問だけにする)
+OTHER_CONDITION_KEYS = ("job_type", "time_band", "days_per_week", "min_wage", "min_annual_salary", "work_style")
+
+
+def asks_other_conditions(r: dict) -> list[str]:
+    """その返信の問いで聞いた、エリア以外の探す条件(REASK の項目名)。"""
+    q = "".join(_question_part(b) for b in r["bubbles"])
+    return [k for k in OTHER_CONDITION_KEYS if REASK[k].search(q)]
+
+
+def _summary_preferences(turns: list[dict], upto: int) -> dict:
+    """T1..T(upto+1) で読んだ要約(get_user_conversation_summary)の stated_preferences(項目 -> 値)。"""
+    out = {}
+    for r in turns[:upto + 1]:
+        for t in r["tools"]:
+            res = t.get("result")
+            if t["name"] == "get_user_conversation_summary" and isinstance(res, dict):
+                for k, v in (res.get("stated_preferences") or {}).items():
+                    out[k] = str(v.get("value") if isinstance(v, dict) else v)
+    return out
+
+
+def _said_areas(msgs: list[str | None]) -> list[str]:
+    """本人の発言にある地名・駅名を、先に言った順に(同じ位置なら長い方を先に)。"""
+    said = "\n".join(m or "" for m in msgs)
+    return [a for _, _, a in sorted((said.find(a), -len(a), a) for a in AREA_NAMES if a in said)]
+
+
+def _known_area(turns: list[dict], user_msgs: list[str | None], i: int) -> str | None:
+    """i ターン目の返信を書くときに分かっていたエリア(要約の stated_preferences の area、保存した area、
+    本人の発言にある地名・駅名)。無ければ None。"""
+    saved = _summary_preferences(turns, i).get("area") or next(
+        (str(p["area"]) for r in turns[:i + 1] for t in r["tools"] if t["name"] == SAVE_TOOL
+         for p in [t["args"].get("preferences") or {}] if p.get("area")), None)
+    if saved:
+        return saved
+    said = _said_areas(user_msgs[:i + 1])
+    return said[0] if said else None  # 本人が先に言った地名
+
+
+def _area_open(turns: list[dict], user_msgs: list[str | None], i: int) -> bool:
+    """T(i+1) の時点で、本人がエリアを問わないと言っているか(「どこでもいい」、在宅で働きたい、エリアの問いへの「特にないです」)。
+    後で地名を言い直したら(「やっぱり池袋で」)、エリアは決まったものとして、問わない言い方は打ち消す。"""
+    open_ = False
+    for k, m in enumerate(user_msgs[:i + 1]):
+        if not m:
+            continue
+        named = bool(_said_areas([m]))
+        if AREA_ANY.search(m) or (not named and AREA_REMOTE.search(m)) \
+                or (k > 0 and not named and asks_area(turns[k - 1]) and AREA_ANY_REPLY.search(m)):
+            open_ = True
+        elif named:
+            open_ = False
+    return open_
+
+
+def _new_areas(msgs: list[str | None], areas: list[str]) -> list[str]:
+    """本人の発言にある地名のうち、前の検索の area(areas)に無いもの。"""
+    return [a for a in _said_areas(msgs) if not any(a in s for s in areas)]
+
+
+def _widened(turns: list[dict], user_msgs: list[str | None], j: int, i: int, areas: list[str]) -> bool:
+    """T(j+1) でエリアつきで探した後、T(i+1) でエリアを外したのが、本人の了承した広げ方か。
+    T(j+1)..T(i) で relax_conditions を見せたか、本人が「広げて」「外して」と言ったときだけ。
+    本人がその後に、前の検索に無い地名を言ったら(「やっぱり池袋で」)、広げたのではなく言い直し。"""
+    later = user_msgs[j + 1:i + 1]
+    if _new_areas(later, areas):
+        return False
+    return any(t["name"] == "relax_conditions" for r in turns[j:i] for t in r["tools"]) \
+        or any(m and WIDEN.search(m) for m in later)
+
+
+def area_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
+    """最初の求人はエリアが分かってから出す(task 224。Prompt の「分岐」)。recommend_jobs を area なしで呼んだら違反。
+    エリアが分かっていなかった(探す前にエリアを1問で聞く)か、分かっていたのに area に入れなかったかを分けて書く。
+    次のときは除く: 本人がエリアを問わないと言った(_area_open)、在宅(remote=可)で探した、前にエリアつきで探した後、
+    relax_conditions の案内か本人の言葉でエリアを外して広げた(_widened)。"""
+    out = []
+    last = None  # (エリアつきで最後に探したターンの添字, その area)
+    for i, r in enumerate(turns):
+        calls = [t.get("args") or {} for t in r["tools"] if t["name"] == "recommend_jobs"]
+        if any(not a.get("area") and a.get("remote") != "可" for a in calls) \
+                and not (last and _widened(turns, user_msgs, last[0], i, last[1])) \
+                and not _area_open(turns, user_msgs, i):
+            # エリアつきで探した後の言い直しなら、その後に本人が言った地名を挙げる
+            later = _new_areas(user_msgs[last[0] + 1:i + 1], last[1]) if last else []
+            known = later[0] if later else _known_area(turns, user_msgs, i)
+            out.append(f"T{i + 1}: 分かっているエリア({known})を recommend_jobs の area に入れずに探した" if known
+                       else f"T{i + 1}: エリアが分からないまま recommend_jobs で探した(先にエリアを1問で聞く)")
+        areas = [str(a["area"]) for a in calls if a.get("area")]
+        if areas:
+            last = (i, areas)
+    return out
+
+
+def experience_keyword_violations(turns: list[dict]) -> list[str]:
+    """分かっている経験(この会話の save_user_preferences の experience と、要約の stated_preferences の experience)を、
+    分かった後の最初の recommend_jobs の keywords に入れたか(task 224。common_chat の「提案に進むとき」)。
+    経験の内容語(「居酒屋のホールを1年」の「居酒屋」「ホール」)のどれかが、そのターンのどれかの検索の keywords にあればよい。
+    search_arg_violations の1つとして数える(違反ではなく、検索の引数の指標)。"""
+    out = []
+    judged: set[str] = set()
+    for i, r in enumerate(turns):
+        known = [v for k, v in _summary_preferences(turns, i).items() if k == "experience"] + [
+            str(p["experience"]) for x in turns[:i + 1] for t in x["tools"] if t["name"] == SAVE_TOOL
+            for p in [t["args"].get("preferences") or {}] if p.get("experience")]
+        calls = [t.get("args") or {} for t in r["tools"] if t["name"] == "recommend_jobs"]
+        if not calls:
+            continue
+        kws = " ".join(str(a.get("keywords") or "") for a in calls)
+        for exp in dict.fromkeys(known):
+            words = [w for w in re.findall(r"[一-龥々ァ-ヴー]{2,}", exp) if w not in _FILLER_WORDS]
+            if exp in judged or not words:
+                continue
+            judged.add(exp)
+            if not any(w in kws for w in words):
+                out.append(f"T{i + 1}: 分かっている経験「{exp}」を recommend_jobs の keywords に入れていない"
+                           f"(keywords={kws.strip() or None!r})")
     return out
 
 
@@ -1374,6 +1530,7 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         violations += greeting_track_violations(sc, turns)
     violations += upload_violations(turns, upload)
     violations += playbook_violations(turns, user_msgs) + dont_know_violations(turns, user_msgs)
+    violations += area_violations(turns, user_msgs)
     fabrications = fact_violations(turns, user_msgs, facts) + preference_violations(turns, user_msgs)
     if first and not (_questions(first["bubbles"]) or first["quick_replies"]):
         violations.append("T1: 初回が質問で終わっていない")
@@ -1410,6 +1567,9 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
     # 分岐の期限は、期限のターン(v1 は3ターン目)の区分の決まり。指標の名前は前の結果と比べられるよう変えない
     branch_by = FORMAT_RULES.get(tracks[min(2, len(tracks) - 1)] if tracks else DEFAULT_TRACK,
                                  FORMAT_RULES[DEFAULT_TRACK])["branch_by"]
+    # 探す前にエリアを聞く1問(task 224)は、期限の回数に数えない(1回だけ)
+    if branch_turn and any(asks_area(turns[i]) for i in range(branch_turn - 1)):
+        branch_by += 1
     judged = [r for r in track_rows if r["status"] != "no_trigger"]
     if sc.get("expect_tracks") is None or (sc["expect_tracks"] and not judged):
         track_ok = None  # 期待が無いか、模擬ユーザーが期待の発言をしなかった

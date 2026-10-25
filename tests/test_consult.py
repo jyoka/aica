@@ -253,8 +253,9 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
 
 
 def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
-    """区分を確かめる問いに経験で答え、目的を聞いている途中で「求人を見せて」。その時点の内容ですぐ提案する
-    (本人が自分から頼んだので、目的を確かめる前の提案でも違反ではない)。"""
+    """区分を確かめる問いに経験で答え、目的を聞いている途中で「求人を見せて」。エリアがまだ分からないので、エリアの1問だけを
+    聞いてから、その時点の内容で提案する(task 224。ほかの条件は聞き足さない)。本人が自分から頼んだので、目的を確かめる前の
+    提案でも違反ではない。分かっている経験は keywords に入れる。"""
     sc = SCENARIOS["C-consult-switch"]
     uid = sc["user"]
     model = ConsultModel(script=[
@@ -264,15 +265,20 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
         reply(["居酒屋のホールを1年されていたんですね。", "今回、お仕事を探そうと思ったきっかけは何ですか?"],
               quick_replies=["それ以外", "今はいい"]),
-        calls(("recommend_jobs", {"line_user_id": uid, "job_type": "飲食ホール"}),
+        reply(["承知しました。", "どのエリアで探しますか?"], quick_replies=["それ以外", "今はいい"]),
+        calls(("save_user_preferences", {"line_user_id": uid, "preferences": {"area": "渋谷"}}),
+              ("recommend_jobs", {"line_user_id": uid, "area": "渋谷", "job_type": "飲食ホール",
+                                  "keywords": "居酒屋 ホール"}),
               ("record_conversation_outcome", {"line_user_id": uid, "outcome": "propose",
                                                "reason": "求人を見せて", "confidence": 0.8})),
-        lambda msgs: reply(["ホールの経験を活かせそうな求人です。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
+        lambda msgs: reply(["ホールの経験から、渋谷の求人です。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         reply(["またいつでもご相談ください。"], quick_replies=CLOSING),
     ])
     r = run_eval_scenario(model, sc, tmp_path)
-    assert r["violations"] == [] and r["outcome_as_expected"]
-    assert r["tools"][3] == ["recommend_jobs", "record_conversation_outcome"]  # 「求人を見せて」のターンで提案
+    assert r["violations"] == [] and r["outcome_as_expected"] and r["search_arg_violations"] == []
+    assert r["tools"][3] == []  # 「求人を見せて」のターンは、エリアの1問だけ
+    assert r["tools"][4] == ["save_user_preferences", "recommend_jobs", "record_conversation_outcome"]
+    assert r["turn_log"][4]["cards"]
 
 
 # ----------------------------- 判定が悪い振る舞いを捕まえる -----------------------------
@@ -365,7 +371,7 @@ def test_checks_catch_a_consult_that_never_reads_the_playbook():
     assert conversation_checks(CONSULT, turns, [None, "まず相談する", "生活費のため"])["violations"] == []
 
 
-PROPOSE = [("recommend_jobs", {}), ("record_conversation_outcome", {"outcome": "propose"})]
+PROPOSE = [("recommend_jobs", {"area": "池袋"}), ("record_conversation_outcome", {"outcome": "propose"})]
 
 
 def test_checks_catch_jobs_proposed_before_asking_the_purpose():
@@ -397,7 +403,7 @@ def test_show_me_jobs_before_the_purpose_is_not_a_violation():
     # 本人が自分から「求人を見せて」と言ったら、目的を聞く前でもすぐ出す(C-consult-switch)
     turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"], [READ]),
              turn(["求人です。"], PROPOSE, cards=[CARD], quick_replies=CLOSING)]
-    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "もういいので求人を見せて"])["violations"]
+    v = conversation_checks(CONSULT, turns, [None, "まず相談する", "もういいので池袋の求人を見せて"])["violations"]
     assert v == []
 
 
