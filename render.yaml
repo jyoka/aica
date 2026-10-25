@@ -1,0 +1,26 @@
+# Render の Blueprint(docs/deploy/render.md)。運営者が Render のダッシュボードで「New → Blueprint」からこのリポジトリを選ぶ。
+# sync: false の値は、Blueprint を作るときにダッシュボードで入れる(リポジトリには書かない)。
+services:
+  - type: web
+    name: aica
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    # 永続ディスクは 1 つのインスタンスにしかつながらない。会話数の上限もプロセス 1 つで数える
+    numInstances: 1
+    disk:
+      name: aica-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      # Render のプロキシの後ろなので、IP を X-Forwarded-For の最後の値から取る
+      - key: AICA_TRUST_PROXY
+        value: "1"
+      # Web プロセスと音声ワーカー(同じコンテナ)が同じ値を読む
+      - key: AICA_INTERNAL_KEY
+        generateValue: true
