@@ -45,7 +45,7 @@ LINE のチャネルは、設定(`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TO
 - LINE での、ファイルの受け取り、音声相談、プッシュ。LINE で扱うのは、テキストの会話と友だち追加の挨拶です(4.8)。
   ファイルの受け取りは、LINE の後続のタスク(3 つのうちの 2 つ目)で足します
 - 認証と招待(URL を知っている知人だけが使う前提)
-- 公開(Render への配置は人の作業で、まだ始めていない。jyoka/tasks#64)
+- 公開そのもの(Render のサービスを作るのは運営者の作業。image、Blueprint、smoke、手順は [docs/deploy/render.md](../deploy/render.md))
 - 複数台、複数プロセスでの配置
 
 以前の構成(転職の求職者エージェント ca-agent と aica-poc)は、LLM に多くを任せる作りでした。aica(line-sim)は事業者のツールを
@@ -881,7 +881,10 @@ flowchart TB
 - Web サーバーは `127.0.0.1` で待ち受けます。プロキシの後ろに置くとき(cloudflared のトンネルも含む)だけ `AICA_TRUST_PROXY=1` にします
 - LINE で試すときは、トンネル(cloudflared など)で手元の Web サーバーを https で公開し、その URL を LINE Developers の
   Webhook URL と `AICA_PUBLIC_URL` に設定します(手順は README)。トンネルの URL を知っていれば、誰でも Web のトーク画面も開けます
-- 公開の形(Render の 1 コンテナ)は決まっていますが、配置の設定はまだリポジトリにありません
+- 公開は Render の 1 コンテナです(`Dockerfile`、`render.yaml`)。上の 2 つのプロセスと dip の子プロセスが同じコンテナで動き
+  (音声ワーカーは `AICA_VOICE_WORKER=1` のときだけ)、`data/` はコンテナの `/app/data` につないだ永続ディスクです。
+  Web サーバーは `0.0.0.0:$PORT` で待ち受け、`AICA_TRUST_PROXY=1` と `AICA_SECURE_COOKIE=1` で動きます。
+  `.env` は image に入れず、API キーは Render の環境変数に置きます。手順は [docs/deploy/render.md](../deploy/render.md)
 
 ## 8. 品質の目標
 

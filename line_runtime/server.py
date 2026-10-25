@@ -110,13 +110,19 @@ def _anon(request: Request) -> str | None:
     return v if ANON_ID.fullmatch(v) else None
 
 
+# https で公開するとき(Render など)だけ 1 にする。そのときだけ Cookie に Secure を付ける(http では送り返されなくなるので、
+# 手元の http://127.0.0.1 では付けない)。コンテナの image は 1 にしてある(Dockerfile)。
+SECURE_COOKIE_ENV = "AICA_SECURE_COOKIE"
+
+
 def _issue(request: Request, response: Response) -> str:
     """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。
     発行するのは画面を開いたとき(GET / と GET /dev)だけ。API は発行しない(Cookie が無ければ 401)。"""
     uid = _anon(request)
     if uid is None:
         uid = f"w-{secrets.token_hex(8)}"
-        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True)
+        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
+                            secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
     return uid
 
 
@@ -240,6 +246,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
+
+
+@app.get("/healthz")
+async def healthz():
+    """ヘルスチェック(Render が数秒ごとに呼ぶ)。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない。"""
+    return {"status": "ok"}
 
 
 @app.get("/")
@@ -1264,5 +1276,7 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 if __name__ == "__main__":
     import uvicorn
 
-    # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LINE_SIM_PORT", "8030")), proxy_headers=False)
+    # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。
+    # ワーカーは 1 つ(会話数の上限と状態を 1 つのプロセスで持つ)。コンテナでは LINE_SIM_HOST=0.0.0.0(scripts/container_start.sh)
+    uvicorn.run(app, host=os.environ.get("LINE_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("LINE_SIM_PORT", "8030")),
+                proxy_headers=False)

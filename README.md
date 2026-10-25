@@ -74,6 +74,13 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 - `AICA_INTERNAL_KEY` は、2 つのプロセスで同じ値の長い乱数です(例: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - 画面で入力欄の「+」→「音声で相談する」を押し、マイクを許可します。声が途切れるときはイヤホンを使います
 
+### Render で公開する
+
+1 つのコンテナ(`Dockerfile`)を、Render の Web サービスに永続ディスクつきで置きます。Blueprint は `render.yaml` です。
+手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と初回の挨拶の
+1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
+Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](docs/deploy/render.md) にあります。
+
 ### LINE で試す
 
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。今はテキストの会話と、友だち追加の挨拶と、アカウント連携(下の「アカウント連携を試す」)と、
@@ -225,6 +232,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |
 | `python -m line_runtime.ledger [--date 2026-09-27] [--by-user-id] [--json]` | 費用台帳を人と日ごとに表で集計する(合計の行つき)。`--by-user-id` はシナリオユーザーを匿名ユーザーIDにまとめない | 使わない |
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
+| `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
 | `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
@@ -248,7 +256,9 @@ API キーなどの秘密は、リポジトリ直下の `.env` に書きます(�
 | `LINE_SIM_PROVIDER` | `openai` | LLM のプロバイダ(`openai`、`anthropic`)。エージェント、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
 | `LINE_SIM_MODEL` | `gpt-6-sol`(anthropic なら `claude-opus-5`) | エージェントのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
-| `LINE_SIM_PORT` | `8030` | Web サーバーのポート | 不可 |
+| `LINE_SIM_PORT` | `8030` | Web サーバーのポート(コンテナでは `PORT`、既定 10000) | 不可 |
+| `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
+| `AICA_SECURE_COOKIE` | なし(コンテナの image では `1`) | `1` のとき、匿名ユーザーIDの Cookie に Secure を付ける。https で公開するときに使う。http で開くと Cookie が送り返されない | 可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
 | `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
 | `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
@@ -284,6 +294,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | なし(必須) | LiveKit Cloud(URL は `wss://<project>.livekit.cloud`)。Web プロセスが部屋の接続トークンを発行し、音声ワーカーが部屋に入る | 可 |
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
+| `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
 | `AICA_INTERNAL_KEY` | なし(必須) | 内部の鍵。音声ワーカーが `POST /api/voice/result` に付け、Web サーバーが照合する。無いと結果は 401 で届かない | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | 下書き、文字起こし、求人の提案の置き場 | 不可 |
@@ -306,3 +317,4 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](docs/design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
+| Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](docs/deploy/render.md) |
