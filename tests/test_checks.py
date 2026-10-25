@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from evals.checks import (
@@ -787,7 +789,7 @@ READ_PLAYBOOK = ("get_counseling_playbook", {"track": "未定", "channel": "chat
 
 def consult_switch(ask: str, last_tools):
     """C-consult-switch の形: 相談 → 経験 → 「求人を見せて」→ ask の1問 → 次のターンで探す。"""
-    turns = [GREETING, t(["いくつか伺いながら一緒に整理します。経験はありますか?"], [READ_PLAYBOOK]),
+    turns = [GREETING, t(["何から始めるか、一緒に整理しましょう。経験はありますか?"], [READ_PLAYBOOK]),
              t(["きっかけは何ですか?"], [("save_user_preferences", {"preferences": {"experience": "居酒屋のホール"}})]),
              t([ask], quick_replies=[]),
              t(["渋谷の3件です。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["渋谷"]}])]
@@ -958,7 +960,7 @@ def test_hesitating_think_does_not_end_a_consultation():
     「ありがとう、考えます」は切り上げ。"""
     from evals.checks import consult_violations
 
-    entry = {**turn(["いくつか伺いながら一緒に整理します。", "探そうと思ったきっかけは何ですか?"],
+    entry = {**turn(["何から始めるか、一緒に整理しましょう。", "探そうと思ったきっかけは何ですか?"],
                     [("get_counseling_playbook", {"playbook": "…"})]), "quick_replies": []}
     close = _closing(["承知しました。"], [("record_conversation_outcome", {"recorded": True})])
     sc = {"consult_mode": True}
@@ -1013,3 +1015,127 @@ def test_reason_words_without_cards_are_not_judged():
 
     # カードを出していないターン(条件を確かめる問い)は見ない
     assert reason_echo_violations([turn(["勤務時間とエリアがご希望に合う求人を探しますか？"])]) == []
+
+
+# ----------------------------- 同じ問いと決まり文句(会話の改善 C (9/10)、task 230) -----------------------------
+
+BASELINE_221 = Path(__file__).resolve().parent.parent / "evals" / "baseline" / "sim-20261025-230120.json"
+
+
+def test_wants_reask_catches_the_other_word_order_and_paraphrases():
+    """「してみたい仕事」の語順だけでなく、「どんな仕事をしてみたいですか」と言い換え(取り組んでみたい)も聞き直しに数える
+    (#221 の T-switch-to-fulltime T7・T8)。本人の言葉を引いた掘り下げ(例えば・というのは)は数えない。"""
+    saved = {"wants": "店長を目指したい"}
+    for q in ("店長を目指すうえで、どんな仕事をしてみたいですか？", "販売の仕事で店長を目指すなら、どんなことに取り組んでみたいですか？",
+              "どんなお仕事がしたいですか?", "どのようなことをやってみたいですか?", "取り組みたいことはありますか?",
+              "どんなことに挑戦したいですか?", "どんなお仕事に興味がありますか?", "どんな仕事に就きたいですか?",
+              "どのような業務に携わりたいですか?", "どんな作業ならやってみたいですか?",
+              "店長を目指したいというのは分かりました、では、どんな仕事をしてみたいですか?"):
+        assert any("「wants」を聞き直した" in v for v in _reask(q, saved, "はい")), q
+    for q in ("『店長を目指したい』というのは、例えばどんなことですか?", "店長を目指したいというのは、どんな仕事をしてみたいからですか?",
+              "店長を目指したいのは、どんなお店ですか?", "具体的には、どんなことをやってみたいですか?"):
+        assert _reask(q, saved, "はい") == [], q
+    # 職種の聞き直しの判定は今までどおり(やりたいことの問いを職種に数えない)
+    assert _reask("店長としてどんな仕事をしてみたいですか？", {"job_type": "販売・サービス"}, "はい") == []
+
+
+def test_resaving_a_profile_item_does_not_excuse_asking_it_again_in_the_same_turn():
+    """本人のこと(やりたいこと)を言い足した答えで保存し直したターンも、前に保存していれば白紙の問いは聞き直し(#221 の T8)。
+    条件(エリアなど)は今までどおり、値を変えて保存し直したターンは聞いてよい。"""
+    from evals.checks import reask_violations
+
+    def turns(key, first, second, ask):
+        return [{"bubbles": ["はい"], "cards": [], "quick_replies": [], "tools": [
+                    {"name": "save_user_preferences", "args": {"preferences": {key: first}}}]},
+                {"bubbles": ["そうですか。"], "cards": [], "quick_replies": [], "tools": []},
+                {"bubbles": [ask], "cards": [], "quick_replies": [], "tools": [
+                    {"name": "save_user_preferences", "args": {"preferences": {key: second}}}]}]
+
+    v = reask_violations(turns("wants", "店長を目指したい", "店長を目指したい。販売の仕事がしたいです。",
+                               "販売の仕事で店長を目指すなら、どんなことに取り組んでみたいですか？"), [None, "はい", "販売の仕事がしたいです"])
+    assert any("「wants」を聞き直した" in x for x in v), v
+    # 初めて保存したターンの問いは数えない
+    first = turns("wants", "店長を目指したい", "店長を目指したい", "どんなことに取り組んでみたいですか？")[2:]
+    assert reask_violations(first, ["販売の仕事がしたいです"]) == []
+    assert reask_violations(turns("area", "渋谷", "渋谷と原宿", "どのエリアで探しますか?"), [None, "はい", "原宿も"]) == []
+    # 前の値を含まない値への言い直し(気が変わった)は、そのターンに何をしたいかを聞いてよい
+    assert reask_violations(turns("wants", "販売の仕事", "別のことがしたい", "どんなことをしてみたいですか?"),
+                            [None, "はい", "やっぱり販売じゃなくてもいい、別のことがしたい"]) == []
+
+
+def _says(*bubbles, quick=("今はいい",)):
+    return {"bubbles": list(bubbles), "quick_replies": list(quick), "cards": [], "buttons": [], "tools": []}
+
+
+def test_echo_acks_in_a_row_are_violations():
+    """受け止めの「〜ですね」は続けて使わない(#221 の T-switch-to-fulltime T5〜T8 は4回続いた)。間に受け止めの無い返信があればよい。"""
+    from evals.checks import conversation_checks, echo_acks, echo_streak_violations
+
+    a = _says("カフェのホールを2年されていたんですね。", "今お仕事を探そうと思ったきっかけは何ですか?")
+    b = _says("収入の安定を考えているんですね。", "収入が安定しないと感じたのは、どんなときですか?")
+    plain = _says("シフトで収入が変わるのが気になるなら、希望の年収はどのくらいですか?")
+    assert echo_acks(a) == ["カフェのホールを2年されていたんですね。"]
+    assert echo_streak_violations([a, b]) == ["T2: 受け止めの「〜ですね」を続けて使った(T1 に続けて): 収入の安定を考えているんですね。"]
+    assert echo_streak_violations([a, plain, b]) == []
+    said = [None, "カフェのホールを2年", "収入が安定しないから"]
+    assert "T3: 受け止めの「〜ですね」を続けて使った(T2 に続けて): 収入の安定を考えているんですね。" in conversation_checks(
+        {"expect_outcome": ["consult"]}, [_says("はじめまして。どうしますか?", quick=("求人を探す", "今はいい")), a, b], said)["violations"]
+    # 疑問符の付く確認は受け止めではない。求人を見るかを聞く返信のまとめ(playbook の決まり)も数えない
+    assert echo_acks(_says("渋谷でよろしいですね?")) == []
+    summary = _says("渋谷か品川、年収は600万円以上ですね。", "この条件で求人を見ますか？", quick=("求人を見る", "今はいい"))
+    assert echo_streak_violations([a, summary]) == []
+
+
+def test_stock_phrases_for_the_consult_opening_and_the_track_switch_are_violations():
+    """相談の入りと区分の切り替えを、Prompt の前の例のままの決まり文句で言わない。本人の言葉や問いとつなげた1文は数えない。"""
+    from evals.checks import stock_phrase_violations
+
+    def switched(*bubbles):  # 区分を切り替えたターン(set_search_track を呼んだ)
+        return {**_says(*bubbles), "tools": [{"name": "set_search_track", "args": {}, "result": {"changed": True}}]}
+
+    old = switched("アルバイト・パートのお仕事で考えますね。いくつか伺いながら、一緒に整理します。", "きっかけは何ですか?")
+    assert stock_phrase_violations([old]) == [
+        "T1: 区分の切り替えの決まり文句をそのまま使った: アルバイト・パートのお仕事で考えますね。",
+        "T1: 相談の入りの決まり文句をそのまま使った: いくつか伺いながら、一緒に整理します。"]
+    for x in ("承知しました。正社員のお仕事で考えますね。", "では、正社員のお仕事で考えますね。", "了解です、正社員で考えますね。",
+              "正社員のお仕事で考えていきますね。"):
+        assert stock_phrase_violations([switched(x)]), x
+    assert stock_phrase_violations([_says("いくつかお伺いしながら、一緒に整理しましょう。")])
+    # 区分を切り替えていないターンの「アルバイトで探しますね。」は、切り替えの決まり文句ではない
+    assert stock_phrase_violations([_says("アルバイトで探しますね。", "どのエリアで探しますか?")]) == []
+    for fine in ("アルバイトで何が向いているか、一緒に整理しましょう。", "正社員で、販売の店長を目指せるお仕事を考えますね。",
+                 "何から始めるか、一緒に整理しましょう。"):
+        assert stock_phrase_violations([switched(fine, "きっかけは何ですか?")]) == [], fine
+
+
+def test_shared_sentences_count_the_same_sentence_across_conversations():
+    """複数の会話で同じ文(挨拶の T1・問い・短い文・Prompt が文言を決めている文は除く)。"""
+    from evals.checks import shared_sentences
+
+    greet = _says("お仕事探しの相談と求人のご提案をします。音声相談もできます。")
+    same = "いくつか伺いながら、一緒に整理します。"
+    convs = [[greet, _says(same, "きっかけは?"), _says("承知しました。"), _says("気になる求人はありますか？")] for _ in range(3)]
+    convs.append([greet, _says("職務経歴書や履歴書があれば、読み込むと早いです。")])
+    assert shared_sentences(convs) == {same: 3}
+    assert shared_sentences(convs, min_convs=4) == {}
+    assert shared_sentences(convs[:2]) == {}
+
+
+def test_the_221_conversations_give_the_221_counts_under_the_new_checks():
+    """#221 の会話(sim-20261025-230120、16 件)を新しい判定で見直すと、#221 の報告の数になる(費用なし):
+    受け止めの「〜ですね」は 113 吹き出しのうち 24 個、「いくつか伺いながら、一緒に整理します。」は 6 件の会話、
+    T-switch-to-fulltime の T7・T8 はやりたいことの聞き直し。"""
+    import json
+
+    from evals.checks import shared_sentences
+    from evals.run import recheck
+
+    runs = [r for r in json.loads(BASELINE_221.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"]
+    results = {r["case"]: recheck(r["detail"]) for r in runs}
+    assert sum(x["bubbles"] for x in results.values()) == 113
+    assert sum(x["echo_ack_bubbles"] for x in results.values()) == 24
+    shared = shared_sentences([r["detail"]["turn_log"] for r in runs])
+    assert shared["いくつか伺いながら、一緒に整理します。"] == 6 and shared["アルバイト・パートのお仕事で考えますね。"] == 5
+    switch = results["T-switch-to-fulltime"]["violations"]
+    assert [v.split(":")[0] for v in switch if "「wants」を聞き直した" in v] == ["T7", "T8"]
+    assert sum("続けて使った" in v for v in switch) == 3
