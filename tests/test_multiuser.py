@@ -45,7 +45,8 @@ def test_first_access_issues_an_id_and_the_same_browser_reuses_it(tmp_path, monk
         assert re.fullmatch(r"w-[0-9a-f]{16}", uid)
         assert uid == r.cookies[server.ANON_COOKIE]
         assert client.get("/api/me").json()["user_id"] == uid  # 再アクセスでも同じ ID
-        assert client.get("/").cookies.get(server.ANON_COOKIE) is None  # 持っていれば発行し直さない
+        again = client.get("/")  # 持っていれば同じ ID で書き直す(期限を延ばす。test_retention)
+        assert again.cookies.get(server.ANON_COOKIE) == uid
         client.cookies.clear()  # 別のブラウザ相当
         assert client.get("/api/me").status_code == 401  # API は ID を発行しない(発行は画面を開いたときだけ)
         client.get("/")

@@ -24,6 +24,7 @@ flowchart TB
         agent["agent.py<br/>build_agent、LineReply、middleware"]
         quota["quota.py<br/>DailyQuota"]
         ledger["ledger.py<br/>Ledger、PRICES"]
+        purge["purge.py<br/>期間で消す掃除"]
         vreply["voice_reply.py、resume_confirm.py<br/>LLM を使わない返信"]
         llm["llm.py<br/>模擬ユーザーとジャッジの SDK 呼び出し"]
     end
@@ -32,6 +33,7 @@ flowchart TB
         logic["logic.py<br/>業務ロジック"]
         profile["profile.py<br/>プロフィールを見る、直す、消す"]
         data["data.py<br/>State、BaitoJob、now"]
+        retention["retention.py<br/>最後の利用、期間で外す行"]
         emb["embedding.py<br/>意味検索"]
     end
     subgraph ri["resume_intake"]
@@ -56,6 +58,12 @@ flowchart TB
     server --> quota
     runtime --> ledger
     ledger --> quota
+    server --> purge
+    purge --> runtime
+    purge --> retention
+    turn --> retention
+    profile --> retention
+    retention --> data
     server --> vreply
     server --> profile
     server --> logic
@@ -84,14 +92,15 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`internal_purge`、`_purge`、`_purge_daily`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限 | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
-| `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する | `PRICES`、`cost_usd`、`Ledger`、`summarize` |
+| `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にする(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`)、`fold`、`summarize`、`ID_TTL`、`FOLDED` |
+| `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
 | `llm.py` | 模擬ユーザーとジャッジが SDK を直接呼ぶところの、プロバイダの違いの吸収 | `client`、`parse`、`text` |
@@ -175,6 +184,7 @@ classDiagram
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
 | `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`for_agent`、`head`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`AGENT_APPLICATIONS`、`AGENT_SAVES`、`SUMMARIES_PATH` |
 | `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
+| `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
@@ -389,7 +399,7 @@ flowchart LR
 | メソッドとパス | 関数 | 本人の確かめ | ターン | 書くもの |
 |---|---|---|---|---|
 | `GET /healthz` | `healthz` | - | - | -(ヘルスチェック。Cookie も発行しない) |
-| `GET /`、`GET /dev` | `index`、`dev` | Cookie を発行する(`_issue`) | - | Cookie |
+| `GET /`、`GET /dev` | `index`、`dev` | Cookie を発行するか、同じ ID で書き直す(`_issue`) | - | Cookie(180 日) |
 | `GET /static/{name}` | `shared_static` | - | - | -(`talk-core.js`、`talk-core.css` だけ) |
 | `GET /static/arcade/{name}` | `arcade_static` | - | - | -(`arcade-ja.js` だけ。`ARCADE_STATIC`) |
 | `GET /liff/arcade` | `liff_arcade` | -(Cookie を発行も要求もしない) | - | -(ハブ) |
@@ -414,6 +424,7 @@ flowchart LR
 | `POST /api/voice/start` | `voice_start` | 本人 | 1 | 部屋の記録(`record_voice_room`、終わっていない部屋の `ActiveVoiceRooms`)。LiveKit の設定が無ければターンを使わずに 503、その人(シナリオユーザーも匿名IDにまとめる)に終わっていない部屋があればターンを使わずに 409、上限なら 429 |
 | `POST /api/voice/wait` | `voice_wait` | 本人 | - | -(最長 `VOICE_WAIT_MAX` 30 秒、既定 25 秒) |
 | `POST /api/voice/result` | `voice_result_in` | 内部の鍵 | - | 音声相談の結果、会話にエージェントの返信を足す。部屋はまだ終わったとみなさない。「すべて消す」の前の部屋なら 410。下書きが `DRAFT_MAX`(2 万字)を超えたら 422 |
+| `POST /api/internal/purge` | `internal_purge` | 内部の鍵 | - | 期間で消す掃除を今すぐ走らせ、消した数を返す(4.6)。CLI `python -m line_runtime.purge` が呼ぶ |
 | `POST /api/voice/session` | `voice_session` | 内部の鍵 | - | ワーカーのジョブの始まり(`joined`)と終わり(`ended`)。終わっていない部屋の記録(メモリだけ。`line_runtime/voice_rooms.py`)。`joined` でその人に別の部屋があれば `allowed: false` を返し、ワーカーはそのジョブを止める |
 | `POST /api/resume/upload` | `resume_upload` | 本人 | 1 | 読み取り結果、費用台帳。形式が違えば 400、10MB を超えたら 413、会話が替わっていれば 409、上限なら 429、API の失敗は 502 |
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
@@ -431,6 +442,8 @@ flowchart LR
 | `GET /fake-line/dialog/bot/accountLink` | `fake_line_account_link` | Cookie(開いた人が linkToken のユーザーか) | - | 4.12。偽物の LINE の accountLink の画面。知らない linkToken は 404 |
 
 - Cookie `aica_uid` は HttpOnly、SameSite=Lax です。`AICA_SECURE_COOKIE=1`(コンテナの image の既定)のときは Secure も付けます。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
+- Cookie の期限(`ANON_COOKIE_MAX_AGE`)は 180 日です。`_issue` は Cookie があって形が正しいときも、同じ ID で書き直して期限を延ばします。
+  期限は最後に画面を開いた日から数えるので、毎日使う人が 181 日目に ID を失いません。API は書き直しません
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
   ブラウザの履歴、アクセスログ、Referer に残るためです
 - dip の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
@@ -752,6 +765,43 @@ sequenceDiagram
 - 閉じた会話は描き直せず、次の会話の文脈にも入りません。次にトーク画面を開くと、30 分以内でも新しい会話(再訪の挨拶)から始まります。
   消すこと自体は LLM を呼ばず、ターンも数えません
 - ターン数の上限の数と費用台帳は消しません
+
+期間で消す掃除(`line_runtime.purge.purge`)の流れです。期間の数と理由は [docs/design/privacy.md](../design/privacy.md) の 3.3 です。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Web サーバー
+    participant R as LineRuntime
+    participant D as dip の状態
+    participant L as 費用台帳
+
+    Note over S: 起動時、1 日 1 回(_purge_daily)、POST /api/internal/purge
+    S->>R: old_threads(最後のやりとりが 30 日より前の会話)
+    loop 会話ごと
+        S->>R: そのユーザーの user_lock の中で erase_old_thread(確かめ直してから消す)
+    end
+    S->>D: retention.sweep(last_seen_at の無い行に今を書く、持ち越した部屋の名前を 1 日で外す、180 日を過ぎた人を返す)
+    S->>R: 180 日を過ぎた人とシナリオユーザー全員の user_lock を名前の順に取る
+    S->>D: retention.still_expired(確かめ直す)
+    S->>R: 残った人の forget(会話)
+    S->>D: retention.remove_expired(行を丸ごと外し、連携と linkToken も外す)
+    S->>S: unread_uploads、voice_ready を捨て、音声の下書きのファイルを消す
+    S->>L: Ledger.fold_old(90 日を過ぎた行を日ごとの合計に)
+    S->>R: vacuum(VACUUM と WAL の書き戻し)
+    S->>D: dip_accounts.db の VACUUM
+```
+
+- 期間は人ごとです。`last_seen_at` はシナリオユーザーの行にも書き、その人(匿名ユーザーIDか LINE のユーザーID)の行のいちばん新しい時刻で数えます
+- 180 日で消すときは `forget_all` を使いません。`forget_all` は連番と消した部屋を同じユーザーIDの行に書き戻すので、行がいつまでも残るためです
+- 「すべて消す」で持ち越した行は、`forget_all` が消した時刻を `last_seen_at` と `forgotten_at` に書きます。部屋の名前は `forgotten_at` から
+  1 日で外し、行は `last_seen_at` から 180 日で外します。1 日は、相談の長さの上限(`VOICE_RESUME_MAX_SESSION_MINUTES`、既定 10 分)に十分な余裕です
+- `last_seen_at` の無い行(この仕組みの前からある行など)は、最初に見つけた掃除の時刻から数えます。fixtures のユーザーそのもの(評価用、例 `sim-new`)は対象にしません
+- 境目はどれも「過ぎたら」です。ちょうど 30 日、180 日、90 日、1 日のものは残します
+- 会話を消しても会話の番号のキャッシュ(`_threads`)は戻しません。消した会話が今の会話なら、次にトークを開くと返信の無い会話として新しい会話から始まります
+- 180 日を過ぎた人は、全員まとめて 1 回で消します(`state.json` を人ごとに読み書きしない)。ファイルの読み書きはスレッドで行い
+  (`asyncio.to_thread`)、その間もほかの要求とヘルスチェックに答えます。180 日を過ぎた人が一度に多くても、Web プロセスが止まらないためです
+- ログは件数だけです(`purge.log`。privacy.md の 3.4 の決まり)。掃除が失敗しても Web プロセスは止めず、次の回にやり直します
 
 ### 4.7 求人の推薦(`logic.recommend`)
 
@@ -1202,8 +1252,8 @@ sequenceDiagram
 | `.env` | 人 | `line_runtime.config.load_env`、`voice_resume.config.load_env` | `KEY=VALUE`。今の環境変数を上書きしない |
 | `data/state.json`(`DIP_STATE_PATH`) | `State._write`(Web プロセス、dip の子プロセス、評価) | `State._read` | JSON(5.1) |
 | `data/state.lock` | `State._lock` | 同 | `fcntl.flock` の印 |
-| `data/line_checkpoints.db` | `AsyncSqliteSaver`、`LineRuntime._erase` | LineRuntime | SQLite(5.2) |
-| `data/costs.jsonl` | `Ledger.record`(追記) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
+| `data/line_checkpoints.db` | `AsyncSqliteSaver`、`LineRuntime._erase`、`erase_old_thread`、`vacuum` | LineRuntime | SQLite(5.2) |
+| `data/costs.jsonl` | `Ledger.record`(追記)、`Ledger.fold_old`(書き直し) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
 | `data/quota.json` | `DailyQuota._save` | `DailyQuota.__init__` | JSON(5.3) |
 | `data/line_events.json` | `line_channel.SeenEvents.first_time` | `SeenEvents.__init__` | 受けた webhook のイベントの ID の JSON の配列(直近 2,000 件、4.11) |
 | `data/voice-resume/`(`VOICE_RESUME_OUT_DIR`) | `outputs.write_outputs` | Web サーバー(消すだけ)、人 | 5.4 |
@@ -1237,8 +1287,13 @@ sequenceDiagram
 | `voice_results`、`voice_result_seq` | `{id, at, cards, draft_markdown, files, preferences, room, document_kind}` と次の番号 | `record_voice_result` |
 | `voice_rooms`、`forgotten_voice_rooms` | 発行した部屋と、「すべて消す」の前の部屋(それぞれ直近 20) | `record_voice_room`、`forget_all` |
 | `profile_changes` | 知らせ `{at, action, what, value?, undone?}`(最大 20) | `profile._note`、`take_changes` |
+| `last_seen_at` | 最後の利用の時刻(実際の時刻、UTC。秒まで)。ターン(プッシュを除く)、プロフィールの書き換え、雇用区分の取り消し、シナリオの開始、音声相談の開始と結果、履歴書のアップロードで書く。fixtures のユーザーそのものには書かない | `retention.touch`、`retention.sweep`(無い行)、`forget_all`(消した時刻) |
+| `forgotten_at` | 「すべて消す」の時刻(`forgotten_voice_rooms` を持ち越したときだけ)。1 日で部屋の名前と一緒に外れる | `forget_all`、`retention.sweep` |
 
-時刻は `data.now(line_user_id)` の値です(HLD の 4.7、R4、ADR-0004)。
+時刻は `data.now(line_user_id)` の値です(HLD の 4.7、R4、ADR-0004)。`last_seen_at` と `forgotten_at` だけは、シナリオユーザーも
+実際の時刻です(期間で消す掃除が実際の時刻で数えるため。`retention.clock`)。
+
+期間: 最後の利用から 180 日(`retention.USER_TTL`)を過ぎた人は、掃除がシナリオユーザーの行ごと外します(4.6)。
 
 - 評価のユーザー(fixtures のユーザーそのもの)、シナリオユーザー(`:` の後ろが fixtures のユーザー)、ユーザーの無い呼び出しは
   `SIM_NOW`(既定 `2026-09-23T12:00:00+09:00`)です。見分けるのは `data.uses_sim_clock` です
@@ -1258,6 +1313,9 @@ sequenceDiagram
 - 本人側のメッセージの `additional_kwargs` に、画面に描き直す材料を添えます。`upload`(ファイルの種類、確認の吹き出し、`upload_id`、`empty`)、
   `voice`(音声相談の返信そのもの)、`profile_notice`(知らせ。画面には出さない)です
 - `LineReply` は msgpack で直列化します(`_SERDE` の `allowed_msgpack_modules`)
+- 期間: 会話(`thread_id`)ごとに、最後のやりとり(最新のチェックポイントの `ts`)から 30 日(`purge.CONVERSATION_TTL`)を過ぎたら、
+  掃除が `checkpoints` と `writes` の行を消します。その後に VACUUM し、WAL も本体に書き戻して空にします(`PRAGMA wal_checkpoint(TRUNCATE)`)。
+  `AsyncSqliteSaver` は WAL で書くので、VACUUM だけでは消した行が WAL のファイルに残るためです
 
 ### 5.3 費用台帳とターン数
 
@@ -1272,6 +1330,10 @@ sequenceDiagram
 - `event` は会話のイベントの名前か `resume_upload`(履歴書の読み取り)です
 - 集計(`summarize`)は日本時間の日付と人(`quota.person`。シナリオユーザーは匿名ユーザーIDにまとめる)ごとで、表には合計の行が付きます。
   `--by-user-id` はシナリオユーザーをまとめずに分けます
+- 期間: ユーザーIDを持つのは 90 日(`ledger.ID_TTL`)です。過ぎた行は、掃除が日本時間の日ごとの合計の 1 行に置き換えます(`Ledger.fold_old`)。
+  合計の行は `{"at": その日の最後の行の時刻, "user_id": "deleted", "event": "daily_total", "model": "", "calls": まとめた行の数, …}` で、
+  トークン数と `cost_usd` は足したものです。集計は `calls` を回数として数えるので、日ごとの合計の金額と回数は変わりません。
+  前にまとめた日の行も、同じ日なら 1 行にまとめ直します。ファイルは `Ledger._lock` の中で一時ファイルに書いてから置き換えます
 
 ターン数(`data/quota.json`)は `{"day": "2026-10-11", "counts": {人: ターン数}, "ips": {IP の鍵: {人: ターン数}}}` です。
 日本時間の日付が変わると数え直します。IP の鍵は `ip_key` が作ります(IPv6 は /64、IPv4 射影は IPv4)。
@@ -1586,6 +1648,8 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `links` | `user_id`(主キー)、`dip_id`、`linked_at` | 連携の表。`user_id` は aica のユーザーID(`l-…`、`w-…`、シナリオユーザー)。LINE の userId は持たない |
 | `meta` | `key`、`value` | 種を入れたか(`seeded`) |
 
+`links` と `link_tokens` の行は、最後の利用から 180 日を過ぎた人の分を掃除が外し(`Accounts.forget_users`)、その後に VACUUM します(`Accounts.vacuum`、4.6)。
+
 ## 6. 並行と排他
 
 - **ユーザーの排他**: `LineRuntime._locks[user_id]`(`asyncio.Lock`)。1 人のターンは 1 つずつ進みます。Web サーバーは、会話を読む、
@@ -1594,7 +1658,10 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
   プロセスごとの一時ファイルから置き換えます(`State._write`)。メモリには持ちません。読むだけの `user` もロックを取ります
 - **会話**: `AsyncSqliteSaver` の 1 つの接続です。`_erase` は saver の `lock` を取り、1 つのトランザクションで消します
 - **ターン数**: `DailyQuota._lock`(`threading.Lock`)の中で数えて書きます。ファイルは一時ファイルを使わずに書き直します(R18)
-- **費用台帳**: `Ledger._lock` の中で 1 行を追記します
+- **費用台帳**: `Ledger._lock` の中で 1 行を追記します。期間で消す掃除の書き直し(`fold_old`)も同じロックの中です
+- **期間で消す掃除**: `app.state.purge_lock`(`asyncio.Lock`)で 1 つずつ走ります。会話は、そのユーザーの `user_lock` の中で消します。
+  180 日を過ぎた人は、その人たちとシナリオユーザーの `user_lock` を名前の順にまとめて取ってから消します(「すべて消す」と同じ順なので、互いに待ち合っても止まりません)。
+  ロックを取った後と、dip の状態から外す読み書きの中で、もう一度期限を確かめます(対象を決めた後に使われた人を消さない)
 - **dip の行動の元データと要約**: 最初の準備(要約が無いときのシナリオの元データとバッチ)は `dip_events.lock` の `fcntl.flock` の中で 1 回だけ行います。
   要約は別の名前のファイルに作ってから置き換えるので、ロックを取らずに読む側は、準備が終わるまで要約が無いと見てロックを待ちます。
   追記は SQLite の 1 つのトランザクションです。`behavior.record` は元データに追記してから `State.update` で `dip_writes` に足します
@@ -1769,6 +1836,15 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     古い接続トークンで終わった部屋に入り直しても、その人に別の部屋があれば、ワーカーは相談を始めずにジョブを止めます。本人が抜けて
     セッションが閉じたら、ジョブも終えます。音声ワーカーは `dev` でも同時に `VOICE_RESUME_MAX_JOBS` 個までしか受けません
     (`tests/test_voice_concurrency.py`)。記録は Web プロセスのメモリだけで、再起動の前から続いているジョブは数えません
+
+25. 期間を過ぎたものは掃除が消し、ちょうどのものは残します。会話は最後のやりとりから 30 日で消え、VACUUM の後はファイルにも WAL にも
+    ユーザーIDが残りません(`tests/test_retention.py::test_conversation_is_kept_until_30_days_after_the_last_exchange_and_then_erased_and_vacuumed`)。
+    最後の利用から 180 日を過ぎた人は、シナリオユーザーの行、連携、会話、音声のファイル、費用台帳のユーザーIDごと消え、`state.json` に
+    行が残りません(`::test_user_unused_for_180_days_is_removed_whole_with_scenario_users_links_files_and_ledger_ids`)。「すべて消す」で
+    持ち越した部屋の名前は 1 日、行は 180 日で外れます(`::test_rows_kept_on_forget_lose_the_rooms_after_1_day_and_the_row_after_180_days`)。
+    費用台帳は 90 日を過ぎた行が日ごとの合計になり、合計は変わりません(`::test_ledger_rows_older_than_90_days_become_one_daily_total_without_user_ids`)。
+    掃除は起動時と定期に走り、進行中のターンを待ち、CLI は内部の鍵で内部の口を呼ぶだけです。Cookie は画面を開くたびに同じ ID で 180 日に
+    書き直します(`::test_cookie_lasts_180_days_and_every_open_rewrites_the_same_id`)
 
 ## 10. テストと評価の仕組み
 

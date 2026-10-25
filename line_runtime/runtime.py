@@ -253,11 +253,50 @@ class LineRuntime:
         await self._erase(user_id, keep=n + 1)
 
     async def forget(self, user_id: str) -> None:
-        """そのユーザーの会話(チェックポイント)をすべて、1つのトランザクションで消す(プロフィールの「すべて消す」)。
-        次の会話は1番から。途中で失敗したら何も消えていない(もう一度押せばやり直せる)。
+        """そのユーザーの会話(チェックポイント)をすべて、1つのトランザクションで消す(プロフィールの「すべて消す」と、
+        期間で消す掃除のユーザー)。次の会話は1番から。途中で失敗したら何も消えていない(もう一度押せばやり直せる)。
         呼び出し元が user_lock の中で呼ぶ(進行中のターンと交差しないように)。"""
         await self._erase(user_id)
-        self._threads[user_id] = 0
+        self._threads.pop(user_id, None)  # 次に参照したとき、残りの会話(無いので 0)から数え直す
+
+    async def _last_at(self, thread_id: str) -> datetime | None:
+        """その会話の最後のやりとり(最新のチェックポイントの保存時刻、UTC)。会話が無ければ None。"""
+        tup = await self._saver.aget_tuple({"configurable": {"thread_id": thread_id}})
+        return datetime.fromisoformat(tup.checkpoint["ts"]) if tup else None
+
+    async def old_threads(self, cutoff: datetime) -> list[str]:
+        """最後のやりとりが cutoff より前の会話の thread_id(期間で消す掃除が、会話ごとに消す)。"""
+        await self._saver.setup()
+        async with self._saver.lock, self._saver.conn.execute("SELECT DISTINCT thread_id FROM checkpoints") as cur:
+            threads = [row[0] for row in await cur.fetchall()]
+        return [t for t in threads if (at := await self._last_at(t)) is not None and at < cutoff]
+
+    async def erase_old_thread(self, thread_id: str, cutoff: datetime) -> bool:
+        """その会話の記録を1つのトランザクションで消す。消す前に、最後のやりとりが今も cutoff より前かを確かめ直す
+        (掃除が対象を決めた後に続いていたら消さない)。今の会話を消しても番号は戻さない(_threads はそのまま。
+        次にトークを開くと、返信の無い会話として新しい会話から始まる)。
+        呼び出し元が、その会話のユーザーの user_lock の中で呼ぶ。"""
+        at = await self._last_at(thread_id)
+        if at is None or at >= cutoff:
+            return False
+        saver = self._saver
+        async with saver.lock, saver.conn.cursor() as cur:
+            try:
+                for table in CONVERSATION_TABLES:
+                    await cur.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
+                await saver.conn.commit()
+            except BaseException:
+                await saver.conn.rollback()
+                raise
+        return True
+
+    async def vacuum(self) -> None:
+        """会話の DB を詰める(消した行がファイルの空き領域に残らないように。期間で消す掃除の後)。
+        AsyncSqliteSaver は WAL で書くので、VACUUM の後に WAL も本体に書き戻して空にする(WAL のファイルにも残さない)。"""
+        await self._saver.setup()
+        async with self._saver.lock:
+            await self._saver.conn.execute("VACUUM")
+            await self._saver.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
                      talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False) -> dict:

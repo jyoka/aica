@@ -49,7 +49,7 @@ import os
 import re
 import secrets
 from collections import defaultdict
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -76,10 +76,10 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, Field
 
-from dip_mcp import accounts, behavior, logic, profile
+from dip_mcp import accounts, behavior, logic, profile, retention
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, line_channel, turn
+from line_runtime import config, fake_line, line_channel, purge, turn
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -103,7 +103,8 @@ state = State()
 # ブラウザごとの匿名ユーザーID(Cookie)。ブラウザ側には ID しか置かず、状態はすべてサーバー側でこの ID にひも付く。
 ANON_COOKIE = "aica_uid"
 ANON_ID = re.compile(r"w-[0-9a-f]{16}")
-ANON_COOKIE_MAX_AGE = 400 * 24 * 3600  # ブラウザが Cookie を保持できる上限(約400日)いっぱい
+# 最後に画面を開いた日から 180 日(使われなくなった人の dip の状態を消す期間と同じ。dip_mcp.retention.USER_TTL)
+ANON_COOKIE_MAX_AGE = 180 * 24 * 3600
 
 
 def _anon(request: Request) -> str | None:
@@ -118,12 +119,12 @@ SECURE_COOKIE_ENV = "AICA_SECURE_COOKIE"
 
 def _issue(request: Request, response: Response) -> str:
     """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。
-    発行するのは画面を開いたとき(GET / と GET /dev)だけ。API は発行しない(Cookie が無ければ 401)。"""
-    uid = _anon(request)
-    if uid is None:
-        uid = f"w-{secrets.token_hex(8)}"
-        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
-                            secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
+    あれば同じ ID で Cookie を書き直し、期限を今日から ANON_COOKIE_MAX_AGE に延ばす(毎日使う人が 181 日目に ID を
+    失わないように。期限は「最後に画面を開いた日から」になる。docs/design/privacy.md の 3.3 の注)。
+    発行と書き直しは画面を開いたとき(GET / と GET /dev)だけ。API は発行も書き直しもしない(Cookie が無ければ 401)。"""
+    uid = _anon(request) or f"w-{secrets.token_hex(8)}"
+    response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
+                        secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
     return uid
 
 
@@ -200,9 +201,11 @@ def _admit(request: Request, user_id: str) -> None:
 
 
 def _profile_writer(request: Request) -> str:
-    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。"""
+    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。
+    書き換えは最後の利用として記録する(期間で消す掃除が数える。dip_mcp.retention)。"""
     user_id = _owner(request)
     _admit(request, user_id)
+    retention.touch(state, user_id)
     return user_id
 
 
@@ -244,10 +247,48 @@ async def lifespan(app: FastAPI):
     app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
-        yield
+        app.state.purge_lock = asyncio.Lock()  # 起動時・定期・内部の口の掃除を重ねない
+        await _purge_logged()  # 起動時の掃除(落ちても起動は止めない)
+        daily = asyncio.create_task(_purge_daily())
+        try:
+            yield
+        finally:
+            daily.cancel()
+            with suppress(asyncio.CancelledError):  # 走っている掃除を止めてから会話の DB を閉じる
+                await daily
+
+
+async def _purge() -> dict:
+    """期間で消す掃除(line_runtime.purge)。この Web プロセスの中で、ユーザーごとに user_lock を取って消す。"""
+    async with app.state.purge_lock:
+        return await purge.purge(app.state.rt, state, scenario_users=_scenario_users(),
+                                 unread_uploads=app.state.unread_uploads, voice_ready=app.state.voice_ready,
+                                 remove_files=_remove_voice_files)
+
+
+async def _purge_logged() -> None:
+    try:
+        await _purge()
+    except Exception as e:  # noqa: BLE001  掃除の失敗で Web プロセスを止めない(次の回にやり直す)
+        purge.log.error("期間で消す掃除が失敗しました: %s", type(e).__name__)
+
+
+async def _purge_daily() -> None:
+    """1 日 1 回の掃除(起動時の掃除の EVERY 後から)。"""
+    while True:
+        await asyncio.sleep(purge.EVERY.total_seconds())
+        await _purge_logged()
 
 
 app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
+
+
+@app.post(purge.INTERNAL_PATH)
+async def internal_purge(request: Request):
+    """期間で消す掃除を今すぐ走らせる(手で走らせる CLI python -m line_runtime.purge が呼ぶ)。消した数を返す。
+    Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。消す処理は定期の掃除と同じく、この Web プロセスの中で行う。"""
+    _require_internal(request)
+    return await _purge()
 
 
 @app.get("/healthz")
@@ -370,6 +411,7 @@ async def talk_track_undo(body: UndoIn, request: Request):
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
     _admit(request, body.user_id)
+    retention.touch(state, body.user_id)
     async with app.state.rt.user_lock(body.user_id):
         r = profile.undo_switch(state, body.user_id, body.id)
     if "error" in r:
@@ -404,6 +446,7 @@ async def start_scenario(scenario_id: str, request: Request):
     _admit(request, user)
     async with app.state.rt.user_lock(user):
         prepare(state, sc, user)
+    retention.touch(state, user)
     return {"user": user, "event": sc["event"]}
 
 
@@ -941,6 +984,7 @@ async def voice_start(body: UserIn, request: Request):
     limited = app.state.quota.try_take(user_id, _client_ip(request))
     if limited is not None:
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)  # 音声相談を始めたのも最後の利用
     token = issue_token(user_id)
     rooms.issue(user_id, token["room"])
     logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
@@ -982,6 +1026,7 @@ async def voice_result_in(body: VoiceResultIn, request: Request):
     _require_internal(request)
     if logic.voice_room_forgotten(state, body.user_id, body.room):
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
+    retention.touch(state, body.user_id)  # 音声相談の結果も最後の利用(期間で消す掃除が数える)
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
@@ -1059,6 +1104,7 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
     limited = app.state.quota.try_take(user_id, _client_ip(request))
     if limited is not None:  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)
     try:
         draft, usage = await extract_bytes(name, data, resume_client())
     except Exception as e:  # API のエラーは画面に理由を出す

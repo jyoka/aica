@@ -252,6 +252,13 @@ class State:
             u = self._read()["users"].get(line_user_id)
         return u or _new_user(line_user_id)
 
+    def edit_users(self, fn) -> None:
+        """全員の行(users)を 1 回の読み書きで変える(期間で消す掃除。dip_mcp.retention)。fn が True を返したときだけ書く。"""
+        with self._lock():
+            data = self._read()
+            if fn(data["users"]):
+                self._write(data)
+
     def update(self, line_user_id: str, fn) -> dict:
         with self._lock():
             data = self._read()

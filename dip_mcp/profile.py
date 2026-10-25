@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy
 import json
 
-from dip_mcp import behavior, logic
+from dip_mcp import behavior, logic, retention
 from dip_mcp.data import State, now
 from resume_draft.pii import fold_pii, has_pii
 from resume_draft.schema import document_kind_of
@@ -279,7 +279,8 @@ def resume_uploaded(state: State, line_user_id: str) -> None:
 
 
 # 「すべて消す」の後も持ち越すもの: 連番(古いリンクの rid が、消した後の新しい履歴書・下書きを開かないように)と、
-# 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)
+# 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)。
+# 持ち越した行には消した時刻を最後の利用として書き、部屋の名前は 1 日、行は 180 日で掃除が外す(dip_mcp.retention)
 _KEPT_ON_FORGET = ("resume_upload_seq", "voice_result_seq")
 
 
@@ -302,6 +303,7 @@ def forget_all(state: State, line_user_id: str) -> dict:
             kept["forgotten_voice_rooms"] = rooms
         state.reset_user(uid)
         if kept:
+            kept = retention.mark_forgotten(kept)
             state.update(uid, lambda u, kept=kept: u.update(kept))
     return {"forgotten": True, "files": files, "users": users}
 
