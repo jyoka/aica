@@ -1,4 +1,4 @@
-"""Anthropic SDK の全 messages.create と、OpenAI SDK の全 responses.create / parse の呼び出しを計測する。
+"""Anthropic SDK の全 messages.create / parse と、OpenAI SDK の全 responses.create / parse の呼び出しを計測する。
 
 anthropic 1.x の非同期クライアントの with_raw_response(langchain-anthropic が使う)では parse() がコルーチンに
 なったので、await してから usage を読む。
@@ -69,10 +69,11 @@ class Meter:
             self.calls.append(call)
 
     def install(self) -> Meter:
+        # parse(構造化出力。模擬ユーザーとジャッジの llm.parse)は create を通らず直に送るので、別に包む
         for cls in (Messages, BetaMessages):
-            cls.create = self._wrap_sync(cls.create)
+            cls.create, cls.parse = self._wrap_sync(cls.create), self._wrap_sync(cls.parse)
         for cls in (AsyncMessages, AsyncBetaMessages):
-            cls.create = self._wrap_async(cls.create)
+            cls.create, cls.parse = self._wrap_async(cls.create), self._wrap_async(cls.parse)
         Responses.create, Responses.parse = self._wrap_sync(Responses.create), self._wrap_sync(Responses.parse)
         AsyncResponses.create = self._wrap_async(AsyncResponses.create)
         AsyncResponses.parse = self._wrap_async(AsyncResponses.parse)

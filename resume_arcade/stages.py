@@ -22,7 +22,7 @@ from resume_arcade import schemas as s
 from resume_draft.pii import redact_pii
 from resume_lines import check_numbers, quote_in
 
-QUICK_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-4-5"}  # 模擬ユーザーと同じ安いモデル
+QUICK_MODEL = {"openai": "gpt-6-luna", "anthropic": "claude-haiku-5-5"}  # 安いモデル(Claude Haiku 5.5 は $0.10 / $0.50)
 QUICK_MODEL_ENV = "AICA_ARCADE_QUICK_MODEL"  # ゲームの中の反応のモデルだけを替える(決まっていないことの 5)
 
 

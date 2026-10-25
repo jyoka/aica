@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dip_mcp import retention
 from dip_mcp.data import State
-from line_runtime import legal
+from line_runtime import config, legal
 
 KINDS = ("terms", "resume", "voice")
 KEY = "consents"
@@ -33,10 +33,16 @@ FORGET_POINT = {"web": "プロフィール画面の「すべて消す」で、�
                 "line": "トークで「データを消す」と送れば、いつでも消せます"}
 
 
+# 書いた内容の送り先(LINE_SIM_PROVIDER。プライバシーポリシーの 5 の表は両方を書いている)
+SENT_TO = {"anthropic": ("書いた内容は、返事を作るために米国の Anthropic に送ります。求人を探す言葉は、米国の OpenAI にも送ります。"
+                         "どちらも学習には使わないとされています"),
+           "openai": "書いた内容は、返事を作るために米国の OpenAI に送ります。学習には使わないとされています"}
+
+
 def _terms_points(channel: str) -> list[str]:
     return [
         legal.DEMO_NOTE.removesuffix("。"),
-        "書いた内容は、返事を作るために米国の OpenAI(設定によっては Anthropic)に送ります。学習には使わないとされています",
+        SENT_TO.get(config.PROVIDER, SENT_TO["anthropic"]),
         "aica のサーバーと保存する情報も、米国の Render にあります",
         ("米国には連邦の包括的な個人情報保護法がなく、分野ごと、州ごとの法律があります。各事業者の学習への利用と保持は、"
          "プライバシーポリシーの「5」に書いています"),

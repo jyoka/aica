@@ -61,7 +61,7 @@ class NoModel(ScriptedModel):
         raise AssertionError("同意の前に LLM を呼んだ")
 
 
-def _bump(monkeypatch, privacy: str = "1.1") -> None:
+def _bump(monkeypatch, privacy: str = "1.2") -> None:
     """ポリシーの版を上げたことにする。"""
     monkeypatch.setattr(legal, "versions", lambda: {"terms": legal.TERMS_VERSION, "privacy": privacy})
 
@@ -73,25 +73,25 @@ def test_record_keeps_the_version_and_a_new_version_asks_again(tmp_path, monkeyp
     state = State(tmp_path / "state.json")
     uid = "w-1234567890abcdef"
     assert consent.needed(state, uid, "terms") and uid not in state.user_ids()  # 同意の前は行も無い
-    assert consent.tag() == "privacy=1.0;terms=1.0"
-    assert consent.record(state, uid, "terms", "privacy=0.9;terms=1.0") is False  # 示していない版には同意できない
+    assert consent.tag() == "privacy=1.1;terms=1.0"
+    assert consent.record(state, uid, "terms", "privacy=1.0;terms=1.0") is False  # 示していない版には同意できない
     assert uid not in state.user_ids()
     assert consent.record(state, uid, "terms", consent.tag()) is True
     rec = state.user(uid)["consents"]["terms"]
-    assert rec["version"] == {"terms": "1.0", "privacy": "1.0"} and rec["at"].endswith("+00:00")
+    assert rec["version"] == {"terms": "1.0", "privacy": "1.1"} and rec["at"].endswith("+00:00")
     assert not consent.needed(state, uid, "terms") and consent.needed(state, uid, "resume")
     # /dev のシナリオユーザーは、同じブラウザの人(匿名ID)の同意を見る
     assert not consent.needed(state, f"{uid}:sim-new", "terms")
     _bump(monkeypatch)
     assert consent.needed(state, uid, "terms")  # 版が上がったら取り直す
-    assert consent.record(state, uid, "terms", "privacy=1.1;terms=1.0")
-    assert state.user(uid)["consents"]["terms"]["version"]["privacy"] == "1.1"
+    assert consent.record(state, uid, "terms", "privacy=1.2;terms=1.0")
+    assert state.user(uid)["consents"]["terms"]["version"]["privacy"] == "1.2"
 
 
 def test_texts_follow_the_design_and_the_policy():
     web, line = consent.texts("web"), consent.texts("line")
     terms = "\n".join(web["terms"]["points"])
-    for words in ("米国の OpenAI", "学習には使わない", "30 日", "180 日", "「すべて消す」", "18 歳未満", "自動で伏せます",
+    for words in ("米国の Anthropic", "米国の OpenAI にも", "学習には使わない", "30 日", "180 日", "「すべて消す」", "18 歳未満", "自動で伏せます",
                   "プライバシーポリシーの「5」", "架空のデモ", "米国の Render", "州ごとの法律"):
         assert words in terms
     assert "「データを消す」" in "\n".join(line["terms"]["points"]) and "「すべて消す」" not in "\n".join(line["terms"]["points"])
@@ -269,7 +269,7 @@ def test_line_asks_on_follow_and_before_the_first_message_then_greets_after_the_
     asked = _messages(fake)
     assert len(asked) == 3
     for (m,) in asked:  # どれも同意の要点と、規約とポリシーの URL と、「同意して始める」(postback)
-        assert "米国の OpenAI" in m["text"] and "「データを消す」" in m["text"]
+        assert "米国の Anthropic" in m["text"] and "「データを消す」" in m["text"]
         assert "https://aica.example.test/legal/terms" in m["text"] and "https://aica.example.test/legal/privacy" in m["text"]
         (item,) = m["quickReply"]["items"]
         assert item["action"] == {"type": "postback", "label": "同意して始める",

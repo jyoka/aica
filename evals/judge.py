@@ -115,7 +115,8 @@ async def judge(client, model: str, transcript: list[dict], resume: dict | None 
         user += f"\n\n## 本人の履歴書の読み取り結果\n{json.dumps(resume, ensure_ascii=False)}"
     shaped = []
     for _ in range(max(1, samples)):
-        j = await llm.parse(client, model=model, max_tokens=3000, effort="low", schema=Judgement, system=SYSTEM,
+        # max_tokens は思考の分も数える(Claude は effort low でも考えることがある)。使わなければ費用はかからない
+        j = await llm.parse(client, model=model, max_tokens=8000, effort="low", schema=Judgement, system=SYSTEM,
                             messages=[{"role": "user", "content": user}])
         if j is None:
             raise RuntimeError("ジャッジが判定を返さなかった")

@@ -21,7 +21,7 @@ aica を Render の Web サービス(Starter プラン)に、1 つのコンテ�
 
 ## 手元で smoke を通す
 
-docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要ります。
+docker と、リポジトリ直下の `.env` の `ANTHROPIC_API_KEY` と `OPENAI_API_KEY` が要ります。
 
 ```bash
 ./.venv/bin/python -m scripts.deploy_smoke              # build(初回は約 5 分)→ 起動 → 確かめる → 再起動 → 確かめる → 片付け
@@ -34,7 +34,7 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 - `/healthz` が 200 になる。`GET /` の Cookie に `Secure` と `HttpOnly` が付く
 - 新しいブラウザで開くと、まず使い始める同意を求める(入口は無く、LLM を呼ばない)。画面の「同意して始める」と同じく
   今の版で同意すると(`POST /api/consent`)初回訪問(`visit`)になり、挨拶の吹き出しが返る
-- 画面(`/`、`/dev`、`/static/talk-core.js`)と返信と履歴に、`OPENAI_API_KEY` の値が出てこない
+- 画面(`/`、`/dev`、`/static/talk-core.js`)と返信と履歴に、`ANTHROPIC_API_KEY` と `OPENAI_API_KEY` の値が出てこない
 - `/app/data` がコンテナの外のボリュームで、コンテナを再起動しても会話の履歴と同意と dip の状態が残る
 
 2026-10-25 に手元(OrbStack)で通しました。挨拶の後のコンテナのメモリは約 200MB でした(Starter は 512MB)。
@@ -46,7 +46,7 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 1. [Render のダッシュボード](https://dashboard.render.com/) で「New」→「Blueprint」を選び、GitHub の `jyoka/aica` をつなぐ。
    ブランチは `main`
 2. `render.yaml` が読まれ、Web サービス `aica`(Starter、Singapore)とディスク `aica-data`(1GB、`/app/data`)が出る
-3. `OPENAI_API_KEY` の値を入れる(`sync: false` なので、ここで聞かれる。リポジトリには書かない)
+3. `ANTHROPIC_API_KEY` と `OPENAI_API_KEY` の値を入れる(`sync: false` なので、ここで聞かれる。リポジトリには書かない)
 4. 「Apply」でサービスを作る。最初の build に数分かかる。「Events」で `Deploy live` になるまで待つ
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
@@ -65,7 +65,7 @@ docker と、リポジトリ直下の `.env` の `OPENAI_API_KEY` が要りま�
 ```
 
 - 手元の smoke と同じ確かめに加え、`http://` で開くと `https://` に飛ぶことも確かめます
-- 画面にキーが出ないかは、手元の `.env` の `OPENAI_API_KEY` の値で探します。Render に入れたキーと同じときだけ意味があります
+- 画面にキーが出ないかは、手元の `.env` の `ANTHROPIC_API_KEY` と `OPENAI_API_KEY` の値で探します。Render に入れたキーと同じときだけ意味があります
 - 最後に、このときの匿名ユーザーID(`w-…`)が出ます
 
 ### 3. トークの 1 往復と再訪の挨拶を確かめる **【運営者】**
@@ -119,7 +119,8 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 
 | 環境変数 | 値 | 入れる者 | 用途 |
 |---|---|---|---|
-| `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | エージェント、履歴書の読み取り、意味検索 |
+| `ANTHROPIC_API_KEY` | Anthropic の API キー | **【運営者】** Blueprint を作るとき | エージェント、ゲームの AI(既定の `LINE_SIM_PROVIDER=anthropic`) |
+| `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | 履歴書の読み取り、意味検索、音声相談 |
 | `AICA_TRUST_PROXY` | `1` | Blueprint | IP を `X-Forwarded-For` の最後の値から取る(Render のプロキシの後ろ) |
 | `AICA_INTERNAL_KEY` | 乱数 | Blueprint(`generateValue`) | 音声ワーカーが結果を返すときの共有鍵 |
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | Blueprint | 本番の文字起こしを Deepgram に固定する。変えない(`openai` にすると声そのものが OpenAI に届く。[privacy.md](../design/privacy.md) の 3.2) |
@@ -204,7 +205,7 @@ LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKi
 
 ## うまくいかないとき
 
-- デプロイが 15 分たっても `Deploy live` にならない: 「Logs」で起動の途中のエラーを見る。`OPENAI_API_KEY` が無いと、Web プロセスは
+- デプロイが 15 分たっても `Deploy live` にならない: 「Logs」で起動の途中のエラーを見る。`ANTHROPIC_API_KEY` が無いと、Web プロセスは
   起動の途中で止まる
 - 「Logs」に `WARNING: /app/data is not a mounted disk.` と出る: ディスクがつながっていないか、Mount Path が `/app/data` でない。
   このままでは再起動で会話が消える

@@ -28,15 +28,22 @@ from pathlib import Path
 from line_runtime.quota import person, today
 
 # $/1M tokens (input, output)。キャッシュ書込 1.25x / 読込 0.1x(GPT-6 も同じ)、web search は $10/1k 回。
+# モデル名は、いちばん長く一致する名前で引く(claude-sonnet-5-5 を claude-sonnet-5 の値で数えないように)。
+# claude-sonnet-5-5 と claude-haiku-5-5 は 2026-10-26 の Anthropic の公表価格(Sonnet 5.5 のキャッシュの読みは $0.20 = 0.1x)
 PRICES = {
     "claude-haiku-4-5": (1.0, 5.0),
+    "claude-haiku-5-5": (0.1, 0.5),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-5": (2.0, 10.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-4-8": (5.0, 25.0),
     "claude-opus-5": (5.0, 25.0),
     "gpt-6-sol": (2.0, 10.0),
     "gpt-6-luna": (0.1, 0.5),
 }
+# プロンプト(キャッシュの読み書きを含む入力の合計)が長いときの料金: モデル → (この長さを超えたら, (input, output))。
+# Claude Haiku 5.5 は 100K トークンを超えると $0.50 / $2.50
+LONG_PROMPT_PRICES = {"claude-haiku-5-5": (100_000, (0.5, 2.5))}
 WEB_SEARCH_PER_CALL = 0.01
 ID_TTL = timedelta(days=90)  # 行にユーザーIDを残す期間。過ぎたら日ごとの合計にする
 FOLDED = "deleted"  # 日ごとの合計の行と、「すべて消す」をした人の行の user_id(どの人の分かは残さない)
@@ -50,9 +57,9 @@ _UNPRICED: set[str] = set()
 def price(model: str) -> tuple[float, float]:
     """料金表に無いモデルは $0 で数える。台帳が過少になるので、モデルごとに1回だけ警告を出す
     (モデル名を変えたときに PRICES を足し忘れていないか気づくため)。"""
-    for prefix, p in PRICES.items():
-        if model.startswith(prefix):
-            return p
+    known = [prefix for prefix in PRICES if model.startswith(prefix)]
+    if known:
+        return PRICES[max(known, key=len)]
     if model not in _UNPRICED:
         _UNPRICED.add(model)
         warnings.warn(f"料金表(line_runtime/ledger.py の PRICES)に無いモデル {model!r} の費用を $0 で数えます",
@@ -64,6 +71,9 @@ def cost_usd(model: str, input_tokens: int, output_tokens: int, cache_write: int
              web_searches: int = 0) -> float:
     """input_tokens はキャッシュの読み書きを除いた分。"""
     pin, pout = price(model)
+    long = next((v for k, v in LONG_PROMPT_PRICES.items() if model.startswith(k)), None)
+    if long and input_tokens + cache_write + cache_read > long[0]:
+        pin, pout = long[1]
     return ((input_tokens + 1.25 * cache_write + 0.1 * cache_read) * pin
             + output_tokens * pout) / 1e6 + web_searches * WEB_SEARCH_PER_CALL
 
