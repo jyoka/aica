@@ -63,6 +63,7 @@ def test_build_draft_passes_facts_only_prompt():
     assert "性格・感情・思考傾向の推定は一切しない" in call["instructions"]
     assert "コンビニで1年半" in call["input"][0]["content"]
     assert call["text_format"] is ResumeDraft
+    assert call["store"] is False  # OpenAI に応答を残さない
 
 
 def test_build_draft_empty_transcript_skips_api():

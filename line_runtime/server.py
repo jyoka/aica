@@ -35,6 +35,11 @@ accountLink の画面に送る。LINE から accountLink の webhook が来た�
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 
+LINE で見る、消す(docs/design/privacy.md の 3.7): 「データを見る」と送ると、プロフィール画面と同じ中身をテキストで返す。
+「データを消す」と送ると、消す範囲と確かめのクイックリプライ(postback)を返し、「すべて消す」を押したら Web の「すべて消す」と
+同じ処理(_forget_all)をする。どちらも LLM を呼ばず、会話数も数えない。友だち解除(unfollow。ブロック)では消さない
+(間違えて押すこともあり、解除すれば前の続きから使えるため。使われなくなったユーザーの期間で消す掃除に任せる)。
+
 レジュメ・アーケード(task 187、188。docs/prd/resume-arcade.md): ゲームの画面(/liff/arcade…)は Cookie を発行も要求もしない。
 ハブに出す 2 本は、AI と下書きの API(/api/arcade/start、/ai、/save)を Cookie の本人として呼ぶ。画面は指示の文を送らず、
 LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(dip_mcp.arcade)と人ごとの 1 日の回数。
@@ -70,7 +75,7 @@ import re
 import secrets
 import time
 from collections import defaultdict
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -97,11 +102,12 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from dip_mcp import accounts, arcade, behavior, logic, profile
+from dip_mcp import accounts, arcade, behavior, logic, profile, retention
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
-from line_runtime import config, fake_line, legal, line_channel, llm, turn
+from line_runtime import config, fake_line, legal, line_channel, llm, purge, turn
 from line_runtime.arcade_reply import arcade_reply
+from line_runtime.log_policy import quiet_sdk_loggers
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -128,7 +134,8 @@ state = State()
 # ブラウザごとの匿名ユーザーID(Cookie)。ブラウザ側には ID しか置かず、状態はすべてサーバー側でこの ID にひも付く。
 ANON_COOKIE = "aica_uid"
 ANON_ID = re.compile(r"w-[0-9a-f]{16}")
-ANON_COOKIE_MAX_AGE = 400 * 24 * 3600  # ブラウザが Cookie を保持できる上限(約400日)いっぱい
+# 最後に画面を開いた日から 180 日(使われなくなった人の dip の状態を消す期間と同じ。dip_mcp.retention.USER_TTL)
+ANON_COOKIE_MAX_AGE = 180 * 24 * 3600
 
 
 def _anon(request: Request) -> str | None:
@@ -143,12 +150,12 @@ SECURE_COOKIE_ENV = "AICA_SECURE_COOKIE"
 
 def _issue(request: Request, response: Response) -> str:
     """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。
-    発行するのは画面を開いたとき(GET / と GET /dev)だけ。API は発行しない(Cookie が無ければ 401)。"""
-    uid = _anon(request)
-    if uid is None:
-        uid = f"w-{secrets.token_hex(8)}"
-        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
-                            secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
+    あれば同じ ID で Cookie を書き直し、期限を今日から ANON_COOKIE_MAX_AGE に延ばす(毎日使う人が 181 日目に ID を
+    失わないように。期限は「最後に画面を開いた日から」になる。docs/design/privacy.md の 3.3 の注)。
+    発行と書き直しは画面を開いたとき(GET / と GET /dev)だけ。API は発行も書き直しもしない(Cookie が無ければ 401)。"""
+    uid = _anon(request) or f"w-{secrets.token_hex(8)}"
+    response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
+                        secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
     return uid
 
 
@@ -225,9 +232,11 @@ def _admit(request: Request, user_id: str) -> None:
 
 
 def _profile_writer(request: Request) -> str:
-    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。"""
+    """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。
+    書き換えは最後の利用として記録する(期間で消す掃除が数える。dip_mcp.retention)。"""
     user_id = _owner(request)
     _admit(request, user_id)
+    retention.touch(state, user_id)
     return user_id
 
 
@@ -266,14 +275,53 @@ async def lifespan(app: FastAPI):
     app.state.unread_uploads = {}  # ユーザー → 読み取れなかった直前のアップロード(続くターンの facts)
     app.state.line_seen = line_channel.SeenEvents(config.DATA_DIR / "line_events.json")  # LINE の再送に 2 回答えない
     app.state.line_locks = defaultdict(asyncio.Lock)  # LINE のユーザー → その人のイベントを届いた順に 1 つずつ
+    app.state.line_forget_asks = {}  # LINE のユーザー → 「データを消す」の確かめ(番号、期限の monotonic 秒)。1 回だけ使える
     app.state.line_voice_rooms = {}  # LIFF から始めた音声相談の部屋 → (LINE の userId, 始めた時刻)。結果を push する宛先。メモリだけ
     app.state.fake_line = fake_line.FakeLinePlatform()  # 開発者画面から試す、Web の匿名ユーザーのアカウント連携の LINE の役
     async with LineRuntime() as rt:
         app.state.rt = rt
-        yield
+        app.state.purge_lock = asyncio.Lock()  # 起動時・定期・内部の口の掃除を重ねない
+        await _purge_logged()  # 起動時の掃除(落ちても起動は止めない)
+        daily = asyncio.create_task(_purge_daily())
+        try:
+            yield
+        finally:
+            daily.cancel()
+            with suppress(asyncio.CancelledError):  # 走っている掃除を止めてから会話の DB を閉じる
+                await daily
+
+
+async def _purge() -> dict:
+    """期間で消す掃除(line_runtime.purge)。この Web プロセスの中で、ユーザーごとに user_lock を取って消す。"""
+    async with app.state.purge_lock:
+        return await purge.purge(app.state.rt, state, scenario_users=_scenario_users(),
+                                 unread_uploads=app.state.unread_uploads, voice_ready=app.state.voice_ready,
+                                 remove_files=_remove_voice_files)
+
+
+async def _purge_logged() -> None:
+    try:
+        await _purge()
+    except Exception as e:  # noqa: BLE001  掃除の失敗で Web プロセスを止めない(次の回にやり直す)
+        purge.log.error("期間で消す掃除が失敗しました: %s", type(e).__name__)
+
+
+async def _purge_daily() -> None:
+    """1 日 1 回の掃除(起動時の掃除の EVERY 後から)。"""
+    while True:
+        await asyncio.sleep(purge.EVERY.total_seconds())
+        await _purge_logged()
 
 
 app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
+
+
+@app.post(purge.INTERNAL_PATH)
+async def internal_purge(request: Request):
+    """期間で消す掃除を今すぐ走らせる(手で走らせる CLI python -m line_runtime.purge が呼ぶ)。消した数を返す。
+    Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る。消す処理は定期の掃除と同じく、この Web プロセスの中で行う。"""
+    _require_internal(request)
+    return await _purge()
 
 
 @app.get("/healthz")
@@ -454,6 +502,7 @@ async def talk_track_undo(body: UndoIn, request: Request):
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
     _admit(request, body.user_id)
+    retention.touch(state, body.user_id)
     async with app.state.rt.user_lock(body.user_id):
         r = profile.undo_switch(state, body.user_id, body.id)
     if "error" in r:
@@ -488,6 +537,7 @@ async def start_scenario(scenario_id: str, request: Request):
     _admit(request, user)
     async with app.state.rt.user_lock(user):
         prepare(state, sc, user)
+    retention.touch(state, user)
     return {"user": user, "event": sc["event"]}
 
 
@@ -652,6 +702,7 @@ async def arcade_start(body: ArcadeStartIn, request: Request):
             app.state.quota.refund(user, _client_ip(request))
             reason = "daily_limit"
     rec = arcade.start_play(state, user, game, ai=reason is None)
+    retention.touch(state, user)  # ゲームを始めたのも最後の利用(期間で消す掃除が数える)
     return {"play": rec["id"], "ai": rec["ai"], "reason": reason, "track": logic.search_track(state.user(user)),
             "document_kind": arcade.document_kind(state, user), "jobs": _resume_jobs(user)}
 
@@ -704,6 +755,7 @@ async def arcade_save(body: ArcadeSaveIn, request: Request):
     rec = arcade.save_draft(state, user, game, body.play, arcade_draft.to_envelope(body.markdown, kind))
     if rec is None:
         raise HTTPException(403, "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください")
+    retention.touch(state, user)
     talk = await app.state.rt.add_arcade_result(user, arcade_reply(user, rec))
     return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": kind,
             "blanks": arcade.blanks(rec), "talk": talk}
@@ -727,17 +779,22 @@ def line_login() -> line_channel.LineLogin:
 
 
 def _line_kind(e: dict) -> str | None:
-    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link と
-    解除 unlink)、友だち追加(follow)、アカウント連携の結果(account_link)。ほかは None(無視する)。
-    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。"""
+    """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
+    解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
+    「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)。ほかは None(無視する)。
+    standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
+    友だち解除(unfollow)も None: 受けても消さない(docs/design/privacy.md の 3.7。期間で消す掃除に任せる)。"""
     src = e.get("source") or {}
     if src.get("type") != "user" or not src.get("userId") or e.get("mode", "active") != "active":
         return None
     msg = e.get("message") or {}
     if e.get("type") == "message" and msg.get("type") == "text" and str(msg.get("text") or "").strip():
-        return line_channel.link_command(str(msg["text"])) or "message"
+        text = str(msg["text"])
+        return line_channel.link_command(text) or line_channel.data_command(text) or "message"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
+    if e.get("type") == "postback" and (pb := line_channel.forget_postback(str((e.get("postback") or {}).get("data") or ""))):
+        return pb[0]
     return "follow" if e.get("type") == "follow" else None
 
 
@@ -779,16 +836,19 @@ async def _line_user_events(line_uid: str, events: list[dict]) -> None:
             await api.loading(line_uid)
             try:
                 messages = await _line_messages(api, line_uid, uid, _line_kind(e), e)
-            except Exception:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
-                line_channel.log.exception("LINE のイベントを処理できませんでした(%s)", uid)
+            except Exception as err:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
+                # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+                line_channel.log.error("LINE のイベントを処理できませんでした(%s): %s", uid, type(err).__name__)
                 messages = line_channel.to_messages({"bubbles": [line_channel.FAILED_TEXT]})
             if messages:
                 await api.send(e.get("replyToken"), line_uid, messages)
 
 
 async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kind: str, e: dict) -> list[dict] | None:
-    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)は LLM を使わず、会話数も数えない。
-    ほかは会話のターン(返すものが無ければ None)。"""
+    """1 件のイベントに返す LINE のメッセージ。アカウント連携(開始・結果・解除)と、データを見る、消すは LLM を使わず、
+    会話数も数えない。ほかは会話のターン(返すものが無ければ None)。"""
+    if kind in ("view_data", "forget_data", "forget_confirm", "forget_cancel"):
+        return await _line_data(uid, kind, e)
     if kind == "account_link":
         return line_channel.texts(account_link(uid, e["link"]))
     if kind == "link":
@@ -813,6 +873,34 @@ async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -
         return line_channel.texts(line_channel.LINK_UNAVAILABLE_TEXT)
     accounts.of(state).record_link_token(uid, token)
     return line_channel.link_messages(base, token)
+
+
+async def _line_data(uid: str, kind: str, e: dict) -> list[dict]:
+    """データを見る、消す(docs/design/privacy.md の 3.7)。消すのは、直前の「データを消す」で出した確かめ(1 回だけ、
+    FORGET_CONFIRM_SECONDS まで)の「すべて消す」が押されたときだけ。範囲は Web の「すべて消す」と同じ(_forget_all)。"""
+    asks = app.state.line_forget_asks
+    now = time.monotonic()
+    for u in [u for u, (_, until) in asks.items() if until <= now]:  # 期限の切れた確かめを捨てる(覚えすぎない)
+        del asks[u]
+    if kind == "view_data":
+        rt = app.state.rt
+        async with rt.user_lock(uid):  # 進行中のターンが書き終えてから読む
+            talked = await rt.current_thread(uid) > 0
+            view = _profile_view(uid)
+        return line_channel.data_view_messages(view, talked=talked, linked=behavior.dip_id(state, uid) is not None)
+    if kind == "forget_data":
+        nonce = secrets.token_urlsafe(16)
+        asks[uid] = (nonce, now + line_channel.FORGET_CONFIRM_SECONDS)
+        return line_channel.forget_ask_messages(nonce)
+    if kind == "forget_cancel":
+        asks.pop(uid, None)
+        return line_channel.texts(line_channel.FORGET_CANCELLED_TEXT)
+    _, nonce = line_channel.forget_postback(str(e["postback"]["data"]))
+    if uid not in asks or not secrets.compare_digest(asks[uid][0], nonce):  # 前の確かめ: 今の確かめは残す
+        return line_channel.texts(line_channel.FORGET_EXPIRED_TEXT)
+    del asks[uid]
+    await _forget_all(uid)
+    return line_channel.texts(line_channel.FORGOT_TEXT)
 
 
 def account_link(uid: str, link: dict) -> str:
@@ -867,7 +955,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     try:
         reply = await turn.reply_of(deps, t)
     except (turn.BadTurn, turn.TurnFailed) as err:
-        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, _error_text(err))
+        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, type(err.__cause__ or err).__name__)
         return {"bubbles": [line_channel.FAILED_TEXT]}
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
@@ -1101,7 +1189,12 @@ async def profile_forget(request: Request):
     同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
     会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
-    anon = _owner(request)
+    await _forget_all(_owner(request))
+    return {"forgotten": True}
+
+
+async def _forget_all(anon: str) -> None:
+    """すべて消す(Web のプロフィール画面と、LINE の「データを消す」の確かめ)。anon は本人のユーザーID(w-… か l-…)。"""
     rt = app.state.rt
     # 本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。
     # どのユーザーも、進行中のターンが終わってから消す
@@ -1116,7 +1209,6 @@ async def profile_forget(request: Request):
     for uid in users:
         app.state.unread_uploads.pop(uid, None)
     _remove_voice_files(out["files"])
-    return {"forgotten": True}
 
 
 # ----------------------------- 音声相談(voice-resume との連携) -----------------------------
@@ -1205,6 +1297,7 @@ def _voice_token(user_id: str, ip: str | None) -> dict:
     limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)  # 音声相談を始めたのも最後の利用
     token = issue_token(user_id)
     rooms.issue(user_id, token["room"])
     logic.record_voice_room(state, user_id, token["room"])  # 「すべて消す」の前に始めた面談かを、結果が届いたときに見分ける
@@ -1254,6 +1347,7 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
     if logic.voice_room_forgotten(state, body.user_id, body.room):
         _line_voice_to(body.room)  # 届けない宛先は忘れる
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
+    retention.touch(state, body.user_id)  # 音声相談の結果も最後の利用(期間で消す掃除が数える)
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
@@ -1341,6 +1435,7 @@ async def _read_resume(user_id: str, file: UploadFile, ip: str | None, thread: i
     limited = app.state.quota.try_take(user_id, ip)
     if limited is not None:  # アップロードも1ターン扱い: 上限を超えたら読み取らずに案内だけ返す
         raise HTTPException(429, limited)
+    retention.touch(state, user_id)
     try:
         draft, usage = await extract_bytes(name, data, resume_client())
     except Exception as e:  # API のエラーは画面に理由を出す
@@ -1650,8 +1745,9 @@ async def _line_upload_turn(uid: str, to: str, shown: dict) -> None:
         await api.loading(to)
         try:
             reply = await _line_turn(uid, "upload", {})
-        except Exception:  # noqa: BLE001  確認だけでも届ける
-            line_channel.log.exception("履歴書の続きのターンを進められませんでした(%s)", uid)
+        except Exception as err:  # noqa: BLE001  確認だけでも届ける
+            # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+            line_channel.log.error("履歴書の続きのターンを進められませんでした(%s): %s", uid, type(err).__name__)
             reply = {"bubbles": [line_channel.FAILED_TEXT]}
         if await api.push(to, line_channel.to_messages(_joined(shown, reply))) != line_channel.OK:
             line_channel.log.warning("LINE のトークに履歴書の続きを届けられませんでした(%s)", uid)
@@ -1941,10 +2037,16 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 </head><body><header>{title}({site})</header><main>{body}</main>{footer}</body></html>"""
 
 
-if __name__ == "__main__":
+def main() -> None:
     import uvicorn
 
+    # SDK(OpenAI、Anthropic、httpx など)の INFO や DEBUG のログに、送った本文が出ないように(docs/design/privacy.md の 3.4)
+    quiet_sdk_loggers()
     # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。
     # ワーカーは 1 つ(会話数の上限と状態を 1 つのプロセスで持つ)。コンテナでは LINE_SIM_HOST=0.0.0.0(scripts/container_start.sh)
     uvicorn.run(app, host=os.environ.get("LINE_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("LINE_SIM_PORT", "8030")),
                 proxy_headers=False)
+
+
+if __name__ == "__main__":
+    main()

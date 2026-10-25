@@ -76,6 +76,10 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
         # スタブに PDF がそのまま渡っている(ファイルはディスクに置かずバイト列で読む)
         part = app.stub.calls[0]["input"][0]["content"][0]
         assert part["type"] == "input_file" and part["file_data"].startswith("data:application/pdf;base64,")
+        # OpenAI にファイル名(氏名が入りがち)を送らず、応答も残させない
+        assert part["filename"] == "resume.pdf"
+        assert "佐藤美咲" not in json.dumps(app.stub.calls[0]["input"], ensure_ascii=False)
+        assert app.stub.calls[0]["store"] is False
         # 応答にも個人情報は無い(トークに出す確認の材料)
         assert all(v == "" for v in body["result"]["personal"].values())
         assert not any(p in r.text for p in PII)

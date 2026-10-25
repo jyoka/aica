@@ -16,12 +16,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 
 from livekit import agents
 from livekit.agents import AgentSession
 from livekit.plugins import cartesia, openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
+from line_runtime.log_policy import quiet_sdk_loggers
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor, _post_json
 from voice_resume.dip import DipMCP
@@ -86,17 +88,18 @@ async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAd
             consultation = summary.get("consultation_summary") or None
             track = summary.get("search_track") or DEFAULT_TRACK
         except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
-            logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", exc)
+            logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", type(exc).__name__)
     # 相談の進め方は、チャットと同じく dip が配る区分ごとの playbook(音声版)。読めなければ最小の進め方で始める
     playbook: str | None = None
     if dip is not None:
         try:
             playbook = (await dip.get_counseling_playbook(track, "voice")).get("playbook") or None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("get_counseling_playbook 失敗(最小の進め方で続行): %s", exc)
+            logger.warning("get_counseling_playbook 失敗(最小の進め方で続行): %s", type(exc).__name__)
+    # ログには値を出さない(あるかないかと項目の数だけ。docs/design/privacy.md の 3.4)
     logger.info("面談を開始: user_id=%s 区分=%s 前回の希望=%s 相談のまとめ=%s 履歴書=%s playbook=%s",
-                user_id or "(不明)", track, stated or "なし", "あり" if consultation else "なし",
-                "あり" if resume else "なし", "あり" if playbook else "なし")
+                user_id or "(不明)", track, f"あり({len(stated)} 項目)" if stated else "なし",
+                "あり" if consultation else "なし", "あり" if resume else "なし", "あり" if playbook else "なし")
 
     advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume,
                             consultation_summary=consultation, track=track, playbook=playbook)
@@ -111,7 +114,8 @@ async def report_session(room: str, user_id: str, state: str, poster=None) -> bo
         got = await (poster or _post_json)(f"{config.TALK_URL}/api/voice/session",
                                            {"user_id": user_id, "room": room, "state": state})
     except Exception as exc:  # noqa: BLE001
-        logger.warning("トークへ部屋の%sを知らせられません: %s", "始まり" if state == "joined" else "終わり", exc)
+        logger.warning("トークへ部屋の%sを知らせられません: %s", "始まり" if state == "joined" else "終わり",
+                       type(exc).__name__)
         return True
     return (got or {}).get("allowed", True) is not False
 
@@ -151,7 +155,7 @@ class SessionGuard:
         try:
             self._closing = self._session.generate_reply(instructions=END_INSTRUCTIONS)
         except RuntimeError as exc:  # session が閉じかけている
-            logger.warning("締めの返答を作れません: %s", exc)
+            logger.warning("締めの返答を作れません: %s", type(exc).__name__)
 
     @property
     def closing_down(self) -> bool:
@@ -176,7 +180,7 @@ class SessionGuard:
                 self._closing = self._session.generate_reply(
                     instructions=time_up_instructions(minutes), allow_interruptions=False)
             except RuntimeError as exc:
-                logger.warning("時間切れの締めの返答を作れません: %s", exc)
+                logger.warning("時間切れの締めの返答を作れません: %s", type(exc).__name__)
             else:
                 await self._wait_for(self._closing)
         await self._close("voice session time limit")
@@ -192,8 +196,8 @@ class SessionGuard:
         self._closing_down = True
         try:
             await self._session.aclose()
-        except Exception:  # 閉じるのに失敗しても部屋は消す
-            logger.exception("AgentSession を閉じられませんでした")
+        except Exception as exc:  # noqa: BLE001 - 閉じるのに失敗しても部屋は消す
+            logger.error("AgentSession を閉じられませんでした: %s", type(exc).__name__)
         # 部屋を消して本人の接続も切る(画面は「切れた」を受けて、結果を待つ表示に移る)
         await self._ctx.delete_room()
         self._ctx.shutdown(reason=reason)
@@ -205,7 +209,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     try:
         await dip.start()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("dip MCP サーバーに接続できません(求人提案なしで続行): %s", exc)
+        logger.warning("dip MCP サーバーに接続できません(求人提案なしで続行): %s", type(exc).__name__)
         dip = None
     if dip is not None:
         ctx.add_shutdown_callback(dip.aclose)
@@ -229,7 +233,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
-        llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT),
+        # Chat Completions の既定も残さないが、OpenAI に応答を残さないことを明示する(docs/design/privacy.md の 3.2)
+        llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT, store=False),
         tts=cartesia.TTS(
             model=config.TTS_MODEL,
             voice=config.TTS_VOICE,
@@ -259,7 +264,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い。
     # 時間切れで guard が閉じているときは何もしない(guard が部屋を消してからジョブを終える)
     session.on("close", lambda _ev: guard.closing_down or ctx.shutdown(reason="agent session closed"))
-    await session.start(agent=advisor, room=ctx.room)
+    # LiveKit Cloud に録音、文字起こし、ログを残さない(Agent Observability。docs/design/privacy.md の 3.2)。
+    # 指定しないとプロジェクトの設定に従う
+    await session.start(agent=advisor, room=ctx.room, record=False)
     guard.start()
 
     # 画面の「面談を終える」ボタン → 下書きを保存して締める(返答は 1 回だけ)
@@ -301,6 +308,23 @@ def worker_options() -> agents.WorkerOptions:
                                 job_memory_limit_mb=config.JOB_MEMORY_LIMIT_MB)
 
 
-if __name__ == "__main__":
+def configure_logging(argv: list[str]) -> None:
+    """ワーカーのログの設定。本番(コンテナが使う start)では、SDK のロガーを WARNING にする(docs/design/privacy.md の 3.4)。
+    livekit-agents と OpenAI の SDK は INFO や DEBUG で、送った本文や応答を出しうる。手元の dev と console は
+    livekit-agents の既定のまま(SDK の INFO も出る)。
+
+    livekit-agents の CLI は、この後でレベルの無いプラグインのロガーを INFO にし、後から読み込んだプラグイン
+    (Deepgram の STT はジョブの中で読む)のロガーも登録のときに INFO にする。なので、登録のときにこちらが先に
+    WARNING にする。ジョブのプロセスは、作るときのこのプロセスのロガーのレベルを写す。"""
     logging.basicConfig(level=logging.INFO)
+    if argv[:1] != ["start"]:
+        return
+    from livekit.agents.plugin import Plugin
+
+    quiet_sdk_loggers()
+    Plugin.emitter.on("plugin_registered", lambda p: p.logger and p.logger.setLevel(logging.WARNING))
+
+
+if __name__ == "__main__":
+    configure_logging(sys.argv[1:])
     agents.cli.run_app(worker_options())

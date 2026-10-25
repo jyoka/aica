@@ -88,7 +88,8 @@ class StubLLM:
         self.calls: list[dict] = []
         self.responses = SimpleNamespace(parse=self._parse)
 
-    async def _parse(self, *, model, instructions, input, text_format, max_output_tokens, reasoning):
+    async def _parse(self, *, model, instructions, input, text_format, max_output_tokens, reasoning, store):
+        assert store is False  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
         self.calls.append({"model": model, "system": instructions, "user": input[0]["content"],
                            "schema": text_format.__name__})
         out = self.script[text_format.__name__](input[0]["content"])
