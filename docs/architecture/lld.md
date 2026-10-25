@@ -1957,18 +1957,34 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 | dip の要約か playbook が読めない(音声) | 確認なし、`FALLBACK_PLAYBOOK` で始める | `prepare_advisor`、`advisor_instructions` |
 | 求人の検索の失敗(音声) | 警告のログを出し、LLM に伝えて会話を締めさせる | `ResumeAdvisor.propose_jobs` |
 | 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
-| 下書きの保存の失敗 | LLM に謝らせる。トークへは送らない | `finalize_interview` |
+| 下書きの保存の失敗 | 決まった文で LLM に謝らせる(例外の文は LLM にも渡さない)。トークへは送らない | `finalize_interview` |
 | 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
 | 結果をトークに届けられない(ほか) | 警告のログだけ。ファイルは残り、会話の段階の結果は記録する(R20。「すべて消す」の前の部屋なら dip が断る) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
 | LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
 | LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
-| LINE のターンの途中の失敗 | `FAILED_TEXT` を返す。使ったターンは返さない | `server._line_turn`、`_line_user_events` |
+| LINE のターンの途中の失敗 | `FAILED_TEXT` を返す。使ったターンは返さない。ログは例外の型名だけ | `server._line_turn`、`_line_user_events`、`_line_upload_turn` |
 | LINE の返信トークで返せない(断られた、つながらない) | push で返す | `LineApi.send`、`LineApi._post` |
 | LINE の返信の応答が来ない | 届いたかもしれないので push しない(警告のログ) | `LineApi.send` |
 | LINE がメッセージの形を断った | `FAILED_TEXT` だけを push する。それも届かなければ警告のログだけ(本文とユーザーIDは出さない) | `LineApi.send` |
 | `data/line_events.json` が壊れている | 警告のログを出し、空から始める | `SeenEvents.__init__` |
 | 評価の 1 シナリオの失敗 | その回を `status: error` にして次へ。払った分は予算台帳に載せる | `evals.run.main` の `run_one`、`to_run`、`run_cases` |
+
+### ログに値を出さない
+
+ログに出してよいのは、ユーザーID、イベントや処理の種類、件数、値があるかないか、例外の型名だけです([設計メモ](../design/privacy.md)の 3.4)。
+ログはホスティングの決まりで残り、本人が消せないからです。新しくログを足すときも、この決まりに従います。
+
+- 本人の発言、希望、文字起こし、ファイル名は出しません。値は「あり / なし」や項目の数にします(例: 面談の開始の `前回の希望=あり(2 項目)`)
+- 例外は `type(exc).__name__` だけを出し、例外の文も `logger.exception` のトレースバックも出しません。API のエラーの文に送った本文が、
+  `ValidationError` の文にモデルの出力が入ることがあるからです。LLM に返すツールの結果にも、例外の文を入れません
+- 本番では SDK のロガー(`livekit`、`openai`、`anthropic`、`httpx`、`httpcore`、`aiosqlite`、`langchain`、`langgraph`、`mcp` など。
+  一覧は `log_policy.SDK_LOGGERS`)を WARNING にします(`log_policy.quiet_sdk_loggers`)。INFO や DEBUG で、送った本文や応答、
+  会話の保存の中身を出しうるからです。Web プロセスは起動でいつも(`server.main`)、音声ワーカーは `start`(コンテナが使う)のときだけ
+  (`voice_resume.agent.configure_logging`)にします。手元の `dev` は livekit-agents の既定のまま、SDK の INFO も出ます。
+  livekit-agents の CLI は、レベルの無い自分とプラグインのロガーを起動のレベルにするので、もうある下のロガーにもレベルを付け、
+  後から読み込むプラグイン(Deepgram の STT はジョブの中で読む)は登録のときに WARNING にします
+- uvicorn のアクセスログ(IP、パス、クエリ)は残します。値は 10 分で切れる linkToken と番号だけです
 
 ## 9. 守る約束(テストで確かめているもの)
 
@@ -2063,6 +2079,11 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     費用台帳は 90 日を過ぎた行が日ごとの合計になり、合計は変わりません(`::test_ledger_rows_older_than_90_days_become_one_daily_total_without_user_ids`)。
     掃除は起動時と定期に走り、進行中のターンを待ち、CLI は内部の鍵で内部の口を呼ぶだけです。Cookie は画面を開くたびに同じ ID で 180 日に
     書き直します(`::test_cookie_lasts_180_days_and_every_open_rewrites_the_same_id`)
+27. ログに値を出しません。架空の目印の値(住所と電話番号)を、本人の発言、前に話した希望、文字起こし、API のエラーの文に入れて、
+    音声相談の開始、各ツールの失敗、下書きの失敗、LINE のターンとイベントの失敗、LIFF で読み込んだ履歴書の続きのターンの失敗を
+    動かしても、ログにその値は出ず、例外の型名だけが出ます。下書きの失敗のツールの結果にも例外の文は入りません。本番の音声ワーカー
+    (`start`)と Web プロセスでは、SDK のロガーと、後から登録した livekit-agents のプラグインのロガーが INFO を出しません
+    (`tests/test_log_privacy.py`)
 
 ## 10. テストと評価の仕組み
 

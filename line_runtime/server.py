@@ -104,6 +104,7 @@ from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import config, fake_line, line_channel, llm, purge, turn
 from line_runtime.arcade_reply import arcade_reply
+from line_runtime.log_policy import quiet_sdk_loggers
 from line_runtime.quota import (
     DailyQuota,
     daily_limit,
@@ -824,8 +825,9 @@ async def _line_user_events(line_uid: str, events: list[dict]) -> None:
             await api.loading(line_uid)
             try:
                 messages = await _line_messages(api, line_uid, uid, _line_kind(e), e)
-            except Exception:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
-                line_channel.log.exception("LINE のイベントを処理できませんでした(%s)", uid)
+            except Exception as err:  # noqa: BLE001  1 件の失敗で、残りのイベントと本人への返事を止めない
+                # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+                line_channel.log.error("LINE のイベントを処理できませんでした(%s): %s", uid, type(err).__name__)
                 messages = line_channel.to_messages({"bubbles": [line_channel.FAILED_TEXT]})
             if messages:
                 await api.send(e.get("replyToken"), line_uid, messages)
@@ -942,7 +944,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> dict | None:
     try:
         reply = await turn.reply_of(deps, t)
     except (turn.BadTurn, turn.TurnFailed) as err:
-        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, _error_text(err))
+        line_channel.log.warning("LINE のターンが失敗しました(%s): %s", uid, type(err.__cause__ or err).__name__)
         return {"bubbles": [line_channel.FAILED_TEXT]}
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
@@ -1720,8 +1722,9 @@ async def _line_upload_turn(uid: str, to: str, shown: dict) -> None:
         await api.loading(to)
         try:
             reply = await _line_turn(uid, "upload", {})
-        except Exception:  # noqa: BLE001  確認だけでも届ける
-            line_channel.log.exception("履歴書の続きのターンを進められませんでした(%s)", uid)
+        except Exception as err:  # noqa: BLE001  確認だけでも届ける
+            # 型名だけ(トレースバックの最後の行の例外の文に、LLM の API のエラーの文が入りうる)
+            line_channel.log.error("履歴書の続きのターンを進められませんでした(%s): %s", uid, type(err).__name__)
             reply = {"bubbles": [line_channel.FAILED_TEXT]}
         if await api.push(to, line_channel.to_messages(_joined(shown, reply))) != line_channel.OK:
             line_channel.log.warning("LINE のトークに履歴書の続きを届けられませんでした(%s)", uid)
@@ -2005,10 +2008,16 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 </head><body><header>{title}({site})</header><main>{body}</main></body></html>"""
 
 
-if __name__ == "__main__":
+def main() -> None:
     import uvicorn
 
+    # SDK(OpenAI、Anthropic、httpx など)の INFO や DEBUG のログに、送った本文が出ないように(docs/design/privacy.md の 3.4)
+    quiet_sdk_loggers()
     # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。
     # ワーカーは 1 つ(会話数の上限と状態を 1 つのプロセスで持つ)。コンテナでは LINE_SIM_HOST=0.0.0.0(scripts/container_start.sh)
     uvicorn.run(app, host=os.environ.get("LINE_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("LINE_SIM_PORT", "8030")),
                 proxy_headers=False)
+
+
+if __name__ == "__main__":
+    main()

@@ -147,7 +147,7 @@ class ResumeAdvisor(Agent):
             try:
                 result = await self._dip.set_search_track(self._user_id, track, evidence, room=self._room_name)
             except Exception as exc:  # noqa: BLE001 - 記録できなくても会話は続ける
-                logger.warning("set_search_track 失敗: %s", exc)
+                logger.warning("set_search_track 失敗: %s", type(exc).__name__)
                 return "区分を切り替えられませんでした。今の区分のまま続けてください。"
             if result.get("error"):
                 return f"区分を切り替えられませんでした: {result['error']}"
@@ -394,7 +394,7 @@ class ResumeAdvisor(Agent):
             try:
                 result = await self._dip.recommend_jobs(**self._with_user(search))
             except Exception as exc:  # noqa: BLE001 - 提案に失敗しても会話は続ける
-                logger.warning("recommend_jobs 失敗: %s", exc)
+                logger.warning("recommend_jobs 失敗: %s", type(exc).__name__)
                 return "求人の検索に失敗しました。その旨を伝えて会話を締めてください。"
             if result.get("error"):
                 return f"検索エラー: {result['error']}"
@@ -517,9 +517,10 @@ class ResumeAdvisor(Agent):
                 proposed_jobs=self.proposed_jobs,
                 document_kind=kind,
             )
-        except Exception as exc:
-            logger.exception("下書きの保存に失敗")
-            return f"下書きの保存に失敗しました({exc})。その旨を伝えて謝ってください。"
+        except Exception as exc:  # noqa: BLE001 - 保存できなくても面談は締める
+            # 例外の文はログにも LLM にも渡さない(ValidationError の文には、モデルの出力の前後が入る)
+            logger.error("下書きの保存に失敗: %s", type(exc).__name__)
+            return "下書きの保存に失敗しました。その旨を伝えて謝ってください。"
         await self._publish(
             {
                 "type": "draft",
@@ -617,7 +618,7 @@ class ResumeAdvisor(Agent):
         try:
             result = await self._dip.get_counseling_playbook(track, "voice")
         except Exception as exc:  # noqa: BLE001 - 読めなくても会話は続ける
-            logger.warning("get_counseling_playbook 失敗: %s", exc)
+            logger.warning("get_counseling_playbook 失敗: %s", type(exc).__name__)
             return None
         return result.get("playbook") or None
 
@@ -642,7 +643,7 @@ class ResumeAdvisor(Agent):
         try:
             return await self._dip.save_user_preferences(self._user_id, prefs, room=self._room_name)
         except Exception as exc:  # noqa: BLE001 - 保存に失敗しても面談は続ける
-            logger.warning("save_user_preferences 失敗: %s", exc)
+            logger.warning("save_user_preferences 失敗: %s", type(exc).__name__)
             return None
 
     async def _record_outcome(self) -> None:
@@ -666,7 +667,7 @@ class ResumeAdvisor(Agent):
                 self._user_id, outcome, reason, confidence=1.0, summary=self.summary, room=self._room_name
             )
         except Exception as exc:  # noqa: BLE001 - 記録に失敗しても面談は締められる
-            logger.warning("record_conversation_outcome 失敗: %s", exc)
+            logger.warning("record_conversation_outcome 失敗: %s", type(exc).__name__)
 
     async def _deliver_to_talk(self) -> None:
         """提案した求人と下書きをトーク(line_runtime の /api/voice/result)へ届ける。失敗しても out/ には残る。
@@ -693,7 +694,7 @@ class ResumeAdvisor(Agent):
             self.forgotten = True
             _remove_files(self.finalized["files"])
         except Exception as exc:  # noqa: BLE001 - トークへ戻せなくても下書きは保存済み
-            logger.warning("LINE のトークへの結果送信に失敗: %s", exc)
+            logger.warning("LINE のトークへの結果送信に失敗: %s", type(exc).__name__)
 
     async def _zero_hit_reply(self, args: dict) -> str:
         """0件のとき: dip の relax_conditions(読み取りだけ)で、どの条件を外すと何件になるかを調べる。
@@ -703,7 +704,7 @@ class ResumeAdvisor(Agent):
         try:
             relax_result = await self._dip.relax_conditions(**self._with_user(args))
         except Exception as exc:  # noqa: BLE001 - 調べられなくても会話は続ける
-            logger.warning("relax_conditions 失敗: %s", exc)
+            logger.warning("relax_conditions 失敗: %s", type(exc).__name__)
             relax_result = None
         if relax_result is None or relax_result.get("error"):
             # 調べられなかったのに「確認済み」と言うのは嘘になる。正直に伝える
@@ -759,7 +760,7 @@ class ResumeAdvisor(Agent):
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 調べものに失敗しても会話は続ける
-            logger.warning("web 検索に失敗: %s", exc)
+            logger.warning("web 検索に失敗: %s", type(exc).__name__)
             return None
         return _strip_links(resp.output_text or "")
 
@@ -780,7 +781,7 @@ class ResumeAdvisor(Agent):
                 topic=DATA_TOPIC,
             )
         except Exception as exc:  # noqa: BLE001 - 画面表示は音声の補助なので失敗しても続ける
-            logger.warning("画面への送信に失敗: %s", exc)
+            logger.warning("画面への送信に失敗: %s", type(exc).__name__)
 
 
 def _remove_files(files: list[str]) -> None:
@@ -789,7 +790,7 @@ def _remove_files(files: list[str]) -> None:
         try:
             os.remove(f)
         except OSError as exc:
-            logger.warning("ファイルを消せませんでした: %s", exc)
+            logger.warning("ファイルを消せませんでした: %s", type(exc).__name__)
 
 
 def _spoken(answer: str | None) -> str:
