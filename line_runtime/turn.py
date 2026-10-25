@@ -1,7 +1,7 @@
 """イベントの受け付けとターンの決まり(task 163)。POST /api/event(JSON)と POST /api/event/stream(NDJSON)が共通に使う。
 
 受け付け(accept): イベントの種類、空の発言・長すぎる発言(MAX_TEXT_CHARS)、アップロードの事実を確かめる。LLM も会話数も使わない。だめなら BadTurn。
-ターン(run): プッシュの判定 → stale の照合 → 会話数を 1 つ数える → 知らせ → LineRuntime → 開いた記録、の順に進め、
+ターン(run): プッシュの判定 → stale の照合 → 会話数を 1 つ数える → 最後の利用 → 知らせ → LineRuntime → 開いた記録、の順に進め、
 行(dict)を順に出す。Web サーバーは Cookie の照合と、HTTP(reply_of)と NDJSON への書き出しだけを受け持つ。
 評価が後で同じ手順を呼べるように、FastAPI には依存させない(docs/design/consolidate-resume-draft-and-event-turn.md)。
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from dip_mcp import logic, profile
+from dip_mcp import logic, profile, retention
 from dip_mcp.data import State
 from line_runtime.quota import DailyQuota, limit_reply
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
@@ -103,6 +103,8 @@ async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
     if limited is not None:  # 上限を超えたら LLM を呼ばずに案内だけ返す
         yield {"kind": "reply", **limit_reply(turn.entry, limited)}
         return
+    if turn.kind != "push":  # 本人のターン(プッシュは dip から)は最後の利用。会話数を数えた後に書く(上限の人の行を増やさない)
+        retention.touch(deps.state, turn.user_id)
     changes, notice = profile_notice(deps.state, turn)
     try:
         events = deps.rt.handle_stream(turn.user_id, turn.event, turn.text, facts, talk_thread=turn.thread, notice=notice,
