@@ -84,8 +84,8 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
@@ -379,6 +379,8 @@ flowchart LR
 - Cookie: `_owner`。Cookie `aica_uid` が無いか形が違えば 401
 - 本人: `_require_own`。本文の `user_id` が Cookie の匿名ユーザーIDか、そのシナリオユーザー(`scenarios.json` にあるものだけ)でなければ 403
 - 画面: `_page_user`。Cookie の匿名ユーザーIDに、URL の `scenario_user` を付ける
+- LIFF: `_liff_page_user`。署名つきの Cookie `aica_liff` の LINE のユーザーID(`l-…`)。`aica_uid` は見ない。無い、不正、期限切れなら、
+  GET は LIFF SDK の殻(`_liff_shell`)、POST は 401。LIFF の設定が無ければ 404(4.11)
 - 書き込みの枠: `_admit`(`DailyQuota.admit`)。この IP か全体で、その日に使える匿名ユーザーIDの数を超えたら 429
 - 内部の鍵: `_require_internal`。`Authorization: Bearer <AICA_INTERNAL_KEY>` でなければ 401
 - LINE の署名: `line_channel.verify_signature`。`X-Line-Signature` が、チャネルシークレットで本文そのままの HMAC-SHA256 を取った値の
@@ -415,6 +417,10 @@ flowchart LR
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。入力値は保存しない |
+| `POST /api/liff/session` | `liff_session` | LIFF の ID トークン(LINE の検証) | - | Cookie `aica_liff`。確かめられなければ 401 で Cookie を消す。JSON でなければ 415。LIFF の設定が無ければ 404 |
+| `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
+| `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
+| `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
 | `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳、連携の表 |
 | `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | dip の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
 | `GET /api/dev/link` | `dev_link` | Cookie | - | -(開発者画面の「アカウント連携」。匿名ユーザーIDと `dip_id`) |
@@ -1069,14 +1075,31 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `bubbles` | 1 つずつテキスト |
 | `actions` | `ACTION_NOTES` の文をテキストで足す。LINE ではファイルを選べず、音声相談もできないので、文で書くよう案内する |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
-| `buttons` | `/liff/` で始まるものだけ、`AICA_PUBLIC_URL` + パスへの URI のボタン。`AICA_PUBLIC_URL` が無ければ出さない(警告のログ) |
+| `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
 - 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
 - `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
-- LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+- LIFF の設定が無いときの LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+
+LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは HLD の 4.8):
+
+- 設定は `LINE_LIFF_ID` と `LINE_LOGIN_CHANNEL_ID` の両方です(`liff_configured`。リクエストのたびに環境変数を読む)。片方だけなら使わず、
+  起動のときに警告のログを出します。両方あるのに `AICA_ID_KEY` が無い、短いときは `check_id_key` で起動を止めます
+- 殻(`_liff_shell`)は LIFF SDK(`https://static.line-scdn.net/liff/edge/2/sdk.js`)を読み、`liff.init({ liffId, withLoginOnExternalBrowser: true })`
+  の後、`liff.getIDToken()` を `POST /api/liff/session` に送って、通れば同じ URL を読み直します。URL に `liff.state` があるときは、
+  `liff.init` が本来の画面へ送るので何もしません。ログインしていなければ `liff.login`。読み直しても殻に戻ったとき(Cookie が付かない)は、
+  10 秒以内の 2 回目で止めます(`sessionStorage`。`liff.login` から戻ってもログインしていないときも同じ)。`liff.state` があるのに 10 秒で送られなければ止めます。どの失敗も「LINE で本人を確かめられませんでした」と出して止まります
+- `LineLogin.verify`: `POST https://api.line.me/oauth2/v2.1/verify` に `id_token` と `client_id`(`LINE_LOGIN_CHANNEL_ID`)をフォームで送ります。
+  200 でも、`iss` が `https://access.line.me`、`aud` がチャネル ID、`exp` が今より後、`sub` が `U` + 32 桁 hex でなければ None です。
+  断られた(400)、つながらない(10 秒で打ち切り)ときも None です。トークンが 4,096 字を超えたら LINE に送りません。トークンと `sub` はログに出しません
+- 本人は `line_user(sub)` で、webhook のトークと同じ関数です。Cookie `aica_liff` の値は `l-….<期限の UNIX 秒>.<HMAC-SHA256>` で、
+  鍵は `HMAC-SHA256(AICA_ID_KEY, "aica-liff-session")` です(`liff_session`、`liff_session_user`)。値の期限は 1 時間(`LIFF_SESSION_SECONDS`)で、
+  Cookie は `Max-Age` の無い、ブラウザを閉じたら消えるものです。HttpOnly、Secure、SameSite=Lax です。LIFF のエンドポイント URL は https だけなので Secure にしています
+- `POST /api/liff/session` は `Content-Type: application/json` でなければ 415 です(本文の無い型や `text/plain` は、ほかのサイトから事前の確認なしに送れるため)
+- 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
 
 ### 4.12 LINE のアカウント連携
 
@@ -1730,6 +1753,12 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`tests/test_account_link.py::test_line_user_links_end_to_end_and_tools_then_read_the_members_summary`)。nonce の使い回し、期限切れ、
     `link.result` が failed、署名の無い webhook、別の linkToken との組み合わせは連携しません。ログインの失敗には上限があり、
     解除すると未連携の扱いに戻ります。シナリオのユーザーは最初から連携済みです(`tests/test_account_link.py`)
+23. LINE のアプリの LIFF 画面は、偽物の LINE ログインが正しいと答えた ID トークンのときだけ、トークと同じ `l-…` の本人になります
+    (`tests/test_liff.py::test_a_verified_id_token_makes_the_liff_page_the_same_user_as_the_talk`)。署名が合わない、期限切れ、
+    別のチャネルの `aud` のトークンは本人にならず、同じブラウザの Cookie の匿名ユーザーにも切り替えません
+    (`::test_a_rejected_id_token_is_nobody_and_never_falls_back_to_the_web_user`)。LINE が 200 で答えても、発行元、`aud`、期限、`sub` の形を
+    もう一度見ます。LIFF の設定が無ければ `/liff/line/…` は 404 で、ほかは今までどおりです。殻の画面はブラウザで、偽物の LIFF SDK を使って
+    動かします(`::test_the_liff_page_in_a_browser`)
 
 ## 10. テストと評価の仕組み
 
