@@ -100,10 +100,10 @@ def test_set_search_track_rejects_unknown_track_missing_evidence_and_strips_cont
 
 
 def test_set_search_track_strips_addresses_from_the_evidence(tmp_path):
-    """根拠の発言も、希望の保存・まとめと同じ住所の決まりで伏せる(住所らしい所は、区切りまでの語ごと)。"""
+    """根拠の発言も、希望の保存・まとめと同じ住所の決まりで伏せる(住所らしい所は、地名から番地までの住所の部分だけ)。"""
     state = State(tmp_path / "state.json")
     r = logic.set_search_track(state, UID, "正社員", "渋谷区神南1-2-3に住んでいて、正社員で探したい")
-    assert r["recorded"]["evidence"] == "[個人情報を削除]、正社員で探したい"
+    assert r["recorded"]["evidence"] == "[個人情報を削除]に住んでいて、正社員で探したい"
     (h,) = logic.conversation_summary(state, UID)["track_history"]
     assert "神南" not in h["evidence"] and "1-2-3" not in h["evidence"]
     # 住所でない数字の幅は伏せない

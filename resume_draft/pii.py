@@ -37,28 +37,51 @@ _PII_FOLD = str.maketrans(
 
 # 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
 # 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
-# 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える。
+# 2つ組は地名の字(漢字・カタカナ・ひらがな。「西新宿2-8」「大字みほん1234-5」)の直後で、前が「週」「月」「給」「収」でなく、
+# 後ろに単位(万・円・か月・年・日・時・人など)が続かないものだけを数える。
+# 部屋番号まで続けた形(「1-2-3-405」)と、「2番3号」「4の5の6」の形も数える。
 # 全角のハイフンは照合の前に fold_pii で半角にそろえる(personal_value / redact_personal はそうする)。
 # この形だけでは住所に数えない。同じ文に住んでいる所を言う言葉(RESIDENCE_WORDS)があるときだけ住所とみなす(_address_matches)
 ADDRESS_LIKE = re.compile(
-    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
-    r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
+    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?:[-－]\d{1,4})?(?![\d-])"
+    r"|\d{1,4}番\d{1,4}号"
+    r"|(?<=[一-鿿々ヶァ-ヺぁ-ゖ])(?<![週月給収])\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分秒歳才%％人名件回個本社店倍点週枚])"
+    r"|(?<![\d])\d{1,4}の\d{1,4}の\d{1,4}(?!\d)"
     r"|丁目|番地"
 )
 # 住んでいる所を言う言葉。ADDRESS_LIKE の当たりは、同じ文にこれがあるときだけ住所とみなす。
 # 駅の名前(「新宿三丁目」)や求人の勤務地、数の幅(「5-10人」)は ADDRESS_LIKE と同じ形になることがあり、
 # 形だけで住所と見分けると、求人の検索の条件(「新宿三丁目5分以内で探して」)が消えるため(docs/architecture/lld.md 1.8)。
-# 「住み込み」は働き方なので数えない。「住宅」(住宅手当)も数えない
-RESIDENCE_WORDS = re.compile(r"住所|住居|居住|在住|住ん|住む|住み(?!込)|住まい|すんで|すまい|自宅|実家|家は|引っ越|引越|転居")
+# 「住み込み」は働き方なので数えない。「住宅」(住宅手当)も数えない。引っ越しの仕事(「引っ越しのバイト」「引越しスタッフ」)と、
+# 職業の「家は」(「専門家は」「作家は」「画家は」「農家は」)も数えない。住まいの「一軒家は」「借家は」は数える
+RESIDENCE_WORDS = re.compile(
+    r"住所|住居|居住|在住|住ん|住む|住み(?!込)|住まい|すんで|すまい|自宅|実家|(?<![門作画築治業資楽論究真術農書語])家は|転居"
+    r"|(?:引っ越|引越)(?!し?の?(?:バイト|スタッフ|作業|業者|屋|センター|仕事|会社))")
 # 文の終わり(住む言葉を探す範囲の区切り)
 _SENTENCE_END = re.compile(r"[。!?！？\n]")
 # 見出しだけの行(「住所:」「【住所】」「自宅」)と、郵便番号だけの行。連絡先を貼るときは見出しと住所を別の行に書くので、
-# 見出しだけの行の住む言葉は、改行の後ろの行にも効かせる(郵便番号だけの行と空の行は飛ばして、その次の行まで)。
+# 見出しだけの行の住む言葉は、改行の後ろの行にも効かせる(郵便番号だけの行、市区町村までの行、空の行は飛ばして、その次の行まで)。
 # ふつうの文(「住所は言いたくないです」)は見出しではないので、次の行には効かせない
 _LABEL_MARKS = r"\s【】\[\]「」『』()（）<>＜＞〈〉《》:：・*＊■□●○◆◇"
 _LABEL_LINE = re.compile(rf"[{_LABEL_MARKS}]*(?:現|ご|お)?(?:{RESIDENCE_WORDS.pattern})+地?[{_LABEL_MARKS}]*")
 _POSTAL_LINE = re.compile(rf"[{_LABEL_MARKS}]*〒?\s*\d{{3}}-\d{{4}}[{_LABEL_MARKS}]*")
-_WORD_SEP = set("、。,.!?！？「」()（）")
+# 都道府県・市区町村までの行(「東京都みほん市」)。見出しの後ろの住所を 2 行に分けて書くときは、この行も飛ばして次の行まで効かせる
+_PLACE_LINE = re.compile(r"\s*[^\s。、!?！？:：]{1,30}[都道府県市区町村郡]\s*")
+# 住所を左右に広げるときの決まり(address_spans)。住所の部分だけを伏せ、同じ文の検索の条件は残す
+_PLACE_SUFFIX = set("都道府県市区町村郡")
+# 住む言葉の後ろに続く「は」「:」など(「住所は」「自宅：」「引っ越し先は」「住んでいるのは」)。ここまでは伏せない
+_RESIDENCE_TAIL = re.compile(r"(?:でい?る(?:の|所|ところ)?|し?(?:先|地)?)[はがもの:：\s]*")
+# 住所が郵便番号から始まるとき(「〒100-0001 東京都…」)は、郵便番号も住所に含める
+_POSTAL_BEFORE = re.compile(r"〒?\s*(?<!\d)\d{3}-\d{4}\s*$")
+# 住所の前にあれば、そこで止める言葉(「時給1200円以上東京都…」)。地名には出てこないもの
+_NOT_PLACE = ("以上", "以内", "時給", "日給", "月給", "年収")
+# 住所の後ろのひらがなが、この字で始まれば建物の名前ではない(「に住む」「で働きたい」「の近く」「まで」「けど」「って」)。
+# ただし後ろに建物の言葉(_BUILDING)が続くときは建物の名前とみなす(「のぞみハイツ」)
+_PARTICLE_START = set("にでのはがをへともなかやよまだじぐくすあらけってほ")
+_BUILDING = re.compile(r"\S{0,20}?(?:ハイツ|マンション|ビル|荘|コーポ|アパート|レジデンス|ハウス|ハイム|メゾン|コート|パレス|ヒルズ|"
+                       r"タワー|号室|号棟|棟)")
+# 住所の後ろにあれば、そこで止める言葉(「1-2-3近くのカフェ」「新宿三丁目5分以内」)
+_NOT_PLACE_AFTER = re.compile(r"近く|付近|周辺|辺り|周り|駅(?!前)|徒歩|以上|以内|時給|日給|月給|年収|\d+分")
 # redact_pii が置き換えをくり返す回数の上限(ふつうは 1〜2 回で当たる所が無くなる)
 _REDACT_PASSES = 8
 # 伏せた所に入れる文。トークの発言(line_runtime.turn)もこれで伏せ、履歴を返すときはこれで伏せたかを見る
@@ -80,7 +103,7 @@ def _address_matches(text: str) -> list[re.Match]:
     文ごとに住む言葉があるかを先に決め、当たった所の文は二分探索で引く(長い文でも時間がかからない)。"""
     ends = [m.end() for m in _SENTENCE_END.finditer(text)] + [len(text)]
     lives: list[bool] = []
-    carry = False  # 前の行が見出しだけの行(またはその後ろの郵便番号だけの行、空の行)
+    carry = False  # 前の行が見出しだけの行(またはその後ろの郵便番号だけの行、空の行、市区町村までの行)
     for start, end in zip([0, *ends[:-1]], ends):
         line_end = text[end - 1:end] == "\n"
         body = text[start:end - 1] if line_end else text[start:end]
@@ -88,7 +111,7 @@ def _address_matches(text: str) -> list[re.Match]:
         lives.append(live)
         carry = line_end and (
             (live and (_LABEL_LINE.fullmatch(body) is not None or _POSTAL_LINE.fullmatch(body) is not None))
-            or (carry and not body.strip()))
+            or (carry and (not body.strip() or _PLACE_LINE.fullmatch(body) is not None)))
     if not any(lives):
         return []
     return [m for m in ADDRESS_LIKE.finditer(text) if lives[bisect_right(ends, m.start())]]
@@ -110,23 +133,106 @@ def personal_value(text: str) -> bool:
 
 
 def address_spans(text: str) -> list[tuple[int, int]]:
-    """文の中の住所らしい所の範囲: 住んでいる所を言う言葉と同じ文で ADDRESS_LIKE に当たった所を含む、
-    区切り(空白・句読点・括弧)までの語(「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。
-    正規表現で前後の語まで取ると長い文で時間がかかるので、当たった所から区切りまで広げる。"""
-    def sep(ch: str) -> bool:
-        return ch.isspace() or ch in _WORD_SEP
-
+    """文の中の住所らしい所の範囲: 住んでいる所を言う言葉と同じ文で ADDRESS_LIKE に当たった所を、住所の部分だけに広げたもの。
+    左は地名(都道府県・市区町村・町名)まで、右は番地・号・建物まで(「渋谷区神南1丁目2-3に住む」なら「渋谷区神南1丁目2-3」。
+    丁目だけ消して番地を残さない)。文の残り(「に住んでいて」「近くのカフェで働きたい」)は残す(docs/architecture/lld.md 1.8)。
+    正規表現で前後の語まで取ると長い文で時間がかかるので、当たった所から 1 文字ずつ広げる。"""
+    matches = _address_matches(text)
+    if not matches:
+        return []
+    # 住む言葉(と後ろの「は」「:」など)の終わり。左に広げるのはここまで(「自宅はみほん市3-5」の「自宅は」は残す)
+    lives = [_RESIDENCE_TAIL.match(text, m.end()).end() for m in RESIDENCE_WORDS.finditer(text)]
     spans: list[tuple[int, int]] = []
-    for m in _address_matches(text):
+    for m in matches:
         start, end = m.span()
-        if spans and start < spans[-1][1]:  # 前の語に含まれている
+        if spans and start < spans[-1][1]:  # 前の住所に含まれている
             continue
-        while start > 0 and not sep(text[start - 1]):
-            start -= 1
-        while end < len(text) and not sep(text[end]):
-            end += 1
-        spans.append((start, end))
+        i = bisect_right(lives, start)
+        word = lives[i - 1] if i else -1
+        floor = max(spans[-1][1] if spans else 0, word, 0)
+        spans.append((_address_start(text, start, floor, word), _address_end(text, end)))
     return spans
+
+
+def _address_start(text: str, start: int, floor: int, word: int = -1) -> int:
+    """住所の始まり: 漢字・カタカナ・数字の地名をさかのぼる。ひらがなは地名の一部のときだけ含める: 後ろが都道府県・市区町村の字
+    (「みほん町」「さいたま市」)、助詞で終わらずに漢字が続く(「みほん台」)、前が都道府県・市区町村の字
+    (「みほん市あおば台」「横浜市西区みなとみらい」)、漢字に挟まれた 2 字まで(「霞が関」)。
+    前が都道府県・市区町村の字か、漢字に挟まれた 2 字まででなければ、そこで止める
+    (「以上でさいたま市」の「以上」は残す。「で」は含まれる)。市区町村の後ろの空白か改行 1 つ(「東京都 みほん市」)も越える。
+    word は住む言葉と後ろの「は」「:」の終わり。ひらがなの町名がそこからすぐ始まるときは、助詞の字で終わっても含める
+    (「住所はみなと台3-5-1」「住所はひばりが丘3丁目」)。番地の直前のひらがなの町名(「大字みほん1234-5」)と、
+    地名に続くひらがなの前の漢字(「大字」)も含める。前に郵便番号があれば、それも含める(「〒100-0001 東京都…」)。"""
+    while start > floor:
+        ch = text[start - 1]
+        if _is_hiragana(ch):
+            run = start
+            while run > floor and _is_hiragana(text[run - 1]):
+                run -= 1
+            before = text[run - 1] if run > floor else ""
+            between = start - run <= 2 and _is_kanji(before) and _is_kanji(text[start])
+            goes_on = before in _PLACE_SUFFIX or between or (before.isspace() and text[run - 2:run - 1] in _PLACE_SUFFIX)
+            after_word = run == word and word > 0 and (text[word - 1] in "はがもの:：" or text[word - 1].isspace())
+            name = text[start] in _PLACE_SUFFIX or (
+                (_is_kanji(text[start]) or text[start].isdigit()) and (ch not in _PARTICLE_START or after_word))
+            if not (goes_on or name):
+                break  # 地名の一部ではない(「を新宿三丁目」の「を」)
+            start = run
+            if not (goes_on or _is_kanji(before)):
+                break
+            continue
+        if ch.isspace() and start - 1 > floor and text[start - 2] in _PLACE_SUFFIX and not text[start - 2].isspace():
+            start -= 1
+            continue
+        if not _is_place_char(ch) or text.endswith(_NOT_PLACE, 0, start):
+            break
+        start -= 1
+    postal = _POSTAL_BEFORE.search(text, max(floor, start - 12), start)
+    return postal.start() if postal else start
+
+
+def _address_end(text: str, end: int) -> int:
+    """住所の終わり: 番地・号・建物の名前(漢字・カタカナ・数字・英字)まで。助詞などのひらがな(「に住んで」「で働きたい」)、
+    住む言葉、検索の条件の言葉(「近く」「時給」「5分」など)で止める。ひらがなは、後ろに漢字・カタカナ・数字が続き、
+    助詞で始まらないか建物の言葉が続くとき(「1-2-3みほんビル101号室」「1-2-3のぞみハイツ」)だけ、建物の名前として含める。
+    「123番地の4」の「の4」と、空白か改行 1 つの後ろの建物(「1-2-3 みほんハイツ101号室」)も含める。"""
+    while end < len(text):
+        ch = text[end]
+        if ch == "の" and text[end + 1:end + 2].isdigit() and text[end - 1:end] in ("地", "目", "番"):
+            end += 1
+            continue
+        if ch.isspace():
+            if end + 1 < len(text) and not text[end + 1].isspace() and _BUILDING.match(text, end + 1):
+                end += 1
+                continue
+            break
+        if _is_hiragana(ch):
+            run = end
+            while run < len(text) and _is_hiragana(text[run]):
+                run += 1
+            if run == len(text) or not _is_place_char(text[run]):
+                break
+            if ch in _PARTICLE_START and not _BUILDING.match(text, run):
+                break
+            end = run
+            continue
+        if not _is_place_char(ch) or _NOT_PLACE_AFTER.match(text, end) or RESIDENCE_WORDS.match(text, end):
+            break
+        end += 1
+    return end
+
+
+def _is_hiragana(ch: str) -> bool:
+    return "ぁ" <= ch <= "ゖ"
+
+
+def _is_kanji(ch: str) -> bool:
+    return ch != "" and ("一" <= ch <= "鿿" or ch in "々ヶ")  # 文の始まりの前("")は漢字ではない
+
+
+def _is_place_char(ch: str) -> bool:
+    """地名・番地・建物の名前に使う字(漢字、カタカナ、数字、英字。全角・半角とも)。ひらがなは呼ぶ側で別に見る。"""
+    return ch.isalnum() or ch in "ー々〆ヶ-・"
 
 
 def redact_pii(text: str, repl: str = REDACTED,
@@ -160,7 +266,7 @@ def _redact_once(text: str, repl: str, extra: Callable[[str], list[tuple[int, in
 
 
 def redact_personal(text: str, repl: str = REDACTED) -> str:
-    """電話番号・メールアドレス・住所らしい所(区切りまでの語ごと)を repl に置き換える(personal_value と同じ範囲)。"""
+    """電話番号・メールアドレス・住所らしい所(地名から番地までの住所の部分)を repl に置き換える(personal_value と同じ範囲)。"""
     return redact_pii(text, repl, extra=address_spans)
 
 

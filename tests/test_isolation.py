@@ -366,8 +366,9 @@ def test_the_consultation_summary_drops_addresses(tmp_path):
     ok = logic.record_outcome(state, "sim-new", "consult", "相談", 0.5, summary="年収400-500万円、3-6か月以内に転職したい")
     assert ok["recorded"]["summary"] == "年収400-500万円、3-6か月以内に転職したい"
     assert redact_pii("東京都みほん市1-2-3") == "東京都みほん市1-2-3"  # 住所の置換は address_spans を渡したときだけ
-    assert redact_pii("東京都みほん市1-2-3に住む。", extra=address_spans) == "[個人情報を削除]。"
-    assert redact_personal("東京都みほん市1-2-3に住む。") == "[個人情報を削除]。"
+    # 伏せるのは住所の部分(地名から番地まで)だけ。「に住む」は残る
+    assert redact_pii("東京都みほん市1-2-3に住む。", extra=address_spans) == "[個人情報を削除]に住む。"
+    assert redact_personal("東京都みほん市1-2-3に住む。") == "[個人情報を削除]に住む。"
 
 
 @pytest.mark.parametrize("value,personal", [
@@ -389,7 +390,7 @@ def test_one_address_rule_for_preferences_summary_form_and_track(tmp_path, value
     assert (profile.edit_summary(state, "sim-exit", value).get("error") == "personal_info") is personal
     assert (logic.resume_form(state, "sim-exit", "a002", {"希望開始日": value})["rejected_pii"] == ["希望開始日"]) is personal
     evidence = logic.set_search_track(state, "sim-exit", "正社員", value)["recorded"]["evidence"]
-    assert (evidence == "[個人情報を削除]") is personal and (evidence == value) is not personal
+    assert ("[個人情報を削除]" in evidence) is personal and (evidence == value) is not personal
 
 
 def test_address_scrubbing_stays_fast_on_a_long_reason(tmp_path):
@@ -399,11 +400,11 @@ def test_address_scrubbing_stays_fast_on_a_long_reason(tmp_path):
     state = State(tmp_path / "state.json")
     t = time.perf_counter()
     rec = logic.record_outcome(state, "sim-new", "consult", "あ" * 20000 + "1丁目に住む" + "い" * 20000, 0.5)["recorded"]
-    assert time.perf_counter() - t < 1.0 and rec["reason"] == "[個人情報を削除]"
+    assert time.perf_counter() - t < 1.0 and rec["reason"] == "あ" * 20000 + "[個人情報を削除]に住む" + "い" * 20000
     # 文と住所らしい所がたくさんあっても(文ごとに住む言葉を探す)
     t = time.perf_counter()
     rec = logic.record_outcome(state, "sim-new", "consult", "1丁目。家は2丁目。" * 3000, 0.5)["recorded"]
-    assert time.perf_counter() - t < 1.0 and rec["reason"] == "1丁目。[個人情報を削除]。" * 3000
+    assert time.perf_counter() - t < 1.0 and rec["reason"] == "1丁目。家は[個人情報を削除]。" * 3000
 
 
 def test_the_voice_worker_sends_the_shared_key(monkeypatch):
