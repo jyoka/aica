@@ -20,7 +20,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from dip_mcp import logic
 from dip_mcp.data import State
-from resume_draft.pii import has_pii, redact_pii
+from resume_draft.pii import (
+    address_spans,
+    has_pii,
+    personal_value,
+    redact_personal,
+    redact_pii,
+)
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_revisit import Greeter, greet
 from tests.test_talk_page import (  # noqa: F401  app はフィクスチャ
@@ -360,7 +366,27 @@ def test_the_consultation_summary_drops_addresses(tmp_path):
     ok = logic.record_outcome(state, "sim-new", "consult", "相談", 0.5, summary="年収400-500万円、3-6か月以内に転職したい")
     assert ok["recorded"]["summary"] == "年収400-500万円、3-6か月以内に転職したい"
     assert redact_pii("東京都みほん市1-2-3") == "東京都みほん市1-2-3"  # 住所の置換は address_spans を渡したときだけ
-    assert redact_pii("東京都みほん市1-2-3に住む。", extra=logic.address_spans) == "[個人情報を削除]。"
+    assert redact_pii("東京都みほん市1-2-3に住む。", extra=address_spans) == "[個人情報を削除]。"
+    assert redact_personal("東京都みほん市1-2-3に住む。") == "[個人情報を削除]。"
+
+
+@pytest.mark.parametrize("value,personal", [
+    ("渋谷区神南1-2-3", True), ("みほん町３－５", True), ("みほん市みほん町3丁目", True), ("090-1234-5678", True),
+    ("taro@example.com", True), ("年収400-500万円", False), ("3-6か月以内", False), ("2026-10-01から", False),
+])
+def test_one_address_rule_for_preferences_summary_form_and_track(tmp_path, value, personal):
+    """希望の保存、まとめを直す、フォームの続き、雇用区分の根拠が、同じ決まり(resume_draft/pii.py)で個人情報を見分ける。"""
+    from dip_mcp import profile
+
+    assert personal_value(value) is personal
+    state = State(tmp_path / "state.json")
+    state.reset()
+    assert (logic.save_preferences(state, "sim-exit", {"wants": value})["rejected"] == ["wants"]) is personal
+    logic.record_outcome(state, "sim-exit", "consult", "相談", 0.5, summary="次に確かめること: 時間帯")
+    assert (profile.edit_summary(state, "sim-exit", value).get("error") == "personal_info") is personal
+    assert (logic.resume_form(state, "sim-exit", "a002", {"希望開始日": value})["rejected_pii"] == ["希望開始日"]) is personal
+    evidence = logic.set_search_track(state, "sim-exit", "正社員", value)["recorded"]["evidence"]
+    assert (evidence == "[個人情報を削除]") is personal and (evidence == value) is not personal
 
 
 def test_address_scrubbing_stays_fast_on_a_long_reason(tmp_path):

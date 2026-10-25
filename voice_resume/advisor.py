@@ -108,6 +108,12 @@ class ResumeAdvisor(Agent):
         return self._track
 
     @property
+    def _room_name(self) -> str | None:
+        """この通話の部屋の名前。dip への書き込みとトークへの結果に付ける(面談の途中で「すべて消す」をしたら、
+        その部屋の書き込みと結果は断られる)。"""
+        return getattr(self._room, "name", None) or None
+
+    @property
     def document_kind(self) -> str:
         """この面談で作る下書きの書類(正社員なら職務経歴書、それ以外は履歴書)。"""
         return document_kind_for(self._track)
@@ -139,7 +145,7 @@ class ResumeAdvisor(Agent):
             return f"今の区分はすでに{track}です。切り替えていません。"
         if self._dip is not None and self._user_id:
             try:
-                result = await self._dip.set_search_track(self._user_id, track, evidence)
+                result = await self._dip.set_search_track(self._user_id, track, evidence, room=self._room_name)
             except Exception as exc:  # noqa: BLE001 - 記録できなくても会話は続ける
                 logger.warning("set_search_track 失敗: %s", type(exc).__name__)
                 return "区分を切り替えられませんでした。今の区分のまま続けてください。"
@@ -635,7 +641,7 @@ class ResumeAdvisor(Agent):
         if not prefs:
             return None
         try:
-            return await self._dip.save_user_preferences(self._user_id, prefs)
+            return await self._dip.save_user_preferences(self._user_id, prefs, room=self._room_name)
         except Exception as exc:  # noqa: BLE001 - 保存に失敗しても面談は続ける
             logger.warning("save_user_preferences 失敗: %s", type(exc).__name__)
             return None
@@ -658,7 +664,7 @@ class ResumeAdvisor(Agent):
             reason = f"音声相談で希望を聞き取り、{kind}の下書きを保存した(条件に合う求人は提案できず)"
         try:
             await self._dip.record_conversation_outcome(
-                self._user_id, outcome, reason, confidence=1.0, summary=self.summary
+                self._user_id, outcome, reason, confidence=1.0, summary=self.summary, room=self._room_name
             )
         except Exception as exc:  # noqa: BLE001 - 記録に失敗しても面談は締められる
             logger.warning("record_conversation_outcome 失敗: %s", type(exc).__name__)
@@ -677,7 +683,7 @@ class ResumeAdvisor(Agent):
             # 本人が話した希望(トークに出す「話した内容のまとめ」。dip へ保存したのと同じ項目だけ)
             "preferences": {k: v for k, v in self._on_track_items(self.preferences)[0].items() if k in self._DIP_PREF_KEYS},
             # この面談の部屋(トークのシートは、自分の部屋の結果だけを受け取る)
-            "room": getattr(self._room, "name", None) or None,
+            "room": self._room_name,
         }
         poster = self._talk_poster or _post_json
         try:
@@ -746,6 +752,7 @@ class ResumeAdvisor(Agent):
                 # 音声の会話で待たせないよう軽くする(実測: 既定 約16秒 → この設定で 約7秒)
                 tools=[{"type": "web_search", "search_context_size": "low"}],
                 reasoning={"effort": "none"},
+                store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
                 input=(
                     "次のことを web で調べ、日本語の話し言葉(です・ます調)で2〜3文にまとめてください。"
                     "記号・箇条書き・URL は使わず、最後に主な情報源のサイト名を一言添えてください。"

@@ -37,6 +37,7 @@ async def build_draft(transcript: list[dict], client, *, model: str | None = Non
         input=[{"role": "user", "content": drafter_user(text, document_kind)}],
         text_format=ResumeDraft,
         max_output_tokens=4096,
+        store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
     )
     draft = resp.output_parsed or ResumeDraft()
     return ResumeDraft.model_validate(scrub_pii(draft.model_dump()))

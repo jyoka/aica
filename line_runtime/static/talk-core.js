@@ -13,6 +13,10 @@
 //     beforeTurn,               // (任意)本人のターン(発言・アップロード)の前に呼ぶ(本番: 閉じたシートの結果を描き直す)
 //     onTrack(track),           // (任意)切り替えの表示のボタンで雇用区分を戻したとき(本番: ヘッダーの区分を直す)
 //     getTrack,                 // (任意)今の雇用区分(「+」メニューの音声相談の説明で、書類の呼び方を合わせる)
+//     voiceApi,                 // (任意)音声相談の API { start, wait, extra }(LINE の LIFF 画面: /api/liff/voice/…。
+//                               //   extra() は start の本文に足すもの = LIFF の ID トークン)。無ければ Web の /api/voice/…
+//     onVoiceClosed(done, started), // (任意)音声相談のシートを閉じたとき(done: まとめが届いた、started: 面談の部屋につながった)。
+//                               //   LIFF 画面がトークに戻る案内を出す
 //   });
 function createTalk(o) {
   const log = o.log;
@@ -265,6 +269,7 @@ function createTalk(o) {
   // シートは開いている間だけ /api/voice/wait で待ち、届いたら閉じて同じ返信をトークに描く
   // (システム通知のラベルは出さない。再読み込みしても履歴に残る)。
   const LIVEKIT_CLIENT = "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js";
+  const VOICE_API = { start: "/api/voice/start", wait: "/api/voice/wait", ...o.voiceApi };
   const sheet = el("div", "voice-sheet"); sheet.id = "voice-sheet"; sheet.hidden = true;
   sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "音声相談");
   const panel = el("div", "vs-panel"), vHead = el("div", "vs-head");
@@ -335,8 +340,8 @@ function createTalk(o) {
     vCaps.replaceChildren(); vEnd.hidden = false; vEnd.disabled = true; vConfirm.hidden = true;
     sheet.hidden = false; vSet("connecting", "接続の準備をしています…");
     try {
-      const res = await fetch("/api/voice/start", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                    body: JSON.stringify({ user_id: user }) });
+      const res = await fetch(VOICE_API.start, { method: "POST", headers: { "Content-Type": "application/json" },
+                                                 body: JSON.stringify({ user_id: user, ...(await VOICE_API.extra?.()) }) });
       if (!res.ok) { let m = "音声相談を始められませんでした。"; try { m = (await res.json()).detail || m; } catch (_) {} throw new Error(m); }
       const t = await res.json();
       if (voice !== v) return;  // 準備の間に閉じた
@@ -376,6 +381,7 @@ function createTalk(o) {
       if (voice !== v) { room.disconnect(); return; }
       // エコー(スピーカーの音をマイクが拾う)対策: echoCancellation を明示的に有効にする
       await room.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+      v.joined = true;  // つながってマイクも使える: 面談が始まった
       vEnd.disabled = false; vRefresh(v);
     } catch (e) {
       room?.disconnect();  // マイクが使えないまま、アドバイザーだけが話し始めないように
@@ -409,6 +415,7 @@ function createTalk(o) {
     v.room?.disconnect();
     sheet.hidden = true; sheet.querySelectorAll("audio").forEach(a => a.remove());
     scroll();
+    o.onVoiceClosed?.(v.done, !!v.joined);
   }
   // 通話中(つながっていて、まとめがまだ届いていない)なら、閉じる前に確かめる
   const inCall = (v) => !!(v && v.room && !v.done && !v.stalled);
@@ -421,7 +428,7 @@ function createTalk(o) {
     while (voice === v) {
       let d;
       try {
-        const res = await fetch("/api/voice/wait", { method: "POST", headers: { "Content-Type": "application/json" },
+        const res = await fetch(VOICE_API.wait, { method: "POST", headers: { "Content-Type": "application/json" },
                                                       body: JSON.stringify({ user_id: v.user, since: v.since, room: v.roomName }),
                                                       signal: v.abort.signal });
         if (!res.ok) throw new Error(res.status + "");

@@ -21,7 +21,7 @@ from datetime import datetime
 from statistics import median
 from urllib.parse import urlencode
 
-from dip_mcp import behavior, embedding, summarize
+from dip_mcp import arcade, behavior, embedding, summarize
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -40,7 +40,7 @@ from dip_mcp.data import (
     parse_ts,
     pay_text,
 )
-from resume_draft.pii import fold_pii, has_pii, redact_pii, scrub_pii
+from resume_draft.pii import personal_value, redact_personal, scrub_pii
 from resume_draft.schema import (
     DEFAULT_DOCUMENT_KIND,
     DOCUMENT_KINDS,
@@ -112,10 +112,19 @@ def _track_summary(user: dict) -> dict:
     return {"search_track": search_track(user), "track_history": track_history(user)}
 
 
+ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。"
+               "blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。"
+               "arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う"
+               "(URL を作らない。arcade_url が無ければボタンを出さない)。")
+
+
 def _profile_summary(user: dict) -> dict:
-    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書)。"""
-    return {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
-            "uploaded_resume": uploaded_resume(user)}
+    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
+    ゲームの URL は Web のユーザーにだけ載せる(LINE で開いても本人にならないため。arcade.game_url)。"""
+    out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
+           "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
+    url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
+    return out | ({"arcade_url": url} if url else {})
 
 
 def conversation_summary(state: State, line_user_id: str) -> dict:
@@ -124,7 +133,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         return {"linked": False, "segment": "unlinked", **_track_summary(user), **_profile_summary(user),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -169,7 +178,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         **_profile_summary(user),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE,
     }
 
 
@@ -713,9 +722,10 @@ def application_status(state: State, line_user_id: str, job_id: str | None = Non
 
 def resume_form(state: State, line_user_id: str, job_id: str, answers: dict[str, str]) -> dict:
     """トークで受け取れる項目(個人情報以外)だけを反映し、残りは LIFF 画面の URL を返す。
-    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレスが含まれていれば受け取らない。
+    個人情報の項目に加え、どの項目でも値に電話番号・メールアドレス・住所らしい所が含まれていれば受け取らない
+    (resume_draft/pii.py の personal_value。希望の保存・まとめと同じ決まり)。受け取らない項目は「入力済み」にしない。
     反映は、答えた項目名を元データに form_fill のイベントで書く(値は持たない。シミュレーションなので値を使う先が無い)。"""
-    rejected = [k for k, v in answers.items() if k in PII_FIELDS or has_pii(str(v))]
+    rejected = [k for k, v in answers.items() if k in PII_FIELDS or personal_value(str(v))]
     e = behavior.view(state, line_user_id)["form_exit"]
     if not e or e["job_id"] != job_id:
         return {"error": f"{job_id} の入力途中の応募フォームはありません"}
@@ -788,62 +798,39 @@ FULLTIME_PREFERENCE_KEYS = ("min_annual_salary", "work_style", "start_timing")
 PREFERENCE_VALUE_MAX = 100  # 本人の言葉のまま短い文で。長い値は要約・会話ログの貼り付けになりがちなので保存しない
 
 
-# 住所らしい値(番地・丁目・「1-2-3」の形・「みほん町3-5」の形)。氏名はコードでは見分けられないので、Prompt で保存させない。
-# 幅や日付(「年収400-500万円」「3-6か月以内」「2026-09-30に入社」)は住所ではない: 3つ組は先頭が1〜3桁のものだけ、
-# 2つ組は市区町村名の直後で、後ろに単位(万・円・か月・年・日・時など)が続かないものだけを数える
-ADDRESS_LIKE = re.compile(
-    r"(?<![\d-])\d{1,3}[-－]\d{1,4}[-－]\d{1,4}(?![\d-])"
-    r"|[市区町村]\d{1,4}[-－]\d{1,4}(?![\d万千円かカヵヶケ年月日時分歳%％])"
-    r"|丁目|番地"
-)
-_WORD_SEP = set("、。,.!?！？「」()（）")
-
-
-def address_spans(text: str) -> list[tuple[int, int]]:
-    """文の中の住所らしい所の範囲: ADDRESS_LIKE に当たった所を含む、区切り(空白・句読点・括弧)までの語
-    (「渋谷区神南1丁目2-3に住む」なら全体。丁目だけ消して番地を残さない)。正規表現で前後の語まで取ると長い文で
-    時間がかかるので、当たった所から区切りまで広げる。"""
-    def sep(ch: str) -> bool:
-        return ch.isspace() or ch in _WORD_SEP
-
-    spans: list[tuple[int, int]] = []
-    for m in ADDRESS_LIKE.finditer(text):
-        start, end = m.span()
-        if spans and start < spans[-1][1]:  # 前の語に含まれている
-            continue
-        while start > 0 and not sep(text[start - 1]):
-            start -= 1
-        while end < len(text) and not sep(text[end]):
-            end += 1
-        spans.append((start, end))
-    return spans
-
-
 def _preference_error(key: str, value) -> str | None:
     """保存しない理由(保存してよければ None)。個人情報らしい値の防御は全項目に効かせる。"""
     if key not in PREFERENCE_KEYS:
         return "unknown_key"
     v = str(value)
-    if has_pii(v) or ADDRESS_LIKE.search(fold_pii(v)):
+    if personal_value(v):
         return "personal_info"
     if len(v.strip()) > PREFERENCE_VALUE_MAX:
         return "too_long"
     return None
 
 
-def save_preferences(state: State, line_user_id: str, preferences: dict[str, str | int]) -> dict:
+def save_preferences(state: State, line_user_id: str, preferences: dict[str, str | int],
+                     room: str | None = None) -> dict:
     """本人が会話で話した希望と、本人について分かったこと(目的・強みなど)を保存する(次の会話の要約で返す)。
-    決まった項目だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は保存しない。値は文字列にそろえる。"""
+    決まった項目だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は保存しない。値は文字列にそろえる。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら何も保存しない。"""
     errors = {k: e for k, v in preferences.items() if (e := _preference_error(k, v))}
     rejected = list(errors)
     keep = {k: str(v).strip() for k, v in preferences.items() if k not in rejected and str(v).strip()}
+    forgotten = False
 
     def apply(u):
+        nonlocal forgotten
+        if forgotten := _room_forgotten(u, room):
+            return
         prefs = u.setdefault("preferences", {})
         for k, v in keep.items():
             prefs[k] = {"value": v, "at": now(line_user_id).isoformat()}
 
     state.update(line_user_id, apply)
+    if forgotten:
+        return {"saved": [], "rejected": [], "error": FORGOTTEN_ROOM_ERROR}
     out = {"saved": list(keep), "rejected": rejected}
     if rejected:
         notes = []
@@ -879,18 +866,24 @@ def track_history(user: dict) -> list[dict]:
              "undo": h["undo"]} for h in (user.get("track_history") or [])[-TRACK_HISTORY_IN_SUMMARY:]]
 
 
-def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False) -> dict:
+def set_search_track(state: State, line_user_id: str, track: str, evidence: str, undo: bool = False,
+                     room: str | None = None) -> dict:
     """雇用区分を切り替えて履歴に残す。evidence は根拠になった本人の発言そのまま。
-    undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。"""
+    根拠の電話番号・メールアドレス・住所らしい所は伏せる(redact_personal)。
+    undo は直前の切り替えの取り消し(track には切り替える前の区分を渡す)。今と同じ区分なら記録しない。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら記録しない。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
-    evidence = redact_pii(str(evidence or "").strip())[:EVIDENCE_MAX]
+    evidence = redact_personal(str(evidence or "").strip())[:EVIDENCE_MAX]
     if not evidence:
         return {"error": "evidence に、切り替えの根拠になった本人の発言をそのまま入れてください"
                          "(履歴書の内容や推測だけでは切り替えない)。"}
     result: dict = {}
 
     def apply(u):
+        if _room_forgotten(u, room):
+            result["error"] = FORGOTTEN_ROOM_ERROR
+            return
         history = u.get("track_history") or []
         current = search_track(u)
         if undo:
@@ -955,6 +948,8 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
 
 
 VOICE_ROOMS_KEPT = 20  # 覚えておく音声相談の部屋の数(「すべて消す」の前に始めた面談の結果を見分けるため)
+VOICE_ROOM_ARG = "room"  # 音声ワーカーが書き込むツールに渡す部屋の引数名(dip_mcp/server.py。トークの AI には見せない)
+FORGOTTEN_ROOM_ERROR = "この通話の途中で、本人が覚えていることをすべて消したので、記録しません。"
 
 
 def record_voice_result(state: State, line_user_id: str, jobs: list[dict] | None,
@@ -1035,7 +1030,14 @@ def record_voice_room(state: State, line_user_id: str, room: str) -> None:
 
 def voice_room_forgotten(state: State, line_user_id: str, room: str | None) -> bool:
     """「すべて消す」の前に始めた面談の部屋か(その結果で dip の記録を作り直さない)。"""
-    return bool(room) and room in state.user(line_user_id).get("forgotten_voice_rooms", [])
+    return _room_forgotten(state.user(line_user_id), room)
+
+
+def _room_forgotten(user: dict, room: str | None) -> bool:
+    """1 人の dict で見る voice_room_forgotten。音声ワーカーの書き込み(希望・雇用区分・会話の結果)は、state.update の
+    中(書き込みと同じロックの中)でこれを見て断る。面談の途中で「すべて消す」をした後に、その通話で話したことを残さないため
+    (docs/design/privacy.md の 3.8 の案 A)。"""
+    return bool(room) and room in user.get("forgotten_voice_rooms", [])
 
 
 # ----------------------------- アップロードした履歴書(resume-intake の読み取り結果) -----------------------------
@@ -1105,10 +1107,11 @@ CONSULTATION_SUMMARY_MAX = 200  # 相談のまとめの字数の上限
 
 
 def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, confidence: float,
-                   summary: str | None = None) -> dict:
+                   summary: str | None = None, room: str | None = None) -> dict:
     """会話の結果を記録する。summary は相談のまとめ(200字以内。本人の発言に基づく事実と、次に確かめることだけ)。
     まとめは次の会話(チャット・音声)の要約の consultation_summary に出る。200字を超えたら何も記録しない
-    (書き直して呼び直してもらう。途中で切ると「次に確かめること」が落ちるため)。"""
+    (書き直して呼び直してもらう。途中で切ると「次に確かめること」が落ちるため)。
+    room は音声相談の部屋(音声ワーカーだけが渡す)。「すべて消す」の前に始めた部屋なら記録しない。"""
     if outcome not in OUTCOMES:
         return {"error": f"outcome は {OUTCOMES} のいずれか"}
     if outcome == "wait" and not REFUSAL_WORDS.search(reason or ""):  # 断っていない人を wait にしない
@@ -1121,13 +1124,20 @@ def record_outcome(state: State, line_user_id: str, outcome: str, reason: str, c
                          "もう一度呼んでください(本人の発言に基づく事実と、次に確かめることだけ)。何も記録していません。"}
     # 理由・まとめの文に本人の連絡先・住所が紛れ込んでも保存しない(住所らしい所は、区切りまでの語ごと消す)。
     # 氏名はコードでは見分けられないので消せない: ツールの説明で書かないよう指示し(dip_mcp/server.py)、評価で見る
-    reason = redact_pii(reason, extra=address_spans)
+    reason = redact_personal(reason)
     rec = {"at": now(line_user_id).isoformat(), "outcome": outcome, "reason": reason,
            "confidence": max(0.0, min(1.0, confidence))}
     if summary:
-        rec["summary"] = redact_pii(summary, extra=address_spans)
-    state.update(line_user_id, lambda u: u.setdefault("outcomes", []).append(rec))
-    return {"recorded": rec}
+        rec["summary"] = redact_personal(summary)
+    forgotten = False
+
+    def apply(u):
+        nonlocal forgotten
+        if not (forgotten := _room_forgotten(u, room)):
+            u.setdefault("outcomes", []).append(rec)
+
+    state.update(line_user_id, apply)
+    return {"error": FORGOTTEN_ROOM_ERROR} if forgotten else {"recorded": rec}
 
 
 def consultation_summary(user: dict) -> dict | None:

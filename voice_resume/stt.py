@@ -3,7 +3,7 @@
 既定は Deepgram nova-3(日本語)+ バイト用語の keyterm 登録(タスク 37 の比較で決定。
 results/stt-eval-*.md)。環境変数で戻せる:
 
-- VOICE_RESUME_STT_PROVIDER: deepgram(既定)/ openai
+- VOICE_RESUME_STT_PROVIDER: deepgram(既定。本番はこれに固定する)/ openai(声そのものが OpenAI に届く。開発の比較用)
 - VOICE_RESUME_STT_MODEL: nova-3(既定)。nova-2 に戻す、openai なら gpt-4o-transcribe など
 - VOICE_RESUME_STT_KEYTERMS: 用語のカンマ区切り(空にすると登録しない)
 """
@@ -36,7 +36,8 @@ def create_stt() -> lk_stt.STT:
 
     from livekit.plugins import deepgram
 
-    kwargs = {}
+    # 声を Deepgram の改善プログラム(Model Improvement Program)に使わせない(docs/design/privacy.md の 3.2)
+    kwargs = {"mip_opt_out": True}
     # keyterm は nova-3 系のみ(nova-2 に戻したときはプラグインが拒むので渡さない)
     if config.STT_KEYTERMS and config.STT_MODEL.startswith("nova-3"):
         kwargs["keyterm"] = list(config.STT_KEYTERMS)

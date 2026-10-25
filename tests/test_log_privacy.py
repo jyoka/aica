@@ -259,6 +259,22 @@ def test_failed_line_event_logs_only_the_exception_type(tmp_path, monkeypatch, l
     assert_no_marks(logs)
 
 
+def test_failed_liff_upload_turn_logs_only_the_exception_type(tmp_path, monkeypatch, logs):
+    """LIFF 画面で履歴書を読み込んだ後の続きのターンが思わぬ例外で止まっても、例外の文をログに出さず、確認と失敗の文を届ける。"""
+    server, fake = _server(tmp_path, monkeypatch, Greeter(script=[]))
+
+    async def boom(uid, kind, e):
+        raise RuntimeError(f"unexpected: {SAID}")
+
+    monkeypatch.setattr(server, "_line_turn", boom)
+    with TestClient(server.app) as client:
+        client.portal.call(server._line_upload_turn, "l-1", "U1", {"bubbles": ["読み取りました"]})
+    ((_, body),) = fake.sent()
+    assert [m["text"] for m in body["messages"]] == ["読み取りました", line_channel.FAILED_TEXT]
+    assert "履歴書の続きのターンを進められませんでした" in logs.text and "RuntimeError" in logs.text
+    assert_no_marks(logs)
+
+
 # ----------------------------- 本番の SDK のロガー -----------------------------
 
 class _LatePlugin:
