@@ -158,9 +158,12 @@ class TurnCallLimitMiddleware(AgentMiddleware):
 
 def build_model(model: str | None = None, effort: str | None = None) -> BaseChatModel:
     if config.PROVIDER == "openai":
-        # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動
+        # Chat Completions は reasoning とツール呼び出しを併用できないので Responses API を使う。キャッシュは自動。
+        # OpenAI に応答を残さない(store=False。docs/design/privacy.md の 3.2)。前の応答の ID は使わず、毎回会話の全文を送る。
+        # 残さない応答の reasoning は ID で参照できないので、暗号化した中身を受け取り、次の呼び出しでそのまま送り返す
         return ChatOpenAI(model=model or config.MODEL, max_tokens=16000, use_responses_api=True,
-                          reasoning={"effort": effort or config.EFFORT})
+                          reasoning={"effort": effort or config.EFFORT},
+                          store=False, include=["reasoning.encrypted_content"])
     return ChatAnthropic(model=model or config.MODEL, max_tokens=16000, thinking={"type": "adaptive"},
                          output_config={"effort": effort or config.EFFORT})
 

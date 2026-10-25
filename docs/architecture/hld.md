@@ -147,6 +147,9 @@ flowchart LR
 - 状態の正本は手元の `data/` です。dip の状態は `data/state.json`、会話は `data/line_checkpoints.db` にあります
 - 求人と、開発者画面のシナリオユーザーの初期状態は `fixtures/` の架空のデータです
 - 外のサービスのキーは、リポジトリ直下の `.env` に置きます(6 章)
+- 外のサービスには、学習に使わせず、先方に残る量が減る設定で送ります(6 章「個人情報」、LLD の 7 章)。
+  LiveKit Cloud の Agent Observability(録音、文字起こし、ログを 30 日残す)には、ワーカーが `record=False` で何も送りません。
+  プロジェクトの設定で有効かどうかと、プランは確かめていません([privacy.md](../design/privacy.md) の 6 章)
 
 LLM のプロバイダは `LINE_SIM_PROVIDER` で選びます(`line_runtime/config.py`)。
 
@@ -929,7 +932,14 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書と下書きの `personal`(氏名、住所、電話、メール、生年月日)は、何が来ても空で保存します
 - 希望とプロフィールの値は、決まった項目だけを受け付け、電話、メール、住所らしい値は保存しません(`logic.save_preferences`)
 - 応募フォームの続きは、個人情報の項目と、値に電話、メール、住所らしい所を含む項目をトークで受け取らず、LIFF 画面を案内します(`logic.resume_form`)
-- 履歴書のファイル本体とファイル名は保存しません
+- 履歴書のファイル本体とファイル名は保存しません。ファイル名は OpenAI にも送りません(PDF は形式だけの固定の名前 `resume.pdf` で送る)
+- 外のサービスに残る量を減らします([privacy.md](../design/privacy.md) の 3.2)
+  - OpenAI: Responses API の呼び出しはすべて `store=False` で、応答を残させません。エージェントは前の応答の ID を使わず、
+    毎回会話の全文を送ります。reasoning は暗号化した中身(`reasoning.encrypted_content`)を受け取って送り返します
+  - Deepgram: `mip_opt_out=true` で、声を改善プログラムに使わせません
+  - LiveKit Cloud: `record=False` で、録音、文字起こし、ログを LiveKit Cloud に残しません
+  - 本番の STT は Deepgram に固定します(`VOICE_RESUME_STT_PROVIDER=deepgram`)。`openai` にすると声そのものが OpenAI に届きます
+  - 先方の保持(OpenAI の不正利用の監視のログなど)は、aica からは消せません
 - レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。進み具合と答えはそのブラウザの localStorage に残ります。AI の段では
   答え(まとめでは書類の行)が Web サーバーを通って LLM のプロバイダに送られますが、サーバーには保存せず、ログにも出しません。
   送る前に電話とメールを伏せます(`redact_pii`)。保存するのは本人が保存した書類だけで、`scrub_pii` をかけます(4.11)
