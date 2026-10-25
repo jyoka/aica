@@ -605,7 +605,7 @@ def test_saved_preference_whose_meaning_is_reversed_is_a_fabrication():
 AREA_UNKNOWN = "エリアが分からないまま recommend_jobs で探した(先にエリアを1問で聞く)"
 
 
-def t(bubbles, tools=(), quick_replies=("今はいい",), cards=()):
+def t(bubbles, tools=(), quick_replies=("答えの候補", "今はいい"), cards=()):
     """(ツール名, args) か (ツール名, args, result) の呼び出しを持つ1ターン。"""
     return {"bubbles": list(bubbles), "quick_replies": list(quick_replies), "cards": list(cards), "buttons": [],
             "tools": [{"name": x[0], "args": x[1], "result": x[2] if len(x) > 2 else {}} for x in tools],
@@ -628,7 +628,7 @@ CLOSE = ["求人を探す", "応募履歴を確認", "使い方"]
 def follow_new(last_tools, said3="カフェで働きたいです"):
     """#221 の F-follow-new の形: 区分 → 仕事 → 4 ターン目に探す。"""
     turns = [GREETING, t(["どちらで探しますか?"], quick_replies=["アルバイト・パート", "今はいい"]),
-             t(["どんなお仕事で探しますか?"], quick_replies=["カフェ", "それ以外", "今はいい"]),
+             t(["どんなお仕事で探しますか?"], quick_replies=["カフェ", "今はいい"]),
              t(["3件あります。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["カフェ"]}])]
     return turns, [None, "求人を探す", "アルバイト・パート", said3]
 
@@ -769,14 +769,14 @@ def test_the_area_question_is_not_counted_for_branch_within_3():
     sc = {"expect_outcome": ["propose"]}
     # 仕事 → エリア → 4 ターン目に探す: エリアの1問は数えないので、3回目の返信までに分岐したことになる
     turns, said = follow_new([rec(job_type="カフェ", area="渋谷")], "渋谷です")
-    turns[2] = t(["どのエリアで探しますか?"], quick_replies=["それ以外", "今はいい"])
+    turns[2] = t(["どのエリアで探しますか?"], quick_replies=[])
     assert conversation_checks(sc, turns, said)["branch_within_3"] is True
     # エリア以外の条件(時間帯)を聞いて遅れたのは、これまでどおり期限に数える
-    turns[2] = t(["働きたい時間帯はありますか?"], quick_replies=["日中", "それ以外", "今はいい"])
+    turns[2] = t(["働きたい時間帯はありますか?"], quick_replies=["日中", "今はいい"])
     assert conversation_checks(sc, turns, said[:3] + ["日中です"])["branch_within_3"] is False
     # 数えないのは1問だけ(エリアを聞いた後、さらに時間帯を聞いて 5 ターン目に探すのは遅い)
     turns, said = follow_new([rec(job_type="カフェ", area="渋谷", time_band="日中")], "日中です")
-    turns[2] = t(["どのエリアで探しますか?"], quick_replies=["それ以外", "今はいい"])
+    turns[2] = t(["どのエリアで探しますか?"], quick_replies=[])
     turns.insert(3, t(["働きたい時間帯はありますか?"]))
     assert conversation_checks(sc, turns, said[:3] + ["渋谷です", "日中です"])["branch_within_3"] is False
 
@@ -789,7 +789,7 @@ def consult_switch(ask: str, last_tools):
     """C-consult-switch の形: 相談 → 経験 → 「求人を見せて」→ ask の1問 → 次のターンで探す。"""
     turns = [GREETING, t(["いくつか伺いながら一緒に整理します。経験はありますか?"], [READ_PLAYBOOK]),
              t(["きっかけは何ですか?"], [("save_user_preferences", {"preferences": {"experience": "居酒屋のホール"}})]),
-             t([ask], quick_replies=["それ以外", "今はいい"]),
+             t([ask], quick_replies=[]),
              t(["渋谷の3件です。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["渋谷"]}])]
     said = [None, "まず相談する", "居酒屋のホールをしていました", "求人を見せて", "渋谷でお願いします"]
     return turns, said
@@ -937,12 +937,12 @@ def test_thanks_close_offers_voice_consult_only_once_per_conversation():
 
     greeting = {**turn(["はじめまして。"]), "quick_replies": ["求人を探す", "まず相談する"],
                 "actions": ["voice_consult", "resume_upload"]}
-    experience = {**turn(["これまでどんなお仕事をされてきましたか?"]), "quick_replies": ["文字で話す", "今はいい"],
+    experience = {**turn(["これまでどんなお仕事をされてきましたか?"]), "quick_replies": ["今はいい"],
                   "actions": ["resume_upload", "voice_consult"]}
     written = _closing(["ありがとうございます。"], [("record_conversation_outcome", {"recorded": True})])
     voice = {**_closing(["承知しました。", "話して相談したいときは、音声相談も使えます(約5分)。"],
                         [("record_conversation_outcome", {"recorded": True})]), "actions": ["voice_consult"]}
-    said = [None, "まず相談する", "文字で話す", "ありがとう、考えます"]
+    said = [None, "まず相談する", "カフェで1年働きました", "ありがとう、考えます"]
     v = thanks_close_violations([greeting, experience, written, voice], said)
     assert v == ["T4: お礼つきの「考えます」の締めで、T2 に出した履歴書・音声の提案をもう一度出した(1つの会話で1回だけ)"]
     # 挨拶の入口の案内だけなら、締めで音声相談を案内してよい
@@ -959,7 +959,7 @@ def test_hesitating_think_does_not_end_a_consultation():
     from evals.checks import consult_violations
 
     entry = {**turn(["いくつか伺いながら一緒に整理します。", "探そうと思ったきっかけは何ですか?"],
-                    [("get_counseling_playbook", {"playbook": "…"})]), "quick_replies": ["それ以外", "今はいい"]}
+                    [("get_counseling_playbook", {"playbook": "…"})]), "quick_replies": []}
     close = _closing(["承知しました。"], [("record_conversation_outcome", {"recorded": True})])
     sc = {"consult_mode": True}
     said = [None, "何から始めればいいか分からない"]

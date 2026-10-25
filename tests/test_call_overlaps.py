@@ -104,18 +104,18 @@ def consult_script(h: bool) -> list:
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
         switch_and_read(UID, BAITO, CONSULT_SAID[1]),
         reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
-               "今回、バイトを探そうと思ったきっかけは何ですか?"], quick_replies=["それ以外", "今はいい"]),
+               "今回、バイトを探そうと思ったきっかけは何ですか?"], quick_replies=[]),
         call(*save({"purpose": "生活費の足し"})),
-        reply(["生活費の足しにしたいのですね。", "そう思ったのは、どんな変化からですか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["生活費の足しにしたいのですね。", "そう思ったのは、どんな変化からですか?"], quick_replies=[]),
         *([call(*save({"purpose": PURPOSE}))] if h else []),
         reply(["家賃の分を自分で払いたいのですね。", "やってみたいことや、好きなことはありますか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
         # 直した決まり: 掘り下げの答え(目的)は、次に保存するターンで新しい項目と1回の save にまとめる
         call(*save({"wants": "パン屋で働いてみたい"})) if h else call(*save({"wants": "パン屋で働いてみたい", "purpose": PURPOSE})),
-        reply(["パン屋で働いてみたいのですね。", "パン屋のどんなところに惹かれますか?"], quick_replies=["それ以外", "今はいい"]),
+        reply(["パン屋で働いてみたいのですね。", "パン屋のどんなところに惹かれますか?"], quick_replies=[]),
         *([call(*save({"wants": WANTS}))] if h else []),
         reply(["お客さんに渡すところなのですね。", "働ける時間帯とエリアはどのあたりですか?"],
-              quick_replies=["平日の夕方", "それ以外", "今はいい"]),
+              quick_replies=["平日の夕方", "今はいい"]),
         *([call(*save({"time_band": "夕方", "area": "池袋"}), "s1"), call(*save({"time_band": "平日の夕方"}), "s2")] if h
           else [call(*save({"time_band": "平日の夕方", "area": "池袋", "wants": WANTS}))]),
         reply(["家賃の分を払いたい・パン屋・池袋の平日夕方で整理しました。", "この内容で求人を見ますか?"],
@@ -140,12 +140,17 @@ def run_script(script: list, said: list, tmp_path) -> tuple[list[dict], int]:
     return turns, n
 
 
+# 台本は H の会話の問いの数(目的・掘り下げ・やりたいこと・掘り下げ・条件の5問の後に求人を見るか)のまま。task 225 で
+# 相談の問いを4問までにしたので、その違反だけは出る(このテストが見るのは保存と検索の呼び方。相談の長さは tests/test_playbook.py)
+LENGTH = "T5: 相談で求人を見るかを聞かずに4問を聞いた(4問目までに聞く)"
+
+
 def test_consult_saves_dig_answers_with_the_next_call_and_calls_fewer_times(tmp_path):
     h_turns, h_calls = run_script(consult_script(h=True), CONSULT_SAID, tmp_path / "h")
     turns, llm_calls = run_script(consult_script(h=False), CONSULT_SAID, tmp_path / "new")
 
     # H の呼び方は、評価の違反ではないが、呼び出しの重複として数える
-    assert conversation_checks(CONSULT_SC, h_turns, CONSULT_SAID)["violations"] == []
+    assert conversation_checks(CONSULT_SC, h_turns, CONSULT_SAID)["violations"] == [LENGTH]
     assert call_overlaps(h_turns, CONSULT_SAID) == [
         "T4: 掘り下げの答えだけで save_user_preferences を呼んだ(保存済みの purpose)",
         "T6: 掘り下げの答えだけで save_user_preferences を呼んだ(保存済みの wants)",
@@ -154,7 +159,7 @@ def test_consult_saves_dig_answers_with_the_next_call_and_calls_fewer_times(tmp_
     ]
     # 直した決まりの台本: 違反も重複も無く、save・検索・LLM の呼び出しが減った
     r = conversation_checks(CONSULT_SC, turns, CONSULT_SAID)
-    assert r["violations"] == [] and r["call_overlaps"] == [] and r["outcomes"] == ["propose"]
+    assert r["violations"] == [LENGTH] and r["call_overlaps"] == [] and r["outcomes"] == ["propose"]
     assert (count(h_turns, "save_user_preferences"), count(turns, "save_user_preferences")) == (6, 3)
     assert (count(h_turns, "recommend_jobs"), count(turns, "recommend_jobs")) == (2, 1)
     assert (h_calls, llm_calls) == (17, 13)
@@ -192,22 +197,22 @@ def search_script(h: bool) -> tuple[list, list]:
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU),
         reply([TRACK_Q], quick_replies=TRACK_REPLIES),
         switch_and_read(UID, BAITO, "アルバイト・パート") if h else call(*switch),
-        reply(["アルバイト・パートのお仕事で考えますね。", "どんなお仕事で探しますか?"], quick_replies=["カフェ", "それ以外", "今はいい"]),
+        reply(["アルバイト・パートのお仕事で考えますね。", "どんなお仕事で探しますか?"], quick_replies=["カフェ", "今はいい"]),
         search({"job_type": "カフェ"}, job_type="カフェ"),
         lambda msgs: reply(["カフェのお仕事です。"], job_ids=returned_jobs(msgs), quick_replies=NARROW),
     ]
     if h:
         script += [
-            reply(["勤務地はどのあたりがよいですか?"], quick_replies=["渋谷", "それ以外", "今はいい"]),
+            reply(["勤務地はどのあたりがよいですか?"], quick_replies=["渋谷", "今はいい"]),
             search({"area": "渋谷"}, job_type="カフェ", area="渋谷"),
             lambda msgs: reply(["渋谷のカフェです。", "時間帯の希望はありますか?"], job_ids=returned_jobs(msgs),
-                               quick_replies=["日中", "それ以外", "今はいい"]),
+                               quick_replies=["日中", "今はいい"]),
             search({"time_band": "日中"}, job_type="カフェ", area="渋谷", time_band="日中"),
             lambda msgs: reply(["渋谷・日中のカフェです。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         ]
     else:  # 直した決まり: まだ分かっていない勤務地と時間帯をまとめて1問で聞き、答えの条件を全部入れて1回で探す
         script += [
-            reply(["勤務地と時間帯は、どのあたりがよいですか?"], quick_replies=["渋谷の日中", "それ以外", "今はいい"]),
+            reply(["勤務地と時間帯は、どのあたりがよいですか?"], quick_replies=["渋谷の日中", "今はいい"]),
             search({"area": "渋谷", "time_band": "日中"}, job_type="カフェ", area="渋谷", time_band="日中"),
             lambda msgs: reply(["渋谷・日中のカフェです。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         ]
@@ -268,7 +273,7 @@ def test_recount_of_the_h_baseline_by_scene():
     assert all(playbook_violations(r["detail"]["turn_log"], r["detail"]["user_msgs"]) == [] for r in doc["runs"])
 
 
-def t(bubbles, tools=(), quick_replies=("今はいい",)):
+def t(bubbles, tools=(), quick_replies=("答えの候補", "今はいい")):
     return {"bubbles": list(bubbles), "quick_replies": list(quick_replies), "cards": [], "buttons": [],
             "tools": [{"name": n, "args": a, "result": res} for n, a, res in tools], "unknown_job_ids": []}
 

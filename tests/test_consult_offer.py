@@ -7,6 +7,10 @@ H の評価(evals/baseline/sim-20261004-113109.json)で、相談・ペルソナ�
 (a) 判定(evals.checks.jobs_offer_turn)の正例・負例、(b) シナリオの期待の付け方、
 (c) H の保存済みの会話で判定し直した結果(T-career-fulltime と T-student-first が合格、T-blank-parent が不合格)
 を確かめる。
+2026-10-26(task 225)で、相談の問いを4問までにした(4問目までに求人を見るかを聞く)。相談のペルソナは本人の1回目の発言で
+相談に入る(T2 が1問目)ので、期限 expect_offer_by は T5 にした。(c) は task 133 のときの期限(T8)で判定し直したものとして残す。
+同じ task 225 で、事情を話して探し始めた T-side-job と T-blank-parent は相談に入れないことにした(利用者の決定 2026-10-25、
+その読み方 2026-10-26)。足りない条件だけを聞き(条件の問いは2問まで)、T4 までに探すので、期限は T4 にした。
 """
 
 from __future__ import annotations
@@ -16,14 +20,23 @@ import json
 import pytest
 
 from dip_mcp.data import ROOT
-from evals.checks import conversation_checks, jobs_offer_turn
+from evals.checks import (
+    CONSULT_QUESTIONS_MAX,
+    SITUATION_QUESTIONS_MAX,
+    conversation_checks,
+    jobs_offer_turn,
+)
 from evals.run import SCENARIO_TURNS, recheck
 from evals.scenarios import load_scenarios
 
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
-CONSULT_PERSONAS = ("T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent")
-ASK = ["それ以外", "今はいい"]
+CONSULT_PERSONAS = ("T-career-fulltime", "T-student-first")
+# 事情を話して探し始める(相談に入れない)ペルソナ
+SITUATION_PERSONAS = ("T-side-job", "T-blank-parent")
+# task 133 のときに相談から始まったペルソナ(H の見直しで当時の期限 T8 を当てる)
+H_CONSULT_PERSONAS = ("T-career-fulltime", "T-side-job", "T-student-first", "T-blank-parent")
+ASK = []
 OFFER = ["求人を見る", "もう少し相談したい", "今はいい"]
 
 
@@ -116,17 +129,24 @@ def test_other_scenarios_still_expect_the_recorded_outcome():
 # ----------------------------- (b) シナリオの期待 -----------------------------
 
 
-def test_consult_personas_expect_an_offer_by_the_turn_limit():
+def test_consult_personas_expect_an_offer_by_the_fourth_question():
     for case in CONSULT_PERSONAS:
         sc = SCENARIOS[case]
-        # 求人を見るかを聞く期限は T8 のまま(会話の決まりは変えない)。task 222 でターンの上限だけを 12 にした
-        # (T-side-job は 8 の上限より前に終わっていたので、上限はシナリオの既定のまま。tests/test_turn_cap.py)
-        assert sc["consult_mode"] and sc["expect_offer_by"] == SCENARIO_TURNS == 8, case
+        # 本人の1回目の発言(U1)で相談に入り、T2 が1問目。4問目(T5)までに求人を見るかを聞く(task 225。前は T8)。
+        # ターンの上限(task 222 で相談のシナリオは 12)より前に、提案と反応まで見られる
+        assert sc["consult_mode"] and sc["expect_offer_by"] == 1 + CONSULT_QUESTIONS_MAX == 5, case
+        assert sc["expect_offer_by"] < sc.get("max_turns", SCENARIO_TURNS), case
         assert "expect_outcome" not in sc, case  # 結果の記録は期待しない(期待を2つ持たない)
     # 相談から始まらないペルソナと、相談の C-* は、これまでどおり記録した結果で見る
     for case in ("T-switch-to-fulltime", "C-consult-propose", "C-consult-only", "C-consult-switch"):
         assert SCENARIOS[case]["expect_outcome"] and "expect_offer_by" not in SCENARIOS[case], case
-    assert [sc["id"] for sc in SCENARIOS.values() if sc.get("expect_offer_by")] == list(CONSULT_PERSONAS)
+    # 事情を話して探し始めた人は相談に入れず、U1 の答え(T2)と U2 の答え(T3)で足りない条件を聞き(2問まで)、T4 までに探す
+    for case in SITUATION_PERSONAS:
+        sc = SCENARIOS[case]
+        assert sc["expect_no_consult"] and not sc.get("consult_mode") and not sc.get("measure_depth"), case
+        assert sc["expect_offer_by"] == 2 + SITUATION_QUESTIONS_MAX == 4, case
+        assert "expect_outcome" not in sc and sc["expect_offer_by"] < sc.get("max_turns", SCENARIO_TURNS), case
+    assert [sc["id"] for sc in SCENARIOS.values() if sc.get("expect_offer_by")] == list(H_CONSULT_PERSONAS)
 
 
 # ----------------------------- (c) H の保存済みの会話で判定し直す(費用なし) -----------------------------
@@ -134,8 +154,10 @@ def test_consult_personas_expect_an_offer_by_the_turn_limit():
 
 def test_h_conversations_rechecked_with_the_new_expectation():
     runs = {r["case"]: r for r in json.loads(H_BASELINE.read_text(encoding="utf-8"))["runs"] if r["status"] == "ok"}
-    before = {case: runs[case]["metrics"]["outcome_as_expected"] for case in (*CONSULT_PERSONAS, "T-switch-to-fulltime")}
-    after = {case: recheck(runs[case]["detail"]) for case in before}
+    before = {case: runs[case]["metrics"]["outcome_as_expected"] for case in (*H_CONSULT_PERSONAS, "T-switch-to-fulltime")}
+    # task 133 のときの期限(T8)で判定し直す(今のシナリオの期限は T5、T-side-job と T-blank-parent は T4)
+    after = {case: recheck(runs[case]["detail"], SCENARIOS[case] | ({"expect_offer_by": 8} if case in H_CONSULT_PERSONAS else {}))
+             for case in before}
     assert before == {"T-career-fulltime": False, "T-side-job": True, "T-student-first": False,
                       "T-blank-parent": False, "T-switch-to-fulltime": True}
     assert {case: r["outcome_as_expected"] for case, r in after.items()} == {

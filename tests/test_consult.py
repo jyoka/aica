@@ -23,7 +23,7 @@ MENU = ["求人を探す", "まず相談する", "今はいい"]
 ENTRIES = {"actions": ["voice_consult", "resume_upload"], "buttons": [{"label": "ゲームで書類を作る", "url": "/liff/arcade"}]}
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
-CONFIRM_REPLIES = ["正社員", "空いた時間のアルバイト", "それ以外", "今はいい"]
+CONFIRM_REPLIES = ["正社員", "空いた時間のアルバイト", "今はいい"]
 BAITO = "アルバイト・パート"
 
 
@@ -128,7 +128,8 @@ def test_consult_prompt_reaches_the_agent_on_first_visit(tmp_path):
 
 def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(tmp_path):
     """「まず相談する」(区分は未定)→ 未定の playbook で区分を1問で確かめる → 答えで切り替えて playbook を読み直す →
-    目的を聞いて掘り下げ、興味・経験・生活の制約を1問ずつ → まとめて提案。3ターンを超えても締めない。
+    目的を聞く → 生活の制約をまとめて1問 → 4問目で求人を見るかを聞いて提案(相談の問いは4問まで。task 225)。
+    3ターンを超えても締めない。
     相談で話したことは dip に保存され、提案の条件にそのまま使われ、次の会話の要約にも出る。"""
     uid = "sim-new"
     model = ConsultModel(script=[
@@ -137,18 +138,13 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
         reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         switch_and_read(uid, BAITO, "空いた時間のアルバイト"),
         reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
-              quick_replies=["生活費の足しに", "経験を積みたい", "それ以外", "今はいい"]),
-        call("save_user_preferences", {"line_user_id": uid, "preferences": {"purpose": "働く経験を積みたい"}}),
-        reply(["働く経験を積みたいのですね。", "例えば、どんな経験をしてみたいですか?"],
-              quick_replies=["それ以外", "今はいい"]),
-        call("save_user_preferences", {"line_user_id": uid, "preferences": {"wants": "人と話す接客"}}),
-        reply(["人と話す接客をしてみたいのですね。", "これまでにアルバイトの経験はありますか?"],
-              quick_replies=["未経験です", "それ以外", "今はいい"]),
-        call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}}),
-        reply(["ありがとうございます。", "働ける時間帯とエリアはどのあたりですか?"],
-              quick_replies=["平日の夕方", "土日の日中", "それ以外", "今はいい"]),
+              quick_replies=["生活費の足しに", "経験を積みたい", "今はいい"]),
+        call("save_user_preferences", {"line_user_id": uid, "preferences": {"purpose": "働く経験を積みたい",
+                                                                          "wants": "人と話す接客"}}),
+        reply(["働く経験を積みたい、人と話す接客をしてみたいのですね。", "働ける時間帯・曜日と、通いやすいエリアを教えてもらえますか?"],
+              quick_replies=["平日の夕方", "土日の日中", "今はいい"]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {
-            "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}}),
+            "experience": "未経験", "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}}),
         reply(["働く経験を積みたい・接客・池袋の夕方で整理しました。", "この内容で求人を見ますか?"],
               quick_replies=["求人を見る", "もう少し相談したい", "今はいい"]),
         # keywords は意味検索で embedding の API を呼ぶので、オフラインの台本では渡さない
@@ -162,9 +158,8 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
         reply(["前回はアルバイトで、池袋の夕方でしたが、今回も同じ感じで探しますか?"],
               quick_replies=["同じで探す", "変えたい", "今はいい"]),
     ])
-    said = [None, "まず相談する", "空いた時間のアルバイト", "働く経験を積みたい",
-            "人と話す接客をしてみたい", "バイトは未経験です", "平日の夕方、池袋あたりで週3日", "求人を見る",
-            "ありがとう、考えます"]
+    said = [None, "まず相談する", "空いた時間のアルバイト", "働く経験を積みたい。人と話す接客をしてみたい",
+            "バイトは未経験です。平日の夕方、池袋あたりで週3日", "求人を見る", "ありがとう、考えます"]
     steps = [(uid, "visit", None)] + [(uid, "message", m) for m in said[1:]] + [(uid, "revisit", None)]
     *turns, again = run(model, steps, tmp_path)
 
@@ -175,15 +170,17 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
     # 入口で未定の playbook、区分が決まったターンで新しい区分の playbook を読み直した
     assert playbooks_read(turns[1]) == ["未定"] and "まず区分を確かめる" in turns[1]["tools"][0]["result"]["playbook"]
     assert playbooks_read(turns[2]) == [BAITO] and checks["tracks"][2] == BAITO
-    assert checks["branch_turn"] == 8  # 相談の間(ユーザーの返信6回)は締めずに1問ずつ聞いた
+    assert checks["branch_turn"] == 6  # 相談の間(ユーザーの返信4回)は締めずに1問ずつ聞いた
     assert checks["branch_within_3"] is None  # 相談のシナリオでは「3ターン以内に分岐」を測らない
-    assert all(len([b for b in r["bubbles"] if "?" in b or "?" in b]) == 1 for r in turns[:7])  # 毎ターン1問
-    assert checks["outcomes"] == ["propose"] and turns[7]["cards"]
+    assert all(len([b for b in r["bubbles"] if "?" in b or "?" in b]) == 1 for r in turns[:5])  # 毎ターン1問
+    # 区分の1問・目的・条件・求人を見るか、の4問目で求人を見るかを聞いた
+    assert checks["consult_questions"] == {"start": 2, "asked": [2, 3, 4], "offer": 5, "offer_at": 4}
+    assert checks["outcomes"] == ["propose"] and turns[5]["cards"]
 
     # 相談で話したことがプロフィールに残り、提案の条件にそのまま使われた(言い直し・聞き直しなし)
     assert stated(tmp_path, uid) == {"purpose": "働く経験を積みたい", "wants": "人と話す接客", "experience": "未経験",
                                      "time_band": "夕方", "area": "池袋", "days_per_week": "週3日"}
-    rec = next(t for t in turns[7]["tools"] if t["name"] == "recommend_jobs")
+    rec = next(t for t in turns[5]["tools"] if t["name"] == "recommend_jobs")
     assert (rec["args"]["area"], rec["args"]["time_band"]) == ("池袋", "夕方")
     # 次の会話では要約の stated_preferences と区分として返る
     summary = again["tools"][0]["result"]
@@ -199,14 +196,14 @@ def test_consult_from_a_sign_of_being_lost_digs_instead_of_listing_job_types(tmp
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),
         switch_and_read(uid, BAITO, "バイトを探したいけど、何から始めればいいか分からない"),
         reply(["アルバイト・パートのお仕事で考えますね。いくつか伺いながら一緒に整理します。",
-               "今回、バイトを探そうと思ったのはなぜですか?"], quick_replies=["それ以外", "今はいい"]),
+               "今回、バイトを探そうと思ったのはなぜですか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {
             "purpose": "生活費の足し", "experience": "コンビニで半年"}}),
         reply(["生活費の足しにしたいのですね。コンビニで半年されていたんですね。",
-               "コンビニの仕事で、楽しかったのはどんな場面でしたか?"], quick_replies=["それ以外", "今はいい"]),
+               "コンビニの仕事で、楽しかったのはどんな場面でしたか?"], quick_replies=[]),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"wants": "お客さんと話すこと"}}),
         reply(["お客さんと話すのが楽しかったのですね。", "例えば、どんな話をしたときに楽しいと感じましたか?"],
-              quick_replies=["常連さんとの世間話", "それ以外", "今はいい"]),
+              quick_replies=["常連さんとの世間話", "今はいい"]),
     ])
     said = [None, "バイトを探したいけど、何から始めればいいか分からない", "生活費の足しに。コンビニで半年やっていました",
             "お客さんと話すのは好き。でも自分に合うのが分からない"]
@@ -240,7 +237,7 @@ def test_consult_only_scenario_ends_on_ima_wa_ii_without_proposing(tmp_path):
         switch_and_read(uid, BAITO, "バイトは未経験です",
                         ("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "未経験"}})),
         reply(["アルバイト・パートのお仕事で考えますね。", "今回、バイトを探そうと思ったきっかけは何ですか?"],
-              quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
         call("record_conversation_outcome", {"line_user_id": uid, "outcome": "consult", "reason": "相談のみ",
                                              "confidence": 0.7}),
         reply(["承知しました。またいつでもご相談ください。"], quick_replies=["求人を探す", "使い方"]),
@@ -264,8 +261,8 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
         reply(["いくつか伺いながら一緒に整理します。", CONFIRM], quick_replies=CONFIRM_REPLIES),
         call("save_user_preferences", {"line_user_id": uid, "preferences": {"experience": "居酒屋のホールを1年"}}),
         reply(["居酒屋のホールを1年されていたんですね。", "今回、お仕事を探そうと思ったきっかけは何ですか?"],
-              quick_replies=["それ以外", "今はいい"]),
-        reply(["承知しました。", "どのエリアで探しますか?"], quick_replies=["それ以外", "今はいい"]),
+              quick_replies=[]),
+        reply(["承知しました。", "どのエリアで探しますか?"], quick_replies=[]),
         calls(("save_user_preferences", {"line_user_id": uid, "preferences": {"area": "渋谷"}}),
               ("recommend_jobs", {"line_user_id": uid, "area": "渋谷", "job_type": "飲食ホール",
                                   "keywords": "居酒屋 ホール"}),
@@ -284,7 +281,7 @@ def test_consult_switch_scenario_proposes_right_away_on_show_me_jobs(tmp_path):
 # ----------------------------- 判定が悪い振る舞いを捕まえる -----------------------------
 
 
-def turn(bubbles, tools=(), cards=(), quick_replies=("今はいい",)):
+def turn(bubbles, tools=(), cards=(), quick_replies=("答えの候補", "今はいい")):
     return {"bubbles": list(bubbles), "quick_replies": list(quick_replies), "cards": list(cards), "buttons": [],
             "tools": [{"name": n, "args": a, "result": {}} for n, a in tools], "unknown_job_ids": []}
 
@@ -411,7 +408,7 @@ def test_job_type_options_from_what_the_person_said_are_not_generic():
     said = [None, "まず相談する", "カフェと、スーパーで働いたことがあります"]
     turns = [turn(["どうしますか?"], quick_replies=MENU), turn(["経験はありますか?"], [READ]),
              turn(["カフェとスーパーのご経験から考えると、どちらに近いお仕事がよいですか?"],
-                  quick_replies=["カフェ", "スーパー・販売", "それ以外", "今はいい"])]
+                  quick_replies=["カフェ", "スーパー・販売", "今はいい"])]
     assert conversation_checks(CONSULT, turns, said)["violations"] == []
     # 本人が言っていない職種を並べると一般論の候補(v1 で PM の経歴の人に事務・コールセンター・イベントを出した)
     turns[2]["quick_replies"] = ["オフィス事務", "コールセンター", "イベントスタッフ", "今はいい"]
@@ -419,5 +416,5 @@ def test_job_type_options_from_what_the_person_said_are_not_generic():
     assert v == [("T3: 本人の発言にも履歴書にも無い職種を選択肢に並べた(一般論の候補): "
                   "['イベントスタッフ', 'オフィス事務', 'コールセンター']")]
     # 職種の名前が別の語の一部(「法人営業」「営業時間」)なら、職種を挙げたことにならない
-    turns[2]["quick_replies"] = ["法人営業の経験を活かす", "営業時間が短い職場", "それ以外", "今はいい"]
+    turns[2]["quick_replies"] = ["法人営業の経験を活かす", "営業時間が短い職場", "今はいい"]
     assert conversation_checks(CONSULT, turns, said)["violations"] == []

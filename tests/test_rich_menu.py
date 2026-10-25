@@ -81,7 +81,10 @@ def test_menu_has_the_four_entries_and_opens_the_same_liff_pages_as_the_talk_but
     body = rm.menu_body(rm.items())
     assert body["size"] == {"width": 2500, "height": 843} and body["selected"] is True and body["name"] == rm.NAME
     actions = [a["action"] for a in body["areas"]]
-    assert [a.get("label") for a in actions] == ["音声で相談", "履歴書を読み込む", "ゲームで書類を作る", "求人を探す"]
+    # トークのボタンと同じ文言で、絵文字が無い(task 231)
+    assert [a.get("label") for a in actions] == ["音声で相談する", "履歴書を読み込む", "ゲームで書類を作る", "求人を探す"]
+    assert [a.get("label") for a in actions[:3]] == [line_channel.LIFF_ACTIONS["voice_consult"][0],
+                                                    line_channel.LIFF_ACTIONS["resume_upload"][0], line_channel.ARCADE_LABEL]
     # トークのボタン(line_channel.to_messages の LIFF_ACTIONS と、ゲームの liff_url_of)と同じ URL
     assert [a.get("uri") for a in actions[:3]] == [
         line_channel.liff_page_url(line_channel.LIFF_ACTIONS["voice_consult"][1]),

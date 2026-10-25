@@ -222,7 +222,7 @@ class CareerAgent(BaseChatModel):
             msg = call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb")
         elif "転職" in text:  # 経歴の要る場面で、履歴書の操作を出す
             msg = reply(["正社員のお仕事で考えますね。職務経歴書があれば、読み込むと早いです。", "なぜ今、転職を考えているのですか?"],
-                        quick_replies=["文字で話す", "今はいい"], actions=["resume_upload"])
+                        quick_replies=["新しい企画をしたい", "今はいい"], actions=["resume_upload"])
         else:
             msg = reply(["正社員のお仕事で考えますね。なぜ今、転職を考えているのですか?"], quick_replies=["今はいい"])
         return ChatResult(generations=[ChatGeneration(message=msg)])
@@ -584,8 +584,9 @@ def test_depth_is_counted_only_on_consult_and_persona_scenarios():
     for case in ("B-exit", "pii", "F-follow-new", "R-revisit", "Q-job-question"):
         assert set(depth_of(case, j).values()) == {None}, case
     measured = {sc["id"] for sc in SCENARIOS.values() if sc.get("measure_depth")}
-    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime", "T-side-job",
-                        "T-student-first", "T-blank-parent", "T-switch-to-fulltime"}
+    # T-side-job と T-blank-parent は相談に入れないので測らない(task 225)
+    assert measured == {"C-consult-propose", "C-consult-only", "C-consult-switch", "T-career-fulltime",
+                        "T-student-first", "T-switch-to-fulltime"}
 
 
 def test_keyword_trace_is_split_per_conversation(tmp_path, monkeypatch):

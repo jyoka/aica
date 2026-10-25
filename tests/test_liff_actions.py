@@ -62,7 +62,7 @@ def test_line_offers_liff_buttons_instead_of_refusing_right_after_recommending(t
 
     def propose(messages):
         systems.append(messages[0].content)
-        return reply(PROPOSE, quick_replies=["文字で話す", "今はいい"], actions=ACTIONS)
+        return reply(PROPOSE, quick_replies=["接客", "事務", "今はいい"], actions=ACTIONS)
 
     _no_liff(monkeypatch)  # 前の名前(LINE_LOGIN_CHANNEL_ID)のチャネル ID でも LIFF を使う
     server, fake = _server(tmp_path, monkeypatch, Greeter(script=[propose]),
@@ -77,11 +77,18 @@ def test_line_offers_liff_buttons_instead_of_refusing_right_after_recommending(t
     assert texts == PROPOSE  # 勧めた本文の後に、断りの文が続かない
     assert not any("LINE ではまだ" in t or "使えません" in t or "受け取れません" in t for t in texts)
     (flex,) = [m for m in body["messages"] if m["type"] == "flex"]
+    assert _heading(flex) is None  # 経験の問いの答えは文字の選択肢なので、ボタンの見出しにしない(見出しは初回訪問の挨拶だけ。task 231)
     uris = [b["action"]["uri"] for b in flex["contents"]["body"]["contents"]]
     assert uris == [f"https://liff.line.me/{LIFF_ID}/resume/upload", f"https://liff.line.me/{LIFF_ID}/voice"]
     (system,) = systems
     assert "# 窓口" in system and "LINE のトーク" in system  # エージェントに今の窓口が伝わっている
 
+
+
+def _heading(flex: dict) -> str | None:
+    """ボタンの箱の見出し(header の文)。無ければ None。"""
+    header = flex["contents"].get("header")
+    return header["contents"][0]["text"] if header else None
 
 
 def _no_liff(monkeypatch) -> None:
@@ -96,7 +103,7 @@ def test_without_liff_the_agent_is_told_line_cannot_take_files_or_voice_and_the_
 
     def answer(messages):
         systems.append(messages[0].content)
-        return reply(["これまでのお仕事を教えてください。"], quick_replies=["文字で話す", "今はいい"], actions=ACTIONS)
+        return reply(["これまでのお仕事を教えてください。"], quick_replies=["接客", "事務", "今はいい"], actions=ACTIONS)
 
     _no_liff(monkeypatch)
     server, fake = _server(tmp_path, monkeypatch, Greeter(script=[answer, answer]), AICA_ID_KEY=ID_KEY)
@@ -137,12 +144,106 @@ def test_line_buttons_follow_what_liff_can_open(monkeypatch):
     links = [(b["action"]["label"], b["action"]["uri"]) for b in flex["contents"]["body"]["contents"]]
     assert links == [("ゲームで書類を作る", f"https://liff.line.me/{LIFF_ID}/arcade"),
                      ("応募の続き", f"https://liff.line.me/{LIFF_ID}/apply?job=a001"),
-                     ("📄 履歴書・職務経歴書を送る", f"https://liff.line.me/{LIFF_ID}/resume/upload")]
+                     ("履歴書を読み込む", f"https://liff.line.me/{LIFF_ID}/resume/upload")]
     assert "quickReply" in msgs[-1]
     for k, v in LIVEKIT_ENV.items():
         monkeypatch.setenv(k, v)
     assert line_channel.liff_features() == ("resume_upload", "voice_consult", "arcade")
     assert [m["type"] for m in to_messages(r, "")] == ["text", "flex"]  # 断りの文は無い
+
+
+# 初回訪問の挨拶(task 231)。本文は dip の Prompt(entries.json の visit)の例と同じ言い方
+GREETING = ["お仕事探しの相談と、求人のご提案をします。下の「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」も使えます。",
+            "ゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?"]
+
+
+def _liff_on(monkeypatch, voice: bool = True) -> None:
+    _no_liff(monkeypatch)
+    monkeypatch.setenv("LINE_LIFF_ID", LIFF_ID)
+    monkeypatch.setenv("LINE_LIFF_CHANNEL_ID", CHANNEL)
+    for k, v in (LIVEKIT_ENV if voice else {}).items():
+        monkeypatch.setenv(k, v)
+
+
+def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_the_buttons(monkeypatch):
+    """初回の挨拶は LINE で 2 通: 本文と、問いを見出しにした入口のボタン(LINE のボタンのテンプレートと同じ形)。
+    問いは通知とトークの一覧にも出る(altText)。文字の選択肢は、ボタンのメッセージのクイックリプライ。"""
+    _liff_on(monkeypatch)
+    r = {"entry": "visit", "bubbles": GREETING, "actions": ["voice_consult", "resume_upload"], "quick_replies": ["求人を探す", "まず相談する", "今はいい"],
+         "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}], "cards": []}
+    msgs = to_messages(r, "", visit_greeting=True)
+    assert [m["type"] for m in msgs] == ["text", "flex"]
+    assert msgs[0]["text"] == GREETING[0] and "quickReply" not in msgs[0]
+    flex = msgs[1]
+    assert _heading(flex) == GREETING[1] and flex["altText"] == GREETING[1]
+    assert [b["action"]["label"] for b in flex["contents"]["body"]["contents"]] == [
+        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+    assert [i["action"]["label"] for i in flex["quickReply"]["items"]] == ["求人を探す", "まず相談する", "今はいい"]
+    # 前の挨拶(本文、問い、見出しの無いボタンの箱の 3 通)と同じ返信も、いまは 2 通になる
+    old = r | {"bubbles": ["お仕事探しの相談や求人のご提案ができます。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。",
+                           "どれから始めますか？"]}
+    assert len(to_messages(old, "", visit_greeting=True)) == 2
+    # 挨拶のターンかどうかは呼び出し元が決める。会話の入口(entry)が visit でも、挨拶のターンでなければ見出しにしない
+    assert [m["type"] for m in to_messages(r, "")] == ["text", "text", "flex"]
+
+
+def test_the_heading_is_only_used_when_it_keeps_the_order_and_a_plain_bubble(monkeypatch):
+    """見出しにするのは、初回訪問の挨拶のターンで、ボタンがあり、求人が無く、吹き出しが 2 つ以上のときの最後の吹き出しだけ。
+    吹き出しが 1 つなら、本文の吹き出しをそのまま残す(ボタンだけのメッセージにしない)。求人があれば、問いを求人の後ろへ動かさない。"""
+    _liff_on(monkeypatch)
+    one = {"entry": "visit", "bubbles": ["遊びながら書類を作れます。"], "buttons": [{"label": line_channel.ARCADE_LABEL, "url": "/liff/arcade"}]}
+    msgs = to_messages(one, "", visit_greeting=True)
+    assert [m["type"] for m in msgs] == ["text", "flex"] and _heading(msgs[1]) is None
+    assert msgs[1]["altText"] == "リンク: ゲームで書類を作る"
+    card = {"job_id": "a001", "title": "カフェ", "employer": "店", "reasons": ["近い"]}
+    with_cards = {"entry": "visit", "bubbles": ["3件あります。", "気になるものはありますか?"], "cards": [card],
+                  "buttons": [{"label": "応募の続き", "url": "/liff/apply?job=a001"}]}
+    assert [m.get("text") for m in to_messages(with_cards, "", visit_greeting=True)][:2] == ["3件あります。", "気になるものはありますか?"]
+    joined = {"bubbles": ["読み取りました。", "希望の勤務地はどこですか?"],
+              "buttons": [{"label": "読み取り結果を見る", "url": "/liff/resume?rid=0"}]}
+    msgs = to_messages(joined, "")  # 2 つの返信をつないだもの(server._joined。履歴書の続きのターン)は見出しにしない
+    assert [m["type"] for m in msgs] == ["text", "text", "flex"] and _heading(msgs[-1]) is None
+    no_links = {"bubbles": ["一つ目。", "二つ目?"]}
+    assert [m["text"] for m in to_messages(no_links, "")] == ["一つ目。", "二つ目?"]
+
+
+def test_the_revisit_greeting_keeps_the_question_out_of_the_button_heading(monkeypatch):
+    """再訪の挨拶(Prompt の「再訪の挨拶の並び」の例そのまま)は見出しにしない。確認の1問は「はい」で答える問いなので、
+    答えではない「履歴書を読み込む」のボタンの見出しにすると、問いと答えがずれ、勧めの文がボタンから離れる。"""
+    _liff_on(monkeypatch)
+    r = {"entry": "revisit", "bubbles": ["おかえりなさい。履歴書を読み込むと、経歴を一から書かずに探せます。",
+                                         "前回はアルバイトで探していましたが、最近見ていたカフェのお仕事で探しますか?"],
+         "actions": ["resume_upload"], "quick_replies": ["はい", "ほかの条件で探す", "今はいい"], "buttons": [], "cards": []}
+    msgs = to_messages(r, "")
+    assert [m["type"] for m in msgs] == ["text", "text", "flex"]
+    assert [m["text"] for m in msgs[:2]] == r["bubbles"]
+    assert _heading(msgs[2]) is None and msgs[2]["altText"] == "リンク: 履歴書を読み込む"
+    assert [i["action"]["label"] for i in msgs[2]["quickReply"]["items"]] == ["はい", "ほかの条件で探す", "今はいい"]
+
+
+def test_line_buttons_have_no_emoji_and_use_the_greetings_words():
+    """D3: LINE のボタンに絵文字を付けない。ボタンの文言は、挨拶の本文(dip の Prompt の例)と同じ言い方。
+    評価の模擬ユーザーにも、LINE ではその文言で見せる(evals.run の ACTION_LABEL)。「文字で話す」の選択肢は Prompt から無くした。"""
+    from dip_mcp.server import baitoru_assistant
+    from evals.checks import EMOJI
+    from evals.run import ACTION_LABEL, _format_agent
+
+    labels = [line_channel.LIFF_ACTIONS["voice_consult"][0], line_channel.LIFF_ACTIONS["resume_upload"][0],
+              line_channel.ARCADE_LABEL]
+    assert labels == ["音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]
+    assert not any(EMOJI.search(x) for x in labels)
+    visit = baitoru_assistant("visit")
+    assert "「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」" in visit  # 本文の例とボタンの名前の決まり
+    assert "Web のトーク画面は「話して伝える」「ファイルを選ぶ」「ゲームで書類を作る」" in visit  # Web は画面のボタンの名前
+    assert f'{{"label": "{line_channel.ARCADE_LABEL}", "url": arcade_url}}' in visit  # ゲームのボタンの文言
+    assert "遊びながら履歴書や職務経歴書の下書きを作れます" in visit  # ゲームが何をするものか
+    assert all(lb in "".join(GREETING) for lb in labels)
+    assert "「文字で話す」と「今はいい」" not in visit and "「文字で話す」のような選択肢は付けない" in visit
+    assert ACTION_LABEL["line"] == {"resume_upload": "履歴書を読み込む", "voice_consult": "音声で相談する"}
+    r = {"bubbles": ["どうぞ"], "cards": [], "buttons": [], "actions": ["voice_consult"], "quick_replies": []}
+    assert _format_agent(r, "line") == "どうぞ\n[操作] 音声で相談する"
+    assert _format_agent(r) == "どうぞ\n[操作] 話して伝える(音声・約5分)"  # Web はトーク画面の文言のまま
+    assert EMOJI.search("🎤 音声で相談する(約5分)") and EMOJI.search("📄 履歴書") and not EMOJI.search("今はいい")
 
 
 def test_the_new_channel_id_name_wins_and_the_old_one_still_works(monkeypatch):
@@ -279,6 +380,8 @@ def test_a_resume_read_in_liff_continues_the_users_line_talk(line_liff, tmp_path
     texts = "\n".join(m["text"] for m in push["messages"] if m["type"] == "text")
     assert "履歴書を読み取りました" in texts
     assert "コンビニみほん駅前店での接客のご経験を活かせる仕事で探しますか?" in texts  # エージェントの次の 1 問
+    # 次の 1 問は、確認の「読み取り結果を見る」の見出しにしない(2 つの返信をつないだ push。task 231)
+    assert _heading(push["messages"][-1]) is None
     links = [b["action"] for m in push["messages"] if m["type"] == "flex" for b in m["contents"]["body"]["contents"]]
     assert links[0]["label"] == "読み取り結果を見る" and links[0]["uri"] == d["view_url"]
     assert [i["action"]["text"] for i in push["messages"][-1]["quickReply"]["items"]] == ["はい", "ほかも見たい", "今はいい"]
