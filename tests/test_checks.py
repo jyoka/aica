@@ -791,7 +791,7 @@ def consult_switch(ask: str, last_tools):
     """C-consult-switch の形: 相談 → 経験 → 「求人を見せて」→ ask の1問 → 次のターンで探す。"""
     turns = [GREETING, t(["何から始めるか、一緒に整理しましょう。経験はありますか?"], [READ_PLAYBOOK]),
              t(["きっかけは何ですか?"], [("save_user_preferences", {"preferences": {"experience": "居酒屋のホール"}})]),
-             t([ask], quick_replies=[]),
+             t([ask], quick_replies=["渋谷", "新宿", "今はいい"]),  # 条件の問いには選択肢を付ける(task 233)
              t(["渋谷の3件です。"], last_tools, quick_replies=CLOSE, cards=[{"job_id": "b0101", "reasons": ["渋谷"]}])]
     said = [None, "まず相談する", "居酒屋のホールをしていました", "求人を見せて", "渋谷でお願いします"]
     return turns, said
@@ -803,7 +803,7 @@ def test_show_me_jobs_may_wait_for_the_one_area_question():
     r = conversation_checks(CONSULT_SC, turns, said)
     assert r["violations"] == [] and r["search_arg_violations"] == []
     # エリアの1問でも、答えを受けたターンで探さなければ違反のまま
-    turns[4] = t(["時間帯はどうしますか?"])
+    turns[4] = t(["時間帯はどうしますか?"], quick_replies=["平日の日中", "夕方から", "今はいい"])
     assert "T4: 「求人を見せて」の後に求人を探さなかった" in conversation_checks(CONSULT_SC, turns, said)["violations"]
     # エリアの1問の後に「今はいい」なら、探さずに終えてよい
     turns[4] = t(["承知しました。"], [("record_conversation_outcome", {"outcome": "consult"})], quick_replies=CLOSE)
@@ -830,8 +830,9 @@ def test_prompt_and_playbook_state_the_area_rule():
     prompt = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
     common = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
     assert "最低限の条件はエリア" in prompt and "エリアが無ければエリアだけを1問で聞いてから探す" in prompt
-    assert "エリアと仕事の希望をまとめて1問で聞く" in prompt
-    assert "探す前にエリアを聞く1問(上の「提案」)は、この回数に数えない" in prompt
+    # 「求人を探す」を選んだだけなら、エリアと仕事の希望を1つずつ聞く(条件は1問に1つ。task 233 で、まとめて聞く決まりを直した)
+    assert "エリアと仕事の希望を1つずつ聞く" in prompt and "エリアと仕事の希望をまとめて1問で聞く" not in prompt
+    assert "探す前にエリアと仕事の希望を聞く問い(上の「提案」。1つずつで2問まで)は、この回数に数えない" in prompt
     assert "keywords に本人の言葉で入れる" in prompt
     assert "エリアの1問だけを聞いてから探す" in common and "経験とやりたいことは keywords" in common
 
@@ -854,15 +855,18 @@ def test_show_me_jobs_area_question_must_not_add_other_conditions():
     search = [rec(area="渋谷", keywords="居酒屋 ホール"), ("record_conversation_outcome", {"outcome": "propose"})]
     turns, said = consult_switch("求人を探します。どのエリアで、どんなお仕事を探しますか?", search)
     v = conversation_checks(CONSULT_SC, turns, said)["violations"]
-    assert v == ["T4: 「求人を見せて」の後に、エリアのほかの条件(job_type)も聞いた"]
-    turns[3] = t(["どのエリアで、何時ごろ働きたいですか?"])
+    assert v == ["T4: 1つの問いで条件を2つ聞いた(area・job_type。条件は1問に1つ)",
+                 "T4: 「求人を見せて」の後に、エリアのほかの条件(job_type)も聞いた"]
+    turns[3] = t(["どのエリアで、何時ごろ働きたいですか?"], quick_replies=["渋谷", "今はいい"])
     v = conversation_checks(CONSULT_SC, turns, said)["violations"]
-    assert v == ["T4: 「求人を見せて」の後に、エリアのほかの条件(time_band)も聞いた"]
-    # 「求人を探す」を選んだだけ(「求人を見せて」ではない)なら、まとめて聞いてよい
+    assert v == ["T4: 1つの問いで条件を2つ聞いた(area・time_band。条件は1問に1つ)",
+                 "T4: 「求人を見せて」の後に、エリアのほかの条件(time_band)も聞いた"]
+    # 「求人を探す」を選んだだけ(「求人を見せて」ではない)でも、エリアと仕事の希望は1つずつ聞く(task 233。前はまとめてよかった)
     turns, said = follow_new([rec(area="渋谷", job_type="カフェ")], "渋谷のカフェで")
-    turns[1] = t(["どのエリアで、どんなお仕事を探しますか?"])
+    turns[1] = t(["どのエリアで、どんなお仕事を探しますか?"], quick_replies=["渋谷", "新宿", "今はいい"])
     sc = {"expect_outcome": ["propose"]}
-    assert conversation_checks(sc, turns[:2] + turns[3:], said[:2] + said[3:])["violations"] == []
+    assert conversation_checks(sc, turns[:2] + turns[3:], said[:2] + said[3:])["violations"] == [
+        "T2: 1つの問いで条件を2つ聞いた(area・job_type。条件は1問に1つ)"]
 
 
 # ----------------------------- お礼つきの「考えます」で締める(task 223 の D1) -----------------------------
