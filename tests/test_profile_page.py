@@ -860,17 +860,18 @@ def test_profile_screen_in_the_browser(remembered, browser, served_profile):  # 
     page.get_by_text("エリアは渋谷で探しますね。").wait_for()
     assert "生活費" not in page.locator("#log .row.bot").last.inner_text()
 
-    # すべて消す: 説明と確認に、応募を含めて消えるものと、消えないもの(その日の利用回数)が出る。
+    # すべて消す: 説明と確認に、応募を含めて消えるものと、消えないもの(その日の利用回数、番号を外した費用の記録)が出る。
     # 確認の1段を挟み、やめれば何も消えない
     page.locator("#nav button[data-view=profile]").click()
     forget = prof.locator('.prow[data-key="forget"]')
     forget.wait_for()
     what = "aica が覚えていること・保存した求人・応募・これまでの会話"
+    kept = "その日の利用回数は消えません。費用の記録は、あなたを見分ける番号を外して残ります。"
     assert prof.locator(".pcard.danger .pnote").inner_text() == \
-        f"{what}をすべて消します。その日の利用回数は消えません。次に開くと、はじめての訪問として始まります。"
+        f"{what}をすべて消します。{kept}次に開くと、はじめての訪問として始まります。"
     forget.locator("button.del").click()
     assert forget.locator(".pconfirm span").inner_text() == \
-        f"本当にすべて消しますか?{what}が消え、元に戻せません。その日の利用回数は消えません。"
+        f"本当にすべて消しますか?{what}が消え、元に戻せません。{kept}"
     forget.locator(".pconfirm button", has_text="やめる").click()
     assert logic.stated_preferences(remembered.state.user(uid))
     forget.locator("button.del").click()
