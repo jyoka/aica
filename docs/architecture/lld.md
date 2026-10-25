@@ -11,6 +11,7 @@
 - LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
 - dip のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
 - LINE のアカウント連携(4.12、5.9、`accounts.py`、`fake_line.py`)は task 182 で足しました
+- レジュメ・アーケードの画面(1.1 の `static/arcade/`、3.1 の口、4.10 の終わり、10 章の node のテスト)は task 187 で足しました
 
 ## 1. パッケージの構成
 
@@ -96,6 +97,7 @@ flowchart TB
 | `llm.py` | 模擬ユーザーとジャッジが SDK を直接呼ぶところの、プロバイダの違いの吸収 | `client`、`parse`、`text` |
 | `config.py` | 設定と `.env` の読み込み | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
 | `static/` | 画面。`talk.html`(トーク画面)、`dev.html`(開発者画面)、共通部品 `talk-core.js`、`talk-core.css` | - |
+| `static/arcade/` | レジュメ・アーケード(4.10 の終わり)。ハブ `resume-arcade.html`、8 本のゲーム `<game>.html`、日本語の答えの判定の共通部品 `arcade-ja.js` | - |
 
 ```mermaid
 classDiagram
@@ -386,6 +388,9 @@ flowchart LR
 |---|---|---|---|---|
 | `GET /`、`GET /dev` | `index`、`dev` | Cookie を発行する(`_issue`) | - | Cookie |
 | `GET /static/{name}` | `shared_static` | - | - | -(`talk-core.js`、`talk-core.css` だけ) |
+| `GET /static/arcade/{name}` | `arcade_static` | - | - | -(`arcade-ja.js` だけ。`ARCADE_STATIC`) |
+| `GET /liff/arcade` | `liff_arcade` | -(Cookie を発行も要求もしない) | - | -(ハブ) |
+| `GET /liff/arcade/{game}` | `liff_arcade_game` | -(同上) | - | -(ゲーム。`ARCADE_GAMES` に無い名前は 404) |
 | `GET /api/me` | `me` | Cookie | - | - |
 | `POST /api/talk/open` | `talk_open` | Cookie | - | 挨拶が保存されているのに記録が無ければ `record_talk_open` で補う |
 | `GET /api/talk/history` | `talk_history` | Cookie | - | - |
@@ -993,6 +998,26 @@ sequenceDiagram
   ほかに駅、おすすめの理由、「詳しく見る」「保存」を出します。LIFF のボタンを押すと応募フォームの LIFF 画面(モック)が開き、送信すると応募済みになります
 - 右: 構成図と、このターンの処理の流れ(HLD の 4.1)です。構成図の動いている部分を光らせます
 - 音声相談の結果は、左の「本人の希望」「会話の結果」(画面の見出し)にも出ます
+
+レジュメ・アーケード(`/liff/arcade`。決めたことは [PRD](../prd/resume-arcade.md)):
+
+- ファイルは `line_runtime/static/arcade/` にあります。元は claude.ai の Artifact(doctype、html、head、body が無い形)で、
+  aica では普通の HTML(`<!doctype html>`、`lang="ja"`、charset、viewport)にしました。`window.claude` は使いません
+- どのゲームも簡易分析だけで動き、「オフライン：AIを使わない簡易分析」と出します。ダウンロードのボタンは外し、「Markdownでコピー」を残しました
+- ハブ(`resume-arcade.html`)は、`GAMES` のうち `shipped` の 2 本(`the-case-of-you`、`harvest-of-work`)だけを `/liff/arcade/<slug>` のリンクで出します。
+  サーバーの `ARCADE_SHIPPED` と同じ 2 本です。残りの 6 本は開発者画面の左の「レジュメ・アーケード」からだけ開けます
+- 共通部品 `arcade-ja.js` は DOM を使わず、ブラウザでは `window.ArcadeJa`、node では `require()` で読みます。中身は
+  `clean`(NFKC)、`findMetric`(範囲、単位つきの数、漢数字、順位。年と日付は数えない。`bareNumbers: false` で単位の無い数を数えない)、
+  `isVague`(日本語は字数、英語は語の数。数字が要るかは `metric` で選ぶ)、`sentences`(「。」で分ける)、`trimTo`、
+  `plainEnding` と `plainLine`(です・ます調を言い切りに)、数字の空欄(`PLACEHOLDER` など)、`resumeMarkdown`(職務経歴書の Markdown)です。
+  ゲームの中身(証人、台詞、強みの分け方)はゲームの側に残します。あなたという事件と仕事の収穫だけが使い、残りの 6 本は自分の写しを持ったままです
+- 氏名と連絡先の欄はありません。`resumeMarkdown` は、いつも `# [氏名]` と `[メール] · [電話] · [居住地] · [リンク]` で始めます
+- あなたという事件: ライバル(弱み)は「任意」です。進み具合はライバル以外の証人で数え、各職場で書類の行が 2 行になったら、
+  「次にやること」と「次の証人」のボタンは「事件を閉じる」を案内します(`nextWitness`)
+- 仕事の収穫: 案内の部品を足しました。「次にやること」(`nextAction`。ボタンで歩いて、その場所の話を始める)、進み具合(`farmStats`。
+  具体的な答えが 1 つある思い出を書類の 1 行と数え、目安は各職場 2 行)、「聞かれていること」(`PLAIN_ASK`)、答えを書いている間のチェックと
+  1 行の見本(`answerChecks`、`previewLine`)、いつでも開ける「下書き」です
+- 答えと進み具合は、そのブラウザの localStorage にだけ残ります(あなたという事件は `theCaseOfYou.v1.*`。仕事の収穫は見本の人物では残さない)
 
 ### 4.11 LINE のトーク(`POST /line/webhook`)
 
@@ -1726,6 +1751,9 @@ python3 -m unittest discover -s evalkit  # evalkit
   LiveKit の `AgentSession` の中でも確かめます(`tests/test_voice_track.py`)。LiveKit Cloud、STT、TTS は使いません
 - LINE の API は `server.line_api` を差し替え、`httpx.MockTransport` の偽物の LINE API で受けます(`tests/test_line_webhook.py` の `FakeLine`)
 - 意味検索は `embedding._api_embed` を差し替えるか、`fixtures/search_query_vectors.json` の保存済みのベクトルを使います
+- レジュメ・アーケードの共通部品 `arcade-ja.js` は、node の標準のテスト(`tests/js/arcade-ja.test.js`、何もインストールしない)で確かめます。
+  pytest の `tests/test_arcade.py` がこれを呼び、node が無ければ飛ばします。直接回すときは `node --test tests/js/arcade-ja.test.js` です。
+  同じファイルが、2 本のゲームを見本の人物で 390px の幅で最後まで遊ぶ画面のテスト(Playwright)も持ちます
 
 ### 評価(実 API を使う、費用がかかる)
 
