@@ -210,7 +210,7 @@ class FakeRuntime:
         self.fail = fail
 
     async def handle_stream(self, user_id, event, text=None, facts=None, talk_thread=None, notice=None,
-                            new_conversation=False):
+                            new_conversation=False, channel="web", features=()):
         yield {"kind": "llm", "ms": 1, "tool_calls": []}
         if self.fail is not None:
             raise self.fail

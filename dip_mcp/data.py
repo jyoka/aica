@@ -26,8 +26,8 @@ FIXTURES = ROOT / "fixtures"
 JST = timezone(timedelta(hours=9))
 SIM_NOW = datetime.fromisoformat(os.environ.get("SIM_NOW", "2026-09-23T12:00:00+09:00"))
 
-# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)。値に含まれる電話番号・メールアドレスの決まりは
-# resume_draft/pii.py(has_pii / redact_pii)
+# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)。値に含まれる電話番号・メールアドレス・住所の決まりは
+# resume_draft/pii.py(personal_value / redact_personal)
 PII_FIELDS = {"電話番号", "氏名", "住所", "メールアドレス", "生年月日"}
 # 雇用区分(ADR-0002)。求人には「未定」は付かない(未定は求職者の側の状態)
 EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
