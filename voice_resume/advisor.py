@@ -98,6 +98,7 @@ class ResumeAdvisor(Agent):
         self._finalize_reply: str | None = None  # finalize 済みなら2回目はこれを返す(副作用なし)
         self.summary: str | None = None  # 相談のまとめ(finalize_interview で受け取り、dip に記録する)
         self.forgotten = False  # 面談の途中で本人が「すべて消す」をした(トークが結果を受け取らなかった)
+        self.web_searches = 0  # この相談で web を調べた回数(config.MAX_WEB_SEARCHES まで)
         # 全国・東京の平均時給の参考データ(会話のたびには調べない)
         self._wage_reference = wage_reference if wage_reference is not None else load_reference()
 
@@ -431,8 +432,7 @@ class ResumeAdvisor(Agent):
             query: 調べることを日本語で短く(例: コンビニバイト 仕事内容 未経験)。
                 氏名・住所・電話番号など本人の個人情報は入れない。
         """
-        async with self._working("🌐 調べています…"):
-            return _spoken(await self._search(f"調べること: {query}"))
+        return await self._research("🌐 調べています…", f"調べること: {query}")
 
     @function_tool
     async def wage_average(self, area: str | None = None, job_type: str | None = None) -> str:
@@ -448,11 +448,11 @@ class ResumeAdvisor(Agent):
         if not job_type and (answer := answer_from_reference(self._wage_reference, area)):
             return _spoken(answer)
         what = f"{job_type}の" if job_type else ""
-        async with self._working("🌐 平均時給を調べています…"):
-            return _spoken(await self._search(
-                f"調べること: {area or '全国'}の、{what}アルバイト・パートの平均時給。"
-                "できるだけ新しい調査の数字を、調査の名前と時期を添えて伝えてください。"
-            ))
+        return await self._research(
+            "🌐 平均時給を調べています…",
+            f"調べること: {area or '全国'}の、{what}アルバイト・パートの平均時給。"
+            "できるだけ新しい調査の数字を、調査の名前と時期を添えて伝えてください。",
+        )
 
     @function_tool
     async def research_company(self, name: str, hint: str | None = None) -> str:
@@ -464,12 +464,12 @@ class ResumeAdvisor(Agent):
             name: 会社名かお店の名前(本人や求人に出た呼び方のまま)
             hint: 同じ名前の別の会社と区別するための手がかり(例: 中野のコンビニ、カフェチェーン)
         """
-        async with self._working(f"🏢 {name}のことを調べています…"):
-            return _spoken(await self._search(
-                f"調べる会社・お店: {name}" + (f"(手がかり: {hint})" if hint else "") + "\n"
-                "アルバイトとして働くかを考えている人向けに、事業の内容と規模、働く人の評判の傾向、気をつける点を伝えてください。"
-                "同じ名前の会社が複数あって特定できないとき、見つからないときは、推測で埋めずにそう書き、情報源は添えないでください。"
-            ))
+        return await self._research(
+            f"🏢 {name}のことを調べています…",
+            f"調べる会社・お店: {name}" + (f"(手がかり: {hint})" if hint else "") + "\n"
+            "アルバイトとして働くかを考えている人向けに、事業の内容と規模、働く人の評判の傾向、気をつける点を伝えてください。"
+            "同じ名前の会社が複数あって特定できないとき、見つからないときは、推測で埋めずにそう書き、情報源は添えないでください。",
+        )
 
     @function_tool
     async def finalize_interview(self, summary: str | None = None) -> str:
@@ -722,6 +722,19 @@ class ResumeAdvisor(Agent):
             "「探してもよいですか?」のような許可の確認はしないこと。選ばれたら、その条件名を "
             "これまでの relax に足して propose_jobs をもう一度呼ぶ(希望の引数と exclude_ids は変えない)。"
         )
+
+    async def _research(self, label: str, subject: str) -> str:
+        """web で調べて読み上げ用の答えを返す。1 回の相談で config.MAX_WEB_SEARCHES 回まで(費用の上限)。
+
+        上限を超えたら調べず、表示も出さない(一瞬で消える表示を出さない)。失敗した回も 1 回に数える。
+        """
+        if self.web_searches >= config.MAX_WEB_SEARCHES:
+            logger.info("web の調べものは上限(%d 回)に達したので調べません", config.MAX_WEB_SEARCHES)
+            return (f"この相談で web を調べられる回数({config.MAX_WEB_SEARCHES}回)を使い切りました。"
+                    "今回はこれ以上調べられないと短く伝えて、会話の続きに戻ってください(調べもののツールはもう呼ばない)。")
+        self.web_searches += 1
+        async with self._working(label):
+            return _spoken(await self._search(subject))
 
     async def _search(self, subject: str) -> str | None:
         """web_search で調べて、話し言葉の短い答えを返す。失敗したら None(会話は止めない)。"""
