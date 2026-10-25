@@ -1,0 +1,16 @@
+# image に入れないもの。API キー(.env)と、手元の会話・状態(data/)は特に入れない
+.git
+.venv
+.env
+.env.*
+data/
+tests/
+docs/
+evals/results/
+voice_resume/results/
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.DS_Store
+.task-report.md

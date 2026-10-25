@@ -320,6 +320,76 @@ def test_spoofed_forwarded_for_is_ignored_unless_the_proxy_is_trusted(tmp_path, 
         assert model.calls == 3 and quota.ip_used("testclient") == 0
 
 
+# README の「LINE で試す」: cloudflared が同じ機械から 127.0.0.1:8030 へつなぐので、トンネル越しの Web 利用者の接続元は全員これ
+TUNNEL_PEER = ("127.0.0.1", 50000)
+# その手順で .env に書く鍵(ダミー値)。load_env より先に入れておくので、本物の .env の値は入らない
+TUNNEL_ENV = {"LINE_CHANNEL_SECRET": "offline-test-secret", "LINE_CHANNEL_ACCESS_TOKEN": "offline-test-token",
+              "AICA_ID_KEY": "offline-test-id-key-" + "0" * 32, "AICA_PUBLIC_URL": "https://aica.example.test",
+              "AICA_INTERNAL_KEY": "offline-test-internal-key", **LIVEKIT}
+
+
+def _tunnel_server(tmp_path, monkeypatch, **env: str):
+    """トンネルの後ろの Web サーバー。本物の .env と data/ は読まない(.env の場所を tmp に替え、データも tmp に置く)。"""
+    from line_runtime import config
+
+    monkeypatch.setattr(config, "REPO_ENV", tmp_path / "missing.env")
+    monkeypatch.setenv("LINE_SIM_DATA_DIR", str(tmp_path))
+    return _server(tmp_path, monkeypatch, None, **TUNNEL_ENV, **env)
+
+
+def _via_cloudflare(visitor_ip: str, sent: str | None = None) -> dict:
+    """Cloudflare がトンネルの先へ付けるヘッダー。本人が X-Forwarded-For を送っていれば、その最後に接続元を足す
+    (https://developers.cloudflare.com/fundamentals/reference/http-headers/)。"""
+    return {"CF-Connecting-IP": visitor_ip, "X-Forwarded-For": f"{sent}, {visitor_ip}" if sent else visitor_ip}
+
+
+def _new_visitor_starts(client, headers: dict | None = None):
+    """Cookie の無いブラウザでトーク画面を開き(Cookie が発行される)、ターンを使わずにシナリオを始める。"""
+    client.cookies.clear()
+    assert client.get("/", headers=headers).status_code == 200
+    return client.post("/api/scenarios/F-follow-new/start", headers=headers)
+
+
+def _ip_ids(tmp_path, ip: str) -> int:
+    return len(json.loads((tmp_path / "quota.json").read_text(encoding="utf-8"))["ips"].get(ip, {}))
+
+
+def test_tunnel_without_trust_proxy_puts_every_web_visitor_in_one_ip(tmp_path, monkeypatch):
+    """AICA_TRUST_PROXY なしでトンネルの後ろに置くと、Web の利用者は全員 127.0.0.1 の1つの IP として数えられる。
+    1人が Cookie を分けて20回シナリオを始める(ターンは使わない)と、別の回線の新しい利用者も、その日は 429 になる。"""
+    server, model = _tunnel_server(tmp_path, monkeypatch)
+    from fastapi.testclient import TestClient
+
+    with TestClient(server.app, client=TUNNEL_PEER) as client:
+        for i in range(DEFAULT_IP_IDS):
+            assert _new_visitor_starts(client, _via_cloudflare("198.51.100.1", f"10.0.0.{i}")).status_code == 200
+        assert _ip_ids(tmp_path, "127.0.0.1") == DEFAULT_IP_IDS and model.calls == 0
+        r = _new_visitor_starts(client, _via_cloudflare("203.0.113.5"))  # 別の人の、21人目のブラウザ
+        assert r.status_code == 429 and r.json()["detail"] == IP_LIMIT_MESSAGE
+        uid = client.get("/api/me").json()["user_id"]
+        assert _say(client, uid, _via_cloudflare("203.0.113.5"))["bubbles"] == [IP_LIMIT_MESSAGE] and model.calls == 0
+
+
+def test_tunnel_with_trust_proxy_counts_each_visitor_by_the_ip_cloudflare_appended(tmp_path, monkeypatch):
+    """README の手順どおり AICA_TRUST_PROXY=1 にすると、Cloudflare が X-Forwarded-For の最後に足した接続元で数える。
+    20人分の匿名IDを使い切った回線は止まるが、別の回線の21人目は使える。本人が先頭に書いた値では迂回できない。"""
+    server, model = _tunnel_server(tmp_path, monkeypatch, AICA_TRUST_PROXY="1")
+    from fastapi.testclient import TestClient
+
+    with TestClient(server.app, client=TUNNEL_PEER) as client:
+        for i in range(DEFAULT_IP_IDS):
+            assert _new_visitor_starts(client, _via_cloudflare("198.51.100.1", f"10.0.0.{i}")).status_code == 200
+        r = _new_visitor_starts(client, _via_cloudflare("198.51.100.1", "10.0.0.99"))
+        assert r.status_code == 429 and r.json()["detail"] == IP_LIMIT_MESSAGE
+        assert _ip_ids(tmp_path, "198.51.100.1") == DEFAULT_IP_IDS and _ip_ids(tmp_path, "10.0.0.0") == 0
+        assert _new_visitor_starts(client, _via_cloudflare("203.0.113.5")).status_code == 200  # 21人目(別の回線)
+        uid = client.get("/api/me").json()["user_id"]
+        assert _say(client, uid, _via_cloudflare("203.0.113.5"))["bubbles"] == ["はい、どうぞ。"] and model.calls == 1
+        # 手元のブラウザで http://127.0.0.1:8030 を開く運営者(X-Forwarded-For なし)は、接続元の IP で別に数える
+        assert _new_visitor_starts(client).status_code == 200
+        assert _ip_ids(tmp_path, "127.0.0.1") == 1 and _ip_ids(tmp_path, "203.0.113.5") == 1
+
+
 def test_ip_and_total_limits_come_from_env_and_zero_means_unlimited(monkeypatch):
     for k in QUOTA_ENVS:
         monkeypatch.delenv(k, raising=False)

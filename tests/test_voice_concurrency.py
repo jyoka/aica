@@ -144,9 +144,12 @@ def test_an_unused_room_ends_when_its_token_can_no_longer_join(client, clock):
     """だれも入らなかった部屋は、接続トークンの期限(+余裕)が過ぎたら終わったとみなす(もう入れない)。
     入った部屋は、終わりの知らせが無くても HOLD_MAX が過ぎたら終わったとみなす(ジョブがメモリの上限で止められたなど)。"""
     from line_runtime.voice_rooms import HOLD_MAX, JOIN_WINDOW
+    from voice_resume import agent, config
     from voice_resume.livekit_token import TOKEN_TTL
 
     assert JOIN_WINDOW > TOKEN_TTL and HOLD_MAX > JOIN_WINDOW
+    # ワーカーが相談を締めて閉じるまで(時間の上限 + 締めの返答を 2 回待つ)より長い。短いと相談の途中で 2 つ目を開ける
+    assert HOLD_MAX.total_seconds() > config.MAX_SESSION_MINUTES * 60 + 2 * agent.CLOSING_REPLY_TIMEOUT
     uid = client.get("/api/me").json()["user_id"]
     assert _start(client, uid).status_code == 200
     clock.now += JOIN_WINDOW.total_seconds() - 1
@@ -235,7 +238,11 @@ class FakeSession:
         self.handlers = {}
 
     def on(self, event, cb):
-        self.handlers[event] = cb
+        self.handlers.setdefault(event, []).append(cb)
+
+    def emit(self, event, ev=None):
+        for cb in self.handlers.get(event, []):
+            cb(ev)
 
     async def start(self, **_kwargs):
         FakeSession.started.append(self)
@@ -293,7 +300,7 @@ def test_the_worker_reports_the_room_so_the_person_cannot_open_another(client, c
     clock.now += JOIN_WINDOW.total_seconds() + 1  # トークンの期限が過ぎても、入った部屋は終わっていない
     assert _start(client, uid).status_code == 409
 
-    FakeSession.started[0].handlers["close"](None)  # 本人が抜けてセッションが閉じた
+    FakeSession.started[0].emit("close")  # 本人が抜けてセッションが閉じた
     assert ctx.shutdowns == ["agent session closed"]
 
     async def shutdown():
@@ -318,7 +325,7 @@ def test_the_worker_stops_a_job_for_a_second_room_of_the_same_person(client, fak
     assert ctx.shutdowns and FakeSession.started == [] and ctx.shutdown_callbacks == []
 
 
-def test_report_session_does_not_stop_the_interview_when_the_talk_is_down():
+def test_report_session_does_not_stop_the_interview_when_the_talk_is_down(offline_env):
     """トークへ知らせられなくても、面談は続ける(トークは時間で部屋を終わったとみなす)。"""
     import asyncio
 
@@ -348,7 +355,12 @@ def _captured_worker_options(monkeypatch):
     return opts
 
 
-def test_the_worker_caps_concurrent_jobs_even_in_dev(offline_env, monkeypatch):
+# 既定の 4 と、1 / MAX_JOBS の足し算が丸めで境界を越える値(6, 7 など)。2 の累乗(1, 2, 8)も含める
+MAX_JOBS_CASES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 49]
+
+
+@pytest.mark.parametrize("max_jobs", MAX_JOBS_CASES)
+def test_the_worker_caps_concurrent_jobs_even_in_dev(offline_env, monkeypatch, max_jobs):
     """dev で起動しても、同時に受けるジョブは MAX_JOBS まで(直す前は dev の load_threshold が無限大で、満員を報告しなかった)。
     ジョブのプロセスのメモリにも上限がある(直す前は 0 = 上限なし)。"""
     import math
@@ -357,6 +369,7 @@ def test_the_worker_caps_concurrent_jobs_even_in_dev(offline_env, monkeypatch):
 
     from voice_resume import config
 
+    monkeypatch.setattr(config, "MAX_JOBS", max_jobs)
     opts = _captured_worker_options(monkeypatch)
     for devmode in (True, False):
         threshold = ServerEnvOption.getvalue(opts.load_threshold, devmode)
@@ -370,14 +383,17 @@ def test_the_worker_caps_concurrent_jobs_even_in_dev(offline_env, monkeypatch):
     assert opts.job_memory_limit_mb > 0
 
 
+@pytest.mark.parametrize("max_jobs", MAX_JOBS_CASES)
 @pytest.mark.parametrize("devmode", [True, False])
-def test_the_worker_accepts_up_to_max_jobs_requests_at_once(offline_env, monkeypatch, devmode):
+def test_the_worker_accepts_up_to_max_jobs_requests_at_once(offline_env, monkeypatch, devmode, max_jobs):
     """ジョブがまだ起動していない間(受付中)の依頼も数えて、MAX_JOBS 件までは受け、それを超えたら断る。
-    直す前の版は、dev ではジョブ 0 個 + 受付中 1 件で満員になり、ほぼ同時に来た 2 人目を断っていた。"""
+    直す前の版は、dev ではジョブ 0 個 + 受付中 1 件で満員になり、ほぼ同時に来た 2 人目を断っていた。
+    負荷を 1 / MAX_JOBS で数えていた版は、MAX_JOBS が 6 などのとき、丸めで MAX_JOBS + 1 件目を受けていた。"""
     from livekit.agents.worker import AgentServer
 
     from voice_resume import config
 
+    monkeypatch.setattr(config, "MAX_JOBS", max_jobs)
     opts = _captured_worker_options(monkeypatch)
     jobs = []
     monkeypatch.setattr(AgentServer, "active_jobs", property(lambda self: jobs))
@@ -391,7 +407,6 @@ def test_the_worker_accepts_up_to_max_jobs_requests_at_once(offline_env, monkeyp
         return server._is_available()
 
     m = config.MAX_JOBS
-    assert m >= 2
     for running in range(m):
         for reserved in range(m - running):
             assert available(running, reserved), (running, reserved)  # 合わせて MAX_JOBS 件目までは受ける

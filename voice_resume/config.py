@@ -8,6 +8,7 @@
 - LLM: OpenAI gpt-6-sol(会話・下書き生成とも。line_runtime の既定 OpenAI モデルと同じ)
 - TTS: Cartesia sonic-3.5 の日本語ボイス。速さは標準より少し遅い "slow" が既定
 - ターン判定: Silero VAD + LiveKit turn detector(多言語)。終わり判定は少し待つ
+- 1 回の相談の上限: 長さ 10 分、web の調べもの 5 回
 
 いずれも環境変数で差し替えられる(VOICE_RESUME_*)。
 """
@@ -64,6 +65,13 @@ MAX_ENDPOINTING_DELAY = float(os.environ.get("VOICE_RESUME_MAX_ENDPOINTING_DELAY
 MIN_INTERRUPTION_DURATION = float(os.environ.get("VOICE_RESUME_MIN_INTERRUPTION_DURATION", "0.8"))
 # 誤割り込み(割り込んだのに発話が続かない)から再開するまでの秒数
 FALSE_INTERRUPTION_TIMEOUT = float(os.environ.get("VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT", "1.5"))
+
+# --- 1 回の相談の上限(費用の暴走を防ぐ。セキュリティ監査 run-1 の 4 番、review-2026-10 の R6)---
+# 相談の長さの上限(分)。時間が来たら締めの返答を 1 回作って閉じる(agent.SessionGuard)。
+# 接続トークンの期限(livekit_token.TOKEN_TTL の 5 分)は部屋に入る期限で、相談の長さではない
+MAX_SESSION_MINUTES = float(os.environ.get("VOICE_RESUME_MAX_SESSION_MINUTES", "10"))
+# 1 回の相談で web を調べる回数の上限(web_research / wage_average / research_company の合計)
+MAX_WEB_SEARCHES = int(os.environ.get("VOICE_RESUME_MAX_WEB_SEARCHES", "5"))
 
 # --- トーク・出力先 ---
 # トークのシミュレーター(line_runtime.server)。面談の結果(求人・下書き)をトークへ戻す先

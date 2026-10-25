@@ -34,12 +34,17 @@ LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント�
 accountLink の画面に送る。LINE から accountLink の webhook が来たら、nonce から会員を引いて連携の表に書く(dip_mcp.accounts)。
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
+
+LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID と LINE_LOGIN_CHANNEL_ID があるときだけ、/liff/line/… を開く(無ければ 404)。
+ここは Cookie の匿名ユーザーIDを見ず、LIFF の ID トークンを LINE に確かめてもらった LINE のユーザー(トークと同じ l-…)だけを本人にする
+(POST /api/liff/session が確かめて、署名つきの Cookie aica_liff を返す)。Web のブラウザの /liff/… は今までどおり Cookie の匿名ユーザーID。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import secrets
@@ -65,6 +70,7 @@ from fastapi import (
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
+    JSONResponse,
     RedirectResponse,
     StreamingResponse,
 )
@@ -105,13 +111,19 @@ def _anon(request: Request) -> str | None:
     return v if ANON_ID.fullmatch(v) else None
 
 
+# https で公開するとき(Render など)だけ 1 にする。そのときだけ Cookie に Secure を付ける(http では送り返されなくなるので、
+# 手元の http://127.0.0.1 では付けない)。コンテナの image は 1 にしてある(Dockerfile)。
+SECURE_COOKIE_ENV = "AICA_SECURE_COOKIE"
+
+
 def _issue(request: Request, response: Response) -> str:
     """このブラウザの匿名ユーザーID。無ければ発行して Cookie に保存する(再アクセスで同じ ID になる)。
     発行するのは画面を開いたとき(GET / と GET /dev)だけ。API は発行しない(Cookie が無ければ 401)。"""
     uid = _anon(request)
     if uid is None:
         uid = f"w-{secrets.token_hex(8)}"
-        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True)
+        response.set_cookie(ANON_COOKIE, uid, max_age=ANON_COOKIE_MAX_AGE, samesite="lax", httponly=True,
+                            secure=os.environ.get(SECURE_COOKIE_ENV, "").strip() == "1")
     return uid
 
 
@@ -212,7 +224,7 @@ def talk_continues(conv: dict) -> bool:
 class EventIn(BaseModel):
     user_id: str
     event: str
-    text: str | None = None
+    text: str | None = None  # 長さの上限(turn.MAX_TEXT_CHARS)は turn.accept が確かめる(LINE の発言と共通)
     # 本番のトーク画面が表示している会話の番号(/api/talk/open が返す)。/dev・評価は送らない。
     # 送られたら: 発言は今の会話がこれと同じときだけ受け付ける(違えば stale)/ 挨拶が返ったら開いた記録を残す
     thread: int | None = None
@@ -236,6 +248,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LINE AI assistant simulator", lifespan=lifespan)
+
+
+@app.get("/healthz")
+async def healthz():
+    """ヘルスチェック(Render が数秒ごとに呼ぶ)。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない。"""
+    return {"status": "ok"}
 
 
 @app.get("/")
@@ -263,6 +281,38 @@ async def shared_static(name: str):
     if name not in SHARED_STATIC:
         raise HTTPException(404)
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
+
+
+# レジュメ・アーケード(docs/prd/resume-arcade.md): ドット絵のゲームで職務経歴書を作る LIFF 画面。いまは AI を使わない簡易分析だけで、
+# 本人のデータを読み書きしないので、本人を決めない(Cookie を発行も要求もしない)。ゲームの名前はファイル名と同じ。
+ARCADE = STATIC / "arcade"
+ARCADE_SHIPPED = ("the-case-of-you", "harvest-of-work")  # ハブに出す(案内の部品がそろったもの)
+ARCADE_GAMES = ARCADE_SHIPPED + (  # 残りは開発者画面からだけリンクする
+    "career-quest", "dungeon-of-past-jobs", "career-pet", "career-fighter", "deck-of-deeds", "star-log")
+ARCADE_STATIC = {"arcade-ja.js"}  # ゲームが共通に使う部品(日本語の答えの判定)
+
+
+@app.get("/static/arcade/{name}")
+async def arcade_static(name: str):
+    """レジュメ・アーケードの共通部品。"""
+    if name not in ARCADE_STATIC:
+        raise HTTPException(404)
+    return FileResponse(ARCADE / name, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade")
+async def liff_arcade():
+    """レジュメ・アーケードのハブ(ゲームを選ぶ画面)。"""
+    return FileResponse(ARCADE / "resume-arcade.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/liff/arcade/{game}")
+async def liff_arcade_game(game: str):
+    """レジュメ・アーケードの 1 本のゲーム。知らない名前は 404(「draft」は (3/3) の下書きの画面に取っておく)。"""
+    if game not in ARCADE_GAMES:
+        return HTMLResponse(_page("レジュメ・アーケード", '<p>このゲームは見つかりません。<a href="/liff/arcade">ハブに戻る</a></p>'),
+                            status_code=404)
+    return FileResponse(ARCADE / f"{game}.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/me")
@@ -435,6 +485,11 @@ async def dip_view(body: UserIn, request: Request):
 def line_api() -> line_channel.LineApi:
     """LINE の API(テストでは偽物の LINE API に差し替える)。"""
     return line_channel.LineApi(line_channel.access_token())
+
+
+def line_login() -> line_channel.LineLogin:
+    """LINE ログインの API(LIFF の ID トークンの検証。テストでは偽物の LINE に差し替える)。"""
+    return line_channel.LineLogin(line_channel.login_channel_id())
 
 
 def _line_kind(e: dict) -> str | None:
@@ -899,7 +954,11 @@ async def voice_wait(body: VoiceWaitIn, request: Request):
     next は次に待つときの since(この部屋でない結果も読み飛ばす。そちらは会話に入っているので再読み込みで出る)。"""
     user_id, since, room = body.user_id, body.since, body.room
     _require_own(request, user_id)
-    timeout = min(max(body.timeout, 0.0), VOICE_WAIT_MAX)
+    # NaN(本文の `NaN` は json.loads が通す)は max/min の丸めをすり抜けて wait_for → loop.call_at に届き、プロセスで共有する
+    # タイマーの山の順序を壊すので断る。モデルの検証にしないのは、既定の 422 が入力の nan を JSON にできず 500 になるため
+    if math.isnan(body.timeout):
+        raise HTTPException(422, "timeout は数値で指定してください")
+    timeout = min(max(body.timeout, 0.0), VOICE_WAIT_MAX)  # Infinity は上限、負と -Infinity は 0
     cond = _voice_ready(user_id)
     async with cond:
         try:
@@ -951,7 +1010,10 @@ async def voice_session(body: VoiceSessionIn, request: Request):
 async def liff_voice_draft(rid: int, request: Request, scenario_user: str | None = None):
     """音声相談で作った下書きを表示する(トークの「履歴書の下書きを見る」「職務経歴書の下書きを見る」のリンク先)。
     題は下書きの書類(document_kind)に合わせる。本人は Cookie から決める(URL にユーザーIDは無い)。"""
-    user = _page_user(request, scenario_user)
+    return _voice_draft_page(_page_user(request, scenario_user), rid)
+
+
+def _voice_draft_page(user: str, rid: int) -> HTMLResponse | str:
     r = logic.voice_result(state, user, rid)
     if r is None or not r.get("draft_markdown"):
         return HTMLResponse(_page("下書き", "<p>この下書きは見つかりません。</p>"), status_code=404)
@@ -1026,7 +1088,10 @@ async def liff_resume(rid: int, request: Request, scenario_user: str | None = No
     本人は Cookie から決める(URL にユーザーIDは無い)。rid はそのターンでアップロードした読み取り結果の番号:
     保存しているのは最新の1件だけなので、あとで別の履歴書をアップロードしていたら、古いターンのリンクは
     新しい結果を開かずに、置き換わったことを伝える。"""
-    user = _page_user(request, scenario_user)
+    return _resume_page(_page_user(request, scenario_user), rid)
+
+
+def _resume_page(user: str, rid: int) -> HTMLResponse | str:
     rec = logic.resume_upload(state, user)
     if rec is None:
         return HTMLResponse(_page("履歴書の読み取り結果", "<p>読み取った履歴書はありません。</p>"), status_code=404)
@@ -1068,7 +1133,10 @@ def _resume_html(r: dict) -> str:
 @app.get("/liff/apply", response_class=HTMLResponse)
 async def liff_form(job: str, request: Request, scenario_user: str | None = None):
     """入力途中の応募フォームの続き。本人は Cookie から決める(URL にユーザーIDは無い。dip_mcp.logic.liff_url)。"""
-    user = _page_user(request, scenario_user)
+    return _apply_form_page(_page_user(request, scenario_user), job, scenario_user)
+
+
+def _apply_form_page(user: str, job: str, scenario_user: str | None = None) -> HTMLResponse | str:
     j = load_jobs().get(job)
     exit_ = logic.form_exit(state, user)
     if j is None or exit_ is None or exit_["job_id"] != job:
@@ -1085,13 +1153,148 @@ async def liff_form(job: str, request: Request, scenario_user: str | None = None
 
 @app.post("/liff/apply", response_class=HTMLResponse)
 async def liff_submit(request: Request, job: str = Form(...), scenario_user: str = Form("")):
-    user = _page_user(request, scenario_user or None)
+    return _apply_submit(_page_user(request, scenario_user or None), job)
+
+
+def _apply_submit(user: str, job: str) -> HTMLResponse | str:
     exit_ = logic.form_exit(state, user)
     if exit_ is None or exit_["job_id"] != job:  # 入力途中の応募が無ければ確定しない(状態にも書かない)
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
     # 入力値は保存しない(シミュレーション)。応募の確定だけを dip の状態に反映する。
     logic.submit_application(state, user, job)
     return _page("応募完了", "<p>応募しました。店舗からの連絡をお待ちください。</p><p>このタブを閉じてトークに戻れます。</p>")
+
+
+# ----------------------------- LINE のアプリで開く LIFF 画面(/liff/line/…) -----------------------------
+# LIFF アプリのエンドポイント URL は <公開 URL>/liff/line。LINE のボタン(line_channel.liff_url_of)から開くと、LINE は
+# /liff/line/<画面>?… を開く。ここでは Cookie の匿名ユーザーID(aica_uid)を見ない: 本人は LIFF の ID トークンを LINE に
+# 確かめてもらった LINE のユーザー(l-…。トークと同じ line_user)だけ。確かめた本人は署名つきの Cookie(aica_liff)で覚え、
+# Cookie が無い・期限切れなら、まず LIFF SDK で ID トークンを取ってくる画面(_liff_shell)を返す。LIFF の設定が無ければ 404。
+
+LIFF_COOKIE = "aica_liff"
+LIFF_SDK = "https://static.line-scdn.net/liff/edge/2/sdk.js"
+LIFF_FAILED_TEXT = "LINE で本人を確かめられませんでした。LINE のトークから、もう一度開いてください。"
+
+
+class LiffSessionIn(BaseModel):
+    id_token: str = Field(..., max_length=line_channel.MAX_ID_TOKEN_CHARS)
+
+
+def _liff_page_user(request: Request) -> str | None:
+    """LINE のアプリで開いた画面の本人(Cookie aica_liff の l-…)。無い・不正・期限切れなら None。LIFF の設定が無ければ 404。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    return line_channel.liff_session_user(request.cookies.get(LIFF_COOKIE))
+
+
+def _liff_shell(title: str) -> HTMLResponse:
+    """LIFF SDK で ID トークンを取り、POST /api/liff/session で本人を確かめてから、同じ画面を読み直す。
+    中身(本人のデータ)は載せない。確かめられなければ、そう出して止まる(匿名ユーザーには切り替えない)。
+    URL に liff.state があるとき(LINE が最初にエンドポイント URL を開いたとき)は、liff.init が本来の画面へ送る。"""
+    conf = json.dumps({"liffId": line_channel.liff_id(), "failed": LIFF_FAILED_TEXT}, ensure_ascii=False).replace("<", "\\u003c")
+    body = f"""<p id="liff-status">LINE で本人を確かめています…</p>
+<script src="{LIFF_SDK}" charset="utf-8"></script>
+<script>
+(async () => {{
+  const conf = {conf};
+  const status = document.getElementById("liff-status");
+  const fail = (msg) => {{ status.textContent = msg || conf.failed; }};
+  if (!window.liff) return fail("LINE の画面の部品を読み込めませんでした。通信を確かめて、もう一度開いてください。");
+  try {{
+    await liff.init({{ liffId: conf.liffId, withLoginOnExternalBrowser: true }});
+  }} catch (e) {{
+    return fail();
+  }}
+  if (new URLSearchParams(location.search).has("liff.state")) {{  // liff.init が本来の画面へ送る
+    setTimeout(() => fail(), 10000);  // 送られないまま止まらない
+    return;
+  }}
+  // ログインや読み直しから、10 秒以内にまたこの画面に戻ったら、繰り返さずに止める
+  const key = "aica-liff-retry:" + location.pathname + location.search;
+  const retried = Date.now() - Number(sessionStorage.getItem(key) || 0) < 10000;
+  if (!liff.isLoggedIn()) {{
+    if (retried) return fail();
+    sessionStorage.setItem(key, String(Date.now()));
+    return liff.login({{ redirectUri: location.href }});
+  }}
+  const idToken = liff.getIDToken();
+  if (!idToken) return fail();
+  let r;
+  try {{
+    r = await fetch("/api/liff/session", {{
+      method: "POST", credentials: "same-origin",
+      headers: {{ "Content-Type": "application/json" }}, body: JSON.stringify({{ id_token: idToken }}),
+    }});
+  }} catch (e) {{
+    return fail();
+  }}
+  if (!r.ok) return fail();
+  if (retried) return fail();  // 読み直しても Cookie が付かず、またこの画面になった
+  sessionStorage.setItem(key, String(Date.now()));
+  location.reload();
+}})();
+</script>"""
+    return HTMLResponse(_page(title, body), headers={"Cache-Control": "no-store"})
+
+
+def _liff_unauthorized(title: str) -> HTMLResponse:
+    return HTMLResponse(_page(title, f"<p>{escape(LIFF_FAILED_TEXT)}</p>"), status_code=401)
+
+
+@app.post("/api/liff/session")
+async def liff_session(body: LiffSessionIn, request: Request):
+    """LIFF の ID トークンを LINE の検証の API で確かめ(署名・aud・期限)、sub からトークと同じ LINE のユーザーID(l-…)を作って、
+    その本人の Cookie(aica_liff。ブラウザを閉じるまで、長くても 1 時間)を返す。確かめられなければ 401 で、前の Cookie も消す(匿名ユーザーにも切り替えない)。
+    本文は JSON だけ(ほかのサイトのフォームから、別人のトークンで本人を入れ替えさせないように。JSON は事前の確認が要る)。"""
+    if not line_channel.liff_configured():
+        raise HTTPException(404)
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(415, "JSON で送ってください")
+    sub = await line_login().verify(body.id_token)
+    if sub is None:
+        resp = JSONResponse({"detail": LIFF_FAILED_TEXT}, status_code=401)
+        resp.delete_cookie(LIFF_COOKIE, secure=True, httponly=True, samesite="lax")
+        return resp
+    resp = JSONResponse({"ok": True})
+    # ブラウザを閉じたら消える Cookie(max_age なし)。開いている間も、値の期限(1 時間)を過ぎたら確かめ直す
+    resp.set_cookie(LIFF_COOKIE, line_channel.liff_session(line_channel.line_user(sub)),
+                    secure=True, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get(line_channel.LIFF_PREFIX, response_class=HTMLResponse)
+@app.get(f"{line_channel.LIFF_PREFIX}/", response_class=HTMLResponse, include_in_schema=False)
+async def liff_line_entry(request: Request):
+    """LIFF アプリのエンドポイント URL。LINE はまずここを liff.state つきで開き、liff.init が本来の画面へ送る。"""
+    user = _liff_page_user(request)
+    if user is None or "liff.state" in request.query_params:
+        return _liff_shell("LINE")
+    return _page("LINE", "<p>LINE で本人を確かめました。このタブを閉じてトークに戻れます。</p>")
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/resume", response_class=HTMLResponse)
+async def liff_line_resume(rid: int, request: Request):
+    user = _liff_page_user(request)
+    return _liff_shell("履歴書の読み取り結果") if user is None else _resume_page(user, rid)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/voice/draft", response_class=HTMLResponse)
+async def liff_line_voice_draft(rid: int, request: Request):
+    user = _liff_page_user(request)
+    return _liff_shell("下書き") if user is None else _voice_draft_page(user, rid)
+
+
+@app.get(f"{line_channel.LIFF_PREFIX}/apply", response_class=HTMLResponse)
+async def liff_line_form(job: str, request: Request):
+    user = _liff_page_user(request)
+    return _liff_shell("応募の続き") if user is None else _apply_form_page(user, job)
+
+
+@app.post(f"{line_channel.LIFF_PREFIX}/apply", response_class=HTMLResponse)
+async def liff_line_submit(request: Request, job: str = Form(...)):
+    """LINE のアプリで開いた応募フォームの送信。本人の Cookie が無い・期限切れなら 401(確定しない)。"""
+    user = _liff_page_user(request)
+    return _liff_unauthorized("応募フォーム") if user is None else _apply_submit(user, job)
 
 
 def _page(title: str, body: str, site: str = "LIFF・dip の画面") -> str:
@@ -1108,5 +1311,7 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 if __name__ == "__main__":
     import uvicorn
 
-    # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("LINE_SIM_PORT", "8030")), proxy_headers=False)
+    # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。
+    # ワーカーは 1 つ(会話数の上限と状態を 1 つのプロセスで持つ)。コンテナでは LINE_SIM_HOST=0.0.0.0(scripts/container_start.sh)
+    uvicorn.run(app, host=os.environ.get("LINE_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("LINE_SIM_PORT", "8030")),
+                proxy_headers=False)

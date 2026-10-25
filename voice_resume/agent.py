@@ -7,6 +7,8 @@
 → Cartesia TTS(日本語ボイス・少し遅め)。
 ターンの判定は Silero VAD + LiveKit turn detector(多言語)。「えーと」で考えている間は
 打ち切らず、終わり判定は少し待つ(config.MIN/MAX_ENDPOINTING_DELAY)。
+1 回の相談には上限がある: 長さは config.MAX_SESSION_MINUTES で、時間が来たら締めて閉じる。「面談を終える」(end パケット)
+への返答は 1 回だけ(SessionGuard)。web の調べものの回数は advisor が config.MAX_WEB_SEARCHES で止める。
 """
 
 from __future__ import annotations
@@ -30,6 +32,22 @@ from voice_resume.stt import create_stt
 config.load_env()
 
 logger = logging.getLogger("voice-resume.agent")
+
+# 締めの返答(下書きの保存とお礼)を待つ上限(秒)。時間切れで締めるとき、これを過ぎたら返答を止めて閉じる
+CLOSING_REPLY_TIMEOUT = 90.0
+
+END_INSTRUCTIONS = (
+    "本人が画面の「面談を終える」を押しました。まだ保存していなければ "
+    "finalize_interview を呼んで(summary に相談のまとめを入れて)下書きを保存し、短くお礼を述べて締めてください。"
+)
+
+
+def time_up_instructions(minutes: float) -> str:
+    return (
+        f"相談の時間の上限({minutes:g}分)になりました。まだ保存していなければ finalize_interview を呼んで"
+        "(summary に相談のまとめを入れて)下書きを保存し、時間になったので今回はここで終わることを伝えて、"
+        "短くお礼を述べて締めてください。新しい質問はしないこと。"
+    )
 
 
 def prewarm(proc: agents.JobProcess) -> None:
@@ -98,6 +116,89 @@ async def report_session(room: str, user_id: str, state: str, poster=None) -> bo
     return (got or {}).get("allowed", True) is not False
 
 
+class SessionGuard:
+    """1 回の音声相談の上限。時間が来たら締めて閉じる。「面談を終える」(end パケット)への返答は 1 回だけ作る。
+
+    上限が無いと、本人がつながっている限り STT・LLM・TTS が動き続け、end パケットを送るたびに返答が出る
+    (セキュリティ監査 run-1 の 4 番、review-2026-10 の R6)。接続トークンの期限は部屋に入る期限で、相談の長さではない。
+
+    時間が来たら、締めの返答が途中ならそれを待ち、まだ下書きを保存していないか、締めの返答をまだ作っていなければ
+    時間切れの締めの返答を作る(「面談を終える」の返答が割り込まれて保存できなかったときも、下書きを残す)。
+    """
+
+    def __init__(self, ctx, session, advisor, *, max_seconds: float,
+                 closing_timeout: float = CLOSING_REPLY_TIMEOUT) -> None:
+        self._ctx = ctx
+        self._session = session
+        self._advisor = advisor  # finalized(下書きを保存したか)を見る
+        self._max_seconds = max_seconds
+        self._closing_timeout = closing_timeout
+        self._closing = None  # 締めの返答の SpeechHandle。end パケットの返答は、これがあれば作らない
+        self._timer: asyncio.Task | None = None
+        self._closing_down = False  # 自分で閉じている最中(session の close で自分のタイマーを止めない)
+
+    def start(self) -> None:
+        self._timer = asyncio.create_task(self._close_at_limit())
+        # 本人が切って session が先に閉じたら、タイマーも止める
+        self._session.on("close", lambda *_: self._cancel_timer())
+        self._ctx.add_shutdown_callback(self.aclose)
+
+    def on_end(self) -> None:
+        """画面の「面談を終える」。締めの返答は相談ごとに 1 回だけ(2 回目からの end パケットは返答を作らない)。"""
+        if self._closing is not None or self._closing_down:
+            logger.info("end パケットを無視(締めの返答は作成済み)")
+            return
+        try:
+            self._closing = self._session.generate_reply(instructions=END_INSTRUCTIONS)
+        except RuntimeError as exc:  # session が閉じかけている
+            logger.warning("締めの返答を作れません: %s", exc)
+
+    @property
+    def closing_down(self) -> bool:
+        """時間切れで自分で閉じている最中か。"""
+        return self._closing_down
+
+    async def aclose(self) -> None:
+        self._cancel_timer()
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None and not self._timer.done() and not self._closing_down:
+            self._timer.cancel()
+
+    async def _close_at_limit(self) -> None:
+        await asyncio.sleep(self._max_seconds)
+        minutes = self._max_seconds / 60
+        logger.info("相談の時間の上限(%g分)になったので締めます", minutes)
+        if self._closing is not None and not self._closing.done():
+            await self._wait_for(self._closing)
+        if self._closing is None or self._advisor.finalized is None:
+            try:
+                self._closing = self._session.generate_reply(
+                    instructions=time_up_instructions(minutes), allow_interruptions=False)
+            except RuntimeError as exc:
+                logger.warning("時間切れの締めの返答を作れません: %s", exc)
+            else:
+                await self._wait_for(self._closing)
+        await self._close("voice session time limit")
+
+    async def _wait_for(self, handle) -> None:
+        try:
+            await asyncio.wait_for(handle.wait_for_playout(), self._closing_timeout)
+        except TimeoutError:
+            logger.warning("締めの返答が %g 秒で終わらないので止めます", self._closing_timeout)
+            handle.interrupt(force=True)
+
+    async def _close(self, reason: str) -> None:
+        self._closing_down = True
+        try:
+            await self._session.aclose()
+        except Exception:  # 閉じるのに失敗しても部屋は消す
+            logger.exception("AgentSession を閉じられませんでした")
+        # 部屋を消して本人の接続も切る(画面は「切れた」を受けて、結果を待つ表示に移る)
+        await self._ctx.delete_room()
+        self._ctx.shutdown(reason=reason)
+
+
 async def entrypoint(ctx: agents.JobContext) -> None:
     # 求人の提案: dip 側 MCP サーバー(dip_mcp)へ stdio でつなぐ。失敗しても面談は続ける
     dip: DipMCP | None = DipMCP()
@@ -153,47 +254,50 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             },
         },
     )
+    guard = SessionGuard(ctx, session, advisor, max_seconds=config.MAX_SESSION_MINUTES * 60)
     # 本人が抜けてセッションが閉じたら、部屋が閉じるのを待たずにジョブも終える(プロセスと dip MCP の子プロセスを返し、
-    # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い
-    session.on("close", lambda _ev: ctx.shutdown(reason="agent session closed"))
+    # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い。
+    # 時間切れで guard が閉じているときは何もしない(guard が部屋を消してからジョブを終える)
+    session.on("close", lambda _ev: guard.closing_down or ctx.shutdown(reason="agent session closed"))
     await session.start(agent=advisor, room=ctx.room)
+    guard.start()
 
-    # 画面の「面談を終える」ボタン → 下書きを保存して締める
+    # 画面の「面談を終える」ボタン → 下書きを保存して締める(返答は 1 回だけ)
     def _on_data(packet) -> None:
         try:
             payload = json.loads(bytes(packet.data).decode("utf-8"))
         except Exception:  # noqa: BLE001
             return
-        if payload.get("type") == "end":
-            asyncio.create_task(
-                session.generate_reply(
-                    instructions=(
-                        "本人が画面の「面談を終える」を押しました。まだ保存していなければ "
-                        "finalize_interview を呼んで(summary に相談のまとめを入れて)下書きを保存し、短くお礼を述べて締めてください。"
-                    )
-                )
-            )
+        if isinstance(payload, dict) and payload.get("type") == "end":
+            guard.on_end()
 
     ctx.room.on("data_received", _on_data)
 
     await session.generate_reply(instructions=greeting)
 
 
+def _job_unit() -> float:
+    """ジョブ 1 個の負荷。MAX_JOBS 以上の最小の 2 の累乗の逆数にする。負荷も上限もこの倍数なので、livekit-agents の
+    足し算と比べ合いが丸めずに済む(1 / MAX_JOBS だと、6 のとき 1/6 + 5 * (1/6) が 1 より小さくなり、7 件目を受ける)。"""
+    return 1 / (1 << (max(config.MAX_JOBS, 1) - 1).bit_length())
+
+
 def job_load(worker) -> float:
-    """ワーカーの負荷: 動いているジョブの数 / MAX_JOBS。load_threshold=1 と合わせて、MAX_JOBS 個で満員を報告する。"""
-    return len(worker.active_jobs) / max(config.MAX_JOBS, 1)
+    """ワーカーの負荷: 動いているジョブの数 * _job_unit()。load_threshold と合わせて、MAX_JOBS 個で満員を報告する。"""
+    return len(worker.active_jobs) * _job_unit()
 
 
 def worker_options() -> agents.WorkerOptions:
     """ワーカーの設定。同時に受けるジョブは config.MAX_JOBS まで(dev でも。livekit-agents の既定は、dev では上限なし、
-    start では CPU 70%)。ジョブのプロセスのメモリが config.JOB_MEMORY_LIMIT_MB を超えたら、そのジョブを止める。
+    start では CPU 70%)。上限の負荷は MAX_JOBS * _job_unit()(1 以下。start は 1 を超えると起動で止まる)。
+    ジョブのプロセスのメモリが config.JOB_MEMORY_LIMIT_MB を超えたら、そのジョブを止める。
 
     温めておくプロセスの数も MAX_JOBS にする。livekit-agents は、動いているジョブが 0 個の間、受付中(起動前)の
     ジョブ 1 件の負荷を load_threshold / num_idle_processes と見積もる。dev の既定の 0 のままだと 1 件で満員になり、
-    最初のジョブが起動するまでの数秒に来た 2 人目を断ってしまう。"""
+    最初のジョブが起動するまでの数秒に来た 2 人目を断ってしまう。MAX_JOBS にすると、見積もりは _job_unit() ちょうどになる。"""
     max_jobs = max(config.MAX_JOBS, 1)
     return agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, load_fnc=job_load,
-                                load_threshold=1.0, num_idle_processes=max_jobs,
+                                load_threshold=max_jobs * _job_unit(), num_idle_processes=max_jobs,
                                 job_memory_limit_mb=config.JOB_MEMORY_LIMIT_MB)
 
 

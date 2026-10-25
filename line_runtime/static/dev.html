@@ -48,6 +48,7 @@
   .step h2 .n { width: 20px; height: 20px; border-radius: 50%; background: var(--head); color: #fff; font-size: 11px;
                 display: inline-flex; align-items: center; justify-content: center; }
   .hint { color: var(--sub); font-size: 11.5px; margin: -2px 0 8px; line-height: 1.5; }
+  .arcade { margin: 0; padding-left: 18px; line-height: 1.8; } .arcade .hidden-game { color: var(--sub); }
   .badge { font-size: 10.5px; font-weight: 700; border-radius: 6px; padding: 1px 6px; background: var(--soft); color: var(--sub); white-space: nowrap; }
   .badge.warn { background: var(--warn-soft); color: var(--warn); } .badge.ok { background: var(--ok-soft); color: var(--ok-dark); }
   .group { margin: 10px 0 4px; font-size: 11px; font-weight: 700; color: var(--faint); letter-spacing: .02em; }
@@ -195,6 +196,21 @@
         <button type="button" class="restart" id="link-stop">連携を解除</button>
       </div>
     </div>
+    <div class="step">
+      <h2><span class="n">5</span>レジュメ・アーケード</h2>
+      <div class="hint">職務経歴書を作るゲーム(いまは AI を使わない簡易分析だけ)。ハブには最初の 2 本だけが出ます。残りの 6 本は、案内の部品が無いのでここからだけ開けます。</div>
+      <ul class="arcade" id="arcade-links">
+        <li><a href="/liff/arcade" target="_blank" rel="noopener">ハブ</a></li>
+        <li><a href="/liff/arcade/the-case-of-you" target="_blank" rel="noopener">あなたという事件</a></li>
+        <li><a href="/liff/arcade/harvest-of-work" target="_blank" rel="noopener">仕事の収穫</a></li>
+        <li class="hidden-game"><a href="/liff/arcade/career-quest" target="_blank" rel="noopener">キャリアクエスト</a>(ハブに出さない)</li>
+        <li class="hidden-game"><a href="/liff/arcade/dungeon-of-past-jobs" target="_blank" rel="noopener">職歴ダンジョン</a>(ハブに出さない)</li>
+        <li class="hidden-game"><a href="/liff/arcade/career-pet" target="_blank" rel="noopener">キャリアペット</a>(ハブに出さない)</li>
+        <li class="hidden-game"><a href="/liff/arcade/career-fighter" target="_blank" rel="noopener">キャリアファイター</a>(ハブに出さない)</li>
+        <li class="hidden-game"><a href="/liff/arcade/deck-of-deeds" target="_blank" rel="noopener">実績デッキ</a>(ハブに出さない)</li>
+        <li class="hidden-game"><a href="/liff/arcade/star-log" target="_blank" rel="noopener">スターログ</a>(ハブに出さない)</li>
+      </ul>
+    </div>
     <div class="hint">これは評価・説明用の開発者画面です。求職者が使う本番のトーク画面は <a href="/">/</a>。</div>
   </aside>
 
@@ -202,7 +218,7 @@
   <div class="phone">
     <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small></header>
     <div id="log"></div>
-    <form id="f"><input id="t" autocomplete="off" placeholder="メッセージを入力"><button id="send">送信</button></form>
+    <form id="f"><input id="t" autocomplete="off" maxlength="5000" placeholder="メッセージを入力"><button id="send">送信</button></form>
   </div>
 
   <!-- 右: 全体の構成と、このターンの処理の流れ -->

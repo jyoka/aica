@@ -27,8 +27,10 @@ from voice_resume.livekit_token import TOKEN_TTL
 
 # 発行した部屋に入れる間。接続トークンの期限(5 分)を過ぎると入れないので、それに入るまでの時間の余裕を足す
 JOIN_WINDOW = TOKEN_TTL + timedelta(minutes=1)
-# 入った部屋を、終わりの知らせが無くても終わったとみなすまでの時間。相談は約 5 分なので、十分に長くとる
-HOLD_MAX = timedelta(minutes=30)
+# 入った部屋を、終わりの知らせが無くても終わったとみなすまでの時間。ワーカーは相談を 10 分(VOICE_RESUME_MAX_SESSION_MINUTES の
+# 既定)で締め、締めの返答を最大 90 秒 x 2 待ってから閉じる(voice_resume.agent.SessionGuard)。それに余裕を足す。
+# ワーカーの相談の上限を延ばすときは、これも延ばす(短いままだと、相談の途中で 2 つ目の部屋を開ける)
+HOLD_MAX = timedelta(minutes=15)
 
 
 class ActiveVoiceRooms:

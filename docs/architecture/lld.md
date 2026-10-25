@@ -11,6 +11,7 @@
 - LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
 - dip のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
 - LINE のアカウント連携(4.12、5.9、`accounts.py`、`fake_line.py`)は task 182 で足しました
+- レジュメ・アーケードの画面(1.1 の `static/arcade/`、3.1 の口、4.10 の終わり、10 章の node のテスト)は task 187 で足しました
 
 ## 1. パッケージの構成
 
@@ -83,12 +84,12 @@ flowchart TB
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link` |
-| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT` |
+| `server.py` | Web サーバー。FastAPI の `app` と `lifespan`、Cookie と本人の確かめ、イベントの結果の HTTP と NDJSON への書き出し、プロフィール、音声相談、履歴書のアップロード、LIFF 画面、LINE の webhook | `_issue`、`_owner`、`_require_own`、`_page_user`、`_require_internal`、`_client_ip`、`_admit`、`_deps`、`event`、`event_stream`、`_error_text`、`_remove_voice_files`、`line_webhook`、`line_api`、`_line_kind`、`_line_handle`、`_line_user_events`、`_line_messages`、`_line_link_start`、`account_link`、`_line_turn`、`_unlink`、`dip_login_page`、`dip_login`、`dev_link_start`、`dev_link_unlink`、`fake_line_account_link`、`line_login`、`_liff_page_user`、`_liff_shell`、`liff_session`、`liff_line_entry`、`liff_line_resume`、`liff_line_voice_draft`、`liff_line_form`、`liff_line_submit` |
+| `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
 | `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
-| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
+| `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形 | `LineReply`、`Button`、`LineState`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限 | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する | `PRICES`、`cost_usd`、`Ledger`、`summarize` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
@@ -96,6 +97,7 @@ flowchart TB
 | `llm.py` | 模擬ユーザーとジャッジが SDK を直接呼ぶところの、プロバイダの違いの吸収 | `client`、`parse`、`text` |
 | `config.py` | 設定と `.env` の読み込み | `PROVIDER`、`MODEL`、`EFFORT`、`DIP_MCP_URL`、`DATA_DIR`、`load_env` |
 | `static/` | 画面。`talk.html`(トーク画面)、`dev.html`(開発者画面)、共通部品 `talk-core.js`、`talk-core.css` | - |
+| `static/arcade/` | レジュメ・アーケード(4.10 の終わり)。ハブ `resume-arcade.html`、8 本のゲーム `<game>.html`、日本語の答えの判定の共通部品 `arcade-ja.js` | - |
 
 ```mermaid
 classDiagram
@@ -137,18 +139,26 @@ classDiagram
     class ScenarioMiddleware {
         awrap_model_call: 指示に dip の Prompt とユーザーIDを足す
     }
+    class TurnCallLimitMiddleware {
+        awrap_model_call: 1 ターンのモデルの呼び出しを 10 回までにする
+    }
     class PinUserMiddleware {
         awrap_tool_call: line_user_id を会話のユーザーに固定する
     }
     LineRuntime --> Ledger
     LineRuntime ..> LineReply : 構造化出力
     LineRuntime ..> ScenarioMiddleware : build_agent
+    LineRuntime ..> TurnCallLimitMiddleware : build_agent
     LineRuntime ..> PinUserMiddleware : build_agent
 ```
 
 エージェントは `build_agent` が LangChain の `create_agent` で作ります。
 
-- middleware は外側から `ScenarioMiddleware`、`AnthropicPromptCachingMiddleware`(OpenAI では何もしない)、`PinUserMiddleware` の順です
+- middleware は外側から `ScenarioMiddleware`、`TurnCallLimitMiddleware`、`AnthropicPromptCachingMiddleware`(OpenAI では何もしない)、`PinUserMiddleware` の順です
+- `TurnCallLimitMiddleware` は、1 ターン(最後の本人の入力より後)のモデルの呼び出しを `MAX_MODEL_CALLS_PER_TURN`(10)回までにします。
+  10 回目の指示には、ツールを呼ばずに返信するよう添え書き(`LAST_CALL_NOTE`)を足します。それでもツールを呼んだら、11 回目はモデルを呼ばずに
+  決まった返信(`TURN_LIMIT_REPLY`。うまくまとめられなかったので短く聞き直してほしい)でターンを終えます。この返信は LLM を呼んでいないので、
+  費用台帳と画面の `llm` の行には載せません(`additional_kwargs` の `turn_limit`)
 - `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + ユーザーIDにします。入口とユーザーIDは会話の state(`entry`、`line_user_id`)から読みます
 - 返信は `ProviderStrategy(LineReply)` の構造化出力です
 - `build_model` は `config.PROVIDER` で `ChatOpenAI`(Responses API、`reasoning.effort`)か `ChatAnthropic`(`thinking: adaptive`)を作ります
@@ -369,6 +379,8 @@ flowchart LR
 - Cookie: `_owner`。Cookie `aica_uid` が無いか形が違えば 401
 - 本人: `_require_own`。本文の `user_id` が Cookie の匿名ユーザーIDか、そのシナリオユーザー(`scenarios.json` にあるものだけ)でなければ 403
 - 画面: `_page_user`。Cookie の匿名ユーザーIDに、URL の `scenario_user` を付ける
+- LIFF: `_liff_page_user`。署名つきの Cookie `aica_liff` の LINE のユーザーID(`l-…`)。`aica_uid` は見ない。無い、不正、期限切れなら、
+  GET は LIFF SDK の殻(`_liff_shell`)、POST は 401。LIFF の設定が無ければ 404(4.11)
 - 書き込みの枠: `_admit`(`DailyQuota.admit`)。この IP か全体で、その日に使える匿名ユーザーIDの数を超えたら 429
 - 内部の鍵: `_require_internal`。`Authorization: Bearer <AICA_INTERNAL_KEY>` でなければ 401
 - LINE の署名: `line_channel.verify_signature`。`X-Line-Signature` が、チャネルシークレットで本文そのままの HMAC-SHA256 を取った値の
@@ -376,8 +388,12 @@ flowchart LR
 
 | メソッドとパス | 関数 | 本人の確かめ | ターン | 書くもの |
 |---|---|---|---|---|
+| `GET /healthz` | `healthz` | - | - | -(ヘルスチェック。Cookie も発行しない) |
 | `GET /`、`GET /dev` | `index`、`dev` | Cookie を発行する(`_issue`) | - | Cookie |
 | `GET /static/{name}` | `shared_static` | - | - | -(`talk-core.js`、`talk-core.css` だけ) |
+| `GET /static/arcade/{name}` | `arcade_static` | - | - | -(`arcade-ja.js` だけ。`ARCADE_STATIC`) |
+| `GET /liff/arcade` | `liff_arcade` | -(Cookie を発行も要求もしない) | - | -(ハブ) |
+| `GET /liff/arcade/{game}` | `liff_arcade_game` | -(同上) | - | -(ゲーム。`ARCADE_GAMES` に無い名前は 404) |
 | `GET /api/me` | `me` | Cookie | - | - |
 | `POST /api/talk/open` | `talk_open` | Cookie | - | 挨拶が保存されているのに記録が無ければ `record_talk_open` で補う |
 | `GET /api/talk/history` | `talk_history` | Cookie | - | - |
@@ -403,6 +419,10 @@ flowchart LR
 | `GET /liff/resume` | `liff_resume` | 画面 | - | -(読み取り結果。`rid` が最新でなければ 404) |
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。入力値は保存しない |
+| `POST /api/liff/session` | `liff_session` | LIFF の ID トークン(LINE の検証) | - | Cookie `aica_liff`。確かめられなければ 401 で Cookie を消す。JSON でなければ 415。LIFF の設定が無ければ 404 |
+| `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
+| `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
+| `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
 | `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳、連携の表 |
 | `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | dip の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
 | `GET /api/dev/link` | `dev_link` | Cookie | - | -(開発者画面の「アカウント連携」。匿名ユーザーIDと `dip_id`) |
@@ -410,7 +430,7 @@ flowchart LR
 | `POST /api/dev/link/unlink` | `dev_link_unlink` | Cookie | - | 連携の表から外す |
 | `GET /fake-line/dialog/bot/accountLink` | `fake_line_account_link` | Cookie(開いた人が linkToken のユーザーか) | - | 4.12。偽物の LINE の accountLink の画面。知らない linkToken は 404 |
 
-- Cookie `aica_uid` は HttpOnly、SameSite=Lax です。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
+- Cookie `aica_uid` は HttpOnly、SameSite=Lax です。`AICA_SECURE_COOKIE=1`(コンテナの image の既定)のときは Secure も付けます。匿名ユーザーIDを発行するのは画面を開いたとき(`_issue`)だけで、API は発行しません
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
   ブラウザの履歴、アクセスログ、Referer に残るためです
 - dip の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
@@ -484,7 +504,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
 | `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
 | `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
-| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す |
+| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
 
@@ -496,7 +516,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | ワーカー → 画面 | `jobs` | 検索の結果(`jobs`、`total`) |
 | ワーカー → 画面 | `track` | 切り替えた雇用区分 |
 | ワーカー → 画面 | `draft` | 下書き(`document_kind`、`markdown`、`files`) |
-| 画面 → ワーカー | `end` | 「面談を終える」。ワーカーは `finalize_interview` を呼ぶよう指示して返信を作らせる |
+| 画面 → ワーカー | `end` | 「面談を終える」。ワーカーは `finalize_interview` を呼ぶよう指示して返信を作らせる。返信は相談ごとに 1 回だけで、2 回目からと時間切れの締めの後の `end` には返信しない(`agent.SessionGuard`)。その返信で下書きを保存できなかったら、時間切れのときに保存させる |
 
 ## 4. 主な流れ
 
@@ -553,7 +573,7 @@ sequenceDiagram
 - `render` は、会話の中のツールの結果と音声相談の結果から `CARD_KEYS` を持つものを拾い、モデルの `job_ids` のうち拾えたものだけをカードにします。
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
 
-Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と空の発言の確かめ、アップロードの事実
+Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と、空の発言・長すぎる発言(`MAX_TEXT_CHARS`、5000 字)の確かめ、アップロードの事実
 (`upload_facts`))を呼び、`turn.run` でターンを進めます。`run` は、プッシュなら上限に空きがあるかと `push_trigger` → `stale_thread` →
 `try_take` → `profile_notice` → LineRuntime の順に進み、行を順に出します。返信が返ったら `record_open` が、渡した知らせを消し
 (`profile.take_changes`)、本番のトーク画面(`thread` あり)の挨拶なら開いた記録を残し、読み取れなかったアップロードの事実を捨てます。
@@ -987,6 +1007,26 @@ sequenceDiagram
 - 右: 構成図と、このターンの処理の流れ(HLD の 4.1)です。構成図の動いている部分を光らせます
 - 音声相談の結果は、左の「本人の希望」「会話の結果」(画面の見出し)にも出ます
 
+レジュメ・アーケード(`/liff/arcade`。決めたことは [PRD](../prd/resume-arcade.md)):
+
+- ファイルは `line_runtime/static/arcade/` にあります。元は claude.ai の Artifact(doctype、html、head、body が無い形)で、
+  aica では普通の HTML(`<!doctype html>`、`lang="ja"`、charset、viewport)にしました。`window.claude` は使いません
+- どのゲームも簡易分析だけで動き、「オフライン：AIを使わない簡易分析」と出します。ダウンロードのボタンは外し、「Markdownでコピー」を残しました
+- ハブ(`resume-arcade.html`)は、`GAMES` のうち `shipped` の 2 本(`the-case-of-you`、`harvest-of-work`)だけを `/liff/arcade/<slug>` のリンクで出します。
+  サーバーの `ARCADE_SHIPPED` と同じ 2 本です。残りの 6 本は開発者画面の左の「レジュメ・アーケード」からだけ開けます
+- 共通部品 `arcade-ja.js` は DOM を使わず、ブラウザでは `window.ArcadeJa`、node では `require()` で読みます。中身は
+  `clean`(NFKC)、`findMetric`(範囲、単位つきの数、漢数字、順位。年と日付は数えない。`bareNumbers: false` で単位の無い数を数えない)、
+  `isVague`(日本語は字数、英語は語の数。数字が要るかは `metric` で選ぶ)、`sentences`(「。」で分ける)、`trimTo`、
+  `plainEnding` と `plainLine`(です・ます調を言い切りに)、数字の空欄(`PLACEHOLDER` など)、`resumeMarkdown`(職務経歴書の Markdown)です。
+  ゲームの中身(証人、台詞、強みの分け方)はゲームの側に残します。あなたという事件と仕事の収穫だけが使い、残りの 6 本は自分の写しを持ったままです
+- 氏名と連絡先の欄はありません。`resumeMarkdown` は、いつも `# [氏名]` と `[メール] · [電話] · [居住地] · [リンク]` で始めます
+- あなたという事件: ライバル(弱み)は「任意」です。進み具合はライバル以外の証人で数え、各職場で書類の行が 2 行になったら、
+  「次にやること」と「次の証人」のボタンは「事件を閉じる」を案内します(`nextWitness`)
+- 仕事の収穫: 案内の部品を足しました。「次にやること」(`nextAction`。ボタンで歩いて、その場所の話を始める)、進み具合(`farmStats`。
+  具体的な答えが 1 つある思い出を書類の 1 行と数え、目安は各職場 2 行)、「聞かれていること」(`PLAIN_ASK`)、答えを書いている間のチェックと
+  1 行の見本(`answerChecks`、`previewLine`)、いつでも開ける「下書き」です
+- 答えと進み具合は、そのブラウザの localStorage にだけ残ります(あなたという事件は `theCaseOfYou.v1.*`。仕事の収穫は見本の人物では残さない)
+
 ### 4.11 LINE のトーク(`POST /line/webhook`)
 
 LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD の 4.8)。口は `server.line_webhook`、部品は
@@ -1037,14 +1077,31 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `bubbles` | 1 つずつテキスト |
 | `actions` | `ACTION_NOTES` の文をテキストで足す。LINE ではファイルを選べず、音声相談もできないので、文で書くよう案内する |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
-| `buttons` | `/liff/` で始まるものだけ、`AICA_PUBLIC_URL` + パスへの URI のボタン。`AICA_PUBLIC_URL` が無ければ出さない(警告のログ) |
+| `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
 - 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります
 - `track_switch`(雇用区分の切り替えの表示)、`unknown_job_ids`、`tools` は LINE には出しません
-- LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+- LIFF の設定が無いときの LIFF 画面は Cookie の匿名ユーザーIDで本人を決めるので、LINE のユーザーが開いても本人の画面になりません(HLD の 4.8)
+
+LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは HLD の 4.8):
+
+- 設定は `LINE_LIFF_ID` と `LINE_LOGIN_CHANNEL_ID` の両方です(`liff_configured`。リクエストのたびに環境変数を読む)。片方だけなら使わず、
+  起動のときに警告のログを出します。両方あるのに `AICA_ID_KEY` が無い、短いときは `check_id_key` で起動を止めます
+- 殻(`_liff_shell`)は LIFF SDK(`https://static.line-scdn.net/liff/edge/2/sdk.js`)を読み、`liff.init({ liffId, withLoginOnExternalBrowser: true })`
+  の後、`liff.getIDToken()` を `POST /api/liff/session` に送って、通れば同じ URL を読み直します。URL に `liff.state` があるときは、
+  `liff.init` が本来の画面へ送るので何もしません。ログインしていなければ `liff.login`。読み直しても殻に戻ったとき(Cookie が付かない)は、
+  10 秒以内の 2 回目で止めます(`sessionStorage`。`liff.login` から戻ってもログインしていないときも同じ)。`liff.state` があるのに 10 秒で送られなければ止めます。どの失敗も「LINE で本人を確かめられませんでした」と出して止まります
+- `LineLogin.verify`: `POST https://api.line.me/oauth2/v2.1/verify` に `id_token` と `client_id`(`LINE_LOGIN_CHANNEL_ID`)をフォームで送ります。
+  200 でも、`iss` が `https://access.line.me`、`aud` がチャネル ID、`exp` が今より後、`sub` が `U` + 32 桁 hex でなければ None です。
+  断られた(400)、つながらない(10 秒で打ち切り)ときも None です。トークンが 4,096 字を超えたら LINE に送りません。トークンと `sub` はログに出しません
+- 本人は `line_user(sub)` で、webhook のトークと同じ関数です。Cookie `aica_liff` の値は `l-….<期限の UNIX 秒>.<HMAC-SHA256>` で、
+  鍵は `HMAC-SHA256(AICA_ID_KEY, "aica-liff-session")` です(`liff_session`、`liff_session_user`)。値の期限は 1 時間(`LIFF_SESSION_SECONDS`)で、
+  Cookie は `Max-Age` の無い、ブラウザを閉じたら消えるものです。HttpOnly、Secure、SameSite=Lax です。LIFF のエンドポイント URL は https だけなので Secure にしています
+- `POST /api/liff/session` は `Content-Type: application/json` でなければ 415 です(本文の無い型や `text/plain` は、ほかのサイトから事前の確認なしに送れるため)
+- 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
 
 ### 4.12 LINE のアカウント連携
 
@@ -1242,13 +1299,22 @@ sequenceDiagram
 - 匿名ユーザーIDの数の上限は、会話のほか、シナリオの開始とプロフィールの書き換えにも効きます(`_admit`、超えると 429)
 - IPv6 は /64 を 1 つの IP として数えます。家庭の回線でも /64 以上をもらえるので、送信元のアドレスを替えて迂回できないようにするためです。
   IPv4 と IPv4 射影アドレス(`::ffff:1.2.3.4`)は 1 アドレスずつで、射影アドレスは元の IPv4 と同じ IP です
-- IP は既定で接続元の IP です。`X-Forwarded-For` は本人が書き換えられるので見ません。Render のようにプロキシの後ろに置くときは
+- IP は既定で接続元の IP です。`X-Forwarded-For` は本人が書き換えられるので見ません。Render や cloudflared のトンネルのようにプロキシの後ろに置くときは
   `AICA_TRUST_PROXY=1` にし(Render なら Environment に設定)、プロキシが付けた最後の値だけを使います。付けないと全員がプロキシの IP として数えられ、IP の上限ですぐ止まります
 - 上限を超えたら LLM を呼ばず、「本日のご利用回数の上限に達した、明日また使える」という案内を返します(返信に `limited: true`)。
   IP の上限は「この回線からの」、全体の上限は「本日はたくさんのご利用があり」と、どの上限か分かる文にします(`limit_reply`)
 - プッシュは、上限に空きが無ければ dip に聞く前に送らないと決めます。履歴書のアップロードと音声相談の開始は 429 です。空の発言は数える前に 400 で断ります
 - 当日の数は `data/quota.json` にあるので、再起動しても消えません。IP の数は当日の分だけです
 - 対象は Web の API だけです。評価(`evals.run`)は `LineRuntime` を直接使うので、上限はかかりません
+
+1 ターンの費用は、次の 2 つで縛ります(task 199)。どちらも 1 日のターンの上限の「1 ターン約 $0.05」が崩れないようにするためです。
+
+- 発言の長さ: `turn.MAX_TEXT_CHARS`(5000 字)を超える発言は、ターンを数える前に 400 で断ります(LINE の webhook も同じ `turn.accept` を通り、
+  何も返しません)。LINE のテキストメッセージの上限と同じ値です。Web のトーク画面の入力欄も `maxlength` で同じ長さにしています
+- モデルの呼び出し: 1 ターン 10 回まで(`TurnCallLimitMiddleware`、1.1)。評価の記録では、1 ターンのツールの呼び出しは多くて 5 回でした。
+  これは評価にもかかります
+- 残る課題: 会話の記録は刈り込まず、毎回すべて送り直します。会話が長く続くと 1 回の入力が大きくなります(会話は 30 分空くと替わり、
+  1 人 1 日 50 ターンまで)。費用台帳を使った 1 日の費用の上限もありません
 
 ### 5.4 音声相談の出力(`data/voice-resume/`)
 
@@ -1578,7 +1644,9 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
 | 結果を返す先 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` |
 | 出力先 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume/` |
-| 同時に受ける相談の数 | `VOICE_RESUME_MAX_JOBS` | 4(`load_fnc` が動いているジョブの数 / 4 を返し、`load_threshold` 1 で満員を報告する。温めておくプロセスも 4 つにする(`num_idle_processes`。ジョブが 0 個の間、livekit-agents は起動前の依頼 1 件の負荷を `load_threshold` / `num_idle_processes` と見積もるので、`dev` の既定の 0 のままだと、最初のジョブが起動するまでの数秒に来た 2 件目を断る)。`dev` でも同じ。LiveKit Cloud の上でワーカーを動かすときは、livekit-agents が `load_fnc` と `load_threshold` を既定に戻すので効かない) |
+| 1 回の相談の長さ | `VOICE_RESUME_MAX_SESSION_MINUTES` | 10 分。時間が来たら、途中の締めの返答を待ち、下書きを保存していないか締めの返答をまだ作っていなければ時間切れの締めの返答を作る(どちらも最大 90 秒待つ)。そのあとセッションを閉じて部屋を消し、ジョブを終える(`agent.SessionGuard`。ジョブの終わりにトークへ `ended` を知らせる) |
+| 1 回の相談の web の調べもの | `VOICE_RESUME_MAX_WEB_SEARCHES` | 5 回(`web_research`、`wage_average`、`research_company` の合計) |
+| 同時に受ける相談の数 | `VOICE_RESUME_MAX_JOBS` | 4(`load_fnc` が動いているジョブの数 × 単位を返し、`load_threshold` = `VOICE_RESUME_MAX_JOBS` × 単位で満員を報告する。単位は `VOICE_RESUME_MAX_JOBS` 以上の最小の 2 の累乗の逆数(4 なら 1/4、6 なら 1/8)。1 / `VOICE_RESUME_MAX_JOBS` だと、6 などのとき足し算の丸めで 1 件多く受ける。温めておくプロセスも 4 つにする(`num_idle_processes`。ジョブが 0 個の間、livekit-agents は起動前の依頼 1 件の負荷を `load_threshold` / `num_idle_processes` と見積もるので、`dev` の既定の 0 のままだと、最初のジョブが起動するまでの数秒に来た 2 件目を断る)。`dev` でも同じ。LiveKit Cloud の上でワーカーを動かすときは、livekit-agents が `load_fnc` と `load_threshold` を既定に戻すので効かない) |
 | 相談 1 つのメモリの上限 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | 2000 MB(超えたらそのジョブを止める。0 で上限なし) |
 
 STT は聞き間違い(「時給の下限」が「地球の加減」になるなど)を比べて nova-3 と keyterm に決めました(旧リポジトリの task 37、
@@ -1689,8 +1757,15 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
     (`tests/test_account_link.py::test_line_user_links_end_to_end_and_tools_then_read_the_members_summary`)。nonce の使い回し、期限切れ、
     `link.result` が failed、署名の無い webhook、別の linkToken との組み合わせは連携しません。ログインの失敗には上限があり、
     解除すると未連携の扱いに戻ります。シナリオのユーザーは最初から連携済みです(`tests/test_account_link.py`)
-23. 1 人が開ける音声相談の部屋は同時に 1 つまでで、2 つ目はターンを使わずに 409 です。ワーカーがジョブの終わりを知らせるか、
-    だれも入らないまま接続トークンの期限(+1 分)が過ぎるか、入ってから 30 分が過ぎたら、次を開けます。結果が届いただけでは開けません。
+23. LINE のアプリの LIFF 画面は、偽物の LINE ログインが正しいと答えた ID トークンのときだけ、トークと同じ `l-…` の本人になります
+    (`tests/test_liff.py::test_a_verified_id_token_makes_the_liff_page_the_same_user_as_the_talk`)。署名が合わない、期限切れ、
+    別のチャネルの `aud` のトークンは本人にならず、同じブラウザの Cookie の匿名ユーザーにも切り替えません
+    (`::test_a_rejected_id_token_is_nobody_and_never_falls_back_to_the_web_user`)。LINE が 200 で答えても、発行元、`aud`、期限、`sub` の形を
+    もう一度見ます。LIFF の設定が無ければ `/liff/line/…` は 404 で、ほかは今までどおりです。殻の画面はブラウザで、偽物の LIFF SDK を使って
+    動かします(`::test_the_liff_page_in_a_browser`)
+24. 1 人が開ける音声相談の部屋は同時に 1 つまでで、2 つ目はターンを使わずに 409 です。ワーカーがジョブの終わりを知らせるか、
+    だれも入らないまま接続トークンの期限(+1 分)が過ぎるか、入ってから 15 分(相談の長さの上限 10 分と、締めの返答を待つ時間に
+    余裕を足したもの)が過ぎたら、次を開けます。結果が届いただけでは開けません。
     古い接続トークンで終わった部屋に入り直しても、その人に別の部屋があれば、ワーカーは相談を始めずにジョブを止めます。本人が抜けて
     セッションが閉じたら、ジョブも終えます。音声ワーカーは `dev` でも同時に `VOICE_RESUME_MAX_JOBS` 個までしか受けません
     (`tests/test_voice_concurrency.py`)。記録は Web プロセスのメモリだけで、再起動の前から続いているジョブは数えません
@@ -1715,6 +1790,9 @@ python3 -m unittest discover -s evalkit  # evalkit
   LiveKit の `AgentSession` の中でも確かめます(`tests/test_voice_track.py`)。LiveKit Cloud、STT、TTS は使いません
 - LINE の API は `server.line_api` を差し替え、`httpx.MockTransport` の偽物の LINE API で受けます(`tests/test_line_webhook.py` の `FakeLine`)
 - 意味検索は `embedding._api_embed` を差し替えるか、`fixtures/search_query_vectors.json` の保存済みのベクトルを使います
+- レジュメ・アーケードの共通部品 `arcade-ja.js` は、node の標準のテスト(`tests/js/arcade-ja.test.js`、何もインストールしない)で確かめます。
+  pytest の `tests/test_arcade.py` がこれを呼び、node が無ければ飛ばします。直接回すときは `node --test tests/js/arcade-ja.test.js` です。
+  同じファイルが、2 本のゲームを見本の人物で 390px の幅で最後まで遊ぶ画面のテスト(Playwright)も持ちます
 
 ### 評価(実 API を使う、費用がかかる)
 
