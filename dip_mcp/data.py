@@ -26,8 +26,8 @@ FIXTURES = ROOT / "fixtures"
 JST = timezone(timedelta(hours=9))
 SIM_NOW = datetime.fromisoformat(os.environ.get("SIM_NOW", "2026-09-23T12:00:00+09:00"))
 
-# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)。値に含まれる電話番号・メールアドレスの決まりは
-# resume_draft/pii.py(has_pii / redact_pii)
+# 個人情報(トークでは受け取らず LIFF 画面で入力させる項目)。値に含まれる電話番号・メールアドレス・住所の決まりは
+# resume_draft/pii.py(personal_value / redact_personal)
 PII_FIELDS = {"電話番号", "氏名", "住所", "メールアドレス", "生年月日"}
 # 雇用区分(ADR-0002)。求人には「未定」は付かない(未定は求職者の側の状態)
 EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
@@ -224,22 +224,29 @@ class State:
             self._write({"users": _initial_users()})
         accounts.of(self).reset_links()
 
-    def reset_user(self, line_user_id: str, template: str | None = None) -> None:
+    def reset_user(self, line_user_id: str, template: str | None = None, keep=None) -> dict:
         """1人だけ初期状態に戻す。fixtures に無いユーザーは消し、連携も外す(未連携の新規に戻る)。
         template を与えると、そのシナリオ用ユーザーの初期状態を line_user_id に写す
         (ブラウザごとの匿名ユーザーが、同じシナリオを他の人と混線せずに使えるように)。
-        連携の表も写す: シナリオのユーザーは、最初から同じ dip の会員と連携済みとして始まる(ADR-0007)。"""
+        連携の表も写す: シナリオのユーザーは、最初から同じ dip の会員と連携済みとして始まる(ADR-0007)。
+        keep(戻す前の 1 人の dict → 持ち越す値の dict)を与えると、戻した後の行に、その値を同じロックの中で書き戻す
+        (「すべて消す」が持ち越す消す前の部屋が無い間に、その部屋の書き込みが通らないように。profile.forget_all)。
+        戻す前の 1 人の dict を返す。"""
         from dip_mcp import accounts
 
         with self._lock():
             data = self._read()
+            before = data["users"].get(line_user_id) or _new_user(line_user_id)
             u = _initial_users().get(template or line_user_id)
             if u is None:
                 data["users"].pop(line_user_id, None)
             else:
                 data["users"][line_user_id] = u | {"line_user_id": line_user_id}
+            if kept := (keep(before) if keep else None):
+                data["users"].setdefault(line_user_id, _new_user(line_user_id)).update(kept)
             self._write(data)
         accounts.of(self).set_link(line_user_id, accounts.fixture_dip_id(template or line_user_id))
+        return copy.deepcopy(before)
 
     def user_ids(self) -> list[str]:
         """状態にいるユーザーの ID(fixtures の初期ユーザーを含む)。"""

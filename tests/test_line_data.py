@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from dip_mcp import accounts, behavior, logic
+from dip_mcp import accounts, arcade, behavior, logic
 from line_runtime import line_channel
 from line_runtime.line_channel import line_user
+from resume_arcade.draft import to_envelope
 from tests.test_handle import reply
 from tests.test_line_webhook import (  # noqa: F401  line_id_key はフィクスチャ(LINE のユーザーIDの鍵)
     RAW_OTHER,
@@ -31,7 +32,7 @@ NOTE = "みほん駅の近くで日中のカフェを探している。次は週
 
 
 def _fill(server, uid: str, files: list[str] | None = None) -> None:
-    """プロフィール画面に出るものを一通り入れる(雇用区分、希望、まとめ、履歴書、音声の下書き、保存、応募、連携)。
+    """プロフィール画面に出るものを一通り入れる(雇用区分、希望、まとめ、履歴書、音声の下書き、ゲームの下書き、保存、応募、連携)。
     files は音声相談で書き出した下書きのファイル。"""
     st = server.state
     logic.set_search_track(st, uid, "アルバイト・パート", "バイトを探しています")
@@ -39,6 +40,8 @@ def _fill(server, uid: str, files: list[str] | None = None) -> None:
     logic.record_outcome(st, uid, "consult", "希望を聞いた", 0.7, summary=NOTE)
     logic.save_resume_upload(st, uid, {"resume": clean_draft().model_dump()}, file="履歴書(PDF)")
     logic.record_voice_result(st, uid, [], "# 履歴書の下書き", files=files, room="room-fake-1")
+    play = arcade.start_play(st, uid, "harvest-of-work", ai=False)
+    arcade.save_draft(st, uid, "harvest-of-work", play["id"], to_envelope("# [氏名]\n\n## 職務経歴\n", "職務経歴書"))
     job_id = next(iter(logic.load_jobs()))
     behavior.record(st, uid, "save", job_id)
     behavior.record(st, uid, "apply", job_id, status="応募済み")
@@ -81,7 +84,7 @@ def test_view_data_sends_a_summary_of_what_is_saved_without_the_llm(tmp_path, mo
     text = "\n".join(m["text"] for m in body["messages"])
     job = next(iter(logic.load_jobs().values()))
     for want in (line_channel.VIEW_INTRO, "■ 雇用区分\nアルバイト・パート", "バイトを探しています", "エリア・駅: みほん駅",
-                 NOTE, "■ 履歴書の読み取り結果", "に読み取り", "■ 音声相談の下書き\n・", f"■ 保存した求人\n・{job.title}",
+                 NOTE, "■ 履歴書の読み取り結果", "に読み取り", "■ 音声相談の下書き\n・", "■ ゲームで作った下書き\n・", "「仕事の収穫」の職務経歴書", f"■ 保存した求人\n・{job.title}",
                  f"■ 応募した求人\n・{job.title}", "■ dip の会員との連携\nあり", "このトークでの、あなたの発言と aica の返信",
                  line_channel.FORGET_DATA_TEXT):
         assert want in text, want
@@ -112,6 +115,7 @@ def test_view_data_fits_in_five_line_messages_even_when_long_and_keeps_every_sec
             "consultation_summary": {"text": long, "recorded": "10/1"},
             "resume": {"uploaded": "10/1", "highlights": [long] * 30},
             "voice_drafts": [{"at": "10/1", "document_kind": "履歴書"}] * 300,
+            "arcade_drafts": [{"at": "10/1", "game": long, "document_kind": "職務経歴書"}] * 100,
             "saved_jobs": [{"title": long, "saved_at": "10/1"}] * 200,
             "applications": [{"title": long, "job_id": "x", "applied": "10/1", "status": "応募済み"}] * 200}
     msgs = line_channel.data_view_messages(view, talked=True, linked=True)
@@ -120,7 +124,7 @@ def test_view_data_fits_in_five_line_messages_even_when_long_and_keeps_every_sec
     text = "\n".join(m["text"] for m in msgs)
     assert msgs[0]["text"].startswith(line_channel.VIEW_INTRO) and text.endswith(line_channel.VIEW_OUTRO)
     for title in ("雇用区分", "目的", "希望", "経歴", "相談のまとめ", "履歴書の読み取り結果", "音声相談の下書き",
-                  "保存した求人", "応募した求人", "dip の会員との連携\nあり", "会話\nこのトーク"):
+                  "ゲームで作った下書き", "保存した求人", "応募した求人", "dip の会員との連携\nあり", "会話\nこのトーク"):
         assert f"■ {title}" in text, title
     assert any(f"ほか {200 - cap} 件" in text for cap in line_channel.VIEW_CAPS)  # 保存した求人 200 件のうち、出せなかった分
 
@@ -195,7 +199,8 @@ def test_forget_data_asks_first_and_then_erases_the_same_as_the_web_forget_all(t
             return {k: v for k, v in server.state.user(u).items() if k != "line_user_id"}
 
         assert after(uid) == after(WEB_USER)  # 残るのは、どちらも同じ(初期の値と、持ち越す連番)
-        gone = ("track_history", "preferences", "resume_upload", "voice_results", "dip_writes", "talk_opens")
+        gone = ("track_history", "preferences", "resume_upload", "voice_results", "arcade_drafts", "arcade_plays",
+                "dip_writes", "talk_opens")
         assert not any(after(uid).get(k) for k in gone) and "resume_upload_seq" in after(uid)
         assert not any(o.get("summary") for o in after(uid).get("outcomes", []))
         assert behavior.dip_id(server.state, uid) is None is behavior.dip_id(server.state, WEB_USER)

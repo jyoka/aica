@@ -27,9 +27,10 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from dip_mcp.logic import liff_url
+from dip_mcp.logic import VOICE_ROOM_ARG, liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
+from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
 from line_runtime.voice_reply import voice_history_reply
 
@@ -107,11 +108,30 @@ def voice_event(reply: dict) -> str:
                if track else ""))
 
 
+# ゲームで下書きを保存したターンの、本人側の記録(LLM は呼ばない。次のターンから LLM が読む文脈になる)
+ARCADE_EVENT = ("[イベント: 本人がゲーム(レジュメ・アーケード)で書類の下書きを保存した] 下書きは dip に保存済み"
+                "(要約の arcade_draft)。トークには次の返信を出しました。同じことを聞き直さず、続きから会話してください。")
+
+
+def arcade_event(reply: dict) -> str:
+    return ARCADE_EVENT + f" 書類: {reply.get('document_kind')}、数字の空欄: {reply.get('blanks', 0)}か所。"
+
+
 def dip_connection() -> dict:
     if config.DIP_MCP_URL:
         return {"transport": "streamable_http", "url": config.DIP_MCP_URL}
     return {"transport": "stdio", "command": sys.executable, "args": ["-m", "dip_mcp.server"],
             "cwd": str(config.ROOT), "env": dict(os.environ)}
+
+
+def chat_tools(tools: list) -> list:
+    """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。"""
+    for tool in tools:
+        schema = tool.args_schema
+        if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
+            props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
+            tool.args_schema = schema | {"properties": props}
+    return tools
 
 
 class LineRuntime:
@@ -130,7 +150,7 @@ class LineRuntime:
     async def __aenter__(self) -> Self:
         client = MultiServerMCPClient({"dip": dip_connection()})
         session = await self._stack.enter_async_context(client.session("dip"))
-        self.tools = await load_mcp_tools(session)
+        self.tools = chat_tools(await load_mcp_tools(session))
         scenarios = {}
         for entry in EVENTS.values():
             msgs = await load_mcp_prompt(session, "baitoru_assistant", arguments={"entry": entry[0]})
@@ -223,13 +243,21 @@ class LineRuntime:
     async def add_voice_result(self, user_id: str, reply: dict) -> bool:
         """音声相談の結果を、今の会話に AI の返信として続ける(LLM は呼ばない)。画面に描き直せるよう、返信は
         そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。"""
+        return await self._add_reply(user_id, reply, voice_event(reply), "voice")
+
+    async def add_arcade_result(self, user_id: str, reply: dict) -> bool:
+        """ゲームで保存した下書きの知らせ(line_runtime.arcade_reply)を、今の会話に AI の返信として続ける
+        (LLM は呼ばない。add_voice_result と同じ作り)。まだ会話が無ければ何もしない(False)。"""
+        return await self._add_reply(user_id, reply, arcade_event(reply), "arcade")
+
+    async def _add_reply(self, user_id: str, reply: dict, event_text: str, key: str) -> bool:
         async with self._locks[user_id]:
             n = await self._current(user_id)
             if not n:
                 return False
             shown = LineReply(bubbles=reply["bubbles"], quick_replies=reply["quick_replies"],
                               job_ids=[c["job_id"] for c in reply["cards"]])
-            human = HumanMessage(voice_event(reply), additional_kwargs={"voice": reply})
+            human = HumanMessage(event_text, additional_kwargs={key: reply})
             update = {"messages": [human, AIMessage(shown.model_dump_json())]}
             if not (await self.agent.aget_state(self._cfg(user_id, n))).values.get("messages"):
                 update |= {"entry": "A", "line_user_id": user_id}  # 閉じた後の空の会話: 結果のターンから始まる
@@ -260,17 +288,20 @@ class LineRuntime:
         self._threads[user_id] = 0
 
     async def handle(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
-                     talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False) -> dict:
+                     talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False,
+                     channel: str = "web", features: tuple[str, ...] = ()) -> dict:
         """1ターン進めて、返信(render の結果)を返す。途中経過が要らない呼び出し元(評価・API)向け。
         会話が替わっていて送らなかったとき(talk_thread を参照)は {"stale": True, "thread": 今の会話番号}。"""
         reply = None
-        async for ev in self.handle_stream(user_id, event, text, facts, talk_thread, notice, new_conversation):
+        async for ev in self.handle_stream(user_id, event, text, facts, talk_thread, notice, new_conversation,
+                                           channel, features):
             if ev["kind"] in ("reply", "stale"):
                 reply = {k: v for k, v in ev.items() if k != "kind"} | ({"stale": True} if ev["kind"] == "stale" else {})
         return reply
 
     async def handle_stream(self, user_id: str, event: str, text: str | None = None, facts: dict | None = None,
-                            talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False):
+                            talk_thread: int | None = None, notice: str | None = None, new_conversation: bool = False,
+                            channel: str = "web", features: tuple[str, ...] = ()):
         """handle と同じ1ターンを、途中経過を順に出しながら進める(シミュレーター画面のリアルタイム表示用)。
         出すもの: llm(LLM の呼び出し1回: 時間・トークン・キャッシュ・呼んだツール)/ tool_start(ツールの実行が始まる:
         名前と引数。画面が「何をしているか」を出すために使う)/ tools(ツールの実行が終わった: 時間・引数・結果の要約)/
@@ -283,12 +314,15 @@ class LineRuntime:
         ターンなら、本人の入力の直前に置く(画面の履歴には出さない)。新しい会話を始めるターンでは使わない
         (最初に要約を読むので要らない)。
         new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき)。
+        channel・features: 今の窓口(agent.CHANNELS)と、LINE のトークから LIFF 画面で使えるもの。毎ターン会話の state に書き、
+        エージェントのシステムプロンプトの「窓口」になる(line_runtime.agent.channel_note)。
         ターン自体は裏の処理として最後まで進める。画面との接続が途中で切れて受け取りをやめても、ツールを呼んだのに
         結果が無い状態で会話が保存されることはない(そうなると次のターンが API に拒否される)。"""
         if event not in EVENTS:
             raise ValueError(f"unknown event: {event}")
         queue: asyncio.Queue = asyncio.Queue()
-        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts, talk_thread, notice, new_conversation))
+        task = asyncio.create_task(self._turn(queue, user_id, event, text, facts, talk_thread, notice, new_conversation,
+                                              channel, features))
         self._running.add(task)
         task.add_done_callback(self._running.discard)
         while True:
@@ -299,7 +333,8 @@ class LineRuntime:
         await task  # ターンの中で起きた例外はここで呼び出し元に伝わる
 
     async def _turn(self, queue: asyncio.Queue, user_id: str, event: str, text: str | None, facts: dict | None,
-                    talk_thread: int | None, notice: str | None = None, new_conversation: bool = False) -> None:
+                    talk_thread: int | None, notice: str | None = None, new_conversation: bool = False,
+                    channel: str = "web", features: tuple[str, ...] = ()) -> None:
         try:
             entry = EVENTS[event][0]
             content = event_input(event, text, facts)
@@ -324,6 +359,7 @@ class LineRuntime:
                     payload = {"messages": [HumanMessage(notice, additional_kwargs={"profile_notice": True}), human]}
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
+                payload |= {"channel": channel, "channel_features": list(features)}
                 args: dict[str, dict] = {}
                 t = time.perf_counter()
                 async for chunk in self.agent.astream(payload, cfg, stream_mode="updates"):
@@ -445,7 +481,8 @@ def history(messages: list, user_id: str) -> list[dict]:
         user = None if k == 0 and isinstance(content, str) and content.startswith("[イベント:") else content
         upload = messages[start].additional_kwargs.get("upload")
         voice = messages[start].additional_kwargs.get("voice")
-        if upload or voice:
+        arcade = messages[start].additional_kwargs.get("arcade")
+        if upload or voice or arcade:
             user = None
         if upload:
             rid = upload.get("upload_id")
@@ -455,6 +492,8 @@ def history(messages: list, user_id: str) -> list[dict]:
         bot = None
         if voice:
             bot = voice_history_reply(user_id, voice)  # URL は今の形で組み直し、書類の呼び方は下書きにそろえる
+        elif arcade:
+            bot = arcade_history_reply(user_id, arcade)
         elif reply is not None:
             bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
                    if k2 != "tools"}

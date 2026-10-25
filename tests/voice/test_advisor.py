@@ -58,12 +58,13 @@ class FakeDip:
             raise self.relax_error
         return self.relax_result
 
-    async def save_user_preferences(self, user_id: str, preferences: dict) -> dict:
+    async def save_user_preferences(self, user_id: str, preferences: dict, room: str | None = None) -> dict:
         self.save_calls.append({"line_user_id": user_id, "preferences": preferences})
         return {"saved": list(preferences), "rejected": []}
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None,
+        room: str | None = None,
     ) -> dict:
         if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
@@ -692,6 +693,7 @@ def test_web_research_searches_the_web_and_returns_a_short_answer():
     assert call["model"] == config.RESEARCH_MODEL
     assert call["tools"][0]["type"] == "web_search"
     assert "コンビニバイト 仕事内容" in call["input"]
+    assert call["store"] is False  # OpenAI に応答を残さない
 
 
 def test_web_research_failure_keeps_the_conversation_going():
@@ -776,6 +778,7 @@ def test_fetch_reference_uses_web_search_and_stamps_the_date():
     assert ref.fetched_at == "2026-09-26"
     assert ref.source == "マイナビ"  # 読み上げる情報源にリンクを残さない
     assert captured["tools"] == [{"type": "web_search"}] and captured["text_format"] is WageReference
+    assert captured["store"] is False
 
 
 def test_research_company_passes_the_hint_and_asks_not_to_guess():

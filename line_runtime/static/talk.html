@@ -386,6 +386,25 @@
     }
     box.appendChild(vc);
 
+    // ゲーム(レジュメ・アーケード)で作った下書き。直すのは下書きの画面(/liff/arcade/draft)。ゲームへの入口もここに置く
+    const gc = card("ゲームで作った下書き");
+    if (!p.arcade_drafts.length) gc.appendChild(el("div", "pv empty", EMPTY));
+    for (const d of p.arcade_drafts) {
+      const r = el("div", "prow"); r.dataset.key = `arcade-${d.id}`;
+      r.appendChild(el("div", "pv", `${d.at} に「${d.game}」で作った${d.document_kind}の下書き`));
+      if (d.blanks) r.appendChild(el("span", "pl", `数字の空欄が${d.blanks}か所あります`));
+      const b = el("div", "pbtns"), a = el("a", null, "見る・直す");
+      a.href = d.view_url; a.target = "_blank"; a.rel = "noopener";
+      b.append(a, btn("消す", "del", () => confirmIn(r, "この下書きを丸ごと消します。チャットでも使われなくなります。", "消す", () => change("DELETE", `/arcade/${d.id}`))));
+      r.appendChild(b); gc.appendChild(r);
+    }
+    if (p.arcade_url) {
+      const r = el("div", "prow"), b = el("div", "pbtns"), a = el("a", null, "ゲームで書類を作る");
+      a.id = "arcade-link"; a.href = p.arcade_url; a.target = "_blank"; a.rel = "noopener";
+      b.appendChild(a); r.appendChild(b); gc.appendChild(r);
+    }
+    box.appendChild(gc);
+
     // 保存した求人・応募した求人
     const jc = card("保存した求人");
     if (!p.saved_jobs.length) jc.appendChild(el("div", "pv empty", EMPTY));

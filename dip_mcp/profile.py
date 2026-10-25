@@ -1,7 +1,7 @@
 """わたしのプロフィール(task 95): aica が本人について覚えていることを、本人が見て、直して、消す。
 
 見せるもの(CONTEXT.md の「プロフィール」): 雇用区分と切り替えの記録・目的・希望・経歴(stated_preferences の項目)・
-相談のまとめ・アップロードした履歴書・音声相談の下書き・保存した求人・応募した求人。
+相談のまとめ・アップロードした履歴書・音声相談の下書き・ゲームで作った下書き・保存した求人・応募した求人。
 
 - 保存した求人と応募した求人は、dip のツールと同じく行動の要約(と、この会話で書いた分)から読む(dip_mcp/behavior.py)。
   保存をやめると、元データに unsave のイベントを書く
@@ -21,9 +21,9 @@ from __future__ import annotations
 import copy
 import json
 
-from dip_mcp import behavior, logic
+from dip_mcp import arcade, behavior, logic
 from dip_mcp.data import State, now
-from resume_draft.pii import fold_pii, has_pii
+from resume_draft.pii import personal_value
 from resume_draft.schema import document_kind_of
 
 # 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
@@ -72,6 +72,9 @@ def view(state: State, line_user_id: str) -> dict:
         "consultation_summary": logic.consultation_summary(user),
         "resume": copy.deepcopy(user.get("resume_upload")),
         "voice_drafts": sorted(drafts, key=lambda d: d["id"], reverse=True),
+        "arcade_drafts": [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": r["document_kind"],
+                           "game": arcade.GAME_NAMES.get(r["game"], r["game"]), "blanks": arcade.blanks(r)}
+                          for r in arcade.drafts(state, line_user_id)],
         "saved_jobs": logic.saved_jobs(state, line_user_id),
         "applications": [{"job_id": a["job_id"], "title": _job_title(jobs, a["job_id"]), "applied": logic._md(a["applied_at"]),
                           "status": a["status"]}
@@ -135,7 +138,7 @@ def edit_summary(state: State, line_user_id: str, text: str) -> dict:
     text = str(text or "").strip()
     if not text:
         return {"error": "empty", "message": ERRORS["empty"]}
-    if has_pii(text) or logic.ADDRESS_LIKE.search(fold_pii(text)):
+    if personal_value(text):
         return {"error": "personal_info", "message": ERRORS["personal_info"]}
     if len(text) > logic.CONSULTATION_SUMMARY_MAX:
         return {"error": "too_long", "message": f"{logic.CONSULTATION_SUMMARY_MAX}字以内で入力してください。"}
@@ -258,6 +261,26 @@ def delete_voice_draft(state: State, line_user_id: str, result_id: int) -> dict:
     return out
 
 
+ARCADE_DRAFT_LABEL = "ゲームで作った下書き"
+
+
+def delete_arcade_draft(state: State, line_user_id: str, draft_id: int) -> dict:
+    """ゲームで作った下書きを丸ごと消す(チャットの要約にも出なくなる)。"""
+    if not arcade.delete_draft(state, line_user_id, draft_id):
+        return {"error": "not_found"}
+    state.update(line_user_id, lambda u: _note(u, "消した", ARCADE_DRAFT_LABEL))
+    return {"deleted": "arcade_draft", "id": draft_id}
+
+
+def edit_arcade_draft(state: State, line_user_id: str, draft_id: int, env: dict) -> dict:
+    """本人が下書きの画面で、ゲームで作った下書きを直した(保存と同じ決まり。arcade.edit_draft)。"""
+    rec = arcade.edit_draft(state, line_user_id, draft_id, env)
+    if rec is None:
+        return {"error": "not_found"}
+    state.update(line_user_id, lambda u: _note(u, "直した", ARCADE_DRAFT_LABEL))
+    return rec
+
+
 def unsave_job(state: State, line_user_id: str, job_id: str) -> dict:
     """保存をやめる。保存していた求人なら、取り消しを書き、次の本人のターンの前に AI へ知らせる(保存したままと思って
     話さないように)。要約の保存は全件なので、載っていない求人は保存していない。"""
@@ -278,9 +301,9 @@ def resume_uploaded(state: State, line_user_id: str) -> None:
     state.update(line_user_id, apply)
 
 
-# 「すべて消す」の後も持ち越すもの: 連番(古いリンクの rid が、消した後の新しい履歴書・下書きを開かないように)と、
+# 「すべて消す」の後も持ち越すもの: 連番(古いリンクの rid が、消した後の新しい履歴書・下書き・ゲームの下書きを開かないように)と、
 # 消す前に始めた音声相談の部屋(その面談の結果が後から届いても、dip の記録を作り直さないように)
-_KEPT_ON_FORGET = ("resume_upload_seq", "voice_result_seq")
+_KEPT_ON_FORGET = ("resume_upload_seq", "voice_result_seq", "arcade_draft_seq")
 
 
 def forget_all(state: State, line_user_id: str) -> dict:
@@ -290,20 +313,23 @@ def forget_all(state: State, line_user_id: str) -> dict:
     users = [line_user_id, *sorted(u for u in state.user_ids() if u.startswith(f"{line_user_id}:"))]
     files: list[str] = []
     for uid in users:
-        before = state.user(uid)
+        # 持ち越す値は、行を戻すのと同じロックの中で書き戻す(間に、消す前の部屋の書き込みが通らないように)
+        before = state.reset_user(uid, keep=_kept_on_forget)
         files += [f for r in before.get("voice_results", []) for f in r.get("files") or []]
-        kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
-        if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
-            kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
-        if "voice_results" in before:
-            kept["voice_result_seq"] = logic._next_voice_id(before)
-        rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
-        if rooms:
-            kept["forgotten_voice_rooms"] = rooms
-        state.reset_user(uid)
-        if kept:
-            state.update(uid, lambda u, kept=kept: u.update(kept))
     return {"forgotten": True, "files": files, "users": users}
+
+
+def _kept_on_forget(before: dict) -> dict:
+    """「すべて消す」の後も持ち越す値(消す前の 1 人の dict から)。"""
+    kept = {k: before[k] for k in _KEPT_ON_FORGET if k in before}
+    if "resume_upload_seq" not in kept and before.get("resume_upload"):  # 連番を持つ前の記録: 今ある結果の次から
+        kept["resume_upload_seq"] = before["resume_upload"].get("id", 0) + 1
+    if "voice_results" in before:
+        kept["voice_result_seq"] = logic._next_voice_id(before)
+    rooms = [*before.get("forgotten_voice_rooms", []), *before.get("voice_rooms", [])][-logic.VOICE_ROOMS_KEPT:]
+    if rooms:
+        kept["forgotten_voice_rooms"] = rooms
+    return kept
 
 
 # ----------------------------- 会話の途中で直したときの知らせ -----------------------------
@@ -329,12 +355,13 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
             done.append(f"{c['what']}の「{c['undone']}」への切り替えを取り消して「{c['value']}」に戻した")
             undone.append(c["undone"])
         else:
-            done.append(f"{c['what']}を「{c['value']}」に直した" if "value" in c else f"{c['what']}を消した")
+            done.append(f"{c['what']}を「{c['value']}」に直した" if "value" in c else f"{c['what']}を{c['action']}")
     user = state.user(line_user_id)
     now_ = {"search_track": logic.search_track(user),
             "stated_preferences": {k: v["value"] for k, v in logic.stated_preferences(user).items()},
             "consultation_summary": (logic.consultation_summary(user) or {}).get("text"),
-            "uploaded_resume": "あり" if user.get("resume_upload") else "なし"}
+            "uploaded_resume": "あり" if user.get("resume_upload") else "なし",
+            "arcade_draft": "あり" if user.get("arcade_drafts") else "なし"}
     where = ("トークの表示のボタンで" if all(c["action"] == "取り消した" for c in changes)
              else "アカウント連携で" if all(c["what"] == LINK_LABEL for c in changes) else "画面で")
     relinked = any(c["what"] == LINK_LABEL for c in changes)

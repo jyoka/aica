@@ -5,8 +5,9 @@
 `get_counseling_playbook`(雇用区分ごとの音声版の playbook)。
 トークから入った相談(ユーザーID が分かるとき)だけ、書き込みも使う:
 雇用区分の切り替え(`set_search_track`)、本人が話した希望の保存(`save_user_preferences`)と
-会話結果・相談のまとめの記録(`record_conversation_outcome`)。単体で動かすとき(ユーザー不明)は
-タスク 31 の決まりのまま読み取りだけで、dip の状態は書き換えない。
+会話結果・相談のまとめの記録(`record_conversation_outcome`)。書き込みには通話の部屋(room)を付け、
+dip は面談の途中で本人が「すべて消す」をした部屋の書き込みを断る(docs/design/privacy.md の 3.8 の案 A)。
+単体で動かすとき(ユーザー不明)はタスク 31 の決まりのまま読み取りだけで、dip の状態は書き換えない。
 """
 
 from __future__ import annotations
@@ -63,10 +64,11 @@ class DipMCP:
         result = await self._call("get_counseling_playbook", {"track": track, "channel": channel})
         return _tool_result_dict(result)
 
-    async def set_search_track(self, user_id: str, track: str, evidence: str) -> dict:
-        """本人の発話を根拠に雇用区分を切り替えて、dip に記録する(evidence は本人の発言そのまま)。"""
+    async def set_search_track(self, user_id: str, track: str, evidence: str, room: str | None = None) -> dict:
+        """本人の発話を根拠に雇用区分を切り替えて、dip に記録する(evidence は本人の発言そのまま)。
+        room はこの通話の部屋(「すべて消す」の前に始めた部屋なら、dip は記録せず error を返す)。"""
         result = await self._call(
-            "set_search_track", {"line_user_id": user_id, "track": track, "evidence": evidence}
+            "set_search_track", {"line_user_id": user_id, "track": track, "evidence": evidence, **_room(room)}
         )
         return _tool_result_dict(result)
 
@@ -76,23 +78,25 @@ class DipMCP:
         result = await self._call("get_user_conversation_summary", {"line_user_id": user_id})
         return _tool_result_dict(result)
 
-    async def save_user_preferences(self, user_id: str, preferences: dict) -> dict:
-        """本人が会話で話した希望を、本人の言葉のまま dip に保存する(推測は渡さない)。"""
+    async def save_user_preferences(self, user_id: str, preferences: dict, room: str | None = None) -> dict:
+        """本人が会話で話した希望を、本人の言葉のまま dip に保存する(推測は渡さない)。
+        room はこの通話の部屋(「すべて消す」の前に始めた部屋なら、dip は何も保存せず error を返す)。"""
         result = await self._call(
-            "save_user_preferences", {"line_user_id": user_id, "preferences": preferences}
+            "save_user_preferences", {"line_user_id": user_id, "preferences": preferences, **_room(room)}
         )
         return _tool_result_dict(result)
 
     async def record_conversation_outcome(
-        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None
+        self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None,
+        room: str | None = None,
     ) -> dict:
         """会話の結果と相談のまとめ(summary。200字以内)を記録する。voice-resume からは propose / consult だけを記録する
-        (wait は本人が断ったときだけ。断っていない人を wait と記録しない決まりを守る)。"""
+        (wait は本人が断ったときだけ。断っていない人を wait と記録しない決まりを守る)。room は set_search_track と同じ。"""
         if outcome not in ("propose", "consult"):
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
         result = await self._call("record_conversation_outcome", {
             "line_user_id": user_id, "outcome": outcome, "reason": reason,
-            "confidence": confidence, **({"summary": summary} if summary else {}),
+            "confidence": confidence, **({"summary": summary} if summary else {}), **_room(room),
         })
         return _tool_result_dict(result)
 
@@ -106,6 +110,11 @@ class DipMCP:
             await self._stack.aclose()
             self._stack = None
             self._session = None
+
+
+def _room(room: str | None) -> dict:
+    """書き込むツールに付ける部屋の引数(部屋が分からなければ付けない)。"""
+    return {"room": room} if room else {}
 
 
 def _tool_result_dict(result) -> dict:
