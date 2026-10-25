@@ -118,8 +118,8 @@ def test_ai_offers_resume_and_voice_as_actions_on_the_talk_and_dev_screens(advis
 def test_actions_without_a_text_choice_are_flagged_by_the_checks():
     r = {"bubbles": ["これまでのお仕事を教えてください。"], "quick_replies": [], "cards": [], "buttons": [], "tools": [],
          "actions": ACTIONS}
-    assert any("文字で話す" in v for v in turn_violations(0, r))
-    assert turn_violations(0, r | {"quick_replies": ["文字で話す", "今はいい"]}) == []
+    assert any("文字の選択肢" in v for v in turn_violations(0, r))
+    assert turn_violations(0, r | {"quick_replies": ["接客", "事務", "今はいい"]}) == []
 
 
 def test_the_screens_turn_actions_into_file_picking_and_the_voice_entry():

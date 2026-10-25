@@ -1195,7 +1195,7 @@ sequenceDiagram
 - 下のナビは 3 つです。トーク、保存した求人(`GET /api/saved` の求人をカードで一覧)、プロフィールです
 - ヘッダーに今の雇用区分(「正社員で相談中」など)を出します
 - 履歴書と音声相談は、会話の中から入ります(ヘッダーの常設ボタンは無い)。エージェントが経歴を聞く場面で、返信の `actions` として
-  [ファイルを選ぶ] [話して伝える(音声・約5分)] を出します。`quick_replies` の「文字で話す」「今はいい」と並び、押しても発言は送りません。
+  [ファイルを選ぶ] [話して伝える(音声・約5分)] を出します。`quick_replies` の答えの候補と「今はいい」と並び、押しても発言は送りません(「文字で話す」の選択肢は、押すと答えが 1 ターン遅れるだけなので付けない。2026-10-26)。
   いつ出すかは dip の Prompt の「履歴書・音声の提案」です
 - 自分から使う人は、入力欄の左の「+」から「履歴書・職務経歴書を送る」「音声で相談する」に入れます(LINE と同じ置き場)
 - 書類の呼び方は雇用区分にそろえます。アルバイト・パートは履歴書、正社員は職務経歴書です。未定のあいだは「+」メニューと音声アドバイザーが「履歴書など」と言います
@@ -1349,11 +1349,14 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `render` の項目 | LINE のメッセージ |
 |---|---|
 | `bubbles` | 1 つずつテキスト |
-| `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` → `https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` → `…/voice`)を、`buttons` のボタンの後ろに足す。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
+| `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` →「履歴書を読み込む」`https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` →「音声で相談する」`…/voice`。絵文字は付けない)を、`buttons` のボタンの後ろに足す。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
 | `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
+- 初回訪問の挨拶(`entry` が `visit`)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出しをボタンの Flex の見出し(`header`)と `altText` にします。
+  問いとその答えの入口のボタンが 1 つのメッセージになり、挨拶が 2 通になります。ほかの返信(再訪の挨拶、経験を聞く 1 問など)は見出しにしません。
+  問いの答えがボタンではないからです(`docs/design/line-sim-scenarios.md` の 12 章)
 - 1 回に送るのは 5 つまで(`MAX_MESSAGES`)です。超えるときは、Flex を残し、テキストを後ろから 1 つにまとめます(空行で区切る)
 - 空か空白だけの吹き出し、クイックリプライ、ボタンのラベルは除きます。LINE は空の文言を断り、そのメッセージ全体が届かなくなるからです。
   `AICA_PUBLIC_URL` が `https://` か `http://` で始まらなければ、リンクは出しません。送るものが何も残らなければ `FAILED_TEXT` を送ります

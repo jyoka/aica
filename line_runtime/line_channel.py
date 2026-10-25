@@ -133,11 +133,14 @@ MAX_ID_TOKEN_CHARS = 4096
 LIFF_SESSION_SECONDS = 3600
 LIFF_PAGES = ("/liff/apply", "/liff/resume", "/liff/voice/draft")  # LIFF_PREFIX の下にもある画面(line_runtime.server)
 ARCADE_PATH = "/liff/arcade"  # レジュメ・アーケード(ハブと各ゲーム)。LIFF_PREFIX の下にもある。LIFF で開けなければ LINE に出さない
-# 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり
+# 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり。
+# ボタンの文言は、挨拶の本文(dip の Prompt の entries.json の visit)とリッチメニュー(scripts.line_rich_menu)と同じ言い方にし、
+# 絵文字を付けない(トークの決まりの「絵文字なし」。task 231)
 LIFF_ACTIONS = {
-    "resume_upload": ("📄 履歴書・職務経歴書を送る", "resume/upload"),
-    "voice_consult": ("🎤 音声で相談する(約5分)", "voice"),
+    "resume_upload": ("履歴書を読み込む", "resume/upload"),
+    "voice_consult": ("音声で相談する", "voice"),
 }
+ARCADE_LABEL = "ゲームで書類を作る"  # ゲームのボタンの文言(dip の Prompt が buttons の label に書く文言と同じ)
 LIVEKIT_ENVS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")  # 音声相談に要る(voice_resume.livekit_token と同じ)
 
 
@@ -371,14 +374,19 @@ def _cards_message(cards: list[dict]) -> dict:
             "contents": {"type": "carousel", "contents": [_card_bubble(c) for c in cards[:12]]}}
 
 
-def _buttons_message(links: list[dict]) -> dict:
-    """リンク({label, uri})をボタンの並んだ Flex にする。"""
-    return {"type": "flex", "altText": _clip("リンク: " + "、".join(b["label"] for b in links), 400),
-            "contents": {"type": "bubble", "size": "kilo", "body": {
-                "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
-                    {"type": "button", "style": "link", "height": "sm",
-                     "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": b["uri"]}}
-                    for b in links]}}}
+def _buttons_message(links: list[dict], heading: str | None = None) -> dict:
+    """リンク({label, uri})をボタンの並んだ Flex にする。heading があれば、ボタンの上の見出し(header)にし、
+    通知とトークの一覧に出る文(altText)にもする。"""
+    alt = heading or "リンク: " + "、".join(b["label"] for b in links)
+    bubble = {"type": "bubble", "size": "kilo", "body": {
+        "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
+            {"type": "button", "style": "link", "height": "sm",
+             "action": {"type": "uri", "label": _clip(b["label"], 20), "uri": b["uri"]}}
+            for b in links]}}
+    if heading:
+        bubble["header"] = {"type": "box", "layout": "vertical", "contents": [
+            {"type": "text", "text": _clip(heading, 2000), "wrap": True, "size": "md", "color": "#222222"}]}
+    return {"type": "flex", "altText": _clip(alt, 400), "contents": bubble}
 
 
 def _quick_reply(labels: list[str]) -> dict:
@@ -391,20 +399,25 @@ def _labeled(items: list[str]) -> list[str]:
     return [x.strip() for x in items if isinstance(x, str) and x.strip()]
 
 
-def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
+def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, ...] | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト
     - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
       へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
+    - 初回訪問の挨拶(entry が visit)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、最後の吹き出し(「どれから始めますか?」)を
+      入口のボタンの見出しにする(task 231。挨拶が「本文」と「問い + 入口のボタン」の 2 通になる)。ほかの返信は見出しにしない:
+      再訪の確認の1問(「はい」で答える)や経験の1問の答えは、ボタンではなく文字の選択肢なので、問いがボタンの見出しになると
+      答えではないボタンの上に問いが載る
     - quick_replies → 最後のメッセージのクイックリプライ
-    5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。"""
+    5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。
+    features は LINE で使えるもの(既定は liff_features()。評価が LINE の通数を数えるときに、設定の代わりに渡す)。"""
     base = public_url() if base_url is None else base_url.strip().rstrip("/")
-    features = liff_features()
+    features = liff_features() if features is None else tuple(features)
     actions = [a for a in dict.fromkeys(reply.get("actions") or []) if a in LIFF_ACTIONS]
-    texts = _labeled(reply.get("bubbles") or [])
-    texts += [ACTION_NOTES[a] for a in actions if a not in features]
+    bubbles = _labeled(reply.get("bubbles") or [])
+    notes = [ACTION_NOTES[a] for a in actions if a not in features]
     flex = []
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
@@ -421,8 +434,10 @@ def to_messages(reply: dict, base_url: str | None = None) -> list[dict]:
         buttons = [b for b in buttons if b not in dropped]
     links = [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
     links += [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
+    heading = bubbles.pop() if reply.get("entry") == "visit" and links and not flex and len(bubbles) >= 2 else None
+    texts = bubbles + notes
     if links:
-        flex.append(_buttons_message(links))
+        flex.append(_buttons_message(links, heading))
     room = MAX_MESSAGES - len(flex)
     if len(texts) > room:
         texts = [*texts[: room - 1], "\n\n".join(texts[room - 1:])]
