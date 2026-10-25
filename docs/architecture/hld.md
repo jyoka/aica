@@ -12,6 +12,7 @@ aica が何でできていて、データがどこを流れるかの全体図で
 - 4.11 のレジュメ・アーケード(ゲームの LIFF 画面)は、[PRD](../prd/resume-arcade.md) の (2/3) として task 187 で足しました。
   ゲームの AI と下書きの保存(`resume_arcade/`、`resume_lines/`、`dip_mcp/arcade.py`)は (3/3) として task 188 で足しました
 - 4.8 の LIFF 画面を LINE の本人で開く(LIFF の ID トークン)は、2026-10-25 のユーザーの方針で、task 203 で足しました
+- 4.8 の LIFF の中でマイクを試す画面は、2026-10-25 のユーザーの方針で、task 205 で足しました
 - 語は 10 章の「用語」に従います。業務の語の定義の正本は [CONTEXT.md](../../CONTEXT.md) です
 - 部品の中身、関数、ファイルの形式は [LLD](lld.md) に書きます
 - なぜそう決めたかは [ADR](../adr/) と [PRD](../prd/aica-v2-fulltime.md) に書きます。ここでは繰り返しません
@@ -653,6 +654,13 @@ sequenceDiagram
   LINE の userId は Cookie にも保存にも載せません。LIFF の設定があるのに `AICA_ID_KEY` が無い、短いときは起動で止まります
 - `POST /api/liff/session` は JSON の本文だけを受けます。ほかのサイトのフォームから、別人のトークンで本人を入れ替えさせないためです
 - LIFF アプリ 1 つにエンドポイント URL は 1 つなので、開発用(Tailscale Funnel)と公開用(Render)の 2 つを作ります。`LINE_LIFF_ID` だけが変わります
+
+LIFF の中でマイクを試す(task 205):
+
+LINE から音声相談を使えるようにする前に、LIFF の画面の中でマイク(`getUserMedia`)と WebRTC が使えるかを、人が実機(iPhone、Android)で確かめます。
+画面は `/liff/line/mic-check` で、本人を決めません。結果(使えたか、エラーの名前、音の大きさ、LIFF の環境)だけをサーバーのログに 1 行書き、
+声もその文字起こしも送りません。使えなかったときの逃げ道として、外のブラウザで同じ確認を開けます(`liff.openWindow`)。
+外のブラウザで同じ本人のまま音声相談を始める仕組みは、実機の結果を見てから作ります
 
 ### 4.9 dip の行動データと状況の要約
 
