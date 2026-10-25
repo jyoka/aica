@@ -56,7 +56,7 @@
    "wait"
   ],
   "expect_uses_preferences": true,
-  "expect_greeting_offer": "resume_upload"
+  "expect_greeting_offer": "arcade"
  },
  {
   "id": "R-revisit-browsing",
