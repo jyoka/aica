@@ -149,7 +149,8 @@ from resume_arcade import schemas as arcade_schemas
 from resume_arcade import stages as arcade_stages
 from resume_draft.schema import document_kind_of
 from resume_intake import config as resume_config
-from resume_intake.extract import extract_bytes, finalize, media_type
+from resume_intake.extract import default_client as resume_default_client
+from resume_intake.extract import extract_bytes, finalize, media_type, oversized_image
 
 STATIC = config.ROOT / "line_runtime" / "static"
 state = State()
@@ -1622,10 +1623,9 @@ def _voice_draft_page(user: str, rid: int) -> HTMLResponse | str:
 
 
 def resume_client():
-    """履歴書の読み取りに使う OpenAI のクライアント(テストでは固定応答のスタブに差し替える)。"""
-    from openai import AsyncOpenAI
-
-    return AsyncOpenAI()
+    """履歴書の読み取りに使うクライアント(resume_intake の PROVIDER。既定は Anthropic。テストでは固定応答のスタブに
+    差し替える)。"""
+    return resume_default_client()
 
 
 @app.post("/api/resume/upload")
@@ -1655,6 +1655,9 @@ async def _read_resume(user_id: str, file: UploadFile, ip: str | None, thread: i
         raise HTTPException(400, "ファイルが空です")
     if len(data) > resume_config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"ファイルが大きすぎます({resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)}MB まで)")
+    # Anthropic に送るには縮める画像で、縮めるにも展開が大きすぎるもの(画素の多い PNG など)は、会話数を使う前に断る
+    if resume_config.PROVIDER == "anthropic" and media_type(name) != "application/pdf" and oversized_image(data):
+        raise HTTPException(413, "画像の画素が多すぎます。小さくした画像か PDF を送ってください")
     if thread is not None and await app.state.rt.current_thread(user_id) != thread:
         raise HTTPException(409, "別の画面で新しい会話が始まっています")
     limited = app.state.quota.try_take(user_id, ip)

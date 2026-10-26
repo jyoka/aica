@@ -15,11 +15,9 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from openai import AsyncOpenAI
-
 from line_runtime.config import load_env
 from resume_intake import config
-from resume_intake.extract import extract_draft, finalize
+from resume_intake.extract import default_client, extract_draft, finalize
 
 EXPECTED = config.SAMPLES / "expected"
 # 正解ファイルがあるサンプルだけ回す(04_unreadable.jpg は CLI で個別に確認する)
@@ -42,7 +40,7 @@ def compare(expected: dict, actual: dict) -> list[tuple[str, bool, str]]:
 
 async def main(compare_pdf: bool = False) -> None:
     load_env()
-    client = AsyncOpenAI()
+    client = default_client()
     RESULTS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     lines = [f"# サンプル読み取り結果({stamp} UTC, model={config.MODEL})", ""]

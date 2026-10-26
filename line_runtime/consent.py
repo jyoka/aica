@@ -21,6 +21,8 @@ from __future__ import annotations
 from dip_mcp import retention
 from dip_mcp.data import State
 from line_runtime import config, legal
+from resume_intake import config as resume_config
+from voice_resume import config as voice_config
 
 KINDS = ("terms", "resume", "voice")
 KEY = "consents"
@@ -37,6 +39,14 @@ FORGET_POINT = {"web": "プロフィール画面の「すべて消す」で、�
 SENT_TO = {"anthropic": ("書いた内容は、返事を作るために米国の Anthropic に送ります。求人を探す言葉は、米国の OpenAI にも送ります。"
                          "どちらも学習には使わないとされています"),
            "openai": "書いた内容は、返事を作るために米国の OpenAI に送ります。学習には使わないとされています"}
+
+
+# 履歴書と音声相談の送り先(RESUME_INTAKE_PROVIDER、VOICE_RESUME_PROVIDER。どちらも既定は anthropic。task 236)
+COMPANY = {"anthropic": "Anthropic", "openai": "OpenAI"}
+
+
+def _company(provider: str) -> str:
+    return COMPANY.get(provider, COMPANY["anthropic"])
 
 
 def _terms_points(channel: str) -> list[str]:
@@ -59,13 +69,14 @@ def texts(channel: str = "web") -> dict[str, dict]:
         "terms": {"title": "aica を始める前に", "paragraphs": [TERMS_INTRO], "points": _terms_points(channel),
                   "strong": "", "button": "同意して始める"},
         "resume": {"title": "履歴書・職務経歴書を送る前に", "paragraphs": [
-            "履歴書・職務経歴書のファイルは、内容を読み取るために米国の OpenAI に送ります。ファイルそのものは aica に保存しません。",
+            (f"履歴書・職務経歴書のファイルは、内容を読み取るために米国の {_company(resume_config.PROVIDER)} に送ります。"
+             "ファイルそのものは aica に保存しません。"),
             "読み取った経歴(学歴、職歴、資格など)は、プロフィールに保存し、相談に使います。"],
             "points": [], "strong": "名前、住所、写真の欄は、隠すか消してからアップロードしてください。",
             "button": "同意してファイルを選ぶ"},
         "voice": {"title": "音声相談を始める前に", "paragraphs": [
             "声は、米国の LiveKit を通り、米国の Deepgram で文字にします。AI の声は米国の Cartesia で作ります。",
-            "文字にした内容は米国の OpenAI に送り、相談と下書き作りに使います。録音は保存しません。",
+            f"文字にした内容は米国の {_company(voice_config.PROVIDER)} に送り、相談と下書き作りに使います。録音は保存しません。",
             "名前、住所などは話さないでください。話した電話番号などは、自動では伏せません。"],
             "points": [], "strong": "", "button": "同意して始める"},
     }

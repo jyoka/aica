@@ -119,8 +119,8 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 
 | 環境変数 | 値 | 入れる者 | 用途 |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic の API キー | **【運営者】** Blueprint を作るとき | エージェント、ゲームの AI(既定の `LINE_SIM_PROVIDER=anthropic`) |
-| `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | 履歴書の読み取り、意味検索、音声相談 |
+| `ANTHROPIC_API_KEY` | Anthropic の API キー | **【運営者】** Blueprint を作るとき | エージェント、ゲームの AI、履歴書の読み取り、音声相談(既定の `LINE_SIM_PROVIDER=anthropic`) |
+| `OPENAI_API_KEY` | OpenAI の API キー | **【運営者】** Blueprint を作るとき | 求人の意味検索の埋め込み(無ければ部分一致の検索に戻る) |
 | `AICA_TRUST_PROXY` | `1` | Blueprint | IP を `X-Forwarded-For` の最後の値から取る(Render のプロキシの後ろ) |
 | `AICA_INTERNAL_KEY` | 乱数 | Blueprint(`generateValue`) | 音声ワーカーが結果を返すときの共有鍵 |
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | Blueprint | 本番の文字起こしを Deepgram に固定する。変えない(`openai` にすると声そのものが OpenAI に届く。[privacy.md](../design/privacy.md) の 3.2) |

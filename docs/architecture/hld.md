@@ -121,8 +121,8 @@ flowchart LR
     lineapi[("LINE プラットフォーム<br/>Messaging API")]
     op(["運営者<br/>ターミナル"])
     aica["aica<br/>手元の Mac で動く 2 つのプロセス"]
-    openai[("OpenAI<br/>履歴書と音声の LLM、embedding、web 検索")]
-    anthropic[("Anthropic<br/>トークとゲームの LLM")]
+    openai[("OpenAI<br/>embedding")]
+    anthropic[("Anthropic<br/>トーク、ゲーム、履歴書、音声の LLM、web 検索")]
     livekit[("LiveKit Cloud<br/>音声の部屋")]
     deepgram[("Deepgram<br/>文字起こし")]
     cartesia[("Cartesia<br/>読み上げ")]
@@ -139,8 +139,8 @@ flowchart LR
     seeker -. "字体を読む(ゲーム)" .-> fonts
     livekit -- "音声" --> aica
     op -- "評価、費用台帳、起動" --> aica
-    aica -- "トーク、ゲームの答え" --> anthropic
-    aica -- "読み取り、音声相談、下書き、検索" --> openai
+    aica -- "トーク、ゲームの答え、読み取り、音声相談、下書き、調べもの" --> anthropic
+    aica -- "求人の意味検索の問い" --> openai
     aica -- "音声" --> deepgram
     aica -- "読み上げる文" --> cartesia
 ```
@@ -152,8 +152,9 @@ flowchart LR
   LiveKit Cloud の Agent Observability(録音、文字起こし、ログを 30 日残す)には、ワーカーが `record=False` で何も送りません。
   プロジェクトの設定で有効かどうかと、プランは確かめていません([privacy.md](../design/privacy.md) の 6 章)
 
-LLM のプロバイダは `LINE_SIM_PROVIDER` で選びます(`line_runtime/config.py`)。既定は `anthropic` です(task 235。
+LLM のプロバイダは `LINE_SIM_PROVIDER` で選びます(`line_runtime/config.py`)。既定は `anthropic` です(task 235、236。
 OpenAI のクレジットが切れがちなため。料金は `gpt-6-sol` と同じ入力 $2 / 出力 $10 per 1M)。`openai` にすれば元に戻ります。
+履歴書の読み取りと音声相談は、`RESUME_INTAKE_PROVIDER`、`VOICE_RESUME_PROVIDER` で別にも選べます(無ければ `LINE_SIM_PROVIDER` の値)。
 
 | 使うところ | `anthropic`(既定) | `openai` |
 |---|---|---|
@@ -161,7 +162,12 @@ OpenAI のクレジットが切れがちなため。料金は `gpt-6-sol` と同
 | エージェントの思考の深さ | `LINE_SIM_EFFORT`(既定 `low`)。思考は任せる(adaptive) | `LINE_SIM_EFFORT` を reasoning に |
 | 模擬ユーザー、ジャッジ(`evals/run.py`) | `claude-sonnet-5-5`(利用者の決定) | `gpt-6-luna` |
 | ゲームの中の反応(`AICA_ARCADE_QUICK_MODEL`) | `claude-haiku-5-5` | `gpt-6-luna` |
-| 履歴書の読み取り、音声アドバイザー、下書き、意味検索 | 常に OpenAI | 常に OpenAI |
+| 履歴書の読み取り(`RESUME_INTAKE_PROVIDER`) | `claude-sonnet-5-5`。思考を切る。PDF は `document`、画像は `image` のブロック | `gpt-6-sol` |
+| 音声アドバイザーの会話(`VOICE_RESUME_PROVIDER`) | `claude-sonnet-5-5`(LiveKit の Anthropic のプラグイン)。思考を切る | `gpt-6-sol`(`reasoning_effort=none`) |
+| 音声相談の下書き | `claude-sonnet-5-5`。思考は任せて effort `low` | `gpt-6-sol` |
+| 音声相談の調べもの | `claude-sonnet-5-5` + web 検索のサーバーツール(1 回の調べもので検索 2 回まで) | `gpt-6-sol` + `web_search` |
+| 意味検索の埋め込み | 常に OpenAI(Anthropic には埋め込みの API がない) | 常に OpenAI |
+| 平均時給の参考データの更新(年 1 回、手で回す) | 常に OpenAI(`gpt-6-sol` + `web_search`) | 常に OpenAI |
 
 Anthropic への送り方(思考、effort、構造化出力、キャッシュの区切り)は LLD の 1.1 と 7 章です。
 
@@ -430,7 +436,7 @@ sequenceDiagram
     participant P as トーク画面
     participant S as Web サーバー
     participant I as resume_intake
-    participant O as OpenAI
+    participant O as Anthropic
     participant D as dip の状態
 
     U->>P: ファイルを選ぶ(PDF、JPEG、PNG)
@@ -448,8 +454,8 @@ sequenceDiagram
 
 - アップロードは本人の 1 ターンです。読み取りと続くターンで、ターンを 2 つ数えます
 - ファイル名は保存せず、トークにも出しません。トークには「履歴書(PDF)」のような種類だけを出します
-- テキストのある PDF は、取り出したテキストだけを OpenAI に送り、顔写真などの画像を送りません。テキストの無い PDF
-  (スキャンなど)と、JPEG、PNG は、ファイルをそのまま送ります(6 章)
+- テキストのある PDF は、取り出したテキストだけを Anthropic(既定。`RESUME_INTAKE_PROVIDER=openai` なら OpenAI)に送り、
+  顔写真などの画像を送りません。テキストの無い PDF(スキャンなど)と、JPEG、PNG は、ファイルをそのまま送ります(6 章)
 - 読めないファイルのときは、前に読み取れた結果を上書きしません。読めなかった前提で 1 問返します
 
 ### 4.3 音声相談
@@ -475,10 +481,11 @@ sequenceDiagram
     loop 相談の間
         U->>K: 話す
         K->>W: 音声(Deepgram で文字にする)
+        W->>W: 返事を作る(Anthropic の claude-sonnet-5-5。思考を切る)
         W->>D: set_search_track、save_user_preferences、recommend_jobs
         W-->>U: 読み上げ(Cartesia)
     end
-    W->>W: 文字起こしから下書きを作る(data/voice-resume/ に書くのは開発のときだけ)
+    W->>W: 文字起こしから下書きを作る(Anthropic の構造化出力。data/voice-resume/ に書くのは開発のときだけ)
     W->>S: POST /api/voice/result(内部の鍵つき)
     S->>S: 求人を dip の求人データで作り直し、今の会話にエージェントの返信として足す
     W->>D: record_conversation_outcome(propose か consult と、相談のまとめ)
@@ -1019,8 +1026,9 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - 履歴書と下書きの `personal`(氏名、住所、電話、メール、生年月日)は、何が来ても空で保存します
 - 希望とプロフィールの値は、決まった項目だけを受け付け、電話、メール、住所らしい値は保存しません(`logic.save_preferences`)
 - 応募フォームの続きは、個人情報の項目と、値に電話、メール、住所らしい所を含む項目をトークで受け取らず、LIFF 画面を案内します(`logic.resume_form`)
-- 履歴書のファイル本体とファイル名は保存しません。ファイル名は OpenAI にも送りません(PDF は形式だけの固定の名前 `resume.pdf` で送る)
-- テキストのある PDF は、テキストをローカルで取り出し、テキストだけを OpenAI に送ります。顔写真などの画像は届きません
+- 履歴書のファイル本体とファイル名は保存しません。ファイル名は LLM のプロバイダにも送りません(Anthropic の `document` のブロックには
+  名前の欄が無い。OpenAI の PDF は形式だけの固定の名前 `resume.pdf` で送る)
+- テキストのある PDF は、テキストをローカルで取り出し、テキストだけを LLM のプロバイダ(既定は Anthropic)に送ります。顔写真などの画像は届きません
   ([privacy.md](../design/privacy.md) の 3.2 の案 B)。氏名と住所はテキストに残るので、本人に隠してもらう案内は要ります
   - ファイルをそのまま送るのは、テキストの無いページ、ページの 1 割以上を覆う画像(OCR の文字を重ねたスキャン、画像で貼った表)、
     リンク以外の注釈(閲覧アプリで書き込んだ文字、フォームの入力欄)、読めない字ばかりのテキスト、ToUnicode の無いフォント、
@@ -1033,7 +1041,8 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
   - Deepgram: `mip_opt_out=true` で、声を改善プログラムに使わせません
   - LiveKit Cloud: `record=False` で、録音、文字起こし、ログを LiveKit Cloud に残しません
   - 本番の STT は Deepgram に固定します(`VOICE_RESUME_STT_PROVIDER=deepgram`)。`openai` にすると声そのものが OpenAI に届きます
-  - 先方の保持(OpenAI の不正利用の監視のログなど)は、aica からは消せません
+  - Anthropic: 商用の API は既定で学習に使わず、30 日以内に消します(設定は要らない。[privacy.md](../design/privacy.md) の 2.2)
+  - 先方の保持(Anthropic と OpenAI の不正利用の監視のためのログなど)は、aica からは消せません
 - レジュメ・アーケードのゲームは、氏名と連絡先を聞きません。進み具合と答えはそのブラウザの localStorage に残ります。AI の段では
   答え(まとめでは書類の行)が Web サーバーを通って LLM のプロバイダに送られますが、サーバーには保存せず、ログにも出しません。
   送る前に電話とメールを伏せます(`redact_pii`)。保存するのは本人が保存した書類だけで、`scrub_pii` をかけます(4.11)
@@ -1043,7 +1052,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 - system prompt に LINE のユーザーIDを載せません。ツールの `line_user_id` には `me` を入れさせ、`PinUserMiddleware` が会話のユーザーに置き換えます。
   dip のツールの結果にもユーザーIDは入りません
 - 音声アドバイザーの調べもの(`web_research`、`research_company`、`wage_average` の web の分)は、問いに電話、メールか、住所の形があれば、
-  調べずに断ります(`has_pii`、`looks_like_address`)。問いは OpenAI を通って検索エンジンにも届くからです。
+  調べずに断ります(`has_pii`、`looks_like_address`)。問いは Anthropic(既定)を通って検索エンジンにも届くからです。
   問いは LLM が書くので、トークと違い、住む言葉が無くても番地まである住所の形(`みほん町552`)で断ります。番地の無い地名(`新宿三丁目のカフェ`)は調べます。
   区切りの無い数 1 つは、すぐ前が `町`、`村`、`丁目`、`番地`、`大字` の名前などのときだけ番地とみなします。
   キーワードの後ろの年や件数(`東京都 最低賃金 2026`、`おすすめ 10選`)、店の名前の数(`ローソンストア100`)は調べます
@@ -1125,7 +1134,7 @@ LLM に dip の Prompt で守らせ、評価がコードで確かめる規則で
 
 ### API キーと内部の鍵
 
-- 外のサービスのキー(`OPENAI_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` など)は
+- 外のサービスのキー(`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` など)は
   リポジトリ直下の `.env` に置きます。git には入れません
 - dip の MCP サーバーの子プロセスは、親の環境変数をすべて受け取ります
 - ブラウザに渡すのは、LiveKit の部屋ごとの接続トークン(有効期限 5 分)だけです

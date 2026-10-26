@@ -1,4 +1,5 @@
-"""SDK を直接呼ぶところ(模擬ユーザー・ジャッジ・ゲームの AI・データ生成)の、プロバイダの違いを吸収する。
+"""SDK を直接呼ぶところ(模擬ユーザー・ジャッジ・ゲームの AI・データ生成・音声相談の下書き・履歴書の読み取り)の、
+プロバイダの違いを吸収する。
 
 エージェントは langchain 経由(agent.build_model)なのでここは使わない。OpenAI には応答を残さない(store=False。
 docs/design/privacy.md の 3.2)。
@@ -6,6 +7,8 @@ effort は OpenAI では reasoning、Anthropic では思考(thinking)と output_
 Anthropic にはキャッシュの区切りを 2 つ付ける(cached_system と top-level の cache_control)。system の後の区切りは、
 同じ指示で本人の答えだけが変わる呼び出し(ゲームの段、データ生成)が指示を読むため。最後の区切りは、会話が伸びる
 模擬ユーザーと、同じ会話を 2 回見るジャッジが、前の呼び出しの分を読むため。512 トークンより短い前置きはキャッシュされない。
+1 回しか送らない中身(履歴書のファイル、相談の文字起こし)は、parse の cache=False で区切りを付けない
+(書き込みは入力の 1.25 倍で、読まれなければ高くなるだけ)。
 """
 
 from __future__ import annotations
@@ -28,8 +31,9 @@ def anthropic_key() -> bool:
     return any(os.environ.get(k, "").strip() for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"))
 
 
-def client():
-    if config.PROVIDER == "openai":
+def client(provider: str | None = None):
+    """provider(anthropic / openai)の非同期のクライアント。省くと LINE_SIM_PROVIDER(config.PROVIDER)。"""
+    if (provider or config.PROVIDER) == "openai":
         from openai import AsyncOpenAI
 
         return AsyncOpenAI()
@@ -60,19 +64,19 @@ def thinking_kwargs(model: str, effort: str) -> dict:
 
 
 async def parse(client, *, model: str, system: str, messages: list[dict], schema, max_tokens: int, effort: str = "none",
-                with_usage: bool = False):
+                with_usage: bool = False, cache: bool = True):
     """構造化出力(schema のインスタンス)を返す。with_usage なら (結果, 使った量) を返す。使った量は費用台帳
     (ledger.Ledger.record)の形で、input_tokens はキャッシュの読み書きを含む合計。
     Anthropic は構造化出力(output_config.format。SDK が output_format の型から作る)で受け取り、ツールの強制
-    (tool_choice の any / tool。Claude Sonnet 5.5 では 400)は使わない。"""
+    (tool_choice の any / tool。Claude Sonnet 5.5 では 400)は使わない。cache=False なら Anthropic にキャッシュの区切りを付けない。"""
     if _is_openai(client):
         resp = await client.responses.parse(model=model, instructions=system, input=messages, text_format=schema,
                                             max_output_tokens=max_tokens, reasoning={"effort": effort}, store=False)
         return (resp.output_parsed, usage_of(resp)) if with_usage else resp.output_parsed
     # messages.parse は top-level の cache_control を引数に持たないので、本文に足す(messages.create は持つ)
-    resp = await client.messages.parse(model=model, max_tokens=max_tokens, system=cached_system(system), messages=messages,
-                                       output_format=schema, extra_body={"cache_control": CACHE_CONTROL},
-                                       **thinking_kwargs(model, effort))
+    cached = {"system": cached_system(system), "extra_body": {"cache_control": CACHE_CONTROL}} if cache else {"system": system}
+    resp = await client.messages.parse(model=model, max_tokens=max_tokens, messages=messages, output_format=schema,
+                                       **cached, **thinking_kwargs(model, effort))
     return (resp.parsed_output, usage_of(resp)) if with_usage else resp.parsed_output
 
 

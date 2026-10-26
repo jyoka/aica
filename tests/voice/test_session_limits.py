@@ -164,14 +164,15 @@ def agent_mod(tmp_path, monkeypatch):
         monkeypatch.setenv(k, "offline-test")
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / ".env")  # 本物の .env を読まない
     monkeypatch.setattr(config, "OUT_DIR", tmp_path / "voice-resume")
-    from voice_resume import agent
+    from voice_resume import agent, voice_llm
 
     FakeSession.instances = []
     FakeSession.finish_replies = True
     monkeypatch.setattr(agent, "DipMCP", FakeDip)
     monkeypatch.setattr(agent, "AgentSession", FakeSession)
     monkeypatch.setattr(agent, "create_stt", lambda: SimpleNamespace(fake="stt"))
-    monkeypatch.setattr(agent, "openai", SimpleNamespace(LLM=lambda **kw: SimpleNamespace(fake="llm", **kw)))
+    monkeypatch.setattr(voice_llm, "lk_openai", SimpleNamespace(LLM=lambda **kw: SimpleNamespace(fake="llm", **kw)))
+    monkeypatch.setattr(voice_llm, "ClaudeLLM", lambda **kw: SimpleNamespace(fake="claude", **kw))
     monkeypatch.setattr(agent, "cartesia", SimpleNamespace(TTS=lambda **kw: SimpleNamespace(fake="tts", **kw)))
     monkeypatch.setattr(agent, "MultilingualModel", lambda: SimpleNamespace(fake="turn-detector"))
     monkeypatch.setattr(agent, "_post_json", talk_reports(agent))  # トークへの知らせは送らずに残す
@@ -239,16 +240,28 @@ def time_up_replies(session: FakeSession) -> list[FakeHandle]:
     return [h for h in session.replies if "時間の上限" in (h.instructions or "")]
 
 
-def test_session_keeps_nothing_on_livekit_and_openai(agent_mod):
+def test_session_keeps_nothing_on_livekit_and_openai(agent_mod, monkeypatch):
     """LiveKit Cloud に録音・文字起こし・ログを残さず(record=False)、会話の LLM も OpenAI に応答を残さない(store=False)。
-    record を渡さないと、LiveKit Cloud のプロジェクトの設定に従う(docs/design/privacy.md の 3.2)。"""
+    record を渡さないと、LiveKit Cloud のプロジェクトの設定に従う(docs/design/privacy.md の 3.2)。
+    会話の LLM は既定で Claude Sonnet 5.5(思考を切る)、VOICE_RESUME_PROVIDER=openai なら gpt-6-sol(task 236)。"""
+
+    built = []
 
     async def scenario(loop):
         _ctx, session = await start_session(agent_mod)
         assert session.started and session.record is False
-        assert session.kwargs["llm"].store is False
+        built.append(session.kwargs["llm"])
 
     run_on_fake_clock(scenario)
+    (claude,) = built
+    assert (claude.fake, claude.model, claude.caching) == ("claude", "claude-sonnet-5-5", "ephemeral")
+    assert claude.thinking == {"thinking": {"type": "between_tools"}, "output_config": {"effort": "low"}}
+    monkeypatch.setattr(config, "PROVIDER", "openai")
+    monkeypatch.setattr(config, "LLM_MODEL", "gpt-6-sol")
+    FakeSession.instances = []
+    run_on_fake_clock(scenario)
+    gpt = built[-1]
+    assert (gpt.fake, gpt.model, gpt.store) == ("llm", "gpt-6-sol", False)
 
 
 def test_session_closes_at_the_time_limit(agent_mod):
@@ -258,7 +271,7 @@ def test_session_closes_at_the_time_limit(agent_mod):
     async def scenario(loop):
         ctx, session = await start_session(agent_mod)
         assert session.started and session.kwargs["stt"].fake == "stt"
-        assert session.kwargs["llm"].fake == "llm" and session.kwargs["tts"].fake == "tts"
+        assert session.kwargs["llm"].fake == "claude" and session.kwargs["tts"].fake == "tts"
         assert len(session.replies) == 1  # 最初の挨拶
         loop.advance(10 * 60 - 1)
         await settle()

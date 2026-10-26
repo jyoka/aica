@@ -61,7 +61,7 @@ class NoModel(ScriptedModel):
         raise AssertionError("同意の前に LLM を呼んだ")
 
 
-def _bump(monkeypatch, privacy: str = "1.2") -> None:
+def _bump(monkeypatch, privacy: str = "1.3") -> None:
     """ポリシーの版を上げたことにする。"""
     monkeypatch.setattr(legal, "versions", lambda: {"terms": legal.TERMS_VERSION, "privacy": privacy})
 
@@ -73,19 +73,19 @@ def test_record_keeps_the_version_and_a_new_version_asks_again(tmp_path, monkeyp
     state = State(tmp_path / "state.json")
     uid = "w-1234567890abcdef"
     assert consent.needed(state, uid, "terms") and uid not in state.user_ids()  # 同意の前は行も無い
-    assert consent.tag() == "privacy=1.1;terms=1.0"
+    assert consent.tag() == "privacy=1.2;terms=1.0"
     assert consent.record(state, uid, "terms", "privacy=1.0;terms=1.0") is False  # 示していない版には同意できない
     assert uid not in state.user_ids()
     assert consent.record(state, uid, "terms", consent.tag()) is True
     rec = state.user(uid)["consents"]["terms"]
-    assert rec["version"] == {"terms": "1.0", "privacy": "1.1"} and rec["at"].endswith("+00:00")
+    assert rec["version"] == {"terms": "1.0", "privacy": "1.2"} and rec["at"].endswith("+00:00")
     assert not consent.needed(state, uid, "terms") and consent.needed(state, uid, "resume")
     # /dev のシナリオユーザーは、同じブラウザの人(匿名ID)の同意を見る
     assert not consent.needed(state, f"{uid}:sim-new", "terms")
     _bump(monkeypatch)
     assert consent.needed(state, uid, "terms")  # 版が上がったら取り直す
-    assert consent.record(state, uid, "terms", "privacy=1.2;terms=1.0")
-    assert state.user(uid)["consents"]["terms"]["version"]["privacy"] == "1.2"
+    assert consent.record(state, uid, "terms", "privacy=1.3;terms=1.0")
+    assert state.user(uid)["consents"]["terms"]["version"]["privacy"] == "1.3"
 
 
 def test_texts_follow_the_design_and_the_policy():
@@ -97,6 +97,9 @@ def test_texts_follow_the_design_and_the_policy():
     assert "「データを消す」" in "\n".join(line["terms"]["points"]) and "「すべて消す」" not in "\n".join(line["terms"]["points"])
     assert "隠すか消してから" in web["resume"]["strong"] and web["resume"]["button"] == "同意してファイルを選ぶ"
     assert all(w in "".join(web["voice"]["paragraphs"]) for w in ("LiveKit", "Deepgram", "Cartesia", "録音は保存しません"))
+    # 履歴書と音声相談の送り先は、既定では Anthropic(task 236)
+    assert "米国の Anthropic に送ります" in web["resume"]["paragraphs"][0]
+    assert "文字にした内容は米国の Anthropic に送り" in "".join(web["voice"]["paragraphs"])
     assert [x["url"] for x in consent.links()] == ["/legal/terms", "/legal/privacy"]
 
 

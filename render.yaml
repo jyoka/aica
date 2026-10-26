@@ -16,10 +16,10 @@ services:
       mountPath: /app/data
       sizeGB: 1
     envVars:
-      # トークとゲームの AI(既定の LINE_SIM_PROVIDER=anthropic)
+      # トーク、ゲームの AI、履歴書の読み取り、音声相談(既定の LINE_SIM_PROVIDER=anthropic)
       - key: ANTHROPIC_API_KEY
         sync: false
-      # 履歴書の読み取り、意味検索、音声相談
+      # 求人の意味検索の埋め込み(Anthropic には埋め込みの API がない。無ければ部分一致の検索に戻る)
       - key: OPENAI_API_KEY
         sync: false
       # Render のプロキシの後ろなので、IP を X-Forwarded-For の最後の値から取る

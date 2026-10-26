@@ -5,7 +5,8 @@
   (results/stt-eval-*.md)で「時給の下限」「合うと思う」の聞き間違いが直り、
   遅延も一番短かった。nova-2 に戻すなら VOICE_RESUME_STT_MODEL=nova-2、
   OpenAI にするなら VOICE_RESUME_STT_PROVIDER=openai(モデルは gpt-4o-transcribe など)
-- LLM: OpenAI gpt-6-sol(会話・下書き生成とも。line_runtime の既定 OpenAI モデルと同じ)
+- LLM: Anthropic Claude Sonnet 5.5(会話・下書き・調べものとも。task 236。料金は前の gpt-6-sol と同じ
+  入力 $2 / 出力 $10 per 1M)。VOICE_RESUME_PROVIDER=openai(未指定なら LINE_SIM_PROVIDER)で前の gpt-6-sol に戻る
 - TTS: Cartesia sonic-3.5 の日本語ボイス。速さは標準より少し遅い "slow" が既定
 - ターン判定: Silero VAD + LiveKit turn detector(多言語)。終わり判定は少し待つ
 - 1 回の相談の上限: 長さ 10 分、web の調べもの 5 回
@@ -20,7 +21,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]  # リポジトリ直下
-# LIVEKIT_* / OPENAI_API_KEY / DEEPGRAM_API_KEY / CARTESIA_API_KEY はリポジトリ直下の .env(line_runtime と共通)
+# LIVEKIT_* / ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPGRAM_API_KEY / CARTESIA_API_KEY はリポジトリ直下の .env(line_runtime と共通)
 ENV_FILE = ROOT / ".env"
 
 # --- STT(文字起こし)---
@@ -38,14 +39,28 @@ STT_KEYTERMS = [
     if t.strip()
 ]
 
-# --- LLM(会話の脳・下書き生成)---
-LLM_MODEL = os.environ.get("VOICE_RESUME_LLM_MODEL", "gpt-6-sol")
-# gpt-6-sol は chat completions でツールを使うとき reasoning_effort="none" が必要。
-# 音声会話は低レイテンシ優先なので none を既定にする
+# --- LLM(会話の脳・下書き生成・調べもの)---
+# プロバイダ(anthropic / openai)。未指定ならトークと同じ LINE_SIM_PROVIDER、それも無ければ anthropic(task 236)。
+# 作り分けは voice_resume/voice_llm.py(会話)と、drafter / advisor が受け取る client の型(下書き・調べもの)
+PROVIDER = os.environ.get("VOICE_RESUME_PROVIDER") or os.environ.get("LINE_SIM_PROVIDER") or "anthropic"
+_DEFAULT_MODEL = {"openai": "gpt-6-sol"}.get(PROVIDER, "claude-sonnet-5-5")
+LLM_MODEL = os.environ.get("VOICE_RESUME_LLM_MODEL", _DEFAULT_MODEL)
+# 思考の深さ(OpenAI の reasoning_effort と同じ名前)。音声会話は低レイテンシ優先なので none を既定にする。
+# gpt-6-sol は chat completions でツールを使うとき none が必要。Anthropic では none は思考を切る
+# (Claude Sonnet 5.5 は thinking between_tools + effort low、Haiku 5.5 は disabled + low。line_runtime.llm.thinking_kwargs)
 LLM_REASONING_EFFORT = os.environ.get("VOICE_RESUME_LLM_REASONING_EFFORT", "none")
-DRAFT_MODEL = os.environ.get("VOICE_RESUME_DRAFT_MODEL", "gpt-6-sol")
-# 会話中の調べもの(web_research)。Responses API の web_search を使う
-RESEARCH_MODEL = os.environ.get("VOICE_RESUME_RESEARCH_MODEL", "gpt-6-sol")
+# 会話の 1 回の返事の上限トークン(Anthropic は必須。音声の返事は短いが、finalize_interview のまとめの引数も入る)
+LLM_MAX_TOKENS = int(os.environ.get("VOICE_RESUME_LLM_MAX_TOKENS", "4096"))
+DRAFT_MODEL = os.environ.get("VOICE_RESUME_DRAFT_MODEL", _DEFAULT_MODEL)
+# 下書きの思考の深さ(Anthropic だけ。思考は任せて effort を低めにする。節約のため)
+DRAFT_EFFORT = os.environ.get("VOICE_RESUME_DRAFT_EFFORT", "low")
+# 会話中の調べもの(web_research)。OpenAI は Responses API の web_search、Anthropic は web 検索のサーバーツール
+RESEARCH_MODEL = os.environ.get("VOICE_RESUME_RESEARCH_MODEL", _DEFAULT_MODEL)
+# Anthropic の 1 回の調べもので web を検索する回数の上限(max_uses)。検索 1 回 $0.01 と、結果の分の入力トークンがかかる
+RESEARCH_MAX_USES = int(os.environ.get("VOICE_RESUME_RESEARCH_MAX_USES", "2"))
+# 平均時給の参考データの更新(scripts/voice/update_wage_reference.py。年 1 回、手で回す)は OpenAI のまま
+# (web 検索と構造化出力を 1 回で使う。Anthropic の web 検索は必ず引用が付き、構造化出力と一緒に使えるかは確かめていない)
+WAGE_UPDATE_MODEL = os.environ.get("VOICE_RESUME_WAGE_UPDATE_MODEL", "gpt-6-sol")
 
 # --- TTS(声)。ボイスと速さは設定で変えられる ---
 TTS_MODEL = os.environ.get("VOICE_RESUME_TTS_MODEL", "sonic-3.5")

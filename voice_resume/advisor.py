@@ -1,6 +1,6 @@
 """音声アドバイザー本体(LiveKit Agent)。
 
-会話の脳は OpenAI(gpt-6-sol)。指示は、区分によらない音声の決まりに、今の雇用区分の playbook(dip の
+会話の脳は Anthropic の Claude Sonnet 5.5(VOICE_RESUME_PROVIDER=openai なら OpenAI の gpt-6-sol。voice_resume/voice_llm.py)。指示は、区分によらない音声の決まりに、今の雇用区分の playbook(dip の
 get_counseling_playbook(track, "voice"))を足したもの(prompts.advisor_instructions)。ツール:
 - set_search_track: 本人の発話から雇用区分を切り替えて dip に記録し、指示の playbook をその区分のものに入れ替える
 - save_user_preferences: 本人が話した希望と自分のこと(目的・強み・正社員の条件など)を、その場で dip に保存する
@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 
 from livekit.agents import Agent, function_tool
 
+from line_runtime import llm as line_llm
 from resume_draft.pii import has_pii, looks_like_address
 from voice_resume import config
 from voice_resume.jobs import (
@@ -82,8 +83,8 @@ class ResumeAdvisor(Agent):
         self._resume = uploaded_resume
         super().__init__(instructions=self._build_instructions())
         self._dip = dip  # DipMCP(またはテスト用スタブ)。None なら求人提案は不可の旨を返す
-        self._draft_client_factory = draft_client_factory  # () -> AsyncOpenAI 互換
-        self._research_client_factory = research_client_factory  # () -> AsyncOpenAI 互換
+        self._draft_client_factory = draft_client_factory  # () -> AsyncAnthropic か AsyncOpenAI 互換
+        self._research_client_factory = research_client_factory  # () -> AsyncAnthropic か AsyncOpenAI 互換
         self._room = room  # 画面表示用の data channel(無ければ音声のみ)
         # トークから入った相談のユーザーID(匿名ユーザーID のスコープ)。あるときだけ dip に書き込み
         # (希望の保存・結果の記録)、終わりにトーク(line_runtime)へ結果を届ける。無ければ従来どおり読み取りだけ
@@ -756,7 +757,7 @@ class ResumeAdvisor(Agent):
         """web で調べて読み上げ用の答えを返す。1 回の相談で config.MAX_WEB_SEARCHES 回まで(費用の上限)。
 
         上限を超えたら調べず、表示も出さない(一瞬で消える表示を出さない)。失敗した回も 1 回に数える。
-        問い(subject。OpenAI を通って検索エンジンにも届く)に電話番号・メールアドレス・住所の形があれば、
+        問い(subject。LLM の事業者(既定は Anthropic)を通って検索エンジンにも届く)に電話番号・メールアドレス・住所の形があれば、
         調べずに PERSONAL_QUERY_REPLY を返す(表示も出さず、回数にも数えない)。問いは LLM が書くので、
         本人の文と違い、住む言葉が無くても住所の形で断る(looks_like_address)。
         """
@@ -772,25 +773,30 @@ class ResumeAdvisor(Agent):
             return _spoken(await self._search(subject))
 
     async def _search(self, subject: str) -> str | None:
-        """web_search で調べて、話し言葉の短い答えを返す。失敗したら None(会話は止めない)。"""
+        """web で調べて、話し言葉の短い答えを返す。失敗したら None(会話は止めない)。
+        送り先は client の型で決まる(Anthropic は web 検索のサーバーツール、OpenAI は Responses API の web_search)。"""
         client = self._research_client_factory() if self._research_client_factory else _default_client()
+        prompt = RESEARCH_PROMPT + subject
         try:
-            resp = await client.responses.create(
-                model=config.RESEARCH_MODEL,
-                # 音声の会話で待たせないよう軽くする(実測: 既定 約16秒 → この設定で 約7秒)
-                tools=[{"type": "web_search", "search_context_size": "low"}],
-                reasoning={"effort": "none"},
-                store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
-                input=(
-                    "次のことを web で調べ、日本語の話し言葉(です・ます調)で2〜3文にまとめてください。"
-                    "記号・箇条書き・URL は使わず、最後に主な情報源のサイト名を一言添えてください。"
-                    "分からなかったことは分からないと書いてください。\n\n" + subject
-                ),
-            )
+            if hasattr(client, "responses"):  # OpenAI
+                resp = await client.responses.create(
+                    model=config.RESEARCH_MODEL,
+                    # 音声の会話で待たせないよう軽くする(実測: 既定 約16秒 → この設定で 約7秒)
+                    tools=[{"type": "web_search", "search_context_size": "low"}],
+                    reasoning={"effort": "none"},
+                    store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
+                    input=prompt,
+                )
+                text = resp.output_text or ""
+            else:
+                text = await _claude_search(client, prompt)
         except Exception as exc:  # noqa: BLE001 - 調べものに失敗しても会話は続ける
             logger.warning("web 検索に失敗: %s", type(exc).__name__)
             return None
-        return _strip_links(resp.output_text or "")
+        if text is None:
+            logger.warning("web 検索が終わらなかった(pause_turn のまま)")
+            return None
+        return _strip_links(text)
 
     def _transcript(self) -> list[dict]:
         try:
@@ -832,6 +838,49 @@ def _spoken(answer: str | None) -> str:
     )
 
 
+RESEARCH_PROMPT = (
+    "次のことを web で調べ、日本語の話し言葉(です・ます調)で2〜3文にまとめてください。"
+    "記号・箇条書き・URL は使わず、最後に主な情報源のサイト名を一言添えてください。"
+    "分からなかったことは分からないと書いてください。\n\n"
+)
+# Anthropic の web 検索のサーバーツール。検索は 1 回 $0.01 と、結果の分の入力トークンがかかる(2026-10-26 の Anthropic の
+# 資料)ので、1 回の調べもので検索する回数を config.RESEARCH_MAX_USES(既定 2)までにする。
+# この版の既定の dynamic filtering(コードを実行して結果を絞る)は切る(allowed_callers を direct にする)。2026-10-26 に
+# 同じ問いを 1 回ずつ実 API で比べると、絞る方は 12.1 秒・入力 3 万トークン・$0.076、切った方は 5.5 秒・1.2 万トークン・
+# $0.037 だった(音声で待たせる時間と費用が半分)。検索の結果は日本向けにする(地域は国と時間帯だけで、本人の場所は送らない)
+RESEARCH_TOOL_TYPE = "web_search_20260209"
+# 長い検索で API が返事を止めた(pause_turn)とき、続きを頼む回数の上限。max_uses は呼び出しごとに数え直すとみられる
+# (推測)ので、検索は多くても (1 + この数) × RESEARCH_MAX_USES 回になる
+MAX_RESEARCH_PAUSES = 1
+
+
+def research_tool() -> dict:
+    return {"type": RESEARCH_TOOL_TYPE, "name": "web_search", "max_uses": config.RESEARCH_MAX_USES,
+            "allowed_callers": ["direct"],
+            "user_location": {"type": "approximate", "country": "JP", "timezone": "Asia/Tokyo"}}
+
+
+async def _claude_search(client, prompt: str) -> str | None:
+    """Anthropic の web 検索で調べた答え(最後の検索の後の文)。思考は切る(音声で待たせない。effort none は
+    Claude Sonnet 5.5 では thinking between_tools + effort low。line_runtime.llm.thinking_kwargs)。
+    続きを頼んでも止まったまま(答えが無い)なら None(調べものの失敗として伝える)。"""
+    messages: list[dict] = [{"role": "user", "content": prompt}]
+    for _ in range(MAX_RESEARCH_PAUSES + 1):
+        resp = await client.messages.create(model=config.RESEARCH_MODEL, max_tokens=4096, messages=messages,
+                                            tools=[research_tool()],
+                                            **line_llm.thinking_kwargs(config.RESEARCH_MODEL, "none"))
+        if getattr(resp, "stop_reason", None) != "pause_turn":
+            break
+        # 止まった返事をそのまま送り返すと、続きから検索と答えを続ける
+        messages = [messages[0], {"role": "assistant", "content": resp.content}]
+    else:
+        return None
+    blocks = list(resp.content or [])
+    # 「調べますね」のような検索の前の文は外し、最後の検索の結果の後の文だけを使う
+    last_tool = max((i for i, b in enumerate(blocks) if getattr(b, "type", "") not in ("text", "thinking")), default=-1)
+    return "".join(b.text for b in blocks[last_tool + 1:] if getattr(b, "type", "") == "text").strip()
+
+
 def _strip_links(text: str) -> str:
     """web_search が付ける出典リンク([サイト](URL))や URL を消す(読み上げないため)。"""
     text = re.sub(r"\(?\[([^\]]*)\]\([^)]*\)\)?", "", text)
@@ -840,9 +889,8 @@ def _strip_links(text: str) -> str:
 
 
 def _default_client():
-    from openai import AsyncOpenAI
-
-    return AsyncOpenAI()
+    """下書きと調べものの client(config.PROVIDER の AsyncAnthropic か AsyncOpenAI)。"""
+    return line_llm.client(config.PROVIDER)
 
 
 def post_failure(exc: Exception) -> str:

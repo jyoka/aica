@@ -257,13 +257,30 @@ dip の関数はどれも、1 つ目の引数に `State` を受け取ります�
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `extract.py` | 履歴書のファイルから Resume Draft を作る。OpenAI の Responses API の構造化出力。テキストのある PDF はローカルでテキストを取り出す(pypdf)。形と `scrub_pii` は `resume_draft`(1.8) | `EXTRACT_SYSTEM`、`media_type`、`pdf_text`、`content_part`、`extract_bytes`、`extract_draft`、`finalize`、`Usage` |
-| `config.py` | モデル、上限、出力先 | `MODEL`(既定 `gpt-6-sol`)、`MAX_UPLOAD_BYTES`(10MB)、`OUT_DIR` |
+| `extract.py` | 履歴書のファイルから Resume Draft を作る。Anthropic の Messages API の構造化出力(`line_runtime.llm.parse`。`RESUME_INTAKE_PROVIDER=openai` なら OpenAI の Responses API)。テキストのある PDF はローカルでテキストを取り出す(pypdf)。形と `scrub_pii` は `resume_draft`(1.8) | `EXTRACT_SYSTEM`、`media_type`、`pdf_text`、`content_part`、`anthropic_block`、`default_client`、`extract_bytes`、`extract_draft`、`finalize`、`Usage` |
+| `config.py` | プロバイダ、モデル、思考の深さ、上限、出力先 | `PROVIDER`(既定 `anthropic`)、`MODEL`(既定 `claude-sonnet-5-5`)、`EFFORT`(既定 `none`)、`MAX_UPLOAD_BYTES`(10MB)、`OUT_DIR` |
 | `cli.py`、`run_samples.py` | 運営者が手で回す読み取りと、サンプルの正解との比較(実 API) | - |
 | `samples/` | 架空の履歴書 5 つと正解 4 つ(05 は JIS 風の表と顔写真の PDF) | - |
 
-`client` を引数で受け取るので、テストは `responses.parse` を持つスタブを渡します。Web サーバーは `server.resume_client` で
-`AsyncOpenAI` を作ります。
+`client` を引数で受け取り、送り先は `client` の型で決めます(`responses` があれば OpenAI)。テストは `messages.parse` か
+`responses.parse` を持つスタブを渡します。Web サーバーは `server.resume_client`(`extract.default_client`)で `PROVIDER` の
+`AsyncAnthropic` か `AsyncOpenAI` を作ります。
+
+Anthropic への送り方です(task 236。`tests/test_claude_voice_resume.py`)。
+
+- 中身は `content_part` が作る Responses API の形を、`anthropic_block` で Messages API のブロックにします。取り出したテキストは
+  `text`、テキストの無い PDF は `document`(`source.type=base64`、`application/pdf`)、JPEG と PNG は `image`(base64)です。
+  ファイル名は送りません(`document` には名前の欄が無い)。ファイル(かテキスト)を先に、頼みの文を後に置きます
+- 思考は `RESUME_INTAKE_EFFORT`(既定 `none`)で、Claude Sonnet 5.5 では `thinking: between_tools` と effort `low` です。
+  書いてあることを写すだけなので、節約のため思考を切ります
+- 1 回しか送らないので、キャッシュの区切りは付けません(`line_runtime.llm.parse` の `cache=False`。書き込みは入力の 1.25 倍)
+- 画像の MIME タイプは、拡張子ではなく中身の先頭で決めます(名前を付け替えた PNG を `image/jpeg` で送ると 400)。Anthropic は
+  1 枚を base64 にして 10MB まで、縦横 8000 画素までなので、超える写真(アップロードは 10MB まで受ける)は、長い辺を 2,576 画素
+  (Claude Sonnet 5.5 が読む上限)に縮め、写真の向きを直して JPEG にし直します(`fit_image`。別のスレッドで行う)
+- 縮めるときは、Web のプロセスのメモリ(Render の Starter は 512MB で、音声ワーカーと分け合う)を守るため、画素を展開する前に
+  大きさを見ます。JPEG は `draft` で 1/2〜1/8 に縮めて読み、展開する画素が 1,250 万(`MAX_DECODED_IMAGE_PIXELS`)を超える
+  画像(小さなファイルの画素の多い PNG など)は `ImageTooLarge` で断ります。トークのアップロードは、会話数を使う前に
+  `oversized_image` で見て 413 を返します。縮めてから向きを直し、透けた所は白で埋めます
 
 ### 1.4 voice_resume
 
@@ -273,7 +290,7 @@ OpenAI Realtime の構成から作り直しました)。
 ```
 ブラウザ(マイク) ──WebRTC──▶ LiveKit Cloud(部屋) ──▶ 音声ワーカー(voice_resume/agent.py)
                                                         ├ STT: Deepgram nova-3(ja)+ 用語の keyterm
-                                                        ├ LLM: OpenAI gpt-6-sol(reasoning_effort=none)
+                                                        ├ LLM: Anthropic claude-sonnet-5-5(思考を切る。voice_llm.py)
                                                         ├ TTS: Cartesia sonic-3.5(日本語のボイス、速さ 0.9)
                                                         ├ ターンの判定: Silero VAD + 多言語の turn detector
                                                         ├ dip: dip_mcp を相談ごとに stdio の子プロセスで起動
@@ -293,6 +310,7 @@ OpenAI Realtime の構成から作り直しました)。
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
 | `livekit_token.py` | 部屋の接続トークンの発行。Web サーバーが使う | `configured`、`issue_token`、`TOKEN_TTL`(5 分) |
 | `stt.py` | STT の作り分け | `create_stt` |
+| `voice_llm.py` | 会話の LLM の作り分け(`VOICE_RESUME_PROVIDER`)。Anthropic は LiveKit のプラグインに思考の設定を足したもの | `create_llm`、`ClaudeLLM` |
 | `flow.py`、`stt_eval.py` | 文字起こしから会話の流れを確かめるチェッカーと、STT の聞き取りの台本(テストと評価で使う) | `verify_flow`、`count_experience_probes`、`find_leading_questions`、`score_transcripts` |
 | `wages.py` | 平均時給の参考データ(`data/wage_reference.json`) | `load_reference`、`answer_from_reference` |
 | `config.py` | 設定(7.1)と `.env` の読み込み | `WRITE_FILES`、`OUT_DIR`、`TALK_URL`、`dip_server_command`、`load_env` |
@@ -457,7 +475,7 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
   `丁目`、`番地` の言葉だけの当たり(`新宿三丁目のカフェ`)と、丁目までの数(`西新宿1丁目の店`)は数えません。
   区切りの無い数 1 つ(`みほん町552`)は、すぐ前(空白 1 つを越える)が町名の終わり(`_LOT_BEFORE`。`町`、`村`、`丁目`、`番地`、`大字`・`字` の名前)のときだけ数えます
   (`大字みほん1234`、`みほん町字あおば 12` は断る)。`字` は前が `大`、市区町村郡の字、文の始まりか空白のときだけです(`漢字検定 2` は数えない)
-  - 理由: 問いは LLM が書き、OpenAI と検索エンジンに届きます。音声の文字起こしは伏せないので、本人が話した住所を LLM が住む言葉を外して
+  - 理由: 問いは LLM が書き、LLM の事業者(既定は Anthropic)と検索エンジンに届きます。音声の文字起こしは伏せないので、本人が話した住所を LLM が住む言葉を外して
     書き写せます(`みほん市みほん町1-2-3 から近いコンビニバイト`)。住む言葉の決まりは本人の文の中で検索の条件を残すためのもので、
     外へ出る問いには当てはまりません(task 211)
   - 数 1 つを町名の終わりの後ろだけにする理由: 問いはキーワードを空白で区切って書くので、言葉の後ろの年や件数、店の名前の数が
@@ -731,7 +749,7 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 | `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
 | `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
 | `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
-| `web_research(query)`、`research_company(name, hint)` | OpenAI の Responses API の `web_search` で調べ、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メールか、住む言葉が無くても住所の形があれば(`has_pii`、`looks_like_address`。1.8)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
+| `web_research(query)`、`research_company(name, hint)` | Anthropic の web 検索のサーバーツール(`web_search_20260209`、dynamic filtering なし、1 回の調べもので `max_uses` 2 回まで。`VOICE_RESUME_PROVIDER=openai` なら Responses API の `web_search`)で調べ、検索の後の答えだけを、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メールか、住む言葉が無くても住所の形があれば(`has_pii`、`looks_like_address`。1.8)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
 
@@ -933,7 +951,7 @@ sequenceDiagram
     participant E as entrypoint
     participant A as ResumeAdvisor
     participant D as DipMCP(dip の子プロセス)
-    participant O as OpenAI
+    participant O as Anthropic(既定)
     participant F as data/voice-resume/
     participant S as Web サーバー
 
@@ -2199,14 +2217,15 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | 呼び出し | 呼ぶところ | API とモデル | いつ | 台帳 |
 |---|---|---|---|---|
 | エージェント | `LineRuntime._turn` | Anthropic Messages `claude-sonnet-5-5`(既定)か OpenAI Responses `gpt-6-sol` | ターンごとに 1 回以上(ツールを呼ぶたび) | 費用台帳 |
-| 履歴書の読み取り | `resume_intake.extract._extract` | OpenAI Responses `gpt-6-sol`(`RESUME_INTAKE_MODEL`)。テキストのある PDF はテキストだけ(4.3) | アップロードごとに 1 回 | 費用台帳 |
+| 履歴書の読み取り | `resume_intake.extract._extract` | Anthropic Messages `claude-sonnet-5-5`(既定。`RESUME_INTAKE_MODEL`)か OpenAI Responses `gpt-6-sol`。テキストのある PDF はテキストだけ(4.3) | アップロードごとに 1 回 | 費用台帳 |
 | 意味検索の問い合わせ | `dip_mcp.embedding._api_embed`(dip の子プロセス) | OpenAI Embeddings `text-embedding-3-large`、1024 次元、1 回 5 秒で打ち切り、1 回だけ再試行 | `recommend_jobs` の keywords ごとに 1 回(同じ文はプロセスの中で 512 件まで覚える) | なし(R19) |
 | 求人のベクトル | `scripts/gen_job_vectors.py` | 同上 | 人が回す | なし |
 | 音声の文字起こし | `voice_resume.stt.create_stt` | Deepgram `nova-3`(ストリーミング) | 相談の間ずっと | なし(R6) |
-| 音声アドバイザー | `voice_resume.agent.entrypoint` | OpenAI `gpt-6-sol`(`reasoning_effort=none`) | 本人の発話ごと | なし(R6) |
+| 音声アドバイザー | `voice_resume.agent.entrypoint`(`voice_llm.create_llm`) | Anthropic Messages(ストリーミング)`claude-sonnet-5-5`(既定。思考を切る)か OpenAI Chat Completions `gpt-6-sol`(`reasoning_effort=none`) | 本人の発話ごと | なし(R6) |
 | 読み上げ | 同上 | Cartesia `sonic-3.5` | アドバイザーの発話ごと | なし(R6) |
-| 下書き | `voice_resume.drafter.build_draft` | OpenAI Responses `gpt-6-sol` | 相談の終わりに 1 回 | なし(R6) |
-| 調べもの | `ResumeAdvisor._search` | OpenAI Responses `gpt-6-sol` + `web_search`(`search_context_size=low`) | 本人が聞いたとき | なし(R6) |
+| 下書き | `voice_resume.drafter.build_draft` | Anthropic Messages `claude-sonnet-5-5`(既定。effort `low`)か OpenAI Responses `gpt-6-sol` | 相談の終わりに 1 回 | なし(R6) |
+| 調べもの | `ResumeAdvisor._search` | Anthropic Messages `claude-sonnet-5-5` + `web_search_20260209`(既定。`max_uses` 2、dynamic filtering なし、思考を切る)か OpenAI Responses `gpt-6-sol` + `web_search`(`search_context_size=low`) | 本人が聞いたとき | なし(R6) |
+| 平均時給の参考データの更新 | `scripts/voice/update_wage_reference.py` | 常に OpenAI Responses `gpt-6-sol`(`VOICE_RESUME_WAGE_UPDATE_MODEL`)+ `web_search`。web 検索と構造化出力を 1 回で使うため | 人が年 1 回くらい回す | なし |
 | 部屋 | ブラウザ、ワーカー | LiveKit Cloud | 相談ごと | なし |
 | LiveKit のブラウザ用ライブラリ | `talk-core.js` | jsDelivr の `livekit-client@2` | シートを開いたとき | -(R11) |
 | LINE の入力中の表示、返信、push | `server._line_user_events`(`line_channel.LineApi`) | LINE Messaging API(`api.line.me`)。1 回 10 秒で打ち切り | LINE のイベントごと。push は返信トークで返せなかったときだけ | なし。push は LINE 公式アカウントの月のメッセージ数に数えられる |
@@ -2217,9 +2236,9 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 
 | サービス | 設定 | 呼ぶところ | 効き目 |
 |---|---|---|---|
-| OpenAI Responses | `store=False` | エージェント(`agent.build_model`)、履歴書の読み取り、下書き、調べもの、平均時給の更新(`voice_resume.wages.fetch_reference`)、模擬ユーザーとジャッジ、レジュメ・アーケードの AI の段(`line_runtime.llm`) | 応答を OpenAI に残さない。前の応答を ID で参照できなくなる |
+| OpenAI Responses | `store=False` | `openai` のときの、エージェント(`agent.build_model`)、履歴書の読み取り、下書き、調べもの。常に OpenAI の平均時給の更新(`voice_resume.wages.fetch_reference`)、模擬ユーザーとジャッジ、レジュメ・アーケードの AI の段(`line_runtime.llm`) | 応答を OpenAI に残さない。前の応答を ID で参照できなくなる |
 | OpenAI Responses(エージェント) | `include=["reasoning.encrypted_content"]` | `agent.build_model` | 残さない応答の reasoning を、暗号化した中身で受け取る。langchain-openai が次の呼び出しで送り返す(中身の無い reasoning と、メッセージの ID は送らない)。会話の記録にも暗号化したまま残る |
-| OpenAI Chat Completions(音声アドバイザー) | `store=False` | `voice_resume.agent.entrypoint` | 既定も残さないが、明示する |
+| OpenAI Chat Completions(音声アドバイザー) | `store=False` | `voice_resume.voice_llm.create_llm`(`VOICE_RESUME_PROVIDER=openai` のとき) | 既定も残さないが、明示する |
 | Deepgram | `mip_opt_out=True` | `voice_resume.stt.create_stt` | 声を改善プログラム(Model Improvement Program)に使わせない。先方は処理の間だけ持つ |
 | LiveKit Cloud | `AgentSession.start(record=False)` | `voice_resume.agent.entrypoint` | 録音、文字起こし、ログを Agent Observability に送らない。指定しないとプロジェクトの設定に従う |
 
@@ -2228,14 +2247,37 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 最後の決まりは本物の API で確かめていない推測です([privacy.md](../design/privacy.md) の 3.2)。
 OpenAI の Zero Data Retention は申し込んでいません(人が決める)。
 
-Anthropic(既定)への送り方です。SDK を直に呼ぶところ(`line_runtime.llm`。模擬ユーザー、ジャッジ、ゲームの AI)は、構造化出力
+Anthropic(既定)への送り方です。SDK を直に呼ぶところ(`line_runtime.llm`。模擬ユーザー、ジャッジ、ゲームの AI、履歴書の読み取り、音声相談の下書き)は、構造化出力
 (`messages.parse` の `output_format`。SDK が `output_config.format` にする)で受け、ツールの強制は使いません。
 `llm.thinking_kwargs` が effort を thinking と `output_config.effort` にします。
 
 | effort | `claude-sonnet-5-5` | `claude-haiku-5-5` | 使うところ |
 |---|---|---|---|
-| `none`(思考を切る) | `thinking: between_tools`、effort `low` | `thinking: disabled`、effort `low` | 模擬ユーザー、ゲームの中の反応 |
-| `low` など | thinking を送らない(adaptive)、その effort | 同じ | ジャッジ、ゲームのまとめ |
+| `none`(思考を切る) | `thinking: between_tools`、effort `low` | `thinking: disabled`、effort `low` | 模擬ユーザー、ゲームの中の反応、履歴書の読み取り、音声の会話、調べもの |
+| `low` など | thinking を送らない(adaptive)、その effort | 同じ | ジャッジ、ゲームのまとめ、音声相談の下書き |
+
+1 回しか送らない中身(履歴書のファイル、相談の文字起こし)には、キャッシュの区切りを付けません(`llm.parse` の `cache=False`)。
+音声の会話は LiveKit のプラグイン(`livekit-plugins-anthropic`。livekit-agents と同じ 1.8 系)で送ります(`voice_resume/voice_llm.py`)。
+
+- プラグインは `thinking` と `output_config` を引数に持たないので、`ClaudeLLM.chat` が毎回の `extra_kwargs` に足します
+- キャッシュはプラグインの `caching="ephemeral"` で、ツールの最後、system の最後、最後の返事とその前の本人の発話に区切りを付けます。
+  音声の指示(区分の playbook つき)は長いので、2 回目の返事から前置きをキャッシュから読みます
+- プラグインは思考のブロック(`between_tools` の途中の短い報告を含む)を読み上げず、会話の記録にも残さないので、次の呼び出しにも
+  送り返しません。思考を任せる(adaptive)と、ツールの呼び出しの後に思考のブロックを返せないので、思考を切ります(推測。実 API では未確認)
+  - 気をつけること: Claude Sonnet 5.5 は、ツールを呼ぶ前の 1〜2 文より長い文を、思考のブロック(途中の報告)で返します。
+    「〜で探しますね。少しお待ちください」のような前置きが長いと、その分は読み上げられず、検索の間は黙ったままになります
+    (Anthropic の移行の資料による。実機では確かめていない)
+- ツールの選び方は強制しません(プラグインは Sonnet 5.5 への `tool_choice` の any / tool を auto に直す)
+- ツールの形は strict にしません(`_strict_tool_schema=False`)。プラグインの既定の strict の形は、省ける引数をすべて null との union に
+  するので、アドバイザーの 7 つのツールでは union の引数が 47 個になり、Anthropic の上限(16 個)を超えて毎回 400 になりました
+  (2026-10-26 に実 API で確かめた)
+
+調べものの web 検索は 1 回 $0.01 で、結果の分の入力トークンも払います(2026-10-26 の Anthropic の資料)。`max_uses` が 2 なので、1 回の
+調べものの検索の費用は $0.02 までです。この版の既定の dynamic filtering(コードを実行して結果を絞る)は、`allowed_callers: ["direct"]` で
+切ります。同じ問いを 1 回ずつ比べると、絞る方は 12.1 秒・入力 30,521 トークン・$0.076、切った方は 5.5 秒・11,748 トークン・$0.037 でした
+(2026-10-26。1 回ずつなので、ばらつきは測っていない)。検索の結果は日本向けにします(`user_location` は国 JP と時間帯だけで、本人の場所は送りません)。
+長い検索で返事が止まったら(`pause_turn`)、止まった返事を送り返して続きを受け取ります(1 回まで。`max_uses` は呼び出しごとに数え直すと
+みられるので、検索は多くても 4 回。推測)。続けても止まったままなら、調べものの失敗として伝えます。
 
 キャッシュの区切り(5 分)は、system の後と最後(top-level の `cache_control`)の 2 か所です。指示が同じで答えだけが変わる呼び出し
 (ゲームの段)は指示を、会話が伸びる模擬ユーザーと同じ会話を 2 回見るジャッジは前の呼び出しの分を、2 回目からキャッシュから読みます。
@@ -2257,8 +2299,11 @@ web 検索は 1 回 $0.01 で数えます。`resume_intake/config.py` にも同�
 |---|---|---|
 | STT の提供元とモデル | `VOICE_RESUME_STT_PROVIDER`、`VOICE_RESUME_STT_MODEL` | `deepgram`、`nova-3`(`openai` なら `gpt-4o-transcribe` など) |
 | STT の用語 | `VOICE_RESUME_STT_KEYTERMS`(カンマ区切り) | 時給、下限、シフト、品出し、ホール、キッチン、求人、履歴書 |
-| 会話の LLM | `VOICE_RESUME_LLM_MODEL`、`VOICE_RESUME_LLM_REASONING_EFFORT` | `gpt-6-sol`、`none`(ツールを使うとき必要) |
-| 下書き、調べもの | `VOICE_RESUME_DRAFT_MODEL`、`VOICE_RESUME_RESEARCH_MODEL` | `gpt-6-sol` |
+| プロバイダ | `VOICE_RESUME_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`)。`openai` で前の構成に戻る |
+| 会話の LLM | `VOICE_RESUME_LLM_MODEL`、`VOICE_RESUME_LLM_REASONING_EFFORT`、`VOICE_RESUME_LLM_MAX_TOKENS` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`)、`none`(思考を切る。gpt-6-sol はツールを使うとき必要)、4096 |
+| 下書き | `VOICE_RESUME_DRAFT_MODEL`、`VOICE_RESUME_DRAFT_EFFORT` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`)、`low`(Anthropic だけ) |
+| 調べもの | `VOICE_RESUME_RESEARCH_MODEL`、`VOICE_RESUME_RESEARCH_MAX_USES` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`)、2 回(Anthropic だけ) |
+| 平均時給の参考データの更新 | `VOICE_RESUME_WAGE_UPDATE_MODEL` | `gpt-6-sol`(常に OpenAI) |
 | 読み上げ | `VOICE_RESUME_TTS_MODEL`、`VOICE_RESUME_TTS_VOICE`、`VOICE_RESUME_TTS_SPEED` | `sonic-3.5`、日本語のボイス、0.9 |
 | ターンの判定 | `VOICE_RESUME_MIN_ENDPOINTING_DELAY`、`VOICE_RESUME_MAX_ENDPOINTING_DELAY` | 0.8 秒、6 秒 |
 | 割り込み | `VOICE_RESUME_MIN_INTERRUPTION_DURATION`、`VOICE_RESUME_FALSE_INTERRUPTION_TIMEOUT` | 0.8 秒、1.5 秒 |
@@ -2278,14 +2323,25 @@ STT は聞き間違い(「時給の下限」が「地球の加減」になるな
 ### 7.2 音声相談の費用の目安
 
 1 回 5 分の相談で $0.2 前後と見積もっています。単価は 2026-09 時点の各社の公表価格で、このリポジトリでは測っていません(R6)。
+LLM を Claude Sonnet 5.5 にしても単価は gpt-6-sol と同じです(task 236)。会話は 2 回目の返事から前置きをキャッシュから読みます。
+2026-10-26 に `scripts/voice/tool_call_probe.py` の 2 つの場面(条件を外して探す、調べもの)を、本物の `AgentSession` とアドバイザーの
+指示とツールで 2 回ずつ回した結果です(STT、TTS、LiveKit は通さない。1 回の本人の発話に、LLM の呼び出しが 2 回)。
+
+| モデル | 同じ返事でツールを呼んだ | 最初のトークンまで(中央値 / 最大) | 4 回の費用 | 入力 2.1〜2.4 万トークンのうちキャッシュから読んだ分(2 回目) |
+|---|---|---|---|---|
+| `claude-sonnet-5-5`(既定。between_tools、effort low) | 4 / 4 | 1.55 秒 / 1.97 秒 | $0.062 | 98〜99% |
+| `claude-haiku-5-5`(disabled、effort low) | 4 / 4 | 0.71 秒 / 0.81 秒 | $0.003 | 98〜99% |
+
+どちらも「探しますね」「少し調べますね」と言ってから同じ返事でツールを呼び、その前置きは読み上げに渡りました。
+1 回目は前置き(指示とツール)のキャッシュの書き込みで、Sonnet 5.5 は $0.038 でした。
 
 | 部品 | 見積もり |
 |---|---|
 | STT(Deepgram nova-3、$0.0077/分) | 5 分で約 $0.04 |
-| LLM(gpt-6-sol、往復 10 回、入力 3 万、出力 2 千トークンほど) | 約 $0.08 |
+| LLM(claude-sonnet-5-5 か gpt-6-sol、往復 10 回、入力 3 万、出力 2 千トークンほど) | 約 $0.08 |
 | 読み上げ(Cartesia、1,500〜2,500 字) | $0.06〜0.10 |
-| 下書き(gpt-6-sol) | 約 $0.03 |
-| 調べもの(1 回) | 約 $0.02、7〜10 秒 |
+| 下書き(claude-sonnet-5-5 か gpt-6-sol) | 約 $0.03 |
+| 調べもの(1 回) | gpt-6-sol で約 $0.02、7〜10 秒。claude-sonnet-5-5 は 1 回測って $0.037、5.5 秒(検索 1 回。task 236) |
 | LiveKit Cloud | 無料枠の中 |
 
 Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引がなくなる、と設計メモ([privacy.md](../design/privacy.md) の 2.2)にあります。
@@ -2548,7 +2604,20 @@ python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.j
     足した後の読み取りは、まだ実 API で確かめていません
   - 両方に共通の不一致(職務の分け方、希望の文末)は、正解の書き方とモデルの写し方の違いで、送り方の差ではありません
 - pytest では `tests/test_resume_intake.py`(読み取り)と `tests/test_resume_upload.py`(アップロード、保存、同じユーザーの会話からの参照)が、
-  OpenAI をスタブにして確かめます
+  OpenAI をスタブにして確かめます。Anthropic(既定)に送るブロック(`text`、`document`、`image`)と思考の設定は
+  `tests/test_claude_voice_resume.py` が偽の Anthropic で確かめます
+- 上の比べは `gpt-6-sol` のときのものです。Claude Sonnet 5.5(task 236 から既定、思考を切る)では、2026-10-26 に `run_samples` を
+  1 回回して $0.055(4 回の呼び出し)、完全一致は次のとおりでした
+
+  | サンプル | 送り方 | 完全一致 / 9 | 入力 / 出力のトークン | 合わなかった項目 |
+  |---|---|---|---|---|
+  | 01_clean.pdf | テキストだけ | 9 | 4995 / 621 | - |
+  | 02_photo.jpg | `image` | 8 | 4982 / 299 | preferences(「週4日以上」が「週4日以上働ける」) |
+  | 03_sparse.png | `image` | 8 | 5174 / 141 | preferences(「土日に働ける」が文のまま) |
+  | 05_table_photo.pdf | テキストだけ | 8 | 4841 / 420 | certifications(「合格」が名前に付いた) |
+  | 05_table_photo.pdf | `document`(PDF のまま) | 8 | 6317 / 420 | certifications |
+
+  05 の表の年月(前の「2017  4」)は、テキストだけでも合いました
 
 ### 音声の E2E(実 API を使う、費用がかかる)
 
@@ -2557,6 +2626,6 @@ python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.j
 ./.venv/bin/python scripts/voice/live_room_smoke.py     # ワーカーを起動してから。LiveKit の部屋の実経路
 ```
 
-- `e2e_audio_session.py` は本人役の発話を `gpt-4o-mini-tts` で合成し、Deepgram、アドバイザー(gpt-6-sol + dip の MCP)、Cartesia を
+- `e2e_audio_session.py` は本人役の発話を `gpt-4o-mini-tts` で合成し、Deepgram、アドバイザー(既定は claude-sonnet-5-5 + dip の MCP)、Cartesia を
   本番と同じ部品で通します。LiveKit の転送とターンの判定は通らないので、ブラウザで確かめます
 - 成果物(文字起こし、下書き、求人の提案、費用)は `voice_resume/results/` に残ります

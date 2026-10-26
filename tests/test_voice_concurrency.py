@@ -279,7 +279,7 @@ def fake_worker(client, monkeypatch):
     monkeypatch.setattr(FakeSession, "started", [])
     for name in ("create_stt", "MultilingualModel"):
         monkeypatch.setattr(agent, name, lambda *a, **k: None)
-    monkeypatch.setattr(agent.openai, "LLM", lambda *a, **k: None)
+    monkeypatch.setattr(agent.voice_llm, "create_llm", lambda *a, **k: None)
     monkeypatch.setattr(agent.cartesia, "TTS", lambda *a, **k: None)
     return agent, sent
 

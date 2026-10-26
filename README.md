@@ -45,7 +45,7 @@ flowchart LR
 
 ## 動かし方
 
-必要なもの: Python 3.12、Anthropic の API キー、OpenAI の API キー。
+必要なもの: Python 3.12、Anthropic の API キー、OpenAI の API キー(求人の意味検索の埋め込みだけに使う)。
 
 ```bash
 # リポジトリ直下で
@@ -56,12 +56,16 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
 
 - 既定(`LINE_SIM_PROVIDER=anthropic`)では、`ANTHROPIC_API_KEY` が無いと Web プロセスは起動の途中で止まります。
-  `OPENAI_API_KEY` が無くても起動はしますが、履歴書の読み取り、意味検索、音声相談が失敗します
+- 求人の意味検索(埋め込み)には OpenAI の鍵が要ります。Anthropic には埋め込みの API がないので、ここだけは
+  プロバイダの設定によらず OpenAI です(`dip_mcp/embedding.py`)。`OPENAI_API_KEY` が無くても起動し、検索は止まらず、
+  言い換えを拾わない部分一致の検索に戻ります
 - トーク画面を初めて開くと、まず同意の画面が出ます(「同意して始める」を押すまで実 API を呼びません)。
   押すと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
   開発者画面は、シナリオを選ぶまで呼びません。話すとターンごとに呼びます
-- トーク(エージェント)、ゲームの AI、評価の模擬ユーザーとジャッジは Anthropic(Claude Sonnet 5.5、ゲームの中の反応は Claude Haiku 5.5)です。
-  `LINE_SIM_PROVIDER=openai` にすると、前のとおり OpenAI(`gpt-6-sol`)になります。履歴書の読み取り、意味検索、音声相談は常に OpenAI です
+- トーク(エージェント)、ゲームの AI、評価の模擬ユーザーとジャッジ、履歴書の読み取り、音声相談(会話、下書き、調べもの)は
+  Anthropic(Claude Sonnet 5.5、ゲームの中の反応は Claude Haiku 5.5)です。
+  `LINE_SIM_PROVIDER=openai` にすると、前のとおり OpenAI(`gpt-6-sol`)になります。履歴書と音声相談だけを別に選ぶなら
+  `RESUME_INTAKE_PROVIDER`、`VOICE_RESUME_PROVIDER` です。意味検索の埋め込みは常に OpenAI です
 
 ### 音声相談も使う
 
@@ -374,8 +378,8 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 
 | 環境変数 | 既定 | 用途 | `.env` |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | なし(必須) | エージェント、ゲームの AI、評価の模擬ユーザーとジャッジ(既定の `LINE_SIM_PROVIDER=anthropic` のとき)。無いと起動の途中で止まる | 可 |
-| `OPENAI_API_KEY` | なし(必須) | 履歴書の読み取り、意味検索、音声アドバイザー、下書き。`LINE_SIM_PROVIDER=openai` ならエージェントとゲームの AI も | 可 |
+| `ANTHROPIC_API_KEY` | なし(必須) | エージェント、ゲームの AI、評価の模擬ユーザーとジャッジ、履歴書の読み取り、音声アドバイザー、下書き、調べもの(既定の `anthropic` のとき)。無いと Web プロセスは起動の途中で止まる | 可 |
+| `OPENAI_API_KEY` | なし(意味検索に要る) | 求人の意味検索の埋め込み(常に OpenAI)。無いと部分一致の検索に戻る。プロバイダを `openai` にしたところ(エージェント、履歴書、音声相談)でも使う | 可 |
 | `LINE_SIM_PROVIDER` | `anthropic` | LLM のプロバイダ(`anthropic`、`openai`)。エージェント、ゲームの AI、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
 | `LINE_SIM_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | エージェントとゲームのまとめのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
@@ -386,7 +390,9 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
 | `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
-| `RESUME_INTAKE_MODEL` | `gpt-6-sol` | 履歴書の読み取りのモデル | 不可 |
+| `RESUME_INTAKE_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`) | 履歴書の読み取りのプロバイダ(`anthropic`、`openai`) | 不可 |
+| `RESUME_INTAKE_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | 履歴書の読み取りのモデル | 不可 |
+| `RESUME_INTAKE_EFFORT` | `none` | 履歴書の読み取りの思考の深さ(Anthropic だけ。`none` は思考を切る。書いてあることを写すだけなので) | 不可 |
 
 ターン数の上限です。`0` 以下にすると、その上限はありません。既定値の理由は [LLD の 5.3](docs/architecture/lld.md#53-費用台帳とターン数) にあります。
 
@@ -436,6 +442,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |
 | `VOICE_RESUME_MAX_JOBS` | 4 | 音声ワーカーが同時に受ける相談の数。超えた部屋にはアドバイザーが入らない(`dev` でも) | 不可 |
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | 2000 | 相談 1 つのプロセスのメモリの上限(MB)。超えたらその相談を止める。0 で上限なし | 不可 |
+| `VOICE_RESUME_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`) | 音声相談の会話、下書き、調べもののプロバイダ(`anthropic`、`openai`)。既定では `ANTHROPIC_API_KEY` が要る(無いと相談を始めるときに失敗する) | 不可 |
 | `VOICE_RESUME_*`(モデル、ボイス、ターンの判定) | [LLD の 7.1](docs/architecture/lld.md#71-音声の部品の設定) | STT、LLM、読み上げの設定 | 不可 |
 
 ## 文書

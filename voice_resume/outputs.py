@@ -48,7 +48,7 @@ async def write_outputs(
     """下書き(document_kind の書類)を生成し、{resume, markdown, proposal, files, stamp} を返す。
 
     config.WRITE_FILES のときだけ OUT_DIR に書き出す。書かないときの files は空。
-    client は AsyncOpenAI(テストではスタブ)。
+    client は AsyncAnthropic か AsyncOpenAI(テストではスタブ)。
     """
     draft = await build_draft(transcript, client, document_kind=document_kind)
     env = finalize(draft, source=source, document_kind=document_kind)

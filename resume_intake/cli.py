@@ -15,14 +15,12 @@ from pathlib import Path
 
 from line_runtime.config import load_env
 from resume_intake import config
-from resume_intake.extract import extract_draft, finalize
+from resume_intake.extract import default_client, extract_draft, finalize
 
 
 async def run(path: Path, out: Path | None, model: str | None) -> int:
-    from openai import AsyncOpenAI
-
     load_env()
-    draft, usage = await extract_draft(path, AsyncOpenAI(), model=model)
+    draft, usage = await extract_draft(path, default_client(), model=model)
     result = finalize(draft)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if out is None:
@@ -43,10 +41,10 @@ async def run(path: Path, out: Path | None, model: str | None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="履歴書(PDF / JPEG / PNG)を OpenAI API で読み取り、構造化 JSON にする")
+    parser = argparse.ArgumentParser(description="履歴書(PDF / JPEG / PNG)を LLM(既定 Anthropic)で読み取り、構造化 JSON にする")
     parser.add_argument("file", type=Path, help="履歴書ファイル(PDF / JPEG / PNG)")
     parser.add_argument("-o", "--out", type=Path, default=None, help="出力先 JSON(既定: data/resume_intake/<ファイル名>.json)")
-    parser.add_argument("--model", default=None, help=f"OpenAI モデル(既定: {config.MODEL})")
+    parser.add_argument("--model", default=None, help=f"モデル(既定: {config.MODEL}。プロバイダは RESUME_INTAKE_PROVIDER)")
     args = parser.parse_args(argv)
     if not args.file.is_file():
         parser.error(f"ファイルが見つかりません: {args.file}")

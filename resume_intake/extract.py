@@ -1,10 +1,12 @@
 """履歴書ファイル(PDF / JPEG / PNG)→ 履歴書下書き(ResumeDraft)。
 
 この部分はオフラインでテストする(実 API を呼ばない)。client を外から渡し、
-テストでは responses.parse を持つスタブを渡す(旧リポジトリの voice-resume/drafter.py と同じ作り)。
+テストでは messages.parse(Anthropic)か responses.parse(OpenAI)を持つスタブを渡す(旧リポジトリの
+voice-resume/drafter.py と同じ作り)。送り先は client の型で決まる(既定は config.PROVIDER の anthropic。default_client)。
 トークからのアップロードはファイルをディスクに置かず、バイト列のまま extract_bytes で読む。
-テキストのある PDF は、ローカルでテキストを取り出してテキストだけを送る(写真などの画像を OpenAI に送らない。
-docs/design/privacy.md の 3.2 の案 B)。テキストの無い PDF と画像は、ファイルをそのまま送る。
+テキストのある PDF は、ローカルでテキストを取り出してテキストだけを送る(写真などの画像を LLM の事業者に送らない。
+docs/design/privacy.md の 3.2 の案 B)。テキストの無い PDF と画像は、ファイルをそのまま送る
+(Anthropic には PDF を document、画像を image のブロックで base64 にして送る。anthropic_block)。
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 from pypdf import PdfReader, apply_configuration
 from pypdf.generic import ContentStream, StreamObject
 
+from line_runtime import llm as line_llm
 from resume_draft.pii import scrub_pii
 from resume_draft.schema import ResumeDraft, envelope
 from resume_intake import config
@@ -46,6 +49,7 @@ EXTRACT_SYSTEM = """あなたは履歴書・職務経歴書の読み取り係で
 
 _MEDIA_TYPES = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 # OpenAI に渡す PDF のファイル名。本人のファイル名(氏名が入りがち)は送らず、形式だけの固定の名前にする
+# (Anthropic の document のブロックにはファイル名の欄が無いので、何も送らない)
 SENT_PDF_NAME = "resume.pdf"
 # テキストだけを送るのは、どのページにもこの字数(空白を除く)以上のテキストがある PDF だけ。
 # スキャンした PDF のページ番号や、スキャンアプリの透かしのような短い文字だけのページは、テキストが無いとみなす
@@ -295,6 +299,114 @@ def content_part(filename: str, data: bytes, *, pdf_text_only: bool = True) -> d
     return {"type": "input_image", "image_url": f"data:{mt};base64,{b64}"}
 
 
+# Anthropic の API が受ける画像の上限(1 枚の base64 にした大きさが 10MB、縦横が 8000 画素まで。2026-10-26 の Anthropic の
+# 資料)。アップロードは 10MB まで受け、base64 にすると 4/3 倍になるので、7.5MB ほどを超える写真は手元で縮めて JPEG に
+# し直す。縮める先の長い辺は、Claude Sonnet 5.5 が読むときの長い辺の上限(2,576 画素。超える画像は先方で縮める)にそろえる
+ANTHROPIC_MAX_IMAGE_B64_BYTES = 10_000_000
+ANTHROPIC_MAX_IMAGE_SIDE = 8000
+SHRUNK_IMAGE_SIDE = 2576
+# 縮めるために展開してよい画素の上限。圧縮の効く PNG は小さなファイルでも展開すると大きい(13000×13000 の白黒の PNG は
+# 47KB で 169MB)。Render の Starter は 512MB で Web と音声ワーカーが同じコンテナなので、縮める間に増えるメモリを
+# 160MB ほどまでにする(上限ちょうどの RGBA の PNG で最大 RSS が約 160MB 増える。2026-10-26 に手元で測った)。
+# JPEG は draft で 1/2〜1/8 に縮めて読むので、48MP の写真(8064×6048)も 4032×3024 で済む。A4 を 300dpi で読んだ画像は 870 万画素
+MAX_DECODED_IMAGE_PIXELS = 12_500_000
+_IMAGE_MAGIC = {b"\x89PNG\r\n\x1a\n": "image/png", b"\xff\xd8\xff": "image/jpeg"}
+
+
+class ImageTooLarge(ValueError):
+    """縮めないと Anthropic に送れず、縮めるにも展開が MAX_DECODED_IMAGE_PIXELS を超える画像。"""
+
+
+def anthropic_block(part: dict) -> dict:
+    """content_part の形(Responses API)を、Anthropic の Messages API の content block にする。
+    テキストは text、PDF は document(base64)、画像は image(base64。fit_image で上限に収める)。ファイル名は送らない。"""
+    if part["type"] == "input_text":
+        return {"type": "text", "text": part["text"]}
+    url = part["file_data"] if part["type"] == "input_file" else part["image_url"]
+    head, data = url.split(",", 1)  # data:<MIME タイプ>;base64,<中身>
+    mt = head.removeprefix("data:").removesuffix(";base64")
+    if part["type"] == "input_file":
+        return {"type": "document", "source": {"type": "base64", "media_type": mt, "data": data}}
+    raw, mt = fit_image(base64.b64decode(data), mt)
+    return {"type": "image", "source": {"type": "base64", "media_type": mt,
+                                        "data": base64.b64encode(raw).decode("ascii")}}
+
+
+def fit_image(data: bytes, media_type_hint: str) -> tuple[bytes, str]:
+    """Anthropic に送る画像の (中身, MIME タイプ)。MIME タイプは拡張子ではなく中身の先頭で決める(名前を付け替えた
+    PNG を image/jpeg で送ると 400)。ANTHROPIC_MAX_IMAGE_B64_BYTES か ANTHROPIC_MAX_IMAGE_SIDE を超えるなら、
+    長い辺を SHRUNK_IMAGE_SIDE に縮め、写真の向き(EXIF)を直して JPEG にし直す。
+    縮めるのに展開する画素が MAX_DECODED_IMAGE_PIXELS を超えるなら、展開する前に ImageTooLarge にする。
+    メモリを抑えるため、縮めてから向きを直し、透けた所を白で埋める(大きな画像のコピーを作らない)。"""
+    mt = next((m for magic, m in _IMAGE_MAGIC.items() if data.startswith(magic)), media_type_hint)
+    if not _needs_shrink(data):
+        return data, mt
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(data)) as img:
+        _draft(img)
+        if img.mode in ("1", "P"):  # この 2 つは thumbnail が粗い縮め方(NEAREST)になるので先に直す(1 画素 1 バイト)
+            img = img.convert("L" if img.mode == "1" else "RGBA")
+        img.thumbnail((SHRUNK_IMAGE_SIDE, SHRUNK_IMAGE_SIDE))
+        img = ImageOps.exif_transpose(img)
+        if "A" in img.getbands():
+            rgba = img.convert("RGBA")
+            img = Image.new("RGB", rgba.size, "white")
+            img.paste(rgba, mask=rgba.getchannel("A"))
+        out = io.BytesIO()
+        img.convert("RGB").save(out, format="JPEG", quality=90)
+    return out.getvalue(), "image/jpeg"
+
+
+def oversized_image(data: bytes) -> bool:
+    """fit_image が ImageTooLarge にする画像か(画素は読まず、頭の情報だけを見る)。アップロードを受けた所で、
+    会話数を使う前に断るのに使う。"""
+    if not _needs_shrink(data):
+        return False
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            _draft(img)
+    except ImageTooLarge:
+        return True
+    except Exception:  # noqa: BLE001  読めない画像は fit_image と API の答えに任せる
+        return False
+    return False
+
+
+def _needs_shrink(data: bytes) -> bool:
+    b64_size = 4 * -(-len(data) // 3)
+    return b64_size > ANTHROPIC_MAX_IMAGE_B64_BYTES or _max_side(data) > ANTHROPIC_MAX_IMAGE_SIDE
+
+
+def _draft(img) -> None:
+    """JPEG は縮めて読むように決め(ほかの形式では何もしない)、展開する画素が多すぎれば ImageTooLarge にする。
+    どちらも頭の情報だけで決まり、画素はまだ読まない。"""
+    w, h = img.size
+    r = min(1.0, SHRUNK_IMAGE_SIDE / max(w, h, 1))  # draft は縦横とも求めた大きさ以上に収まる所までしか縮めない
+    img.draft("RGB", (max(1, round(w * r)), max(1, round(h * r))))
+    w, h = img.size
+    if w * h > MAX_DECODED_IMAGE_PIXELS:
+        raise ImageTooLarge(f"画像の画素が多すぎます({w}×{h})")
+
+
+def _max_side(data: bytes) -> int:
+    """画像の長い辺の画素(読めなければ 0。読めない画像はそのまま送り、API の答えに任せる)。"""
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:  # 画素は読まず、頭の情報だけを読む
+            return max(img.size)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def default_client():
+    """読み取りの client(config.PROVIDER の AsyncAnthropic か AsyncOpenAI)。"""
+    return line_llm.client(config.PROVIDER)
+
+
 def file_part(path: Path, *, pdf_text_only: bool = True) -> dict:
     """入力ファイルを Responses API の content part(input_text / input_file / input_image)にする。"""
     media_type(path.name)  # 読む前に形式を確かめる
@@ -303,7 +415,7 @@ def file_part(path: Path, *, pdf_text_only: bool = True) -> dict:
 
 async def extract_draft(path: Path, client, *, model: str | None = None,
                         pdf_text_only: bool = True) -> tuple[ResumeDraft, Usage]:
-    """履歴書ファイルから ResumeDraft を作る。client は AsyncOpenAI(またはテスト用スタブ)。"""
+    """履歴書ファイルから ResumeDraft を作る。client は AsyncAnthropic か AsyncOpenAI(またはテスト用スタブ)。"""
     return await _extract(file_part(path, pdf_text_only=pdf_text_only), client, model=model)
 
 
@@ -315,25 +427,34 @@ async def extract_bytes(filename: str, data: bytes, client, *, model: str | None
 
 
 async def _extract(part: dict, client, *, model: str | None) -> tuple[ResumeDraft, Usage]:
+    model = model or config.MODEL
     content = [
         part,
         {"type": "input_text", "text": "この履歴書に書いてあることをスキーマどおりの JSON に書き写してください。"},
     ]
-    resp = await client.responses.parse(
-        model=model or config.MODEL,
-        instructions=EXTRACT_SYSTEM,
-        input=[{"role": "user", "content": content}],
-        text_format=ResumeDraft,
-        max_output_tokens=4096,
-        store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
-    )
-    draft = resp.output_parsed or ResumeDraft()
-    draft = ResumeDraft.model_validate(scrub_pii(draft.model_dump()))
-    usage = getattr(resp, "usage", None)
-    return draft, Usage(
-        input_tokens=getattr(usage, "input_tokens", 0) or 0,
-        output_tokens=getattr(usage, "output_tokens", 0) or 0,
-    )
+    if hasattr(client, "responses"):  # OpenAI
+        resp = await client.responses.parse(
+            model=model,
+            instructions=EXTRACT_SYSTEM,
+            input=[{"role": "user", "content": content}],
+            text_format=ResumeDraft,
+            max_output_tokens=4096,
+            store=False,  # OpenAI に応答を残さない(docs/design/privacy.md の 3.2)
+        )
+        draft = resp.output_parsed
+        usage = getattr(resp, "usage", None)
+        used = {"input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0}
+    else:
+        # ファイル(か取り出したテキスト)を先に、頼みを後に置く。1 回しか送らないのでキャッシュの区切りは付けない。
+        # input_tokens はキャッシュを含む合計(line_runtime.llm.usage_of)
+        # 大きな写真を縮めるのは CPU を使うので、イベントループを止めないよう別のスレッドで行う
+        blocks = await asyncio.to_thread(lambda: [anthropic_block(c) for c in content])
+        draft, used = await line_llm.parse(
+            client, model=model, system=EXTRACT_SYSTEM, messages=[{"role": "user", "content": blocks}],
+            schema=ResumeDraft, max_tokens=8192, effort=config.EFFORT, with_usage=True, cache=False)
+    draft = ResumeDraft.model_validate(scrub_pii((draft or ResumeDraft()).model_dump()))
+    return draft, Usage(input_tokens=used.get("input_tokens", 0), output_tokens=used.get("output_tokens", 0))
 
 
 def finalize(draft: ResumeDraft) -> dict:

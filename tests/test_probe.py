@@ -81,10 +81,9 @@ def test_voice_observation_does_not_count_the_right_behaviour():
 
 def test_voice_probe_runs_offline_with_a_scripted_llm(app, tmp_path, monkeypatch):  # noqa: F811
     """配線: 本物の advisor と dip MCP に台本の LLM と台本の本人をつなぎ、費用台帳に1行を載せて読み出す。"""
-    from livekit.plugins import openai as lk_openai
 
     from evals import run
-    from voice_resume import config
+    from voice_resume import config, voice_llm
 
     monkeypatch.setattr(config, "OUT_DIR", tmp_path / "out")
     model = _scripted_llm([
@@ -94,7 +93,7 @@ def test_voice_probe_runs_offline_with_a_scripted_llm(app, tmp_path, monkeypatch
         ("tool", "propose_jobs", {"time_band": "深夜", "exclude_ids": ["b0903"], "search_only": True}),
         ("say", "見つかった求人を1件ずつお伝えしますね。"),
     ])
-    monkeypatch.setattr(lk_openai, "LLM", lambda **_kw: model)
+    monkeypatch.setattr(voice_llm, "create_llm", lambda: model)
     said = iter([{"text": "深夜で探したいです。電話はしたくないです", "end": False},
                  {"text": "レジは大丈夫です", "end": True}])
 
@@ -165,14 +164,13 @@ def test_interrupted_chat_probe_is_kept_in_the_json_and_the_md(tmp_path, monkeyp
 
 
 def test_interrupted_voice_probe_is_kept_in_the_results(app, tmp_path, monkeypatch):  # noqa: F811
-    from livekit.plugins import openai as lk_openai
 
     from evals import run
-    from voice_resume import config
+    from voice_resume import config, voice_llm
 
     monkeypatch.setattr(config, "OUT_DIR", tmp_path / "out")
     model = _scripted_llm([("say", "こんにちは。どんなお仕事を探していますか?")])
-    monkeypatch.setattr(lk_openai, "LLM", lambda **_kw: model)
+    monkeypatch.setattr(voice_llm, "create_llm", lambda: model)
 
     async def interrupted_user(*_a, **_kw):
         raise KeyboardInterrupt

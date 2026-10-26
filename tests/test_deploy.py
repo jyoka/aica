@@ -43,7 +43,7 @@ def test_the_image_and_the_blueprint_match_the_code():
     assert svc["numInstances"] == 1  # 会話数の上限(quota.json)は 1 つのプロセスで数える
     env = {e["key"]: e for e in svc["envVars"]}
     assert env["AICA_TRUST_PROXY"]["value"] == "1"
-    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トークは Anthropic(既定)、履歴書と音声は OpenAI
+    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トーク、履歴書、音声は Anthropic(既定)、意味検索の埋め込みは OpenAI
         assert env[key] == {"key": key, "sync": False}  # 値はリポジトリに書かない
     assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
     # 状態と出力の既定の置き場はすべてリポジトリ直下の data/。image では /app/data で、そこにディスクをつなぐ
