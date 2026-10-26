@@ -99,7 +99,8 @@ def test_ai_offers_resume_and_voice_as_actions_on_the_talk_and_dev_screens(advis
 
     with TestClient(advised.app) as client:
         opened, greeting = open_talk(client)
-        assert greeting["actions"] == [] and greeting["quick_replies"] == MENU
+        # 挨拶の入口のボタンはコードが付ける(task 237。この画面は LiveKit の設定が無いので、音声相談は出ない)
+        assert greeting["actions"] == ["resume_upload"] and greeting["quick_replies"] == MENU
         r = stream(client, opened["user"], "message", greeting["thread"], "まず相談する")[-1]
         assert r["kind"] == "reply" and r["actions"] == ACTIONS
         assert r["quick_replies"] == ["今はいい"]  # 操作は自由文の選択肢とは別に届く(「文字で話す」は付けない)
@@ -338,8 +339,9 @@ def _open_and_close_the_voice_sheet(page, context, open_it) -> None:
 def _talk_through_actions(page, context) -> None:
     """「まず相談する」→ AI が差し出す [ファイルを選ぶ] [話して伝える] を押して進む(/ と /dev で同じ)。"""
     page.locator("#log .chips button", has_text="まず相談する").click()
-    pick = page.locator("#log .chips button.action", has_text="ファイルを選ぶ")
-    talk = page.locator("#log .chips button.action", has_text="話して伝える(音声・約5分)")
+    # 挨拶にもコードが入口のボタンを付ける(task 237)。押せるのは最後の返信のボタンだけ(前の選択肢は押した後に止まる)
+    pick = page.locator("#log .chips button.action:enabled", has_text="ファイルを選ぶ")
+    talk = page.locator("#log .chips button.action:enabled", has_text="話して伝える(音声・約5分)")
     pick.wait_for()
     assert talk.count() == 1 and page.locator("#log .chips button", has_text="文字で話す").count() == 0
 
@@ -420,7 +422,7 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
     page.goto(served + "/")
     page.locator("#log .chips button", has_text="まず相談する").wait_for()
     page.locator("#log .chips button", has_text="まず相談する").click()
-    talk = page.locator("#log .chips button.action", has_text="話して伝える(音声・約5分)")
+    talk = page.locator("#log .chips button.action:enabled", has_text="話して伝える(音声・約5分)")  # 挨拶のボタンではなく後の返信の
     talk.wait_for()
     uid = next(c["value"] for c in context.cookies() if c["name"] == "aica_uid")
     used = advised.app.state.quota.used(uid)

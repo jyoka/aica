@@ -293,7 +293,8 @@ def test_persona_uploads_by_the_fallback_turn_when_never_offered(tmp_path, monke
     sc = SCENARIOS["T-career-fulltime"]
     r = _run(sc, FakeClient(["転職を考えていて、正社員の仕事を相談したい", "営業を4年やってきました"], end_after=False),
              NoOffer(), tmp_path, monkeypatch, max_turns=5)
-    assert r["action_offers"] == [] and r["upload_turn"] == sc["upload_by_turn"] + 1
+    # 挨拶(T1)の入口のボタンはコードが付ける(task 237)。経験を聞く場面では一度も出していない
+    assert [o for o in r["action_offers"] if o["turn"] > 1] == [] and r["upload_turn"] == sc["upload_by_turn"] + 1
 
 
 def test_turn_cap_limits_the_conversation(tmp_path, monkeypatch):

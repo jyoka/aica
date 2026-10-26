@@ -351,10 +351,10 @@ def test_line_greets_after_the_consent_even_when_the_first_greeting_failed(tmp_p
     assert model.script == []
     _, failed, greeting = _messages(fake)
     assert failed == [{"type": "text", "text": line_channel.FAILED_TEXT}]
-    # 次の返信は初回訪問の挨拶: 入口のボタン(ゲーム、音声相談、履歴書)と、文字の選択肢
+    # 次の返信は初回訪問の挨拶: 入口のボタン(音声相談、履歴書、ゲーム。リッチメニューと同じ並び)と、文字の選択肢
     (flex,) = [m for m in greeting if m["type"] == "flex"]
     assert [b["action"]["label"] for b in flex["contents"]["body"]["contents"]] == [
-        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+        "音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]
     (messages,) = seen
     assert "入口V(初回訪問)" in messages[0].content
     humans = [m.content for m in messages if m.type == "human"]
@@ -456,7 +456,7 @@ def test_talk_screen_consent_flow_in_the_browser(advised, served, browser, livek
     page.locator("#consent-agree").click()
     sheet.wait_for(state="hidden")
     page.locator("#log .chips button", has_text="まず相談する").click()
-    pick = page.locator("#log .chips button.action", has_text="ファイルを選ぶ")
+    pick = page.locator("#log .chips button.action:enabled", has_text="ファイルを選ぶ")  # 挨拶のボタンではなく後の返信の
     pick.wait_for()
 
     # 履歴書: ファイルを選ぶ直前に同意の画面。「同意してファイルを選ぶ」で、ファイルを選ぶ画面が開く

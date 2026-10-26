@@ -142,9 +142,9 @@ def test_line_buttons_follow_what_liff_can_open(monkeypatch):
     assert [m.get("text") for m in msgs if m["type"] == "text"] == ["どうぞ", line_channel.ACTION_NOTES["voice_consult"]]
     (flex,) = [m for m in msgs if m["type"] == "flex"]
     links = [(b["action"]["label"], b["action"]["uri"]) for b in flex["contents"]["body"]["contents"]]
-    assert links == [("ゲームで書類を作る", f"https://liff.line.me/{LIFF_ID}/arcade"),
-                     ("応募の続き", f"https://liff.line.me/{LIFF_ID}/apply?job=a001"),
-                     ("履歴書を読み込む", f"https://liff.line.me/{LIFF_ID}/resume/upload")]
+    assert links == [("履歴書を読み込む", f"https://liff.line.me/{LIFF_ID}/resume/upload"),  # 操作のボタンが先(task 237)
+                     ("ゲームで書類を作る", f"https://liff.line.me/{LIFF_ID}/arcade"),
+                     ("応募の続き", f"https://liff.line.me/{LIFF_ID}/apply?job=a001")]
     assert "quickReply" in msgs[-1]
     for k, v in LIVEKIT_ENV.items():
         monkeypatch.setenv(k, v)
@@ -152,8 +152,8 @@ def test_line_buttons_follow_what_liff_can_open(monkeypatch):
     assert [m["type"] for m in to_messages(r, "")] == ["text", "flex"]  # 断りの文は無い
 
 
-# 初回訪問の挨拶(task 231)。本文は dip の Prompt(entries.json の visit)の例と同じ言い方
-GREETING = ["お仕事探しの相談と、求人のご提案をします。下の「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」も使えます。",
+# 初回訪問の挨拶(task 231)。本文は dip の Prompt(entries.json の visit)の例と同じ言い方(task 237 から本文で 3 つを並べない)
+GREETING = ["お仕事探しの相談と、求人のご提案をします。",
             "ゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?"]
 
 
@@ -177,7 +177,7 @@ def test_the_first_visit_greeting_is_two_line_messages_with_the_question_over_th
     flex = msgs[1]
     assert _heading(flex) == GREETING[1] and flex["altText"] == GREETING[1]
     assert [b["action"]["label"] for b in flex["contents"]["body"]["contents"]] == [
-        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+        "音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]  # リッチメニューと同じ並び(task 237)
     assert [i["action"]["label"] for i in flex["quickReply"]["items"]] == ["求人を探す", "まず相談する", "今はいい"]
     # 前の挨拶(本文、問い、見出しの無いボタンの箱の 3 通)と同じ返信も、いまは 2 通になる
     old = r | {"bubbles": ["お仕事探しの相談や求人のご提案ができます。音声相談、履歴書の読み込み、ゲームでの書類作りもできます。",
@@ -221,7 +221,7 @@ def test_the_revisit_greeting_puts_the_offer_over_the_buttons_and_the_question_l
     assert [m["type"] for m in msgs] == ["flex", "text"]
     assert _heading(msgs[0]) == welcome and msgs[0]["altText"] == welcome and "quickReply" not in msgs[0]
     assert [b["action"]["label"] for b in msgs[0]["contents"]["body"]["contents"]] == [
-        "ゲームで書類を作る", "音声で相談する", "履歴書を読み込む"]
+        "音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]
     assert msgs[1]["text"] == question
     assert [i["action"]["label"] for i in msgs[1]["quickReply"]["items"]] == ["はい", "ほかの条件で探す", "今はいい"]
     # 挨拶のターンでなければ、前の組み立て(吹き出し 2 つとボタンの箱の 3 通)
@@ -254,11 +254,10 @@ def test_line_buttons_have_no_emoji_and_use_the_greetings_words():
     assert labels == ["音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]
     assert not any(EMOJI.search(x) for x in labels)
     visit = baitoru_assistant("visit")
-    assert "「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」" in visit  # 本文の例とボタンの名前の決まり
+    assert "「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」" in visit  # ボタンの名前の決まり(本文で並べない例にも出る)
     assert "Web のトーク画面は「話して伝える」「ファイルを選ぶ」「ゲームで書類を作る」" in visit  # Web は画面のボタンの名前
     assert f'{{"label": "{line_channel.ARCADE_LABEL}", "url": arcade_url}}' in visit  # ゲームのボタンの文言
     assert "遊びながら履歴書や職務経歴書の下書きを作れます" in visit  # ゲームが何をするものか
-    assert all(lb in "".join(GREETING) for lb in labels)
     assert "「文字で話す」と「今はいい」" not in visit and "「文字で話す」のような選択肢は付けない" in visit
     assert ACTION_LABEL["line"] == {"resume_upload": "履歴書を読み込む", "voice_consult": "音声で相談する"}
     r = {"bubbles": ["どうぞ"], "cards": [], "buttons": [], "actions": ["voice_consult"], "quick_replies": []}

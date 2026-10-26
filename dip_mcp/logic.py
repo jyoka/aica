@@ -104,6 +104,24 @@ PROFILE_NOTE = ("stated_preferences には、希望の条件のほか、相談�
                 "consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。"
                 "続きから始める材料にする。")
 
+ENTRY_NOTE = ("used_entries は本人がやり終えた入口(voice_consult = 音声相談で下書きができた、resume_upload = 履歴書を"
+              "読み込んだ、arcade = ゲームで下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
+
+# 挨拶で案内する 3 つの入口(task 237)。並びはリッチメニュー(scripts/line_rich_menu.py)と同じ
+ENTRIES = ("voice_consult", "resume_upload", "arcade")
+
+
+def used_entries(user: dict) -> list[str]:
+    """本人がやり終えた入口(ENTRIES の並び)。今ある記録だけから決め、やり終えた印の項目は持たない
+    (記録を消せば、また案内される)。開いただけ・途中でやめたものは数えない。
+    - voice_consult: 音声相談の結果に下書き(draft_markdown)がある(プロフィール画面で下書きを消すと空になる)
+    - resume_upload: 履歴書を読み込んだ(resume_upload がある)
+    - arcade: ゲームで下書きを保存した(arcade_drafts がある)"""
+    done = {"voice_consult": any(str(r.get("draft_markdown") or "").strip() for r in user.get("voice_results") or []),
+            "resume_upload": bool(user.get("resume_upload")),
+            "arcade": bool(user.get("arcade_drafts"))}
+    return [e for e in ENTRIES if done[e]]
+
 TRACK_NOTE = ("search_track は本人の発言から記録した今の雇用区分(未定はまだ判断できていない)。"
               "track_history は直近の切り替え(根拠の発言つき)。")
 
@@ -121,11 +139,12 @@ ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケー�
 
 
 def _profile_summary(user: dict) -> dict:
-    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き)。
-    ゲームの URL と下書きの画面の URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる
+    """チャットと音声が同じ形で読む、本人について覚えていること(保存項目・相談のまとめ・履歴書・ゲームで作った下書き・
+    やり終えた入口)。ゲームの URL と下書きの画面の URL は、Web のユーザーと、LIFF の設定があるときの LINE のユーザーに載せる
     (LINE では LIFF 画面で開くため。arcade.game_url、arcade.view_url)。"""
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
-           "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user)}
+           "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user),
+           "used_entries": used_entries(user)}
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
     return out | ({"arcade_url": url} if url else {})
 
@@ -199,7 +218,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
                 "condition_options": condition_options(user, search_track(user)),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -245,7 +264,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "condition_options": condition_options(user, search_track(user), b["tendency"], last_app),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE,
     }
 
 

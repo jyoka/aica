@@ -116,7 +116,7 @@ flowchart TB
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`check_internal_key`、`InternalKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
-| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`(`conversations_of`)、`render`、`history`、`track_switch`、`_cards_in`、`CARD_KEYS` |
+| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`(`conversations_of`、`_read_summary`)、`render`、`history`、`track_switch`、`greeting_entries`、`usable_entries`、`is_arcade_entry`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形、今の窓口の案内 | `LineReply`、`Button`、`LineState`、`channel_note`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
@@ -236,7 +236,7 @@ classDiagram
 
 | 見出し | 主な関数と定数 |
 |---|---|
-| (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS` |
+| (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」) |
 | 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
 | 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
@@ -695,6 +695,7 @@ flowchart LR
 
 `render` の結果(返信)は `entry`、`track_switch`、`bubbles`、`quick_replies`、`cards`、`unknown_job_ids`、`buttons`、`actions`、
 `tools` です。`track_switch` には Web サーバーが今の状態(`profile.switch_status` の `undoable`、`undone`、`past`、`gone`)を足します。
+挨拶の返信の `actions` とゲームの `buttons` は、モデルではなくコードが決めたものです(4.9 の「挨拶の入口のボタン」)。
 
 ### 3.3 dip のツール(MCP)と業務ロジック
 
@@ -820,6 +821,11 @@ sequenceDiagram
 - 受け取り手が切れても `_turn` は最後まで進みます(`handle_stream` は `queue` を読むだけ)。ツールの結果が無い会話を保存しないためです
 - `render` は、会話の中のツールの結果と音声相談の結果から `CARD_KEYS` を持つものを拾い、モデルの `job_ids` のうち拾えたものだけをカードにします。
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
+- 挨拶のターン(`EVENTS` の種類が `greet`)では、`_turn` が LLM を呼ぶ前に `_read_summary`(dip の要約を MCP のツールで読む。LLM は呼ばない)と
+  `greeting_entries` で入口のボタンを決め、会話の state の `greeting_entries` に書きます。`render` は、state に `greeting_entries` があり、
+  そのターンが会話の最初の本人側の入力(挨拶のイベント)のときだけ、`actions` をそれに置き換え、`buttons` からゲームの入口(`is_arcade_entry`)を除いて
+  コードのボタンを先に足します(呼び出しの上限で返した謝り `TURN_LIMIT_REPLY` には付けません)。`history` も同じ state を渡すので、
+  画面を開き直しても挨拶のボタンは同じです(4.9 の「挨拶の入口のボタン」)
 
 Web サーバーの `event` と `event_stream` は、`_require_own` の後に `turn.accept`(イベントの名前と、空の発言・長すぎる発言(`MAX_TEXT_CHARS`、5000 字)の確かめ、アップロードの事実
 (`upload_facts`))を呼び、`turn.run` でターンを進めます。`accept` は、発言の電話、メール、住所らしい所を `redact_personal` で `[個人情報を削除]` に置き換え
@@ -1237,7 +1243,7 @@ sequenceDiagram
 | 形式 | 1 ターン 1 問。選択肢は最大 4 つで、問いの選択肢は逃げ道の「今はいい」を含む(入口 D は「やめた」でもよい)。逃げ道だけの選択肢(`escape_only`)、「今はいい」のほかの「それ以外」「特にない」「思いつかない」、「文字で話す」は違反。吹き出しの字数。求人は最大 3 件で理由つき。求人カードを出したターンの吹き出しで、カードの理由を繰り返さない(`reason_echo_violations`。条件が希望に合うという言い方か、8 字以上の理由をそのまま書いた)。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい。問いで終える返信もよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
 | 会話の進め方 | ツールが返していない求人を出さない。個人情報をトーク経由でツールに渡さない。「今はいい」「送らないで」の後に質問や求人を続けない。「求人を見せて」のターンで求人を探す。この会話で保存した項目を聞き直さない。断られていないのに wait を記録しない。エリアが分からないまま `recommend_jobs` を呼ばない(`area_violations`。分かっていたエリアを `area` に入れなかったのも違反。本人がエリアを問わない(在宅を外す言い方の「リモートは無理」は数えない)・在宅で探す・前にエリアつきで探した後に `relax_conditions` の案内か本人の言葉で広げた、は除く) |
 | 再訪 | 希望ありは、1 通目で前の希望に触れ、以後その項目を聞き直さない。行動履歴のみは、1 通目で最近の行動に触れ、触れるのは会話を通して 1 回だけ。1 通目に求人カード、求人名、件数を並べず、職種も 1 つだけ |
-| 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`) | 初回訪問は、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)が 1 通目に全部ある。選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、1 通目の入口が 1 つまでで、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを勧める(期待の入口がその窓口で使えなければ問わない)。どちらも窓口で使えないものを出したら違反。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |
+| 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`、`greeting_mentions`、`greeting_expected`) | 初回訪問・再訪とも、1 通目のボタンが、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)のうちシナリオの種(`seed_voice_draft`、`seed_resume`、`seed_arcade_draft`)でやり終えていないもの(`expected_entries`)とちょうど同じ(2026-10-26、jyoka/tasks#237。足りなければ、やり終えたものや使えないものを出したら違反)。本文で触れる入口(`greeting_mentions`)は 1 つまでで、ボタンの付かない入口には触れない。初回訪問は選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを文で勧める(期待の入口がその窓口で使えないか、やり終えていれば問わない)。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |
 | 挨拶の言い方と並び(`greeting_wording_violations`) | 初回訪問・再訪の 1 通目で、こちらから連絡した言い方(「ご連絡しました」「お声がけしました」。過去・完了の形と、連絡・声かけの進行の形「ご連絡しております」)をしない。問いがあれば最後の吹き出しを問いで終える。再訪は、行動履歴に言い切り(「見ていましたね」)で触れない。問いの文の中の「ご覧になっていたので、」「見ていらっしゃいましたね、」も言い切りに数える。前に話したこと(`seed_preferences`・`seed_track`)が無い人に「今回も」と言わない。入口を勧めたら、勧めの文を問いと同じ吹き出しに置かない。吹き出しの合計が `GREETING_TOTAL_MAX`(アルバイト・パートと未定は 90 字、正社員は 130 字)まで |
 | プッシュ | 本番と同じく `push_trigger` を通してから始める |
 | 事実性(`fact_violations`、指標 `fabrications`) | 返信の金額、日付、徒歩分数、件数、求人名が、この会話で dip から来た情報(ツールの結果、プッシュの根拠の事実、dip の Prompt)か本人の発言にあるか。数字は同じ単位の値とだけ照合する(徒歩の分数は `walk_min`、件数は `total` など。ID や日付の中の数字は根拠にしない)。dip の Prompt の例文の日付は根拠にしない。その場で作った架空の求人名は文字列では見分けにくいので、求人名で捕まえるのは実在の求人の出し間違い。保存した希望が本人の発言に無いのも違反(本人が決めていない条件を記録しない) |
@@ -1362,11 +1368,28 @@ LINE の実機(2026-10-26)で、エリアと年収の下限を 1 問で聞き、
   (`evals.checks.PAY_ESCAPE`)。選ばれた区切りの数字を `min_wage` / `min_annual_salary` に渡し、「こだわらない」なら渡しません
 - 区切りの金額は求人の事実ではないので、評価の作り話の判定(`fact_violations`)は、`condition_options` の金額を根拠にしません
 
+#### 挨拶の入口のボタン
+
+初回訪問と再訪の挨拶には、音声相談、履歴書の読み込み、ゲームの入口のボタンを、LLM ではなくコードが付けます(2026-10-26、jyoka/tasks#237)。
+Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲームのボタンが付かなかった(3 回中 3 回)ためです。案内するのは、本人がまだやり終えていない入口だけです。
+
+| 段 | どこで | 決め方 |
+|---|---|---|
+| やり終えたか | dip の `logic.used_entries(user)`(要約の `used_entries` と、その説明 `ENTRY_NOTE`) | 音声相談は、音声相談の結果に下書き(`draft_markdown`)がある。履歴書は `resume_upload` がある。ゲームは `arcade_drafts` がある。新しい記録の項目は足さず、今ある記録から決めます。開いただけ、途中でやめた、の記録は無いので数えません |
+| 窓口で使えるか | `runtime.usable_entries(channel, features)` | LINE は `line_channel.liff_features` にあるもの。Web は features が空なら 3 つとも(評価と開発者画面)、本番のトーク画面は `line_channel.web_features`(音声相談は LiveKit の設定があるときだけ)。ゲームは要約に `arcade_url` があるときだけ |
+| ボタン | `runtime.greeting_entries(summary, channel, features)` | やり終えていなくて使える入口を、`actions`(`voice_consult`、`resume_upload` の順)とゲームの `buttons`(「ゲームで書類を作る」、`arcade_url`)にします。3 つともやり終えていれば空です |
+| 付ける | `LineRuntime._turn` と `render` | 挨拶のターンの初めに dip の要約を MCP で読み(`_read_summary`)、会話の state の `greeting_entries` に書きます。`render` はその会話の最初の返信だけ、モデルの入口(`actions` とゲームのボタン)をこれに置き換えます。入口でないボタン(「下書きを見る」など)は残します。同じ会話の 2 回目からの返信には付けません |
+
+- 記録を消すと(プロフィールの項目ごとの削除、「すべて消す」、期間で消す掃除)、`used_entries` から外れ、次の挨拶でまた案内します
+- dip の Prompt(`baitoru_assistant.md` の「挨拶の入口」、`entries.json` の `visit`・`revisit`)は、挨拶に入口の `actions` とゲームのボタンを付けず、本文で 3 つを並べないように言います。
+  必要なら 1 つだけ 1 文で触れてよく、触れてよいのはボタンの付く入口だけです。再訪の勧めの 1 文の決まり(どれを勧めるか)は前のままです
+- LINE の通数(挨拶は 2 通まで。`line_channel.to_messages` の見出し)と、挨拶の長さの目安は前のままです
+
 選択肢の決まりです。
 
 - エージェントの返信はリッチメニューに頼らず、触れません(LINE のリッチメニューは 4.11 の終わり)。「求人を探す / 応募履歴を確認 / 使い方」はメニューではなく、トークの選択肢
   (クイックリプライ)として出します。挨拶だけのときと、意図が分からないときの最初の 1 問です。初回訪問の挨拶は「求人を探す / まず相談する / 今はいい」で、
-  音声相談、履歴書の読み込み、ゲームの入口のボタンを添えます(dip の Prompt の「挨拶で3つの入口を案内する」。[設計メモの 12 章](../design/line-sim-scenarios.md#12-挨拶から-3-つの入口へ案内する2026-10-25会話の改善-23))
+  音声相談、履歴書の読み込み、ゲームの入口のボタンのうち、やり終えていないものをコードが添えます(下の「挨拶の入口のボタン」。[設計メモの 12 章](../design/line-sim-scenarios.md#12-挨拶から-3-つの入口へ案内する2026-10-25会話の改善-23))
 - 返信は必ず選択肢で終えます(締めくくりの返信にも「求人を探す / 応募履歴を確認 / 使い方」)。LINE のクイックリプライは、ボタンを押すか
   新しいメッセージが届くまで消えないので、次に開いた人が書くしかない状態を減らせます。トークを開き直したときに表示が残るかは
   LINE のドキュメントに記載が無く、実機で確かめていません
@@ -1544,7 +1567,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `render` の項目 | LINE のメッセージ |
 |---|---|
 | `bubbles` | 1 つずつテキスト |
-| `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` →「履歴書を読み込む」`https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` →「音声で相談する」`…/voice`。絵文字は付けない)を、`buttons` のボタンの後ろに足す。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
+| `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` →「履歴書を読み込む」`https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` →「音声で相談する」`…/voice`。絵文字は付けない)を、`buttons` のボタンの前に置く(挨拶の入口がリッチメニューと同じ「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」の順になる。2026-10-26 までは後ろだった)。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
 | `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
