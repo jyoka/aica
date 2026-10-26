@@ -1,0 +1,23 @@
+{
+ "format_version": "1.0",
+ "source": "upload",
+ "created_at": "2026-10-20T21:00:00+09:00",
+ "resume": {
+  "job_summary": "ホテルのフロントで主任を5年。その前は旅行会社のカウンターで営業を3年。",
+  "self_pr": "",
+  "education": [
+   {"period": "2014年4月〜2018年3月", "school": "みほん大学 観光学部", "status": "卒業"}
+  ],
+  "work_history": [
+   {"period": "2018年4月〜2021年3月", "organization": "みほん旅行株式会社", "employment_type": "正社員",
+    "role": "カウンターの営業", "duties": ["個人旅行の相談と手配"], "achievements": []},
+   {"period": "2021年4月〜現在", "organization": "みほんホテル株式会社", "employment_type": "正社員",
+    "role": "フロントの主任", "duties": ["チェックインと予約の対応", "スタッフ12人のシフトの作成"], "achievements": []}
+  ],
+  "other_experience": [],
+  "skills": ["接客", "予約システムの操作"],
+  "certifications": [],
+  "preferences": {"desired_work": [], "conditions": ["勤務地: 福岡市内"], "notes": []},
+  "unconfirmed": []
+ }
+}

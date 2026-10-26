@@ -1,0 +1,28 @@
+{
+ "id": "p1-sales",
+ "title": "営業 8 年、同じ職種で年収を上げたい",
+ "segment": "same_path",
+ "style": "聞かれたことに短く答える。数字は覚えているので、聞かれたら言う。",
+ "resume": null,
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "成果を出しても年収がほとんど上がらないから"},
+  {"key": "area", "kind": "text", "value": "東京の新宿か品川"},
+  {"key": "min_annual_salary", "kind": "number", "value": 650, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "3か月以内"},
+  {"key": "raise_target", "kind": "text", "value": "年収"},
+  {"key": "career1.role", "kind": "text", "value": "みほん事務機で法人営業、4年(今の会社)"},
+  {"key": "career1.scale", "kind": "number", "value": 120, "unit": "社(担当の取引先)"},
+  {"key": "career1.result", "kind": "text", "value": "新規の取引先を1年で30社増やした"},
+  {"key": "career2.role", "kind": "text", "value": "みほん人材で法人営業、3年"},
+  {"key": "career2.scale", "kind": "number", "value": 8, "unit": "人(チーム)"},
+  {"key": "career2.result", "kind": "text", "value": "年間の売上の目標を3年続けて達成した"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "同じ仕事で上へ",
+  "3社目(いちばん古い)": "みほん食品卸でルート営業、1年",
+  "働き方": "残業は月20時間くらいまで。リモートはなくてもよい",
+  "次にやりたいこと": "営業のまま、大きな会社の取引先を担当したい",
+  "人と働く形": "チームで目標を追うのが好き",
+  "やりたくないこと": "電話をかけ続けるだけの営業"
+ }
+}

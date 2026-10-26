@@ -1,0 +1,29 @@
+{
+ "id": "p2-change",
+ "title": "経理から IT へ",
+ "segment": "change",
+ "style": "聞かれたことに答える。人数や件数などの数字は本当に覚えていないので「覚えていない」と言う。",
+ "resume": null,
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "経理の作業を自動にしたのが楽しく、仕組みを作る側の仕事がしたくなったから"},
+  {"key": "area", "kind": "text", "value": "大阪市内"},
+  {"key": "min_annual_salary", "kind": "number", "value": 400, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "半年以内"},
+  {"key": "change_reason", "kind": "text", "value": "自分で仕組みを作る仕事がしたい"},
+  {"key": "use_experience", "kind": "text", "value": "経理の仕事の流れが分かること"},
+  {"key": "career1.role", "kind": "text", "value": "みほん食品で経理、5年(今の会社)"},
+  {"key": "career1.scale", "kind": "dont_know"},
+  {"key": "career1.result", "kind": "text", "value": "Excel のマクロで月次の締めの作業を減らした"},
+  {"key": "career2.role", "kind": "text", "value": "みほん会計事務所で記帳の補助、2年"},
+  {"key": "career2.scale", "kind": "dont_know"},
+  {"key": "career2.result", "kind": "text", "value": "お客さんの記帳を一人で任されるようになった"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "仕事を変えたい",
+  "できること": "簿記2級、Excel のマクロ、独学で Python を少し",
+  "働き方": "リモートが週2日以上あるとよい",
+  "次にやりたいこと": "社内の業務のシステムを作る仕事",
+  "人と働く形": "少人数で相談しながら進めたい",
+  "やりたくないこと": "数字を入力するだけの仕事"
+ }
+}

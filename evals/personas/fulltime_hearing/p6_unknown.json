@@ -1,0 +1,26 @@
+{
+ "id": "p6-unknown",
+ "title": "属性を最後まで言わない",
+ "segment": "unknown",
+ "style": "自分の状況(今のあなたに近いのは、など)を聞かれても答えない。ボタンがあれば「パス」を押し、無ければ「言いたくない」と打つ。ほかの問いには短く答える。",
+ "resume": null,
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "今の仕事を続けていいか迷っているから"},
+  {"key": "area", "kind": "text", "value": "札幌市内"},
+  {"key": "min_annual_salary", "kind": "number", "value": 380, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "良いところがあれば"},
+  {"key": "career1.role", "kind": "text", "value": "みほんシステムでサポートの窓口、3年(今の会社)"},
+  {"key": "career1.scale", "kind": "number", "value": 25, "unit": "件(1日の問い合わせ)"},
+  {"key": "career1.result", "kind": "text", "value": "よくある質問のページを作り、問い合わせを減らした"},
+  {"key": "career2.role", "kind": "text", "value": "みほん電機の店で家電の販売、2年"},
+  {"key": "career2.scale", "kind": "dont_know"},
+  {"key": "career2.result", "kind": "text", "value": "パソコン売り場の担当を任された"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "言いたくない",
+  "働き方": "リモートが週1日以上",
+  "次にやりたいこと": "わからない",
+  "人と働く形": "特にない",
+  "やりたくないこと": "電話の対応だけの仕事"
+ }
+}
