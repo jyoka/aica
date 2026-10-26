@@ -68,6 +68,7 @@ def test_hub_footer_matches_how_the_games_use_ai_and_storage(client):
     assert "Anthropic" not in footer and "OpenAI" not in footer
     assert "いまはオフライン" not in footer and "ブラウザにだけ残ります" not in footer
 
+
 def test_unknown_games_and_files_are_404(client):
     for path in ["/liff/arcade/resume-arcade", "/liff/arcade/nope", "/liff/arcade/the-case-of-you.html",
                  "/liff/arcade/..%2Fserver.py", "/static/arcade/nope.js", "/static/arcade/the-case-of-you.html"]:
