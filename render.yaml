@@ -4,7 +4,8 @@ services:
   - type: web
     name: aica
     runtime: docker
-    plan: starter
+    # 音声ワーカーも同じコンテナで動かす。Starter(512MB)では足りないので Standard(2GB)
+    plan: standard
     region: singapore
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
@@ -14,7 +15,8 @@ services:
     disk:
       name: aica-data
       mountPath: /app/data
-      sizeGB: 1
+      # 音声のモデル(約 460MB)も置く。増やせるが減らせない
+      sizeGB: 2
     envVars:
       # トーク、ゲームの AI、履歴書の読み取り、音声相談(既定の LINE_SIM_PROVIDER=anthropic)
       - key: ANTHROPIC_API_KEY
@@ -31,3 +33,16 @@ services:
       # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
       - key: VOICE_RESUME_STT_PROVIDER
         value: deepgram
+      # 音声相談(docs/deploy/render.md の「音声相談」)。音声ワーカーを同じコンテナで動かす
+      - key: AICA_VOICE_WORKER
+        value: "1"
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false

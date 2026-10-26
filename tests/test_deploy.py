@@ -38,7 +38,7 @@ def test_the_cookie_is_secure_only_when_served_over_https(tmp_path, monkeypatch)
 def test_the_image_and_the_blueprint_match_the_code():
     """Render の設定(render.yaml)と image(Dockerfile)が、ヘルスチェックの口と状態の置き場に合っている。"""
     svc = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"][0]
-    assert svc["runtime"] == "docker" and svc["plan"] == "starter"
+    assert svc["runtime"] == "docker" and svc["plan"] == "standard"  # 音声ワーカーも同じコンテナ
     assert svc["healthCheckPath"] == "/healthz"
     assert svc["numInstances"] == 1  # 会話数の上限(quota.json)は 1 つのプロセスで数える
     env = {e["key"]: e for e in svc["envVars"]}
@@ -46,6 +46,9 @@ def test_the_image_and_the_blueprint_match_the_code():
     for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トーク、履歴書、音声は Anthropic(既定)、意味検索の埋め込みは OpenAI
         assert env[key] == {"key": key, "sync": False}  # 値はリポジトリに書かない
     assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
+    assert env["AICA_VOICE_WORKER"]["value"] == "1" and svc["disk"]["sizeGB"] >= 2  # 音声のモデル(約 460MB)もディスクに置く
+    for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"):
+        assert env[key] == {"key": key, "sync": False}
     # 状態と出力の既定の置き場はすべてリポジトリ直下の data/。image では /app/data で、そこにディスクをつなぐ
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "WORKDIR /app\n" in dockerfile and "AICA_SECURE_COOKIE=1" in dockerfile
