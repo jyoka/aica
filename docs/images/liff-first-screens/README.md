@@ -18,7 +18,7 @@ iPhone の幅(390px)で、LIFF の SDK を偽物に差し替えたブラウザ(P
 
 | 音声相談 | 履歴書の読み込み | ゲームの一覧 |
 |---|---|---|
-| ![音声相談](after-voice.png) | ![履歴書の読み込み](after-resume-picked.png) | ![ゲームの一覧](after-arcade.png) |
+| ![音声相談](after-voice.png) | ![履歴書の読み込み](after-resume-picked.png) | ![ゲームの一覧(直す前に戻した)](before-arcade.png) |
 
 ## 直す前
 
