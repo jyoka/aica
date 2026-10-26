@@ -59,6 +59,13 @@ def test_hub_and_eight_games_are_plain_html_pages_without_claude_ai(client):
         assert "set-cookie" not in r.headers  # 本人のデータを読み書きしないので、匿名IDの Cookie を発行しない
 
 
+
+def test_hub_footer_matches_how_the_games_use_ai_and_storage(client):
+    """ハブの注意書きは今の動きに合わせる: 同意したあとは答えを Anthropic に送る。保存を選んだ書類はプロフィールに残る。"""
+    footer = client.get("/liff/arcade").text.split("<footer>")[1].split("</footer>")[0]
+    assert "米国の Anthropic に送ります" in footer and "保存を選んだときだけプロフィールに保存" in footer
+    assert "いまはオフライン" not in footer and "ブラウザにだけ残ります" not in footer
+
 def test_unknown_games_and_files_are_404(client):
     for path in ["/liff/arcade/resume-arcade", "/liff/arcade/nope", "/liff/arcade/the-case-of-you.html",
                  "/liff/arcade/..%2Fserver.py", "/static/arcade/nope.js", "/static/arcade/the-case-of-you.html"]:
