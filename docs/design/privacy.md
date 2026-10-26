@@ -122,10 +122,10 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | LiveKit Cloud | 7、10 | 米国(データの地域はプロジェクトを作るときに選ぶ) | 未確認。前は「無料プランは、匿名化したデータを turn detector の改善に長く残すことがある」と書いたが、2026-10-25 に利用者が公式ページで確かめられなかった | 音声は転送のためにメモリで扱い、残さない。Agent Observability が有効なら、録音、文字起こし、ログを 30 日 | `AgentSession.start(record=False)`。有料プラン | `record` を指定していない(`voice_resume/agent.py:132`) |
 | LINE(LINE ヤフー) | 5、6、返信の本文 | 日本 | - | LINE の決まりによる(不明) | - | - |
 | jsDelivr | 本人の IP(音声相談のシートが JS を読むとき) | - | - | 不明 | 自分で JS を配る(R11) | CDN から読む(`line_runtime/static/talk-core.js:267`) |
-| Render(公開の予定) | `data/` のすべて、ログ | 米国 | - | ディスクとログ、バックアップの保持は契約による(不明) | - | まだ配置していない |
+| Render | `data/` のすべて、ログ | 米国(リージョンは Singapore) | - | ディスクのスナップショットは 7 日。ログは Hobby のワークスペースで 7 日。ディスクは保存中も暗号化 | - | ポリシー 1.4 から |
 | Cloudflare AI Gateway(将来) | LLM への全リクエスト | 米国 | - | ログを有効にすると本文を保持 | 3.5 | まだ置いていない |
-| cloudflared のトンネル(今、LINE の Webhook) | LINE の Webhook の本文(トークの本文、LINE のユーザーID) | 米国 | - | 不明 | Render に移せば要らない | 運営者の Mac で動かす間は、LINE の Webhook をこれで受ける(ポリシー 1.3 に載せた) |
-| Tailscale Funnel(今、画面) | Web と LIFF の画面の通信(暗号のまま) | - | - | 中継は TLS を解かない(Tailscale の公開文書) | - | 運営者の Mac で動かす間の画面の公開 |
+| cloudflared のトンネル(前、LINE の Webhook) | LINE の Webhook の本文(トークの本文、LINE のユーザーID) | 米国 | - | 不明 | - | 運営者の Mac で動かしていた間(ポリシー 1.3)だけ。Render では使わない |
+| Tailscale Funnel(前、画面) | Web と LIFF の画面の通信(暗号のまま) | - | - | 中継は TLS を解かない(Tailscale の公開文書) | - | 運営者の Mac で動かしていた間だけ。Render では使わない |
 
 ## 3. 設計
 
