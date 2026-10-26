@@ -124,7 +124,8 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | jsDelivr | 本人の IP(音声相談のシートが JS を読むとき) | - | - | 不明 | 自分で JS を配る(R11) | CDN から読む(`line_runtime/static/talk-core.js:267`) |
 | Render(公開の予定) | `data/` のすべて、ログ | 米国 | - | ディスクとログ、バックアップの保持は契約による(不明) | - | まだ配置していない |
 | Cloudflare AI Gateway(将来) | LLM への全リクエスト | 米国 | - | ログを有効にすると本文を保持 | 3.5 | まだ置いていない |
-| cloudflared のトンネル(今、LINE を試すとき) | Web と LINE の通信のすべて | 米国 | - | 不明 | 公開では使わない | 試すときだけ |
+| cloudflared のトンネル(今、LINE の Webhook) | LINE の Webhook の本文(トークの本文、LINE のユーザーID) | 米国 | - | 不明 | Render に移せば要らない | 運営者の Mac で動かす間は、LINE の Webhook をこれで受ける(ポリシー 1.3 に載せた) |
+| Tailscale Funnel(今、画面) | Web と LIFF の画面の通信(暗号のまま) | - | - | 中継は TLS を解かない(Tailscale の公開文書) | - | 運営者の Mac で動かす間の画面の公開 |
 
 ## 3. 設計
 
