@@ -67,7 +67,10 @@ WebRTC が使えるかを人が実機で確かめる。結果(使えたか、エ
 本人の同意(task 214。docs/design/privacy.md の 3.6、line_runtime.consent): 同意の前は LLM を呼ばず、状態にも書かない。
 Web は最初にトークを開いたとき(/api/talk/open が consent を返し、画面が同意の画面を出して POST /api/consent)、LINE は友だち追加と
 同意の前の発言に要点と「同意して始める」のクイックリプライ(postback)を返し、押したら挨拶する(挨拶が返るまでは、次の発言も
-挨拶から始める。task 232)。履歴書と音声相談は、使う直前に
+挨拶から始める。task 232)。リッチメニューから LIFF 画面(音声相談、履歴書の読み込み、ゲーム)を同意の前に開いた LINE の本人には、
+その画面で同じ要点と「同意して始める」を示し、押したら POST /api/liff/consent で記録してそのまま使わせる(task 239)。音声相談と
+履歴書は、それぞれの同意も同じ画面で示し、1 回押せば両方を記録する。画面で同意した人には、トークで同意を求め直さず、次の
+トークの新しい会話を挨拶から始める(トークの同意と同じ logic.await_greeting。挨拶を push はしない)。履歴書と音声相談は、使う直前に
 もう一度示して同意を取る(Web は /api/consent、LIFF 画面は /api/liff/consent)。ターン、履歴書の読み取り、音声相談のトークン、
 ゲームの AI、プロフィールに足す・直す口、雇用区分の取り消し、シナリオと連携の開始は、同意がまだなら断る(turn.NeedsConsent、
 _require_consent、_profile_writer)。消す口(プロフィールの各項目、「すべて消す」、LINE の「データを消す」)と見る口は同意の前もできる。
@@ -113,7 +116,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from dip_mcp import accounts, arcade, behavior, logic, profile, retention
 from dip_mcp.data import State, load_jobs
@@ -554,10 +557,18 @@ class ConsentIn(BaseModel):
     kind: Literal["terms", "resume", "voice"]
     version: str = Field(..., max_length=200)  # 画面が示した版(consent.tag)
     user_id: str | None = None  # LIFF 画面だけが使う(本人の確かめ)。Web は Cookie で決める
+    # 使い始める同意と同じ画面で示し、一緒に記録する同意(LIFF 画面の履歴書と音声相談。task 239)
+    also: Literal["resume", "voice"] | None = None
+
+    @model_validator(mode="after")
+    def _also_with_terms(self):
+        if self.also is not None and self.kind != "terms":
+            raise ValueError("also は kind が terms のときだけ")
+        return self
 
 
 def _require_consent(user_id: str, *kinds: str) -> None:
-    """kinds に同意していなければ 403(LLM を呼ぶ前、会話数を使う前に断る)。LINE のユーザーの使い始める同意はトークで取る。"""
+    """kinds に同意していなければ 403(LLM を呼ぶ前、会話数を使う前に断る)。LINE のユーザーの使い始める同意は、トークか LIFF 画面で取る。"""
     kind = consent.missing(state, user_id, *kinds)
     if kind is not None:
         line = kind == "terms" and line_channel.LINE_ID.fullmatch(retention.person(user_id))
@@ -565,10 +576,12 @@ def _require_consent(user_id: str, *kinds: str) -> None:
 
 
 def _record_consent(user_id: str, body: ConsentIn, channel: str = "web") -> dict | JSONResponse:
-    """示した版で同意を記録して、今の同意の状態を返す。版が今と違えば記録せず 409 で、今の版の同意の状態(consent)を付ける
-    (画面は新しい文言で出し直す)。"""
-    if not consent.record(state, user_id, body.kind, body.version):
+    """示した版で同意(と、一緒に示した also)を記録して、今の同意の状態を返す。版が今と違えば、どれも記録せず 409 で、
+    今の版の同意の状態(consent)を付ける(画面は新しい文言で出し直す)。"""
+    if body.version != consent.tag():
         return JSONResponse({"detail": consent.STALE, "consent": consent.view(state, user_id, channel)}, status_code=409)
+    for kind in filter(None, (body.kind, body.also)):
+        consent.record(state, user_id, kind, body.version)
     return consent.view(state, user_id, channel)
 
 
@@ -1116,6 +1129,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
     続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。ただし LINE で同意した後の
     挨拶がまだ返っていなければ(logic.greeting_due)、新しい会話は発言ではなく挨拶から始める(書いた文は会話に入れない。task 232)。
+    挨拶の前に今の会話で本人の発言に返したら(LIFF 画面で同意し、履歴書の続きに答えたなど)、もう挨拶を待たない(logic.skip_greeting)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
     エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。
@@ -1145,6 +1159,9 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
         return {"bubbles": [line_channel.FAILED_TEXT]}, None
     if reply is not None and t.kind == "greet" and not reply.get("limited"):
         logic.record_talk_open(state, uid)  # 挨拶が返った: 次に友だち追加し直したら再訪
+    elif reply is not None and kind == "message" and not reply.get("limited") and logic.greeting_due(state, uid):
+        # 挨拶を待つ間に、今の会話で本人と話した(LIFF 画面で同意し、履歴書の続きに答えたなど): 後の会話で発言を挨拶に替えない
+        logic.skip_greeting(state, uid)
     return reply, t.entry if t.kind == "greet" and t.entry in line_channel.GREETING_HEADINGS else None
 
 
@@ -1983,14 +2000,20 @@ async def _line_upload_turn(uid: str, to: str, shown: dict) -> None:
 
 @app.post("/api/liff/consent")
 async def liff_consent(body: ConsentIn, request: Request):
-    """LIFF 画面(履歴書の読み込み、音声相談)の「同意して…」: LINE の本人(Cookie aica_liff)の履歴書か音声の同意を、示した版で記録する。
-    使い始める同意(terms)は LINE のトークのクイックリプライで取るので、ここでは受けない(400)。その同意の前なら 403。
-    示した版が今と違えば 409。"""
+    """LIFF 画面(音声相談、履歴書の読み込み、ゲーム)の「同意して…」: LINE の本人(Cookie aica_liff)の同意を、示した版で記録する。
+    使い始める同意(terms)もここで取れる(リッチメニューから画面を直接開いた、トークでまだ同意していない人。task 239)。
+    terms と一緒に、同じ画面で示した履歴書か音声の同意(also)も 1 回で記録する。履歴書と音声の同意だけなら、terms の後だけ
+    (前なら 403)。示した版が今と違えば、どれも記録せず 409。
+    画面で terms に同意したら、トークの同意と同じく、次のトークの新しい会話を挨拶から始める(logic.await_greeting)。
+    挨拶を push はしない(音声相談のまとめや履歴書の続きが、この後トークに push されるので、混ざらないように)。"""
     user = _liff_api_user(request, body.user_id or "")
-    if body.kind == "terms":
-        raise HTTPException(400, "使い始める同意は LINE のトークで取ります")
-    _require_consent(user, "terms")
-    return _record_consent(user, body, "line")
+    if body.kind != "terms":
+        _require_consent(user, "terms")
+    first = consent.needed(state, user, "terms")
+    out = _record_consent(user, body, "line")
+    if body.kind == "terms" and first and not isinstance(out, JSONResponse):
+        logic.await_greeting(state, user)
+    return out
 
 
 @app.post("/api/liff/voice/start")
@@ -2051,15 +2074,33 @@ async def liff_resume_upload(background: BackgroundTasks, request: Request, user
     return {"empty": out["empty"], "bubbles": out["bubbles"], "file": out["file"], "view_url": view, "talk": talk}
 
 
-def _consent_html(kind: str) -> str:
+def _consent_html(*kinds: str) -> str:
     """LIFF 画面に出す同意の文と「同意して…」のボタン(id: consent、consent-agree。文言は line_runtime.consent)。
-    ボタンは、画面の script が LIFF の準備を終えて押したときの処理を付けるまで押せない。"""
-    t = consent.texts("line")[kind]
-    paras = "".join(f"<p>{escape(p)}</p>" for p in t["paragraphs"])
-    points = "<ul>" + "".join(f"<li>{escape(p)}</li>" for p in t["points"]) + "</ul>" if t["points"] else ""
-    strong = f"<p><strong>{escape(t['strong'])}</strong></p>" if t["strong"] else ""
-    return (f'<div class="consent" id="consent"><h2>{escape(t["title"])}</h2>{paras}{points}{strong}'
-            f'<p>{legal.links_html()}</p><button id="consent-agree" type="button" disabled>{escape(t["button"])}</button></div>')
+    kinds は 1 つの画面に続けて示す同意(使い始める同意と履歴書の同意など)で、ボタンは 1 つ(最後の同意の文言)。
+    ボタンは、画面の script が押したときの処理(LIFF_AGREE_JS)を付けるまで押せない。"""
+    texts, html = consent.texts("line"), ""
+    for i, kind in enumerate(kinds):
+        t, h = texts[kind], "h3" if i else "h2"
+        html += f"<{h}>{escape(t['title'])}</{h}>" + "".join(f"<p>{escape(p)}</p>" for p in t["paragraphs"])
+        html += "<ul>" + "".join(f"<li>{escape(p)}</li>" for p in t["points"]) + "</ul>" if t["points"] else ""
+        html += f"<p><strong>{escape(t['strong'])}</strong></p>" if t["strong"] else ""
+    button = escape(texts[kinds[-1]]["button"])
+    return (f'<div class="consent" id="consent" data-kind="{" ".join(kinds)}">{html}'
+            f'<p>{legal.links_html()}</p><button id="consent-agree" type="button" disabled>{button}</button></div>')
+
+
+# LIFF 画面(履歴書の読み込み、ゲーム)の「同意して…」を押したときの処理。conf.kinds(_consent_html に渡した同意)を
+# POST /api/liff/consent で 1 回で記録して true。版が上がっていたら(409)新しい文言で開き直し、ほかの失敗は文を出して false
+LIFF_AGREE_JS = """async function liffAgree(conf, status) {
+  try {
+    const r = await fetch("/api/liff/consent", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: conf.kinds[0], also: conf.kinds[1], version: conf.version, user_id: conf.user }) });
+    if (r.status === 409) { status.textContent = conf.stale; setTimeout(() => location.reload(), 1500); return false; }
+    if (!r.ok) { let m = conf.failed; try { m = (await r.json()).detail || m; } catch (_) {} status.textContent = m; return false; }
+    return true;
+  } catch (e) { status.textContent = conf.failed; return false; }
+}"""
 
 
 def _liff_conf(user: str, **extra) -> str:
@@ -2075,12 +2116,13 @@ TALK_VARS = """:root { --room: #8fa9d3; --head: #2f3a4f; --me: #95e05b; --bot: #
 
 def _liff_voice_page(user: str) -> HTMLResponse:
     """LINE のアプリで開く音声相談の画面。Web のトークと同じ音声相談のシート(talk-core.js)を、LIFF の API で開く。
-    音声の同意がまだなら、シートの前に同意の画面を出す(talk-core.js の ask)。使い始める同意がまだなら、LINE のトークへ案内して止まる。
+    音声の同意がまだなら、シートの前に同意の画面を出す(talk-core.js の ask)。使い始める同意もまだなら(リッチメニューから直接
+    開いた)、開いたその場で、使い始める同意と音声の同意を 1 つの同意の画面で示し、押したらそのままシートを開く(task 239)。
     面談のまとめは、この画面と LINE のトークの両方に出る(トークへは /api/voice/result が push する)。"""
     talk = line_channel.configured()  # LINE のトークにも届くか(Messaging API の設定があるか)
     conf = _liff_conf(user, sent=LIFF_SENT_TEXT if talk else LIFF_SHOWN_TEXT, later=LIFF_LATER_TEXT if talk else "",
                       notStarted=LIFF_NOT_STARTED_TEXT, inTalk=LIFF_IN_TALK_TEXT, sdk=LIFF_SDK_MISSING,
-                      consent=consent.view(state, user, "line"), noTerms=consent.MISSING_LINE_TERMS)
+                      consent=consent.view(state, user, "line"))
     html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>音声で相談</title>
 <link rel="stylesheet" href="/static/talk-core.css">
@@ -2119,7 +2161,7 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
     getUser: () => conf.user, isBusy: () => false, setBusy: () => {{}}, fire: async () => {{}},
     send: () => {{ status.textContent = conf.inTalk; }},  // 求人カードと選択肢のボタン: 続きはトークで
     voiceApi: {{ start: "/api/liff/voice/start", wait: "/api/liff/voice/wait", extra: () => ({{ id_token: liff.getIDToken() }}) }},
-    consentApi: "/api/liff/consent",  // 音声の同意(シートを開く前に示す)
+    consentApi: "/api/liff/consent",  // 使い始める同意と音声の同意(シートを開く前に示す)
     consentRefresh: null,  // 読み直さない(Web の Cookie の人を読まないように)
     onVoiceClosed: (done, started) => {{
       if (!started) {{ status.textContent = conf.notStarted; return; }}  // 始められなかった: もう一度押せる
@@ -2127,10 +2169,11 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
     }},
   }});
   talk.setConsent(conf.consent);
-  if (conf.consent.needed.includes("terms")) {{ status.textContent = conf.noTerms; return; }}  // 使い始める同意は LINE のトークで
   open.disabled = false;
   open.onclick = () => talk.openVoice();
   back.onclick = () => liff.closeWindow();
+  // 使い始める同意の前に開いた: その場で同意の画面を出す(押したらシートを開く。「やめる」なら何も記録せず、ボタンでまた出せる)
+  if (conf.consent.needed.includes("terms")) talk.openVoice();
 }})();
 </script></body></html>"""
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
@@ -2139,25 +2182,25 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
 def _liff_upload_page(user: str) -> HTMLResponse:
     """LINE のアプリで開く履歴書の読み込みの画面。読み取った確認をここに出し、続きは LINE のトークに届く。
     履歴書の同意がまだなら、ファイルを選ぶ欄の前に同意の文と「同意してファイルを選ぶ」を出す(押すと POST /api/liff/consent して欄を出す)。
-    使い始める同意がまだなら、LINE のトークへ案内するだけ(ファイルを選ばせない)。"""
-    if consent.needed(state, user, "terms"):
-        return HTMLResponse(_page("履歴書を読み込む", f"<p>{escape(consent.MISSING_LINE_TERMS)}</p>"),
-                            headers={"Cache-Control": "no-store"})
-    ask = consent.needed(state, user, "resume")
+    使い始める同意もまだなら(リッチメニューから直接開いた)、使い始める同意と履歴書の同意を 1 つの同意の画面で示し、1 回押せば
+    両方を記録する(task 239)。押すまでファイルを選ばせない。"""
+    kinds = [k for k in ("terms", "resume") if consent.needed(state, user, k)]
+    ask = bool(kinds)
     conf = _liff_conf(user, sdk=LIFF_SDK_MISSING, reading="読み取っています。そのままお待ちください…",
                       pick="ファイルを選んでください。", sent="続きを LINE のトークに送ります。トークに戻ってください。",
-                      done="読み取りました。", version=consent.tag(), stale=consent.STALE)
+                      done="読み取りました。", version=consent.tag(), stale=consent.STALE, kinds=kinds)
     mb = resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)
     hidden = " hidden" if ask else ""
     body = f"""<p>履歴書か職務経歴書のファイル(PDF / JPEG / PNG、{mb}MB まで)を選ぶと、読み取った内容で LINE のトークの相談を続けます。
 氏名・住所・電話番号・メールアドレスは保存しません。</p>
-{_consent_html("resume") if ask else ""}
+{_consent_html(*kinds) if ask else ""}
 <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"{hidden}>
 <button id="resume-send" type="button" disabled{hidden}>読み込む</button>
 <p id="liff-status"></p><div id="resume-result"></div>
 <button id="liff-back" type="button" hidden>LINE のトークに戻る</button>
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script>
+{LIFF_AGREE_JS}
 (async () => {{
   const conf = {conf};
   const status = document.getElementById("liff-status"), send = document.getElementById("resume-send");
@@ -2169,15 +2212,10 @@ def _liff_upload_page(user: str) -> HTMLResponse:
   send.disabled = false;
   const agree = document.getElementById("consent-agree");
   if (agree) agree.disabled = false;
-  if (agree) agree.onclick = async () => {{  // 履歴書の同意: 記録できたら、ファイルを選ぶ欄を出す
+  if (agree) agree.onclick = async () => {{  // 同意(使い始める同意と履歴書の同意): 記録できたら、ファイルを選ぶ欄を出す
     agree.disabled = true;
-    try {{
-      const r = await fetch("/api/liff/consent", {{ method: "POST", credentials: "same-origin",
-        headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ kind: "resume", version: conf.version, user_id: conf.user }}) }});
-      if (r.status === 409) {{ status.textContent = conf.stale; setTimeout(() => location.reload(), 1500); return; }}
-      if (!r.ok) {{ let m = conf.failed; try {{ m = (await r.json()).detail || m; }} catch (_) {{}} status.textContent = m; agree.disabled = false; return; }}
-    }} catch (e) {{ status.textContent = conf.failed; agree.disabled = false; return; }}
+    if (!(await liffAgree(conf, status))) {{ agree.disabled = false; return; }}
+    status.textContent = "";
     document.getElementById("consent").remove();
     input.hidden = send.hidden = false;
   }};
@@ -2213,10 +2251,36 @@ async def liff_line_resume_upload(request: Request):
     return _liff_shell("履歴書を読み込む") if user is None else _liff_upload_page(user)
 
 
+def _liff_terms_page(user: str, title: str) -> HTMLResponse:
+    """使い始める同意の前の LINE の本人が、LIFF 画面(ゲーム)を開いた: その場で同意の画面を出す(task 239)。押したら記録して、
+    同じ画面を開き直す(今度は本来の画面になる)。押さずに閉じれば何も記録せず、次に開いたときもこの画面になる。"""
+    conf = _liff_conf(user, version=consent.tag(), stale=consent.STALE, kinds=["terms"])
+    body = f"""{_consent_html("terms")}
+<p id="liff-status"></p>
+<script>
+{LIFF_AGREE_JS}
+(() => {{
+  const conf = {conf};
+  const status = document.getElementById("liff-status"), agree = document.getElementById("consent-agree");
+  agree.disabled = false;
+  agree.onclick = async () => {{
+    agree.disabled = true;
+    if (await liffAgree(conf, status)) location.reload();
+    else agree.disabled = false;
+  }};
+}})();
+</script>"""
+    return HTMLResponse(_page(title, body), headers={"Cache-Control": "no-store"})
+
+
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade")
 async def liff_line_arcade(request: Request):
-    """LINE のアプリで開くレジュメ・アーケードのハブ(LIFF の本人を確かめてから。ゲームへのリンクも /liff/line/arcade/… になる)。"""
-    return _liff_shell("レジュメ・アーケード") if _liff_page_user(request) is None else await liff_arcade()
+    """LINE のアプリで開くレジュメ・アーケードのハブ(LIFF の本人を確かめてから。ゲームへのリンクも /liff/line/arcade/… になる)。
+    使い始める同意の前なら、先に同意の画面を出す。"""
+    user = _liff_page_user(request)
+    if user is None:
+        return _liff_shell("レジュメ・アーケード")
+    return _liff_terms_page(user, "レジュメ・アーケード") if consent.needed(state, user, "terms") else await liff_arcade()
 
 
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade/draft", response_class=HTMLResponse)
@@ -2239,11 +2303,15 @@ async def liff_line_arcade_draft_edit(request: Request, rid: int = Form(...),
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade/{{game}}")
 async def liff_line_arcade_game(game: str, request: Request):
     """LINE のアプリで開くゲーム。AI と保存につながったゲームには、LIFF の設定(window.AICA_LIFF)と LIFF SDK を入れる
-    (arcade-ai.js が、LIFF の本人の API /api/liff/arcade/… を呼び、保存のときに ID トークンを送る)。"""
-    if _liff_page_user(request) is None:
+    (arcade-ai.js が、LIFF の本人の API /api/liff/arcade/… を呼び、保存のときに ID トークンを送る)。そのゲームは、使い始める
+    同意の前なら、先に同意の画面を出す(ほかのゲームは AI も本人のデータも使わないので、そのまま開く)。"""
+    user = _liff_page_user(request)
+    if user is None:
         return _liff_shell("レジュメ・アーケード")
     if game not in ARCADE_SHIPPED:
         return await liff_arcade_game(game)
+    if consent.needed(state, user, "terms"):
+        return _liff_terms_page(user, "レジュメ・アーケード")
     conf = json.dumps({"liffId": line_channel.liff_id()}).replace("<", "\\u003c")
     head = f'<script src="{LIFF_SDK}" charset="utf-8" defer></script>\n<script>window.AICA_LIFF = {conf};</script>\n</head>'
     html = (ARCADE / f"{game}.html").read_text(encoding="utf-8").replace("</head>", head, 1)
@@ -2400,6 +2468,7 @@ input{{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10p
 button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}
 .demo{{background:#fff7e6;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.6}}
 .consent{{background:#fff;border-radius:10px;padding:4px 14px 14px;font-size:14px;line-height:1.7}}.consent h2{{font-size:16px}}
+.consent h3{{font-size:15px;margin:14px 0 4px}}
 [hidden]{{display:none!important}}{legal.FOOTER_CSS}</style>
 </head><body><header>{title}({site})</header><main>{body}</main>{footer}</body></html>"""
 

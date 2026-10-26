@@ -507,21 +507,23 @@ def test_talk_screen_consent_flow_in_the_browser(advised, served, browser, livek
 
 
 def test_liff_resume_and_voice_ask_for_their_own_consent(line_liff):  # noqa: F811
-    """LIFF 画面の履歴書と音声も、使う直前に同意を取る。使い始める同意(LINE のトーク)の前は、トークへ案内するだけ。"""
+    """LIFF 画面の履歴書と音声も、使う直前に同意を取る。使い始める同意の前は、同じ同意の画面で両方を示す
+    (その場で同意する流れは tests/test_liff_consent.py。task 239)。"""
     server, _, _, _ = line_liff
     uid = line_user(RAW_USER)
     with _liff_client(server) as client:
         assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
         page = client.get("/liff/line/resume/upload").text
-        assert consent.MISSING_LINE_TERMS in page and 'type="file"' not in page
+        assert 'data-kind="terms resume"' in page and consent.TERMS_INTRO in page
+        assert re.search(r'<input type="file" id="resume-file"[^>]* hidden>', page)  # 同意するまで選ばせない
         r = client.post("/api/liff/voice/start", json={"user_id": uid, "id_token": "good"})
         assert r.status_code == 403 and r.json()["detail"] == consent.MISSING_LINE_TERMS
         body = {"user_id": uid, "kind": "resume", "version": consent.tag()}
-        assert client.post("/api/liff/consent", json=body).status_code == 403
-        assert client.post("/api/liff/consent", json=body | {"kind": "terms"}).status_code == 400  # トークで取る
+        assert client.post("/api/liff/consent", json=body).status_code == 403  # 使い始める同意の前
 
         consent.record(server.state, uid, "terms", consent.tag())  # LINE のトークで「同意して始める」を押した
         page = client.get("/liff/line/resume/upload").text
+        assert 'data-kind="resume"' in page and consent.TERMS_INTRO not in page
         assert 'id="consent-agree"' in page and "同意してファイルを選ぶ" in page and "隠すか消してから" in page
         assert re.search(r'<input type="file" id="resume-file"[^>]* hidden>', page)  # 同意するまで選ばせない
         files = {"file": (FILENAME, b"%PDF-1.4 dummy", "application/octet-stream")}
@@ -542,7 +544,7 @@ def test_liff_resume_and_voice_ask_for_their_own_consent(line_liff):  # noqa: F8
 
 
 def test_liff_arcade_waits_for_the_talk_consent(line_liff, monkeypatch):  # noqa: F811
-    """LIFF の中のゲームも、使い始める同意(LINE のトーク)の前は番号なしで、AI を呼ばず、会話数も使わない(Web と同じ)。"""
+    """LIFF の中のゲームも、使い始める同意の前は番号なしで、AI を呼ばず、会話数も使わない(Web と同じ)。"""
     server, _, _, _ = line_liff
     monkeypatch.setattr(server, "arcade_client", lambda: (_ for _ in ()).throw(AssertionError("同意の前に AI を呼んだ")))
     uid = line_user(RAW_USER)

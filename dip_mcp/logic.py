@@ -946,6 +946,12 @@ def await_greeting(state: State, line_user_id: str) -> None:
     state.update(line_user_id, lambda u: u.__setitem__("greeting_due", True))
 
 
+def skip_greeting(state: State, line_user_id: str) -> None:
+    """挨拶を待たなくてよくなった: 挨拶が返る前に、本人がトークの今の会話で話した(LIFF 画面の操作の続きに答えたなど。task 239)。
+    次の新しい会話は本人の発言から始める。挨拶は返っていないので、record_talk_open と違って再訪にはしない。"""
+    state.update(line_user_id, lambda u: u.pop("greeting_due", None))
+
+
 def greeting_due(state: State, line_user_id: str) -> bool:
     """同意の後の挨拶がまだ返っていないか(await_greeting の後、record_talk_open の前)。"""
     return bool(state.user(line_user_id).get("greeting_due"))
