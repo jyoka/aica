@@ -1,0 +1,234 @@
+--- harness_v2.py	2026-10-26 21:28:15.432246273 +0900
++++ harness_v3.py	2026-10-26 21:47:59.179950418 +0900
+@@ -14,8 +14,11 @@
+     # FIX7: if segment never becomes known, still ask the legally relevant age question
+     "unknown": {"age_under_18": HARD},
+ }
+-ORDER = ["icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps", "result"]
++ORDER = ["icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps", "review", "result"]  # V3: review
+ MAX_TURNS = 15
++REVIEW_RESERVE = 2      # V3: turns reserved for review round 1 (+ optional round 2)
++MAX_REVIEW_ROUNDS = 2
++PRE_REVIEW = ORDER[:ORDER.index("review")]
+ DIRECT = {"hard_filter", "fill_gaps"}          # phases whose answers are high-confidence
+ SEGMENT_SCORE = 1.5                            # FIX1: < q_money(2) so the fun question still goes first
+ TRUTHY = (True, "true", "True", "yes", "はい")  # FIX8
+@@ -31,6 +34,10 @@
+     turns: int = 0
+     phase_turns: int = 0
+     pending: list = field(default_factory=list)  # FIX3: updates for slots not yet known
++    conflicts: dict = field(default_factory=dict)  # V3: slot -> [distinct low values that disagree]
++    review_rounds: int = 0                         # V3
++    need_more_review: bool = False                 # V3
++    review_log: list = field(default_factory=list) # V3
+ 
+ def slots_for(state):
+     s = dict(SLOT_PRIORITY["common"])
+@@ -58,6 +65,7 @@
+         old = state.slots.get(u["slot"])
+         if old and old["confidence"] == "high" and u["confidence"] == "low":
+             continue
++        _track_conflict(state, old, u)                      # V3
+         state.slots[u["slot"]] = u
+     for x in out.get("ng_updates", []):
+         if x not in state.ng:
+@@ -66,6 +74,18 @@
+     if a and a["value"] in TRUTHY and "深夜シフト" not in state.ng:
+         state.ng.append("深夜シフト")
+ 
++def _track_conflict(state, old, u):
++    # V3: two LOW updates that disagree -> keep every distinct value; a HIGH update resolves it
++    slot = u["slot"]
++    if u["confidence"] == "high":
++        state.conflicts.pop(slot, None)
++        return
++    if old and old["confidence"] == "low" and value_ja(slot, old["value"]) != value_ja(slot, u["value"]):
++        # compare readable labels so synonyms (living_cost / household) are not flagged
++        vals = state.conflicts.setdefault(slot, [old["value"]])
++        if u["value"] not in vals:
++            vals.append(u["value"])
++
+ def open_gaps(state, min_pri, include_low):
+     out = []
+     for slot, pri in slots_for(state).items():
+@@ -115,27 +135,37 @@
+     return sorted(set(open_gaps(state, HARD, True)) | set(open_gaps(state, MID, False)))
+ 
+ def next_phase(state):
++    p, n = state.phase, state.phase_turns
++    if p == "review":                                   # V3: at most one extra round, then result regardless
++        more = state.need_more_review and state.review_rounds < MAX_REVIEW_ROUNDS and state.turns < MAX_TURNS
++        return "review" if more else "result"
+     if state.turns >= MAX_TURNS:
+         return "result"
+-    p, n = state.phase, state.phase_turns
++    if p in PRE_REVIEW and state.turns >= MAX_TURNS - REVIEW_RESERVE:
++        return "review"                                 # V3: budget reserved -> review always happens
+     if p == "icebreak":
+         return "hard_filter" if state.segment != "unknown" or n >= 3 else p   # FIX2
+     if p == "hard_filter":
+         return "scenario_game" if not open_gaps(state, HARD, False) or n >= 5 else p
+     if p == "scenario_game":
+         # FIX6: leave budget for reverse_pick (1) + confirming open HARD/MID gaps
+-        budget_tight = state.turns + 1 + len(remaining_gaps(state)) >= MAX_TURNS
++        # V3: scenarios are the main part -> only HARD gaps (+ reverse_pick + review reserve) can cut them short;
++        # MID left empty either gets fill_gaps turns or shows up as 未定 on the review card.
++        budget_tight = state.turns + 1 + len(open_gaps(state, HARD, True)) + REVIEW_RESERVE >= MAX_TURNS
+         done = n >= 6 or (n >= 4 and not open_gaps(state, MID, False)) or (n >= 2 and budget_tight)
+         return "reverse_pick" if done else p
+     if p == "reverse_pick":
+         return "fill_gaps"
+     if p == "fill_gaps":
+-        return "result" if not remaining_gaps(state) else p
++        return "review" if not remaining_gaps(state) else p  # V3
+     return p
+ 
+ def step(state, llm_out, bank):
+     if llm_out:
+-        merge_updates(state, llm_out)
++        if state.phase == "review":
++            apply_review(state, llm_out)                # V3
++        else:
++            merge_updates(state, llm_out)
+         state.turns += 1
+         state.phase_turns += 1
+     new = next_phase(state)
+@@ -144,6 +174,11 @@
+             state.phase, state.phase_turns = new, 0
+         if new == "result":
+             return None
++        if new == "review":                             # V3: synthesize the card "question"
++            state.review_rounds += 1
++            card = build_card(state)
++            return {"id": f"review_{state.review_rounds}", "phase": "review", "segments": ["all"],
++                    "targets": [], "text": render_card_ja(card), "choices": ["これでOK"], "card": card}
+         q = pick_question(state, bank)
+         if q:
+             break
+@@ -154,3 +189,126 @@
+             if gap_weight(state, t) > 0:
+                 state.attempts[t] = state.attempts.get(t, 0) + 1
+     return q
++
++
++# ======================= V3: review phase / result card =======================
++SLOT_LABEL_JA = {
++    "days_per_week": "週の日数", "time_slots": "働く時間帯", "commute": "通勤", "hourly_wage_min": "時給",
++    "shift_length": "1回のシフトの長さ", "customer_facing": "接客", "physical": "体力・立ち仕事",
++    "purpose": "バイトの目的", "pace": "忙しさ", "atmosphere": "職場の雰囲気", "environment_noise": "職場のにぎやかさ",
++    "age_under_18": "18歳未満", "school_permission": "学校のバイト許可", "exam_flex": "テスト期間",
++    "long_vacation": "長期休み", "available_hours": "働ける時間", "sudden_leave": "急なお休み",
++    "fuyou": "扶養", "remote": "在宅/外", "side_job_allowed": "会社の副業OK", "weekday_or_weekend": "平日/週末",
++    "energy_left": "本業後の体力", "avoid_coworkers": "会社の人に会うのは",
++}
++SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心", "side_job": "本業あり・副業", "unknown": "（未回答）"}
++VALUE_JA = {True: "はい", False: "いいえ", "こだわりなし": "こだわりなし"}
++# Explicit readable labels for inferred (scenario / reverse_pick / icebreak) values. Choice text of the
++# question is only a fallback: e.g. reverse_pick "引越しスタッフ" is what the user does NOT want.
++_E = {
++ "customer_facing": {"ok": "接客OK", "avoid": "接客は避けたい", "backoffice_ok": "裏方もOK（店長にほめられたい）", "like": "接客が好き"},
++ "pace": {"busy_ok": "忙しくてもOK", "calm": "落ち着いたペースがいい"},
++ "shift_length": {"short": "短め（3時間くらい）", "long": "長め（6時間くらい）"},
++ "atmosphere": {"structured": "マニュアルがしっかり", "autonomous": "ざっくり・自分で考える", "friendly": "仲良くわいわい",
++                "dry": "さっぱり各自解散", "same_age": "同年代が多い", "mixed_age": "大人が多くてもOK",
++                "parents": "子育て中の人が多い", "any": "こだわらない"},
++ "environment_noise": {"lively": "にぎやか", "quiet": "静か", "lively_ok": "にぎやかでもOK"},
++ "hourly_wage_min": {"wage_less_important": "時給より近さ優先", "wage_priority": "時給優先（多少遠くても）",
++                     "high": "高め希望（立ち仕事でも）", "normal": "ふつうでOK（座れるなら）"},
++ "physical": {"light": "軽めの作業がいい", "seated": "座り仕事がいい", "standing_ok": "立ち仕事OK", "heavy_ok": "体力仕事どんとこい"},
++ "purpose": {"hobby": "推し活・趣味", "saving": "貯金・将来のため", "living_cost": "家計の足し・生活費",
++             "household": "家計の足し・生活費", "fun": "旅行・遊び", "career": "履歴書に書ける経験", "easygoing": "ゆるく楽しく",
++             "perk_meal": "まかない", "perk_discount": "社割", "pocket_money": "自分のおこづかい",
++             "use_experience": "経験を活かしたい", "try_new": "新しいことをしたい", "no_brain": "頭を使わない作業",
++             "skill_up": "本業にプラスになる仕事", "earn": "しっかり稼ぐ", "refresh": "気分転換", "money": "お金",
++             "skill": "経験・スキル", "people": "人とのつながり"},
++ "exam_flex": {"full_off": "テスト前は完全に休みたい", "reduced": "テスト前は少なめならOK", "no_change": "気にしない"},
++ "long_vacation": {"heavy": "長期休みはがっつり", "normal": "長期休みもいつも通り"},
++ "available_hours": {"fixed_morning": "週2・午前で固定", "flexible": "毎週自分で選びたい"},
++ "sudden_leave": {"need_instant": "急に休める職場がいい", "cover_ok": "代わりの人がいれば安心"},
++ "remote": {"yes": "在宅がいい", "no": "外で働きたい", "either": "どちらでも"},
++ "fuyou": {"check_needed": "要確認（家計の足しにしたい）", "within": "扶養内", "beyond_ok": "扶養は気にしない",
++           "unknown_needs_help": "わからない（相談したい）"},
++ "weekday_or_weekend": {"weekend_full_day": "週末に1日しっかり", "weekend_half_day": "週末に半日"},
++ "avoid_coworkers": {"yes": "会社の人には会いたくない", "no": "気にしない"},
++ "energy_left": {"steady_ok": "毎週安定して働ける", "limited": "空いた日だけ（スポット）"},
++ "time_slots": {"after_school": "放課後すぐ", "after_club": "部活のあと"},
++}
++for _slot, _m in _E.items():
++    for _v, _ja in _m.items():
++        VALUE_JA[(_slot, _v)] = _ja
++
++def set_value_labels(bank):
++    """Readable Japanese for stored values: reuse the choice text that produced each (slot, value)."""
++    for q in bank:
++        for choice, eff in q.get("choice_effects", {}).items():
++            for slot, v in eff.items():
++                if not slot.startswith("__"):
++                    VALUE_JA.setdefault((slot, v), choice)
++
++def value_ja(slot, v):
++    if isinstance(v, bool):
++        return VALUE_JA[v]
++    return VALUE_JA.get((slot, v), VALUE_JA.get(v, str(v)))
++
++def build_card(state):
++    pri = slots_for(state)
++    card = {"segment": state.segment, "segment_ja": SEGMENT_JA.get(state.segment, state.segment),
++            "hard": [], "prefs": [], "ng": list(state.ng), "conflicts": sorted(state.conflicts),
++            "missing": [], "round": state.review_rounds}
++    for slot, p in sorted(pri.items(), key=lambda kv: -kv[1]):
++        u = state.slots.get(slot)
++        item = {"slot": slot, "label": SLOT_LABEL_JA.get(slot, slot), "priority": p,
++                "value": None if u is None else u["value"],
++                "value_ja": "未定" if u is None else value_ja(slot, u["value"]),
++                "inferred": bool(u and u["confidence"] == "low"),
++                "missing": u is None,
++                "conflict": [value_ja(slot, v) for v in state.conflicts[slot]] if slot in state.conflicts else None,
++                "conflict_values": list(state.conflicts.get(slot, []))}
++        if u is None:
++            if p < MID:
++                continue                     # LOW slots left empty are not worth showing
++            card["missing"].append(slot)
++        (card["hard"] if p == HARD else card["prefs"]).append(item)
++    return card
++
++def render_card_ja(card):
++    def line(it):
++        if it["conflict"]:
++            return f"・{it['label']}：どっち？ " + " / ".join(it["conflict"])
++        mark = "（推測）" if it["inferred"] else ""
++        if it["missing"]:
++            return f"・{it['label']}：未定（よければ教えてね）"
++        return f"・{it['label']}：{it['value_ja']}{mark}"
++    out = ["📋 あなたのバイト条件まとめ" + ("（もう一度だけ確認！）" if card["round"] > 1 else ""),
++           f"（あなた：{card['segment_ja']}）", "", "【ゆずれない条件】"]
++    out += [line(i) for i in card["hard"]]
++    out += ["", "【こだわり・好み】"] + [line(i) for i in card["prefs"]]
++    out += ["", "【NG】" + ("、".join(card["ng"]) if card["ng"] else "とくになし")]
++    out += ["", "（推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！"
++                "「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！"]
++    return "\n".join(out)
++
++def apply_review(state, out):
++    """Correction reply: explicit updates are high; untouched low items are promoted (review_accepted).
++    A second round is requested if a HARD slot changed, a conflict is still open, or a segment change
++    opened new HARD gaps."""
++    before = {k: v["value"] for k, v in state.slots.items()}
++    seg_before = state.segment
++    for u in out.get("slot_updates", []):
++        u["confidence"] = "high"
++    merge_updates(state, out)
++    pri = slots_for(state)
++    touched = {u["slot"] for u in out.get("slot_updates", [])}
++    promoted = []
++    for slot, u in list(state.slots.items()):
++        if slot in touched or slot in state.conflicts or u["confidence"] != "low":
++            continue
++        state.slots[slot] = dict(u, confidence="high", **{"from": "review_accepted"})
++        promoted.append(slot)
++    hard_changed = [s for s in touched if pri.get(s) == HARD and before.get(s) != state.slots[s]["value"]]
++    new_hard_gaps = [s for s, p in pri.items() if p == HARD and s not in state.slots] if state.segment != seg_before else []
++    state.need_more_review = bool(hard_changed or state.conflicts or new_hard_gaps)
++    state.review_log.append({"round": state.review_rounds, "touched": sorted(touched), "promoted": promoted,
++                             "hard_changed": hard_changed, "open_conflicts": dict(state.conflicts),
++                             "new_hard_gaps": new_hard_gaps, "segment_change": (seg_before, state.segment)})
