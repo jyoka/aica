@@ -12,11 +12,12 @@ dip は面談の途中で本人が「すべて消す」をした部屋の書き�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
-from contextlib import AsyncExitStack
 
+import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -28,13 +29,22 @@ logger = logging.getLogger("voice-resume.dip")
 # 匿名IDを渡す(dip 側は未知のIDを「新規ユーザー」として読み取るだけで、記録は書かない)。
 ANON_USER_ID = "voice-resume"
 
+# 閉じるときに MCP の接続を持つタスクの終わりを待つ秒数。過ぎたらそのタスクの cancel scope を取り消す
+# (anyio は取り消された子プロセスを kill する)。取り消した後も最大 _CANCEL_WAIT 秒だけ待つ。
+# 合わせて livekit のジョブの終了の期限(shutdown_process_timeout の既定 10 秒)より短くする
+CLOSE_TIMEOUT = 3.0
+_CANCEL_WAIT = 2.0
+
 
 class DipMCP:
     """dip のツールのうち voice-resume が使うものだけを公開する MCP クライアント。"""
 
-    def __init__(self) -> None:
-        self._stack: AsyncExitStack | None = None
+    def __init__(self, close_timeout: float = CLOSE_TIMEOUT) -> None:
         self._session: ClientSession | None = None
+        self._task: asyncio.Task | None = None
+        self._stop = asyncio.Event()
+        self._scope: anyio.CancelScope | None = None
+        self._close_timeout = close_timeout
 
     async def start(self) -> None:
         command = config.dip_server_command()
@@ -42,11 +52,34 @@ class DipMCP:
             # 環境変数を渡す(line_runtime と同じ)。テストは DIP_STATE_PATH で状態を隔離する
             command=command[0], args=command[1:], cwd=str(config.ROOT), env=dict(os.environ)
         )
-        self._stack = AsyncExitStack()
-        read, write = await self._stack.enter_async_context(stdio_client(params))
-        self._session = await self._stack.enter_async_context(ClientSession(read, write))
-        await self._session.initialize()
+        # stdio_client と ClientSession(中は anyio の cancel scope)は、入ったタスクと同じタスクで
+        # 出ないといけない。livekit は終了のコールバック(aclose)を別のタスクで呼ぶので、
+        # 接続は専用のタスクが持ち、aclose はそのタスクに知らせて終わるのを待つ
+        ready: asyncio.Future[ClientSession] = asyncio.get_running_loop().create_future()
+        self._task = asyncio.create_task(self._hold(params, ready), name="dip-mcp")
+        try:
+            self._session = await ready
+        except BaseException:
+            await self._close(grace=0)  # つなぐ途中で失敗・取り消し: 待たずに止めて、子プロセスを残さない
+            raise
         logger.info("dip MCP サーバーに接続: %s", " ".join(command))
+
+    async def _hold(self, params: StdioServerParameters, ready: asyncio.Future[ClientSession]) -> None:
+        """MCP の接続を持つタスクの本体。つないで ready に渡し、閉じる知らせが来たら同じタスクの中で閉じる。"""
+        with anyio.CancelScope() as self._scope:
+            try:
+                async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+                    await session.initialize()
+                    if not ready.done():  # start() が取り消されていれば ready も取り消し済み
+                        ready.set_result(session)
+                    await self._stop.wait()
+            except Exception as exc:  # noqa: BLE001 - つなぐ前の失敗は start() へ、後の失敗はログだけ
+                if not ready.done():
+                    ready.set_exception(exc)
+                else:
+                    logger.warning("dip MCP の接続でエラー: %s", type(exc).__name__)
+        if not ready.done():  # つなぐ前に取り消された
+            ready.cancel()
 
     async def recommend_jobs(self, **args) -> dict:
         """条件に合う求人(最大3件)。返り値は dip の {"total", "jobs"} か {"error", ...}。
@@ -106,11 +139,30 @@ class DipMCP:
         return await self._session.call_tool(name, args)
 
     async def aclose(self) -> None:
-        if self._stack is not None:
-            await self._stack.aclose()
-            self._stack = None
-            self._session = None
+        """接続を持つタスクに閉じるよう知らせ、終わるのを待つ(どのタスクから呼んでもよい)。
+        期限までに終わらなければ取り消して、子プロセスを止める。2回目以降は何もしない。"""
+        await self._close(self._close_timeout)
 
+    async def _close(self, grace: float) -> None:
+        task, self._task = self._task, None
+        self._session = None
+        if task is None:
+            return
+        self._stop.set()
+        done, _ = await asyncio.wait({task}, timeout=grace)
+        if done:
+            return
+        if grace > 0:
+            logger.warning("dip MCP の接続が %g 秒で閉じないので取り消します", grace)
+        if self._scope is not None:
+            # 一度きりの task.cancel() と違い、cancel scope の取り消しは中の await すべてに効く
+            # (anyio は子プロセスの終わりを待つところで取り消されると kill する)
+            self._scope.cancel()
+        else:
+            task.cancel()  # まだ動き始めていない
+        done, _ = await asyncio.wait({task}, timeout=_CANCEL_WAIT)
+        if not done:
+            logger.error("dip MCP の接続を取り消しても %g 秒で終わりません", _CANCEL_WAIT)
 
 def _room(room: str | None) -> dict:
     """書き込むツールに付ける部屋の引数(部屋が分からなければ付けない)。"""
