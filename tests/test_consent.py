@@ -92,7 +92,7 @@ def test_texts_follow_the_design_and_the_policy():
     web, line = consent.texts("web"), consent.texts("line")
     terms = "\n".join(web["terms"]["points"])
     for words in ("米国の Anthropic", "米国の OpenAI にも", "学習には使わない", "30 日", "180 日", "「すべて消す」", "18 歳未満", "自動で伏せます",
-                  "プライバシーポリシーの「5」", "架空のデモ", "日本にある運営者のコンピューター", "米国の Cloudflare", "州ごとの法律"):
+                  "プライバシーポリシーの「5」", "架空のデモ", "日本にある運営者のコンピューターで動き", "米国の Cloudflare", "州ごとの法律"):
         assert words in terms
     assert "「データを消す」" in "\n".join(line["terms"]["points"]) and "「すべて消す」" not in "\n".join(line["terms"]["points"])
     assert "隠すか消してから" in web["resume"]["strong"] and web["resume"]["button"] == "同意してファイルを選ぶ"
@@ -100,7 +100,7 @@ def test_texts_follow_the_design_and_the_policy():
     # 履歴書と音声相談の送り先は、既定では Anthropic(task 236)
     assert "AI が読み取ります" in web["resume"]["paragraphs"][0] and "米国の Anthropic に送ります" in web["resume"]["paragraphs"][0]
     assert "文字にした内容を米国の Anthropic に送ります" in "".join(web["voice"]["paragraphs"])
-    assert all("学習には使わない" in web[k]["paragraphs"][0 if k == "resume" else 1] for k in ("resume", "voice"))
+    assert all("Anthropic は学習には使わない" in web[k]["paragraphs"][0 if k == "resume" else 1] for k in ("resume", "voice"))
     assert "Render" not in terms  # 今は Render で動かしていない(ポリシー 1.3)
     assert [x["url"] for x in consent.links()] == ["/legal/terms", "/legal/privacy"]
 

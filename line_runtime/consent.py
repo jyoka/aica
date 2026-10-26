@@ -37,7 +37,7 @@ FORGET_POINT = {"web": "プロフィール画面の「すべて消す」で、�
 
 
 # 書いた内容の送り先(LINE_SIM_PROVIDER。プライバシーポリシーの 5 の表は両方を書いている)
-SENT_TO = {"anthropic": ("aica の AI は、米国の Anthropic の Claude です。書いた内容は、返事を作るために Anthropic に送ります。求人を探す言葉は、米国の OpenAI にも送ります。"
+SENT_TO = {"anthropic": ("aica の AI には、米国の Anthropic が作る Claude を使っています。書いた内容は、返事を作るために Anthropic に送ります。求人を探す言葉は、米国の OpenAI にも送ります。"
                          "どちらも学習には使わないとされています"),
            "openai": "書いた内容は、返事を作るために米国の OpenAI に送ります。学習には使わないとされています"}
 
@@ -55,7 +55,7 @@ def _terms_points(channel: str) -> list[str]:
         legal.DEMO_NOTE.removesuffix("。"),
         SENT_TO.get(config.PROVIDER, SENT_TO["anthropic"]),
         # 今は運営者の Mac で動かし、LINE の Webhook は cloudflared のトンネルで受けている(プライバシーポリシー 1.3)
-        "aica のサーバーと保存する情報は、日本にある運営者のコンピューターにあります。LINE のトークは、米国の Cloudflare を通って届きます",
+        "aica は日本にある運営者のコンピューターで動き、情報もそこに保存します。LINE のトークは、米国の Cloudflare を通って届きます",
         ("米国には連邦の包括的な個人情報保護法がなく、分野ごと、州ごとの法律があります。各事業者の学習への利用と保持は、"
          "プライバシーポリシーの「5」に書いています"),
         "会話は最後のやりとりから 30 日、希望などのプロフィールは最後のご利用から 180 日で消えます",
@@ -72,14 +72,14 @@ def texts(channel: str = "web") -> dict[str, dict]:
                   "strong": "", "button": "同意して始める"},
         "resume": {"title": "履歴書・職務経歴書を送る前に", "paragraphs": [
             (f"履歴書・職務経歴書は、AI が読み取ります。そのために、ファイルを米国の {_company(resume_config.PROVIDER)} に送ります。"
-             "学習には使わないとされています。ファイルそのものは aica に保存しません。"),
+             f"{_company(resume_config.PROVIDER)} は学習には使わないとされています。ファイルそのものは aica に保存しません。"),
             "読み取った経歴(学歴、職歴、資格など)は、プロフィールに保存し、相談に使います。"],
             "points": [], "strong": "名前、住所、写真の欄は、隠すか消してからアップロードしてください。",
             "button": "同意してファイルを選ぶ"},
         "voice": {"title": "音声相談を始める前に", "paragraphs": [
             "声は、米国の LiveKit を通り、米国の Deepgram で文字にします。AI の声は米国の Cartesia で作ります。",
             (f"AI が返事と下書きを作るために、文字にした内容を米国の {_company(voice_config.PROVIDER)} に送ります。"
-             "学習には使わないとされています。録音は保存しません。"),
+             f"{_company(voice_config.PROVIDER)} は学習には使わないとされています。録音は保存しません。"),
             "名前、住所などは話さないでください。話した電話番号などは、自動では伏せません。"],
             "points": [], "strong": "", "button": "同意して始める"},
     }
