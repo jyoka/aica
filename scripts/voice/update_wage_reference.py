@@ -2,7 +2,7 @@
 
     ./.venv/bin/python scripts/voice/update_wage_reference.py
 
-実 API(web_search)を使うので費用がかかる(1回 $0.05 前後)。
+実 API(OpenAI の web_search。会話の調べものと違い、プロバイダの設定によらず OpenAI)を使うので費用がかかる(1回 $0.05 前後)。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from voice_resume.wages import (
 
 async def main() -> None:
     config.load_env()
-    ref = await fetch_reference(AsyncOpenAI(), config.RESEARCH_MODEL, dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date().isoformat())
+    ref = await fetch_reference(AsyncOpenAI(), config.WAGE_UPDATE_MODEL, dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date().isoformat())
     save_reference(ref)
     print(f"-> {REFERENCE_PATH}")
     print(answer_from_reference(ref, None))

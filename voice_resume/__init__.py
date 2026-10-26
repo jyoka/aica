@@ -1,1 +1,1 @@
-"""voice-resume - 音声会話(LiveKit + Deepgram + gpt-6-sol + Cartesia)で棚卸しし、履歴書か職務経歴書の下書きを作る。"""
+"""voice-resume - 音声会話(LiveKit + Deepgram + Claude Sonnet 5.5 + Cartesia)で棚卸しし、履歴書か職務経歴書の下書きを作る。"""

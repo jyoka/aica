@@ -10,7 +10,8 @@ REPO_ENV = ROOT / ".env"
 
 # LLM のプロバイダ(anthropic / openai)。LINE 側エージェント・模擬ユーザー・ジャッジ・ゲームの AI・データ生成の既定モデルも
 # これで決まる。既定は anthropic(task 235。料金は gpt-6-sol と同じ入力 $2 / 出力 $10 per 1M)。openai にすれば元に戻る。
-# 履歴書の読み取り・音声相談・意味検索は、この値によらず OpenAI(resume_intake、voice_resume、dip_mcp/embedding.py)
+# 履歴書の読み取りと音声相談も、別に決めなければこの値に従う(RESUME_INTAKE_PROVIDER、VOICE_RESUME_PROVIDER。task 236)。
+# 意味検索の埋め込みは、この値によらず OpenAI(dip_mcp/embedding.py。Anthropic には埋め込みの API がない)
 PROVIDER = os.environ.get("LINE_SIM_PROVIDER", "anthropic")
 MODEL = os.environ.get("LINE_SIM_MODEL", {"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5-5"}[PROVIDER])
 EFFORT = os.environ.get("LINE_SIM_EFFORT", "low")

@@ -2,14 +2,14 @@
 
 2026-09-26 の実会話で、アドバイザーが「時給の下限を外して探します」と言ったのに
 propose_jobs を呼ばず、本人が促すまで検索されなかった。その場面(と調べものの場面)を
-台本で再現し、実 LLM(gpt-6-sol)に対して「同じターンでツールが呼ばれた回数 / 試行回数」を測る。
+台本で再現し、実 LLM(voice_resume.voice_llm.create_llm。既定は claude-sonnet-5-5)に対して「同じターンでツールが呼ばれた回数 / 試行回数」を測る。
 
 LLM 以外は呼ばない: 求人検索(dip MCP)と web 検索はスタブ。1試行 = セッションを作り、
 実会話から起こした履歴を chat_ctx に入れ、引き金の発話1つを session.run で流す。
 
     ./.venv/bin/python scripts/voice/tool_call_probe.py --trials 5
 
-終わりに試行ごとの結果・成功率・トークン量と概算費用(gpt-6-sol: $2/M in, $10/M out)を出す。
+終わりに試行ごとの結果・成功率・トークン量と概算費用($2/M in, $10/M out)を出す。
 """
 
 from __future__ import annotations
@@ -24,13 +24,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # isort: skip
 
 from livekit.agents import AgentSession, llm
 from livekit.agents.voice.run_result import ChatMessageEvent, FunctionCallEvent
-from livekit.plugins import openai as lk_openai
 
-from voice_resume import config
+from voice_resume import config, voice_llm
 from voice_resume.advisor import ResumeAdvisor
 
-PRICE_IN_PER_M = 2.00  # gpt-6-sol USD/1M input tokens
-PRICE_OUT_PER_M = 10.00  # gpt-6-sol USD/1M output tokens
+PRICE_IN_PER_M = 2.00  # claude-sonnet-5-5 と gpt-6-sol の USD/1M input tokens(キャッシュの読みも同じ単価で数える概算)
+PRICE_OUT_PER_M = 10.00  # claude-sonnet-5-5 と gpt-6-sol の USD/1M output tokens
 
 # 問題が出た実会話(2026-09-26、旧リポジトリの voice-resume/out/transcript-20260925-155708.json)の
 # 発話 0〜39 の verbatim(STT の誤変換もそのまま)+ その裏で実際に起きたツール呼び出し。
@@ -143,7 +142,7 @@ async def run_trial(scenario: dict) -> tuple[bool, list[str], str, dict]:
     """1試行。返り値: (同じターンで期待ツールが呼ばれたか, 呼ばれたツール名, 最初の発話, トークン量)。"""
     advisor = ResumeAdvisor(dip=StubDip(), research_client_factory=stub_research_client)
     session = AgentSession(
-        llm=lk_openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT)
+        llm=voice_llm.create_llm()
     )
     await session.start(agent=advisor)
     ctx = advisor.chat_ctx.copy()
@@ -185,8 +184,9 @@ async def main() -> None:
     config.load_env()
     import os
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise SystemExit("OPENAI_API_KEY がありません(.env を確認)")
+    key = "OPENAI_API_KEY" if config.PROVIDER == "openai" else "ANTHROPIC_API_KEY"
+    if not os.environ.get(key):
+        raise SystemExit(f"{key} がありません(.env を確認)")
 
     from livekit.agents.utils import http_context
 

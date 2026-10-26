@@ -19,7 +19,8 @@ from line_runtime import config
 LEGAL_DIR = config.ROOT / "docs" / "legal"
 
 TERMS_VERSION = "1.0"
-PRIVACY_VERSION = "1.1"  # 1.1(task 235): 返事を作る AI の送り先を Anthropic にした
+# 1.1(task 235): 返事を作る AI の送り先を Anthropic にした。1.2(task 236): 履歴書の読み取りと音声相談も Anthropic にした
+PRIVACY_VERSION = "1.2"
 
 # 画面の名前 → (題, 原文のファイル, 版)。URL は /legal/<名前>
 DOCS = {

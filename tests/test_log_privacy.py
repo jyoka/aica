@@ -45,7 +45,7 @@ def assert_no_marks(caplog) -> None:
 
 # livekit-agents(本体とプラグイン)、OpenAI と Anthropic の SDK、HTTP のクライアント、会話の保存(aiosqlite は DEBUG で
 # 会話の中身を出す)
-SDK_LOGGERS = ("livekit", "livekit.agents", "livekit.plugins.openai", "livekit.plugins.deepgram",
+SDK_LOGGERS = ("livekit", "livekit.agents", "livekit.plugins.openai", "livekit.plugins.anthropic", "livekit.plugins.deepgram",
                "livekit.plugins.cartesia", "openai", "anthropic", "httpx", "httpcore", "aiosqlite")
 
 

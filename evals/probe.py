@@ -257,21 +257,21 @@ def _voice_cost(session) -> float:
     for u in session.usage.model_usage:
         if getattr(u, "type", "") != "llm_usage":
             continue
-        cached = u.input_cached_tokens
-        total += cost_usd(u.model, max(0, u.input_tokens - cached), u.output_tokens, 0, cached)
+        # input_tokens はキャッシュの読み書きを含む合計(Anthropic のプラグインは書き込みも数える。OpenAI は書き込みが 0)
+        cached, written = u.input_cached_tokens, getattr(u, "input_cache_creation_tokens", 0) or 0
+        total += cost_usd(u.model, max(0, u.input_tokens - cached - written), u.output_tokens, written, cached)
     return total
 
 
 async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save) -> bool:
     from livekit.agents import AgentSession
-    from livekit.plugins import openai as lk_openai
 
     from dip_mcp.data import State
     from evals.meter import Meter
     from evals.run import run_cases, sim_reply
     from evals.scenarios import prepare
     from line_runtime import llm
-    from voice_resume import config as vconfig
+    from voice_resume import voice_llm
     from voice_resume.agent import prepare_advisor
     from voice_resume.dip import DipMCP
 
@@ -290,8 +290,7 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
             poster = _NoPoster()
             advisor._talk_poster = poster
             advisor._draft_client_factory = _NoDraft
-            session = AgentSession(llm=lk_openai.LLM(model=vconfig.LLM_MODEL,
-                                                     reasoning_effort=vconfig.LLM_REASONING_EFFORT))
+            session = AgentSession(llm=voice_llm.create_llm())
             await session.start(agent=advisor)
             await session.generate_reply(instructions=greeting)
             transcript = []

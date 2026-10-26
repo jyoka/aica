@@ -133,6 +133,10 @@ async def main() -> None:
     args = parser.parse_args()
 
     config.load_env()
+    if config.PROVIDER != "openai":
+        # この評価は OpenAI の Chat Completions で会話の脳だけを回す(task 38 の前後比べ)。Claude の会話は
+        # scripts/voice/tool_call_probe.py か evals/probe.py の音声で見る
+        raise SystemExit("この評価は OpenAI で回します。VOICE_RESUME_PROVIDER=openai を付けて実行してください")
     client = AsyncOpenAI()
     runs = await asyncio.gather(*(run_once(client, i + 1) for i in range(args.runs)))
 

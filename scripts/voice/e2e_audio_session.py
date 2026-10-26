@@ -2,7 +2,7 @@
 
 本人役の発話を TTS(OpenAI gpt-4o-mini-tts)で音声合成し、本番と同じ部品で1会話を回す:
 - Deepgram STT(nova-3, ja + バイト用語の keyterm)で文字起こし(livekit プラグインの recognize)
-- ResumeAdvisor(OpenAI gpt-6-sol + dip MCP の recommend_jobs)をテキストターンで実行
+- ResumeAdvisor(Claude Sonnet 5.5。VOICE_RESUME_PROVIDER=openai なら gpt-6-sol + dip MCP の recommend_jobs)をテキストターンで実行
 - アドバイザーの返答を Cartesia TTS(sonic-3.5 日本語ボイス・少し遅め)で音声合成
 - 終わりに finalize_interview → 履歴書の下書き・希望条件・求人IDが out/ に出る
 
@@ -33,11 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # isort: skip
 from livekit import rtc
 from livekit.agents import AgentSession
 from livekit.plugins import cartesia
-from livekit.plugins import openai as lk_openai
 from openai import AsyncOpenAI
 
 from resume_draft.schema import JST
-from voice_resume import config
+from voice_resume import config, voice_llm
 from voice_resume.agent import prepare_advisor
 from voice_resume.dip import DipMCP
 from voice_resume.flow import verify_flow
@@ -50,8 +49,8 @@ SAMPLE_RATE = 24000
 
 # 価格(2026-09 時点の各社公式 pricing。1会話の実測量に掛けて概算する)
 PRICE = {
-    "llm_in_per_m": 2.00,  # gpt-6-sol 入力 USD/1M tokens
-    "llm_out_per_m": 10.00,  # gpt-6-sol 出力 USD/1M tokens
+    "llm_in_per_m": 2.00,  # claude-sonnet-5-5 と gpt-6-sol の入力 USD/1M tokens(キャッシュの読みも同じ単価で数える概算)
+    "llm_out_per_m": 10.00,  # claude-sonnet-5-5 と gpt-6-sol の出力 USD/1M tokens
     "deepgram_per_min": 0.0077,  # nova-3 streaming USD/分の正価(live と同じ経路の単価)
     "cartesia_per_1k_chars": 0.04,  # Cartesia クレジット(1文字=1クレジット)のプラン換算の目安
     "user_tts_text_per_m": 0.60,  # gpt-4o-mini-tts(本人役の合成・検証用のみ)
@@ -87,7 +86,8 @@ async def run(user: str | None = None) -> None:
     config.load_env()
     import os
 
-    for key in ("OPENAI_API_KEY", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"):
+    # 本人役の声の合成は OpenAI の TTS(プロバイダの設定によらない)
+    for key in ("OPENAI_API_KEY", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY") + (() if config.PROVIDER == "openai" else ("ANTHROPIC_API_KEY",)):
         if not os.environ.get(key):
             raise SystemExit(f"{key} がありません(.env を確認)")
 
@@ -122,7 +122,7 @@ async def _run_conversation(user: str | None = None) -> None:
     advisor, _ = await prepare_advisor(dip, user)
 
     session = AgentSession(
-        llm=lk_openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT)
+        llm=voice_llm.create_llm()
     )
 
     await session.start(agent=advisor)

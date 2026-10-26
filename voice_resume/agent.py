@@ -3,8 +3,8 @@
     ./.venv/bin/python -m voice_resume.agent download-files   # 初回のみ(VAD / turn detector のモデル)
     ./.venv/bin/python -m voice_resume.agent dev              # LiveKit Cloud に接続して待受
 
-構成: Deepgram STT(nova-3 日本語 + バイト用語の keyterm)→ OpenAI gpt-6-sol
-→ Cartesia TTS(日本語ボイス・少し遅め)。
+構成: Deepgram STT(nova-3 日本語 + バイト用語の keyterm)→ Anthropic Claude Sonnet 5.5(VOICE_RESUME_PROVIDER=openai
+なら OpenAI gpt-6-sol。voice_resume/voice_llm.py)→ Cartesia TTS(日本語ボイス・少し遅め)。
 ターンの判定は Silero VAD + LiveKit turn detector(多言語)。「えーと」で考えている間は
 打ち切らず、終わり判定は少し待つ(config.MIN/MAX_ENDPOINTING_DELAY)。
 1 回の相談には上限がある: 長さは config.MAX_SESSION_MINUTES で、時間が来たら締めて閉じる。「面談を終える」(end パケット)
@@ -20,12 +20,12 @@ import sys
 
 from livekit import agents
 from livekit.agents import AgentSession
-from livekit.plugins import cartesia, openai, silero
+from livekit.plugins import cartesia, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from line_runtime import line_channel
 from line_runtime.log_policy import quiet_sdk_loggers
-from voice_resume import config
+from voice_resume import config, voice_llm
 from voice_resume.advisor import ResumeAdvisor, _post_json, post_failure
 from voice_resume.dip import DipMCP
 from voice_resume.jobs import DEFAULT_TRACK
@@ -234,8 +234,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
-        # Chat Completions の既定も残さないが、OpenAI に応答を残さないことを明示する(docs/design/privacy.md の 3.2)
-        llm=openai.LLM(model=config.LLM_MODEL, reasoning_effort=config.LLM_REASONING_EFFORT, store=False),
+        llm=voice_llm.create_llm(),
         tts=cartesia.TTS(
             model=config.TTS_MODEL,
             voice=config.TTS_VOICE,
@@ -311,7 +310,7 @@ def worker_options() -> agents.WorkerOptions:
 
 def configure_logging(argv: list[str]) -> None:
     """ワーカーのログの設定。本番(コンテナが使う start)では、SDK のロガーを WARNING にする(docs/design/privacy.md の 3.4)。
-    livekit-agents と OpenAI の SDK は INFO や DEBUG で、送った本文や応答を出しうる。手元の dev と console は
+    livekit-agents と Anthropic、OpenAI の SDK は INFO や DEBUG で、送った本文や応答を出しうる。手元の dev と console は
     livekit-agents の既定のまま(SDK の INFO も出る)。
 
     livekit-agents の CLI は、この後でレベルの無いプラグインのロガーを INFO にし、後から読み込んだプラグイン

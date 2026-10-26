@@ -6,7 +6,7 @@ langchain-anthropic>=1.7,<2
 langchain-openai>=1.6,<2
 langgraph-checkpoint-sqlite>=3.1
 fastapi>=0.115
-# 履歴書の読み取り(resume_intake。Responses API の構造化出力 responses.parse)
+# 履歴書の読み取りと音声相談を OpenAI に戻したとき(resume_intake、voice_resume。Responses API の構造化出力)と、意味検索の埋め込み
 openai>=1.99
 pydantic>=2.8
 # テキストのある履歴書の PDF から、ローカルでテキストを取り出す(画像を OpenAI に送らない。docs/design/privacy.md の 3.2)。
@@ -16,10 +16,12 @@ uvicorn>=0.30
 # LINE の Messaging API の呼び出し(line_runtime/line_channel.py)。openai と fastapi のテストが使うので、もとから入っている
 httpx>=0.27
 pytest>=8.3
-# 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ OpenAI + Cartesia TTS(ja)+ Silero VAD
+# 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ Anthropic(既定。OpenAI にも戻せる)+ Cartesia TTS(ja)+ Silero VAD
 # + 多言語 turn detector。オフラインテストも livekit-agents を import するので、同じ venv に入れる。
 livekit-agents[turn-detector]>=1.8
 livekit-plugins-openai>=1.8
+# 会話の LLM(voice_resume/voice_llm.py)。livekit-agents と同じ版にそろえる(1.8.9 で確かめた)
+livekit-plugins-anthropic>=1.8
 livekit-plugins-deepgram>=1.8
 livekit-plugins-cartesia>=1.8
 livekit-plugins-silero>=1.8

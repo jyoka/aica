@@ -81,8 +81,8 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 
 | # | データ | 送り先 | 保存 | 今の期間 | 根拠 |
 |---|---|---|---|---|---|
-| 1 | 履歴書・職務経歴書のファイル本体(PDF、JPEG、PNG、10MB まで)。氏名、住所、写真、生年月日、電話、メール、学歴、職歴を含みうる | OpenAI(Responses API に base64 で埋め込む) | しない(メモリだけ) | - | `line_runtime/server.py:955`、`:966`、`resume_intake/extract.py:64-70`、`:94-100` |
-| 2 | 履歴書のファイル名(氏名が入りがち) | OpenAI(PDF のときだけ `filename` に入る) | しない。トークには「履歴書(PDF)」のような種類だけ | - | `resume_intake/extract.py:69`、`line_runtime/server.py:950-952`、`:979` |
+| 1 | 履歴書・職務経歴書のファイル本体(PDF、JPEG、PNG、10MB まで)。氏名、住所、写真、生年月日、電話、メール、学歴、職歴を含みうる | Anthropic(既定。Messages API の `document` か `image` のブロックに base64 で埋め込む。task 236)。`RESUME_INTAKE_PROVIDER=openai` なら OpenAI(Responses API に base64 で埋め込む)。テキストのある PDF はテキストだけ(3.2 の案 B) | しない(メモリだけ) | - | `line_runtime/server.py:955`、`:966`、`resume_intake/extract.py:64-70`、`:94-100` |
+| 2 | 履歴書のファイル名(氏名が入りがち) | 送らない(Anthropic のブロックには名前の欄が無い。OpenAI には形式だけの固定の名前 `resume.pdf`) | しない。トークには「履歴書(PDF)」のような種類だけ | - | `resume_intake/extract.py:69`、`line_runtime/server.py:950-952`、`:979` |
 | 3 | 履歴書の読み取り結果(学歴、職歴、勤務先、資格、自己 PR など)。`personal` は空、電話、メール、郵便番号は消す。氏名や住所が出力に混ざったときは、コードでは消えない | 毎ターン、要約の `uploaded_resume` として LLM へ(エージェントと音声アドバイザー) | `data/state.json` の `resume_upload`(最新の 1 件) | プロフィールで履歴書を消す、「すべて消す」まで | `resume_intake/extract.py:27-28`、`:102`、`dip_mcp/logic.py:1044-1057`、`:1087-1092`、`dip_mcp/profile.py:229-242` |
 | 4 | Web のトークの本文 | Anthropic(既定。`LINE_SIM_PROVIDER=openai` なら OpenAI)。今の会話の全文を毎ターン送る | `data/line_checkpoints.db` | 「すべて消す」、履歴書を消したときまで。それ以外は消さない | `line_runtime/runtime.py:69-75`、`:142`、`:321-329`、`line_runtime/agent.py:98-104` |
 | 5 | LINE のトークの本文 | LINE プラットフォーム(本人が LINE で送る)、Anthropic(既定)か OpenAI | 4 と同じ | 4 と同じ | `line_runtime/server.py:481-496`、`:555-575` |
@@ -91,9 +91,9 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 8 | Cookie `aica_uid` | - | 本人のブラウザ | 最初の発行から 400 日。発行のときにしか書かないので、使い続けても延びない | `line_runtime/server.py:97-114` |
 | 9 | IP アドレス | - | `data/quota.json`(その日の分)、uvicorn のアクセスログ(標準出力。公開後はホスティングのログ) | `quota.json` は日付が変わるまで。ログはホスティングの決まり(不明) | `line_runtime/quota.py:19`、`:133-137`、`line_runtime/server.py:171`、`:1077` |
 | 10 | 声(音声そのもの) | LiveKit Cloud(WebRTC で中継)、Deepgram(文字起こし。既定)、OpenAI(文字起こし。`VOICE_RESUME_STT_PROVIDER=openai` のときだけ) | しない | LiveKit Cloud の Agent Observability が有効なら、録音と文字起こしが LiveKit Cloud に 30 日残る(7 章。このプロジェクトで有効かは不明) | `voice_resume/agent.py:105-132`、`voice_resume/stt.py:21-33`、`:37-43`、`voice_resume/config.py:27` |
-| 11 | 音声の文字起こし | OpenAI(音声アドバイザーの会話で毎ターン、相談の終わりの下書き) | `data/voice-resume/transcript-<時刻>.json` | 下書きを消す、「すべて消す」まで。トークに届かなかった相談(410 以外)のファイルは、dip の状態から指されず消えない | `voice_resume/agent.py:107`、`voice_resume/drafter.py:31-40`、`voice_resume/outputs.py:62-77`、`voice_resume/advisor.py:689-690` |
+| 11 | 音声の文字起こし | Anthropic(既定。`VOICE_RESUME_PROVIDER=openai` なら OpenAI)。音声アドバイザーの会話で毎ターン、相談の終わりの下書き | `data/voice-resume/transcript-<時刻>.json` | 下書きを消す、「すべて消す」まで。トークに届かなかった相談(410 以外)のファイルは、dip の状態から指されず消えない | `voice_resume/agent.py:107`、`voice_resume/drafter.py:31-40`、`voice_resume/outputs.py:62-77`、`voice_resume/advisor.py:689-690` |
 | 12 | 音声アドバイザーが話す文(本人の話をくり返すことがある) | Cartesia(読み上げ) | しない | - | `voice_resume/agent.py:108-114` |
-| 13 | 会話中の調べものの問い(会社名、エリアなど) | OpenAI の web 検索 | しない | - | `voice_resume/advisor.py:423-472`、`:726-744` |
+| 13 | 会話中の調べものの問い(会社名、エリアなど) | Anthropic の web 検索(既定。検索エンジンにも届く)か OpenAI の web 検索 | しない | - | `voice_resume/advisor.py:423-472`、`:726-744` |
 | 14 | 本人が話した希望と本人について(16 項目。経験、不安、目的など) | 毎ターン、要約の `stated_preferences` として LLM へ | `data/state.json` の `preferences` | プロフィールの各項目、「すべて消す」まで | `dip_mcp/logic.py:822-857`、`dip_mcp/profile.py:106-131` |
 | 15 | 雇用区分の根拠(本人の発言そのまま、200 字まで。電話とメールだけ伏せる。住所は伏せない) | 毎ターン、要約の `track_history`(直近 5 件)として LLM へ | `data/state.json` の `track_history` | 「すべて消す」まで | `dip_mcp/logic.py:876-913` |
 | 16 | 相談のまとめと会話の結果の理由(電話、メール、住所らしい所は伏せる) | 毎ターン、要約の `consultation_summary` として LLM へ | `data/state.json` の `outcomes` | 「すべて消す」まで | `dip_mcp/logic.py:1107-1138` |
@@ -115,8 +115,8 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 
 | サービス | 送るもの(2.1 の #) | 事業者の国 | 学習に使うか | 先方での保持 | 減らせる設定 | 今の設定 |
 |---|---|---|---|---|---|---|
-| OpenAI | 1、2、3(音声相談)、7、10(`VOICE_RESUME_STT_PROVIDER=openai` のときだけ)、11、13、14〜16(音声相談)、21。4、5、22 とゲームの答えは `LINE_SIM_PROVIDER=openai` のときだけ | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
-| Anthropic | 3、4、5、7、14〜16、22、ゲームの答え(既定の `LINE_SIM_PROVIDER=anthropic`。task 235) | 米国 | 商用 API は既定で使わない(本人がフィードバックを送ったときなどを除く。2026-10-26 に確かめた) | 既定で 30 日以内に消す。安全のための自動の判定で違反とされた会話は最長 2 年、判定の点数は最長 7 年。30 日の保持が必須の「Covered Models」(Mythos 級)に、使う Claude Sonnet 5.5 と Haiku 5.5 の名前は無い | Zero Data Retention の契約 | 既定 |
+| OpenAI | 21。10 は `VOICE_RESUME_STT_PROVIDER=openai` のときだけ。1、2(形式だけの名前)は `RESUME_INTAKE_PROVIDER=openai`、3、7、11、13、14〜16(音声相談)は `VOICE_RESUME_PROVIDER=openai`、4、5、22 とゲームの答えは `LINE_SIM_PROVIDER=openai` のときだけ(task 236) | 米国 | API は既定で使わない | 不正利用の監視のログに最長 30 日。Responses API は `store` が有効だと応答を 30 日保持 | `store=False`。Zero Data Retention(審査が要る) | `store` を指定していない(`grep` で 0 件)。API リファレンスでは既定が有効とされる(要確認) |
+| Anthropic | 1、3、4、5、7、11、13、14〜16、22、ゲームの答え(既定の `anthropic`。トークは task 235、履歴書と音声相談は task 236) | 米国 | 商用 API は既定で使わない(本人がフィードバックを送ったときなどを除く。2026-10-26 に確かめた) | 既定で 30 日以内に消す。安全のための自動の判定で違反とされた会話は最長 2 年、判定の点数は最長 7 年。30 日の保持が必須の「Covered Models」(Mythos 級)に、使う Claude Sonnet 5.5 と Haiku 5.5 の名前は無い | Zero Data Retention の契約 | 既定 |
 | Deepgram | 10 | 米国 | 改善プログラム(Model Improvement Program)に既定で入る。外れると割引がなくなる | 不明 | リクエストに `mip_opt_out=true` | 指定していない |
 | Cartesia | 12 | 米国 | 不明 | 不明。Zero Data Retention はエンタープライズの契約だけ | Zero Data Retention | 既定 |
 | LiveKit Cloud | 7、10 | 米国(データの地域はプロジェクトを作るときに選ぶ) | 未確認。前は「無料プランは、匿名化したデータを turn detector の改善に長く残すことがある」と書いたが、2026-10-25 に利用者が公式ページで確かめられなかった | 音声は転送のためにメモリで扱い、残さない。Agent Observability が有効なら、録音、文字起こし、ログを 30 日 | `AgentSession.start(record=False)`。有料プラン | `record` を指定していない(`voice_resume/agent.py:132`) |
@@ -143,7 +143,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 
 #### 履歴書のファイル(#1、#2)
 
-氏名、住所、写真を OpenAI に送らずに済むかの案です。
+氏名、住所、写真を LLM の事業者(今は既定で Anthropic、前は OpenAI)に送らずに済むかの案です。
 
 | 案 | 中身 | よい点 | 弱い点 |
 |---|---|---|---|
@@ -209,7 +209,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 #### 調べものの問い(#13)
 
 - **推奨: `web_research` と `research_company` の問いに電話、メール、住所らしい所があれば、検索せずに「個人情報を含むので調べない」と返す。**
-- 理由: 今は、ツールの説明で「個人情報は入れない」と頼んでいるだけです(`voice_resume/advisor.py:432`)。検索の問いは OpenAI を通って検索エンジンにも届きます
+- 理由: 今は、ツールの説明で「個人情報は入れない」と頼んでいるだけです(`voice_resume/advisor.py:432`)。検索の問いは LLM の事業者(task 236 から既定は Anthropic)を通って検索エンジンにも届きます
 
 ### 3.3 保存する範囲、期間、消し方
 
@@ -361,16 +361,16 @@ Web と LINE の最初の同意です。消し方の 1 行だけ、Web と LINE 
 >
 > 「同意して始める」
 
-履歴書のアップロードの前です。
+履歴書のアップロードの前です。送り先の名前は `RESUME_INTAKE_PROVIDER` に合わせます(既定は Anthropic。`openai` なら OpenAI。task 236)。
 
-> 履歴書・職務経歴書のファイルは、内容を読み取るために米国の OpenAI に送ります。ファイルそのものは aica に保存しません。
+> 履歴書・職務経歴書のファイルは、内容を読み取るために米国の Anthropic に送ります。ファイルそのものは aica に保存しません。
 > 読み取った経歴(学歴、職歴、資格など)は、プロフィールに保存し、相談に使います。
 > **名前、住所、写真の欄は、隠すか消してからアップロードしてください。**
 
-音声相談の前です。
+音声相談の前です。文字にした内容の送り先の名前は `VOICE_RESUME_PROVIDER` に合わせます(既定は Anthropic。task 236)。
 
 > 声は、米国の LiveKit を通り、米国の Deepgram で文字にします。AI の声は米国の Cartesia で作ります。
-> 文字にした内容は米国の OpenAI に送り、相談と下書き作りに使います。録音は保存しません。
+> 文字にした内容は米国の Anthropic に送り、相談と下書き作りに使います。録音は保存しません。
 > 名前、住所などは話さないでください。話した電話番号などは、自動では伏せません。
 
 ### 3.7 本人が見る、消す手段
