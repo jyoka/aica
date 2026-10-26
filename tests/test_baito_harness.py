@@ -262,6 +262,9 @@ def test_minor_late_night_ng_cannot_be_removed():
     ("age_under_18", "中3", True),
     ("age_under_18", "中一です", True),
     ("age_under_18", "未成年です", True),
+    ("age_under_18", "高3で17歳", True),        # 学年の 3 ではなく 17歳 を読む
+    ("age_under_18", "18歳です", False),        # 年齢だけの答えの 18 は成人
+    ("age_under_18", "18", False),
 ])
 def test_review_corrections_are_normalized_and_keep_the_raw_text(slot, said, value):
     """§12-1: 本人の文を列挙値に寄せ、元の文は raw_text に残す。"""
@@ -289,7 +292,11 @@ def test_risky_free_text_is_kept_as_said_instead_of_guessed(slot, said):
 
 
 @pytest.mark.parametrize("said", ["高3", "高三です", "20歳未満です", "未成年ではないです", "ひみつ",
-                                  "未成年ではありません", "未成年じゃありません", "18歳未満ではありません"])
+                                  "未成年ではありません", "未成年じゃありません", "18歳未満ではありません",
+                                  # 18 を含む17歳の言い方(「18歳」だけを読むと成人になり、深夜が通っていた)
+                                  "まだ18歳になっていません", "まだ18歳になってないよ", "18歳になってません",
+                                  "来月18歳になります", "今年18歳になる高3です", "もうすぐ18歳", "18歳の誕生日はまだです",
+                                  "18歳になる年です", "高3で18歳"])
 @pytest.mark.parametrize("segment", ["student", "unknown", "homemaker"])
 def test_age_that_is_not_yes_or_no_is_not_kept(said, segment):
     """18歳未満かが はい / いいえ に寄らない答えは、スロットにも pending にも入れない(文のまま high で埋めると、
@@ -310,6 +317,33 @@ def test_adult_who_denies_being_a_minor_keeps_late_night(said):
     H.merge_updates(s, _out(("age_under_18", said, "high")))
     assert s.slots["age_under_18"]["value"] is False and H.LATE_NIGHT_NG not in s.ng
     assert s.slots["time_slots"]["value"] == "late_night_ok" and s.rejected == []
+
+
+@pytest.mark.parametrize("said", ["いいえ、ちがいます。高2です", "いいえ、違います、高2です", "いいえ、大学生ではありません。高校1年です",
+                                  "いいえ、中学生ではありません。高校1年です", "いいえ、ちがうよ、中3", "違います、高2です",
+                                  "いいえ、未成年ではありません。16歳です"])
+def test_denying_something_else_while_saying_a_grade_is_a_minor(said):
+    """打ち消しているのが未成年の言い方でなければ(カードの値・大学生)、文に残る学年や年齢で 18歳未満と読む。"""
+    assert H.normalize("age_under_18", said) == (True, said)
+
+
+@pytest.mark.parametrize("said", ["いいえ、中学生ではありません", "いいえ、16歳未満ではありません", "いいえ、ちがいます"])
+def test_denial_that_does_not_say_adult_is_asked_again(said):
+    """中学生でない・16歳未満でない・カードの値がちがう、だけでは成人と分からない(高校生・17歳のこともある)。"""
+    assert H.normalize("age_under_18", said) == (said, said)
+
+
+def test_minor_who_corrects_a_guessed_adult_in_review_gets_late_night_ng():
+    """review のカードの「18歳未満：いいえ（推測）」「深夜もOK（推測）」を、本人が「いいえ、ちがいます。高2です」と直す。
+    18歳未満と読み、NG「深夜シフト」を付け、推測の深夜は確定させずに消す(成人と読むと深夜もOK が確定していた)。"""
+    s = H.State(segment="student", phase="review", review_rounds=1)
+    H.merge_updates(s, _out(("age_under_18", False, "low"), ("time_slots", "late_night_ok", "low")))
+    card = H.render_card_ja(H.build_card(s))
+    assert "（推測）" in card and "深夜" in card
+    H.apply_review(s, _out(("age_under_18", "いいえ、ちがいます。高2です", "high")))
+    assert s.slots["age_under_18"]["value"] is True and s.slots["age_under_18"]["confidence"] == "high"
+    assert H.LATE_NIGHT_NG in s.ng and "time_slots" not in s.slots
+    assert s.rejected[-1]["reason"] == "under_18_late_night" and s.need_more_review is True
 
 
 def test_age_given_as_a_number_is_read():
@@ -529,6 +563,16 @@ def test_age_answered_vaguely_is_asked_again(state):
     assert [a for a in asked if a[0] == "hf_age"] == [("hf_age", False), ("hf_age", True)]
     prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
     assert H.LATE_NIGHT_NG in prefs["avoids"]
+
+
+def test_minor_who_says_not_18_yet_is_asked_again_and_never_gets_late_night(state):
+    """E2E: hf_age に「まだ18歳になっていません」と文で答え、モデルが文のまま返す。17歳なので成人と読まず、
+    hf_age を聞き直す(「18歳」だけを読んで成人にすると、hf_time に「深夜もOK」が出て、結果に深夜が保存されていた)。"""
+    said = "まだ18歳になっていません"
+    _, asked = _run_session(state, {"hf_age": (said, _said("age_under_18", said, "hf_age"))})
+    assert [a for a in asked if a[0] == "hf_age"] == [("hf_age", False), ("hf_age", True)]
+    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
+    assert H.LATE_NIGHT_NG in prefs["avoids"] and prefs.get("time_band") != "深夜もOK"
 
 
 def test_session_runs_to_the_result_and_saves_the_card_as_preferences(state):

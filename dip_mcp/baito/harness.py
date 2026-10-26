@@ -508,29 +508,52 @@ def _wage(s):
     return int(m.group(1)) if m and int(m.group(1)) >= 500 else None
 
 
+# 18歳未満と分かる言い方(学年・未成年・「〜歳未満」)。高3・高三・高校生・大学生は18歳のこともあるので入れない
+MINOR = r"中学|中[123一二三]|高[12一二]|高校[12一二]年|未成年|(?<!\d)(?:1[0-8]|[0-9])\s*(?:歳|才)\s*(?:未満|より下)"
+# その言い方そのものを打ち消す形(「未成年ではありません」「中学生じゃないです」「18歳未満とは違います」)
+DENIED_MINOR = re.compile(rf"(?:{MINOR})[生のです]{{0,3}}\s*(?:では|じゃ|とは)\s*(?:ありませ|ない|なく|違|ちが)")
+# 打ち消すと18歳以上と分かる言い方(「中学生ではない」「16歳未満ではない」は高校生・17歳のこともある)
+DENIED_ADULT = re.compile(r"(?:未成年|18\s*(?:歳|才)\s*(?:未満|より下))\s*(?:では|じゃ|とは)\s*(?:ありませ|ない|なく|違|ちが)")
+
+
+def _minor_said(s) -> bool:
+    """文に18歳未満と分かる言い方か、18未満の「〜歳」(「16歳です」)があるか。"""
+    return bool(re.search(MINOR, s)) or any(
+        int(n) < 18 for n in re.findall(r"(?<!\d)(\d{1,2})\s*(?:歳|才)(?!\s*(?:以上|より上|未満|より下))", s))
+
+
 def _age(s):
     """18歳未満か。「はい」「16歳」「17才」「16」「18歳未満です」「高1」「高一」「中3」「未成年」→ True、
     「いいえ」「19歳」「18歳以上」→ False。高3・高三・高校生・大学生のように18歳のこともある言い方は寄せない。
-    打ち消しの文(「未成年ではありません」「18歳未満じゃありません」)は True にしない。「いいえ」で始まり
-    未成年の言い方を打ち消していれば False、ほかは寄せない(聞き直す)。NEGATION に「ません」は足さない
-    (「深夜でもかまいません」が寄らなくなる)。"""
+    18 ちょうどは、年齢だけの答え(「18」「18歳です」)のときだけ False。「まだ18歳になっていません」「もうすぐ18歳」
+    「18歳になる年です」は17歳のことなので寄せない(聞き直す)。
+    打ち消しの文は、何を打ち消しているかで読む。未成年の言い方そのものを打ち消した部分(「未成年ではありません」)を
+    除いても、まだ未成年の言い方が残れば True(「いいえ、ちがいます。高2です」「いいえ、大学生ではありません。高校1年です」)。
+    残らず、「いいえ」で始まり「未成年」「18歳未満」を打ち消していれば False。ほかは寄せない(聞き直す。
+    「いいえ、中学生ではありません」は高校生のこともある)。
+    NEGATION に「ません」は足さない(「深夜でもかまいません」が寄らなくなる)。"""
     if re.fullmatch(r"(はい|true|yes)", s, re.IGNORECASE):
         return True
     if re.fullmatch(r"(いいえ|false|no)", s, re.IGNORECASE):
         return False
-    minor = re.search(r"中学|中[123一二三]|高[12一二]|高校[12一二]年|未成年|(?<!\d)(1[0-8]|[0-9])\s*(歳|才)\s*(未満|より下)", s)
     if re.search(r"(では|じゃ|とは)(ありませ|ない|なく)|違|ちが[うい]", s):
-        return False if minor and s.startswith("いいえ") else None
-    if minor and minor.group(1) is None:
+        rest = DENIED_MINOR.sub("", s)
+        if _minor_said(rest):                       # 打ち消したのは別のこと(カードの値・大学生)。未成年は言っている
+            return True
+        return False if DENIED_ADULT.search(s) and s.startswith("いいえ") else None
+    minor = re.search(MINOR, s)
+    if minor and not re.search(r"\d\s*(歳|才)", minor.group()):
         return True
-    m = re.search(r"(\d+)\s*(歳|才)?\s*(未満|以上|より下|より上)?", s)
-    if not m or (m.group(2) is None and not re.fullmatch(r"\d+", s)):
+    m = re.search(r"(\d+)\s*(?:歳|才)\s*(未満|以上|より下|より上)?", s) or re.fullmatch(r"(\d+)()", s)
+    if not m:                                       # 「高3で17歳」は学年の 3 ではなく 17歳 を読む
         return None
-    n, rel = int(m.group(1)), m.group(3)
+    n, rel = int(m.group(1)), m.group(2)
     if rel in ("未満", "より下"):
         return True if n <= 18 else None            # 「20歳未満」は17歳のこともある
     if rel in ("以上", "より上"):
         return False if n >= 18 else None
+    if n == 18:                                     # 「まだ18歳になっていません」「来月18歳」は17歳。年齢だけの答えのときだけ成人
+        return False if re.fullmatch(r"18\s*(?:歳|才)?\s*(?:です|だよ|だ)?\s*[。.!]?", s) else None
     return n < 18
 
 
