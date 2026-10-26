@@ -107,7 +107,8 @@ def test_shared_japanese_logic_passes_its_node_tests():
     node = shutil.which("node")
     if not node:
         pytest.skip("node が入っていない")
-    r = subprocess.run([node, "--test", str(ROOT / "tests" / "js" / "arcade-ja.test.js")],
+    # spec を明示する: Node 22 までは非 TTY だと tap(`# fail 0`)で出し、下の照合に当たらない
+    r = subprocess.run([node, "--test", "--test-reporter=spec", str(ROOT / "tests" / "js" / "arcade-ja.test.js")],
                        check=False, capture_output=True, text=True, timeout=60, cwd=ROOT)
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
     assert re.search(r"^ℹ fail 0$", r.stdout, re.MULTILINE)
