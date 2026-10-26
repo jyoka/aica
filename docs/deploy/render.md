@@ -48,7 +48,7 @@ docker と、リポジトリ直下の `.env` の `ANTHROPIC_API_KEY` と `OPENAI
 2. `render.yaml` が読まれ、Web サービス `aica`(Standard、Singapore)とディスク `aica-data`(2GB、`/app/data`)が出る
 3. `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` の値を入れる
    (`sync: false` なので、ここで聞かれる。リポジトリには書かない)
-4. 「Apply」でサービスを作る。最初の build に数分かかる。「Events」で `Deploy live` になるまで待つ
+4. 「Deploy Blueprint」でサービスを作る(前の画面では「Apply」だった)。最初の build に数分かかる。「Events」で `Deploy live` になるまで待つ
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
 - `AICA_TRUST_PROXY=1` と `AICA_INTERNAL_KEY`(乱数)は Blueprint が入れます。`AICA_INTERNAL_KEY` は同じコンテナの Web プロセスと
