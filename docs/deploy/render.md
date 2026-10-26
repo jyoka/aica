@@ -1,6 +1,6 @@
 # Render で公開する
 
-aica を Render の Web サービス(Starter プラン)に、1 つのコンテナで公開する手順です。
+aica を Render の Web サービス(Standard。音声相談も同じコンテナで動かす)に、1 つのコンテナで公開する手順です。
 **【運営者】** と書いた手順は、Render のアカウントを持つ運営者がします。それ以外は、リポジトリにあるものだけで済みます。
 
 ## 構成
@@ -45,8 +45,9 @@ docker と、リポジトリ直下の `.env` の `ANTHROPIC_API_KEY` と `OPENAI
 
 1. [Render のダッシュボード](https://dashboard.render.com/) で「New」→「Blueprint」を選び、GitHub の `jyoka/aica` をつなぐ。
    ブランチは `main`
-2. `render.yaml` が読まれ、Web サービス `aica`(Starter、Singapore)とディスク `aica-data`(1GB、`/app/data`)が出る
-3. `ANTHROPIC_API_KEY` と `OPENAI_API_KEY` の値を入れる(`sync: false` なので、ここで聞かれる。リポジトリには書かない)
+2. `render.yaml` が読まれ、Web サービス `aica`(Standard、Singapore)とディスク `aica-data`(2GB、`/app/data`)が出る
+3. `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` の値を入れる
+   (`sync: false` なので、ここで聞かれる。リポジトリには書かない)
 4. 「Apply」でサービスを作る。最初の build に数分かかる。「Events」で `Deploy live` になるまで待つ
 
 - `autoDeployTrigger: "off"` なので、`main` に push しても自動ではデプロイしません。更新は「Manual Deploy」→「Deploy latest commit」でします
@@ -127,13 +128,13 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `AICA_SECURE_COOKIE` | `1` | `Dockerfile` | 匿名ユーザーIDの Cookie に `Secure` を付ける |
 | `PORT` | `10000` | Render | `scripts/container_start.sh` が `LINE_SIM_PORT` にする |
 
-音声相談も公開するときに足すものです(下の「音声相談」)。
+音声相談のものです(下の「音声相談」)。Blueprint が入れるか、Blueprint を作るときに聞かれます。
 
-| 環境変数 | 値 |
-|---|---|
-| `AICA_VOICE_WORKER` | `1`(同じコンテナで音声ワーカーを動かす) |
-| `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | LiveKit Cloud のプロジェクト |
-| `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | 文字起こしと読み上げ |
+| 環境変数 | 値 | 入れる者 |
+|---|---|---|
+| `AICA_VOICE_WORKER` | `1`(同じコンテナで音声ワーカーを動かす) | Blueprint |
+| `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | LiveKit Cloud のプロジェクト | **【運営者】** Blueprint を作るとき |
+| `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | 文字起こしと読み上げ | **【運営者】** Blueprint を作るとき |
 
 LINE 公式アカウントもつなぐときに足すものです(README の「LINE で試す」)。Webhook URL は `https://<名前>.onrender.com/line/webhook` です。
 
@@ -156,7 +157,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 
 音声ワーカーは Web プロセスと同じ `/app/data`(dip の状態と下書き)を使うので、同じコンテナで動かします
 ([review-2026-10.md の R9](../architecture/review-2026-10.md#r9-音声ワーカーがweb-プロセスと同じマシンにいる前提で作られている))。
-既定では動かしません。LiveKit の環境変数が無ければ、音声のボタンを押すと「準備ができていません」(503)と出て、ターンは使いません。
+Blueprint は `AICA_VOICE_WORKER=1` で、Standard(2GB)とディスク 2GB にしています。LiveKit の環境変数が無ければ、音声のボタンを押すと「準備ができていません」(503)と出て、ターンは使いません。
 LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKit だけ入れると、ターンを使って部屋に入っても、答えるワーカーがいません)。
 
 `AICA_VOICE_WORKER=1` にすると、起動のたびに `voice_resume.agent download-files` でモデルを `/app/data/cache/huggingface` に置き
@@ -167,10 +168,10 @@ LiveKit の環境変数は `AICA_VOICE_WORKER=1` と一緒に入れます(LiveKi
 確かめていないこと、気をつけることです。
 
 - コンテナの中で音声ワーカーが LiveKit につながり、相談の結果がトークに届くところまでは、まだ確かめていません(手元で確かめたのは、モデルの取得と、取れないときやワーカーが落ちたときに Web プロセスが動き続けること)
-- Starter の 512MB に音声ワーカーが収まるかは不明です。turn detector のモデルが大きいので、Standard(2GB)が要ると推測します
+- Starter の 512MB では足りないと推測して、Standard(2GB)にしました。turn detector のモデルが大きいためです。2GB で足りるかも、まだ確かめていません
 - 音声ワーカーは、相談がなくても `VOICE_RESUME_MAX_JOBS`(既定 4)個のプロセスを温めておきます(手元で 1 つ約 200MB)。
   メモリの小さいプランでは `VOICE_RESUME_MAX_JOBS` を下げます(同時に受ける相談の数も同じだけ減ります)
-- ディスクの 1GB のうち約 460MB をモデルが使います。音声も使うなら、ディスクを 2GB 以上に増やします(増やせるが減らせない)
+- ディスクの 2GB のうち約 460MB をモデルが使います(増やせるが減らせない)
 - 音声相談の費用は、まだ費用台帳に載りません([review-2026-10.md の R6](../architecture/review-2026-10.md#r6-音声相談の費用が台帳に載らず上限も効かない))
 
 ## 置くデータ(プライバシーの説明に入れること)
