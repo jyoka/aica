@@ -279,7 +279,8 @@ Anthropic への送り方です(task 236。`tests/test_claude_voice_resume.py`)�
   (Claude Sonnet 5.5 が読む上限)に縮め、写真の向きを直して JPEG にし直します(`fit_image`。別のスレッドで行う)
 - 縮めるときは、Web のプロセスのメモリ(Render の Starter は 512MB で、音声ワーカーと分け合う)を守るため、画素を展開する前に
   大きさを見ます。JPEG は `draft` で 1/2〜1/8 に縮めて読み、展開する画素が 1,250 万(`MAX_DECODED_IMAGE_PIXELS`)を超える
-  画像(小さなファイルの画素の多い PNG など)は `ImageTooLarge` で断ります。トークのアップロードは、会話数を使う前に
+  画像(小さなファイルの画素の多い PNG など)は `ImageTooLarge` で断ります。Pillow が開くのを断る画像(178,956,970 画素を
+  超える)も同じく断ります。トークのアップロードは、会話数を使う前に
   `oversized_image` で見て 413 を返します。縮めてから向きを直し、透けた所は白で埋めます
 
 ### 1.4 voice_resume

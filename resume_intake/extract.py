@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import sys
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
@@ -336,14 +337,14 @@ def fit_image(data: bytes, media_type_hint: str) -> tuple[bytes, str]:
     """Anthropic に送る画像の (中身, MIME タイプ)。MIME タイプは拡張子ではなく中身の先頭で決める(名前を付け替えた
     PNG を image/jpeg で送ると 400)。ANTHROPIC_MAX_IMAGE_B64_BYTES か ANTHROPIC_MAX_IMAGE_SIDE を超えるなら、
     長い辺を SHRUNK_IMAGE_SIDE に縮め、写真の向き(EXIF)を直して JPEG にし直す。
-    縮めるのに展開する画素が MAX_DECODED_IMAGE_PIXELS を超えるなら、展開する前に ImageTooLarge にする。
-    メモリを抑えるため、縮めてから向きを直し、透けた所を白で埋める(大きな画像のコピーを作らない)。"""
+    縮めるのに展開する画素が MAX_DECODED_IMAGE_PIXELS を超えるなら、展開する前に ImageTooLarge にする(Pillow が
+    開くのを断るほど画素の多い画像も同じ)。メモリを抑えるため、縮めてから向きを直し、透けた所を白で埋める(大きな画像のコピーを作らない)。"""
     mt = next((m for magic, m in _IMAGE_MAGIC.items() if data.startswith(magic)), media_type_hint)
     if not _needs_shrink(data):
         return data, mt
     from PIL import Image, ImageOps
 
-    with Image.open(io.BytesIO(data)) as img:
+    with _open_image(data) as img:
         _draft(img)
         if img.mode in ("1", "P"):  # この 2 つは thumbnail が粗い縮め方(NEAREST)になるので先に直す(1 画素 1 バイト)
             img = img.convert("L" if img.mode == "1" else "RGBA")
@@ -363,10 +364,8 @@ def oversized_image(data: bytes) -> bool:
     会話数を使う前に断るのに使う。"""
     if not _needs_shrink(data):
         return False
-    from PIL import Image
-
     try:
-        with Image.open(io.BytesIO(data)) as img:
+        with _open_image(data) as img:
             _draft(img)
     except ImageTooLarge:
         return True
@@ -392,14 +391,26 @@ def _draft(img) -> None:
 
 
 def _max_side(data: bytes) -> int:
-    """画像の長い辺の画素(読めなければ 0。読めない画像はそのまま送り、API の答えに任せる)。"""
+    """画像の長い辺の画素(読めなければ 0。読めない画像はそのまま送り、API の答えに任せる)。
+    Pillow が開くのを断るほど画素の多い画像は、縮めが要るものとして sys.maxsize。"""
+    try:
+        with _open_image(data) as img:  # 画素は読まず、頭の情報だけを読む
+            return max(img.size)
+    except ImageTooLarge:
+        return sys.maxsize
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _open_image(data: bytes):
+    """画像を開く(頭の情報だけを読む)。Pillow は画素が Image.MAX_IMAGE_PIXELS の 2 倍(既定で 178,956,970)を超える
+    画像を DecompressionBombError で断るので、それを ImageTooLarge にする(大きさの分からない画像を API に送らない)。"""
     from PIL import Image
 
     try:
-        with Image.open(io.BytesIO(data)) as img:  # 画素は読まず、頭の情報だけを読む
-            return max(img.size)
-    except Exception:  # noqa: BLE001
-        return 0
+        return Image.open(io.BytesIO(data))
+    except Image.DecompressionBombError as e:
+        raise ImageTooLarge("画像の画素が多すぎます(Pillow が開くのを断る大きさ)") from e
 
 
 def default_client():

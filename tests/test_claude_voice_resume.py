@@ -415,6 +415,29 @@ def test_image_too_many_pixels_is_refused_before_decoding(monkeypatch):
     assert not extract.oversized_image(_png(200, extract.ANTHROPIC_MAX_IMAGE_SIDE + 1))
 
 
+def test_image_pillow_refuses_to_open_is_refused_too(monkeypatch):
+    """Pillow が開くのを断るほど画素の多い画像(178,956,970 画素を超える。14000×14000 の白黒の PNG は 24KB ほど)も、
+    縮めずに送る画像と見なさず、ImageTooLarge にする(縦横 8000 画素を超えたまま Anthropic に送らない)。"""
+    import io
+
+    from PIL import Image
+
+    side = 14000
+    assert side * side > 2 * Image.MAX_IMAGE_PIXELS
+    out = io.BytesIO()
+    Image.new("1", (side, side), 1).save(out, format="PNG")
+    data = out.getvalue()
+    assert len(data) < 100_000
+    loaded = _spy_loads(monkeypatch)
+    assert extract.oversized_image(data)
+    with pytest.raises(extract.ImageTooLarge):
+        extract.fit_image(data, "image/png")
+    assert loaded == []
+    # 読めない画像は今までどおり、縮めずに API へ送る(答えは API に任せる)
+    assert not extract.oversized_image(b"\x89PNG\r\n\x1a\n broken")
+    assert extract.fit_image(b"\x89PNG\r\n\x1a\n broken", "image/png") == (b"\x89PNG\r\n\x1a\n broken", "image/png")
+
+
 def test_large_jpeg_is_read_shrunk_and_turned_upright(monkeypatch):
     """JPEG は縮めて読む(48MP の写真でも、全体を展開しない)。写真の向き(EXIF)は縮めた後で直す。"""
     import io

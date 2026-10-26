@@ -122,6 +122,29 @@ def test_image_with_too_many_pixels_is_refused_before_reading(app, monkeypatch):
         assert app.stub.calls == []
         assert _upload(client, user).status_code == 200  # PDF はそのまま読む
 
+
+def test_image_pillow_refuses_to_open_is_refused_before_reading(app, monkeypatch):
+    """Pillow が開くのを断るほど画素の多い PNG(178,956,970 画素を超える)も 413 で断る。読み取りに送らず、
+    会話数も使わない。"""
+    import io
+
+    from fastapi.testclient import TestClient
+    from PIL import Image
+
+    from resume_intake import config as resume_config
+
+    monkeypatch.setattr(resume_config, "PROVIDER", "anthropic")
+    out = io.BytesIO()
+    Image.new("1", (14000, 14000), 1).save(out, format="PNG")
+    with TestClient(app.app) as client:
+        _open(client)
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]
+        r = _upload(client, user, name="resume.png", data=out.getvalue())
+        assert r.status_code == 413 and "画素が多すぎます" in r.json()["detail"]
+        assert app.stub.calls == []
+        assert app.app.state.quota.used(user) == 0
+
+
 def test_upload_of_text_pdf_sends_only_its_text(app):
     """テキストのある PDF をトークからアップロードすると、OpenAI にはテキストだけが届き、顔写真もファイルも届かない。
     (docs/design/privacy.md の 3.2 の案 B。サンプルは架空の JIS 風の表の履歴書で、顔写真の欄に画像がある)"""
