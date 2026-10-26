@@ -24,6 +24,7 @@
 // 同意(docs/design/privacy.md の 3.6): 画面は setConsent(サーバーの consent.view)で同意の状態と文言を渡す。
 // ask(kind) は、その同意がまだなら同意の画面を重ねて出し、「同意して…」で記録できたら true(やめたら false)。
 // 履歴書(resume)はファイルを選ぶ直前、音声(voice)はシートを開く直前に ask する。使い始める同意(terms)は画面が ask する。
+// 音声は使い始める同意と一緒に ask する(LIFF 画面: どちらもまだなら 1 つの同意の画面にまとめ、1 回押せば両方を記録する)。
 function createTalk(o) {
   const log = o.log;
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -245,14 +246,19 @@ function createTalk(o) {
   const cSheet = el("div", "consent-sheet"); cSheet.id = "consent-sheet"; cSheet.hidden = true;
   cSheet.setAttribute("role", "dialog"); cSheet.setAttribute("aria-modal", "true");
   document.body.appendChild(cSheet);
-  // 同意の文(題、段落、箇条書き、太字、規約とポリシーへのリンク)と、「同意して…」(と、取り消せるときは「やめる」)
-  function consentBox(kind, onAgree, onCancel) {
-    const t = consent.texts[kind], box = el("div", "consent-box");
-    box.dataset.kind = kind;
-    box.appendChild(el("h2", null, t.title));
-    for (const p of t.paragraphs) box.appendChild(el("p", null, p));
-    if (t.points.length) { const ul = el("ul"); for (const p of t.points) ul.appendChild(el("li", null, p)); box.appendChild(ul); }
-    if (t.strong) box.appendChild(el("p", "strong", t.strong));
+  // 同意の文(題、段落、箇条書き、太字、規約とポリシーへのリンク)と、「同意して…」(と、取り消せるときは「やめる」)。
+  // kinds は 1 つの画面に続けて示す同意(LIFF 画面の、使い始める同意と音声の同意)。ボタンは最後の同意の文言
+  function consentBox(kinds, onAgree, onCancel) {
+    const box = el("div", "consent-box");
+    box.dataset.kind = kinds.join(" ");
+    kinds.forEach((kind, i) => {
+      const t = consent.texts[kind];
+      box.appendChild(el(i ? "h3" : "h2", null, t.title));
+      for (const p of t.paragraphs) box.appendChild(el("p", null, p));
+      if (t.points.length) { const ul = el("ul"); for (const p of t.points) ul.appendChild(el("li", null, p)); box.appendChild(ul); }
+      if (t.strong) box.appendChild(el("p", "strong", t.strong));
+    });
+    const t = consent.texts[kinds[kinds.length - 1]];
     const links = el("p", "links");
     consent.links.forEach((l, i) => {
       if (i) links.append(" · ");
@@ -265,31 +271,35 @@ function createTalk(o) {
     box.append(links, err, btns);
     return box;
   }
-  // 同意を記録する。記録できたら setConsent し直して true。版が変わっていた(409)なら新しい文言で出し直す
-  async function agree(kind) {
+  // 同意を記録する(2 つなら 1 回で: 先の kind と、一緒に記録する also)。記録できたら setConsent し直して true。
+  // 版が変わっていた(409)なら新しい文言で出し直す
+  async function agree(kinds) {
+    const body = { kind: kinds[0], also: kinds[1], version: consent.version, user_id: o.getUser() };
     const res = await fetch(o.consentApi || "/api/consent", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                            body: JSON.stringify({ kind, version: consent.version, user_id: o.getUser() }) });
+                                                            body: JSON.stringify(body) });
     let d = null; try { d = await res.json(); } catch (_) {}
     if (res.ok) { setConsent(d); return true; }
     const e = new Error((d && typeof d.detail === "string" && d.detail) || "同意を記録できませんでした。もう一度お試しください。");
     e.consent = res.status === 409 ? d.consent : null; throw e;
   }
-  // kind の同意がまだなら同意の画面を出す。cancel: false なら「やめる」を出さない(使い始める同意)。
+  // kind の同意がまだなら同意の画面を出す。kind は配列でもよく、まだの同意をまとめて 1 つの画面で示し、1 回で記録する
+  // (LIFF 画面の音声相談: 使い始める同意と音声の同意)。cancel: false なら「やめる」を出さない(使い始める同意)。
   // gesture は「同意して…」を押したその場で呼ぶ(ファイルを選ぶ画面は、押した操作の中でしか開けないため)
   function ask(kind, { cancel = true, gesture = null } = {}) {
-    if (!needsConsent(kind)) return Promise.resolve(true);
+    const asked = () => [kind].flat().filter(needsConsent);
+    if (!asked().length) return Promise.resolve(true);
     return new Promise((done) => {
       const close = (v) => { cSheet.hidden = true; cSheet.replaceChildren(); done(v); };
       let gestured = false;  // ファイルを選ぶ画面は 1 回だけ開く(記録に失敗して押し直しても、2 つ開かない)
-      const show = () => cSheet.replaceChildren(consentBox(kind, async (ok, err) => {
+      const show = () => cSheet.replaceChildren(consentBox(asked(), async (ok, err) => {
         ok.disabled = true; err.textContent = "";
         const no = cSheet.querySelector("#consent-cancel"); if (no) no.disabled = true;  // 記録している間は閉じない
         if (gesture && !gestured) { gestured = true; gesture(); }
-        try { await agree(kind); close(true); }
+        try { await agree(asked()); close(true); }
         catch (e) {
           if (!e.consent) { err.textContent = e.message; ok.disabled = false; if (no) no.disabled = false; return; }
           setConsent(e.consent);  // 版が上がっていた: 新しい版の文言で出し直す
-          if (!needsConsent(kind)) { close(true); return; }
+          if (!asked().length) { close(true); return; }
           show(); cSheet.querySelector(".err").textContent = e.message;
         }
       }, cancel ? () => close(false) : null));
@@ -419,7 +429,9 @@ function createTalk(o) {
   async function openVoice() {
     const user = o.getUser();
     if (!user || o.isBusy() || voice) return;
-    if (!(await ask("voice"))) return;  // 音声の同意(声が LiveKit、Deepgram、Cartesia にも届く)がまだなら、シートの前に示す
+    // 音声の同意(声が LiveKit、Deepgram、Cartesia にも届く)がまだなら、シートの前に示す。LIFF 画面を同意の前に開いた
+    // LINE の本人には、使い始める同意も同じ画面で示す(Web のトークは使い始める同意の後にしか開かない)
+    if (!(await ask(["terms", "voice"]))) return;
     if (o.getUser() !== user || o.isBusy() || voice) return;
     o.showTalk?.();
     const v = voice = { user, since: null, roomName: null, room: null, agent: null, me: false, working: null,

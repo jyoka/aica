@@ -622,7 +622,7 @@ flowchart LR
 | `GET /api/me` | `me` | Cookie | - | - |
 | `POST /api/talk/open` | `talk_open` | Cookie | - | 挨拶が保存されているのに記録が無ければ `record_talk_open` で補う。同意の状態と文言(`consent`)を返す。使い始める同意がまだなら何も書かず `event: null`(画面は同意の画面を出す。4.2) |
 | `GET /api/consent` | `consent_get` | Cookie | - | -(同意の状態と文言。開発者画面がシナリオの前に読む) |
-| `POST /api/consent` | `consent_post` | Cookie + 書き込みの枠 | - | 同意の記録(`consents`。5.1)。示した版(`version`)が今と違えば 409 で、今の同意の状態を付ける。`resume`、`voice` は `terms` の後だけ(前なら 403) |
+| `POST /api/consent` | `consent_post` | Cookie + 書き込みの枠 | - | 同意の記録(`consents`。5.1)。示した版(`version`)が今と違えば 409 で、今の同意の状態を付ける。`resume`、`voice` は `terms` の後だけ(前なら 403)。`kind: terms` と一緒に `also` も記録できる(`_record_consent`。`/api/liff/consent` と同じ) |
 | `GET /api/talk/history` | `talk_history` | Cookie | - | - |
 | `POST /api/talk/track/undo` | `talk_track_undo` | 本人 + 書き込みの枠 | - | 雇用区分の取り消し、知らせ。直前の切り替えでなければ 409 |
 | `GET /api/saved` | `saved` | Cookie | - | - |
@@ -649,7 +649,7 @@ flowchart LR
 | `GET /liff/voice/draft` | `liff_voice_draft` | 画面 | - | -(下書き) |
 | `GET`、`POST /liff/apply` | `liff_form`、`liff_submit` | 画面 | - | 応募の確定(`submit_application`)。欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れる。入力値は読まず、保存しない |
 | `POST /api/liff/session` | `liff_session` | LIFF の ID トークン(LINE の検証) | - | Cookie `aica_liff`。確かめられなければ 401 で Cookie を消す。JSON でなければ 415。LIFF の設定が無ければ 404 |
-| `POST /api/liff/consent` | `liff_consent` | LIFF | - | 履歴書か音声の同意の記録(LIFF 画面の「同意して…」)。`terms` は LINE のトークで取るので 400、その前なら 403、版が違えば 409 |
+| `POST /api/liff/consent` | `liff_consent` | LIFF | - | 同意の記録(LIFF 画面の「同意して…」)。`terms` も受ける(task 239)。`terms` と一緒に `also`(`resume` か `voice`)を 1 回で記録できる(`also` は `kind: terms` のときだけ。ほかは 422)。`resume`、`voice` だけなら `terms` の後だけ(前なら 403)。版が違えば、どれも記録せず 409。`terms` を初めて記録したら `logic.await_greeting`(次のトークを挨拶から。push はしない) |
 | `GET /liff/line` | `liff_line_entry` | LIFF | - | -(LIFF アプリのエンドポイント URL。`liff.state` があれば殻) |
 | `GET /liff/line/resume`、`GET /liff/line/voice/draft` | `liff_line_resume`、`liff_line_voice_draft` | LIFF | - | -(`/liff/resume`、`/liff/voice/draft` と同じ中身。`scenario_user` は無い) |
 | `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
@@ -1603,8 +1603,23 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   ただし印が無く、今の会話が返った挨拶だけで続いているとき(`_just_greeted`。挨拶の直後の二度押し)は、何も返しません
 - LIFF 画面の履歴書と音声は、使う直前に同意を取ります。履歴書の画面は、同意がまだなら同意の文と「同意してファイルを選ぶ」を出し、
   ファイルを選ぶ欄を隠します。押すと `POST /api/liff/consent` で記録して欄を出します。音声相談の画面は `talk-core.js` の `ask` で、
-  シートを開く前に同意の画面を出します(`consentApi: "/api/liff/consent"`)。どちらも、使い始める同意がまだなら、LINE のトークで
-  「同意して始める」を押すよう案内して止まります(`consent.MISSING_LINE_TERMS`)
+  シートを開く前に同意の画面を出します(`consentApi: "/api/liff/consent"`)
+- リッチメニューから LIFF 画面を、使い始める同意の前に開いた人には、その画面で同意を取ります(task 239。トークに戻らせない)。
+  文言と版は `consent.texts("line")` と `consent.tag()` で、トークと同じ要点と、規約とポリシーのリンクと「同意して始める」です
+  - 音声相談(`_liff_voice_page`): 開いたその場で `talk.openVoice()` を呼び、`ask(["terms", "voice"])` が、まだの同意を 1 つの同意の
+    画面(`.consent-box[data-kind="terms voice"]`)にまとめます。1 回押すと `{kind: "terms", also: "voice"}` で両方を記録し、
+    そのままシートを開きます。「やめる」なら何も記録せず、「音声相談を始める」を押すか開き直すと、また同意の画面を出します
+  - 履歴書(`_liff_upload_page`): まだの同意(`terms`、`resume`)を `_consent_html(*kinds)` で 1 つの枠に続けて示し、ボタンは
+    「同意してファイルを選ぶ」の 1 つです。押すと `LIFF_AGREE_JS` の `liffAgree` が 1 回で記録して、ファイルを選ぶ欄を出します
+  - ゲーム(`liff_line_arcade`、`liff_line_arcade_game` の `ARCADE_SHIPPED`): ハブかゲームの代わりに `_liff_terms_page` を返し、
+    押したら記録して同じ URL を開き直します(今度はハブかゲーム。AI と保存が使える)。ほかのゲームは AI も本人のデータも使わないので、そのまま開きます
+  - 記録したら `logic.await_greeting` で挨拶を待つ印を付けます(トークの同意と同じ)。トークでは同意を求め直さず、次の新しい会話を
+    挨拶のターンから始めます(上の `_line_turn`)。同意の直後に挨拶を push はしません(音声相談のまとめや履歴書の続きの push と混ざらないように)。
+    画面の操作の続き(履歴書の続きなど)が先にトークに届いて会話が続いているときは、上の決まりどおりその会話に続けます。
+    その会話で本人の発言に返したら、印を外します(`logic.skip_greeting`。再訪にはしない)。外さないと、後の日の新しい会話で、
+    本人の発言が初回訪問の挨拶に替わってしまうためです(トークで同意した後も同じ)
+  - 押さずに閉じた人には使わせず、何も記録しません。API も今までどおり断ります(`_require_consent` の `consent.MISSING_LINE_TERMS`、
+    `/api/liff/arcade/start` の番号なし)
 
 本人が見る、消す(`_line_data`。[個人情報の設計メモ](../design/privacy.md) の 3.7):
 
@@ -1644,9 +1659,9 @@ LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 
 |---|---|
 | `GET /liff/line/voice` | 音声相談の画面(`_liff_voice_page`)。`talk-core.js` の `createTalk` を、`voiceApi`(`/api/liff/voice/…`、`extra` で `liff.getIDToken()` を足す)と `onVoiceClosed` つきで使う |
 | `GET /liff/line/resume/upload` | 履歴書の読み込みの画面(`_liff_upload_page`)。ファイルと `user_id` と `liff.getIDToken()` をフォームで送る |
-| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする。AI と保存につながった 2 本(`ARCADE_SHIPPED`)は、`</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
+| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。使い始める同意の前なら、ハブと 2 本のゲームは代わりに同意の画面(`_liff_terms_page`。task 239)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする。AI と保存につながった 2 本(`ARCADE_SHIPPED`)は、`</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
 | `GET /liff/line/arcade/draft`、`POST /liff/line/arcade/draft` | ゲームで作った下書きの画面と、直した書類の保存(`_arcade_draft_page`、`_arcade_draft_edit`。Web と同じ。フォームの送り先は `/liff/line/arcade/draft`)。本人が無ければ GET は殻、POST は 401。`{game}` より先に登録する |
-| `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`)。使い始める同意(LINE のトークで取る)がまだなら、Web と同じく番号なし(`play: null`)の 200 と、LLM を呼ばない `/ai` |
+| `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`)。使い始める同意(LINE のトークか、ハブとゲームの同意の画面で取る)がまだなら、Web と同じく番号なし(`play: null`)の 200 と、LLM を呼ばない `/ai` |
 | `POST /api/liff/arcade/save` | 本文は Web の `/api/arcade/save` に `id_token` を足したもの。`_arcade_save`(Web と同じ決まり。403、400 なら LINE に確かめに行かない)→ 今の会話に返信を足す → Messaging API の設定があれば ID トークンを確かめ、`line_user(sub)` が本人なら宛先にする。宛先があり、その日の知らせが 3 通(`ARCADE_DAILY_PUSHES`。`quota.json` の `arcade_line_push`)に達していなければ、応答の後に `_line_push` で同じ返信(`arcade_reply`)を 1 回 push(`line`)。宛先が無くても、上限でも保存はする。`view_url` は `/liff/line/arcade/draft?rid=…` |
 | `POST /api/liff/voice/start` | `{user_id, id_token}`。`_liff_api_user`(Cookie `aica_liff` が無ければ 401、本文のユーザーが違えば 403)→ LiveKit の設定(無ければ 503)→ `_liff_sub`(ID トークンを確かめ、`line_user(sub)` が本人でなければ 401)→ `_voice_token`(Web と同じ。会話数 1、IP は数えない)。部屋 → `(sub, 時刻)` を `app.state.line_voice_rooms` に覚える(1 時間より古いものは、始めるときと結果が届くときに捨てる。`_forget_old_voice_rooms`) |
 | `POST /api/liff/voice/wait` | Web の `/api/voice/wait` と同じ(`_voice_wait`)。返信のボタンの URL は `/liff/line/…` にする(`_liff_reply`) |
