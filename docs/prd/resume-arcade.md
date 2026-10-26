@@ -170,8 +170,8 @@ LIFF の ID トークンで LINE の本人を決める仕組み(jyoka/tasks#203)
 
 - LIFF の設定(`LINE_LIFF_ID` と `LINE_LIFF_CHANNEL_ID`)があれば、LINE のチャネル(`line_channel.to_messages`)は `/liff/arcade…` の
   ボタンを LIFF URL(`https://liff.line.me/<LIFF ID>/arcade…`)にします。LINE は `/liff/line/arcade…` を開き、LIFF の本人を確かめてから
-  ゲームを出します。LINE のアプリのハブ(`/liff/line/arcade`)は、サーバーがほかの LIFF の最初の画面と同じ枠で出し、リンクは
-  `/liff/line/arcade/…` です(task 241)
+  ゲームを出します。LINE のアプリのハブ(`/liff/line/arcade`)は Web と同じピクセルアートのハブで、リンクは `/liff/line/arcade/…` です
+  (task 241 でほかの LIFF の画面と同じ枠にしたが、ゲームの雰囲気が伝わらないので戻した。同意の画面だけがその枠)
 - LIFF の設定が無ければ、`/liff/arcade` のボタンを LINE に出しません(公開 URL では本人にならないため。守りとして残す)
 - エージェントには窓口(Web / LINE)と、LINE でゲームを開けるかを伝えます(`agent.channel_note`)。開けなければ勧めません
 - LIFF の設定があれば、dip の要約は LINE のユーザーID(`l-…`)にもゲームの URL を載せ(`arcade.game_url`)、エージェントは
