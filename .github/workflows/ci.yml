@@ -1,0 +1,71 @@
+# 回帰を agent の自己申告ではなく、ここで確かめる(AGENTS.md の「回帰の合格基準」)。
+# 実 API は呼ばない: secrets を 1 つも渡さないので、API キーの無いままで通ること自体が確かめる中身になる。
+# 書き方は task-hub の .github/workflows/macos.yml にそろえる。
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash  # pipefail が入るので、tee がテストの失敗を隠さない
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"  # Dockerfile と同じ
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"  # tests/test_arcade.py の node --test 用。task-hub の macos.yml と同じ
+      - name: Dependencies
+        # playwright は入れない: ブラウザのテストは skip になる(AGENTS.md の「CI が確かめないこと」)
+        run: |
+          mkdir -p evidence
+          python -m pip install -r requirements.txt pytest ruff
+      # 1 つが落ちても残りを回し、全部の結果を 1 回で見られるようにする(!cancelled())
+      - name: Tests
+        run: python -m pytest -q 2>&1 | tee evidence/pytest.log
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: ruff check . 2>&1 | tee evidence/ruff.log
+      # evals.baito_sim は PR #115 で入る。入る前だけ、回さずに警告を出す(緑のまま黙って飛ばさない)。
+      # ハーネス(line_runtime/baito_chat.py)があるのに evals.baito_sim が無いときは、名前を変えたなどの事故なので落とす
+      - name: Find the baito harness regression
+        id: baito
+        if: ${{ !cancelled() }}
+        run: |
+          if python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('evals.baito_sim') is None)"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ -e line_runtime/baito_chat.py ]; then
+            echo "::error::line_runtime/baito_chat.py があるのに evals.baito_sim が無い。AGENTS.md の回帰の合格基準と ci.yml をそろえる"
+            exit 1
+          else
+            echo "::warning::evals.baito_sim が無いので、バイトのハーネスの回帰を回していない(PR #115 が main に入るまで)"
+            echo "バイトのハーネスの回帰: **回していない**(evals.baito_sim が無い。PR #115 が main に入るまで)" >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Baito harness regression (mock LLM, PRD §11.3)
+        if: ${{ !cancelled() && steps.baito.outputs.run == 'true' }}
+        run: python -m evals.baito_sim --log evidence/baito_sim 2>&1 | tee evidence/baito_sim.log
+      - name: Test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-evidence
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: warn
