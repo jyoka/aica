@@ -1,0 +1,31 @@
+{
+ "id": "p5-resume",
+ "title": "履歴書を先に送っている",
+ "segment": "same_path",
+ "style": "履歴書を送ってあるので、同じことを聞かれるのを嫌う。聞かれたことに短く答える。",
+ "resume": {
+  "file": "fulltime_hearing/resumes/p5",
+  "filled": ["area", "career1.role", "career1.scale", "career2.role"]
+ },
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "今の会社では役職が上がる見込みがないから"},
+  {"key": "area", "kind": "text", "value": "福岡市内"},
+  {"key": "min_annual_salary", "kind": "number", "value": 500, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "3か月以内"},
+  {"key": "raise_target", "kind": "text", "value": "役職"},
+  {"key": "career1.role", "kind": "text", "value": "みほんホテルでフロントの主任、5年(今の会社)"},
+  {"key": "career1.scale", "kind": "number", "value": 12, "unit": "人(シフトを組むスタッフ)"},
+  {"key": "career1.result", "kind": "text", "value": "接客の手順書を作り、口コミの評価が上がった"},
+  {"key": "career2.role", "kind": "text", "value": "みほん旅行でカウンターの営業、3年"},
+  {"key": "career2.scale", "kind": "number", "value": 4, "unit": "人(支店のスタッフ)"},
+  {"key": "career2.result", "kind": "text", "value": "団体旅行の担当を任された"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "同じ仕事で上へ",
+  "履歴書": "トークで先に送ってある(勤務地と、職歴の勤め先・役割・今の会社の人数が書いてある)",
+  "働き方": "土日の休みが月に4日以上あるとよい",
+  "次にやりたいこと": "支配人のように、店全体を任される仕事",
+  "人と働く形": "後輩を育てるのが好き",
+  "やりたくないこと": "一人で黙々とする作業だけの仕事"
+ }
+}

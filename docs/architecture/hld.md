@@ -160,7 +160,7 @@ OpenAI のクレジットが切れがちなため。料金は `gpt-6-sol` と同
 |---|---|---|
 | エージェント | `claude-sonnet-5-5` | `gpt-6-sol` |
 | エージェントの思考の深さ | `LINE_SIM_EFFORT`(既定 `low`)。思考は任せる(adaptive) | `LINE_SIM_EFFORT` を reasoning に |
-| 模擬ユーザー、ジャッジ(`evals/run.py`) | `claude-sonnet-5-5`(利用者の決定) | `gpt-6-luna` |
+| 模擬ユーザー、ジャッジ(`evals/run.py`、`evals/fulltime_hearing/`) | `claude-sonnet-5-5`(利用者の決定) | `gpt-6-luna` |
 | ゲームの中の反応(`AICA_ARCADE_QUICK_MODEL`) | `claude-haiku-5-5` | `gpt-6-luna` |
 | 履歴書の読み取り(`RESUME_INTAKE_PROVIDER`) | `claude-sonnet-5-5`。思考を切る。PDF は `document`、画像は `image` のブロック | `gpt-6-sol` |
 | 音声アドバイザーの会話(`VOICE_RESUME_PROVIDER`) | `claude-sonnet-5-5`(LiveKit の Anthropic のプラグイン)。思考を切る | `gpt-6-sol`(`reasoning_effort=none`) |

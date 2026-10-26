@@ -1,0 +1,26 @@
+{
+ "id": "p4-short",
+ "title": "答えが短い",
+ "segment": "early",
+ "style": "答えはいつも短い(10字くらいまで)。自由に答える問いには、会話の中で2回まで、まず「特にない」と答える。",
+ "resume": null,
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "残業が多くて体がもたないから"},
+  {"key": "area", "kind": "text", "value": "名古屋駅の近く"},
+  {"key": "min_annual_salary", "kind": "number", "value": 300, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "すぐにでも"},
+  {"key": "keep_doing", "kind": "text", "value": "お客さんと話すこと"},
+  {"key": "stop_doing", "kind": "text", "value": "深夜までの残業"},
+  {"key": "career1.role", "kind": "text", "value": "みほんモバイルの店で携帯電話の販売、2年(今の会社)"},
+  {"key": "career1.scale", "kind": "number", "value": 40, "unit": "件(1か月の契約)"},
+  {"key": "career1.result", "kind": "text", "value": "店の販売の目標を半年続けて達成した"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "経験が浅い",
+  "社会人になって": "2年",
+  "働き方": "残業が少ないこと",
+  "次にやりたいこと": "特にない",
+  "人と働く形": "特にない",
+  "やりたくないこと": "深夜までの残業"
+ }
+}
