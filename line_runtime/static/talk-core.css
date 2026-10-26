@@ -75,7 +75,7 @@ form button.plus:disabled { color: #b8c0cc; background: #f1f3f6; }
 .consent-box { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto; box-sizing: border-box; background: #fff; color: var(--text);
                border-radius: 18px 18px 0 0; padding: 16px 18px calc(18px + env(safe-area-inset-bottom)); font-size: 13.5px; line-height: 1.65;
                box-shadow: 0 -4px 24px #0003; }
-.consent-box h2 { margin: 0 0 8px; font-size: 16px; }
+.consent-box h2 { margin: 0 0 8px; font-size: 16px; } .consent-box h3 { margin: 14px 0 6px; font-size: 15px; }
 .consent-box p { margin: 0 0 8px; } .consent-box ul { margin: 0 0 8px; padding-left: 1.2em; } .consent-box li { margin: 2px 0; }
 .consent-box .strong { font-weight: 700; }
 .consent-box .links a { color: var(--chip); }
