@@ -63,6 +63,8 @@ def prepare(state: State, sc: dict, user: str | None = None) -> None:
     再訪のシナリオなら前に本人が話した希望(seed_preferences)と雇用区分(seed_track)を入れる。
     seed_resume は、前にアップロード済みの履歴書(会話の前から要約の uploaded_resume にある)。
     seed_arcade_draft は、前にゲームで保存した書類の下書き(会話の前から要約の arcade_draft にある。load_arcade_draft)。
+    seed_voice_draft は、前に音声相談でできた書類の下書き(load_arcade_draft と同じ形。求人は無し)。
+    種の履歴書・ゲームの下書き・音声相談の下書きは、要約の used_entries(やり終えた入口)にも出る(task 237)。
     user を与えると、シナリオ用ユーザーの初期状態をそのIDに写して始める(ブラウザごとの匿名ユーザー用)。"""
     user = user or sc["user"]
     state.reset_user(user, template=sc["user"])
@@ -74,3 +76,6 @@ def prepare(state: State, sc: dict, user: str | None = None) -> None:
         logic.save_resume_upload(state, user, load_resume(sc["seed_resume"]), file=RESUME_FILE)
     if sc.get("seed_arcade_draft"):
         seed_arcade_draft(state, user, load_arcade_draft(sc["seed_arcade_draft"]))
+    if sc.get("seed_voice_draft"):
+        d = load_arcade_draft(sc["seed_voice_draft"])
+        logic.record_voice_result(state, user, [], d["markdown"], document_kind=d["document_kind"])

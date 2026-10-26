@@ -57,7 +57,7 @@ def usable_entries(system: str) -> list[str]:
 
 
 def entry_offer(summary: dict, usable: list[str]) -> str | None:
-    """再訪で勧める入口を 1 つ(dip の Prompt の「挨拶で3つの入口を案内する」の順)。"""
+    """再訪で勧める入口を 1 つ(dip の Prompt の「挨拶の入口」の順)。勧めるのはボタンが付く入口(使えて、used_entries に無い)だけ。"""
     if summary.get("segment") in ("applied_waiting", "form_exit"):
         return None
     knows_career = summary.get("uploaded_resume") or "experience" in (summary.get("stated_preferences") or {})
@@ -69,38 +69,35 @@ def entry_offer(summary: dict, usable: list[str]) -> str | None:
                   ("resume_upload", not knows_career and not summary.get("consultation_summary") and helps),
                   ("voice_consult", bool(knows_career) and not summary.get("consultation_summary")),
                   ("arcade", not draft and bool(summary.get("arcade_url")))]
-    return next((k for k, hit in candidates if hit and (k == "blanks" or k in usable)), None)
+    used = summary.get("used_entries") or []
+    return next((k for k, hit in candidates if hit and (k == "blanks" or (k in usable and k not in used))), None)
 
 
-# 再訪の勧めの1文(dip の Prompt の「挨拶で3つの入口を案内する」の例)
+# 再訪の勧めの1文(dip の Prompt の「挨拶の入口」の例)
 OFFER_TEXT = {"blanks": "ゲームで作った下書きに、数字の空欄が残っています。",
               "resume_upload": "履歴書を読み込むと、経歴を一から書かずに探せます。",
               "voice_consult": "下の「音声で相談する」から、話して相談もできます(約5分)。",
               "arcade": "下の「ゲームで書類を作る」で、遊びながら書類の下書きを作れます。"}
 
 
-def revisit_reply(question: str, offer: str | None, quick_replies: list[str], summary: dict,
-                  usable: list[str]) -> AIMessage:
-    """再訪の挨拶: 窓口で使える入口を全部ボタンにし(task 234)、勧める入口は1つだけ文で勧める(勧めが先、確認の1問が最後)。"""
+def revisit_reply(question: str, offer: str | None, quick_replies: list[str]) -> AIMessage:
+    """再訪の挨拶: 勧める入口は1つだけ文で勧める(勧めが先、確認の1問が最後)。入口のボタンは付けない
+    (コードが付ける。task 237)。"""
     bubbles = [f"おかえりなさい。{OFFER_TEXT[offer]}", question] if offer else [f"おかえりなさい。{question}"]
     if offer == "blanks":
         rest = [q for q in quick_replies if q != "今はいい"][:2]  # 4 つまで。「今はいい」は残す
         quick_replies = ["空欄を埋める", *rest, "今はいい"]
-    url = summary.get("arcade_url")
-    return reply(bubbles, quick_replies=quick_replies, actions=[a for a in ("voice_consult", "resume_upload") if a in usable],
-                 buttons=[{"label": "ゲームで書類を作る", "url": url}] if url and "arcade" in usable else [])
+    return reply(bubbles, quick_replies=quick_replies)
 
 
 def greet(messages) -> AIMessage:
-    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニューと使える入口すべて、再訪は要約を読んでから、使える入口すべてと
-    勧めの1文)。"""
+    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニュー、再訪は要約を読んでから勧めの1文)。入口のボタンは付けない
+    (task 237 からコードが付ける)。"""
     system = messages[0].content
     uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
     usable = usable_entries(system)
     if "入口V(初回訪問)" in system:
-        return reply(["こんにちは。バイト探しをお手伝いします。何をしますか?"], quick_replies=VISIT_MENU,
-                     actions=[a for a in ("voice_consult", "resume_upload") if a in usable],
-                     buttons=[ARCADE_BUTTON] if "arcade" in usable else [])
+        return reply(["こんにちは。バイト探しをお手伝いします。何をしますか?"], quick_replies=VISIT_MENU)
     assert "入口R(再訪)" in system
     if not any(m.type == "tool" for m in _this_turn(messages)):
         return call("get_user_conversation_summary", {"line_user_id": uid}, "sum")
@@ -109,14 +106,12 @@ def greet(messages) -> AIMessage:
     prefs = {k: v["value"] for k, v in (summary.get("stated_preferences") or {}).items()}
     if prefs:
         said = "・".join(prefs[k] for k in ("area", "time_band", "job_type") if k in prefs)
-        return revisit_reply(f"前回は{said}でしたが、今回も同じですか?", offer, ["同じで探す", "少し変えたい", "今はいい"],
-                             summary, usable)
+        return revisit_reply(f"前回は{said}でしたが、今回も同じですか?", offer, ["同じで探す", "少し変えたい", "今はいい"])
     viewed = (summary.get("recent_views") or {}).get("by_job_type") or {}
     if viewed:
         top = max(viewed, key=viewed.get)
-        return revisit_reply(f"最近は{top}のお仕事を見ていましたか?", offer, ["そう、探したい", "ほかの仕事", "今はいい"],
-                             summary, usable)
-    return revisit_reply("何をしますか?", offer, MENU, summary, usable)
+        return revisit_reply(f"最近は{top}のお仕事を見ていましたか?", offer, ["そう、探したい", "ほかの仕事", "今はいい"])
+    return revisit_reply("何をしますか?", offer, MENU)
 
 
 def propose(messages) -> AIMessage:
@@ -173,12 +168,14 @@ def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatc
 
         first, back_prefs, back_views = (open_talk(s) for s in ("F-follow-new", "R-revisit", "R-revisit-browsing"))
 
-    # 台本の初回訪問は要約を読まずにメニューと入口を返す(本物のエージェントは arcade_url のために要約を読む。入口V)
+    # 台本の初回訪問は要約を読まずにメニューを返す(本物のエージェントは used_entries と arcade_url のために要約を読む。入口V)
     assert first["entry"] == "visit" and first["tools"] == []
     assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
     assert first["quick_replies"] == VISIT_MENU
-    # LiveKit の設定が無いので、本番のトーク画面では音声相談を出さない(line_channel.web_features)。履歴書とゲームは出す
-    assert first["actions"] == ["resume_upload"] and first["buttons"] == [ARCADE_BUTTON]
+    # 入口のボタンは台本の LLM ではなくコードが付ける(task 237)。LiveKit の設定が無いので、本番のトーク画面では音声相談を
+    # 出さない(line_channel.web_features)。履歴書とゲームは出す(ゲームは dip の要約の arcade_url)
+    assert first["actions"] == ["resume_upload"] and [b["label"] for b in first["buttons"]] == [ARCADE_BUTTON["label"]]
+    assert first["buttons"][0]["url"].startswith("/liff/arcade")
     for r in (back_prefs, back_views):  # 再訪は要約(プロフィールと行動履歴)を読んでから挨拶する
         assert r["entry"] == "revisit" and [t["name"] for t in r["tools"]] == ["get_user_conversation_summary"]
     # 再訪も窓口で使える入口を全部ボタンで出し(task 234。音声は LiveKit が無いので出さない)、勧めの1文は summary に合う1つだけ

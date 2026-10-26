@@ -27,11 +27,12 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from dip_mcp.logic import VOICE_ROOM_ARG, liff_url
+from dip_mcp.logic import ENTRIES, VOICE_ROOM_ARG, liff_url
 from line_runtime import config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
+from line_runtime.line_channel import ARCADE_LABEL
 from line_runtime.voice_reply import voice_history_reply
 from resume_draft.pii import REDACTED, redact_personal
 
@@ -55,6 +56,7 @@ STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("gre
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話の入口(会話の state の entry)
+SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む dip の要約(task 237)
 # 会話の記録の表(AsyncSqliteSaver のスキーマ)。1人の会話を消すときは、これらから1つのトランザクションで消す
 CONVERSATION_TABLES = ("checkpoints", "writes")
 
@@ -121,6 +123,32 @@ def arcade_event(reply: dict) -> str:
     return ARCADE_EVENT + f" 書類: {reply.get('document_kind')}、数字の空欄: {reply.get('blanks', 0)}か所。"
 
 
+def usable_entries(channel: str | None, features: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
+    """窓口で使える入口(dip_mcp.logic.ENTRIES の並び)。LINE は features(line_channel.liff_features)にあるものだけ。
+    Web は features が空なら 3 つとも(評価と開発者画面の既定。agent.channel_note と同じ決まり)、空でなければ features
+    (本番のトーク画面の line_channel.web_features。音声相談は LiveKit の設定があるときだけ)。"""
+    if channel != "line" and not features:
+        return ENTRIES
+    return tuple(e for e in ENTRIES if e in features)
+
+
+def greeting_entries(summary: dict, channel: str | None, features: list[str] | tuple[str, ...] = ()) -> dict:
+    """挨拶に付ける入口のボタン(task 237): 本人がまだやり終えていない(summary の used_entries に無い)入口のうち、
+    窓口で使えるもの。音声相談と履歴書は actions、ゲームは buttons(summary の arcade_url。無ければ出さない)。
+    3 つともやり終えていれば、どちらも空(LINE はリッチメニューから入れる)。"""
+    used = set(summary.get("used_entries") or ())
+    left = [e for e in usable_entries(channel, features) if e not in used]
+    url = summary.get("arcade_url")
+    return {"actions": [e for e in left if e != "arcade"],
+            "buttons": [{"label": ARCADE_LABEL, "url": url}] if "arcade" in left and url else []}
+
+
+def is_arcade_entry(url: str) -> bool:
+    """ゲーム(レジュメ・アーケード)の入口のボタンの URL か(ハブと各ゲーム。下書きの画面 /liff/arcade/draft は入口ではない)。"""
+    path = url.partition("?")[0]
+    return (path == "/liff/arcade" or path.startswith("/liff/arcade/")) and not path.startswith("/liff/arcade/draft")
+
+
 def dip_connection() -> dict:
     if config.DIP_MCP_URL:
         return {"transport": "streamable_http", "url": config.DIP_MCP_URL}
@@ -177,6 +205,16 @@ class LineRuntime:
             await asyncio.gather(*self._running, return_exceptions=True)
         await self._stack.aclose()
 
+    async def _read_summary(self, user_id: str) -> dict:
+        """dip の要約(get_user_conversation_summary)を、エージェントと同じ MCP のツールで読む(LLM は呼ばない)。"""
+        tool = next(t for t in self.tools if t.name == SUMMARY_TOOL)
+        msg = await tool.ainvoke({"type": "tool_call", "name": SUMMARY_TOOL, "args": {"line_user_id": user_id},
+                                  "id": "greeting-entries"})
+        summary = _tool_payload(msg)
+        if not isinstance(summary, dict):
+            raise TypeError(f"dip の要約を読めませんでした: {str(summary)[:200]}")
+        return summary
+
     @staticmethod
     def _cfg(user_id: str, n: int) -> dict:
         return {"configurable": {"thread_id": f"{user_id}:{n}"}}
@@ -232,7 +270,7 @@ class LineRuntime:
         tup = await self._saver.aget_tuple(self._cfg(user_id, n)) if n else None
         values = (await self.agent.aget_state(self._cfg(user_id, n))).values if tup else {}
         messages = values.get("messages", [])
-        turns = history(messages, user_id)
+        turns = history(messages, user_id, values.get("greeting_entries"))
         last_at = None
         if tup and any(t["bot"] for t in turns):
             last_at = datetime.fromisoformat(tup.checkpoint["ts"])
@@ -305,10 +343,10 @@ class LineRuntime:
             if not n.isdigit():
                 continue
             cfg = {"configurable": {"thread_id": thread_id}}
-            messages = (await self.agent.aget_state(cfg)).values.get("messages", [])
+            values = (await self.agent.aget_state(cfg)).values
             at = await self._last_at(thread_id)
             out.append({"user_id": user_id, "thread": int(n), "last_at": at.isoformat() if at else None,
-                        "turns": history(messages, user_id)})
+                        "turns": history(values.get("messages", []), user_id, values.get("greeting_entries"))})
         return sorted(out, key=lambda c: (c["user_id"] != person_id, c["user_id"], c["thread"]))
 
     async def _last_at(self, thread_id: str) -> datetime | None:
@@ -422,6 +460,10 @@ class LineRuntime:
                     payload = {"messages": [HumanMessage(notice, additional_kwargs={"profile_notice": True}), human]}
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
+                if EVENTS[event][1] == "greet":
+                    # 挨拶の入口のボタンは LLM に任せず、dip の要約(やり終えた入口)と窓口から決める(task 237)。
+                    # 会話の state に残し、render がこのターンの返信にだけ付ける(画面の描き直しも同じボタンになる)
+                    payload |= {"greeting_entries": greeting_entries(await self._read_summary(user_id), channel, features)}
                 payload |= {"channel": channel, "channel_features": list(features)}
                 args: dict[str, dict] = {}
                 t = time.perf_counter()
@@ -522,7 +564,7 @@ def _reply_of(msg) -> LineReply | None:
         return None
 
 
-def history(messages: list, user_id: str) -> list[dict]:
+def history(messages: list, user_id: str, greeting: dict | None = None) -> list[dict]:
     """会話を、画面に描き直せる形にする(再読み込みで同じ会話を続けるとき)。1ターン1件:
     user(ユーザーの発言。挨拶・プッシュ・アップロードのイベントなら None)と bot(そのターンの返信。render と同じ形、
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
@@ -532,7 +574,8 @@ def history(messages: list, user_id: str) -> list[dict]:
     本人のデータの画面の URL(読み取り結果・下書き)は会話の記録から取らず、ここで組み立てる(ユーザーIDを載せない形。
     ユーザーID入りの URL を保存していた古い記録も、返すときには載せない)。
     プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。
-    発言に伏せた所(REDACTED)があれば redacted を付ける(画面が「電話番号などは送らないようにしました」と出す)。"""
+    発言に伏せた所(REDACTED)があれば redacted を付ける(画面が「電話番号などは送らないようにしました」と出す)。
+    greeting は会話の state の greeting_entries(挨拶で始まった会話の、コードが付けた入口のボタン)。挨拶の返信にだけ付く(render)。"""
     bounds = [i for i, m in enumerate(messages) if m.type == "human"]
     humans = [i for i in bounds if not messages[i].additional_kwargs.get("profile_notice")]
     turns = []
@@ -559,8 +602,8 @@ def history(messages: list, user_id: str) -> list[dict]:
         elif arcade:
             bot = arcade_history_reply(user_id, arcade)
         elif reply is not None:
-            bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply}).items()
-                   if k2 != "tools"}
+            bot = {k2: v for k2, v in render({"messages": messages[:end], "structured_response": reply,
+                                              "greeting_entries": greeting}).items() if k2 != "tools"}
         redacted = isinstance(user, str) and REDACTED in user
         turns.append({"user": user, "bot": bot} | ({"upload": upload} if upload else {})
                      | ({"redacted": True} if redacted else {}))
@@ -593,6 +636,17 @@ def render(state: dict) -> dict:
     args = {tc["id"]: tc["args"] for m in msgs[last_human:] if m.type == "ai" for tc in (m.tool_calls or [])}
     turn_tools = [{"name": m.name, "args": args.get(m.tool_call_id, {}), "result": _tool_payload(m)}
                   for m in msgs[last_human:] if m.type == "tool"]
+    # ボタンは dip の画面(LIFF)の URL だけを通す。モデルが作った URL は表示しない。
+    buttons = [b.model_dump() for b in reply.buttons if b.url.startswith("/liff/")]
+    actions = list(dict.fromkeys(reply.actions))
+    greeting = state.get("greeting_entries")
+    gave_up = msgs[-1].type == "ai" and msgs[-1].additional_kwargs.get("turn_limit")  # 呼び出しの上限で返した謝り
+    if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
+        # 挨拶のターン(挨拶で始まった会話の最初の返信。task 237): 入口のボタンはコードが決めたものにする。モデルが付けた
+        # 入口(音声相談・履歴書・ゲーム)は使わない(やり終えた入口や、モデルが落とした入口を、そのまま出さない)。
+        # 呼び出しの上限で返した謝り(agent.TURN_LIMIT_REPLY)には付けない(謝りの問いがボタンの見出しにならないように)
+        actions = list(greeting["actions"])
+        buttons = list(greeting["buttons"]) + [b for b in buttons if not is_arcade_entry(b["url"])]
     return {
         "entry": state.get("entry"),
         "track_switch": track_switch(turn_tools),
@@ -600,8 +654,7 @@ def render(state: dict) -> dict:
         "quick_replies": reply.quick_replies,
         "cards": [jobs[j] for j in reply.job_ids if j in jobs],
         "unknown_job_ids": [j for j in reply.job_ids if j not in jobs],
-        # ボタンは dip の画面(LIFF)の URL だけを通す。モデルが作った URL は表示しない。
-        "buttons": [b.model_dump() for b in reply.buttons if b.url.startswith("/liff/")],
-        "actions": list(dict.fromkeys(reply.actions)),  # 画面が「ファイルを選ぶ」「話して伝える」のボタンにする
+        "buttons": buttons,
+        "actions": actions,  # 画面が「ファイルを選ぶ」「話して伝える」のボタンにする
         "tools": turn_tools,
     }

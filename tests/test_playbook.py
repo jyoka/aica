@@ -586,7 +586,9 @@ def test_situation_start_asks_the_missing_conditions_once_and_searches(tmp_path)
         lambda msgs: reply(["本業の後に働ける、新宿の夜の求人です。"], job_ids=returned_jobs(msgs), quick_replies=CLOSING),
         reply(["ありがとうございます。気になる求人は「保存」を押しておくと、次に開いたときに見返せます。"], quick_replies=CLOSING),
     ])
+    prepare(State(tmp_path / "state.json"), sc)  # 前にアップロード済みの履歴書(挨拶に「履歴書を読み込む」は付かない。task 237)
     turns = run(model, [(UID, "visit", None)] + [(UID, "message", m) for m in SIDE_SAID[1:]], tmp_path)
+    assert "resume_upload" not in turns[0]["actions"]
     assert "迷いや相談したいことを言っていなければ相談に入らない" in model.systems[1]
     assert not any(playbooks_read(x) for x in turns) and turns[2]["cards"]
     r = conversation_checks(sc, turns, SIDE_SAID)

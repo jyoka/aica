@@ -191,6 +191,24 @@
   "max_turns": 5
  },
  {
+  "id": "R-revisit-all-used",
+  "title": "再訪(3 つの入口をやり終えた)",
+  "desc": "職務経歴書を読み込み、音声相談で下書きができ、ゲームで下書きを保存した人がトークを開き直す。挨拶に入口のボタンは付かず、文でも入口を勧めない(task 237)",
+  "user": "sim-new",
+  "event": "revisit",
+  "seed_track": "正社員",
+  "seed_resume": "accounting_fulltime",
+  "seed_voice_draft": "accounting_voice",
+  "seed_arcade_draft": "accounting_arcade_filled",
+  "persona": "前にこのトークで職務経歴書を読み込み(メーカーで正社員の経理を7年)、音声相談で経歴を話し、ゲームで職務経歴書の下書きも作った。今日はトークを開き直した。今回も正社員の経理で、都内で探したい。聞かれたことに1つずつ答える。求人を見せられたら「ありがとう、考えます」と言って終える。",
+  "expect_outcome": [
+   "propose",
+   "consult",
+   "wait"
+  ],
+  "max_turns": 5
+ },
+ {
   "id": "T-career-fulltime",
   "title": "経歴の厚い人の転職相談(履歴書をアップロード)",
   "desc": "法人営業とPMの経歴がある人が転職の相談をする。正社員に切り替え、履歴書のアップロード後の1問と、目的の掘り下げ・経歴に沿った選択肢を見る",

@@ -407,7 +407,8 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
                 greeting: str | None = None) -> list[dict]:
     """render の結果(上限の案内 limit_reply も同じ形)を、LINE に送るメッセージ(5 つまで)にする。
     - bubbles → テキスト
-    - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文
+    - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文。
+      ボタンの箱では buttons より先に並べる(挨拶の入口が「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」の順になる)
     - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
       へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
@@ -444,8 +445,10 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
             log.warning("%s が無い(か http(s):// で始まらない)ので、LIFF 画面のボタン %d 個を LINE に出しません",
                         PUBLIC_URL_ENV, len(dropped))
         buttons = [b for b in buttons if b not in dropped]
-    links = [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
-    links += [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
+    # 操作のボタン(音声で相談する・履歴書を読み込む)を先に、画面のボタン(ゲームで書類を作る など)を後に並べる
+    # (挨拶の入口がリッチメニュー(scripts/line_rich_menu.py)と同じ並びになる。task 237)
+    links = [{"label": LIFF_ACTIONS[a][0], "uri": liff_page_url(LIFF_ACTIONS[a][1])} for a in actions if a in features]
+    links += [{"label": b["label"], "uri": liff_url_of(b["url"]) or base + b["url"]} for b in buttons]
     headed = greeting in GREETING_HEADINGS and links and not flex and len(bubbles) >= 2
     heading = bubbles.pop(GREETING_HEADINGS[greeting]) if headed else None
     # 再訪の挨拶は、ボタンの箱を先に置き、確認の1問を最後に残す(吹き出しが 1 つでも。使えない操作の断りの文は問いの前)

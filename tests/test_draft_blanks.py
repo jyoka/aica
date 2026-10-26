@@ -100,8 +100,9 @@ def test_web_conversation_shows_the_draft_button_after_the_number_and_passes_the
     turns = run(Greeter(script=[greet, greet] + [blank_filler] * 4),
                 [(uid, "revisit", None), (uid, "message", said[1]), (uid, "message", said[2])], tmp_path)
     t1, t2, t3 = turns
-    # 挨拶は入口を全部ボタンで出し(task 234)、文で勧めるのは下書きの続きだけ(「下書きを見る」はまだ出さない)
-    assert "空欄を埋める" in t1["quick_replies"] and [b["label"] for b in t1["buttons"]] == ["ゲームで書類を作る"]
+    # 挨拶の入口のボタンは、やり終えていない音声相談だけ(履歴書は読み込み済み、ゲームは下書きを保存済み。task 237)。
+    # 文で勧めるのは下書きの続きだけ(「下書きを見る」はまだ出さない)
+    assert "空欄を埋める" in t1["quick_replies"] and t1["actions"] == ["voice_consult"] and t1["buttons"] == []
     assert t2["bubbles"] == [CONFIRM] and t2["buttons"] == []
     assert t3["buttons"] == [{"label": "下書きを見る", "url": "/liff/arcade/draft?rid=0"}]
     assert TO_SCREEN in t3["bubbles"][0]
