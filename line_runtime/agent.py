@@ -58,6 +58,8 @@ class LineState(AgentState):
     line_user_id: NotRequired[str]
     channel: NotRequired[str]  # 今の窓口(CHANNELS)。無ければ web
     channel_features: NotRequired[list[str]]  # LINE のトークから LIFF 画面で使えるもの(line_channel.liff_features)
+    # 挨拶で始まった会話の、コードが決めた入口のボタン(runtime.greeting_entries。挨拶の返信にだけ付く。task 237)
+    greeting_entries: NotRequired[dict]
 
 
 # 今の窓口。web = Web のトーク画面(LINE 風の画面)、line = LINE 公式アカウントのトーク

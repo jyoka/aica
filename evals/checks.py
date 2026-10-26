@@ -1579,8 +1579,19 @@ BLANKS_REPLY = re.compile(r"空欄")
 
 
 def available_entries(channel: str = "web", features: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
-    """窓口で使える入口。Web のトーク画面は 3 つとも、LINE は LIFF 画面で使えるもの(line_channel.liff_features)だけ。"""
-    return ENTRIES if channel != "line" else tuple(e for e in ENTRIES if e in features)
+    """窓口で使える入口。LINE は LIFF 画面で使えるもの(line_channel.liff_features)だけ。Web のトーク画面は features が
+    空なら 3 つとも(評価の既定)、あれば features のもの(本番の line_channel.web_features)。"""
+    return ENTRIES if channel != "line" and not features else tuple(e for e in ENTRIES if e in features)
+
+
+# シナリオの種(前の会話でやったこと)→ やり終えた入口(task 237。dip_mcp.logic.used_entries と同じ決め方を、種から決める)
+SEEDED_ENTRIES = {"seed_voice_draft": "voice_consult", "seed_resume": "resume_upload", "seed_arcade_draft": "arcade"}
+
+
+def expected_entries(sc: dict, channel: str = "web", features: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
+    """挨拶に付くはずの入口: 窓口で使える入口のうち、シナリオの種でやり終えていないもの(コードが付ける。task 237)。"""
+    used = {e for k, e in SEEDED_ENTRIES.items() if sc.get(k)}
+    return tuple(e for e in available_entries(channel, features) if e not in used)
 
 
 def greeting_offers(r: dict) -> list[str]:
@@ -1626,9 +1637,11 @@ def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
                               features: list[str] | tuple[str, ...] = ()) -> list[str]:
     """挨拶の入口の案内(docs/design/line-sim-scenarios.md の 12 章)。
     どの会話でも: 入口を全部並べる(lineup)のは 1 つの会話で 1 回だけ(task 234)。
-    初回訪問(visit)・再訪(revisit): 窓口で使える入口を全部ボタンで出し、使えないものは出さない。
-    再訪は、文で触れる(勧める)入口が 1 つだけ(ほかはボタンだけ。task 234)。シナリオの expect_greeting_offer があれば、
-    文でそれを勧める(下書きの続きは「空欄を埋める」の選択肢も要る。期待の入口がその窓口で使えなければ、何を勧めたかは問わない)。"""
+    初回訪問(visit)・再訪(revisit): 窓口で使える入口のうち、やり終えていないもの(expected_entries)をボタンで出し、
+    使えないものとやり終えたものは出さない(task 237。ボタンはコードが付ける)。文で触れる入口は 1 つまでで(本文で 3 つを
+    並べない)、ボタンの付かない入口(使えない・やり終えた)には文でも触れない。
+    再訪は、シナリオの expect_greeting_offer があれば、文でそれを勧める(下書きの続きは「空欄を埋める」の選択肢も要る。
+    期待の入口がその窓口で使えないか、やり終えていれば、何を勧めたかは問わない)。"""
     usable = available_entries(channel, features)
     out = []
     if len(shown := [i for i, r in enumerate(turns) if lineup(r, usable)]) > 1:
@@ -1636,18 +1649,23 @@ def greeting_entry_violations(sc: dict, turns: list[dict], channel: str = "web",
     if not turns or sc.get("event") not in ("visit", "revisit"):
         return out
     offers = greeting_offers(turns[0])
+    expected = expected_entries(sc, channel, features)
     if unusable := [o for o in offers if o != BLANKS_OFFER and o not in usable]:
         out.append(f"T1: 窓口で使えない入口を出した: {unusable}")
+    if done := [o for o in offers if o in usable and o not in expected]:
+        out.append(f"T1: やり終えた入口を出した: {done}")
     kind = "初回訪問" if sc["event"] == "visit" else "再訪"
-    if missing := [e for e in usable if e not in offers]:
-        out.append(f"T1: {kind}の挨拶に、使える入口が出ていない: {missing}")
-    if sc["event"] == "visit":
-        return out
+    if missing := [e for e in expected if e not in offers]:
+        out.append(f"T1: {kind}の挨拶に、やり終えていない入口が出ていない: {missing}")
     told = greeting_mentions(turns[0])
     if len(told) > 1:
-        out.append(f"T1: 再訪の挨拶で入口を文で{len(told)}つ並べた(勧めは1つだけ。ほかはボタンだけ): {told}")
+        out.append(f"T1: {kind}の挨拶で入口を文で{len(told)}つ並べた(文で触れるのは1つまで。ほかはボタンだけ): {told}")
+    if hidden := [t for t in told if t != BLANKS_OFFER and t not in expected]:
+        out.append(f"T1: ボタンの付かない入口(使えない・やり終えた)を文で勧めた: {hidden}")
+    if sc["event"] == "visit":
+        return out
     want = sc.get("expect_greeting_offer")
-    if want and (want == BLANKS_OFFER or want in usable):
+    if want and (want == BLANKS_OFFER or want in expected):
         if told != [want]:
             out.append(f"T1: 再訪の挨拶で勧めた入口が {told or 'なし'}(summary からは {want})")
         if want == BLANKS_OFFER and BLANKS_OFFER not in offers:
@@ -1666,7 +1684,7 @@ _CONTACT_DONE = r"(?:ました|た(?!ら|り|い))(?!か)"
 CONTACT_WORDING = re.compile(r"(?:ご?連絡を?(?:" + _CONTACT_STEM + r"|差し上げ|さしあげ)|お?声を?お?(?:が|か|掛)け" + _CONTACT_STEM + r")"
                              r"(?:" + _CONTACT_DONE + r"|てい(?!ただ|(?:ます|る|ました)か)|てお(?=り)(?!(?:ります|りました)か))"
                              r"|お知らせ" + _CONTACT_STEM + _CONTACT_DONE)
-# 再訪の挨拶の吹き出しの合計の目安(Prompt の「挨拶で3つの入口を案内する」と同じ値)。区分は挨拶のターンの区分
+# 再訪の挨拶の吹き出しの合計の目安(Prompt の「挨拶の入口」と同じ値)。区分は挨拶のターンの区分
 GREETING_TOTAL_MAX = {"アルバイト・パート": 90, "正社員": 130, "未定": 90}
 # 前に本人が話したこと(希望か区分)があるときだけ使う言い方。行動履歴だけの人は、まだ何も話していない
 ONCE_AGAIN = re.compile(r"今回も")
@@ -1842,8 +1860,8 @@ def entry_labels(r: dict) -> dict[str, str]:
 def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
                              features: list[str] | tuple[str, ...] = ()) -> list[str]:
     """LINE の挨拶(docs/design/line-sim-scenarios.md の 12 章): 初回訪問も再訪も 2 通まで。ゲームのボタンの文言は
-    line_channel.ARCADE_LABEL(リッチメニューと同じ)。初回訪問は、入口のボタンの文言が本文(吹き出し)に同じ言い方で出ている
-    (再訪は勧めの 1 つだけを文で触れるので見ない)。"""
+    line_channel.ARCADE_LABEL(リッチメニューと同じ)。task 237 から、初回訪問でも本文で 3 つの入口を並べないので、
+    入口のボタンの文言が本文にあるかは見ない(本文で触れる入口の数は greeting_entry_violations が見る)。"""
     if channel != "line" or (event := sc.get("event")) not in GREETING_KINDS or not turns:
         return []
     first, out = turns[0], []
@@ -1852,11 +1870,6 @@ def line_greeting_violations(sc: dict, turns: list[dict], channel: str = "web",
     labels = {e: lb for e, lb in entry_labels(first).items() if e in features}
     if labels.get("arcade", line_channel.ARCADE_LABEL) != line_channel.ARCADE_LABEL:
         out.append(f"T1: ゲームのボタンの文言が「{labels['arcade']}」(「{line_channel.ARCADE_LABEL}」)")
-    if event != "visit":
-        return out
-    body = "".join(first["bubbles"])
-    if missing := [lb for lb in labels.values() if lb not in body]:
-        out.append(f"T1: 入口のボタンの名前が本文に無い(言い方がずれている): {missing}")
     return out
 
 
@@ -2016,8 +2029,10 @@ def conversation_checks(sc: dict, turns: list[dict], user_msgs: list[str], facts
         "track_ok": track_ok,
         "action_offers": action_offers(turns),
         "greeting_offers": greeting_offers(first) if first else [],
-        # 再訪の挨拶の文が触れた(勧めた)入口(初回訪問は 3 つを文で伝えるので None)
-        "greeting_mentions": greeting_mentions(first) if first and sc.get("event") == "revisit" else None,
+        # 挨拶の文が触れた(勧めた)入口(初回訪問と再訪。task 237 から初回訪問も 3 つを文で並べない。ほかの入口は None)
+        "greeting_mentions": greeting_mentions(first) if first and sc.get("event") in GREETING_KINDS else None,
+        # 挨拶に付くはずの入口(窓口で使え、シナリオの種でやり終えていないもの。task 237)
+        "greeting_expected": list(expected_entries(sc, channel, features)) if sc.get("event") in GREETING_KINDS else None,
         "draft_button_turns": [i + 1 for i, r in enumerate(turns) if draft_buttons(r)],
         # 各ターンの返信が LINE で何通になるか(LINE の窓口の会話だけ。Web は None)
         "line_messages": (line_message_counts(turns, features, sc.get("event") if sc.get("event") in GREETING_KINDS else None)

@@ -19,7 +19,7 @@ from tests.test_handle import ScriptedModel, call, reply
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 MENU = ["求人を探す", "まず相談する", "今はいい"]
-# 初回訪問の挨拶で出す、Web で使える 3 つの入口(dip の Prompt の「挨拶で3つの入口を案内する」)
+# 初回訪問の挨拶に付く、Web で使える 3 つの入口(task 237 からコードが付ける。dip の Prompt の「挨拶の入口」)
 ENTRIES = {"actions": ["voice_consult", "resume_upload"], "buttons": [{"label": "ゲームで書類を作る", "url": "/liff/arcade"}]}
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
@@ -116,7 +116,7 @@ def test_consult_prompt_reaches_the_agent_on_first_visit(tmp_path):
     assert "## 相談(playbook に沿って進める)" in system and "「まず相談する」" in system
     assert "get_counseling_playbook を今の区分" in system and "新しい区分で呼び直し" in system
     assert "「求人を探す / まず相談する / 今はいい」の3つ" in system  # 初回挨拶の選択肢
-    assert "## 挨拶で3つの入口を案内する(初回訪問・再訪)" in system  # 音声相談・履歴書・ゲームの入口も案内する
+    assert "## 挨拶の入口(初回訪問・再訪)" in system  # 音声相談・履歴書・ゲームの入口のボタン(コードが付ける)
     assert "相談の途中(下の「相談」)はこの規則を適用しない" in system
     # ヒアリングの順番・「分からないなら職種を2〜3挙げる」は Prompt から消えた(playbook は次に何を聞くかを決めない)
     assert "次の順に聞く" not in system and "向いていそうな職種を2〜3つ" not in system
