@@ -150,6 +150,9 @@ TOOL_ARGS = {
     "save_user_preferences": {"preferences": {"area": "新宿"}},
     "set_search_track": {"track": "アルバイト・パート", "evidence": "バイトを探しています"},
     "get_counseling_playbook": {"track": "未定"},
+    "start_baito_consultation": {},
+    "baito_turn": {"text": "推し活・趣味"},
+    "end_baito_consultation": {},
     "record_conversation_outcome": {"outcome": "consult", "reason": "相談した", "confidence": 0.8},
 }
 

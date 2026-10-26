@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from dip_mcp import logic
+from dip_mcp.baito import session
 from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, State
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
@@ -250,8 +251,36 @@ def get_counseling_playbook(
     次に何を聞くかは決めない。
     相談に入ったターンに今の区分で呼ぶ。区分が変わったターン(切り替え・取り消し)に新しい区分で呼び直すのは、
     相談の途中か一度 playbook を読んだ後のときと、正社員に切り替えたときだけ。
-    相談に入る前(まだ読んでいない)のアルバイト・パートか未定への切り替えでは呼ばない。同じ区分のあいだは呼び直さない。"""
+    相談に入る前(まだ読んでいない)のアルバイト・パートか未定への切り替えでは呼ばない。同じ区分のあいだは呼び直さない。
+    アルバイト・パートのトーク(chat)の相談は、これの代わりに start_baito_consultation を呼ぶ(何を聞くかはハーネスが決める)。"""
     return logic.counseling_playbook(track, channel)
+
+
+@mcp.tool()
+def start_baito_consultation(line_user_id: UserId) -> dict:
+    """アルバイト・パートのトーク(chat)の相談を、ハーネス(バイト探しの相棒)で始める。区分がアルバイト・パートで相談に
+    入ったターン(相談の途中でアルバイト・パートに切り替えたターンも)に、get_counseling_playbook の代わりに呼ぶ。
+    返った question の text を言い換えずに1問として聞く(選択肢は LINE 側が question の choices にする)。
+    2問目から、条件のまとめ(review)と結果(条件カードとおすすめのバイトの種類3つ)までは、ハーネスが本人とやりとりする。
+    結果に着くと、確かめた条件は stated_preferences に保存される。進めている相談があれば、今聞いている質問を返す。"""
+    return session.start(state, line_user_id)
+
+
+@mcp.tool()
+def baito_turn(
+    line_user_id: UserId,
+    text: Annotated[str, Field(description="本人の発言")],
+    extracted: Annotated[dict | None, Field(description="status=extract のとき、モデルが返した JSON")] = None,
+) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を本人の発言 1 つで進める。
+    相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。"""
+    return session.turn(state, line_user_id, text, extracted)
+
+
+@mcp.tool()
+def end_baito_consultation(line_user_id: UserId) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を途中で閉じる(新しい会話を始めたときなど)。"""
+    return session.end(state, line_user_id)
 
 
 @mcp.tool()

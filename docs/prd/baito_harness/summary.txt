@@ -1,0 +1,44 @@
+
+=== v1 (harness.py) ===
+persona    turns result        seg  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other
+hs16          14   True    unknown  1/3/6/0/4               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | ['customer_facing'] | 深夜NG=False
+univ          14   True    unknown  1/3/6/0/4               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | ['customer_facing'] | 
+homemaker     14   True    unknown  1/3/6/0/4               ['available_hours', 'sudden_leave'] | [] | ['fuyou', 'remote'] | ['customer_facing'] | 
+office        14   True    unknown  1/3/6/0/4               ['side_job_allowed', 'weekday_or_weekend'] | [] | ['energy_left'] | ['customer_facing'] | 
+nopref        10   True    unknown  1/3/5/0/1               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | [] | 
+unclear       14   True    unknown  1/3/6/0/4               ['time_slots', 'side_job_allowed', 'weekday_or_weekend'] | ['commute'] | ['physical', 'energy_left'] | ['hourly_wage_min', 'customer_facing'] | 
+late_seg      15   True  homemaker  1/3/6/1/4               [] | ['available_hours', 'sudden_leave'] | [] | ['shift_length', 'customer_facing', 'purpose'] | CUT_BY_MAX_TURNS
+no_seg        14   True    unknown  1/3/6/0/4               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | ['customer_facing'] | 
+
+=== v1w (harness.py) ===
+persona    turns result        seg  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other
+hs16          15   True    student  2/4/6/1/2               [] | [] | [] | ['shift_length', 'customer_facing', 'physical', 'purpose'] | 深夜NG=True
+univ          15   True    student  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose'] | 
+homemaker     15   True  homemaker  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose', 'remote'] | 
+office        15   True   side_job  2/5/4/1/3               [] | [] | [] | ['customer_facing', 'physical', 'purpose'] | 
+nopref        10   True    unknown  1/3/5/0/1               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | [] | 
+unclear       15   True   side_job  2/5/6/1/1               ['time_slots'] | ['commute', 'weekday_or_weekend'] | ['customer_facing', 'physical'] | ['hourly_wage_min', 'purpose', 'energy_left'] | CUT_BY_MAX_TURNS
+late_seg      15   True  homemaker  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'purpose', 'fuyou', 'remote'] | 
+no_seg        14   True    unknown  2/3/6/0/3               ['age_under_18', 'school_permission'] | [] | ['exam_flex'] | ['customer_facing', 'purpose'] | 
+
+=== v2 (harness_v2.py) ===
+persona    turns result        seg  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other
+hs16          14   True    student  2/4/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose'] | 深夜NG=True
+univ          15   True    student  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose'] | 
+homemaker     15   True  homemaker  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose', 'remote'] | 
+office        13   True   side_job  2/5/4/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'physical', 'purpose'] | 
+nopref        14   True    student  2/5/6/1/0               [] | [] | [] | [] | 
+unclear       15   True   side_job  2/5/2/1/5               ['time_slots'] | ['commute', 'weekday_or_weekend'] | ['customer_facing', 'physical'] | ['hourly_wage_min', 'purpose'] | repeat=['hf_weekday', 'hf_time'] CUT_BY_MAX_TURNS
+late_seg      15   True  homemaker  2/5/6/1/1               [] | [] | [] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'purpose', 'fuyou', 'remote'] | 
+no_seg        13   True    unknown  2/4/6/0/1               ['school_permission'] | [] | ['exam_flex'] | ['hourly_wage_min', 'shift_length', 'customer_facing', 'purpose'] | 
+
+=== v2a (harness_v2a_confirm_all_low.py) ===
+persona    turns result        seg  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other
+hs16          15   True    student  2/4/2/1/6               [] | [] | [] | [] | 深夜NG=True
+univ          15   True    student  2/5/2/1/5               [] | [] | [] | ['purpose'] | 
+homemaker     15   True  homemaker  2/5/2/1/5               [] | [] | [] | ['physical', 'purpose'] | 
+office        15   True   side_job  2/5/2/1/5               [] | [] | [] | ['purpose'] | 
+nopref        14   True    student  2/5/6/1/0               [] | [] | [] | [] | 
+unclear       15   True   side_job  2/5/2/1/5               ['time_slots'] | ['commute', 'weekday_or_weekend'] | ['customer_facing', 'physical'] | ['hourly_wage_min', 'purpose'] | repeat=['hf_weekday', 'hf_time'] CUT_BY_MAX_TURNS
+late_seg      15   True  homemaker  2/5/2/1/5               [] | [] | [] | ['customer_facing', 'purpose'] | 
+no_seg        14   True    unknown  2/4/3/0/5               ['school_permission'] | [] | ['exam_flex'] | [] | 

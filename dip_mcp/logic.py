@@ -1090,6 +1090,8 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 # ----------------------------- 相談の playbook(ADR-0001) -----------------------------
 # 雇用区分とチャネルごとの、相談の進め方の指針(明らかにすること・掘り下げ方)。次に何を聞くかは決めない。
 # 区分ごとの playbook に、区分に共通の決まり(common_{channel}.md)を足して返す。
+# アルバイト・パートのチャットの相談は例外で、何を聞くかを dip のハーネスが決める(dip_mcp/baito、ADR-0009)。
+# その playbook は、ハーネスに渡すこと(start_baito_consultation)と、保存先・提案の決まりだけを書く。
 
 PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
 CHANNELS = ("chat", "voice")

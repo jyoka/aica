@@ -1,0 +1,409 @@
+{
+ "v3": [
+  {
+   "persona": "hs16",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 4,
+    "scenario_game": 6,
+    "reverse_pick": 1,
+    "review": 1
+   },
+   "final_seg": "student",
+   "empty": {
+    "HARD": [],
+    "MID": []
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [
+    "深夜シフト",
+    "重い肉体労働"
+   ],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "fill_gaps"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": true,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "environment_noise"
+   ]
+  },
+  {
+   "persona": "univ",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 5,
+    "reverse_pick": 1,
+    "review": 1
+   },
+   "final_seg": "student",
+   "empty": {
+    "HARD": [],
+    "MID": []
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [
+    "重い肉体労働"
+   ],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "fill_gaps"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "environment_noise",
+    "long_vacation"
+   ]
+  },
+  {
+   "persona": "homemaker",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 5,
+    "reverse_pick": 1,
+    "review": 1
+   },
+   "final_seg": "homemaker",
+   "empty": {
+    "HARD": [],
+    "MID": []
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [
+    "立ち仕事",
+    "夜の仕事"
+   ],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "fill_gaps"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "atmosphere",
+    "environment_noise"
+   ]
+  },
+  {
+   "persona": "office",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 4,
+    "reverse_pick": 1,
+    "fill_gaps": 1,
+    "review": 1
+   },
+   "final_seg": "side_job",
+   "empty": {
+    "HARD": [],
+    "MID": []
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [
+    "夜の飲食ホール"
+   ],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [
+    "customer_facing"
+   ],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "atmosphere",
+    "environment_noise",
+    "avoid_coworkers"
+   ]
+  },
+  {
+   "persona": "nopref",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 5,
+    "reverse_pick": 1,
+    "review": 1
+   },
+   "final_seg": "student",
+   "empty": {
+    "HARD": [],
+    "MID": []
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "fill_gaps"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "long_vacation"
+   ]
+  },
+  {
+   "persona": "unclear",
+   "turns": 15,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 2,
+    "reverse_pick": 1,
+    "fill_gaps": 3,
+    "review": 2
+   },
+   "final_seg": "side_job",
+   "empty": {
+    "HARD": [],
+    "MID": [
+     "shift_length",
+     "customer_facing",
+     "physical"
+    ]
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [],
+   "repeated": [
+    "hf_weekday",
+    "hf_time"
+   ],
+   "irrelevant": [],
+   "skipped": [],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": true,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 2,
+   "review_turns": [
+    14,
+    15
+   ],
+   "conflicts_on_first_card": [],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [
+    "shift_length",
+    "customer_facing",
+    "physical"
+   ],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "pace",
+    "atmosphere",
+    "environment_noise",
+    "avoid_coworkers"
+   ]
+  },
+  {
+   "persona": "late_seg",
+   "turns": 14,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 5,
+    "scenario_game": 5,
+    "reverse_pick": 1,
+    "review": 1
+   },
+   "final_seg": "homemaker",
+   "empty": {
+    "HARD": [],
+    "MID": [
+     "physical"
+    ]
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [
+    "レジ"
+   ],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "fill_gaps"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": false,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 1,
+   "review_turns": [
+    14
+   ],
+   "conflicts_on_first_card": [
+    "purpose"
+   ],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [
+    "physical"
+   ],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "atmosphere",
+    "environment_noise"
+   ]
+  },
+  {
+   "persona": "no_seg",
+   "turns": 15,
+   "reached": true,
+   "loop": false,
+   "crash": null,
+   "per_phase": {
+    "icebreak": 2,
+    "hard_filter": 4,
+    "scenario_game": 6,
+    "fill_gaps": 1,
+    "review": 2
+   },
+   "final_seg": "student",
+   "empty": {
+    "HARD": [],
+    "MID": [
+     "exam_flex"
+    ]
+   },
+   "low": {
+    "HARD": [],
+    "MID": []
+   },
+   "ng": [],
+   "repeated": [],
+   "irrelevant": [],
+   "skipped": [
+    "reverse_pick"
+   ],
+   "wasted": [],
+   "dropped": 0,
+   "hit_max": true,
+   "late_night_ng": false,
+   "asked_segment_q": true,
+   "review_rounds": 2,
+   "review_turns": [
+    14,
+    15
+   ],
+   "conflicts_on_first_card": [
+    "customer_facing"
+   ],
+   "conflicts_open_at_end": {},
+   "unconfirmed": [
+    "exam_flex"
+   ],
+   "unconfirmed_low": [],
+   "empty_low_pri": [
+    "long_vacation"
+   ]
+  }
+ ]
+}

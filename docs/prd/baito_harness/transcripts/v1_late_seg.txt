@@ -1,0 +1,49 @@
+### v1 / late_seg (主婦・最初は属性を言わない（5ターン目に判明）, true segment=homemaker)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 生活費・家計の足し
+     slots: purpose: ∅→living_cost(low)
+T02 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週3〜4日
+     slots: days_per_week: ∅→3-4(high)
+T03 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 昼
+     slots: time_slots: ∅→daytime(high)
+T04 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 家から徒歩・自転車
+     slots: commute: ∅→walk_bike(high)
+T05 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → 今すぐ消えたい（平日の昼は子どものお迎えがあって…）
+     slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
+     segment: unknown→homemaker
+T06 [scenario_game] sc_hm_fixed: シフト、どっちがラク？  ['週2午前固定', '毎週選ぶ']
+     → 毎週選ぶ
+     slots: available_hours: ∅→flexible(low)
+T07 [scenario_game] sc_hm_fever: 子どもが急に熱！どっちが安心？  ['すぐ休める', '代わりがいる']
+     → すぐ休める
+     slots: sudden_leave: ∅→need_instant(low)
+T08 [scenario_game] sc_hm_money: バイト代は？  ['家計の足し', 'おこづかい']
+     → おこづかい
+     slots: purpose: living_cost→pocket_money(low); fuyou: ∅→within(low)
+T09 [scenario_game] sc_hm_remote: 働くなら？  ['在宅', '外に出たい']
+     → 外に出たい
+     slots: remote: ∅→no(low)
+T10 [scenario_game] sc_shift: 理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+     → 6時間でガッツリ稼ぐ
+     slots: shift_length: ∅→long(low)
+T11 [reverse_pick] rp_homemaker: この3つ、一番やりたくないのは？  ['スーパーのレジ', '工場の軽作業（立ち仕事）', 'データ入力（在宅）']
+     → スーパーのレジ
+     NG+: ['レジ']
+T12 [fill_gaps] fg_wage: 時給はいくら以上がいい？  ['1,000円台でOK', '1,200円以上', '1,500円以上']
+     → 1,000円台でOK
+     slots: hourly_wage_min: ∅→1000(high)
+T13 [fill_gaps] fg_physical: 体力仕事は？  ['どんとこい', '少しなら', '座り仕事がいい']
+     → どんとこい
+     slots: physical: ∅→heavy_ok(high)
+T14 [fill_gaps] fg_fuyou: 扶養の範囲内で働きたい？  ['はい、扶養内で', '気にしない', 'わからない']
+     → わからない
+     slots: fuyou: within→unknown_needs_help(high)
+T15 [fill_gaps] fg_remote: 在宅の仕事も気になる？  ['在宅がいい', '外がいい', 'どちらでも']
+     → どちらでも
+     slots: remote: no→either(high)
+== END phase=result turns=15 segment=homemaker NG=['レジ']
+   final slots: purpose=pocket_money(low); days_per_week=3-4(high); time_slots=daytime(high); commute=walk_bike(high); customer_facing=avoid(low); pace=calm(low); available_hours=flexible(low); sudden_leave=need_instant(low); fuyou=unknown_needs_help(high); remote=either(high); shift_length=long(low); hourly_wage_min=1000(high); physical=heavy_ok(high)

@@ -74,16 +74,17 @@ def test_three_chat_playbooks_are_served_by_the_dip_tool(tmp_path):
         assert "## 区分に共通の決まり(チャット)" in text  # 共通の決まりが区分ごとの playbook に付く
         assert "## 保存先" in text and "## 会話の決まり" in text
     # 中身は「明らかにすること」と「掘り下げ方」。次に何を聞くか(順番)は決めない
-    for track in (SEISHAIN, BAITO):
-        text = got[track]["playbook"]
-        assert "## 明らかにすること" in text and "## 掘り下げ方" in text and "聞く順番ではない" in text
+    text = got[SEISHAIN]["playbook"]
+    assert "## 明らかにすること" in text and "## 掘り下げ方" in text and "聞く順番ではない" in text
     fulltime, parttime = got[SEISHAIN]["playbook"], got[BAITO]["playbook"]
     for item in ("目的・転職の理由", "強み: 履歴書と会話から、本人の言葉で", "次にやりたいこと・避けたいこと",
                  "条件: 年収(希望の下限)・勤務地・働き方(リモート・フレックス・残業)・時期", "不安: ブランク・年齢・未経験の職種への挑戦"):
         assert item in fulltime, item
-    for item in ("目的: 生活費・副業(本業と別の収入)・経験を積む・学業や家事との両立", "生活の制約: 働ける時間帯・曜日(週の日数)・エリア",
-                 "興味・得意", "経験: これまでの仕事・アルバイト", "不安:"):
-        assert item in parttime, item
+    # アルバイト・パートのチャットの相談は、何を聞くかをハーネスが決める(task 242。tests/test_baito_harness.py)。
+    # playbook は、ハーネスに渡すことと、保存先・提案の決まりだけ。質問(質問バンク)は playbook に書かない
+    assert "## 相談の進め方(ハーネス)" in parttime and "start_baito_consultation" in parttime
+    assert "## 明らかにすること" not in parttime and "## 掘り下げ方" not in parttime
+    assert "## 保存先" in parttime and "## 提案に進むとき" in parttime
     # 未定は、まず区分を1問で確かめる(C の合図の決まり)
     assert "## まず区分を確かめる" in got[MITEI]["playbook"]
     assert "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?" in got[MITEI]["playbook"]
@@ -92,9 +93,11 @@ def test_three_chat_playbooks_are_served_by_the_dip_tool(tmp_path):
     assert "相談の問いは4問まで" in common and "掘り下げは1つの項目につき1回まで" in common
     assert "「分からない」「特にない」「思いつかない」が2回続いたら、掘り下げをやめて、探す条件の1問へ進む" in common
     assert "最低1回掘り下げる" not in common and "目安は5、6問" not in common  # 前の決まり(相談が長すぎた)
-    for track in (SEISHAIN, BAITO, MITEI):  # 区分ごとの会話の決まりにも、相談の問いの上限
+    for track in (SEISHAIN, MITEI):  # 区分ごとの会話の決まりにも、相談の問いの上限
         section = got[track]["playbook"].split("## 会話の決まり")[1].split("\n## ")[0]
         assert "相談の問いは4問まで(求人を見るかの問い" in section, track
+    section = got[BAITO]["playbook"].split("## 会話の決まり")[1].split("\n## ")[0]
+    assert "相談の問いの数は、ハーネスが決める" in section  # アルバイト・パートの相談はハーネスが終わりを決める
     assert "本人の履歴書(uploaded_resume)と本人の発言から作る" in common and "一般論の例" in common
     assert "「分からない」「まだ決めていない」「思いつかない」には、職種を並べない" in common
     # 正社員の条件は time_band を使わない(A のレビュー: 相談の time_band と正社員の節が食い違っていた)。経歴は experience に保存
@@ -117,7 +120,9 @@ def test_voice_playbooks_share_the_chat_skeleton_but_speak_shorter():
         assert voice["rules"] == logic.VOICE_CONVERSATION_RULES[track] == {"questions_max": 1, "sentences_max": 2}
         text = voice["playbook"]
         assert text.startswith(f"# playbook: {track}(音声)") and "## 区分に共通の決まり(音声)" in text
-        headings = [h for h in chat["playbook"].split("\n") if h.startswith("## ") and "共通の決まり" not in h]
+        # アルバイト・パートのチャットの相談の進め方(ハーネス)は、チャットだけ(音声の面談は playbook のまま)
+        headings = [h for h in chat["playbook"].split("\n") if h.startswith("## ") and "共通の決まり" not in h
+                    and h != "## 相談の進め方(ハーネス)"]
         for h in headings:  # チャット版の見出しはすべて音声版にもある
             assert h.split("(")[0] in text, (track, h)
         assert "## 下書き" in text and "1回の発話は2文まで" in text
@@ -737,7 +742,6 @@ def _examples() -> dict[str, str]:
     """ペルソナから離す例文(場所 -> 例の文)。"""
     common = (PLAYBOOKS / "common_chat.md").read_text(encoding="utf-8")
     fulltime = (PLAYBOOKS / "fulltime_chat.md").read_text(encoding="utf-8")
-    parttime = (PLAYBOOKS / "parttime_chat.md").read_text(encoding="utf-8")
     return {
         "Prompt: 正社員の経歴の確認形": _between(PROMPT, "確認形で使う(例:", ")。"),
         "Prompt: 相談に入らない事情の発言": _between(PROMPT, "話して探し始めたとき(", ")は、"),
@@ -747,11 +751,9 @@ def _examples() -> dict[str, str]:
         "common: 本人が最初に話したこと": _between(common, "本人が最初に話したこと(", ")の言葉"),
         "fulltime: 強みの確認形": _between(fulltime, "本人がどう捉えているかを聞く(例:", ")。"),
         "fulltime: 方向の候補": _between(fulltime, "組み合わせて作る(例:", ")。"),
-        "parttime: 方向の候補": _between(parttime, "制約から作る(例:", ")。"),
         "Prompt: 相談に入らない条件だけの発言": _between(PROMPT, "条件だけ(", ")を言ったとき"),
         "common: 一般論の選択肢と答えの種類の一覧(悪い例)": _quotes(_between(common, "誰にでも出す一般論の例(", "を選択肢にしない")),
         "fulltime: やりたいことの掘り下げ": _quotes(_between(fulltime, "- やりたいこと: ", "\n")),
-        "parttime: 興味の掘り下げ": _quotes(_between(parttime, "- やりたいこと・興味: ", "\n")),
     }
 
 
@@ -764,7 +766,7 @@ def _shared(example: str, persona: str, n: int = 4) -> set[str]:
 def test_examples_in_playbooks_and_prompt_do_not_echo_the_eval_personas():
     persona = _persona_text()
     examples = _examples()
-    assert len(examples) == 13 and all(examples.values())
+    assert len(examples) == 11 and all(examples.values())
     for where, example in examples.items():
         assert _shared(example, persona) == set(), (where, example, _shared(example, persona))
     # 負例: 差し替える前の例文(ペルソナとほぼ同じ)は、この判定で重なりとして見つかる

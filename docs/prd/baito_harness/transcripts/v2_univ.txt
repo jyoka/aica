@@ -1,0 +1,49 @@
+### v2 / univ (大学2年, true segment=student)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 旅行・遊び
+     slots: purpose: ∅→fun(low)
+T02 [icebreak] q_segment: 今のあなたに近いのは？  ['学生', '家のこと中心', '本業あり副業探し']
+     → 学生
+     segment: unknown→student
+T03 [hard_filter] hf_age: 今、18歳未満？  ['はい', 'いいえ']
+     → いいえ
+     slots: age_under_18: ∅→False(high)
+T04 [hard_filter] hf_school: 学校のバイトのルールは？  ['OK', '届け出すればOK', '禁止 or わからない']
+     → OK
+     slots: school_permission: ∅→ok(high)
+T05 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週3〜4日
+     slots: days_per_week: ∅→3-4(high)
+T06 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 夕方〜夜
+     slots: time_slots: ∅→evening(high)
+T07 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 電車で30分まで
+     slots: commute: ∅→train_30(high)
+T08 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → よし、燃えてきた
+     slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
+T09 [scenario_game] sc_st_exam: テスト前、シフトどうしたい？  ['完全休み', '少なめなら']
+     → 少なめなら
+     slots: exam_flex: ∅→reduced(low)
+T10 [scenario_game] sc_shift: 理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+     → 6時間でガッツリ稼ぐ
+     slots: shift_length: ∅→long(low)
+T11 [scenario_game] sc_wage_commute: 時給100円の差。徒歩5分の店と電車30分の店、どっち？  ['近いほう', '時給が高いほう']
+     → 時給が高いほう
+     slots: hourly_wage_min: ∅→wage_priority(low)
+T12 [scenario_game] sc_st_peers: バイト仲間、どっちがいい？  ['同年代', '大人']
+     → 大人
+     slots: atmosphere: ∅→mixed_age(low)
+T13 [scenario_game] sc_st_summer: 夏休みは？  ['がっつり', 'いつも通り']
+     → がっつり
+     slots: long_vacation: ∅→heavy(low)
+T14 [reverse_pick] rp_student: この3つ、一番やりたくないのは？  ['コンビニ店員', '引越しスタッフ', 'コールセンター']
+     → 引越しスタッフ
+     slots: physical: ∅→light(low)
+     NG+: ['重い肉体労働']
+T15 [fill_gaps] fg_exam: テスト期間のシフトは？  ['休みたい', '減らせればOK', '気にしない']
+     → 減らせればOK
+     slots: exam_flex: reduced→reduced(high)
+== END phase=result turns=15 segment=student NG=['重い肉体労働']
+   final slots: purpose=fun(low); age_under_18=False(high); school_permission=ok(high); days_per_week=3-4(high); time_slots=evening(high); commute=train_30(high); customer_facing=ok(low); pace=busy_ok(low); exam_flex=reduced(high); shift_length=long(low); hourly_wage_min=wage_priority(low); atmosphere=mixed_age(low); long_vacation=heavy(low); physical=light(low)
