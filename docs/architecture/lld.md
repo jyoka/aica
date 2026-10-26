@@ -1652,6 +1652,13 @@ LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは H
   Cookie は `Max-Age` の無い、ブラウザを閉じたら消えるものです。HttpOnly、Secure、SameSite=Lax です。LIFF のエンドポイント URL は https だけなので Secure にしています
 - `POST /api/liff/session` は `Content-Type: application/json` でなければ 415 です(本文の無い型や `text/plain` は、ほかのサイトから事前の確認なしに送れるため)
 - 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
+- リッチメニューから開く 3 つの最初の画面(`_liff_voice_page`、`_liff_upload_page`、`_liff_arcade_page`)と、その同意の画面
+  (`_liff_terms_page`、`_consent_html` の `.lf-btn`)と殻(`_liff_shell`)は、1 つの枠 `_liff_frame` と共通の CSS `LIFF_CSS` で出します
+  (task 241)。上に aica の名前の帯、下に `legal.footer_html`。`_page` の `site`(「(LIFF・dip の画面)」など)は出しません。
+  最初の画面は `_liff_intro` の、見出しと何ができるか(1 行)、箇条書き(3 点ほど)の下に、押すボタンを 1 つ置きます(ゲームの一覧は
+  ボタンの代わりにゲームのタイル)。履歴書のファイルを選ぶ欄は、透明にした `<input type="file">` を大きな枠(`.lf-pick`)に重ね、
+  選んだファイルの名前を出します。ボタンの緑は白い文字との対比のため濃い緑(`--lf-btn`)で、LINE の緑は飾りにだけ使います。
+  読み取り結果、下書き、応募フォーム、401 の画面(`_liff_unauthorized`)は、まだ `_page` の枠です
 
 LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 4.8):
 
@@ -1659,7 +1666,8 @@ LINE のトークから LIFF 画面で使う操作(task 204。流れは HLD の 
 |---|---|
 | `GET /liff/line/voice` | 音声相談の画面(`_liff_voice_page`)。`talk-core.js` の `createTalk` を、`voiceApi`(`/api/liff/voice/…`、`extra` で `liff.getIDToken()` を足す)と `onVoiceClosed` つきで使う |
 | `GET /liff/line/resume/upload` | 履歴書の読み込みの画面(`_liff_upload_page`)。ファイルと `user_id` と `liff.getIDToken()` をフォームで送る |
-| `GET /liff/line/arcade`、`/liff/line/arcade/{game}` | Web と同じハブとゲームの HTML(`liff_arcade`、`liff_arcade_game`)。使い始める同意の前なら、ハブと 2 本のゲームは代わりに同意の画面(`_liff_terms_page`。task 239)。ハブのリンクは場所を見て `/liff/line/arcade/…` にする。AI と保存につながった 2 本(`ARCADE_SHIPPED`)は、`</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
+| `GET /liff/line/arcade` | ゲームの一覧(`liff_line_arcade` → `_liff_arcade_page`)。Web のハブの HTML(`resume-arcade.html`)は使わず、サーバーが `_liff_frame` で、案内(`_liff_arcade_intro`)と `ARCADE_SHIPPED` の 2 本のタイル(`.lf-game`。リンクは `/liff/line/arcade/{game}`、種類と 1 行は `ARCADE_LIFF_CARDS`)を描く(task 241)。使い始める同意の前なら、代わりに同意の画面(`_liff_terms_page`。task 239) |
+| `GET /liff/line/arcade/{game}` | Web と同じゲームの HTML(`liff_line_arcade_game`。`ARCADE_SHIPPED` 以外は `liff_arcade_game`)。`ARCADE_SHIPPED` の 2 本は、使い始める同意の前なら代わりに同意の画面(`_liff_terms_page`)。同意の後は `</head>` の前に LIFF SDK と `window.AICA_LIFF = {liffId}` を入れて返す(task 219) |
 | `GET /liff/line/arcade/draft`、`POST /liff/line/arcade/draft` | ゲームで作った下書きの画面と、直した書類の保存(`_arcade_draft_page`、`_arcade_draft_edit`。Web と同じ。フォームの送り先は `/liff/line/arcade/draft`)。本人が無ければ GET は殻、POST は 401。`{game}` より先に登録する |
 | `POST /api/liff/arcade/start`、`/ai` | Web の `/api/arcade/start`、`/ai` と同じ(`_arcade_start`、`_arcade_ai`)。本人は Cookie `aica_liff`(無ければ 401)。`scenario_user` は見ない。会話数は IP を数えない(`_arcade_start(user, game, None)`)。使い始める同意(LINE のトークか、ハブとゲームの同意の画面で取る)がまだなら、Web と同じく番号なし(`play: null`)の 200 と、LLM を呼ばない `/ai` |
 | `POST /api/liff/arcade/save` | 本文は Web の `/api/arcade/save` に `id_token` を足したもの。`_arcade_save`(Web と同じ決まり。403、400 なら LINE に確かめに行かない)→ 今の会話に返信を足す → Messaging API の設定があれば ID トークンを確かめ、`line_user(sub)` が本人なら宛先にする。宛先があり、その日の知らせが 3 通(`ARCADE_DAILY_PUSHES`。`quota.json` の `arcade_line_push`)に達していなければ、応答の後に `_line_push` で同じ返信(`arcade_reply`)を 1 回 push(`line`)。宛先が無くても、上限でも保存はする。`view_url` は `/liff/line/arcade/draft?rid=…` |
