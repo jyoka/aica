@@ -78,6 +78,11 @@ _require_consent、_profile_writer)。消す口(プロフィールの各項目�
 
 利用規約とプライバシーポリシー(task 207): GET /legal/terms と GET /legal/privacy。原文は docs/legal/ の Markdown で、
 line_runtime.legal が HTML にする。Cookie を発行も要求もしない。トーク画面と LIFF 画面の下から開ける(legal.footer_html)。
+
+LINE のリッチメニューから開く 3 つの最初の画面(音声相談、履歴書の読み込み、ゲームの一覧)と、本人を確かめる殻(LIFF の
+画面すべての殻)は、1 つの枠(_liff_frame、見た目は LIFF_CSS)で出す(task 241)。上から、見出しと何ができるか(1 行)、何分
+かかるか・何が届くかの箇条書き(_liff_intro)、押すボタン 1 つ(ゲームの一覧は、ボタンの代わりに遊ぶゲームを選ぶ)。同意の画面も
+同じ枠と同じボタンで出す。ほかの LIFF の画面(読み取り結果、下書き、応募フォーム)は、まだ dip の画面と同じ枠(_page)。
 """
 
 from __future__ import annotations
@@ -1825,7 +1830,8 @@ def _liff_shell(title: str) -> HTMLResponse:
     中身(本人のデータ)は載せない。確かめられなければ、そう出して止まる(匿名ユーザーには切り替えない)。
     URL に liff.state があるとき(LINE が最初にエンドポイント URL を開いたとき)は、liff.init が本来の画面へ送る。"""
     conf = json.dumps({"liffId": line_channel.liff_id(), "failed": LIFF_FAILED_TEXT}, ensure_ascii=False).replace("<", "\\u003c")
-    body = f"""<p id="liff-status">LINE で本人を確かめています…</p>
+    body = f"""<section class="lf-card"><h1 class="lf-title">{escape(title)}</h1>
+<p id="liff-status" class="lf-status">LINE で本人を確かめています…</p></section>
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script>
 (async () => {{
@@ -1867,7 +1873,7 @@ def _liff_shell(title: str) -> HTMLResponse:
   location.reload();
 }})();
 </script>"""
-    return HTMLResponse(_page(title, body), headers={"Cache-Control": "no-store"})
+    return HTMLResponse(_liff_frame(title, body), headers={"Cache-Control": "no-store"})
 
 
 def _liff_unauthorized(title: str) -> HTMLResponse:
@@ -2086,7 +2092,7 @@ def _consent_html(*kinds: str) -> str:
         html += f"<p><strong>{escape(t['strong'])}</strong></p>" if t["strong"] else ""
     button = escape(texts[kinds[-1]]["button"])
     return (f'<div class="consent" id="consent" data-kind="{" ".join(kinds)}">{html}'
-            f'<p>{legal.links_html()}</p><button id="consent-agree" type="button" disabled>{button}</button></div>')
+            f'<p>{legal.links_html()}</p><button class="lf-btn" id="consent-agree" type="button" disabled>{button}</button></div>')
 
 
 # LIFF 画面(履歴書の読み込み、ゲーム)の「同意して…」を押したときの処理。conf.kinds(_consent_html に渡した同意)を
@@ -2113,6 +2119,70 @@ LIFF_SDK_MISSING = "LINE の画面の部品を読み込めませんでした。�
 TALK_VARS = """:root { --room: #8fa9d3; --head: #2f3a4f; --me: #95e05b; --bot: #fff; --text: #1a1d23; --sub: #5f6775; --faint: #8a93a3;
   --chip: #1f5fd1; --chip-line: #c9d6ee; --ok: #06c755; --ok-dark: #05a346; --ok-soft: #e7f8ee; --bg: #e4e8ef; --line: #e3e7ee; --soft: #f3f5f8; }"""
 
+# LINE のアプリで開く aica の画面(音声相談、履歴書の読み込み、ゲームの一覧、本人を確かめる殻)の共通の見た目(task 241)。
+# 文字と背景の対比は WCAG AA(4.5:1)以上: 白い文字のボタンは濃い緑(--lf-btn、5.5:1)にし、LINE の緑(--lf-green)は、
+# 文字を載せない飾り(見出しの下の線、箇条書きの印)にだけ使う。音声相談のシートの同意の画面(talk-core.js)も同じボタンにそろえる。
+LIFF_CSS = """:root{--lf-bg:#f4f6f8;--lf-card:#fff;--lf-text:#1a1d23;--lf-sub:#4b5563;--lf-line:#e3e7ee;--lf-green:#06c755;
+--lf-btn:#037a34;--lf-btn-on:#02662b;--lf-soft:#e7f8ee;--lf-link:#1f5fd1}
+body{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:var(--lf-bg);color:var(--lf-text);line-height:1.6;
+overflow-wrap:anywhere}
+.lf-head{background:#fff;border-bottom:3px solid var(--lf-green);padding:10px 16px}
+.lf-brand{font-size:18px;font-weight:800;color:var(--lf-btn);letter-spacing:.02em}
+.lf-brand small{margin-left:8px;font-size:12px;font-weight:400;color:var(--lf-sub);letter-spacing:0}
+.lf-main{max-width:480px;margin:auto;padding:16px;box-sizing:border-box}
+.lf-card,.consent{background:var(--lf-card);border-radius:14px;padding:18px 16px;margin:0 0 16px;box-shadow:0 1px 3px #0f172a14}
+.lf-title{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:20px;line-height:1.35}
+.lf-icon{flex:none;width:40px;height:40px;border-radius:50%;background:var(--lf-soft);display:flex;align-items:center;
+justify-content:center;font-size:20px}
+.lf-lead{margin:0 0 10px;font-size:15px;font-weight:700}
+.lf-points{margin:0;padding:0;list-style:none;font-size:14px}
+.lf-points li{position:relative;margin:6px 0;padding-left:20px}
+.lf-points li::before{content:"";position:absolute;left:4px;top:.62em;width:7px;height:7px;border-radius:50%;background:var(--lf-green)}
+.lf-btn{display:block;width:100%;min-height:52px;margin:0 0 12px;padding:12px;box-sizing:border-box;border:0;border-radius:12px;
+background:var(--lf-btn);color:#fff;font:inherit;font-size:16px;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}
+.lf-btn:active{background:var(--lf-btn-on)}.lf-btn:disabled{background:#e6e9ef;color:var(--lf-sub);cursor:default}
+.lf-btn:focus-visible,.lf-game:focus-visible,.lf-pick:focus-within{outline:3px solid var(--lf-link);outline-offset:2px}
+.lf-status{margin:0 0 12px;font-size:14px;color:var(--lf-sub)}.lf-status:empty{display:none}
+.lf-pick{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:160px;
+margin:0 0 12px;padding:20px 16px;box-sizing:border-box;border:2px dashed #7b8494;border-radius:14px;background:#fff;
+text-align:center;cursor:pointer}
+.lf-pick input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.lf-pick-icon{width:44px;height:44px;border-radius:50%;background:var(--lf-soft);color:var(--lf-btn);font-size:28px;font-weight:700;
+line-height:44px}
+.lf-pick-name{font-size:16px;font-weight:700;word-break:break-all}.lf-pick-sub{font-size:13px;color:var(--lf-sub)}
+.lf-pick.chosen{border-style:solid;border-color:var(--lf-btn);background:var(--lf-soft)}
+.lf-games{display:grid;gap:12px;margin:0 0 16px}
+.lf-game{display:flex;align-items:center;gap:12px;min-height:52px;padding:14px 16px;border-radius:14px;background:#fff;
+color:var(--lf-text);text-decoration:none;box-shadow:inset 0 0 0 2px var(--lf-btn)}
+.lf-game span{flex:1;min-width:0}.lf-game b{display:block;font-size:16px;color:var(--lf-btn)}.lf-game small{display:block;
+font-size:13px;color:var(--lf-sub);line-height:1.5}.lf-game::after{content:"›";font-size:26px;color:var(--lf-btn)}
+.consent{font-size:14px;line-height:1.7}.consent h2{margin:0 0 8px;font-size:17px}.consent h3{margin:16px 0 4px;font-size:15px}
+.consent ul{padding-left:1.2em}.consent a,.consent-box .links a{color:var(--lf-link)}.consent .lf-btn{margin:0}
+.job{background:#fff;border-radius:12px;padding:12px;font-weight:700}
+.consent-box{font-size:14px;line-height:1.7}.consent-box h2{font-size:17px}
+.consent-btns button{min-height:52px;border-radius:12px;font-size:16px}.consent-btns .agree{background:var(--lf-btn)}
+.consent-btns .cancel{color:var(--lf-sub)}
+[hidden]{display:none!important}"""
+
+
+def _liff_frame(title: str, body: str, head: str = "") -> str:
+    """LINE のアプリで開く aica の画面の枠(LIFF_CSS)。上に aica の名前の帯、下にテスト用の公開であることと規約とポリシーへの
+    リンク(legal.footer_html)。開発用の言葉(_page の site)は出さない。head は画面ごとに足す CSS や部品(LIFF_CSS の前に入る)。"""
+    return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>{escape(title)}</title>
+{head}<style>{LIFF_CSS}{legal.FOOTER_CSS}</style>
+</head><body><header class="lf-head"><span class="lf-brand">aica<small>AI のお仕事探しの相談</small></span></header>
+<main class="lf-main">{body}</main>
+{legal.footer_html()}</body></html>"""
+
+
+def _liff_intro(icon: str, title: str, lead: str, points: list[str]) -> str:
+    """LIFF の最初の画面の上の段: 見出し、何ができるか(lead、1 行)、何分かかるか・何が届くかなど(points、3 点くらい)。
+    この下に、押すボタンを 1 つだけ置く。"""
+    items = "".join(f"<li>{escape(p)}</li>" for p in points)
+    return (f'<section class="lf-card lf-intro"><h1 class="lf-title"><span class="lf-icon" aria-hidden="true">{icon}</span>'
+            f'{escape(title)}</h1><p class="lf-lead">{escape(lead)}</p><ul class="lf-points">{items}</ul></section>')
+
 
 def _liff_voice_page(user: str) -> HTMLResponse:
     """LINE のアプリで開く音声相談の画面。Web のトークと同じ音声相談のシート(talk-core.js)を、LIFF の API で開く。
@@ -2123,30 +2193,26 @@ def _liff_voice_page(user: str) -> HTMLResponse:
     conf = _liff_conf(user, sent=LIFF_SENT_TEXT if talk else LIFF_SHOWN_TEXT, later=LIFF_LATER_TEXT if talk else "",
                       notStarted=LIFF_NOT_STARTED_TEXT, inTalk=LIFF_IN_TALK_TEXT, sdk=LIFF_SDK_MISSING,
                       consent=consent.view(state, user, "line"))
-    html = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>音声で相談</title>
-<link rel="stylesheet" href="/static/talk-core.css">
+    # 終わった後に #log に出る、まとめと求人(talk-core.js の部品)の見た目。明るい背景の上なので、白い吹き出しに細い線を付ける
+    head = f"""<link rel="stylesheet" href="/static/talk-core.css">
 <style>{TALK_VARS}
-body{{margin:0;font-family:-apple-system,"Hiragino Sans",sans-serif;background:var(--room);color:var(--text)}}
-header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{padding:16px;max-width:480px;margin:auto}}
-.intro{{background:#fff;border-radius:10px;padding:12px;font-size:14px;line-height:1.6}}
-.go{{width:100%;margin:12px 0;padding:12px;border:0;border-radius:8px;background:#06c755;color:#fff;font-size:16px;font-weight:700}}
-.go[hidden]{{display:none}}#liff-status{{color:#fff;font-size:13px}}
-#log{{display:flex;flex-direction:column;gap:6px}}.row{{display:flex;gap:8px;align-items:flex-end}}
-.avatar{{width:32px;height:32px;border-radius:50%;background:#fff;color:#d0021b;font-weight:800;display:flex;align-items:center;justify-content:center}}
-.col{{display:flex;flex-direction:column;gap:4px;max-width:80%}}.who,.time{{font-size:11px;color:#fff}}
-.bubble{{background:#fff;padding:8px 12px;border-radius:16px;font-size:14.5px;white-space:pre-wrap}}
-.liff a{{display:block;background:#fff;border-radius:10px;padding:10px;color:var(--chip);margin-left:40px}}
-.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px}}
-{legal.FOOTER_CSS}.legal,.legal a{{color:#fff}}</style>
-</head><body><header>🎤 音声で相談(LINE)</header><main>
-<p class="intro">アドバイザーと話しながら、希望と経験を5分ほどで伺います。終わると、話した内容のまとめと求人が LINE のトークに届きます。
-氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです。</p>
-<button class="go" id="voice-open" type="button" disabled>音声相談を始める</button>
-<p id="liff-status"></p><div id="log"></div><form id="talk-form" hidden></form>
-<button class="go" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
-</main>
-{legal.footer_html()}
+#log{{display:flex;flex-direction:column;gap:6px;margin:0 0 12px}}.row{{display:flex;gap:8px;align-items:flex-end}}
+.avatar{{width:32px;height:32px;border-radius:50%;background:#fff;color:#d0021b;font-weight:800;display:flex;align-items:center;
+justify-content:center;box-shadow:0 0 0 1px var(--lf-line)}}
+.col{{display:flex;flex-direction:column;gap:4px;max-width:80%}}.who,.time{{font-size:11px;color:var(--lf-sub)}}
+.bubble{{background:#fff;padding:8px 12px;border-radius:16px;font-size:14.5px;white-space:pre-wrap;box-shadow:0 0 0 1px var(--lf-line)}}
+.liff a{{display:block;background:#fff;border-radius:10px;padding:10px;color:var(--lf-link);margin-left:40px;box-shadow:0 0 0 1px var(--lf-line)}}
+.cards{{display:flex;gap:8px;overflow-x:auto}}.jc{{flex:none;width:236px;background:#fff;border-radius:14px;padding:10px;
+box-shadow:0 0 0 1px var(--lf-line)}}</style>
+"""
+    intro = _liff_intro("🎤", "音声で相談", "声で話すだけで、希望と経験をアドバイザーに伝えられます。", [
+        "アドバイザーとの会話は5分ほどです",
+        "終わると、話した内容のまとめと求人が LINE のトークに届きます",
+        "氏名・住所・電話番号は聞きません。イヤホンの利用がおすすめです"])
+    body = f"""{intro}
+<button class="lf-btn" id="voice-open" type="button" disabled>音声相談を始める</button>
+<p id="liff-status" class="lf-status"></p><div id="log"></div><form id="talk-form" hidden></form>
+<button class="lf-btn" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script src="/static/talk-core.js"></script>
 <script>
@@ -2175,8 +2241,8 @@ header{{background:#06c755;color:#fff;padding:12px 16px;font-weight:700}}main{{p
   // 使い始める同意の前に開いた: その場で同意の画面を出す(押したらシートを開く。「やめる」なら何も記録せず、ボタンでまた出せる)
   if (conf.consent.needed.includes("terms")) talk.openVoice();
 }})();
-</script></body></html>"""
-    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+</script>"""
+    return HTMLResponse(_liff_frame("音声で相談", body, head), headers={"Cache-Control": "no-store"})
 
 
 def _liff_upload_page(user: str) -> HTMLResponse:
@@ -2188,16 +2254,27 @@ def _liff_upload_page(user: str) -> HTMLResponse:
     ask = bool(kinds)
     conf = _liff_conf(user, sdk=LIFF_SDK_MISSING, reading="読み取っています。そのままお待ちください…",
                       pick="ファイルを選んでください。", sent="続きを LINE のトークに送ります。トークに戻ってください。",
-                      done="読み取りました。", version=consent.tag(), stale=consent.STALE, kinds=kinds)
+                      done="読み取りました。", change="別のファイルにするときは、もう一度押してください",
+                      version=consent.tag(), stale=consent.STALE, kinds=kinds)
     mb = resume_config.MAX_UPLOAD_BYTES // (1024 * 1024)
     hidden = " hidden" if ask else ""
-    body = f"""<p>履歴書か職務経歴書のファイル(PDF / JPEG / PNG、{mb}MB まで)を選ぶと、読み取った内容で LINE のトークの相談を続けます。
-氏名・住所・電話番号・メールアドレスは保存しません。</p>
+    intro = _liff_intro("📄", "履歴書を読み込む", "履歴書を読み込むと、経歴を一から書かずに相談を続けられます。", [
+        f"履歴書か職務経歴書のファイル(PDF / JPEG / PNG、{mb}MB まで)を選びます",
+        "読み取った内容で、LINE のトークの相談を続けます",
+        "氏名・住所・電話番号・メールアドレスは保存しません"])
+    # ファイルを選ぶ欄: ブラウザの <input type="file"> を、見えないまま大きな枠いっぱいに重ねる(枠のどこを押しても選べる)。
+    # 選んだファイルの名前は、この画面にだけ出す(送らない。読み込んだら消す)
+    body = f"""{intro}
 {_consent_html(*kinds) if ask else ""}
+<label class="lf-pick" id="resume-pick"{hidden}>
 <input type="file" id="resume-file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"{hidden}>
-<button id="resume-send" type="button" disabled{hidden}>読み込む</button>
-<p id="liff-status"></p><div id="resume-result"></div>
-<button id="liff-back" type="button" hidden>LINE のトークに戻る</button>
+<span class="lf-pick-icon" id="resume-icon" aria-hidden="true">+</span>
+<span class="lf-pick-name" id="resume-name">ファイルを選ぶ</span>
+<span class="lf-pick-sub" id="resume-hint">ここを押して、ファイルか写真を選んでください</span>
+</label>
+<button class="lf-btn" id="resume-send" type="button" disabled{hidden}>読み込む</button>
+<p id="liff-status" class="lf-status"></p><div id="resume-result"></div>
+<button class="lf-btn" id="liff-back" type="button" hidden>LINE のトークに戻る</button>
 <script src="{LIFF_SDK}" charset="utf-8"></script>
 <script>
 {LIFF_AGREE_JS}
@@ -2205,7 +2282,16 @@ def _liff_upload_page(user: str) -> HTMLResponse:
   const conf = {conf};
   const status = document.getElementById("liff-status"), send = document.getElementById("resume-send");
   const input = document.getElementById("resume-file"), result = document.getElementById("resume-result");
-  const back = document.getElementById("liff-back");
+  const back = document.getElementById("liff-back"), pick = document.getElementById("resume-pick");
+  const name = document.getElementById("resume-name"), hint = document.getElementById("resume-hint");
+  const icon = document.getElementById("resume-icon"), unpicked = [icon.textContent, name.textContent, hint.textContent];
+  const showPicked = () => {{  // 選んだファイルの名前を枠に出す(選んでいなければ最初の文に戻す)
+    const f = input.files[0];
+    [icon.textContent, name.textContent, hint.textContent] = f ? ["✓", f.name, conf.change] : unpicked;
+    pick.classList.toggle("chosen", !!f);
+    if (f && status.textContent === conf.pick) status.textContent = "";
+  }};
+  input.onchange = showPicked;
   if (!window.liff) {{ status.textContent = conf.sdk; return; }}
   try {{ await liff.init({{ liffId: conf.liffId }}); }} catch (e) {{ status.textContent = conf.failed; return; }}
   back.onclick = () => liff.closeWindow();
@@ -2217,7 +2303,7 @@ def _liff_upload_page(user: str) -> HTMLResponse:
     if (!(await liffAgree(conf, status))) {{ agree.disabled = false; return; }}
     status.textContent = "";
     document.getElementById("consent").remove();
-    input.hidden = send.hidden = false;
+    pick.hidden = input.hidden = send.hidden = false;
   }};
   send.onclick = async () => {{
     const f = input.files[0];
@@ -2231,12 +2317,13 @@ def _liff_upload_page(user: str) -> HTMLResponse:
       if (!r.ok) {{ status.textContent = (d && typeof d.detail === "string" && d.detail) || conf.failed; send.disabled = false; return; }}
       result.replaceChildren(...d.bubbles.map((b) => {{ const p = document.createElement("p"); p.className = "job"; p.textContent = b; return p; }}));
       status.textContent = d.talk ? conf.sent : conf.done;
-      input.hidden = send.hidden = true; back.hidden = false;
+      pick.hidden = input.hidden = send.hidden = true; back.hidden = false;
+      input.value = ""; showPicked();  // 読み込んだファイルの名前を画面に残さない
     }} catch (e) {{ status.textContent = conf.failed; send.disabled = false; }}
   }};
 }})();
 </script>"""
-    return HTMLResponse(_page("履歴書を読み込む", body), headers={"Cache-Control": "no-store"})
+    return HTMLResponse(_liff_frame("履歴書を読み込む", body), headers={"Cache-Control": "no-store"})
 
 
 @app.get(f"{line_channel.LIFF_PREFIX}/voice", response_class=HTMLResponse)
@@ -2251,12 +2338,39 @@ async def liff_line_resume_upload(request: Request):
     return _liff_shell("履歴書を読み込む") if user is None else _liff_upload_page(user)
 
 
-def _liff_terms_page(user: str, title: str) -> HTMLResponse:
-    """使い始める同意の前の LINE の本人が、LIFF 画面(ゲーム)を開いた: その場で同意の画面を出す(task 239)。押したら記録して、
-    同じ画面を開き直す(今度は本来の画面になる)。押さずに閉じれば何も記録せず、次に開いたときもこの画面になる。"""
+# LINE のアプリで開くゲームの一覧に出すゲーム(dip_mcp.arcade.GAMES の順)の種類と、何ができるかの 1 行。
+# 文は Web のハブ(static/arcade/resume-arcade.html の GAMES)と同じ
+ARCADE_LIFF_CARDS = {
+    "the-case-of-you": ("ノワール探偵", "証人の質問に答えるたび、職務経歴書が1行ずつ増えていきます。"),
+    "harvest-of-work": ("のんびり農場", "収穫祭の市場の掲示板が、そのまま職務経歴書になります。"),
+}
+
+
+def _liff_arcade_intro() -> str:
+    return _liff_intro("🎮", "レジュメ・アーケード", "ゲームで遊びながら、書類の下書きを作れます。", [
+        f"遊べるのは{len(ARCADE_SHIPPED)}本です。どのゲームも、あなたが話したことだけから書類ができ、強みと弱みを正直に教えてくれます",
+        "架空の人物で遊ぶ「サンプル」なら、2分ほどで全体の流れを見られます",
+        "名前や連絡先は聞きません(書類では空欄になります)"])
+
+
+def _liff_arcade_page() -> HTMLResponse:
+    """LINE のアプリで開くゲームの一覧(ほかの LIFF の最初の画面と同じ枠)。ボタンの代わりに、遊ぶゲームを選ぶ。
+    ゲームも LIFF の本人のまま開く(/liff/line/arcade/…)。"""
+    games = "".join(
+        f'<a class="lf-game" href="{line_channel.LIFF_PREFIX}/arcade/{g}"><span><b>{escape(arcade.GAME_NAMES[g])}</b>'
+        f'<small>{escape(ARCADE_LIFF_CARDS[g][0])} · {escape(ARCADE_LIFF_CARDS[g][1])}</small></span></a>' for g in ARCADE_SHIPPED)
+    body = f'{_liff_arcade_intro()}<nav class="lf-games" aria-label="遊ぶゲーム">{games}</nav>'
+    return HTMLResponse(_liff_frame("レジュメ・アーケード", body), headers={"Cache-Control": "no-cache"})
+
+
+def _liff_terms_page(user: str) -> HTMLResponse:
+    """使い始める同意の前の LINE の本人が、LIFF 画面(ゲームの一覧かゲーム)を開いた: その場で、ゲームの一覧の案内の下に
+    同意の画面を出す(task 239)。押したら記録して、同じ画面を開き直す(今度は本来の画面になる)。押さずに閉じれば何も記録せず、
+    次に開いたときもこの画面になる。"""
     conf = _liff_conf(user, version=consent.tag(), stale=consent.STALE, kinds=["terms"])
-    body = f"""{_consent_html("terms")}
-<p id="liff-status"></p>
+    body = f"""{_liff_arcade_intro()}
+{_consent_html("terms")}
+<p id="liff-status" class="lf-status"></p>
 <script>
 {LIFF_AGREE_JS}
 (() => {{
@@ -2270,7 +2384,7 @@ def _liff_terms_page(user: str, title: str) -> HTMLResponse:
   }};
 }})();
 </script>"""
-    return HTMLResponse(_page(title, body), headers={"Cache-Control": "no-store"})
+    return HTMLResponse(_liff_frame("レジュメ・アーケード", body), headers={"Cache-Control": "no-store"})
 
 
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade")
@@ -2280,7 +2394,7 @@ async def liff_line_arcade(request: Request):
     user = _liff_page_user(request)
     if user is None:
         return _liff_shell("レジュメ・アーケード")
-    return _liff_terms_page(user, "レジュメ・アーケード") if consent.needed(state, user, "terms") else await liff_arcade()
+    return _liff_terms_page(user) if consent.needed(state, user, "terms") else _liff_arcade_page()
 
 
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade/draft", response_class=HTMLResponse)
@@ -2311,7 +2425,7 @@ async def liff_line_arcade_game(game: str, request: Request):
     if game not in ARCADE_SHIPPED:
         return await liff_arcade_game(game)
     if consent.needed(state, user, "terms"):
-        return _liff_terms_page(user, "レジュメ・アーケード")
+        return _liff_terms_page(user)
     conf = json.dumps({"liffId": line_channel.liff_id()}).replace("<", "\\u003c")
     head = f'<script src="{LIFF_SDK}" charset="utf-8" defer></script>\n<script>window.AICA_LIFF = {conf};</script>\n</head>'
     html = (ARCADE / f"{game}.html").read_text(encoding="utf-8").replace("</head>", head, 1)

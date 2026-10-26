@@ -22,8 +22,9 @@ from urllib.parse import urlencode
 import pytest
 
 from dip_mcp import logic
+from dip_mcp.arcade import GAMES as ARCADE_GAMES
 from dip_mcp.data import load_jobs
-from line_runtime import line_channel
+from line_runtime import legal, line_channel
 from line_runtime.line_channel import LineLogin, line_user, to_messages
 from tests.test_handle import reply
 from tests.test_liff import FakeLineLogin
@@ -455,12 +456,46 @@ def test_the_arcade_opens_in_liff_only_as_the_verified_line_user(line_liff, monk
         assert "LINE で本人を確かめています" in client.get("/liff/line/arcade").text
         assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
         hub = client.get("/liff/line/arcade")
-        assert hub.status_code == 200 and '"/liff/line/arcade/" + g.slug' in hub.text
+        assert hub.status_code == 200
+        assert [g for g in ARCADE_GAMES if f'href="/liff/line/arcade/{g}"' in hub.text] == list(ARCADE_GAMES)
         assert client.get("/liff/line/arcade/harvest-of-work").status_code == 200
         assert client.get("/liff/line/arcade/nope").status_code == 404
         monkeypatch.delenv("LINE_LIFF_ID")
         assert client.get("/liff/line/arcade").status_code == 404
         assert client.get("/liff/arcade").status_code == 200  # Web のハブは今までどおり
+
+
+def test_the_three_liff_first_screens_share_one_frame_without_developer_words(line_liff):
+    """リッチメニューから開く 3 つの最初の画面(音声相談、履歴書の読み込み、ゲームの一覧)と、その前の本人を確かめる殻は、
+    同じ枠(aica の帯、規約とポリシーへのリンク)で出し、開発用の言葉(「LIFF・dip の画面」)を出さない。
+    上から、何ができるか(1 行)、箇条書き、押すボタン 1 つの順。今までの説明文の事実は落とさない(task 241)。"""
+    server, _, _, _ = line_liff
+    facts = {
+        "/liff/line/voice": ["5分ほど", "話した内容のまとめと求人が LINE のトークに届きます", "氏名・住所・電話番号は聞きません",
+                             "イヤホンの利用がおすすめです"],
+        "/liff/line/resume/upload": ["PDF / JPEG / PNG、10MB まで", "読み取った内容で、LINE のトークの相談を続けます",
+                                     "氏名・住所・電話番号・メールアドレスは保存しません"],
+        "/liff/line/arcade": ["遊べるのは2本", "サンプル", "名前や連絡先は聞きません"],
+    }
+    with _liff_client(server) as client:
+        for path in facts:
+            shell = client.get(path).text
+            assert "LINE で本人を確かめています" in shell and 'class="lf-head"' in shell and "LIFF・dip" not in shell
+        assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
+        for path, words in facts.items():
+            page = client.get(path).text
+            assert "LIFF・dip" not in page and "(LINE)" not in page, path
+            assert 'class="lf-head"' in page and legal.DEMO_NOTE in page and legal.links_html() in page, path
+            intro = re.search(r'<section class="lf-card lf-intro">.*?</section>', page, re.DOTALL).group(0)
+            assert len(re.findall(r'<p class="lf-lead">', intro)) == 1 and 2 <= intro.count("<li>") <= 4, path
+            assert all(w in intro for w in words), path
+            after = page[page.index(intro) + len(intro):]
+            shown = re.findall(r'<(?:button|a) class="lf-(?:btn|game)"[^>]*>', after)
+            visible = [b for b in shown if " hidden" not in b]
+            assert visible and all('id="liff-back"' not in b for b in visible), path
+            if path != "/liff/line/arcade":  # ゲームの一覧は、ボタンの代わりに遊ぶゲームを選ぶ
+                assert len(visible) == 1, (path, visible)
+    assert set(server.ARCADE_LIFF_CARDS) == set(ARCADE_GAMES)  # ハブに出すゲームを足したら、一覧の 1 行も足す
 
 
 # ----------------------------- 画面をブラウザで動かす(Playwright。LIFF SDK と LiveKit は偽物) -----------------------------
@@ -602,10 +637,12 @@ def test_the_liff_resume_page_in_a_browser(served, browser):
         page.locator("#resume-send:not([disabled])").wait_for()
         assert page.url == f"{base}/liff/line/resume/upload"
         page.locator("#resume-file").set_input_files({"name": FILENAME, "mimeType": "application/pdf", "buffer": b"%PDF-1.4 dummy"})
+        assert page.locator("#resume-name").inner_text() == FILENAME  # 選んだファイルの名前を、大きな枠に出す
+        assert "chosen" in page.locator("#resume-pick").get_attribute("class")
         page.locator("#resume-send").click()
         page.get_by_text("続きを LINE のトークに送ります").wait_for()
         assert "履歴書を読み取りました" in page.locator("#resume-result").inner_text()
-        assert FILENAME not in page.content()
+        assert FILENAME not in page.content()  # 読み込んだら、ファイルの名前を画面に残さない(サーバーも返さない)
         assert errors == []
     finally:
         context.close()

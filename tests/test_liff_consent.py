@@ -199,6 +199,26 @@ def test_arcade_asks_terms_then_the_games_ai_and_save_work(served, page_of, monk
     assert errors == []
 
 
+def test_the_three_first_screens_fit_an_iphone_width(served, page_of):  # noqa: F811
+    """iPhone の幅(390px)で、3 つの最初の画面が、同意の前も後も横にはみ出さない(task 241)。"""
+    server, _, _, _, base = served
+    make, errors = page_of
+    ready = {"/voice": "#voice-open:not([disabled])", "/resume/upload": "#resume-send:not([disabled])", "/arcade": ".lf-game"}
+    asked = {"/voice": "#consent-sheet #consent-agree", "/resume/upload": "#consent-agree:not([disabled])",
+             "/arcade": "#consent-agree:not([disabled])"}
+    page = make()
+    page.set_viewport_size({"width": 390, "height": 844})
+    for i, waits in enumerate((asked, ready)):
+        if i:  # 同意した後の画面
+            for k in ("terms", "resume", "voice"):
+                consent.record(server.state, _uid(), k, consent.tag())
+        for path, selector in waits.items():
+            _open(page, base, path)
+            page.locator(selector).first.wait_for()
+            assert page.evaluate("document.documentElement.scrollWidth") <= 390, path
+    assert errors == []
+
+
 # ----------------------------- API とトーク -----------------------------
 
 
