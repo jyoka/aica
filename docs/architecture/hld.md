@@ -924,9 +924,8 @@ sequenceDiagram
 [PRD](../prd/resume-arcade.md) にあります。
 
 - ハブ(`GET /liff/arcade`)と 8 本のゲーム(`GET /liff/arcade/{game}`、`game` はファイル名)を、`line_runtime/static/arcade/` の
-  HTML のまま返します。LINE のアプリでは、LIFF の本人を確かめてから、ゲームは `/liff/line/arcade/{game}` で同じ HTML を返します(task 204)。
-  ハブ(`/liff/line/arcade`)は静的な HTML を使わず、サーバーがほかの LIFF の最初の画面と同じ枠で描き、ゲームへのリンクを
-  `/liff/line/arcade/…` にします(task 241)。AI と保存につながった 2 本には、LIFF の設定と LIFF SDK を入れます(task 219。4.8)。
+  HTML のまま返します。LINE のアプリでは、LIFF の本人を確かめてから `/liff/line/arcade`、`/liff/line/arcade/{game}` で同じ HTML を返し、
+  ハブのリンクも `/liff/line/arcade/…` になります(task 204)。同意の前だけ、ハブの代わりにほかの LIFF の画面と同じ枠の同意の画面を出します(task 239、241)。AI と保存につながった 2 本には、LIFF の設定と LIFF SDK を入れます(task 219。4.8)。
   LIFF の設定が無ければ、ゲームのボタンを LINE に出しません。
   知らない名前は 404 です。ハブに出すのは、案内の部品がそろい、AI と保存がつながった 2 本(あなたという事件、
   仕事の収穫)だけです。残りの 6 本は開発者画面からだけリンクし、AI を使わず、本人のデータも読み書きしません

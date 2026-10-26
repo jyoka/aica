@@ -2141,7 +2141,7 @@ justify-content:center;font-size:20px}
 .lf-btn{display:block;width:100%;min-height:52px;margin:0 0 12px;padding:12px;box-sizing:border-box;border:0;border-radius:12px;
 background:var(--lf-btn);color:#fff;font:inherit;font-size:16px;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}
 .lf-btn:active{background:var(--lf-btn-on)}.lf-btn:disabled{background:#e6e9ef;color:var(--lf-sub);cursor:default}
-.lf-btn:focus-visible,.lf-game:focus-visible,.lf-pick:focus-within{outline:3px solid var(--lf-link);outline-offset:2px}
+.lf-btn:focus-visible,.lf-pick:focus-within{outline:3px solid var(--lf-link);outline-offset:2px}
 .lf-status{margin:0 0 12px;font-size:14px;color:var(--lf-sub)}.lf-status:empty{display:none}
 .lf-pick{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:160px;
 margin:0 0 12px;padding:20px 16px;box-sizing:border-box;border:2px dashed #7b8494;border-radius:14px;background:#fff;
@@ -2151,11 +2151,6 @@ text-align:center;cursor:pointer}
 line-height:44px}
 .lf-pick-name{font-size:16px;font-weight:700;word-break:break-all}.lf-pick-sub{font-size:13px;color:var(--lf-sub)}
 .lf-pick.chosen{border-style:solid;border-color:var(--lf-btn);background:var(--lf-soft)}
-.lf-games{display:grid;gap:12px;margin:0 0 16px}
-.lf-game{display:flex;align-items:center;gap:12px;min-height:52px;padding:14px 16px;border-radius:14px;background:#fff;
-color:var(--lf-text);text-decoration:none;box-shadow:inset 0 0 0 2px var(--lf-btn)}
-.lf-game span{flex:1;min-width:0}.lf-game b{display:block;font-size:16px;color:var(--lf-btn)}.lf-game small{display:block;
-font-size:13px;color:var(--lf-sub);line-height:1.5}.lf-game::after{content:"›";font-size:26px;color:var(--lf-btn)}
 .consent{font-size:14px;line-height:1.7}.consent h2{margin:0 0 8px;font-size:17px}.consent h3{margin:16px 0 4px;font-size:15px}
 .consent ul{padding-left:1.2em}.consent a,.consent-box .links a{color:var(--lf-link)}.consent .lf-btn{margin:0}
 .job{background:#fff;border-radius:12px;padding:12px;font-weight:700}
@@ -2338,29 +2333,11 @@ async def liff_line_resume_upload(request: Request):
     return _liff_shell("履歴書を読み込む") if user is None else _liff_upload_page(user)
 
 
-# LINE のアプリで開くゲームの一覧に出すゲーム(dip_mcp.arcade.GAMES の順)の種類と、何ができるかの 1 行。
-# 文は Web のハブ(static/arcade/resume-arcade.html の GAMES)と同じ
-ARCADE_LIFF_CARDS = {
-    "the-case-of-you": ("ノワール探偵", "証人の質問に答えるたび、職務経歴書が1行ずつ増えていきます。"),
-    "harvest-of-work": ("のんびり農場", "収穫祭の市場の掲示板が、そのまま職務経歴書になります。"),
-}
-
-
 def _liff_arcade_intro() -> str:
     return _liff_intro("🎮", "レジュメ・アーケード", "ゲームで遊びながら、書類の下書きを作れます。", [
         f"遊べるのは{len(ARCADE_SHIPPED)}本です。どのゲームも、あなたが話したことだけから書類ができ、強みと弱みを正直に教えてくれます",
         "架空の人物で遊ぶ「サンプル」なら、2分ほどで全体の流れを見られます",
         "名前や連絡先は聞きません(書類では空欄になります)"])
-
-
-def _liff_arcade_page() -> HTMLResponse:
-    """LINE のアプリで開くゲームの一覧(ほかの LIFF の最初の画面と同じ枠)。ボタンの代わりに、遊ぶゲームを選ぶ。
-    ゲームも LIFF の本人のまま開く(/liff/line/arcade/…)。"""
-    games = "".join(
-        f'<a class="lf-game" href="{line_channel.LIFF_PREFIX}/arcade/{g}"><span><b>{escape(arcade.GAME_NAMES[g])}</b>'
-        f'<small>{escape(ARCADE_LIFF_CARDS[g][0])} · {escape(ARCADE_LIFF_CARDS[g][1])}</small></span></a>' for g in ARCADE_SHIPPED)
-    body = f'{_liff_arcade_intro()}<nav class="lf-games" aria-label="遊ぶゲーム">{games}</nav>'
-    return HTMLResponse(_liff_frame("レジュメ・アーケード", body), headers={"Cache-Control": "no-cache"})
 
 
 def _liff_terms_page(user: str) -> HTMLResponse:
@@ -2390,11 +2367,12 @@ def _liff_terms_page(user: str) -> HTMLResponse:
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade")
 async def liff_line_arcade(request: Request):
     """LINE のアプリで開くレジュメ・アーケードのハブ(LIFF の本人を確かめてから。ゲームへのリンクも /liff/line/arcade/… になる)。
-    使い始める同意の前なら、先に同意の画面を出す。"""
+    使い始める同意の前なら、先に同意の画面を出す。同意の後は Web と同じピクセルアートのハブ(task 241 で枠をそろえたが、
+    ゲームの雰囲気が伝わらないので戻した。利用者の判断、2026-10-26)。"""
     user = _liff_page_user(request)
     if user is None:
         return _liff_shell("レジュメ・アーケード")
-    return _liff_terms_page(user) if consent.needed(state, user, "terms") else _liff_arcade_page()
+    return _liff_terms_page(user) if consent.needed(state, user, "terms") else await liff_arcade()
 
 
 @app.get(f"{line_channel.LIFF_PREFIX}/arcade/draft", response_class=HTMLResponse)

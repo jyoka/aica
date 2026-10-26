@@ -203,7 +203,7 @@ def test_the_three_first_screens_fit_an_iphone_width(served, page_of):  # noqa: 
     """iPhone の幅(390px)で、3 つの最初の画面が、同意の前も後も横にはみ出さない(task 241)。"""
     server, _, _, _, base = served
     make, errors = page_of
-    ready = {"/voice": "#voice-open:not([disabled])", "/resume/upload": "#resume-send:not([disabled])", "/arcade": ".lf-game"}
+    ready = {"/voice": "#voice-open:not([disabled])", "/resume/upload": "#resume-send:not([disabled])", "/arcade": "a.cab"}
     asked = {"/voice": "#consent-sheet #consent-agree", "/resume/upload": "#consent-agree:not([disabled])",
              "/arcade": "#consent-agree:not([disabled])"}
     page = make()
