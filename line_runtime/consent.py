@@ -54,9 +54,10 @@ def _terms_points(channel: str) -> list[str]:
     return [
         legal.DEMO_NOTE.removesuffix("。"),
         SENT_TO.get(config.PROVIDER, SENT_TO["anthropic"]),
-        # 今は運営者の Mac で動かし、LINE の Webhook は cloudflared のトンネルで受けている(プライバシーポリシー 1.3)
-        "aica は日本にある運営者のコンピューターで動き、情報もそこに保存します。LINE のトークは、米国の Cloudflare を通って届きます",
-        ("米国には連邦の包括的な個人情報保護法がなく、分野ごと、州ごとの法律があります。各事業者の学習への利用と保持は、"
+        # Render の Singapore のリージョンで動かす(render.yaml。プライバシーポリシー 1.4)
+        "aica は米国の Render のサーバー(シンガポールにあります)で動き、情報もそこに保存します",
+        ("米国には連邦の包括的な個人情報保護法がなく、分野ごと、州ごとの法律があります。シンガポールには個人データ保護法があります。"
+         "各事業者の学習への利用と保持は、"
          "プライバシーポリシーの「5」に書いています"),
         "会話は最後のやりとりから 30 日、希望などのプロフィールは最後のご利用から 180 日で消えます",
         FORGET_POINT[channel],
