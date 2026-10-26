@@ -118,6 +118,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ap.error("--form に形を 1 つ以上")
     if args.repeat < 1:
         ap.error("--repeat は 1 以上")
+    if args.max_turns < 1:
+        ap.error("--max-turns は 1 以上")
+    if args.same_samples < 1:
+        ap.error("--same-samples は 1 以上")
     return args
 
 

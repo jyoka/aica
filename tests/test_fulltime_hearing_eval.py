@@ -28,6 +28,7 @@ from evals.fulltime_hearing.actor import (
 )
 from evals.fulltime_hearing.conversation import made_up_numbers, run_conversation
 from evals.fulltime_hearing.forms import (
+    RANGE_UNITS,
     SALARY,
     SCALE,
     FormA,
@@ -35,6 +36,7 @@ from evals.fulltime_hearing.forms import (
     ScriptGood,
     a_reply,
     check_forms,
+    declined,
 )
 from evals.fulltime_hearing.personas import hard_keys, load_personas, select
 from evals.fulltime_hearing.report import improved, report, summarize, verdicts
@@ -87,11 +89,12 @@ class ScriptedActor:
         if f["kind"] == "dont_know":
             return ActorTurn(button="覚えていない", text="") if "覚えていない" in buttons else ActorTurn(button="", text="覚えていない")
         if f["kind"] == "number":
-            for b in buttons:
+            for b in buttons:  # 単位の合う区切りだけを押す。120 社は「20人以上」を押さずに「120社」と打つ
                 lo, hi = (SALARY | SCALE).get(b, (None, None))
-                if lo is not None and f["value"] >= lo and (hi is None or f["value"] <= hi):
+                if (lo is not None and J.same_unit(RANGE_UNITS[b], f["unit"])
+                        and f["value"] >= lo and (hi is None or f["value"] <= hi)):
                     return ActorTurn(button=b, text="")
-            return ActorTurn(button="", text=f"{f['value']}{re.split(r'[(]', f['unit'])[0]}")
+            return ActorTurn(button="", text=f"{f['value']}{J.unit_head(f['unit'])}")
         if f["value"] in buttons:
             return ActorTurn(button=f["value"], text="")
         return ActorTurn(button="", text=f["value"])
@@ -286,22 +289,36 @@ def test_time_limit_alone_makes_the_actor_leave():
 # ----------------------------- 正しく取れた事実 -----------------------------
 
 
-def got(status="filled", text="", number=None, rng=None):
-    return {"status": status, "text": text, "number": number, "range": rng}
+def got(status="filled", text="", number=None, rng=None, unit=None):
+    return {"status": status, "text": text, "number": number, "range": rng, "unit": unit}
 
 
 def test_numbers_buckets_and_dont_know_are_judged_by_code():
     salary = {"key": "min_annual_salary", "kind": "number", "value": 650, "unit": "万円"}
-    assert J.code_verdict(salary, got(number=650)) is True
+    assert J.code_verdict(salary, got(number=650, unit="万円")) is True
     assert J.code_verdict(salary, got(text="650万くらい")) is True  # 文の中の数
-    assert J.code_verdict(salary, got(number=600)) is False
+    assert J.code_verdict(salary, got(number=600, unit="万円")) is False
     per_month = {"key": "career1.scale", "kind": "number", "value": 40, "unit": "件(1か月の契約)"}
     assert J.code_verdict(per_month, got(text="1か月に40件くらい")) is True  # 文の中の数のどれか
     assert J.code_verdict(per_month, got(text="1か月に30件")) is False
-    assert J.code_verdict(salary, got(text="600万円以上", rng=[600, None])) is True  # 区切りに入っている
-    assert J.code_verdict(salary, got(text="500万円台", rng=[500, 599])) is False
+    assert J.code_verdict(salary, got(text="600万円以上", rng=[600, None], unit="万円")) is True  # 区切りに入っている
+    assert J.code_verdict(salary, got(text="500万円台", rng=[500, 599], unit="万円")) is False
     assert J.code_verdict(salary, got(text="こだわらない")) is False
     assert J.code_verdict(salary, got("dont_know", "覚えていない")) is False
+    # 単位の違う数と区切りは正しくしない(§6.4 は「事実表の値と同じ」「その区切りに入っていれば」)
+    clients = {"key": "career1.scale", "kind": "number", "value": 120, "unit": "社(担当の取引先)"}
+    assert J.code_verdict(clients, got(text="20人以上", rng=[15, None], unit="人")) is False
+    assert J.code_verdict(clients, got(text="20人以上", rng=[15, None])) is False  # 単位が無い区切り
+    assert J.code_verdict(clients, got(text="120人", number=120, unit="人")) is False
+    assert J.code_verdict(clients, got(text="120社くらい", number=120, unit="社")) is True
+    assert J.code_verdict(clients, got(text="120社")) is True
+    blank = {"key": "blank_period", "kind": "number", "value": 3, "unit": "年"}
+    assert J.code_verdict(blank, got(text="3か月")) is False
+    assert J.code_verdict(blank, got(text="3か月", number=3, unit="か月")) is False
+    assert J.code_verdict(blank, got(text="3年くらい")) is True
+    team = {"key": "career2.scale", "kind": "number", "value": 8, "unit": "人(チーム)"}
+    assert J.code_verdict(team, got(text="10人くらい", rng=[8, 14], unit="人")) is True
+    assert J.code_verdict(team, got(text="8名")) is True  # 同じ単位の言い方の違い
     unknown = {"key": "career1.scale", "kind": "dont_know"}
     assert J.code_verdict(unknown, got("dont_know", "覚えていない")) is True
     assert J.code_verdict(unknown, got(number=10)) is False
@@ -406,6 +423,54 @@ def test_form_a_counts_a_decline_as_leaving_however_many_answers(tmp_path, monke
     assert rt.seen[-1][1] == "今はいい"
 
 
+@pytest.mark.parametrize("text", ["今はいい", "今はいい！", "今はいいです。", "いまはいい…", " 今はいい! "])
+def test_decline_ignores_full_and_half_width_marks(text):
+    assert declined(text)
+
+
+def test_answers_that_only_contain_the_decline_are_not_declines():
+    assert not declined("今はいいところを探しています")
+
+
+class CountingForm:
+    """done_at 回目の AI の返信で result に着く形。send の回数を数える。"""
+
+    def __init__(self, done_at: int):
+        self.done_at, self.sends = done_at, 0
+
+    def _reply(self) -> AIReply:
+        n = self.sends + 1
+        return AIReply(bubbles=["要約です。"] if n == self.done_at else ["場所は?"], buttons=["新宿"], done=n == self.done_at)
+
+    async def start(self) -> AIReply:
+        return self._reply()
+
+    async def send(self, text: str, pressed: bool) -> AIReply:
+        self.sends += 1
+        return self._reply()
+
+    def captured(self) -> dict:
+        return {}
+
+    def saved_texts(self) -> list[str]:
+        return []
+
+    def wasted(self) -> int:
+        return 0
+
+
+@pytest.mark.parametrize("done_at,completed,left,sends", [(2, True, None, 1), (3, False, "turn_cap", 1)])
+def test_turn_cap_counts_ai_replies_and_sends_no_extra(done_at, completed, left, sends):
+    """--max-turns は AI の返信の上限。上限の返信が result なら完了、そうでなければ本人役も形も呼ばずに止める。"""
+    persona = PERSONAS["p1-sales"]
+    form = CountingForm(done_at)
+    client = FakeClient(actor=lambda m, s: ActorTurn(button="新宿", text=""), extraction=J.Extraction(items=[]))
+    r = asyncio.run(run_conversation(form, persona, client, "sim", "judge", max_turns=2))
+    m = r["metrics"]
+    assert (m["completed"], m["left"], m["ai_turns"]) == (completed, left, 2)
+    assert form.sends == sends and client.calls["ActorTurn"] == sends
+
+
 def test_form_a_runs_through_the_line_runtime_and_extracts_facts_from_the_log(tmp_path, monkeypatch):
     monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))  # prepare が dip の状態を戻す
     persona = PERSONAS["p1-sales"]
@@ -427,9 +492,9 @@ def test_form_a_runs_through_the_line_runtime_and_extracts_facts_from_the_log(tm
         return ActorTurn(button="600万円以上", text="")
 
     extraction = J.Extraction(items=[
-        J.Extracted(key="area", status="取れた", text="新宿か品川", number=None, range_low=None, range_high=None),
+        J.Extracted(key="area", status="取れた", text="新宿か品川", number=None, range_low=None, range_high=None, unit=None),
         J.Extracted(key="min_annual_salary", status="取れた", text="600万円以上", number=None, range_low=600,
-                    range_high=None)])
+                    range_high=None, unit="万円")])
     r, client = converse(FormA(rt, persona), persona,
                          FakeClient(actor=actor, extraction=extraction,
                                     same=lambda u: J.Sameness(items=[J.Same(key="area", same=True, reason="")])))
@@ -517,6 +582,10 @@ def test_command_needs_a_limit_and_known_forms():
     for empty in (",", " "):
         with pytest.raises(SystemExit):
             parse_args(["--form", empty, "--limit-usd", "1"])  # 形が 0 個なら、空の報告を書かずに止める
+    with pytest.raises(SystemExit):
+        parse_args(["--form", "A", "--limit-usd", "1", "--max-turns", "0"])
+    with pytest.raises(SystemExit):
+        parse_args(["--form", "A", "--limit-usd", "1", "--same-samples", "0"])
     with pytest.raises(SystemExit, match="2/5"):
         check_forms(["B"])
     with pytest.raises(SystemExit, match="知らない形"):
@@ -592,7 +661,7 @@ def test_form_a_through_the_real_runtime_and_dip(tmp_path, monkeypatch):
         return ActorTurn(button="", text="役職が上がらないから")
 
     extraction = J.Extraction(items=[
-        J.Extracted(key="area", status="取れた", text="福岡市内", number=None, range_low=None, range_high=None)])
+        J.Extracted(key="area", status="取れた", text="福岡市内", number=None, range_low=None, range_high=None, unit=None)])
 
     async def go():
         async with LineRuntime(model=model, in_memory=True) as rt:

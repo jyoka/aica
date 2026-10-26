@@ -25,7 +25,7 @@ DECLINES = {"今はいい", "今はいいです", "いまはいい", "いまは�
 
 
 def missing() -> dict:
-    return {"status": "missing", "text": "", "number": None, "range": None}
+    return {"status": "missing", "text": "", "number": None, "range": None, "unit": None}
 
 
 # ----------------------------- 形 A: 今の正社員の相談 -----------------------------
@@ -65,7 +65,7 @@ def a_reply(r: dict) -> tuple[AIReply, dict[str, str]]:
 
 def declined(text: str) -> bool:
     """本人の返信が、相談の断り(playbook の逃げ道「今はいい」。押しても打っても)か。"""
-    return re.sub(r"[\s。!、]", "", text) in DECLINES
+    return re.sub(r"[\s。、.,!?！？…~〜ー]", "", text) in DECLINES
 
 
 class FormA:
@@ -123,6 +123,7 @@ SEGMENTS = {"同じ仕事で上へ": "same_path", "仕事を変えたい": "chan
 SALARY = {"300万円台": [300, 399], "400万円台": [400, 499], "500万円台": [500, 599], "600万円以上": [600, None]}
 SCALE = {"5人くらい": [1, 7], "10人くらい": [8, 14], "20人以上": [15, None]}
 RANGES = SALARY | SCALE
+RANGE_UNITS = {**dict.fromkeys(SALARY, "万円"), **dict.fromkeys(SCALE, "人")}  # 区切りの単位(人数の区切りは件数や社数に入らない)
 
 GOOD_QUESTIONS = {
     "why_now": ("なぜ今、仕事を探していますか?", [PASS]),
@@ -146,11 +147,11 @@ def value_of(text: str, pressed: bool) -> dict:
     """本人の返信を、取れた値の形に(台本の AI は読み取りに LLM を使わず、本人の言葉のまま入れる)。"""
     t = text.strip()
     if t == PASS or t in ("言いたくない", "パスします"):
-        return {"status": "passed", "text": t, "number": None, "range": None}
+        return {"status": "passed", "text": t, "number": None, "range": None, "unit": None}
     if t == DONT_KNOW or t.startswith(("覚えてない", "覚えていない")):
-        return {"status": "dont_know", "text": t, "number": None, "range": None}
+        return {"status": "dont_know", "text": t, "number": None, "range": None, "unit": None}
     rng = RANGES.get(t) if pressed else None
-    return {"status": "filled", "text": t, "number": None, "range": rng}
+    return {"status": "filled", "text": t, "number": None, "range": rng, "unit": RANGE_UNITS.get(t) if rng else None}
 
 
 class ScriptGood:
@@ -172,7 +173,8 @@ class ScriptGood:
         facts = {f["key"]: f for f in persona["facts"]}
         for k in resume.get("filled", []):  # 履歴書の読み取り結果(事実表と同じ中身)を high として入れる
             f = facts[k]
-            self.values[k] = {"status": "filled", "text": fact_text(f), "number": f.get("value"), "range": None}
+            self.values[k] = {"status": "filled", "text": fact_text(f), "number": f.get("value"), "range": None,
+                              "unit": f.get("unit")}
 
     def _say(self, r: AIReply) -> AIReply:
         self.clock.read(r)

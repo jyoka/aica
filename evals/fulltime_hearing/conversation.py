@@ -70,6 +70,9 @@ async def run_conversation(form, persona: dict, client, sim_model: str, judge_mo
             if why == "irritation":
                 transcript.append({"who": "user", "text": LEAVE_TEXT})
             break
+        if n == max_turns:  # AI の返信の上限。本人役と形にもう 1 回送らない(読まずに捨てる返信に費用を払わない)
+            clock.left = "turn_cap"
+            break
         tired = clock.tired
         t = await actor_turn(client, sim_model, persona, transcript, tired)
         text, pressed = resolve(t, reply.buttons)
@@ -87,8 +90,6 @@ async def run_conversation(form, persona: dict, client, sim_model: str, judge_mo
             clock.left = "time"
             break
         reply = await form.send(text, pressed)
-    else:
-        clock.left = "turn_cap"
 
     captured = form.captured()
     extracted = captured is None

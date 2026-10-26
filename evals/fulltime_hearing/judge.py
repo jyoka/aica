@@ -4,13 +4,14 @@
   数えて離脱を決めるのはコード(actor.Clock)。会話の途中で毎ターン 1 回呼ぶ。
 - extract_facts: 形 A(状態を持たない今のヒアリング)の会話の記録から、事実表の項目ごとに取れたことを取り出す。
   事実表の値は見せない(答えに寄せないため)。
-- score_facts: 「正しく取れた事実」を決める。数字は同じ値か、区切りに入っていれば正しい。「覚えていない」は事実表も
+- score_facts: 「正しく取れた事実」を決める。数字は同じ単位で同じ値か、同じ単位の区切りに入っていれば正しい。「覚えていない」は事実表も
   「覚えていない」なら正しい。文はジャッジが同じ意味かを 2 回判定して、両方「同じ」のときだけ正しい(same_meaning)。
 
 取れた値(captured)の形は、形 B〜D の終わりの状態(2/5 のタスク)も同じにする:
     {key: {"status": "filled" | "dont_know" | "passed" | "missing", "text": 本人の言葉, "number": 数 | None,
-           "range": [下, 上 | None] | None}}
-区切りのボタン(「10 人くらい」など)は range で返す。
+           "range": [下, 上 | None] | None, "unit": number か range の単位 | None}}
+区切りのボタン(「10 人くらい」など)は range で返す。unit は「人」「社」「件」「年」「万円」など。事実表の単位の頭
+(括弧の前)と違う数や区切りは正しくしない(120 社に「20人以上」、3 年に「3か月」)。
 """
 
 from __future__ import annotations
@@ -69,6 +70,8 @@ class Extracted(BaseModel):
     number: float | None = Field(description="数の項目で、本人が数を言ったときだけ、単位をそろえた数。ほかは null")
     range_low: float | None = Field(description="数の項目で、本人が区切り(「20 人以上」など)を選んだときの下の値。ほかは null")
     range_high: float | None = Field(description="区切りの上の値(「以上」のように上が無ければ null)")
+    unit: str | None = Field(description="number か区切りの単位(「人」「社」「件」「年」「か月」「万円」など)。"
+                                         "指定の単位にそろえられないときは、本人の言った単位のまま。数の項目でなければ null")
 
 
 class Extraction(BaseModel):
@@ -79,6 +82,7 @@ EXTRACT_SYSTEM = """あなたは、正社員の仕事探しのチャットの会
 - 本人の発言(打った文と、押したボタンのラベル)と、本人が先に送った履歴書の読み取り結果(あれば)にあることだけを取ります。AI が言っただけで、本人が認めていないことは取りません。
 - 職歴1 は直近の職歴、職歴2 はその前の職歴です(本人がそう話した順で決めます)。
 - 数の項目は、指定の単位にそろえた数を number に入れます。本人が区切りを選んだときは range_low と range_high に入れます。
+- unit には number か区切りの単位を入れます。指定の単位にそろえられない(「人」と「社」のように数えるものが違う)ときは、そろえずに本人の言った単位を入れます。
 - 会話に出ていない項目は「取れていない」にします。推し量って埋めません。"""
 
 
@@ -106,10 +110,10 @@ async def extract_facts(client, model: str, transcript: list[dict], persona: dic
     for f in persona["facts"]:
         x = got.get(f["key"])
         if x is None:
-            out[f["key"]] = {"status": "missing", "text": "", "number": None, "range": None}
+            out[f["key"]] = {"status": "missing", "text": "", "number": None, "range": None, "unit": None}
             continue
         rng = [x.range_low, x.range_high] if x.range_low is not None or x.range_high is not None else None
-        out[f["key"]] = {"status": status[x.status], "text": x.text, "number": x.number, "range": rng}
+        out[f["key"]] = {"status": status[x.status], "text": x.text, "number": x.number, "range": rng, "unit": x.unit}
     return out
 
 
@@ -132,9 +136,28 @@ SAME_SYSTEM = """あなたは、事実表の文と、会話で取れた文が、
 - 矛盾する、別のことを言っている、中心が抜けている、事実表に無い中身が足されているなら「違う」(same: false)です。"""
 
 
-def numbers_in_text(text: str) -> set[float]:
+UNIT_ALIASES = {"名": "人", "万": "万円"}  # 同じ単位の言い方の違い(「8名」「650万」)
+
+
+def unit_head(unit: str | None) -> str:
+    """単位の頭(括弧の前)。「件(1か月の契約)」は「件」、「名」は「人」。"""
+    head = re.split(r"[(（\s]", (unit or "").strip())[0]
+    return UNIT_ALIASES.get(head, head)
+
+
+def same_unit(unit: str | None, fact_unit: str | None) -> bool:
+    return bool(unit_head(unit)) and unit_head(unit) == unit_head(fact_unit)
+
+
+def numbers_in_text(text: str, unit: str | None = None) -> set[float]:
+    """文の中の数。unit を渡すと、その単位(の頭か言い方の違い)がすぐ後ろに付いた数だけ。"""
     t = text.translate(str.maketrans("０１２３４５６７８９．", "0123456789.")).replace(",", "")
-    return {float(x) for x in re.findall(r"\d+(?:\.\d+)?", t)}
+    if unit is None:
+        return {float(x) for x in re.findall(r"\d+(?:\.\d+)?", t)}
+    head = unit_head(unit)
+    words = sorted({head, *(k for k, v in UNIT_ALIASES.items() if v == head)}, key=len, reverse=True)
+    after = "|".join(re.escape(w) for w in words)
+    return {float(x) for x in re.findall(rf"(\d+(?:\.\d+)?)\s*(?:{after})", t)}
 
 
 def code_verdict(fact: dict, got: dict | None) -> bool | None:
@@ -146,15 +169,16 @@ def code_verdict(fact: dict, got: dict | None) -> bool | None:
     if got["status"] == "dont_know":
         return False
     if fact["kind"] == "number":
-        if got.get("number") is not None:
-            return float(got["number"]) == float(fact["value"])
-        if not got.get("range") and (said := numbers_in_text(got.get("text") or "")):
-            # 文の中の数のどれかが同じなら正しい(「1か月に40件くらい」の 1 と 40)
-            return float(fact["value"]) in said
-        if not got.get("range"):  # 「こだわらない」など、数も区切りも無い
-            return False
-        lo, hi = got["range"]
-        return (lo is None or fact["value"] >= lo) and (hi is None or fact["value"] <= hi)
+        value = float(fact["value"])
+        if same_unit(got.get("unit"), fact["unit"]):
+            if got.get("number") is not None:
+                return float(got["number"]) == value
+            if got.get("range"):
+                lo, hi = got["range"]
+                return (lo is None or value >= lo) and (hi is None or value <= hi)
+        # 単位が無いか違う数と区切りは使わない。文の中の、事実表の単位がすぐ後ろに付いた数のどれかが同じなら正しい
+        # (「1か月に40件くらい」の 40。「3か月」は 3 年に、「20人以上」は 120 社に当たらない)。「こだわらない」は数が無い
+        return value in numbers_in_text(got.get("text") or "", fact["unit"])
     return None
 
 
