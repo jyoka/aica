@@ -10,7 +10,9 @@
   - 3: モデルが ng_removals で返した NG を消す(未成年の「深夜シフト」は消さない)
   - 4: NG で選べない選択肢を隠す(visible_choices。未成年に「深夜もOK」を出さない)
   - 5: あいまいな答えで同じ質問を聞き直すときは retry を付ける(プロンプトが聞き方を変える)
-- 未成年の深夜の時間帯は、モデルの返り値によらずコードで受け付けない(merge_updates の最後。PRD §10)
+- 未成年の深夜の時間帯は、モデルの返り値によらずコードで受け付けない(merge_updates の最後。PRD §10)。
+  寄せられなかった文でも、深夜の語か深夜の時刻があれば、否定の有無によらず受け付けない
+- 18歳未満かが はい / いいえ に寄らなかった答え(「高3」など)は残さず、hf_age を聞き直す(法令に関わる値を文のまま埋めない)
 - §12 の 2(review を2回しても残る矛盾の扱い)はユーザーが決めていないので変えていない(最後の low の値が残る)
 """
 
@@ -110,6 +112,9 @@ def merge_updates(state, out):
     state.pending = []
     minor = is_minor(state) or any(u["slot"] == "age_under_18" and u["value"] in TRUTHY for u in ups)
     for u in ups:
+        if u["slot"] == "age_under_18" and type(u["value"]) is not bool:  # 寄らない年齢は預けもしない(hf_age を聞き直す)
+            state.rejected.append(u | {"reason": "age_not_bool"})
+            continue
         if u["slot"] not in known:
             state.pending.append(u)                         # FIX3: 捨てずに預ける
             continue
@@ -139,8 +144,8 @@ def _enforce_minor(state):
     if LATE_NIGHT_NG not in state.ng:
         state.ng.append(LATE_NIGHT_NG)
     vals = state.conflicts.get("time_slots")
-    if vals and "late_night_ok" in vals:
-        vals.remove("late_night_ok")
+    if vals and any(map(_late_value, vals)):
+        vals[:] = [v for v in vals if not _late_value(v)]
         if len(vals) < 2:
             state.conflicts.pop("time_slots")
     t = state.slots.get("time_slots")
@@ -150,7 +155,22 @@ def _enforce_minor(state):
 
 
 def _late_night(u) -> bool:
-    return u["slot"] == "time_slots" and u["value"] == "late_night_ok"
+    return u["slot"] == "time_slots" and _late_value(u["value"])
+
+
+LATE_WORDS = re.compile(r"深夜|夜中|夜勤")
+
+
+def _late_value(v) -> bool:
+    """深夜の時間帯の値か: late_night_ok か、寄せられなかった文に深夜の語か深夜の時刻(_late_clock)がある。
+    文は否定の有無によらない(「深夜も問題ないです」は NEGATION で寄せないが、未成年には残さない。
+    「深夜は無理」を捨てても、深夜を隠した選択肢で聞き直すだけ)。"""
+    if v == "late_night_ok":
+        return True
+    if not isinstance(v, str) or v in SLOT_VALUES.get("time_slots", []):
+        return False
+    s = unicodedata.normalize("NFKC", v)
+    return bool(LATE_WORDS.search(s)) or _late_clock(s)
 
 
 def _clean_update(u) -> dict | None:
@@ -489,13 +509,19 @@ def _wage(s):
 
 
 def _age(s):
-    """18歳未満か。「はい」「16歳」「17才」「16」「18歳未満です」「高1」→ True、「いいえ」「19歳」「18歳以上」→ False。
-    高3・高校生・大学生のように18歳のこともある言い方は寄せない。"""
+    """18歳未満か。「はい」「16歳」「17才」「16」「18歳未満です」「高1」「高一」「中3」「未成年」→ True、
+    「いいえ」「19歳」「18歳以上」→ False。高3・高三・高校生・大学生のように18歳のこともある言い方は寄せない。
+    打ち消しの文(「未成年ではありません」「18歳未満じゃありません」)は True にしない。「いいえ」で始まり
+    未成年の言い方を打ち消していれば False、ほかは寄せない(聞き直す)。NEGATION に「ません」は足さない
+    (「深夜でもかまいません」が寄らなくなる)。"""
     if re.fullmatch(r"(はい|true|yes)", s, re.IGNORECASE):
         return True
     if re.fullmatch(r"(いいえ|false|no)", s, re.IGNORECASE):
         return False
-    if re.search(r"中学|高[12１２]|高校[12１２]年", s):
+    minor = re.search(r"中学|中[123一二三]|高[12一二]|高校[12一二]年|未成年|(?<!\d)(1[0-8]|[0-9])\s*(歳|才)\s*(未満|より下)", s)
+    if re.search(r"(では|じゃ|とは)(ありませ|ない|なく)|違|ちが[うい]", s):
+        return False if minor and s.startswith("いいえ") else None
+    if minor and minor.group(1) is None:
         return True
     m = re.search(r"(\d+)\s*(歳|才)?\s*(未満|以上|より下|より上)?", s)
     if not m or (m.group(2) is None and not re.fullmatch(r"\d+", s)):

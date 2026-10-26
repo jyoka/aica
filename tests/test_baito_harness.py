@@ -180,12 +180,27 @@ def test_minor_cannot_keep_a_late_night_time_slot():
     assert "time_slots" not in s.slots
 
 
-@pytest.mark.parametrize("said", ["22時以降もOK", "23時まで", "夜10時から", "22時半まで", "夜中の2時"])
+@pytest.mark.parametrize("said", ["22時以降もOK", "23時まで", "夜10時から", "22時半まで", "夜中の2時",
+                                  # 文末の「ない」で寄せない(NEGATION)肯定の言い方も、深夜の語があれば受け付けない
+                                  "深夜も問題ないです", "22時以降でも問題ないです", "夜中でもかまわない",
+                                  "深夜は無理"])  # 否定でも捨てる(深夜を隠した選択肢で聞き直すだけ)
 def test_minor_cannot_keep_a_late_night_time_said_as_a_clock_time(said):
     """深夜もOK の選択肢を隠すので、モデルは本人の文(時刻)をそのまま返しやすい。時刻で言っても深夜は受け付けない。"""
     s = H.State(segment="student", phase="fill_gaps")
     H.merge_updates(s, _out(("age_under_18", True, "high"), ("time_slots", said, "high")))
     assert "time_slots" not in s.slots and s.rejected[-1]["raw_text"] == said
+    assert "深夜" not in session.result_preferences(s).get("time_band", "")
+    assert not any("時間帯" in line and "未定" not in line for line in H.render_card_ja(H.build_card(s), final=True).split("\n"))
+
+
+def test_minor_late_night_text_said_before_the_age_is_dropped():
+    """年齢より先に文で届いた深夜(列挙値に寄らない)も、未成年と分かったら消し、矛盾の候補からも外す。"""
+    s = H.State(segment="student")
+    H.merge_updates(s, _out(("time_slots", "evening", "low")))
+    H.merge_updates(s, _out(("time_slots", "夜中でもかまわない", "low")))
+    assert s.conflicts == {"time_slots": ["evening", "夜中でもかまわない"]}
+    H.merge_updates(s, _out(("age_under_18", True, "high")))
+    assert s.conflicts == {} and "time_slots" not in s.slots and s.rejected[-1]["value"] == "夜中でもかまわない"
 
 
 @pytest.mark.parametrize("said", ["22時まで", "17〜22時", "2時から5時まで"])
@@ -242,6 +257,11 @@ def test_minor_late_night_ng_cannot_be_removed():
     ("age_under_18", "17才", True),
     ("age_under_18", "高校1年", True),
     ("age_under_18", "18歳以上", False),
+    ("age_under_18", "高一です", True),
+    ("age_under_18", "高校二年", True),
+    ("age_under_18", "中3", True),
+    ("age_under_18", "中一です", True),
+    ("age_under_18", "未成年です", True),
 ])
 def test_review_corrections_are_normalized_and_keep_the_raw_text(slot, said, value):
     """§12-1: 本人の文を列挙値に寄せ、元の文は raw_text に残す。"""
@@ -261,10 +281,35 @@ def test_review_corrections_are_normalized_and_keep_the_raw_text(slot, said, val
     ("days_per_week", "週2〜3日"),            # 範囲が区切り(1-2 / 3-4)をまたぐ
     ("hourly_wage_min", "2026年までに"),       # 円も時給の語も無い数
     ("age_under_18", "高3"),                  # 18歳のこともある
+    ("age_under_18", "高三です"),
     ("age_under_18", "20歳未満です"),          # 17歳のこともある
 ])
 def test_risky_free_text_is_kept_as_said_instead_of_guessed(slot, said):
     assert H.normalize(slot, said) == (said, said)
+
+
+@pytest.mark.parametrize("said", ["高3", "高三です", "20歳未満です", "未成年ではないです", "ひみつ",
+                                  "未成年ではありません", "未成年じゃありません", "18歳未満ではありません"])
+@pytest.mark.parametrize("segment", ["student", "unknown", "homemaker"])
+def test_age_that_is_not_yes_or_no_is_not_kept(said, segment):
+    """18歳未満かが はい / いいえ に寄らない答えは、スロットにも pending にも入れない(文のまま high で埋めると、
+    未成年を見落としたまま hf_age を聞き直さない)。"""
+    s = H.State(segment=segment)
+    H.merge_updates(s, _out(("age_under_18", said, "high")))
+    assert "age_under_18" not in s.slots and s.pending == [] and H.LATE_NIGHT_NG not in s.ng
+    assert s.rejected[-1]["reason"] == "age_not_bool" and s.rejected[-1]["raw_text"] == said
+    assert H.gap_weight(s, "age_under_18") == 1.0
+
+
+@pytest.mark.parametrize("said", ["いいえ、未成年ではありません", "いいえ、18歳未満ではありません"])
+def test_adult_who_denies_being_a_minor_keeps_late_night(said):
+    """「未成年ではありません」の打ち消しを 18歳未満と読まない(成人に NG「深夜シフト」が付き、深夜の時間帯が消えていた)。"""
+    assert H.normalize("age_under_18", said) == (False, said)
+    s = H.State(segment="student")
+    H.merge_updates(s, _out(("time_slots", "late_night_ok", "high")))
+    H.merge_updates(s, _out(("age_under_18", said, "high")))
+    assert s.slots["age_under_18"]["value"] is False and H.LATE_NIGHT_NG not in s.ng
+    assert s.slots["time_slots"]["value"] == "late_night_ok" and s.rejected == []
 
 
 def test_age_given_as_a_number_is_read():
@@ -441,6 +486,49 @@ def test_answers_that_mention_full_time_or_jobs_keep_the_consultation(state, sai
     session.turn(state, UID, "貯金・将来のため")
     r = session.turn(state, UID, said)
     assert r["status"] == "extract" and session.active(state, UID)
+
+
+def _run_session(state, free: dict[str, tuple[str, dict]], limit=baito_sim.STEP_LIMIT):
+    """相談を最後まで進める。free の質問(id -> (本人の文, モデルの JSON))には、最初の1回だけ文で答える
+    (読み取らせてから呼び直す)。ほかは最初の選択肢をタップし、review は「これでOK」。聞いた質問の (id, retry)。"""
+    session.start(state, UID)
+    asked = []
+    for _ in range(limit):
+        h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
+        asked.append((h.question["id"], bool(h.question.get("retry"))))
+        if h.phase == "review":
+            r = session.turn(state, UID, "これでOK")
+        elif h.question["id"] in free:
+            said, extracted = free.pop(h.question["id"])
+            assert session.turn(state, UID, said)["status"] == "extract"
+            r = session.turn(state, UID, said, extracted)
+        else:
+            r = session.turn(state, UID, h.question["choices"][0])
+        if r["status"] == "result":
+            return r, asked
+    raise AssertionError(asked)
+
+
+def _said(slot, value, qid):
+    return {"reply": "", "choices": [], "segment": "unknown", "ng_updates": [],
+            "slot_updates": [{"slot": slot, "value": value, "confidence": "high", "from": qid}]}
+
+
+def test_minor_who_says_late_night_is_fine_never_gets_it_saved(state):
+    """E2E: 高校生(hf_age「はい」)が、深夜を隠した hf_time に「深夜も問題ないです」と文で答え、モデルが文のまま返す。
+    深夜は受け付けず(時間帯は空のまま。この流れでは後のシナリオ「放課後すぐ」で埋まる)、結果のカードにも保存した希望にも出ない。"""
+    r, _ = _run_session(state, {"hf_time": ("深夜も問題ないです", _said("time_slots", "深夜も問題ないです", "hf_time"))})
+    assert "深夜も問題ないです" not in r["system"] and "深夜も問題ないです" not in r["fallback"]
+    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
+    assert prefs["time_band"] == "放課後すぐ" and H.LATE_NIGHT_NG in prefs["avoids"]
+
+
+def test_age_answered_vaguely_is_asked_again(state):
+    """E2E: hf_age に「高3です」と答え、モデルが文のまま返す。年齢は埋めずに hf_age を聞き直し、「はい」で深夜 NG が付く。"""
+    _, asked = _run_session(state, {"hf_age": ("高3です", _said("age_under_18", "高3です", "hf_age"))})
+    assert [a for a in asked if a[0] == "hf_age"] == [("hf_age", False), ("hf_age", True)]
+    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
+    assert H.LATE_NIGHT_NG in prefs["avoids"]
 
 
 def test_session_runs_to_the_result_and_saves_the_card_as_preferences(state):
