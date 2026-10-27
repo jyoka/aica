@@ -233,6 +233,7 @@ def _finish(state: State, line_user_id: str, h: H.State, partial: bool = False) 
     中学生以下で止めていたら、閉じた後も印(BLOCK_KEY)を残す。年齢の質問に「中学」と答えて聞き直している途中でやめたとき
     (H.jhs_unresolved。task 258)も同じ。15 歳以上と確かめていたら印を消す。"""
     _drop(state, line_user_id)
+    H.settle_pick(h)  # 境目の聞き直しの答えを待っていれば、最初の答えの値を入れる(task 268)
     age = h.slots.get("age_band") or {}
     if h.blocked or H.jhs_unresolved(h):
         state.update(line_user_id, lambda u: u.__setitem__(BLOCK_KEY, {"blocked": h.blocked or "under_15"}))
