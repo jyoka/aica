@@ -25,6 +25,11 @@
 - N-17: 結果の文で、矛盾のまま未定にした項目を「未定：…」に二重に並べない(unknown_hard_slots には残す)
 - 年齢の正規化(§6-3): 未成年を成人と読まないよう読み方を変えた(_norm_age。PRD の表の順では「18歳未満です」
   「17歳、大学志望」が 18_plus になる。レビューに無い、PRD の表の誤り)
+- 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
+  質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。選択肢の文字そのものには当てない。次のターンで「続ける」と
+  言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+- sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
+  choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -207,9 +212,20 @@ def load_catalog():
     return [dict(j, times=set(j["times"])) for j in _load_json("catalog_v4.json")]
 
 
+def load_crisis():
+    """希死念慮・自傷の言葉と、そのときに返す決まった文(crisis_v4.json。PRD に無い aica の決まり。task 256)。
+    窓口は厚生労働省「まもろうよ こころ」(source)で checked の日に確かめたもの。プロンプトには書かない。"""
+    return _load_json("crisis_v4.json")
+
+
 BANK = load_bank()
 CATALOG = load_catalog()
 CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
+CRISIS = load_crisis()
+CRISIS_TEXT = "\n".join(CRISIS["reply"])
+CRISIS_RE = re.compile("|".join(map(re.escape, CRISIS["words"])))
+RESUME_RE = re.compile("|".join(map(re.escape, CRISIS["continue_words"])))
+RESUME_NOT_RE = re.compile("|".join(map(re.escape, CRISIS["continue_not"])))
 
 
 # ----------------------------- 正規化(PRD §6-3) -----------------------------
@@ -1526,6 +1542,13 @@ def _turn(state, user_text, bank, llm, catalog):
     if not nfkc(text):
         ev(state, "empty_input")
         return _represent(state, bank, counted=False)
+    crisis_open = _take_crisis(state)
+    if match_button(state, bank, text) is None:  # 選択肢の文字そのものは答えとして読む
+        if crisis_hit(text):
+            return _crisis(state, bank)
+        if crisis_open and wants_resume(text):
+            ev(state, "crisis_resume")
+            return _represent(state, bank, counted=False, lead=[CRISIS["resume_lead"]])
     if DANGER_RE.search(nfkc(text)):
         return _aside(state, bank, llm, catalog, kind="danger")
     # ---- Stage 1
@@ -1604,6 +1627,34 @@ def _flag(state, key):
         state.flags.append(key)
 
 
+def crisis_hit(text):
+    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。"""
+    return bool(CRISIS_RE.search(nfkc(text)))
+
+
+def wants_resume(text):
+    """窓口を案内した次の発言が「続ける」か(「続けたくない」「大丈夫じゃない」は当たらない)。"""
+    t = nfkc(text)
+    return bool(RESUME_RE.search(t)) and not RESUME_NOT_RE.search(t)
+
+
+def _take_crisis(state):
+    """前のターンで窓口を案内したか。印は 1 ターンだけ残す(読んだら消す)。"""
+    shown = "crisis_shown" in state.flags
+    if shown:
+        state.flags.remove("crisis_shown")
+    return shown
+
+
+def _crisis(state, bank, done=False):
+    """希死念慮・自傷の言葉: 質問を進めず(数えず、抽出も生成もしない)、決まった文だけを返す。選択肢は出さない。
+    今の質問はそのまま残すので、次のターンで「続ける」と言えば、そこから相談を続ける。"""
+    _flag(state, "crisis_shown")
+    ev(state, "crisis_guidance")
+    v = dict(view(state, bank), choices=[], crisis=True)
+    return {"reply": CRISIS_TEXT, "view": v, "done": done, "counted": False}
+
+
 def _restart(state, bank, llm, catalog):
     restarts = state.restarts + 1
     user_text = state._user_text
@@ -1623,6 +1674,12 @@ def _post_result(state, text, bank, llm, catalog):
     v = view(state, bank)
     stored = {"reply": POST_RESULT_TEXT + "\n" + state.result["text"], "view": v, "done": True, "counted": False}
     if not nfkc(text):
+        return stored
+    crisis_open = _take_crisis(state)
+    if crisis_hit(text):
+        return _crisis(state, bank, done=True)
+    if crisis_open and wants_resume(text):
+        ev(state, "crisis_resume")
         return stored
     if DANGER_RE.search(nfkc(text)):
         _flag(state, "danger_warned")

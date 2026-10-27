@@ -8,6 +8,8 @@
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、年齢の「18歳未満」、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
 (6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
+(7) 希死念慮・自傷の言葉(task 256): 自由入力なら、どのフェーズでも質問を進めずに相談窓口の決まった文。ボタンには当てない。
+    「続ける」で続きから。行列の質問の選択肢は「今すぐ抜けたい」
 """
 
 from __future__ import annotations
@@ -661,7 +663,7 @@ def test_real_llm_runner_counts_first_calls_and_records_the_cost(tmp_path):
 
 def test_real_llm_runner_gives_the_generator_the_recent_exchange(tmp_path):
     """--real の生成段には、トークと同じく直前のやりとりを渡す(抽出は今の発言だけ)。task 242 の P3 で、ボタンの
-    「今すぐ消えたい」(お店の行列の質問の答え)だけを渡されたモデルが相談窓口の案内を返し、生成の代替が 3.4% になった。"""
+    お店の行列の質問の答え(当時の文面。task 256 で「今すぐ抜けたい」にした)だけを渡されたモデルが相談窓口の案内を返し、生成の代替が 3.4% になった。"""
     seen: list[tuple[str, list[dict]]] = []
 
     async def fake(stage, system, messages):
@@ -672,7 +674,7 @@ def test_real_llm_runner_gives_the_generator_the_recent_exchange(tmp_path):
 
     baito_sim.run_real(1, tmp_path / "budget.jsonl", 1.0, call=fake, only=["freeter"])
     assert all(m == [m[-1]] and m[-1]["role"] == "user" for s, m in seen if s == "extract")
-    line = next(m for s, m in seen if s == "say" and m[-1]["content"] == "今すぐ消えたい")
+    line = next(m for s, m in seen if s == "say" and m[-1]["content"] == "今すぐ抜けたい")
     assert line[-2] == {"role": "assistant", "content": "お店に長い行列ができた！そのとき思うのは？"}
     assert line[0]["role"] == "user" and len(line) <= 9  # 直前の 8 件 + 今の発言
     assert H.turn.__module__ == H.__name__ and H.start.__module__ == H.__name__  # 包みは外れている
@@ -689,3 +691,145 @@ def test_real_llm_runner_writes_a_relative_ledger_where_it_was_called(tmp_path, 
     monkeypatch.chdir(tmp_path)
     baito_sim.run_real(1, baito_sim.Path("budget.jsonl"), 1.0, call=fake, only=["jhs"])
     assert (tmp_path / "budget.jsonl").read_text().count("baito-p3") == 1
+
+
+# ----------------------------- (7) 希死念慮・自傷の言葉(task 256) -----------------------------
+
+
+def _to_review(st: H.State, llm) -> None:
+    """ボタン(年齢は 18 歳以上、ほかは先頭)で review のカードまで進める。"""
+    for _ in range(40):
+        if st.current["mode"] == "review":
+            return
+        ch = st.current["choices"]
+        H.turn(st, "18歳以上" if "18歳以上" in ch else ch[0], H.BANK, llm)
+    raise AssertionError("review に着かない")
+
+
+def _at(where: str, llm) -> H.State:
+    st = fresh("student")
+    if where == "review":
+        _to_review(st, llm)
+    elif where == "confirm":
+        st.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(QM["q_segment"]["choices"])}
+    else:
+        goto(st, where)
+    return st
+
+
+@pytest.mark.parametrize("said", ["消えたい", "もう死にたい", "バイトどころか生きてる意味がわからない", "リスカしちゃった",
+                                  "消えてなくなりたい", "消えて無くなりたい"])
+@pytest.mark.parametrize("where", ["q_money", "hf_age", "sc_line", "rp_student", "fg_wage", "confirm", "review"])
+def test_crisis_words_in_free_text_get_the_fixed_guidance_and_do_not_advance(where, said):
+    """自由入力の希死念慮・自傷の言葉: どのフェーズでも、抽出も生成も呼ばず、数えず、質問を進めずに決まった文だけを返す。"""
+    llm = LLM()
+    st = _at(where, llm)
+    llm.calls.clear()
+    before = st.to_dict()
+    r = H.turn(st, said, H.BANK, llm)
+    assert r["reply"] == H.CRISIS_TEXT and r["counted"] is False and r["done"] is False
+    assert r["view"]["choices"] == [] and r["view"]["crisis"] is True and llm.calls == []
+    after = st.to_dict()
+    assert after["flags"] == before["flags"] + ["crisis_shown"] and after["log"][-1] == {"t": st.turns, "kind": "crisis_guidance"}
+    assert {k: v for k, v in after.items() if k not in ("flags", "log")} == \
+        {k: v for k, v in before.items() if k not in ("flags", "log")}
+
+
+def test_crisis_guidance_text_is_data_with_the_official_source():
+    """決まった文と言葉の一覧はデータ(crisis_v4.json)。窓口は「まもろうよ こころ」を出典にし、プロンプトには書かない。"""
+    data = json.loads((ROOT / "dip_mcp" / "baito" / "crisis_v4.json").read_text(encoding="utf-8"))
+    assert H.CRISIS == data and data["source"] == "https://www.mhlw.go.jp/mamorouyokokoro/"
+    assert data["source"] in H.CRISIS_TEXT and "続きから" in H.CRISIS_TEXT
+    for f in ("prompt_main_v4_ja.txt", "prompt_extract_v4_ja.txt", "prompt_review_v4_ja.txt", "prompt_result_v4_ja.txt"):
+        assert "0120" not in (H.PROMPT_DIR / f).read_text(encoding="utf-8")
+
+
+def test_a_button_is_read_as_the_answer_even_if_it_contains_a_crisis_word():
+    """選択肢の文字そのもの(ボタン)では案内を出さない。今のバンクの選択肢は、どれも言葉の一覧に当たらない。"""
+    assert not [c for q in H.BANK for c in q["choices"] if H.crisis_hit(c)]
+    bank = json.loads(json.dumps(H.BANK, ensure_ascii=False))
+    q = next(x for x in bank if x["id"] == "sc_line")
+    word = "消えたいくらい忙しいのはイヤ"
+    q["choices"][1] = word
+    q["choice_effects"][word] = q["choice_effects"].pop("今すぐ抜けたい")
+    st = fresh("student")
+    goto(st, "sc_line")
+    st.current["choices"] = list(q["choices"])
+    r = H.turn(st, word, bank, LLM())
+    assert r["reply"] != H.CRISIS_TEXT and r["counted"] is True and "crisis_shown" not in st.flags
+    assert st.slots["customer_facing"]["value"] == "avoid" and st.slots["pace"]["value"] == "calm"
+
+
+def test_after_the_guidance_saying_continue_resumes_the_same_question():
+    """案内の次のターンで「続ける」と言えば、今の質問を出し直して(数えず、LLM なし)相談を続ける。"""
+    llm = LLM()
+    st = fresh("student")
+    goto(st, "hf_days")
+    H.turn(st, "消えたい", H.BANK, llm)
+    r = H.turn(st, "続けたい", H.BANK, llm)
+    assert r["reply"] == H.CRISIS["resume_lead"] + "\n" + QM["hf_days"]["text"] and r["counted"] is False
+    assert r["view"]["choices"] == QM["hf_days"]["choices"] and llm.calls == [] and "crisis_shown" not in st.flags
+    r = H.turn(st, "週3〜4日", H.BANK, llm)
+    assert r["counted"] is True and st.slots["days_per_week"]["value"] == "3-4"
+
+
+def test_after_the_guidance_a_button_answer_continues_and_not_continuing_is_not_a_resume():
+    """案内の後でも、ボタンの答えはそのまま進む。「続けたくない」は「続ける」と読まない(印は 1 ターンだけ)。"""
+    st = fresh("student")
+    goto(st, "hf_days")
+    H.turn(st, "死にたい", H.BANK, LLM())
+    r = H.turn(st, "週1〜2日", H.BANK, LLM())
+    assert r["counted"] is True and st.slots["days_per_week"]["value"] == "1-2" and "crisis_shown" not in st.flags
+    llm = LLM()
+    H.turn(st, "消えたい", H.BANK, llm)
+    H.turn(st, "続けたくない", H.BANK, llm)
+    assert llm.calls[0] == "extract"
+    llm2 = LLM()
+    H.turn(st, "続けて", H.BANK, llm2)  # 案内の直後ではないので、ふつうの発言として読む
+    assert llm2.calls[0] == "extract"
+
+
+def test_crisis_words_after_the_result_also_get_the_guidance():
+    st = fresh("student")
+    finish(st)
+    llm = LLM()
+    r = H.turn(st, "もう消えたい", H.BANK, llm)
+    assert r["reply"] == H.CRISIS_TEXT and r["done"] is True and llm.calls == []
+    r = H.turn(st, "続ける", H.BANK, llm)
+    assert r["reply"] == H.POST_RESULT_TEXT + "\n" + st.result["text"] and llm.calls == []
+
+
+def test_session_sends_the_guidance_without_quick_replies_and_resumes(state):
+    """LINE: 案内はクイックリプライなし・モデルを呼ばない。「続ける」で今の質問と選択肢が戻る。"""
+    session.start(state, UID)
+    r = session.turn(state, UID, "消えたい")
+    assert r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == [] and r["llm_calls"] == 0
+    r = session.turn(state, UID, "続ける")
+    assert r["status"] == "reply" and r["choices"] == QM["q_money"]["choices"] and r["question"] == "q_money"
+
+
+@pytest.mark.parametrize("said", ["もう消えたい。求人見せて", "死にたい、正社員がいい"])
+def test_session_does_not_close_on_an_exit_request_with_crisis_words(state, said):
+    """LINE: やめる頼み(求人を見せて・正社員がいい)を含んでも、希死念慮の言葉があれば相談を閉じずに窓口を案内する
+    (閉じるとトークの AI が受け持つが、トークの AI には希死念慮の決まりが無い)。"""
+    session.start(state, UID)
+    r = session.turn(state, UID, said)
+    assert r["active"] is True and r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == []
+    assert session.turn(state, UID, "求人見せて")["ended"] == "exit"
+
+
+def test_the_line_choice_now_reads_get_out_with_the_same_effects():
+    """お店の行列の選択肢は「今すぐ抜けたい」(利用者の決定 2026-10-27)。効果は前と同じ。古い文面はコードとデータに無い。"""
+    old = "今すぐ" + "消えたい"
+    q = QM["sc_line"]
+    assert q["choices"] == ["よし、燃えてきた", "今すぐ抜けたい"]
+    assert q["choice_effects"]["今すぐ抜けたい"] == {"customer_facing": "avoid", "pace": "calm"}
+    assert _ref("bank_v4").BANK == H.BANK
+    st = fresh("homemaker")
+    goto(st, "sc_line")
+    H.turn(st, "今すぐ抜けたい", H.BANK, LLM())
+    assert st.slots["customer_facing"]["value"] == "avoid" and st.slots["pace"]["value"] == "calm"
+    files = [*(ROOT / "dip_mcp").rglob("*.py"), *(ROOT / "dip_mcp").rglob("*.json"), *(ROOT / "dip_mcp").rglob("*.txt"),
+             *(ROOT / "line_runtime").rglob("*.py"), *(ROOT / "evals").glob("*.py"), *REF.glob("*.py"),
+             *(REF / "transcripts").glob("v4_*.txt")]
+    assert [str(f) for f in files if old in f.read_text(encoding="utf-8")] == []

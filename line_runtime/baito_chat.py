@@ -105,7 +105,8 @@ class SyncLLM:
     """ハーネスの llm(extract / generate)を、同期で実モデルにつなぐ(PRD §13-1 P3 の測定。evals/baito_sim.py --real)。
     call は default_llm() と同じ形。used に段ごとの呼び出しと使った量を残す。
     生成段には、トーク(runtime の _baito_turn)と同じく直前のやりとりを渡す。呼ぶ側が 1 ターンごとに said で覚えさせる
-    (渡さないと、ボタンの「今すぐ消えたい」が前の質問と切り離されて読まれる。task 242 の P3 で、生成の代替の原因だった)。"""
+    (渡さないと、ボタンの答えが前の質問と切り離されて読まれる。task 242 の P3 で、お店の行列の質問の答えが希死念慮と読まれ、
+    生成の代替の原因だった。その選択肢は task 256 で「今すぐ抜けたい」にした)。"""
 
     def __init__(self, call: BaitoLLM, render_prompt, prompt_stage):
         self.call = call
