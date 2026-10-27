@@ -586,7 +586,7 @@ def test_command_needs_a_limit_and_known_forms():
         parse_args(["--form", "A", "--limit-usd", "1", "--max-turns", "0"])
     with pytest.raises(SystemExit):
         parse_args(["--form", "A", "--limit-usd", "1", "--same-samples", "0"])
-    with pytest.raises(SystemExit, match="2/5"):
+    with pytest.raises(SystemExit, match="2b"):
         check_forms(["B"])
     with pytest.raises(SystemExit, match="知らない形"):
         check_forms(["Z"])
