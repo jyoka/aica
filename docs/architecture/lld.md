@@ -1349,7 +1349,7 @@ sequenceDiagram
 | 部品 | 中身 |
 |---|---|
 | `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。移したときに直したところはファイルの先頭に書いてある |
-| `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま |
+| `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
