@@ -15,6 +15,9 @@ pypdf>=6.21
 uvicorn>=0.30
 # LINE の Messaging API の呼び出し(line_runtime/line_channel.py)。openai と fastapi のテストが使うので、もとから入っている
 httpx>=0.27
+# 外向きの HTTPS(httpx、openai、anthropic)が信頼する CA の束。2026.10.19 で漏洩した eMudhra の中間証明書を外した
+# (Render の通告 https://render.com/docs/advisory-emudhra 、2026-10-27)
+certifi>=2026.10.19
 pytest>=8.3
 # 音声相談(voice_resume/)。LiveKit Cloud + Deepgram STT(ja)+ Anthropic(既定。OpenAI にも戻せる)+ Cartesia TTS(ja)+ Silero VAD
 # + 多言語 turn detector。オフラインテストも livekit-agents を import するので、同じ venv に入れる。

@@ -353,6 +353,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
+| `python -m scripts.check_image_certs [--no-build] [--probe]` | image の CA 証明書の確かめ。コンテナを作り、certifi が 2026.10.19 以上で、ca-certificates が Debian の今の版かを確かめる(eMudhra の漏洩。[docs/deploy/render.md](docs/deploy/render.md)) | 使わない |
 | `python -m scripts.progress_ui_preview [--segment homemaker]` | アルバイト・パートの相談の、プロフィールが育つ UI(帯、プロフィールカード、完成)の写真を `docs/images/progress-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
