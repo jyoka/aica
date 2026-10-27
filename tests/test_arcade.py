@@ -59,6 +59,16 @@ def test_hub_and_eight_games_are_plain_html_pages_without_claude_ai(client):
         assert "set-cookie" not in r.headers  # 本人のデータを読み書きしないので、匿名IDの Cookie を発行しない
 
 
+def test_hub_footer_matches_how_the_games_use_ai_and_storage(client):
+    """ハブの注意書きは今の動きに合わせる: 同意したあとは答えを AI の事業者に送る。保存を押した書類はプロフィールに残る。
+    事業者は LINE_SIM_PROVIDER で替わるので、静的なページには名前を書かず、ポリシーを指す。"""
+    footer = client.get("/liff/arcade").text.split("<footer>")[1].split("</footer>")[0]
+    assert "米国の AI の事業者に送ります" in footer and "プライバシーポリシー" in footer
+    assert "「プロフィールに保存」を押したときだけ" in footer
+    assert "Anthropic" not in footer and "OpenAI" not in footer
+    assert "いまはオフライン" not in footer and "ブラウザにだけ残ります" not in footer
+
+
 def test_unknown_games_and_files_are_404(client):
     for path in ["/liff/arcade/resume-arcade", "/liff/arcade/nope", "/liff/arcade/the-case-of-you.html",
                  "/liff/arcade/..%2Fserver.py", "/static/arcade/nope.js", "/static/arcade/the-case-of-you.html"]:
@@ -97,7 +107,8 @@ def test_shared_japanese_logic_passes_its_node_tests():
     node = shutil.which("node")
     if not node:
         pytest.skip("node が入っていない")
-    r = subprocess.run([node, "--test", str(ROOT / "tests" / "js" / "arcade-ja.test.js")],
+    # spec を明示する: Node 22 までは非 TTY だと tap(`# fail 0`)で出し、下の照合に当たらない
+    r = subprocess.run([node, "--test", "--test-reporter=spec", str(ROOT / "tests" / "js" / "arcade-ja.test.js")],
                        check=False, capture_output=True, text=True, timeout=60, cwd=ROOT)
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
     assert re.search(r"^ℹ fail 0$", r.stdout, re.MULTILINE)

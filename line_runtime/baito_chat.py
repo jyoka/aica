@@ -103,17 +103,25 @@ def messages_for(stage: str, user_text: str, convo: list[dict] | None = None) ->
 
 class SyncLLM:
     """ハーネスの llm(extract / generate)を、同期で実モデルにつなぐ(PRD §13-1 P3 の測定。evals/baito_sim.py --real)。
-    call は default_llm() と同じ形。used に段ごとの呼び出しと使った量を残す。"""
+    call は default_llm() と同じ形。used に段ごとの呼び出しと使った量を残す。
+    生成段には、トーク(runtime の _baito_turn)と同じく直前のやりとりを渡す。呼ぶ側が 1 ターンごとに said で覚えさせる
+    (渡さないと、ボタンの「今すぐ消えたい」が前の質問と切り離されて読まれる。task 242 の P3 で、生成の代替の原因だった)。"""
 
     def __init__(self, call: BaitoLLM, render_prompt, prompt_stage):
         self.call = call
         self.render_prompt = render_prompt
         self.prompt_stage = prompt_stage
         self.used: list[dict] = []
+        self.convo: list[dict] = []
         self._loop = asyncio.new_event_loop()
 
+    def said(self, role: str, text: str) -> None:
+        """画面に出たやりとり(本人の発言・返信)を 1 つ覚える。"""
+        _append(self.convo, role, text)
+
     def _run(self, stage: str, system: str, user_text: str):
-        out, usage = self._loop.run_until_complete(self.call(stage, system, messages_for(stage, user_text)))
+        msgs = messages_for(stage, user_text, recent(self.convo))
+        out, usage = self._loop.run_until_complete(self.call(stage, system, msgs))
         self.used.append({"stage": stage, **usage})
         return json.dumps(out, ensure_ascii=False)
 
@@ -139,16 +147,26 @@ def history(messages: list) -> list[dict]:
             role, text = "assistant", _bubbles(m.content)
         else:
             continue
-        if not text:
-            continue
-        if out and out[-1]["role"] == role:
-            out[-1]["content"] += "\n" + text
-        else:
-            out.append({"role": role, "content": text})
-    out = out[-HISTORY_MESSAGES:]
-    while out and out[0]["role"] != "user":  # Anthropic は user から始める
+        _append(out, role, text)
+    return recent(out)
+
+
+def recent(convo: list[dict]) -> list[dict]:
+    """直前の HISTORY_MESSAGES 件を、user から始まる形で返す(Anthropic は user から始める)。"""
+    out = [dict(m) for m in convo[-HISTORY_MESSAGES:]]
+    while out and out[0]["role"] != "user":
         out.pop(0)
     return out
+
+
+def _append(out: list[dict], role: str, text: str) -> None:
+    """同じ役が続いたら 1 つにまとめる(user と assistant を交互にする)。"""
+    if not text:
+        return
+    if out and out[-1]["role"] == role:
+        out[-1]["content"] += "\n" + text
+    else:
+        out.append({"role": role, "content": text})
 
 
 def _bubbles(content) -> str:

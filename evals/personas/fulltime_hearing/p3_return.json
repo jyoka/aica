@@ -1,0 +1,27 @@
+{
+ "id": "p3-return",
+ "title": "介護で 3 年のブランク",
+ "segment": "return",
+ "style": "丁寧に答えるが、ブランクのことは少し気にしている。職歴は1社だけ。",
+ "resume": null,
+ "facts": [
+  {"key": "why_now", "kind": "text", "value": "母が施設に入って落ち着いたので、また働きたい"},
+  {"key": "area", "kind": "text", "value": "横浜市内で、家から30分以内"},
+  {"key": "min_annual_salary", "kind": "number", "value": 350, "unit": "万円"},
+  {"key": "start_timing", "kind": "text", "value": "来月から"},
+  {"key": "work_hours", "kind": "text", "value": "平日の9時から17時まで。残業はできない"},
+  {"key": "blank_period", "kind": "number", "value": 3, "unit": "年"},
+  {"key": "career1.role", "kind": "text", "value": "みほん物流で事務、6年(配車と請求の担当)"},
+  {"key": "career1.scale", "kind": "number", "value": 15, "unit": "人(部署)"},
+  {"key": "career1.result", "kind": "text", "value": "請求の間違いを減らすためにチェック表を作った"},
+  {"key": "career2.role", "kind": "text", "value": "母の介護、3年"},
+  {"key": "career2.result", "kind": "text", "value": "役所の手続きと介護サービスの調整を一人でした"}
+ ],
+ "other": {
+  "今のあなたに近いもの": "ブランクから戻る",
+  "働き方": "残業なし。リモートはなくてもよい",
+  "次にやりたいこと": "前と同じような事務の仕事",
+  "人と働く形": "決まった手順で落ち着いて進めたい",
+  "やりたくないこと": "夜までかかる仕事"
+ }
+}

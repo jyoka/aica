@@ -365,11 +365,12 @@ classDiagram
 | `judge.py` | LLM ジャッジ。相談の深さの 4 項目、トーン、設計への合い方(`design_fit`)、ひとこと(`comment`)。`samples` 回(既定 2)判定してまとめる |
 | `meter.py` | Anthropic と OpenAI の SDK の呼び出しをクラスごと包んで、トークンと費用を数える(評価だけで使う) |
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
-| `personas/` | ペルソナの架空の履歴書(読み取り結果の形) |
+| `personas/` | ペルソナの架空の履歴書(読み取り結果の形)。`personas/fulltime_hearing/` は正社員のヒアリングの評価のペルソナ 6 人と事実表 |
+| `fulltime_hearing/` | 正社員のヒアリングの評価(設計メモ [fulltime-hearing.md](../design/fulltime-hearing.md) §6)。短気な本人役、いらいらと事実のジャッジ、形ごと・ペルソナごとの報告。予算台帳は `budget-fulltime-hearing.jsonl`。使い方は [README](../../evals/fulltime_hearing/README.md) |
 | `search_eval.py`、`search_eval_set.json` | 意味検索の評価セットと、上位 3 件の再現率 |
 | `jobtype_repro.py`、`semantic_repro.py`、`wait_repro.py` | 個別の問題を実 API で再現するスクリプト |
 | `probe.py` | 「電話はしたくない」と音声でコールセンターを外す流れを、チャットと音声で数ターンずつ実 API で確かめる小さな計測。予算台帳と $4 の停止は `run.py` と同じ |
-| `baito_sim.py` | アルバイト・パートの相談のハーネス(`dip_mcp/baito`)の検査。PRD v4.1 の単体チェック 131 件と 20 ペルソナ(モックの LLM)を移植版で回し、§11-5 の基準値に照らす(実 API を呼ばない。`python -m evals.baito_sim`、pytest は `tests/test_baito_harness.py`)。`--real` は P3 の実モデルの測定(費用がかかる) |
+| `baito_sim.py` | アルバイト・パートの相談のハーネス(`dip_mcp/baito`)の検査。PRD v4.1 の単体チェック 131 件と 20 ペルソナ(モックの LLM)を移植版で回し、§11-5 の基準値に照らす(実 API を呼ばない。`python -m evals.baito_sim`、pytest は `tests/test_baito_harness.py`)。`--log DIR` は出力と会話ログを DIR に書く(CI の証跡)。`--real` は P3 の実モデルの測定(費用がかかる) |
 | `baseline/` | 比較の基準にした評価の結果 |
 
 ### 1.6 evalkit
@@ -2135,6 +2136,9 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 - 指標と向きは `evals/run.py` の `DIRECTIONS` です。`branch_within_3`(会話の段階に 3 ターン以内に入ったか)のような名前は、
   前の結果と比べるために残しています(R5)
 - 予算台帳(`evals/budget.jsonl`)の 1 行は `{at, run, cost_usd, case, rep, interrupted?}` です。`search_eval.py record` も 1 行足します
+- 正社員のヒアリングの評価(`python -m evals.fulltime_hearing.run`)は、`evals/results/fulltime-hearing-<時刻>.json` に形、ペルソナ、回ごとの
+  `metrics`(正しく取れた事実、完了、推定時間、打った字数など)と `gates`(関門)を書きます。evalkit の形ではありません。
+  台帳は `evals/budget-fulltime-hearing.jsonl` で、同じ 1 行の形です(`case` は `形/ペルソナ`)
 
 ### 5.7 fixtures
 

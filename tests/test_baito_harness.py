@@ -173,6 +173,19 @@ def test_the_baseline_files_are_not_overwritten(reference):
     assert diff == ["v4_spam_high.txt"]
 
 
+def test_log_writes_the_ci_evidence_and_keeps_the_exit_code(reference, tmp_path, monkeypatch, capsys):
+    """CI(.github/workflows/ci.yml)は `python -m evals.baito_sim --log evidence/baito_sim` を回す。終了コードと出力は --log なしと同じ。"""
+    monkeypatch.setattr(baito_sim, "check", lambda: reference)
+    dest = tmp_path / "evidence" / "baito_sim"
+    assert baito_sim.main(["--log", str(dest)]) == 0
+    assert "すべて合格" in capsys.readouterr().out
+    assert (dest / "unit_checks.log").read_text(encoding="utf-8").strip().endswith("131/131 passed")
+    assert "=== v4" in (dest / "simulate.log").read_text(encoding="utf-8")
+    assert json.loads((dest / "results_v4.json").read_text(encoding="utf-8")) == reference[0]["results"]
+    assert sorted(p.name for p in (dest / "transcripts").iterdir()) == sorted(reference[0]["transcripts"])
+    assert (dest / "verdict.txt").read_text(encoding="utf-8") == "すべて合格\n"
+
+
 def test_acceptance_catches_regressions(reference):
     r, _ = reference
     worse = json.loads(json.dumps(r["results"]))
@@ -644,3 +657,35 @@ def test_real_llm_runner_counts_first_calls_and_records_the_cost(tmp_path):
     assert out["rates"]["extract_pass"] == 1.0 and out["rates"]["generate_pass"] == 0.0
     assert "generate_pass=0.0(基準 ≧ 0.95)" in out["problems"] and ledger.read_text().count("baito-p3") == 1
     assert "aica_port" not in sys.modules or sys.modules["aica_port"] is H
+
+
+def test_real_llm_runner_gives_the_generator_the_recent_exchange(tmp_path):
+    """--real の生成段には、トークと同じく直前のやりとりを渡す(抽出は今の発言だけ)。task 242 の P3 で、ボタンの
+    「今すぐ消えたい」(お店の行列の質問の答え)だけを渡されたモデルが相談窓口の案内を返し、生成の代替が 3.4% になった。"""
+    seen: list[tuple[str, list[dict]]] = []
+
+    async def fake(stage, system, messages):
+        seen.append((stage, messages))
+        out = {"extract": {"slot_updates": [], "ng_updates": [], "ng_removals": [], "segment": None, "intent": "answer",
+                           "review_ack": None}, "result": {"reply": "x", "recommendations": []}}.get(stage, {"reply": ""})
+        return out, {"input_tokens": 0, "output_tokens": 0}
+
+    baito_sim.run_real(1, tmp_path / "budget.jsonl", 1.0, call=fake, only=["freeter"])
+    assert all(m == [m[-1]] and m[-1]["role"] == "user" for s, m in seen if s == "extract")
+    line = next(m for s, m in seen if s == "say" and m[-1]["content"] == "今すぐ消えたい")
+    assert line[-2] == {"role": "assistant", "content": "お店に長い行列ができた！そのとき思うのは？"}
+    assert line[0]["role"] == "user" and len(line) <= 9  # 直前の 8 件 + 今の発言
+    assert H.turn.__module__ == H.__name__ and H.start.__module__ == H.__name__  # 包みは外れている
+
+
+def test_real_llm_runner_writes_a_relative_ledger_where_it_was_called(tmp_path, monkeypatch):
+    """--ledger の相対パスは、呼んだ場所から決める(走らせる間は参照資料の写しへ chdir するので、写しと一緒に消えて
+    いた。task 242 の P3 で、上限の確認が毎回 $0 から始まっていた)。"""
+    async def fake(stage, system, messages):
+        out = {"extract": {"slot_updates": [], "ng_updates": [], "ng_removals": [], "segment": None, "intent": "answer",
+                           "review_ack": None}, "result": {"reply": "x", "recommendations": []}}.get(stage, {"reply": ""})
+        return out, {"input_tokens": 0, "output_tokens": 0}
+
+    monkeypatch.chdir(tmp_path)
+    baito_sim.run_real(1, baito_sim.Path("budget.jsonl"), 1.0, call=fake, only=["jhs"])
+    assert (tmp_path / "budget.jsonl").read_text().count("baito-p3") == 1

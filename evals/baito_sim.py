@@ -1,8 +1,10 @@
 """バイト探しの相棒(dip_mcp/baito)の検査: PRD v4.1 の参照資料の単体チェックとシミュレーターで、aica の移植版を回す。
 
     ./.venv/bin/python -m evals.baito_sim                 # 単体チェック 131 件 + 20 ペルソナ(モック LLM。費用 0)
-    ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/results/budget-baito.jsonl --limit-usd 2
-                                                          # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる)
+    ./.venv/bin/python -m evals.baito_sim --log evidence/baito_sim   # 同じ。出力と会話ログを DIR にも書く(CI)
+    ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/budget-baito-v4.jsonl --limit-usd 8
+                                                          # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる。
+                                                          # 台帳と上限はカード 242 で決めたもの。1 会話 約 $0.08・35 秒)
 
 モック(既定): docs/prd/baito_harness を一時ディレクトリに写し、BAITO_HARNESS=aica_port(移植版。docs/prd/baito_harness/
 aica_port.py)で `unit_checks_v4.py` と `simulate.py v4` を回す。写しの中で回すので、基準値(results_v4.json・transcripts/)は
@@ -13,6 +15,7 @@ pytest は tests/test_baito_harness.py がこれを回す。
 - 対象は 20 ペルソナのうち、LLM の誤りを模す malformed・spam_high を除く 18 人。本人の発言はペルソナの台本のまま。
   モデルは line_runtime/baito_chat.py(トークと同じ LLM 層)で呼ぶ
 - M-drop の「正しい更新」は、台本に付いた抽出(sim_v4 の extraction)とする。sim_v4 の dropped がそのまま照らす
+- 生成段には、トーク(runtime の _baito_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
 - 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
 """
@@ -60,6 +63,7 @@ def run_reference(timeout: int = TIMEOUT) -> dict:
         transcripts = {p.name: p.read_text(encoding="utf-8") for p in sorted((work / "transcripts").glob("v4_*.txt"))}
     lines = unit.stdout.strip().splitlines()
     return {"unit_returncode": unit.returncode, "unit_summary": lines[-1] if lines else "",
+            "unit_stdout": unit.stdout, "unit_stderr": unit.stderr[-2000:],
             "unit_fails": [x for x in lines if x.startswith("FAIL")], "sim_returncode": sim.returncode,
             "sim_stdout": sim.stdout, "sim_stderr": sim.stderr[-2000:], "results": results,
             "baseline": json.loads((REF / "results_v4.json").read_text(encoding="utf-8")), "transcripts": transcripts}
@@ -90,6 +94,20 @@ def acceptance(port: dict, base: dict) -> list[str]:
     return bad
 
 
+def write_log(dest: Path, r: dict, bad: list[str]) -> None:
+    """--log: CI の証跡(単体チェックとシミュレーターの出力、移植版の結果、会話ログの写し、合否)を dest に書く。"""
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "unit_checks.log").write_text(r["unit_stdout"] + r["unit_stderr"], encoding="utf-8")
+    (dest / "simulate.log").write_text(r["sim_stdout"] + r["sim_stderr"], encoding="utf-8")
+    if r["results"] is not None:
+        (dest / "results_v4.json").write_text(json.dumps(r["results"], ensure_ascii=False, indent=1), encoding="utf-8")
+    (dest / "transcripts").mkdir(exist_ok=True)
+    for name, text in r["transcripts"].items():
+        (dest / "transcripts" / name).write_text(text, encoding="utf-8")
+    (dest / "verdict.txt").write_text("すべて合格\n" if not bad else "不合格:\n" + "".join(f"- {x}\n" for x in bad),
+                                      encoding="utf-8")
+
+
 def check(timeout: int = TIMEOUT) -> tuple[dict, list[str]]:
     """モックの検査の全部: 単体チェックが全件合格し、シミュレーターが落ちず、acceptance に問題が無い。"""
     r = run_reference(timeout)
@@ -111,6 +129,42 @@ def _import_sim(work: Path):
     for name in ("sim_v4", "bank_v4", "catalog_v4", PORT):
         sys.modules.pop(name, None)
     return importlib.import_module("sim_v4")
+
+
+class Transcript:
+    """ハーネスの start / resume / turn を包み、画面に出たやりとりを今の会話の SyncLLM に覚えさせる
+    (生成段に、トークと同じく直前のやりとりを渡すため。line_runtime.baito_chat.SyncLLM.said)。"""
+
+    def __init__(self, harness, current):
+        self.harness, self.current = harness, current
+        self.orig = {k: getattr(harness, k) for k in ("start", "resume", "turn")}
+
+    def __enter__(self):
+        o, depth = self.orig, [0]
+
+        def shown(fn):
+            def wrapped(state, bank, *a, **kw):
+                depth[0] += 1  # resume は中で start を呼ぶ。外側の 1 回だけ覚える
+                try:
+                    v = fn(state, bank, *a, **kw)
+                finally:
+                    depth[0] -= 1
+                if not depth[0]:
+                    self.current().said("assistant", v.get("text") or "")
+                return v
+            return wrapped
+
+        def turn(state, user_text, bank, llm, *a, **kw):
+            res = o["turn"](state, user_text, bank, llm, *a, **kw)
+            llm.said("user", user_text)
+            llm.said("assistant", res.get("reply") or "")
+            return res
+        self.harness.start, self.harness.resume, self.harness.turn = shown(o["start"]), shown(o["resume"]), turn
+        return self
+
+    def __exit__(self, *exc):
+        for k, fn in self.orig.items():
+            setattr(self.harness, k, fn)
 
 
 class StageCounter:
@@ -167,6 +221,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
     from line_runtime import baito_chat, config
     from line_runtime.ledger import cost_usd
 
+    ledger = Path(ledger).resolve()  # 下で写しへ chdir するので、相対パスは今のうちに決める(写しと一緒に消さない)
     with tempfile.TemporaryDirectory(prefix="baito-p3-") as tmp:
         work = Path(tmp) / "baito_harness"
         shutil.copytree(REF, work, ignore=shutil.ignore_patterns("__pycache__"))
@@ -189,7 +244,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
             sim.signal = types.SimpleNamespace(signal=signal.signal, SIGALRM=signal.SIGALRM,
                                                alarm=lambda s: signal.alarm(600 if s else 0))
             res, spent, stopped = [], 0.0, False
-            with StageCounter(H) as counter:
+            with StageCounter(H) as counter, Transcript(H, lambda: made[-1]):
                 for rep in range(runs):
                     for p in personas:
                         try:
@@ -242,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", help="--real のとき、回すペルソナ(カンマ区切り)")
     ap.add_argument("--ledger", type=Path, help="--real の費用台帳(このカード用のものを渡す)")
     ap.add_argument("--limit-usd", type=float, help="--real で、台帳の累計がこの額に達したら止める")
+    ap.add_argument("--log", type=Path, metavar="DIR",
+                    help="モックの検査の出力・移植版の結果・会話ログの写し・合否を DIR に書く(CI の証跡)")
     a = ap.parse_args(argv)
     if a.real:
         if a.ledger is None or a.limit_usd is None:
@@ -256,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if out["problems"] else 0
     t = time.perf_counter()
     r, bad = check()
+    if a.log:
+        write_log(a.log, r, bad)
     print(r["unit_summary"])
     print(r["sim_stdout"].split("=== v3")[0].strip())
     print("すべて合格" if not bad else "不合格:\n- " + "\n- ".join(bad), f"({time.perf_counter() - t:.1f}s)")

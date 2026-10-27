@@ -456,6 +456,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | モジュール、HTTP の口、dip のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](docs/architecture/lld.md)(LLD) |
 | 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](docs/architecture/review-2026-10.md) |
 | 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
+| エージェントの決まり(テストのコマンド、回帰の合格基準と CI、禁止事項、task-hub のマージキューの有効化) | [AGENTS.md](AGENTS.md) |
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](docs/design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](docs/prd/aica-v2-fulltime.md)(PRD) |
 | レジュメ・アーケード(遊びながら職務経歴書を作るゲーム)の要件 | [docs/prd/resume-arcade.md](docs/prd/resume-arcade.md)(PRD) |
