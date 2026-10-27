@@ -25,7 +25,7 @@ SEGMENTS = {"student": "学生", "homemaker": "家のこと中心（主婦・主
             "other": "フリーター・求職中・その他"}
 # LINE の Flex の大きさ(px)。bubble の幅と、text・spacing の size
 BUBBLE_W = {"nano": 120, "micro": 160, "deca": 220, "hecto": 241, "kilo": 260, "mega": 300, "giga": 500}
-TEXT_PX = {"xxs": 11, "xs": 13, "sm": 14, "md": 16, "lg": 19, "xl": 22}
+TEXT_PX = {"xxs": 11, "xs": 13, "sm": 14, "md": 16, "lg": 19, "xl": 22, "xxl": 29, "3xl": 35}
 SPACE_PX = {"none": 0, "xs": 2, "sm": 4, "md": 8, "lg": 12, "xl": 16, "xxl": 20}
 
 

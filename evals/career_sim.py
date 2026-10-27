@@ -190,7 +190,7 @@ def _flex_problems(part: dict | None, built: dict | None) -> list[str]:
     bad = [] if 0 < len(flex.get("altText", "")) <= 400 else ["altText"]
     if part["kind"] == UI.CAREER_CARD and sum(H.chars(t) for t in career_ui.flex_lines(flex)) > UI.CAREER_CARD_MAX:
         bad.append(f"職歴カード {n} 字")
-    if part["kind"] == UI.BAND and len(progress_ui.band_line(part["progress"])) > progress_ui.BAND_MAX:
+    if part["kind"] == UI.BAND and len((b := part["band"])["chip"] + b["value"] + (b["more"] or "")) > UI.BAND_MAX:
         bad.append("帯")
     if part["kind"] == UI.CARD and progress_ui.flex_chars(flex) > progress_ui.CARD_MAX:
         bad.append("プロフィールカード")

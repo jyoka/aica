@@ -217,21 +217,25 @@ def test_career_card_only_on_turns_where_a_card_field_was_filled():
         ui, mem, _ = step(h, mem, said)
     assert h.current["qid"] == "card_role1"
     ui, mem, _ = step(h, mem, "物流会社で現場リーダー、6年")
-    assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["count"] == "1/3"
+    assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["status"] is None  # 1 つ目はバーだけ
     assert ui["career_card"]["rows"][1]["value"] is None and not ui["career_card"]["complete"]
     ui, mem, _ = step(h, mem, "5人くらい")
-    assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["count"] == "2/3"
+    assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["status"] == "あと1つ"
     ui, mem, _ = step(h, mem, "誤出荷が半分になった")
     c = ui["career_card"]
-    assert c["count"] == "3/3" and c["complete"]  # 3 つが本人の言葉で埋まった → 完成のスタンプ
+    assert c["status"] is None and c["complete"]  # 3 つが本人の言葉で埋まった → 一言は無く、完成のスタンプ
     # 2 枚目の何をしていたかをパス: 空欄として埋まり(灰色の「パス」)、残りの 2 つは聞かないので career_cards が終わる。
-    # 職歴カードより上のプロフィールカードを付ける(職歴は、何をしていたかが埋まった 1 枚と、欄 4/6)
+    # 職歴カードより上のプロフィールカードを付ける(職歴の行は、何をしていたかの本人の言葉。数は出さない)
     ui, mem, _ = step(h, mem, H.PASS)
     assert h.phase != "career_cards" and ui["kind"] == UI.CARD
-    assert {"label": "職歴カード", "value": "1枚、欄4/6", "inferred": False, "undecided": False} in \
+    assert {"label": "職歴カード", "value": "物流会社で現場リーダー、6年", "inferred": False, "undecided": False} in \
         ui["progress"]["groups"][1]["items"]
+    assert ui["progress"]["growth"]["head"] == "職歴が入りました"
     c = UI.career_card(h, 2)
     assert c["rows"][0] == {"label": "仕事", "value": H.PASS, "muted": True} and not c["complete"]
+    assert c["status"] is None and c["done"] == 1  # 2 枚目は何をしていたかだけ埋まった(パス)
+    assert [UI.card_status(d, 3, False) for d in (1, 2, 3)] == [None, "あと1つ", "空欄あり"]
+    assert UI.card_status(3, 3, True) is None  # 完成は「完成」のスタンプが見せる
 
 
 def test_counts_follow_section_4_and_start_from_hard_filter():
@@ -249,6 +253,9 @@ def test_counts_follow_section_4_and_start_from_hard_filter():
     assert (p["filled"], p["total"]) == (1, 5 + 2 + 6)  # same_path: HARD 5、MID 2、職歴カード 6
     assert p["added"] == [{"label": "なぜ今", "value": "なぜ今 パス", "inferred": False}]
     assert [g["name"] for g in p["groups"]] == ["条件", "職歴", "働き方", "NG"]
+    # 帯は数字を出さない: 最初に埋まったターンは芽が出る。パスは札の後ろに値だけ
+    assert ui["band"] == {"icon": "🌱", "chip": "＋なぜ今", "value": "パス", "more": None, "up": "プロフィールの芽が出ました",
+                              "filled": 1, "total": 13}
 
 
 def test_review_has_fix_buttons_and_fixing_a_field_goes_back_to_the_review():
@@ -405,7 +412,8 @@ def test_start_card_and_typing_an_answer_instead_of_pressing_start():
     out = H.start(h, H.BANK)
     assert out["bubbles"] == [H.START_LEAD] and out["choices"] == [H.START_GO, H.LATER]
     s = UI.start_payload(h)["start"]
-    assert s["title"] == "職務経歴書を3分で" and s["buttons"] == [H.START_GO, UI.RESUME_START, H.LATER]
+    assert s["title"] == "まずは1問から" and s["buttons"] == [H.START_GO, UI.RESUME_START, H.LATER]
+    assert [x["icon"] for x in s["steps"]] == ["🌱", "🌿", "🌸"] and s["note"] == UI.START_NOTE
     assert all(len(b) <= 20 for b in s["buttons"])
     out = H.turn(h, H.START_GO, H.BANK, LLM())
     assert h.current["qid"] == "q_segment" and h.turns == 0 and out["choices"][:2] == ["同じ仕事で上へ", "仕事を変えたい"]
@@ -457,7 +465,9 @@ def test_every_flex_fits_line_limits_and_the_design_lengths(persona, monkeypatch
             if ui["kind"] == UI.CAREER_CARD:
                 assert n <= UI.CAREER_CARD_MAX
             if ui["kind"] == UI.BAND:
-                assert len(P.band_line(ui["progress"])) <= P.BAND_MAX
+                b = ui["band"]
+                assert len(b["chip"] + b["value"] + (b["more"] or "")) <= UI.BAND_MAX
+                assert UI.read_chars(ui) == n
             if ui["kind"] == UI.CARD:
                 assert P.flex_chars(flex) <= P.CARD_MAX
             json.dumps(flex, ensure_ascii=False)
@@ -497,12 +507,98 @@ def test_long_values_are_clipped_to_60_chars_in_the_career_card():
 
 
 def test_shared_limits_match_progress_ui():
-    """dip は line_runtime を import しないので、帯とプロフィールカードの上限を写して持つ。同じ値か。"""
+    """dip は line_runtime を import しないので、帯とプロフィールカードの上限と字を写して持つ。同じ値か。"""
     assert (UI.BAND_MAX, UI.BAND_ITEM_MAX, UI.PROFILE_MAX) == (P.BAND_MAX, P.BAND_ITEM_MAX, P.CARD_MAX)
     assert (UI.BAND_HEAD, UI.PROFILE_HEAD, UI.TODO) == (P.BAND_HEAD, P.HEAD, P.TODO)
+    assert (UI.NEXT_LABEL, UI.DONE_MARK) == (C.NEXT_LABEL, C.DONE_MARK)
+
+
+def test_band_clips_the_value_and_keeps_the_guess_mark():
+    """帯の札と値と「ほかN」は 24 字まで。値を切って「…」、推し量った値の「?」は残す。"""
     p = {"filled": 3, "total": 13, "added": [{"label": "次にやりたいこと", "value": "現場の改善をもっと進めたい",
-                                            "inferred": True}] * 3}
-    assert len(UI.band_line(p)) == len(P.band_line(p)) == P.BAND_MAX  # 見積もりは長さが同じ(切り方は progress_ui)
+                                            "inferred": True}] * 3, "growth": UI.growth(0, False, False)}
+    b = UI.band(p)
+    assert b["chip"] == "＋次にやりたいこと" and b["more"] == "ほか2" and b["value"].endswith("…?")
+    assert len(b["chip"] + b["value"]) <= UI.BAND_ITEM_MAX and len(b["chip"] + b["value"] + b["more"]) <= UI.BAND_MAX
+    flex = C.build({"kind": UI.BAND, "progress": p, "band": b})["flex"]
+    assert sum(H.chars(t) for t in C.flex_lines(flex)) == UI.read_chars({"kind": UI.BAND, "band": b})
+
+
+def test_growth_follows_the_phases_from_sprout_to_bloom():
+    """育ち方(task 288): 聞き終えたフェーズで 🌱(条件)→ 🌿(職歴)→ 🌷、相談を終えたら 🌸(「始める」の 1 枚と同じ絵)。
+    帯の一言(up)は相談で最初の帯だけ。プロフィールカードの見出しは、聞き終えたフェーズの一言を先に。"""
+    assert UI.growth(0, True, False) == {"icon": "🌱", "word": "芽が出ました", "up": UI.SPROUT, "head": "芽が出ました"}
+    assert UI.growth(0, False, False)["up"] is None
+    g = UI.growth(1, False, False, "hf")
+    assert (g["icon"], g["head"]) == ("🌿", "条件が入りました")
+    assert UI.growth(2, False, False, "cards")["head"] == "職歴が入りました"
+    assert UI.growth(2, False, False)["icon"] == "🌷" and UI.growth(5, False, False)["icon"] == "🌷"
+    assert UI.growth(2, False, True)["icon"] == "🌸"
+    _, turns = run()
+    icons = [(ui["kind"], (ui.get("progress") or {}).get("growth", {}).get("icon")) for *_, ui, _ in turns
+             if ui and ui["kind"] in (UI.BAND, UI.CARD, UI.COMPLETE)]
+    assert icons[0] == (UI.BAND, "🌱") and icons[-1] == (UI.COMPLETE, "🌸")
+    cards = [i for k, i in icons if k == UI.CARD]
+    assert cards[0] == "🌿" and set(cards) <= {"🌿", "🌷"}  # 条件を聞き終えた(と、職歴を聞き終えた)
+    ups = [ui["band"]["up"] for *_, ui, _ in turns if ui and ui["kind"] == UI.BAND]
+    assert ups[0] == UI.SPROUT and not any(ups[1:])
+
+
+def test_sprout_shows_on_the_first_band_even_with_saved_values():
+    """履歴書や前の相談の値が先に入っていても、相談で最初に出す帯には「プロフィールの芽が出ました」。"""
+    h = H.new_state(form="D")
+    H.apply_saved(h, "same_path", {"why_now": {"status": "filled", "text": "評価が合わない"}})
+    mem = UI.fresh_mem(h)
+    H.start(h, H.BANK)
+    step(h, mem, H.START_GO)
+    ui, mem, _ = step(h, mem, "大阪市内")
+    assert ui["kind"] == UI.BAND and ui["band"]["up"] == UI.SPROUT and mem["sprouted"]
+    ui, mem, _ = step(h, mem, "400万円台")
+    assert ui["kind"] == UI.BAND and ui["band"]["up"] is None
+
+
+def test_passing_both_jobs_does_not_say_the_career_was_added():
+    """職歴カードの欄をどれもパスしたら、プロフィールの職歴の行は「パス」、見出しは「職歴が入りました」にしない。"""
+    h = H.new_state(form="D")
+    mem = UI.fresh_mem(h)
+    H.start(h, H.BANK)
+    for said in (H.START_GO, "同じ仕事で上へ", TEXT["ib_why_now"], TEXT["hf_area"], "400万円台", "すぐ", "年収"):
+        ui, mem, _ = step(h, mem, said)
+    while h.phase == "career_cards":
+        ui, mem, _ = step(h, mem, H.PASS)
+    assert ui["kind"] == UI.CARD
+    p = ui["progress"]
+    assert p["groups"][1]["items"][0]["value"] == H.PASS
+    assert p["growth"]["head"] != UI.MILESTONE_WORDS["cards"] and p["growth"]["icon"] == "🌷"
+    assert "職歴：パス" in C.build(ui)["text"]
+
+
+def test_complete_carousel_never_says_one_more_left():
+    """相談を終えた完成のカルーセルでは、もう聞かないので「あと1つ」を出さない(完成でなければ「空欄あり」)。"""
+    assert UI.card_status(2, 3, False, final=True) == "空欄あり" and UI.card_status(1, 3, False, final=True) == "空欄あり"
+    assert UI.card_status(3, 3, True, final=True) is None
+    h = H.new_state(form="D")
+    h.slots["career1.role"] = H.entry("filled", "物流会社で現場リーダー、6年")
+    h.slots["career1.scale"] = H.entry("filled", "5人くらい", number=5, unit="人")
+    assert UI.career_card(h, 1)["status"] == "あと1つ" and UI.career_card(h, 1, final=True)["status"] == "空欄あり"
+
+
+def test_no_question_counts_or_bare_fractions_are_shown():
+    """入口で残りの問いの数を出さない。帯、プロフィールカード、職歴カード、完成に「n/13」「n/3」の数字を出さない(task 288)。"""
+    import re
+
+    for form in ("C", "D"):
+        _, turns = run(form)
+        for said, out, ui, _ in turns:
+            assert not re.search(r"あと\d+問", out["reply"]), out["reply"]
+            b = C.build(ui)
+            if b is None:
+                continue
+            shown = C.flex_text(b["flex"]) + "\n" + b["text"] + "\n" + b["flex"]["altText"]
+            assert not re.search(r"\d+/\d+", shown), shown
+    _, turns = run("D")
+    replies = [out["reply"] for _, out, *_ in turns]
+    assert replies[0] == H.START_LEAD and any(H.PHASE_LINES["hard_filter"] in r for r in replies)
 
 
 def test_no_score_rank_or_praise_in_the_parts():
@@ -517,7 +613,7 @@ def test_no_score_rank_or_praise_in_the_parts():
 
 
 def test_stamp_image_only_with_an_https_public_url(monkeypatch):
-    c = {"n": 1, "title": "職歴1(直近)", "count": "3/3", "done": 3, "of": 3, "complete": True,
+    c = {"n": 1, "title": "職歴1(直近)", "status": None, "done": 3, "of": 3, "complete": True,
          "rows": [{"label": x, "value": "a", "muted": False} for x in ("仕事", "規模", "結果")]}
     images = lambda b: [n for n in _nodes(b) if n.get("type") == "image"]
     assert images(C.career_card_bubble(c)) == [] and "完成" in C.flex_lines(C.career_card_bubble(c))
@@ -546,7 +642,7 @@ def test_complete_is_a_carousel_led_by_the_profile_card_with_the_blank_count():
     flex = C.build(ui)["flex"]["contents"]
     assert flex["type"] == "carousel" and len(flex["contents"]) == 1 + len(ui["complete"]["cards"])
     first = C.flex_lines(flex["contents"][0])
-    assert first[0] == P.HEAD
+    assert first[:3] == ["🌸", P.HEAD, UI.BLOOM[1]]
     blanks = h.result["blanks"]  # 結果の文の「空欄はNつ」と同じ数(職歴カードの下書きの空欄)
     assert ui["complete"]["blanks"] == blanks and (f"空欄は{blanks}つ" in turns[-1][1]["reply"]) is bool(blanks)
     assert (f"空欄{blanks}つ。あとから埋められます" in first) is bool(blanks)
@@ -558,7 +654,8 @@ def test_flex_text_is_what_the_simulated_person_reads():
     """評価の本人役は、Flex の中の字(ボタンのラベルを含む)を文で読む(fulltime-hearing.md §6.1)。"""
     s = UI.start_payload(_d_start())["start"]
     text = C.flex_text(C.start_flex(s))
-    assert text.splitlines()[0] == "職務経歴書を3分で" and "始める" in text and "目安 3〜5分" in text
+    assert text.splitlines()[0] == "まずは1問から" and "始める" in text and UI.START_NOTE in text
+    assert not any(ch.isdigit() for ch in text.replace("1問", ""))  # 問いの数も時間も出さない
     r = career_sim.run_one(PERSONAS[0], "D")
     assert any("[career_card] 職歴1(直近)" in line for line in r["transcript"])
 
@@ -616,8 +713,8 @@ def test_line_webhook_form_d_sends_the_start_card_career_cards_review_and_comple
             assert _say(client, said, n).status_code == 200
         else:
             raise AssertionError("result に着かない")
-    assert kinds[0] == "職務経歴書を3分で"  # 「始める」の 1 枚
-    assert "職歴1(直近)" in kinds and "まとめ" in kinds and kinds[-1] == P.HEAD  # 完成の先頭はプロフィールカード
+    assert kinds[0] == "まずは1問から"  # 「始める」の 1 枚
+    assert "職歴1(直近)" in kinds and "まとめ" in kinds and kinds[-1] == "🌸"  # 完成の先頭はプロフィールカード(花の絵から)
     last = fake.sent()[-1][1]["messages"]
     assert last[-1]["contents"]["type"] == "carousel"
     stamp = [n for n in _nodes(last[-1]) if n.get("type") == "image"]
@@ -669,4 +766,4 @@ def test_web_talk_draws_the_career_card_as_text_and_the_fix_buttons_as_choices(p
     reply = dict(reply, bubbles=["それで、何が変わりましたか?"], quick_replies=["パス"], progress=card)
     got = page.evaluate("(r) => { window.talk.renderReply(r, window.talk.botCol());"
                         " return [...document.querySelectorAll('.bubble')].map(b => b.textContent); }", reply)
-    assert got[-1].splitlines()[1].startswith("【職歴1(直近) ")  # 職歴カードは文にして最後の吹き出しに
+    assert got[-1].splitlines()[1].startswith("【職歴1(直近)")  # 職歴カードは文にして最後の吹き出しに
