@@ -13,6 +13,9 @@
   (吹き出しが 80 字を超えた、もう答えた欄を聞かれた)だけ。5 分を超えるか、いらいらが 3 回で離脱
 - 読み取り(OracleLLM): 本人役が言いたかったことを、そのまま正解として返す。モックで確かめられるのはハーネスの動きだけ(§6.2)
 - 履歴書を先に送っている人(p5)は、resume.filled の欄を事実表の値で prefill する(1/5 の ScriptGood と同じ)
+- result に着いたら、職歴カードから職務経歴書の下書きを作る(dip_mcp/career/draft.py。task 247)。関門「数字を作った: 0 件」(§6.4)を
+  コードで見る: 下書きに書く欄の数字が、本人役の発言(押したボタンのラベルも)と履歴書の欄に無ければ made_up_number に数える。
+  下書きの空欄の数が、結果の「空欄はNつ」や、職歴カードの空欄(harness.blank_cards)と空欄に戻した数字の和と違えば draft_blanks に数える
 """
 
 from __future__ import annotations
@@ -24,10 +27,12 @@ import zlib
 from collections import Counter
 from pathlib import Path
 
+from dip_mcp.career import draft as D
 from dip_mcp.career import harness as H
 from evals.fulltime_hearing import judge as J
 from evals.fulltime_hearing.actor import SHORT_ANSWER, AIReply, Clock, fact_text
 from evals.fulltime_hearing.personas import hard_keys, load_personas
+from resume_lines import blank_count, check_numbers
 
 FORMS = ("B", "C")
 MAX_STEPS = 60  # 1 会話の処理の上限(PRD §4-1 の M-loop)
@@ -35,7 +40,7 @@ NOTHING = "特にない"
 # 合否の指標(どれも 0 で合格)。PRD v4.1 §4-1 と v3 §11.3 の置き換え
 GATES = ("crash", "loop", "not_reached", "left", "hard_empty", "low_hard", "no_review", "no_segment_q", "wasted",
          "repeated", "irrelevant", "dropped", "spam_hard_high", "phase_mismatch", "over_max_turns", "budget_violation",
-         "form_violation", "ui_violation", "reask")
+         "form_violation", "ui_violation", "reask", "made_up_number", "draft_blanks")
 
 
 def _crc(*parts) -> int:
@@ -243,6 +248,12 @@ def metrics(r: dict, persona: dict) -> dict:
             v = bool(got["text"]) and (got["text"] in fact or fact in got["text"])
         facts.append(bool(v))
     pri = H.active_slots(st)
+    made_up = draft_blanks = 0
+    if reached:  # 下書き(§6.4 の関門「数字を作った」)。空欄に戻した数と、戻した後にまだ本人の言葉に無い数字
+        md, replaced = D.build(st)
+        made_up = replaced + check_numbers(md, D.sources(st))[1]
+        n = blank_count(md)  # 数字を空欄に戻した欄も、結果の「空欄はNつ」に入る
+        draft_blanks = int(n != (st.result or {}).get("blanks") or n != len(H.blank_cards(st)) + replaced)
     m = {
         "crash": int(r["crash"]), "loop": int(r["loop"]), "not_reached": int(not reached and not r["crash"]),
         "left": int(bool(clock.left)),
@@ -261,7 +272,7 @@ def metrics(r: dict, persona: dict) -> dict:
         "over_max_turns": int(st.turns > H.MAX_TURNS),
         "budget_violation": budget,
         "form_violation": [e["qid"] for e in asks if st.form == "B" and e["phase"] in ("scenario_game", "reverse_pick")],
-        "ui_violation": r["ui"], "reask": r["reask"],
+        "ui_violation": r["ui"], "reask": r["reask"], "made_up_number": made_up, "draft_blanks": draft_blanks,
         # 記録だけ
         "completed": completed, "turns": st.turns, "seconds": round(st.seconds, 1), "actor_seconds": round(clock.seconds, 1),
         "stop_reason": st.stop_reason, "review_rounds": st.review_rounds, "typed_chars": clock.typed_chars,

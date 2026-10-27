@@ -9,6 +9,8 @@ LLM は使わない。Web サーバー(line_runtime.server)が直接呼ぶ(HLD �
 
 ゲームで作った下書き(arcade_drafts): ゲームごとに最新の 1 件。番号は arcade_draft_seq からの通し番号(「すべて消す」の後も
 戻さない。profile._KEPT_ON_FORGET)。保存の前に scrub_pii をかけ、長さの上限を効かせる(形は resume_draft.schema)。
+正社員のヒアリングが result で職歴カードから作る職務経歴書の下書き(dip_mcp/career/draft.py)も、同じ場所に CAREER_DRAFT の
+1 件として入れる(save_career_draft)。下書きの画面、プロフィール、要約、空欄の数え方、「すべて消す」はゲームの下書きと同じ。
 エージェントには、dip の要約(logic.conversation_summary の arcade_draft)で要点だけを渡す(ADR-0003)。
 
 指標のための記録(arcade_metrics): 始めた回数、保存した回数、保存した下書きの数字の空欄の数、事実の確かめで置き換えた数。
@@ -31,10 +33,11 @@ from resume_draft.schema import (
     ResumeDraft,
     document_kind_of,
 )
-from resume_lines import PLACEHOLDER_RE, placeholder_count
+from resume_lines import PLACEHOLDER_RE, blank_count
 
 GAMES = ("the-case-of-you", "harvest-of-work")  # AI と保存がつながっているゲーム(ハブに出す 2 本)
-GAME_NAMES = {"the-case-of-you": "あなたという事件", "harvest-of-work": "仕事の収穫"}
+CAREER_DRAFT = "career"  # 正社員のヒアリングの下書きの置き場所(arcade_drafts の key。ゲームの名前には使わない)
+GAME_NAMES = {"the-case-of-you": "あなたという事件", "harvest-of-work": "仕事の収穫", CAREER_DRAFT: "正社員の相談"}
 DEFAULT_GAME = {"正社員": "the-case-of-you", "アルバイト・パート": "harvest-of-work"}
 # 雇用区分ごとの書類の種類。未定は本人が保存のときに選ぶ(雇用区分は変えない)
 DOCUMENT_BY_TRACK = {"正社員": "職務経歴書", "アルバイト・パート": "履歴書"}
@@ -174,6 +177,16 @@ def save_draft(state: State, line_user_id: str, game: str, play_id: str, env: di
     本人の有効な遊びの番号でなければ保存しない(None)。"""
     if play(state, line_user_id, game, play_id) is None:
         return None
+    return _store(state, line_user_id, game, env, metrics=True)
+
+
+def save_career_draft(state: State, line_user_id: str, env: dict) -> dict:
+    """正社員のヒアリングの下書きを保存する(前の相談の下書きを置き換える)。env は resume_draft.markdown.to_envelope の形。
+    ゲームの指標(arcade_metrics)には数えない。"""
+    return _store(state, line_user_id, CAREER_DRAFT, env, metrics=False)
+
+
+def _store(state: State, line_user_id: str, game: str, env: dict, metrics: bool) -> dict:
     rec = _record(env, clock().isoformat()) | {"game": game}
 
     def apply(u):
@@ -181,16 +194,17 @@ def save_draft(state: State, line_user_id: str, game: str, play_id: str, env: di
         rec["id"] = seq
         u["arcade_draft_seq"] = seq + 1
         u.setdefault("arcade_drafts", {})[game] = rec
-        _metric(u, "saved")
-        _metric(u, "blanks", blanks(rec))
+        if metrics:
+            _metric(u, "saved")
+            _metric(u, "blanks", blanks(rec))
 
     state.update(line_user_id, apply)
     return copy.deepcopy(rec)
 
 
 def blanks(rec: dict) -> int:
-    """下書きの数字の空欄の数。"""
-    return placeholder_count(rec.get("markdown", ""))
+    """下書きの空欄の数(数字の空欄と、正社員の下書きの言葉の空欄)。"""
+    return blank_count(rec.get("markdown", ""))
 
 
 def drafts(state: State, line_user_id: str) -> list[dict]:

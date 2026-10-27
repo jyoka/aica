@@ -119,7 +119,7 @@ def _career_note(user: dict) -> str:
 
 
 ENTRY_NOTE = ("used_entries は本人がやり終えた入口(voice_consult = 音声相談で下書きができた、resume_upload = 履歴書を"
-              "読み込んだ、arcade = ゲームで下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
+              "読み込んだ、arcade = ゲームか正社員の相談で下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
 
 # 挨拶で案内する 3 つの入口(task 237)。並びはリッチメニュー(scripts/line_rich_menu.py)と同じ
 ENTRIES = ("voice_consult", "resume_upload", "arcade")
@@ -130,7 +130,8 @@ def used_entries(user: dict) -> list[str]:
     (記録を消せば、また案内される)。開いただけ・途中でやめたものは数えない。
     - voice_consult: 音声相談の結果に下書き(draft_markdown)がある(プロフィール画面で下書きを消すと空になる)
     - resume_upload: 履歴書を読み込んだ(resume_upload がある)
-    - arcade: ゲームで下書きを保存した(arcade_drafts がある)"""
+    - arcade: ゲームで下書きを保存した(arcade_drafts がある)。正社員の相談の下書き(dip_mcp/career/draft.py)も同じ場所なので、
+      これも数える(書類の下書きがあれば、ゲームを勧めない。playbook の「arcade_draft があれば、ボタンは出さない」と同じ)"""
     done = {"voice_consult": any(str(r.get("draft_markdown") or "").strip() for r in user.get("voice_results") or []),
             "resume_upload": bool(user.get("resume_upload")),
             "arcade": bool(user.get("arcade_drafts"))}
@@ -144,8 +145,10 @@ def _track_summary(user: dict) -> dict:
     return {"search_track": search_track(user), "track_history": track_history(user)}
 
 
-ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。"
+ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)か正社員の相談(game が「正社員の相談」。職歴カードから作った)で"
+               "作った書類の下書きの要点(本人の答えから作った行だけ)。"
                "blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。"
+               "blanks は空欄の数(正社員の相談の下書きは、言葉の空欄 [… ← 言葉を入れる] も数える)。"
                "arcade_draft の view_url は下書きの画面の URL(本人が数字を入れて直す画面)。"
                "「下書きを見る」のボタンは、この URL だけをそのまま buttons に使う(view_url が無ければボタンを出さない)。"
                "arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う"

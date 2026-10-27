@@ -27,6 +27,9 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from resume_draft.pii import personal_value
+from resume_lines import blank_count
+
 HERE = Path(__file__).resolve().parent
 PROMPT_DIR = HERE.parent / "prompts" / "career"
 
@@ -65,6 +68,7 @@ LABEL_MAX = 20
 CARD_MAX = 200  # まとめ 1 回(文とカードの中の字の合計)。読む 30 秒 + ボタン 2 秒で 35 秒以内(§3.3)
 REACTION_MAX = 25  # 生成の受け止め(質問の文の外)の字数
 PROGRESS_WORDS = 10  # 形 C の 1 行に出す本人の言葉の字数
+SAVED_TEXT_MAX = 200  # 保存する 1 つの欄の字数の上限(dip_mcp.career.store.VALUE_MAX。超える値は保存しない)
 
 PASS, DONT_KNOW, LATER, REVIEW_OK = "パス", "覚えていない", "あとで", "これでOK"
 NOPREF = "こだわりなし"
@@ -185,6 +189,7 @@ class State:
     slots: dict = field(default_factory=dict)      # slot -> entry
     pending: dict = field(default_factory=dict)    # 今の segment で使わない欄に来た値(segment が決まったら当てる)
     user_ng: list = field(default_factory=list)
+    said: list = field(default_factory=list)       # 本人の発言(押したボタンのラベルも)。下書きの数字の確かめに使う(draft.py)
     asked: list = field(default_factory=list)
     turns: int = 0
     phase_turns: dict = field(default_factory=dict)
@@ -918,6 +923,7 @@ def _turn(state, user_text, bank, llm):
     if not nfkc(text):
         ev(state, "empty_input")
         return _represent(state, bank, counted=False)
+    state.said.append(text)
     cur = state.current
     q = qmap(state, bank).get(cur["qid"])
     button = match_button(state, text)
@@ -1081,9 +1087,13 @@ def _say(state, bank, llm, counted=True, aside=False):
 
 
 def _finish(state, counted):
-    blanks = blank_cards(state)
-    text = RESULT_TEXT + (f"空欄は{len(blanks)}つ。あとから埋められます。" if blanks else "")
-    state.result = {"text": text, "summary": summary(state)}
+    """結果の文。「空欄はNつ」は、職歴カードから作る下書きの空欄の数(blank_cards の欄と、本人の言葉に無かったので
+    空欄に戻した数字。下書きの画面の数と同じ)。"""
+    from dip_mcp.career import draft  # draft がこのモジュールを使うので、循環を避ける
+
+    blanks = blank_count(draft.build(state)[0])
+    text = RESULT_TEXT + (f"空欄は{blanks}つ。あとから埋められます。" if blanks else "")
+    state.result = {"text": text, "summary": summary(state), "blanks": blanks}
     ev(state, "result", turns=state.turns, seconds=round(state.seconds, 1))
     return _out(state, [text], [], counted=counted, done=True)
 
@@ -1099,14 +1109,22 @@ def _out(state, bubbles, choices, counted, card=None, done=False, read=True):
 
 
 # ----------------------------- 終わりの状態 -----------------------------
+def card_filled(e):
+    """職歴カードの欄が、確かめた本人の言葉で埋まっているか。保存しない値(推測のまま(low)、個人情報らしい値、長すぎる値。
+    dip_mcp.career.store.save と同じ決まり)は、埋まっていない。"""
+    text = str((e or {}).get("text") or "").strip()
+    return (bool(e) and e["status"] == "filled" and e.get("confidence", "high") == "high" and bool(text)
+            and len(text) <= SAVED_TEXT_MAX and not personal_value(text))
+
+
 def blank_cards(state):
-    """職歴カードの空欄(パス、覚えていない、聞かなかった)。下書きの空欄の仕組みで後から埋める(§4)。"""
+    """職歴カードの空欄(パス、覚えていない、聞かなかった、推測のまま確かめていない、保存しない値)。下書きの空欄の仕組みで後から埋める(§4)。
+    下書き(dip_mcp/career/draft.py)は、ここに出る欄を空欄にする。結果の「空欄はNつ」は、これに下書きで空欄に戻した数字を足した数。"""
     out = []
     for n in range(1, CARD_COUNT + 1):
-        role = state.slots.get(card_key(n, "role"))
-        if n > 1 and (role is None or role["status"] != "filled"):
+        if n > 1 and not card_filled(state.slots.get(card_key(n, "role"))):
             continue  # 2 枚目が無い人(パスした、聞けなかった)は空欄に数えない
-        out += [card_key(n, f) for f in CARD_FIELDS if (state.slots.get(card_key(n, f)) or {}).get("status") != "filled"]
+        out += [card_key(n, f) for f in CARD_FIELDS if not card_filled(state.slots.get(card_key(n, f)))]
     return out
 
 

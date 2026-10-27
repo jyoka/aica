@@ -11,6 +11,7 @@ dip_mcp/baito/session.py と同じ。
   モデルの出力が要るときは status=llm でプロンプトを返し、ランタイムがモデルを呼んで、出力を全部 llm_outputs に入れて呼び直す。
   最後まで進んだ回だけ状態を保存する(途中の回は保存しない)
 - 終える: result に着いたら、確かめた条件を stated_preferences に、職歴カードと segment を career_profile に保存して閉じる。
+  職歴カードから職務経歴書の下書きも作り(dip_mcp/career/draft.py。task 247)、結果の返信に「下書きを開く」のボタンを付ける。
   「あとで」・本人がやめると言った・区分が正社員から外れた・新しい会話を始めたときも、そこまでの分(high)を保存して閉じる。
   続きから再開はしない(次の相談は、保存した分を聞かずに始め直す)
 
@@ -29,6 +30,7 @@ from dip_mcp.baito.session import (
     ReplayLLM,
     ReplayMismatch,
 )
+from dip_mcp.career import draft as career_draft
 from dip_mcp.career import harness as H
 from dip_mcp.career import store
 from dip_mcp.data import State
@@ -42,6 +44,7 @@ CAREER_TRACK = "正社員"
 # 結果の後の選択肢(アルバイト・パートの相談と同じ。押した文はトークの AI が受ける)。「あとで」で閉じたときも同じものを付ける
 # (返信を選択肢なしで終えない決まり。急いでいる本人が次に文字を打たずに済むように)
 RESULT_CHOICES = ["求人を見る", "今はいい"]
+DRAFT_LABEL = "下書きを開く"  # 結果の返信のボタン(下書きの画面。設計メモ §5.2 の「全部の完成」)
 START_NOTE = ("相談を始めた。この返信は、question の bubbles をそのまま送る(言い換えない。LINE 側が返信の吹き出しを"
               "bubbles に、選択肢を question の choices に置き換える)。次の質問からはハーネスが進める。")
 MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(文の答えで抽出 2 回 + 生成 2 回)
@@ -143,7 +146,9 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
     - status=reply: bubbles をそのまま送り、choices をクイックリプライにする
-    - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目"""
+    - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目。
+      result に着いたときだけ、職歴カードから作った下書き(draft: id、blanks、replaced、view_url)と、下書きの画面を開く
+      buttons(view_url があるときだけ。LINE は LIFF の設定があるとき)が付く"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
@@ -168,8 +173,11 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
            "llm_calls": llm.used}
     if r["done"]:
         saved = _finish(state, line_user_id, h)
-        return out | {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved,
-                      "blank_cards": H.blank_cards(h)}
+        out |= {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved, "blank_cards": H.blank_cards(h)}
+        if h.closed:  # 「あとで」: 下書きは作らない(続きは次の相談で聞く)
+            return out
+        d = career_draft.create(state, line_user_id, h)
+        return out | {"draft": d, "buttons": [{"label": DRAFT_LABEL, "url": d["view_url"]}] if d["view_url"] else []}
     _save(state, line_user_id, h)
     return out
 
