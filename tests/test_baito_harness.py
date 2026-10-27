@@ -8,10 +8,14 @@
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、年齢の「18歳未満」、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
 (6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
+(7) 区分の表に無い答え(task 257): 区分を言わない本人の「扶養内」を保留し、区分を確かめてから入れるか捨てる。
+    捨てた・保留した答えを、返事が「覚えた」と言わない。P3 で dropped=1 になった台本をモックで回す
 """
 
 from __future__ import annotations
 
+import dataclasses
+import importlib
 import importlib.util
 import json
 import sys
@@ -108,11 +112,26 @@ def finish(st: H.State, llm=None, choose=None, limit: int = 40) -> dict:
 
 
 def test_bank_and_catalog_json_are_the_prd_appendices_verbatim():
-    """質問バンク(付録A、49 問)と職種カタログ(付録B、24 件)は、データファイル(JSON)に原文のまま。"""
+    """質問バンク(付録A、49 問)と職種カタログ(付録B、24 件)は、データファイル(JSON)に原文のまま。
+    バンクの後ろに足したのは、区分の確認の質問(task 257)の 1 問だけ。"""
     cat = _ref("catalog_v4")
-    assert H.BANK == _ref("bank_v4").BANK and len(H.BANK) == 49
+    assert H.BANK[:49] == _ref("bank_v4").BANK and [q["id"] for q in H.BANK[49:]] == [H.HELD_QID]
     assert H.CATALOG == cat.CATALOG and len(H.CATALOG) == 24  # times は集合で読む
     assert all(isinstance(j["times"], set) for j in H.CATALOG)
+
+
+def test_held_segment_question_is_data_that_the_question_picker_never_asks():
+    """区分の確認の質問はバンクのデータ。選択肢と効果は区分の質問と同じで、フェーズ(confirm)は選び方が見ないもの。"""
+    held, seg = QM[H.HELD_QID], QM["q_segment"]
+    assert (held["choices"], held["choice_effects"], held["targets"]) == (seg["choices"], seg["choice_effects"], seg["targets"])
+    assert held["phase"] not in H.ORDER and "{labels}" in held["text"]
+    for segment in ("unknown", "student", "homemaker", "side_job", "other"):
+        st = fresh(segment)
+        for phase in H.ORDER:
+            q, _ = H.pick_question(st, H.BANK, phase)
+            assert q is None or q["id"] != H.HELD_QID
+        finish(st)
+        assert H.HELD_QID not in st.asked
 
 
 def test_prompts_are_the_prd_prompt_files_verbatim():
@@ -689,3 +708,238 @@ def test_real_llm_runner_writes_a_relative_ledger_where_it_was_called(tmp_path, 
     monkeypatch.chdir(tmp_path)
     baito_sim.run_real(1, baito_sim.Path("budget.jsonl"), 1.0, call=fake, only=["jhs"])
     assert (tmp_path / "budget.jsonl").read_text().count("baito-p3") == 1
+
+
+# ----------------------------- (7) 区分の表に無い答え(task 257) -----------------------------
+
+FUYOU_SAID = "扶養内でお願いします。あとはOK"
+CLAIM = "扶養内ね、覚えたよ！"
+HELD_TEXT = QM[H.HELD_QID]["text"].format(labels="扶養")  # 区分の確認の質問(バンクのデータ)
+
+
+def _fuyou_review_extract() -> dict:
+    return _ups(("fuyou", "扶養内で", "扶養内"), review_ack="partial")
+
+
+# P3 の late_seg と同じく、接客に矛盾が出ない答え(矛盾があると review の 2 巡目が要り、確認より先になる)
+NO_SEGMENT_PICKS = {"q_segment": "わかんない", "hf_age": "18歳以上", "sc_line": "今すぐ消えたい", "rp_general": "倉庫ピッキング"}
+
+
+def _without_segment(stop=lambda st: st.current["mode"] == "review") -> H.State:
+    """区分を言わない本人(区分の質問に「わかんない」)を、stop まで(既定は最初の確認のカードまで)進める。"""
+    st = fresh()
+    for _ in range(20):
+        if stop(st):
+            assert st.segment == "unknown"
+            return st
+        cur = st.current
+        H.turn(st, NO_SEGMENT_PICKS.get(cur["qid"], cur["choices"][0]), H.BANK, LLM())
+    raise AssertionError("止める場面に着かない")
+
+
+def _to_review_without_segment() -> H.State:
+    """P3 と同じく、最初の確認のカードは 13 ターン目(確認の質問と 2 巡目の review の 2 ターンが残る)。"""
+    st = _without_segment()
+    assert st.turns == H.MAX_TURNS - 3 and not st.conflicts
+    return st
+
+
+class Claims(LLM):
+    """返事の頭に「扶養内ね、覚えたよ！」を付けるモデル(入れていない答えを覚えたと言う)。"""
+
+    def generate(self, v):
+        d = json.loads(super().generate(v))
+        d["reply"] = CLAIM + d["reply"]
+        return json.dumps(d, ensure_ascii=False)
+
+
+def test_unknown_segment_lets_the_extractor_report_every_slot():
+    """P3 の原因: 区分が未判明の間、抽出に渡す項目に扶養が無く、モデルは扶養を返せなかった。"""
+    st = _to_review_without_segment()
+    assert set(H.extract_payload(st, H.BANK, FUYOU_SAID)["allowed_slots"]) == H.ALL_SLOTS
+    st = fresh("student")
+    assert set(H.extract_payload(st, H.BANK, "週3")["allowed_slots"]) == set(H.SLOT_PRIORITY["student"])
+
+
+def test_fuyou_without_a_segment_asks_the_segment_and_homemaker_keeps_it():
+    st = _to_review_without_segment()
+    r = H.turn(st, FUYOU_SAID, H.BANK, LLM([_fuyou_review_extract()]))
+    assert not r["done"] and st.current["mode"] == "confirm" and st.current["choices"] == QM[H.HELD_QID]["choices"]
+    assert r["reply"] == HELD_TEXT
+    assert "fuyou" not in st.slots and "fuyou" in st.pending  # 捨てずに保留する
+    r = H.turn(st, "家のこと中心（主婦・主夫など）", H.BANK, LLM())
+    assert st.segment == "homemaker" and st.slots["fuyou"]["value"] == "within" and st.pending == {}
+    r = finish(st) or r  # 確認の答えが 15 ターン目なら、そのまま結果
+    assert st.slots["fuyou"]["value"] == "within" and H.NOTICE["fuyou"] in r["reply"]
+    assert st.turns == H.MAX_TURNS and st.review_rounds <= H.MAX_REVIEW_ROUNDS
+    assert sum(st.phase_turns.values()) == st.turns
+
+
+@pytest.mark.parametrize("choice", ["学生", "本業あり副業探し", "フリーター・求職中・その他"])
+def test_fuyou_is_dropped_for_another_segment_and_no_reply_says_it_was_kept(choice):
+    st = _to_review_without_segment()
+    r = H.turn(st, FUYOU_SAID, H.BANK, Claims([_fuyou_review_extract()]))
+    assert CLAIM not in r["reply"] and r["reply"] == HELD_TEXT
+    r = H.turn(st, choice, H.BANK, Claims())
+    assert "fuyou" not in st.slots and st.pending == {}
+    assert [e["segment"] for e in st.log if e["kind"] == "held_discarded" and e["slot"] == "fuyou"] == [st.segment]
+    assert r["reply"].startswith(H.DISCARD_TEXT.format(labels="扶養"))
+    replies = [r["reply"]] + _replies_to_the_result(st)[0]  # 区分によっては、確認の答えのターンで結果まで進む
+    assert [x for x in replies if CLAIM in x] == [] and H.NOTICE["fuyou"] not in replies[-1]
+    assert "fuyou" not in st.slots and st.result
+    assert st.turns <= H.MAX_TURNS and st.review_rounds <= H.MAX_REVIEW_ROUNDS
+
+
+def _replies_to_the_result(st: H.State) -> tuple[list, set]:
+    """「覚えた」と言うモデルで結果まで進めて、すべての返事と、出た場面(mode)を返す。"""
+    replies, modes = [], set()
+    for _ in range(H.MAX_TURNS):
+        if st.result:
+            return replies, modes
+        cur = st.current
+        modes.add(cur["mode"])
+        text = H.REVIEW_OK if cur["mode"] == "review" else {"hf_age": "18歳以上"}.get(cur["qid"], cur["choices"][0])
+        replies.append(H.turn(st, text, H.BANK, Claims())["reply"])
+    raise AssertionError("結果に着かない")
+
+
+@pytest.mark.parametrize("choice", ["学生", "本業あり副業探し", "フリーター・求職中・その他"])
+def test_no_reply_after_the_drop_says_it_was_kept(choice):
+    """早めに捨てたとき: 捨てたターンだけでなく、その後のどの返事(質問・review・結果)も「覚えた」と言わない。"""
+    st = fresh()
+    H.turn(st, "生活費・家計の足し", H.BANK, Claims())
+    H.turn(st, "わかんない", H.BANK, Claims())
+    r = H.turn(st, "扶養内で。", H.BANK, Claims([_ups(("fuyou", "扶養内で", "扶養内"))]))
+    assert r["reply"] == HELD_TEXT
+    r = H.turn(st, choice, H.BANK, Claims())
+    assert r["reply"].startswith(H.DISCARD_TEXT.format(labels="扶養")) and "fuyou" not in st.slots
+    replies, modes = _replies_to_the_result(st)
+    assert {"ask", "review"} <= modes and st.result and len(replies) >= 5  # 最後の返事が結果
+    assert [x for x in replies if CLAIM in x] == []
+    assert "fuyou" not in st.slots and st.turns <= H.MAX_TURNS
+
+
+def test_unreadable_answer_to_the_segment_check_drops_the_held_answer():
+    st = _to_review_without_segment()
+    H.turn(st, FUYOU_SAID, H.BANK, LLM([_fuyou_review_extract()]))
+    r = H.turn(st, "うーん", H.BANK, LLM())
+    assert st.segment == "unknown" and st.pending == {} and "fuyou" not in st.slots
+    assert r["reply"].startswith(H.DISCARD_TEXT.format(labels="扶養"))
+
+
+def test_held_answer_before_review_is_checked_without_using_the_review_turns():
+    """review の前に保留したら、次のターンで区分を確かめる。review に入るターンなら、review の返事の後に聞く。"""
+    st = fresh()
+    H.turn(st, "生活費・家計の足し", H.BANK, LLM())
+    H.turn(st, "わかんない", H.BANK, LLM())
+    r = H.turn(st, "18歳以上。扶養内で働きたい", H.BANK, LLM([_ups(("age_band", "18歳以上", "18歳以上"),
+                                                                ("fuyou", "扶養内で", "扶養内"))]))
+    assert st.current["mode"] == "confirm" and st.current["held"] == ["fuyou"] and "扶養の話の前に" in r["reply"]
+    H.turn(st, "家のこと中心（主婦・主夫など）", H.BANK, LLM())
+    assert st.slots["fuyou"]["value"] == "within"
+    st = _without_segment(lambda st: st.turns == H.MAX_TURNS - H.REVIEW_RESERVE - 2)
+    assert st.phase == "fill_gaps"
+    st.turns += 1  # 次の答え(13 ターン目)で、予算により review に入る
+    st.phase_turns["scenario_game"] += 1
+    H.turn(st, "扶養内で", H.BANK, LLM([_ups(("fuyou", "扶養内で", "扶養内"))]))
+    assert st.phase == "review" and st.current["mode"] == "review" and "fuyou" in st.pending
+    H.turn(st, H.REVIEW_OK, H.BANK, LLM())
+    assert st.current["mode"] == "confirm" and st.turns == H.MAX_TURNS - 1
+
+
+def test_held_answer_in_review_waits_for_the_second_round_when_only_two_turns_are_left():
+    """review の 2 巡目が要るとき(ゆずれない条件を直した)は、2 巡目と確認の両方が入るときだけ先に確認する。"""
+    said = _ups(("days_per_week", "週3〜4日", "週3〜4日"), ("fuyou", "扶養内で", "扶養内"), review_ack="partial")
+    st = _to_review_without_segment()
+    st.turns += 1  # カードが 14 ターン目なら、残りは 2 巡目の 1 ターンだけ
+    st.phase_turns["fill_gaps"] += 1
+    assert st.slots["days_per_week"]["value"] == "1-2"
+    H.turn(st, "週3〜4日にしたい。扶養内で", H.BANK, LLM([said]))
+    assert st.current["mode"] == "review" and st.review_rounds == 1 and "fuyou" in st.pending
+    r = H.turn(st, H.REVIEW_OK, H.BANK, LLM())
+    assert r["done"] and st.turns == H.MAX_TURNS and "fuyou" not in st.slots and st.pending == {}
+    assert H.DISCARD_TEXT.format(labels="扶養") in r["reply"]
+    st = _to_review_without_segment()  # カードが 13 ターン目なら: 確認 → 区分が決まる → 2 巡目
+    H.turn(st, "週3〜4日にしたい。扶養内で", H.BANK, LLM([said]))
+    assert st.current["mode"] == "confirm" and st.current["need_review"]
+    H.turn(st, "家のこと中心（主婦・主夫など）", H.BANK, LLM())
+    assert st.current["mode"] == "review" and st.slots["fuyou"]["value"] == "within" and st.turns == H.MAX_TURNS - 1
+
+
+def test_held_confirm_does_not_use_the_reverse_pick_turn():
+    """reverse_pick は 1 ターンだけ。確認の質問はその次のフェーズで出す。"""
+    st = fresh()
+    for _ in range(20):
+        cur = st.current
+        if cur["qid"].startswith("sc_"):
+            trial = H.State.from_dict(st.to_dict())
+            H.turn(trial, cur["choices"][0], H.BANK, LLM())
+            if trial.phase == "reverse_pick":
+                break
+        text = "わかんない" if cur["qid"] == "q_segment" else {"hf_age": "18歳以上"}.get(cur["qid"], cur["choices"][0])
+        H.turn(st, text, H.BANK, LLM())
+    else:
+        raise AssertionError("最後のシナリオの質問に着かない")
+    H.turn(st, "マイペースがいい。扶養内で", H.BANK, LLM([_ups(("fuyou", "扶養内で", "扶養内"))]))
+    assert st.phase == "reverse_pick" and st.current["qid"] == "rp_general" and "fuyou" in st.pending
+    H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    assert st.current["mode"] == "confirm" and st.phase == "fill_gaps" and st.phase_turns["reverse_pick"] == 1
+
+
+def test_held_answer_with_no_turn_left_is_dropped_at_the_result():
+    st = _to_review_without_segment()
+    st.turns = st.phase_turns["review"] = H.MAX_TURNS - 1
+    st.phase_turns = {"review": H.MAX_TURNS - 1}
+    r = H.turn(st, FUYOU_SAID, H.BANK, Claims([_fuyou_review_extract()]))
+    assert r["done"] and st.turns == H.MAX_TURNS and st.pending == {} and "fuyou" not in st.slots
+    assert H.DISCARD_TEXT.format(labels="扶養") in r["reply"] and CLAIM not in r["reply"]
+
+
+def test_validators_reject_a_reply_that_claims_an_unkept_answer():
+    v = {"mode": "ask", "text": "週に何日くらい入れそう？", "unkept": ["扶養"]}
+    assert H.validate_reply({"reply": "扶養内ね、覚えた！週に何日くらい入れそう？"}, v) == (None, "unkept_mentioned")
+    assert H.validate_reply({"reply": "いいね！週に何日くらい入れそう？"}, v)[1] is None
+    held = {"mode": "confirm", "text": HELD_TEXT, "unkept": ["扶養"]}
+    assert H.validate_reply({"reply": "OK！" + held["text"]}, held)[1] is None  # 確認の質問の中の「扶養」はよい
+    payload = {"need": 1, "candidates": [{"job_id": "cafe"}], "unkept": ["扶養"]}
+    ok = {"recommendations": [{"job_id": "cafe", "reason": "近い"}], "reply": "どうぞ"}
+    assert H.validate_result(ok, payload)[1] is None
+    assert H.validate_result(ok | {"reply": "扶養内も意識したよ"}, payload) == (None, "unkept_mentioned")
+
+
+@pytest.fixture
+def sim_v4(monkeypatch):
+    """参照資料の sim_v4 を、移植版を検査する形で読む(写さない。run() はファイルを書かない)。"""
+    monkeypatch.setenv("BAITO_HARNESS", baito_sim.PORT)
+    monkeypatch.setenv("AICA_ROOT", str(ROOT))
+    monkeypatch.syspath_prepend(str(REF))
+    for name in ("sim_v4", "bank_v4", "catalog_v4", baito_sim.PORT):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    mod = importlib.import_module("sim_v4")
+    yield mod
+    for name in ("sim_v4", "bank_v4", "catalog_v4", baito_sim.PORT):
+        sys.modules.pop(name, None)
+
+
+def test_p3_late_seg_script_is_not_dropped_in_the_mock(sim_v4):
+    """task 242 の P3(evals/baseline/baito-p3-20261027-012954.json)で dropped=1 になった late_seg の台本。
+    モデルはお迎えの話を主婦と読まず(区分は未判明のまま)、抽出は allowed_slots の項目だけを返した。それをモックで再現する。"""
+
+    class Obedient(sim_v4.MockLLM):  # モデルと同じく、使ってよい項目だけを返す
+        def extract(self, payload):
+            d = json.loads(super().extract(payload))
+            d["slot_updates"] = [u for u in d.get("slot_updates") or [] if u["slot"] in payload["allowed_slots"]]
+            return json.dumps(d, ensure_ascii=False)
+    sim_v4.MockLLM = Obedient
+    p = next(x for x in sim_v4.PERSONAS if x.name == "late_seg")
+    p = dataclasses.replace(p, reveal=None, answers={
+        **p.answers, "q_segment": ("free", "うーん、いろいろかな", {"clarify": True}),
+        "hf_days": ("free", "週3〜4日（平日の昼は子どものお迎えがあって…）",
+                    _ups(("days_per_week", "週3〜4日", "週3〜4日"))),
+        "confirm_segment": "家のこと中心（主婦・主夫など）"})
+    log: list[str] = []
+    m = sim_v4.run(p, log)
+    assert m["dropped"] == 0 and m["reached"] and not m["crash"], "\n".join(log)
+    assert m["final_seg"] == "homemaker" and m["turns"] <= 15 and m["review_rounds"] <= 2
+    assert not m["phase_turns_mismatch"] and not m["phase_cap_violation"]
+    assert any("fuyou=within" in x for x in log)
