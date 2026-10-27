@@ -35,6 +35,10 @@ def test_the_cookie_is_secure_only_when_served_over_https(tmp_path, monkeypatch)
         assert "; secure" in secure and "httponly" in secure
 
 
+VOICE_SECRETS = ("ANTHROPIC_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "DEEPGRAM_API_KEY",
+                 "CARTESIA_API_KEY")
+
+
 def test_the_image_and_the_blueprint_match_the_code():
     """Render の設定(render.yaml)と image(Dockerfile)が、ヘルスチェックの口と状態の置き場に合っている。"""
     web = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"][0]
@@ -45,9 +49,11 @@ def test_the_image_and_the_blueprint_match_the_code():
     assert env["AICA_TRUST_PROXY"]["value"] == "1"
     for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トーク、履歴書は Anthropic(既定)、意味検索の埋め込みは OpenAI
         assert env[key] == {"key": key, "sync": False}  # 値はリポジトリに書かない
-    # 音声ワーカーは別サービス。前に入れた 1 が残っても動かないよう、消さずに 0 にする
-    assert env["AICA_VOICE_WORKER"]["value"] == "0" and env["AICA_DIP_PORT"]["value"].isdigit()
-    for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):  # 部屋に入る接続トークンは Web が作る
+    # 音声ワーカーを aica-voice に移す間は、このコンテナでも動かす(aica-voice が動くのを確かめてから 0 にする)。
+    # 待機のプロセスを減らす。相談 1 件の上限は、aica-voice で測るまで既定のまま(今動いている相談を止めない)
+    assert env["AICA_VOICE_WORKER"]["value"] == "1" and env["AICA_DIP_PORT"]["value"].isdigit()
+    assert env["VOICE_RESUME_MAX_JOBS"]["value"] == "2" and "VOICE_RESUME_JOB_MEMORY_LIMIT_MB" not in env
+    for key in VOICE_SECRETS:  # 鍵はこのサービスにだけ入れ、aica-voice はここから写す
         assert env[key] == {"key": key, "sync": False}
     # 状態と出力の既定の置き場はすべてリポジトリ直下の data/。image では /app/data で、そこにディスクをつなぐ
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -72,9 +78,10 @@ def test_the_voice_worker_is_a_service_of_its_own_that_reaches_the_web_service()
     assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
     assert env["AICA_VOICE_MODELS"]["value"] == "1" and "ARG AICA_VOICE_MODELS" in (ROOT / "Dockerfile").read_text()
     assert int(env["VOICE_RESUME_MAX_JOBS"]["value"]) >= 1 and float(env["VOICE_RESUME_JOB_MEMORY_LIMIT_MB"]["value"]) > 0
-    for key in ("ANTHROPIC_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "DEEPGRAM_API_KEY",
-                "CARTESIA_API_KEY"):
-        assert env[key] == {"key": key, "sync": False}
+    # Blueprint を更新するときは sync: false の値を聞かれないので、新しいサービスの鍵は Web サービスから写す
+    for key in VOICE_SECRETS:
+        assert copied[key] == {"name": web["name"], "type": "web", "envVarKey": key} and key in web_env
+    assert not [k for k, e in env.items() if "sync" in e]
 
 
 def test_the_container_does_not_let_uvicorn_rewrite_the_client_ip():

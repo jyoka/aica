@@ -436,7 +436,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](docs/design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
-| `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`。手元の docker 向け。Render では別サービスなので `0`) | 不可 |
+| `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`。手元の docker 向け。Render では、音声ワーカーを別サービスに移し終えたら `0`) | 不可 |
 | `AICA_DIP_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの dip の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
 | `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |

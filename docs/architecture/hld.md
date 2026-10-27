@@ -1210,6 +1210,7 @@ flowchart TB
   音声ワーカー向けの dip の MCP サーバー(`AICA_DIP_PORT`、共有鍵つき)が動き、`data/` はコンテナの `/app/data` につないだ永続ディスクです。
   音声ワーカーは同じ image の別サービス `aica-voice` で動き、Render の private network で `aica` に結果を返し、dip につなぎます
   (`DIP_MCP_URL`)。dip の状態は `aica` のディスクにだけあるので、ファイルロックの前提は変わりません。
+  移す間は、`aica` のコンテナでも音声ワーカーを動かします(`AICA_VOICE_WORKER=1`。docs/deploy/render.md)。
   Web サーバーは `0.0.0.0:$PORT` で待ち受け、`AICA_TRUST_PROXY=1` と `AICA_SECURE_COOKIE=1` で動きます。
   `.env` は image に入れず、API キーは Render の環境変数に置きます。手順は [docs/deploy/render.md](../deploy/render.md)
 
