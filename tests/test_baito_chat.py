@@ -303,3 +303,89 @@ def test_model_output_schemas_are_the_prd_json_contracts():
                                                                         "evidence": "推し活"}]}).model_dump()
     clean, probs = H.validate_extract(out)
     assert clean["slot_updates"] == [{"slot": "purpose", "value": ["hobby"], "evidence": "推し活"}] and probs == ["confidence_missing"]
+
+
+def _to_result(picks, mode=None):
+    """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターン, 相談のターン, 画面の描き直し)。"""
+    from line_runtime.runtime import LineRuntime
+
+    async def go():
+        async with LineRuntime(model=ConsultModel(script=[GREET, *START]), in_memory=True, baito_llm=FakeBaitoLLM()) as rt:
+            first = [await rt.handle(UID, "visit", None), await rt.handle(UID, "message", "まず相談する")]
+            r, out = first[-1], []
+            for _ in range(25):
+                q = (r.get("baito") or {}).get("question") or "q_money"
+                if q == "result":
+                    return first, out, await rt.conversation(UID)
+                r = await rt.handle(UID, "message", H.REVIEW_OK if q == "review" else picks.get(q) or r["quick_replies"][0])
+                out.append(r)
+            raise AssertionError("結果に着かない")
+
+    return asyncio.run(go())
+
+
+def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
+    """答えるたびに、プロフィールが埋まっていくのを見せる(設計メモ hearing-progress-ui.md)。LINE には吹き出し 1 つと
+    Flex 0〜1 つ: 何かが埋まったターンに帯、hard_filter が終わったターンにプロフィールカード、最後に完成(プロフィールと
+    おすすめの職種)。review のターンには付けない。トークの AI のターンには付かない。画面の描き直しにも残る。"""
+    from line_runtime import progress_ui as U
+    from line_runtime.line_channel import to_messages
+
+    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    first, turns, conv = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
+    assert all("progress" not in r for r in first)  # トークの AI のターン(挨拶、相談を始めたターン)
+    kinds = [(r["baito"]["phase"], (r.get("progress") or {}).get("kind")) for r in turns]
+    assert kinds[0] == ("icebreak", None) and kinds[-1] == ("result", U.COMPLETE)
+    assert [k for _, k in kinds].count(U.CARD) == 1 and (U.BAND in [k for _, k in kinds])
+    assert all(k is None for phase, k in kinds if phase == "review")
+    for r in turns:
+        msgs = to_messages(r, base_url="", features=())
+        flex = [m for m in msgs if m["type"] == "flex"]
+        assert len(flex) == (1 if r.get("progress") else 0) and msgs[0]["text"] == r["bubbles"][0]
+        if r.get("progress"):
+            assert {k: v for k, v in flex[0].items() if k != "quickReply"} == r["progress"]["flex"]
+    band = next(r for r in turns if (r.get("progress") or {}).get("kind") == U.BAND)
+    assert band["progress"]["flex"]["altText"].startswith("プロフィール ")
+    done = turns[-1]
+    assert done["bubbles"][0].count("\n1. ") == 1 and "\n3. " in done["bubbles"][0]  # 結果の吹き出しは今のまま
+    jobs = [line.split("：")[0].removeprefix(f"{i}. ") for i, line in
+            enumerate((x for x in done["bubbles"][0].splitlines() if x[:3] in ("1. ", "2. ", "3. ")), 1)]
+    shown = U.flex_text(done["progress"]["flex"])
+    assert all(j in shown for j in jobs) and "おすすめの仕事" in shown
+    # 画面の描き直し(Web のトークは progress の文を吹き出しの最後の行に足す)にも、同じ部品が残る
+    redrawn = [t["bot"].get("progress") for t in conv["turns"][2:]]
+    assert redrawn == [r.get("progress") for r in turns]
+
+
+def test_progress_is_kept_out_of_the_reply_body_and_never_taken_from_the_model():
+    """部品は、保存する返信の本文(トークの AI が後で読む LineReply の JSON)に入れない。モデルが progress を書いても使わない。"""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from line_runtime.agent import LineReply
+    from line_runtime.runtime import render
+
+    assert "progress" not in LineReply.model_json_schema()["properties"]
+    ui = {"kind": "band", "flex": {"type": "flex", "altText": "x", "contents": {}}, "text": "（1/9 ＋年齢）"}
+    said = LineReply(bubbles=["次の質問"])
+    ok = render({"messages": [HumanMessage("18歳以上"), AIMessage(said.model_dump_json(), additional_kwargs={"progress": ui})],
+                 "structured_response": said})
+    assert ok["progress"] == ui and "progress" not in said.model_dump_json()
+    forged = '{"bubbles": ["こんにちは"], "progress": {"kind": "band", "flex": {"type": "flex"}, "text": "x"}}'
+    out = render({"messages": [HumanMessage("こんにちは"), AIMessage(forged)],
+                  "structured_response": LineReply.model_validate_json(forged)})
+    assert "progress" not in out
+
+
+def test_progress_text_mode_sends_no_flex(tmp_path, monkeypatch):
+    """Flex を切った形(AICA_PROGRESS_UI=text): 帯もカードも完成も、吹き出しの文に落ちる。"""
+    from line_runtime import progress_ui as U
+    from line_runtime.line_channel import to_messages
+
+    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    monkeypatch.setenv(U.MODE_ENV, "text")
+    _, turns, _ = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
+    shown = [r for r in turns if r.get("progress")]
+    assert shown and all(r["progress"]["flex"] is None for r in shown)
+    for r in shown:
+        msgs = to_messages(r, base_url="", features=())
+        assert [m["type"] for m in msgs] == ["text"] and msgs[0]["text"].endswith(r["progress"]["text"])
