@@ -17,8 +17,8 @@ USER [hard_filter/hf_time/ask] 朝、昼
 BOT  (5) いいね！通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
 USER [hard_filter/hf_commute/ask] 家から徒歩・自転車
      slots: commute: ∅→walk_bike(high)
-BOT  (6) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
-USER [scenario_game/sc_line/ask] 今すぐ消えたい
+BOT  (6) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
+USER [scenario_game/sc_line/ask] 今すぐ抜けたい
      slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
 BOT  (7) いいね！理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
 USER [scenario_game/sc_shift/ask] 3時間でサクッと

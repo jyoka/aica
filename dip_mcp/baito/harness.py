@@ -30,6 +30,12 @@
   (_ask_held。review の 2 ターンと reverse_pick の 1 ターンは使わない)。区分が決まって表にあれば入れ、無ければ捨ててログ
   held_discarded を残す(_settle_held)。保留中と、捨てて今も空の項目を、以後のどの返事が口にしても検証で落とす(view の unkept。
   捨てたときは決まり文句 DISCARD_TEXT を返事の前に付ける)
+- 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
+  質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
+  (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
+  言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+- sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
+  choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -198,6 +204,19 @@ def nfkc(s):
     return unicodedata.normalize("NFKC", str(s)).strip()
 
 
+KATA_TO_HIRA = {c: c - 0x60 for c in range(0x30A1, 0x30F7)}  # ァ..ヶ -> ぁ..ゖ(長音の「ー」はそのまま)
+
+
+def kana_fold(s):
+    """NFKC にそろえ、カタカナをひらがなにする(希死念慮の言葉と「続ける」を読む前)。
+    「シニタイ」「ｼﾆﾀｲ」「しにたい」が同じ形になるので、言葉の一覧はひらがなと漢字の形だけで持てる。"""
+    return nfkc(s).translate(KATA_TO_HIRA)
+
+
+def _words_re(words):
+    return re.compile("|".join(map(re.escape, map(kana_fold, words))))
+
+
 # ----------------------------- データ(付録A・付録B) -----------------------------
 def _load_json(name):
     return json.loads((HERE / name).read_text(encoding="utf-8"))
@@ -213,10 +232,21 @@ def load_catalog():
     return [dict(j, times=set(j["times"])) for j in _load_json("catalog_v4.json")]
 
 
+def load_crisis():
+    """希死念慮・自傷の言葉と、そのときに返す決まった文(crisis_v4.json。PRD に無い aica の決まり。task 256)。
+    窓口は厚生労働省「まもろうよ こころ」(source)で checked の日に確かめたもの。プロンプトには書かない。"""
+    return _load_json("crisis_v4.json")
+
+
 BANK = load_bank()
 HELD_QID = "q_held_segment"  # 区分の表に無い答えを保留したときの、区分の確認の質問(phase "confirm"。選び方では拾わない)
 CATALOG = load_catalog()
 CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
+CRISIS = load_crisis()
+CRISIS_TEXT = "\n".join(CRISIS["reply"])
+CRISIS_RE = _words_re(CRISIS["words"])
+RESUME_RE = _words_re(CRISIS["continue_words"])
+RESUME_NOT_RE = _words_re(CRISIS["continue_not"])
 
 
 # ----------------------------- 正規化(PRD §6-3) -----------------------------
@@ -1633,6 +1663,13 @@ def _turn(state, user_text, bank, llm, catalog):
     if not nfkc(text):
         ev(state, "empty_input")
         return _represent(state, bank, counted=False)
+    crisis_open = _take_crisis(state)
+    if match_button(state, bank, text) is None:  # 選択肢の文字そのものは答えとして読む
+        if crisis_hit(text):
+            return _crisis(state, bank)
+        if crisis_open and wants_resume(text):
+            ev(state, "crisis_resume")
+            return _represent(state, bank, counted=False, lead=[CRISIS["resume_lead"]])
     if DANGER_RE.search(nfkc(text)):
         return _aside(state, bank, llm, catalog, kind="danger")
     # ---- Stage 1
@@ -1717,6 +1754,34 @@ def _flag(state, key):
         state.flags.append(key)
 
 
+def crisis_hit(text):
+    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。文は kana_fold にそろえてから照らす。"""
+    return bool(CRISIS_RE.search(kana_fold(text)))
+
+
+def wants_resume(text):
+    """窓口を案内した次の発言が「続ける」か(「続けたくない」「大丈夫じゃない」は当たらない)。"""
+    t = kana_fold(text)
+    return bool(RESUME_RE.search(t)) and not RESUME_NOT_RE.search(t)
+
+
+def _take_crisis(state):
+    """前のターンで窓口を案内したか。印は 1 ターンだけ残す(読んだら消す)。"""
+    shown = "crisis_shown" in state.flags
+    if shown:
+        state.flags.remove("crisis_shown")
+    return shown
+
+
+def _crisis(state, bank, done=False):
+    """希死念慮・自傷の言葉: 質問を進めず(数えず、抽出も生成もしない)、決まった文だけを返す。選択肢は出さない。
+    今の質問はそのまま残すので、次のターンで「続ける」と言えば、そこから相談を続ける。"""
+    _flag(state, "crisis_shown")
+    ev(state, "crisis_guidance")
+    v = dict(view(state, bank), choices=[], crisis=True)
+    return {"reply": CRISIS_TEXT, "view": v, "done": done, "counted": False}
+
+
 def _restart(state, bank, llm, catalog):
     restarts = state.restarts + 1
     user_text = state._user_text
@@ -1736,6 +1801,12 @@ def _post_result(state, text, bank, llm, catalog):
     v = view(state, bank)
     stored = {"reply": POST_RESULT_TEXT + "\n" + state.result["text"], "view": v, "done": True, "counted": False}
     if not nfkc(text):
+        return stored
+    crisis_open = _take_crisis(state)
+    if crisis_hit(text):
+        return _crisis(state, bank, done=True)
+    if crisis_open and wants_resume(text):
+        ev(state, "crisis_resume")
         return stored
     if DANGER_RE.search(nfkc(text)):
         _flag(state, "danger_warned")
