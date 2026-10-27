@@ -9,7 +9,8 @@
     中学生以下として止める(task 258)
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
-(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
+(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存。
+    PRD の流れ(icebreak から)を見るので、入口のカード(task 265。tests/test_baito_quick_start.py)を通さずに始める(quick=False)
 (7) 希死念慮・自傷の言葉(task 256): 自由入力なら、どのフェーズでも質問を進めずに相談窓口の決まった文。ボタンには当てない。
     「続ける」で続きから。行列の質問の選択肢は「今すぐ抜けたい」
 (8) 区分の表に無い答え(task 257): 区分を言わない本人の「扶養内」を保留し、区分を確かめてから入れるか捨てる。
@@ -182,16 +183,20 @@ def test_port_passes_the_prd_unit_checks_and_the_20_personas(reference):
 # 読めず、未成年のまま進む(ルールの NG が付く。ターンが 1 つ減った fill_gaps の項目が未定に残る)
 CHANGED_BY_TASK_258 = {"hs16": {"per_phase"}, "sj17": {"per_phase", "mid_empty_end"},
                        "spam_high": {"unresolved", "derived_ng"}, "malformed": {"per_phase", "mid_empty_end", "derived_ng"}}
+# task 265(設計メモ baito-quick-start.md §5)で、体力面が「立ち仕事OK」のときに立ち仕事 +1・にぎやか +0.5 を足した。
+# seg_flip(立ち仕事OK、接客は避けたい)の推薦が、重い作業(倉庫・イベント設営)から立ち仕事(工場の軽作業・イベントスタッフ)になる
+CHANGED_BY_TASK_265 = {"seg_flip": {"recs"}}
 
 
 def test_port_matches_the_reference_baseline_persona_by_persona(reference):
-    """ターン数・フェーズの配分・review の回数・結果の推薦は、参照実装の基準値(results_v4.json)と同じ(task 258 の分を除く)。"""
+    """ターン数・フェーズの配分・review の回数・結果の推薦は、参照実装の基準値(results_v4.json)と同じ(task 258・265 の分を除く)。"""
     r, _ = reference
     keys = ("turns", "per_phase", "review_rounds", "recs", "blocked", "unresolved", "mid_empty_end", "derived_ng")
     port = {m["persona"]: {k: m[k] for k in keys} for m in r["results"]["v4"]}
     base = {m["persona"]: {k: m[k] for k in keys} for m in r["baseline"]["v4"]}
     diff = {p: {k for k in keys if port[p][k] != base[p][k]} for p in port}
-    assert {p: d for p, d in diff.items() if d} == CHANGED_BY_TASK_258
+    assert {p: d for p, d in diff.items() if d} == CHANGED_BY_TASK_258 | CHANGED_BY_TASK_265
+    assert port["seg_flip"]["recs"] == ["super_stock", "factory_light", "event_staff"]
     for p in ("spam_high", "malformed"):
         m = next(x for x in r["results"]["v4"] if x["persona"] == p)
         assert m["reasks"] == ["hf_age"] and m["minor_mode"] and port[p]["derived_ng"] == H.DERIVED_NG_MINOR
@@ -204,9 +209,10 @@ def test_the_baseline_files_are_not_overwritten(reference):
     base = (REF / "transcripts" / "v4_univ.txt").read_text(encoding="utf-8")
     assert r["transcripts"]["v4_univ.txt"] == base and r["baseline"] == json.loads((REF / "results_v4.json").read_text())
     # N-17 で結果の文の「未定」が 1 行減ったところ(spam_high)と、task 258 の年齢の読み取り(persona の台本の
-    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)だけが、基準の会話ログと違う
+    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)と、task 265 の立ち仕事の加点(seg_flip の推薦)だけが、
+    # 基準の会話ログと違う
     diff = [x for x in r["transcripts"] if r["transcripts"][x] != (REF / "transcripts" / x).read_text(encoding="utf-8")]
-    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_sj17.txt", "v4_spam_high.txt"]
+    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_seg_flip.txt", "v4_sj17.txt", "v4_spam_high.txt"]
 
 
 def test_log_writes_the_ci_evidence_and_keeps_the_exit_code(reference, tmp_path, monkeypatch, capsys):
@@ -904,7 +910,7 @@ def test_session_start_needs_the_flag(tmp_path, monkeypatch):
 
 
 def test_session_replays_turn_with_the_model_outputs_and_saves_only_at_the_end(state):
-    r = session.start(state, UID)
+    r = session.start(state, UID, quick=False)
     assert r["question"] == {"id": "q_money", "text": "バイト代、何に使いたい？", "choices": QM["q_money"]["choices"]}
     saved = json.dumps(state.user(UID)[session.KEY], ensure_ascii=False)
     # ボタン: 抽出は呼ばず、言い方を 1 回だけ求める
@@ -929,13 +935,13 @@ def test_session_replays_turn_with_the_model_outputs_and_saves_only_at_the_end(s
 
 
 def test_session_model_errors_fall_back_to_the_question_text(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r, stages = _drive(state, "旅行・遊び", [{"error": "APIError"}, _say("扶養は103万円までだよ")])
     assert stages == ["say", "say"] and r["reply"] == "今のあなたに近いのは？"
 
 
 def test_session_result_saves_the_conditions_with_the_rule_ng_and_closes(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     picks = {"q_segment": "学生", "hf_age": "15〜17歳"}
     r = {"status": "reply", "choices": QM["q_money"]["choices"], "question": "q_money"}
     for _ in range(30):
@@ -952,7 +958,7 @@ def test_session_result_saves_the_conditions_with_the_rule_ng_and_closes(state):
 
 
 def test_session_keeps_a_junior_high_block_open_and_lifts_it_on_an_age_fix(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -968,7 +974,7 @@ def test_session_keeps_a_junior_high_block_open_and_lifts_it_on_an_age_fix(state
 
 
 def test_session_exit_word_saves_answered_conditions_and_hands_back(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     session.turn(state, UID, "貯金・将来のため", [_say("いいね")])
     r = session.turn(state, UID, "今はいい")
     assert r == {"active": False, "ended": "exit", "saved": ["avoids"]} and not session.active(state, UID)
@@ -982,7 +988,7 @@ def test_session_drops_a_saved_state_from_another_version(state):
 
 def test_session_free_text_with_every_model_call_failing_ends_in_four_calls(state):
     """文の答えでモデルが毎回失敗しても、1 ターンの呼び出しは抽出 2 回 + 生成 2 回まで(PRD §5-4)。質問の原文で聞き直す。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r, stages = _drive(state, "なんだろう", [{"error": "x"}] * session.MAX_LLM_CALLS)
     assert stages == ["extract", "extract", "say", "say"] and r["status"] == "reply"
     assert r["reply"] == H.RETRY_TEXT + QM["q_money"]["text"] and r["counted"] is False
@@ -994,7 +1000,7 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
     from dip_mcp import server
 
     monkeypatch.setattr(server, "state", state)
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1002,7 +1008,7 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
     assert session.turn(state, UID, "やめる")["ended"] == "exit" and not session.active(state, UID)
     for got in (server.recommend_jobs(line_user_id=UID, area="新宿"), server.relax_conditions(line_user_id=UID)):
         assert got["jobs"] == [] and got["blocked"] == "under_15" and got["notice"] == H.NOTICE["under_15"]
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1017,7 +1023,7 @@ def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypat
     from dip_mcp import server
 
     monkeypatch.setattr(server, "state", state)
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1033,14 +1039,14 @@ def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypat
 def test_rule_ng_is_saved_even_when_the_previous_avoids_are_long(state):
     long = "、".join(f"苦手なこと{i}番目のもの" for i in range(8))
     logic.save_preferences(state, UID, {"avoids": long})
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     session.turn(state, UID, "今はいい")
     avoids = state.user(UID)["preferences"]["avoids"]["value"]
     assert avoids.startswith("深夜シフト、重量物・危険な作業、苦手なこと0番目") and len(avoids) <= logic.PREFERENCE_VALUE_MAX
 
 
 def test_replayed_outputs_must_match_what_the_harness_asks_for(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     with pytest.raises(RuntimeError, match="合いません"):  # 言い方を求めているのに、抽出の出力が来た
         session.turn(state, UID, "推し活・趣味", [{"stage": "extract", "output": {}}])
     with pytest.raises(RuntimeError, match="多く"):  # 求めより多い(呼び直しの間に状態が変わった)
@@ -1221,7 +1227,7 @@ def test_crisis_words_after_the_result_also_get_the_guidance():
 
 def test_session_sends_the_guidance_without_quick_replies_and_resumes(state):
     """LINE: 案内はクイックリプライなし・モデルを呼ばない。「続ける」で今の質問と選択肢が戻る。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r = session.turn(state, UID, "消えたい")
     assert r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == [] and r["llm_calls"] == 0
     r = session.turn(state, UID, "続ける")
@@ -1232,7 +1238,7 @@ def test_session_sends_the_guidance_without_quick_replies_and_resumes(state):
 def test_session_does_not_close_on_an_exit_request_with_crisis_words(state, said):
     """LINE: やめる頼み(求人を見せて・正社員がいい)を含んでも、希死念慮の言葉があれば相談を閉じずに窓口を案内する
     (閉じるとトークの AI が受け持つが、トークの AI には希死念慮の決まりが無い)。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r = session.turn(state, UID, said)
     assert r["active"] is True and r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == []
     assert session.turn(state, UID, "求人見せて")["ended"] == "exit"

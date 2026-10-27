@@ -153,6 +153,9 @@ function createTalk(o) {
       const last = bubbles.pop();
       bubbles.push(last ? `${last}\n${r.progress.text}` : r.progress.text);
     }
+    // baito_card: アルバイトの相談を 1 タップで始めるカード(入口・職種の結果。設計メモ baito-quick-start.md §9)。
+    // Web のトークは Flex を描かず、文の形(baito_card.text)を吹き出し 1 つにする。ボタンは quick_replies のまま
+    if (r.baito_card?.text) bubbles.push(r.baito_card.text);
     for (const b of bubbles) col.appendChild(el("div", "bubble", b));
     if (bubbles.length && time) col.appendChild(el("span", "time", time));
     if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }

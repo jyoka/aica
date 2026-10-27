@@ -9,7 +9,9 @@ session.turn が turn() の前後の状態からここを呼ぶ。ターンを�
 - 埋まった(分子): 分母の項目のうち、一度でも値が入ったもの。「こだわりなし」も入れる。後で値が消えても(review の矛盾を
   「未定」にした、ルールで深夜を外した)埋まったままに数える。区分が変わったときだけ、新しい表で数え直す(新しい表に無い項目は
   数えないので、分子が減ることがある)
-- 出すのは hard_filter の最初のターン(返事が hard_filter 以降の質問のターン)から。icebreak の間は出さない
+- 出すのは hard_filter の最初のターン(返事が hard_filter 以降の質問のターン)から。icebreak の間は出さない。
+  入口のカードと職種の結果(quick_pick・quick_result。task 265、設計メモ baito-quick-start.md §7)の間も出さず、数えもしない
+  (入口の答えは選び直せる。選び直して外した項目を「未定」にしないため)
 - milestone: hard_filter(か、それより前)から scenario_game・reverse_pick・fill_gaps に移った最初のターン。1 回の相談で 1 回。
   review・result に直接移ったとき(「結果を見せて」、ターンの予算)は付けない(review が同じ役を持つ)
 - 中学生以下で止めたターンと、希死念慮の言葉に窓口を案内したターンには出さない
@@ -87,6 +89,8 @@ def update(h: H.State, mem: dict | None, prev: dict, reply: dict) -> tuple[dict 
         mem = dict(fresh_mem(h), seen=list(prev.get("filled", [])) if prev.get("restarts") == h.restarts else [])
     elif mem.get("restarts") != h.restarts:  # 最初から(やり直し)なら数え直す
         mem = fresh_mem(h)
+    if h.phase in H.QUICK_PHASES:  # 入口の答えは選び直せるので、入口の間は数えない(icebreak に入ったターンから数える)
+        return None, mem
     tbl = table(h)
     old = set(mem["seen"]) & set(tbl)  # 区分が変わったら、新しい表に無い項目は数えない
     seen = old | {s for s in tbl if H.is_filled(h.slots.get(s))}
