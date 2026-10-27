@@ -126,6 +126,7 @@ PERSONAS = [
     P4("hs16", "高1・16歳（free textで高1と申告）", "student", minor_truth=True,
        answers={"q_money": "推し活・趣味",
                 "q_segment": ("free", "学生！高1です", {"segment": "student", "slot_updates": [{"slot": "age_band", "value": "高1", "evidence": "高1"}]}),
+                "hf_age": "15〜17歳",  # aica task 258: 「高1」は年齢として読まないので、年齢の質問にボタンで答える
                 "hf_days": "週1〜2日", "hf_time": "夕方〜夜", "hf_commute": "家から徒歩・自転車", "hf_school": "届け出すればOK",
                 "sc_line": "よし、燃えてきた", "sc_shift": "3時間でサクッと", "sc_st_peers": "同年代", "sc_st_exam": "完全休み",
                 "sc_st_after": "部活のあと", "rp_student": "品出し・仕分け（体を動かす）", "fg_wage": "1,000円台でOK",
@@ -174,6 +175,7 @@ PERSONAS = [
     P4("sj17", "17歳・高卒で就職、副業探し（旧スロット名でage申告）", "side_job", minor_truth=True, adversarial=True,
        answers={"q_segment": ("free", "本業あり副業探し。高卒で働いてて17歳です",
                               {"segment": "side_job", "slot_updates": [{"slot": "age_under_18", "value": True, "evidence": "17歳"}]}),
+                "hf_age": ("free", "17歳です", {"slot_updates": [{"slot": "age_band", "value": "17歳", "evidence": "17歳"}]}),  # aica task 258
                 "hf_time": "深夜もOK", "fg_physical": "どんとこい", "hf_sideok": "わからない・グレー"}, review=[OK, OK]),
     P4("jhs", "中学3年生", "student", minor_truth=True, adversarial=True,
        answers={"q_segment": "学生", "hf_age": "中学生以下"}, review=[OK]),
@@ -200,7 +202,7 @@ PERSONAS = [
        events={5: ("say", "もういいから早く結果見せて", {"intent": "show_result"})}, review=["これでOK", OK]),
     P4("age_fix", "大学生・年齢を誤タップ→レビューで19歳に訂正", "student", adversarial=True,
        answers={"q_segment": "学生", "hf_age": "15〜17歳", "hf_school": "OK", "hf_time": "夕方〜夜"},
-       review=[("free", "年齢まちがえた、19歳です", {"slot_updates": [{"slot": "age_band", "value": "19歳"}], "review_ack": "partial"}), OK]),
+       review=[("free", "19歳です", {"slot_updates": [{"slot": "age_band", "value": "19歳"}], "review_ack": "partial"}), OK]),  # aica task 258: はっきりした形で訂正
 ]
 
 # ------------------------------------------------------------------ runner

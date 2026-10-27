@@ -12,7 +12,8 @@
 から読み、プロンプトは dip_mcp/prompts/baito/ の 4 ファイル(原文のまま)を使う。
 参照実装から変えたところ(レビュー docs/prd/baito_harness/review/06_readiness_v41.md の ID):
 - M-4: 年齢を聞いている質問で抽出が 2 回とも失敗しても、発言に JHS_RE が当たれば age_band=under_15 を入れる(_force_jhs)。
-  本人の学年として「中2」などと言ったのに抽出が別の年齢を返したときも under_15。review(年齢の行があり、抽出が失敗)と
+  抽出が通っても、本人の学年として「中2」などと言っていれば under_15。本人の学年ではないと分かる文(「中学卒業して16歳」
+  「中学の先生をしてる35歳」。_jhs_not_self)は止めず、未成年のままボタンで聞き直す(task 258)。review(年齢の行があり、抽出が失敗)と
   結果の後の年齢の訂正(ブロックを外さない)でも同じ
 - 年齢の矛盾(どっち？)の候補に未成年があれば未成年として扱い、中学生以下があれば結果の前に止める(minor_mode・update_block)
 - M-16: 複数のスロットは、区切る前に文全体を表示名・正規値と照らす(「推し活・趣味」を壊さない。normalize_value)
@@ -23,8 +24,11 @@
 - M-7: 生成の view に本人の直近の発言(user_text)を入れる
 - N-3・N-4: review の返事は、カードの長さに合わせて上限を広げ、カードの中のユーザー由来の文は金額の検査から外す
 - N-17: 結果の文で、矛盾のまま未定にした項目を「未定：…」に二重に並べない(unknown_hard_slots には残す)
-- 年齢の正規化(§6-3): 未成年を成人と読まないよう読み方を変えた(_norm_age。PRD の表の順では「18歳未満です」
-  「17歳、大学志望」が 18_plus になる。レビューに無い、PRD の表の誤り)
+- 打った年齢(task 258。§6-3 の年齢の行を置き換える): 打った文の年齢は、はっきりした形だけ読む(typed_age。年齢のボタンと
+  同じ文字と、数字と「歳・才」だけの答え)。抽出(モデル)の年齢と学校の語(「高2」「大学生」)からは決めない。ただし
+  未成年の側に寄せる値は使う(_read_typed_age): 中学生以下(under_15。止める側)と、18歳以上の人が未成年だと言ったとき。
+  年齢の質問への答えが読めなければ、未成年として扱ったまま、ボタンで 1 回だけ聞き直す(_turn の age_reask)。
+  2 回目も読めなければ未成年のまま進む
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -178,9 +182,6 @@ PII_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|0\d{1,4}-?\d{1,4}-?\d{3,4}|\d{3}-?
 MULTI_SEP_RE = re.compile(r"[、,，/／]\s*")
 STRONG_SPLIT_RE = re.compile(r"[、,，/／\s]+")  # 複数スロットの文の区切り(PRD §6-3 の 1)。M-16: 先にこれで区切り、表示名と一致しない部分だけを「・と&」でも区切る
 WEAK_SPLIT_RE = re.compile(r"[・と&]+")
-# 18 以上の数があっても、まだその年齢になっていない言い方(「18歳未満」「まだ18歳になっていません」「来月18歳」)。
-# PRD §6-3 の表は数の行(8)が「18歳未満」の行(9)より先なので、そのままでは 18_plus と読む。安全側に under_18 にする
-NOT_YET_RE = re.compile(r"未満|未成年|以下|なって(い)?な|なって(い)?ませ|まだ|もうすぐ|あと|来月|来年|今年|になる|になります")
 
 
 def scrub_note(raw):
@@ -281,49 +282,34 @@ def normalize_value(slot, value):
     return _norm_single(slot, value)
 
 
-def _age_number(s):
-    """年齢らしい数。「〜歳・才」の付いた数を先に、無ければ単位(か月・年・時間など)の付かない数。生年(「2009年生まれ」)は読まない。"""
-    m = re.search(r"(\d{1,3})\s*(歳|才)", s)
-    if m:
-        return int(m.group(1))
-    for m in re.finditer(r"\d{1,4}", s):
-        if not re.match(r"\s*(か月|ヶ月|ヵ月|カ月|ヶ|年|月|日|時|分|万|円|週|回|人|学期)", s[m.end():]):
-            return int(m.group(0)) if len(m.group(0)) <= 3 else None
-    return None
+# 打った文の年齢のはっきりした形(task 258)。後ろに「です」「だよ」と句点・感嘆符が付いてもよい
+AGE_TAIL = r"\s*(です|だよ|だ)?\s*[。.!！]*"
+AGE_NUMBER_RE = re.compile(r"(\d{1,2})\s*[歳才]" + AGE_TAIL)
+AGE_BUTTONS = {nfkc(c): e["age_band"] for q in BANK if q["id"] == "hf_age" for c, e in q["choice_effects"].items()}
+
+
+def typed_age(text, buttons=True):
+    """打った文の年齢(task 258)。はっきりした形だけ読む: 年齢のボタンと同じ文字(「15〜17歳」「ひみつです」。
+    buttons=False なら読まない)と、数字と「歳・才」だけの答え(「17歳」「18才です」)。それ以外(「高3で17」
+    「18歳になりました、大学1年」「未成年ではありません」)は None(未成年として扱い、ボタンで聞き直す)。
+    言い方は無限にあるので、読む形を増やさない。"""
+    t = (nfkc(text) if isinstance(text, str) else "").replace("~", "〜")  # 「15～17歳」(全角のチルダ)もボタンと同じ
+    for label, band in AGE_BUTTONS.items() if buttons else ():
+        if re.fullmatch(re.escape(label) + AGE_TAIL, t):
+            return band
+    m = AGE_NUMBER_RE.fullmatch(t)
+    if not m:
+        return None
+    a = int(m.group(1))
+    return "under_15" if a < 15 else "15_17" if a < 18 else "18_plus"
 
 
 def _norm_age(s):
-    """PRD §6-3 の年齢の行。未成年を成人と読まないよう、参照実装から次を変えた(安全側):
-    「〜歳」の数を学校の語より先に読む(「17歳、大学志望」)、まだその年齢になっていない言い方は under_18
-    (「18歳未満」「まだ18歳になっていない」「あと半年で18」)、進学の予定(「大学受験生」「4月から大学生」)と
-    生年(「2009年生まれ」)と学年だけ(「1年生」)は決めない(None。未成年として扱い、年齢を聞く)、
-    成人・大人の打ち消し(「成人してない」)は under_18。"""
+    """抽出の年齢の値。正規値と表示名は _exact が先に読む。ほかは typed_age の形と、中学生(JHS_RE。止める側)だけ。
+    ハーネスが打った文の年齢として使うのは under_15 だけ(_read_typed_age)。"""
     if JHS_RE.search(s):
         return "under_15"
-    if DECLINE_RE.search(s) or NOPREF_RE.search(s):
-        return "declined"
-    a = _age_number(s)
-    if a is not None and re.search(r"(\d{1,3})\s*(歳|才)", s):
-        return _band(a, s)
-    if re.search(r"高[1-3]|高校|高専", s):
-        return "15_17"
-    if re.search(r"未成年|未満|以下", s) or re.search(r"(成人|大人).*(ない|ません|まだ|前)|(まだ|前).*(成人|大人)", s):
-        return "under_18"
-    if re.search(r"生まれ|年生", s) or re.search(r"志望|目指|受験|予定|から|なりたい|行きたい|入りたい", s):
-        return None
-    if re.search(r"大学|大[1-4]|専門|短大|社会人|会社員", s):
-        return "18_plus"
-    if a is not None:
-        return _band(a, s)
-    if "成人" in s or "大人" in s or "18歳以上" in s:
-        return "18_plus"
-    return None
-
-
-def _band(a, s):
-    if a >= 18 and NOT_YET_RE.search(s):
-        return "under_18"
-    return "under_15" if a < 15 else "15_17" if a < 18 else "18_plus"
+    return typed_age(s)
 
 
 def _norm_single(slot, value):
@@ -1484,7 +1470,7 @@ NOT_SELF_RE = re.compile(r"卒|の(時|とき|頃|ころ)|だった|子ども|�
 
 def _jhs_applies(cur, q, text):
     """中学生以下の文字列で年齢を補う場面: 年齢を聞いている質問(確認質問・review でない)で、発言が JHS_RE に当たる。"""
-    return q is not None and cur["mode"] != "confirm" and "age_band" in q["targets"] and bool(JHS_RE.search(nfkc(text)))
+    return _asks_age(cur, q) and bool(JHS_RE.search(nfkc(text)))
 
 
 def _jhs_self(text):
@@ -1492,17 +1478,36 @@ def _jhs_self(text):
     return bool(JHS_SELF_RE.search(t)) and not NOT_SELF_RE.search(t)
 
 
+def _jhs_not_self(text):
+    """「中学」を含むが、本人の学年ではないと分かる文(「中学卒業して16歳」「中学の先生をしてる35歳」)。
+    本人の学年(JHS_SELF_RE)が無く、卒業・昔・家族・先生の話(NOT_SELF_RE)か、15 以上の「N歳・才」がある。
+    年齢を決めるためではなく、止めずにボタンで聞き直すかどうかだけに使う(task 258)。"""
+    t = nfkc(text)
+    if JHS_SELF_RE.search(t):
+        return False
+    return bool(NOT_SELF_RE.search(t)) or any(int(m.group(1)) >= 15 for m in re.finditer(r"(\d{1,2})\s*[歳才]", t))
+
+
 def _force_jhs(state, ext, text):
-    """年齢を聞いている質問への中学生の発言(§5-4 の 5)。抽出が失敗しても(M-4)、抽出の年齢が無い・読めないときも、
-    本人の学年として「中2」などを言ったのに抽出が別の年齢を返したときも、age_band=under_15 にする(安全側)。"""
+    """年齢を聞いている質問への中学生の発言(§5-4 の 5)。抽出が失敗しても(M-4)、はっきりした年齢が無いときも、
+    本人の学年として「中2」などを言ったのにはっきりした年齢があるときも、age_band=under_15 にする(安全側)。
+    「まだ中学です」のような語だけでも、はっきりした年齢(task 258 の typed_age)が無ければ止める(後で「16歳」と打てば外れる)。
+    本人の学年ではないと分かる文(_jhs_not_self)は止めない。抽出の under_15 も外し、未成年のままボタンで聞き直す
+    (抽出が失敗していれば失敗のまま返す。どちらも聞き直しは 1 回まで)。"""
+    if _jhs_not_self(text):
+        ev(state, "jhs_not_self", extract_failed=ext is None)
+        if ext is not None:
+            ext["slot_updates"] = [u for u in ext["slot_updates"]
+                                   if not (u["slot"] == "age_band" and u["value"] == "under_15")]
+        return ext
     if ext is None:
         ext = _empty_extract()
         ev(state, "jhs_fallback", extract_failed=True)
     ages = [u for u in ext["slot_updates"] if u["slot"] == "age_band"]
     if ages and all(u["value"] == "under_15" for u in ages):
         return ext
-    if ages and all(u["value"] is not None for u in ages) and not _jhs_self(text):
-        return ext  # 「中学の先生」のような語だけで、抽出がはっきりした年齢を返したときは抽出のまま
+    if ages and not _jhs_self(text):
+        return ext
     if ages:
         ev(state, "jhs_override", values=[u["value"] for u in ages])
     elif not any(e["kind"] == "jhs_fallback" for e in state.log[-1:]):
@@ -1510,6 +1515,45 @@ def _force_jhs(state, ext, text):
     ext["slot_updates"] = [u for u in ext["slot_updates"] if u["slot"] != "age_band"] + \
         [{"slot": "age_band", "value": "under_15", "evidence": text}]
     return ext
+
+
+def _read_typed_age(state, ext, text, buttons):
+    """task 258: 打った文の年齢は、はっきりした形(typed_age)だけ読む。ボタンの文字は年齢を聞いているとき(年齢の質問と
+    review)だけ(buttons。ほかの質問の「ひみつ」は年齢の答えではない)。抽出の年齢は、未成年の側に寄せるときだけ使う
+    (ログ age_text_unread): 中学生以下(under_15。止める側)と、18歳以上の人が未成年だと言ったとき(「17歳だから深夜は無理」。
+    minor_fix で high にする。未成年を成人と読まず、成人を未成年と読むのは安全側)。
+    抽出が失敗しても、はっきりした形なら年齢だけの抽出を作る。"""
+    band = typed_age(text, buttons)
+    if ext is None:
+        if band is None:
+            return None
+        ext = _empty_extract()
+    ages = [u for u in ext["slot_updates"] if u["slot"] == "age_band"]
+    adult = (state.slots.get("age_band") or {}).get("value") == "18_plus"
+    keep = [{"slot": "age_band", "value": band, "evidence": nfkc(text)}] if band else \
+        [u for u in ages if u["value"] == "under_15"] + \
+        [dict(u, minor_fix=True) for u in ages if adult and u["value"] in ("15_17", "under_18")][-1:]
+    unread = [u["value"] for u in ages if u["value"] != band and u["value"] not in [k["value"] for k in keep]]
+    if unread:
+        ev(state, "age_text_unread", slot="age_band", values=unread)
+    ext["slot_updates"] = [u for u in ext["slot_updates"] if u["slot"] != "age_band"] + keep
+    return ext
+
+
+def _asks_age(cur, q):
+    """今出しているのが年齢の質問(hf_age。確認質問・review でない)。"""
+    return q is not None and cur["mode"] != "confirm" and "age_band" in q["targets"]
+
+
+def _age_unread(state, cur, q, ext):
+    """年齢の質問への答えから年齢が読めなかった(中学生として止めたときと「早く結果」は除く)。"""
+    return _asks_age(cur, q) and not state.blocked and (ext or {}).get("intent") != "show_result" \
+        and not any(u["slot"] == "age_band" for u in (ext or {}).get("slot_updates", []))
+
+
+def _age_asked_again(state):
+    """年齢をボタンで聞き直したら、fill_gaps の言い換えでもう聞かない(聞き直しは 1 回まで)。"""
+    state.attempts["age_band"] = max(state.attempts.get("age_band", 0), MAX_ATTEMPTS)
 
 
 def _turn(state, user_text, bank, llm, catalog):
@@ -1533,6 +1577,7 @@ def _turn(state, user_text, bank, llm, catalog):
     ext = None
     if buttons is None:
         ext = _call_llm(llm.extract, extract_payload(state, bank, text), validate_extract, state, "extract")
+        ext = _read_typed_age(state, ext, text, buttons=_asks_age(cur, q) or cur["mode"] == "review")
         if _jhs_applies(cur, q, text):
             ext = _force_jhs(state, ext, text)
         elif cur["mode"] == "review" and ext is None and _jhs_self(text) and \
@@ -1577,6 +1622,8 @@ def _turn(state, user_text, bank, llm, catalog):
         elif cur["qid"] not in state.retried:  # 1 回目: 数えずに 1 回だけ聞き直す
             state.retried.append(cur["qid"])
             _uncount(state)
+            if "age_band" in q["targets"]:
+                _age_asked_again(state)
             state.current = dict(cur, mode="retry")
             return _say(state, bank, llm, catalog, counted=False)
         else:
@@ -1593,6 +1640,14 @@ def _turn(state, user_text, bank, llm, catalog):
         _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
         if mode == "confirm":
             state.pending_segment = None
+        elif _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
+            if cur["qid"] not in state.retried and clarify_room(state):
+                state.retried.append(cur["qid"])
+                _age_asked_again(state)
+                ev(state, "age_reask", slot="age_band")
+                state.current = dict(cur, mode="reask")
+                return _say(state, bank, llm, catalog)
+            ev(state, "age_unread_kept_minor", slot="age_band")
     if intent == "show_result":
         _flag(state, "show_result")
     advance(state, bank)
@@ -1636,20 +1691,19 @@ def _post_result(state, text, bank, llm, catalog):
         _flag(state, "danger_warned")
         ev(state, "danger_skip", where="post_result")
         return {"reply": NOTICE["danger"], "view": v, "done": True, "counted": False}
-    if state.blocked and ext:
-        ages = [u["value"] for u in ext["slot_updates"]
-                if u["slot"] == "age_band" and u["value"] in ("15_17", "under_18", "18_plus")]
-        if ages and not _jhs_self(text):  # 「中3だけど16になった」は中学生のまま(ブロックを外さない)  # 年齢の訂正でブロックを外す
+    if state.blocked:
+        band = typed_age(text)  # task 258: 年齢の訂正は、はっきりした形(「16歳」「15〜17歳」)だけ読む
+        if band in ("15_17", "18_plus"):  # 「中3だけど16になった」は読まない(中学生のまま。ブロックを外さない)
             if state.turns < MAX_TURNS:  # M-6: 15 ターンに達していれば数えず、そのまま結果を作り直す
                 _count(state)
-            apply_update(state, "age_band", ages[-1], "high", "free:post_result")
+            apply_update(state, "age_band", band, "high", "free:post_result")
             state.result = None
             state.unresolved = {}
             state.review_rounds = 0  # M-6: review をはじめからやり直せるようにする
             state.last_card = None
             state.flags = [f for f in state.flags if f != "show_result"]
             state.phase = "hard_filter"
-            ev(state, "unblocked", value=ages[-1])
+            ev(state, "unblocked", value=band)
             advance(state, bank)
             return _say(state, bank, llm, catalog)
     ev(state, "post_result_message", intent=intent)
@@ -1676,7 +1730,7 @@ def _apply_ext(state, bank, ext, q, text, review, confirm=False):
         evidence = u.get("evidence")  # 05-M12: NFKC 後の発言の部分文字列のときだけ根拠として数える
         ev_ok = isinstance(evidence, str) and bool(nfkc(evidence)) and nfkc(evidence) in nfkc(text)
         kind = "free_current" if current else "free_other"
-        conf = "low" if s in ambiguous else confidence_for(kind, state.phase, s, ev_ok)
+        conf = "high" if u.get("minor_fix") else "low" if s in ambiguous else confidence_for(kind, state.phase, s, ev_ok)
         frm = f"free:{qid}" if current else (f"free_other:{qid}" if qid else "free_other")
         apply_update(state, s, u["value"], conf, frm)
     _apply_ng(state, ext)
