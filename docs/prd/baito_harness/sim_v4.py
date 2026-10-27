@@ -138,7 +138,7 @@ PERSONAS = [
     P4("homemaker", "未就学児2人の親", "homemaker",
        answers={"q_money": "生活費・家計の足し", "q_segment": "家のこと中心（主婦・主夫など）", "hf_age": "18歳以上", "hf_days": "週3〜4日",
                 "hf_commute": "家から徒歩・自転車", "hf_hours": "9〜14時くらい", "hf_leave": "けっこうある", "sc_hm_fever": "すぐ休める",
-                "sc_hm_remote": "外に出たい", "sc_hm_money": "家計の足し", "sc_line": "今すぐ消えたい", "fg_fuyou": "はい、扶養内で",
+                "sc_hm_remote": "外に出たい", "sc_hm_money": "家計の足し", "sc_line": "今すぐ抜けたい", "fg_fuyou": "はい、扶養内で",
                 "fg_remote": "外がいい", "fg_physical": "少しなら"},
        review=[("free", "在宅もアリかも。あと夜の仕事はNGで！", {"slot_updates": [{"slot": "remote", "value": "どちらでも"}], "ng_updates": ["夜の仕事"], "review_ack": "partial"}), OK]),
     P4("office", "会社員・副業探し", "side_job",

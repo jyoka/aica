@@ -27,7 +27,7 @@ USER [hard_filter/hf_commute/ask] 電車で30分までかな
 BOT  (8) いいね！どっちを選ぶ？  ['時給高め立ちっぱなし', 'ふつう座れる']
 USER [scenario_game/sc_sj_stand/ask] 時給高め立ちっぱなしかな
      slots: physical: ∅→standing_ok(low); wage_priority: ∅→wage_first(low)
-BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
 USER [scenario_game/sc_line/ask] よし、燃えてきたかな
      slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
 BOT  (10) いいね！理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
