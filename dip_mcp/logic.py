@@ -1090,6 +1090,9 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 # ----------------------------- 相談の playbook(ADR-0001) -----------------------------
 # 雇用区分とチャネルごとの、相談の進め方の指針(明らかにすること・掘り下げ方)。次に何を聞くかは決めない。
 # 区分ごとの playbook に、区分に共通の決まり(common_{channel}.md)を足して返す。
+# アルバイト・パートのチャットの相談は、機能フラグ BAITO_HARNESS_VERSION=v4 のときだけ例外で、何を聞くかを dip の
+# ハーネスが決める(dip_mcp/baito、ADR-0009)。その playbook(parttime_chat_harness.md)は、ハーネスに渡すこと
+# (start_baito_consultation)と、保存先・提案の決まりだけを書く。フラグが無ければ今までどおり(本番は切り替えない)。
 
 PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
 CHANNELS = ("chat", "voice")
@@ -1110,13 +1113,21 @@ CONVERSATION_RULES = {
 VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for track in TRACKS}
 
 
+BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 のときだけハーネスで相談する
+
+
+def baito_harness_on() -> bool:
+    return os.environ.get(BAITO_HARNESS_FLAG, "").strip() == "v4"
+
+
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
     """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
     if channel not in CHANNELS:
         return {"error": f"channel は {' / '.join(CHANNELS)} のいずれか"}
-    path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}.md"
+    harness = "_harness" if track == "アルバイト・パート" and channel == "chat" and baito_harness_on() else ""
+    path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}{harness}.md"
     if not path.is_file():
         return {"error": f"{channel} の playbook はまだありません"}
     common = PLAYBOOKS / f"common_{channel}.md"

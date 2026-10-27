@@ -1,0 +1,22 @@
+
+=== v3 (harness_v3.py) ===
+persona    turns result        seg  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other
+hs16          14   True    student  2/4/6/1/0               [] | [] | [] | [] | 深夜NG=True
+univ          14   True    student  2/5/5/1/0               [] | [] | [] | [] | 
+homemaker     14   True  homemaker  2/5/5/1/0               [] | [] | [] | [] | 
+office        14   True   side_job  2/5/4/1/1               [] | [] | [] | [] | 
+nopref        14   True    student  2/5/5/1/0               [] | [] | [] | [] | 
+unclear       15   True   side_job  2/5/2/1/3               [] | [] | ['shift_length', 'customer_facing', 'physical'] | [] | repeat=['hf_weekday', 'hf_time'] CUT_BY_MAX_TURNS
+late_seg      14   True  homemaker  2/5/5/1/0               [] | [] | ['physical'] | [] | 
+no_seg        15   True    student  2/4/6/0/1               [] | [] | ['exam_flex'] | [] | CUT_BY_MAX_TURNS
+
+--- v3 review metrics ---
+persona    turns rounds review@turn  unconfirmed(HARD/MID) | unconfirmed LOW-pri | conflicts on 1st card -> open at end
+hs16          14      1 [14]         [] | [] (empty LOW: ['environment_noise']) | [] -> {}
+univ          14      1 [14]         [] | [] (empty LOW: ['environment_noise', 'long_vacation']) | [] -> {}
+homemaker     14      1 [14]         [] | [] (empty LOW: ['atmosphere', 'environment_noise']) | [] -> {}
+office        14      1 [14]         [] | [] (empty LOW: ['atmosphere', 'environment_noise', 'avoid_coworkers']) | ['customer_facing'] -> {}
+nopref        14      1 [14]         [] | [] (empty LOW: ['long_vacation']) | [] -> {}
+unclear       15      2 [14, 15]     ['shift_length', 'customer_facing', 'physical'] | [] (empty LOW: ['pace', 'atmosphere', 'environment_noise', 'avoid_coworkers']) | [] -> {}
+late_seg      14      1 [14]         ['physical'] | [] (empty LOW: ['atmosphere', 'environment_noise']) | ['purpose'] -> {}
+no_seg        15      2 [14, 15]     ['exam_flex'] | [] (empty LOW: ['long_vacation']) | ['customer_facing'] -> {}

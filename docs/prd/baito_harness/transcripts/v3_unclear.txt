@@ -1,0 +1,85 @@
+### v3 / unclear (会社員・あいまい回答多め, true segment=side_job)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 推し活・趣味
+     slots: purpose: ∅→hobby(low)
+T02 [icebreak] q_segment: 今のあなたに近いのは？  ['学生', '家のこと中心', '本業あり副業探し']
+     → 本業あり副業探し
+     segment: unknown→side_job
+T03 [hard_filter] hf_sideok: 今の会社、副業はOK？  ['OK', '届け出が必要', 'NG・グレー']
+     → OK
+     slots: side_job_allowed: ∅→ok(high)
+T04 [hard_filter] hf_weekday: 働くなら平日？週末？  ['平日の夜', '土日', 'どちらでも']
+     → どっちでもない…
+T05 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週1〜2日
+     slots: days_per_week: ∅→1-2(high)
+T06 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → どっちでもない…
+T07 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → どっちでもない…
+T08 [scenario_game] sc_wage_commute: 時給100円の差。徒歩5分の店と電車30分の店、どっち？  ['近いほう', '時給が高いほう']
+     → 時給が高いほう
+     slots: commute: ∅→train_30(low); hourly_wage_min: ∅→wage_priority(low)
+T09 [scenario_game] sc_sj_weekend: 週末に働くなら？  ['週末1日', '半日']
+     → 週末1日
+     slots: weekday_or_weekend: ∅→weekend_full_day(low)
+T10 [reverse_pick] rp_side_job: この3つ、一番やりたくないのは？  ['居酒屋ホール（夜）', '倉庫ピッキング', 'イベント設営']
+     → どっちでもない…
+T11 [fill_gaps] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → どっちでもない…
+T12 [fill_gaps] fg_energy: 本業のあと、体力はどれくらい残ってる？  ['けっこう残ってる', '少しだけ', 'ほぼゼロ']
+     → ほぼゼロ
+     slots: energy_left: ∅→none(high)
+T13 [fill_gaps] hf_weekday: 働くなら平日？週末？  ['平日の夜', '土日', 'どちらでも']
+     → どっちでもない…
+T14 [review] review_1  ----- card -----
+     | 📋 あなたのバイト条件まとめ
+     | （あなた：本業あり・副業）
+     | 
+     | 【ゆずれない条件】
+     | ・週の日数：週1〜2日
+     | ・働く時間帯：未定（よければ教えてね）
+     | ・通勤：電車で30分まで（推測）
+     | ・会社の副業OK：OK
+     | ・平日/週末：週末に1日しっかり（推測）
+     | 
+     | 【こだわり・好み】
+     | ・時給：時給優先（多少遠くても）（推測）
+     | ・1回のシフトの長さ：未定（よければ教えてね）
+     | ・接客：未定（よければ教えてね）
+     | ・体力・立ち仕事：未定（よければ教えてね）
+     | ・バイトの目的：推し活・趣味（推測）
+     | ・本業後の体力：ほぼゼロ
+     | 
+     | 【NG】とくになし
+     | 
+     | （推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！
+     → 時間は平日の夜なら大丈夫。通勤は30分までで
+     slots: purpose: hobby→hobby(high); commute: train_30→train_30(high); hourly_wage_min: wage_priority→wage_priority(high); weekday_or_weekend: weekend_full_day→weekend_full_day(high); time_slots: ∅→平日の夜(high)
+     review_log: {'round': 1, 'touched': ['commute', 'time_slots'], 'promoted': ['purpose', 'hourly_wage_min', 'weekday_or_weekend'], 'hard_changed': ['time_slots'], 'open_conflicts': {}, 'new_hard_gaps': [], 'segment_change': ('side_job', 'side_job')}
+T15 [review] review_2  ----- card -----
+     | 📋 あなたのバイト条件まとめ（もう一度だけ確認！）
+     | （あなた：本業あり・副業）
+     | 
+     | 【ゆずれない条件】
+     | ・週の日数：週1〜2日
+     | ・働く時間帯：平日の夜
+     | ・通勤：電車で30分まで
+     | ・会社の副業OK：OK
+     | ・平日/週末：週末に1日しっかり
+     | 
+     | 【こだわり・好み】
+     | ・時給：時給優先（多少遠くても）
+     | ・1回のシフトの長さ：未定（よければ教えてね）
+     | ・接客：未定（よければ教えてね）
+     | ・体力・立ち仕事：未定（よければ教えてね）
+     | ・バイトの目的：推し活・趣味
+     | ・本業後の体力：ほぼゼロ
+     | 
+     | 【NG】とくになし
+     | 
+     | （推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！
+     → これでOK
+     review_log: {'round': 2, 'touched': [], 'promoted': [], 'hard_changed': [], 'open_conflicts': {}, 'new_hard_gaps': [], 'segment_change': ('side_job', 'side_job')}
+== END phase=result turns=15 segment=side_job NG=[]
+   final slots: purpose=hobby(high); side_job_allowed=ok(high); days_per_week=1-2(high); commute=train_30(high); hourly_wage_min=wage_priority(high); weekday_or_weekend=weekend_full_day(high); energy_left=none(high); time_slots=平日の夜(high)

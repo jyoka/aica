@@ -1,0 +1,71 @@
+### v3 / office (会社員・副業探し, true segment=side_job)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 貯金・将来のため
+     slots: purpose: ∅→saving(low)
+T02 [icebreak] q_segment: 今のあなたに近いのは？  ['学生', '家のこと中心', '本業あり副業探し']
+     → 本業あり副業探し
+     segment: unknown→side_job
+T03 [hard_filter] hf_sideok: 今の会社、副業はOK？  ['OK', '届け出が必要', 'NG・グレー']
+     → 届け出が必要
+     slots: side_job_allowed: ∅→needs_notice(high)
+T04 [hard_filter] hf_weekday: 働くなら平日？週末？  ['平日の夜', '土日', 'どちらでも']
+     → 土日
+     slots: weekday_or_weekend: ∅→weekend(high)
+T05 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週1〜2日
+     slots: days_per_week: ∅→1-2(high)
+T06 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 夕方〜夜
+     slots: time_slots: ∅→evening(high)
+T07 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 電車で30分まで
+     slots: commute: ∅→train_30(high)
+T08 [scenario_game] sc_sj_stand: どっちを選ぶ？  ['時給高め立ちっぱなし', 'ふつう座れる']
+     → ふつう座れる
+     slots: physical: ∅→seated(low); hourly_wage_min: ∅→normal(low)
+T09 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → よし、燃えてきた
+     slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
+T10 [scenario_game] sc_sj_stable: どっちがいい？  ['安定収入（毎週決まって）', 'スポット（空いた日だけ）']
+     → スポット（空いた日だけ）
+     slots: energy_left: ∅→limited(low)
+T11 [scenario_game] sc_shift: 理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+     → 6時間でガッツリ稼ぐ
+     slots: shift_length: ∅→long(low)
+T12 [reverse_pick] rp_side_job: この3つ、一番やりたくないのは？  ['居酒屋ホール（夜）', '倉庫ピッキング', 'イベント設営']
+     → 居酒屋ホール（夜）
+     slots: customer_facing: ok→avoid(low)
+     NG+: ['夜の飲食ホール']
+     conflicts: {'customer_facing': ['ok', 'avoid']}
+T13 [fill_gaps] fg_energy: 本業のあと、体力はどれくらい残ってる？  ['けっこう残ってる', '少しだけ', 'ほぼゼロ']
+     → 少しだけ
+     slots: energy_left: limited→some(high)
+     conflicts: {'customer_facing': ['ok', 'avoid']}
+T14 [review] review_1  ----- card -----
+     | 📋 あなたのバイト条件まとめ
+     | （あなた：本業あり・副業）
+     | 
+     | 【ゆずれない条件】
+     | ・週の日数：週1〜2日
+     | ・働く時間帯：夕方〜夜
+     | ・通勤：電車で30分まで
+     | ・会社の副業OK：届け出が必要
+     | ・平日/週末：土日
+     | 
+     | 【こだわり・好み】
+     | ・時給：ふつうでOK（座れるなら）（推測）
+     | ・1回のシフトの長さ：長め（6時間くらい）（推測）
+     | ・接客：どっち？ 接客OK / 接客は避けたい
+     | ・体力・立ち仕事：座り仕事がいい（推測）
+     | ・バイトの目的：貯金・将来のため（推測）
+     | ・本業後の体力：少しだけ
+     | ・忙しさ：忙しくてもOK（推測）
+     | 
+     | 【NG】夜の飲食ホール
+     | 
+     | （推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！
+     → 時給は1,200円以上はほしい。あとはOK／接客は「接客OK」のほう
+     slots: purpose: saving→saving(high); physical: seated→seated(high); hourly_wage_min: normal→1200(high); customer_facing: avoid→ok(high); pace: busy_ok→busy_ok(high); shift_length: long→long(high)
+     review_log: {'round': 1, 'touched': ['customer_facing', 'hourly_wage_min'], 'promoted': ['purpose', 'physical', 'pace', 'shift_length'], 'hard_changed': [], 'open_conflicts': {}, 'new_hard_gaps': [], 'segment_change': ('side_job', 'side_job')}
+== END phase=result turns=14 segment=side_job NG=['夜の飲食ホール']
+   final slots: purpose=saving(high); side_job_allowed=needs_notice(high); weekday_or_weekend=weekend(high); days_per_week=1-2(high); time_slots=evening(high); commute=train_30(high); physical=seated(high); hourly_wage_min=1200(high); customer_facing=ok(high); pace=busy_ok(high); energy_left=some(high); shift_length=long(high)

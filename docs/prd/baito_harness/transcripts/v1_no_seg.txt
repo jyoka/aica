@@ -1,0 +1,45 @@
+### v1 / no_seg (大学生・属性を最後まで言わない(19歳), true segment=student)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 貯金・将来のため
+     slots: purpose: ∅→saving(low)
+T02 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週5日以上
+     slots: days_per_week: ∅→5+(high)
+T03 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 深夜もOK
+     slots: time_slots: ∅→late_night_ok(high)
+T04 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 家から徒歩・自転車
+     slots: commute: ∅→walk_bike(high)
+T05 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → 今すぐ消えたい
+     slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
+T06 [scenario_game] sc_shift: 理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+     → 3時間でサクッと
+     slots: shift_length: ∅→short(low)
+T07 [scenario_game] sc_wage_commute: 時給100円の差。徒歩5分の店と電車30分の店、どっち？  ['近いほう', '時給が高いほう']
+     → 時給が高いほう
+     slots: hourly_wage_min: ∅→wage_priority(low)
+T08 [scenario_game] sc_teach: 仕事の教わり方、どっちがいい？  ['マニュアル通りにきっちり', 'ざっくり教わって自分で考える']
+     → ざっくり教わって自分で考える
+     slots: atmosphere: ∅→autonomous(low)
+T09 [scenario_game] sc_noise: 働く場所、どっちがいい？  ['にぎやか', '静か']
+     → にぎやか
+     slots: environment_noise: ∅→lively(low)
+T10 [scenario_game] sc_praise: ほめられてうれしいのは？  ['お客さん', '店長']
+     → お客さん
+     slots: customer_facing: avoid→ok(low)
+T11 [fill_gaps] fg_physical: 体力仕事は？  ['どんとこい', '少しなら', '座り仕事がいい']
+     → 少しなら
+     slots: physical: ∅→light(high)
+T12 [fill_gaps] fg_wage: 時給はいくら以上がいい？  ['1,000円台でOK', '1,200円以上', '1,500円以上']
+     → 1,000円台でOK
+     slots: hourly_wage_min: wage_priority→1000(high)
+T13 [fill_gaps] fg_shift: 1回何時間くらい働きたい？  ['2〜4時間', '4〜6時間', '6時間以上']
+     → 6時間以上
+     slots: shift_length: short→6h+(high)
+T14 [fill_gaps] fg_purpose: いちばんの目的は？  ['お金', '経験・スキル', '人とのつながり', '気分転換']
+     → お金
+     slots: purpose: saving→money(high)
+== END phase=result turns=14 segment=unknown NG=[]
+   final slots: purpose=money(high); days_per_week=5+(high); time_slots=late_night_ok(high); commute=walk_bike(high); customer_facing=ok(low); pace=calm(low); shift_length=6h+(high); hourly_wage_min=1000(high); atmosphere=autonomous(low); environment_noise=lively(low); physical=light(high)

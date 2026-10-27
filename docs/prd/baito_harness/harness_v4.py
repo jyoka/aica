@@ -1,0 +1,1463 @@
+"""harness_v4: deterministic core for the アルバイト chat agent (v4) -- REFERENCE implementation.
+
+Source of truth (05-B4): PRD_baito_agent_v4.md is normative.  Data appendices declared by the PRD
+(付録A bank_v4.py, 付録B catalog_v4.py) are normative data.  This file must match the PRD; when they
+disagree the PRD wins and this file is fixed.  Required public API for ports: PRD 付録C.
+
+One TURN = one user message processed by turn().  3 stages (04-B1):
+  Stage 1  EXTRACT : button press -> harness applies choice_effects itself (no LLM).
+                     free text    -> llm.extract(payload) -> validate_extract() (1 retry, then fallback)
+  Stage 2  DECIDE  : merge (confidence/`from` assigned by the harness, never by the model),
+                     safety rules (minor / under-15 / danger), pick next question / phase.
+  Stage 3  SAY     : llm.generate(payload) -> validate_reply() (1 retry, then deterministic fallback)
+The opening question (start/resume) is not a turn.  Review replies ARE turns.  Result output is not a turn.
+"""
+import json, re, unicodedata, copy
+from dataclasses import dataclass, field
+
+VERSION = "v4"
+HARD, MID, LOW = 3, 2, 1
+ORDER = ["icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps", "review", "result"]
+PRE_REVIEW = set(ORDER[:5])
+DIRECT = {"hard_filter", "fill_gaps"}
+MAX_TURNS = 15          # progress turns incl. review replies (asides excluded up to MAX_ASIDES)
+REVIEW_RESERVE = 2      # review is forced when turns >= MAX_TURNS - REVIEW_RESERVE
+MAX_REVIEW_ROUNDS = 2
+HF_MAX, SC_MAX, SC_MIN = 6, 6, 3
+MAX_ATTEMPTS = 2        # direct questions per slot (ask + one re-ask with alt_text)
+TOPIC_CAP = 2           # questions touching the same slot (any phase) before it is no longer targeted by scenarios
+MAX_CLARIFY = 2         # clarify (どっちでもない) re-asks per conversation
+MAX_ASIDES = 3          # off-topic / danger messages not counted as turns
+LLM_RETRIES = 1
+SEGMENT_SCORE = 1.5
+# per-phase hard caps on counted turns (05-B4/B5).  clarify is not offered when it would exceed the cap.
+PHASE_CAP = {"icebreak": 3, "hard_filter": HF_MAX, "scenario_game": SC_MAX, "reverse_pick": 1}
+TIER = {HARD: "hard", MID: "mid", LOW: "low"}          # 05-N3: tier names used in card / slots_json
+SEGMENTS = ("student", "homemaker", "side_job", "other")
+NOPREF = "こだわりなし"
+SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心（主婦・主夫など）", "side_job": "本業あり副業探し",
+              "other": "フリーター・求職中・その他", "unknown": "未判明"}
+INTENTS = ("answer", "clarify", "show_result", "restart", "aside", "danger")
+
+# ----------------------------------------------------------------- slot spec (03-D3/D4, 02-#11)
+def S(label, kind, values, multi=False):
+    return {"label": label, "kind": kind, "values": values, "multi": multi}
+SLOTS = {
+    # common
+    "age_band": S("年齢", "fact", {"under_15": "中学生以下", "15_17": "15〜17歳", "under_18": "18歳未満",
+                                  "18_plus": "18歳以上", "declined": "ひみつ（未回答）"}),
+    "days_per_week": S("週の日数", "pref", {"1-2": "週1〜2日", "3-4": "週3〜4日", "5+": "週5日以上"}),
+    "time_slots": S("時間帯", "pref", {"morning": "朝", "daytime": "昼", "evening": "夕方〜夜", "late_night": "深夜"}, multi=True),
+    "commute": S("通勤", "pref", {"walk_bike": "徒歩・自転車", "train_30": "電車30分まで", "train_60": "1時間くらいまで"}),
+    "hourly_wage_min": S("時給の下限", "pref", {1000: "1,000円台でOK", 1200: "1,200円以上", 1500: "1,500円以上"}),
+    "shift_length": S("1回の勤務時間", "pref", {"short": "4時間未満", "mid": "4〜6時間", "long": "6時間以上"}),
+    "customer_facing": S("接客", "pref", {"like": "好き", "ok": "ふつう（できる）", "avoid": "できれば避けたい"}),
+    "physical": S("体力面", "pref", {"heavy_ok": "体力仕事もOK", "standing_ok": "立ち仕事OK", "light": "軽めがいい", "seated": "座り仕事がいい"}),
+    "purpose": S("目的", "pref", {"hobby": "推し活・趣味", "saving": "貯金", "living_cost": "生活費・家計の足し", "fun": "旅行・遊び",
+                                 "career": "履歴書に書ける経験", "easygoing": "ゆるく", "perk_meal": "まかない", "perk_discount": "社割",
+                                 "pocket_money": "おこづかい", "use_experience": "経験を活かす", "try_new": "違うことをしたい",
+                                 "no_brain": "頭を使わない", "skill_up": "本業にプラス", "earn": "稼ぐ", "refresh": "気分転換",
+                                 "money": "お金", "skill": "経験・スキル", "people": "人とのつながり"}, multi=True),
+    "pace": S("忙しさ", "pref", {"busy_ok": "忙しくてもOK", "calm": "落ち着いた職場"}),
+    "teaching_style": S("教わり方", "pref", {"structured": "マニュアルできっちり", "autonomous": "自分で考えたい"}),
+    "social": S("職場の付き合い", "pref", {"friendly": "仲良くしたい", "dry": "あっさりがいい"}),
+    "environment_noise": S("にぎやかさ", "pref", {"lively": "にぎやか", "quiet": "静か"}),
+    "wage_priority": S("時給と働きやすさ", "pref", {"near_first": "近さ優先", "wage_first": "時給優先", "comfort_first": "ラクさ優先"}),
+    "recognition": S("うれしい評価", "pref", {"customers": "お客さんから", "manager": "店長から"}),
+    "coworker_age": S("一緒に働く人", "pref", {"same_age": "同年代", "mixed_age": "大人も", "similar_life": "同じような立場", "any": "気にしない"}),
+    # student
+    "school_permission": S("学校の許可", "fact", {"ok": "OK", "needs_notice": "届け出すればOK", "banned": "禁止", "unknown": "わからない"}),
+    "exam_flex": S("テスト期間", "pref", {"full_off": "休みたい", "reduced": "減らせればOK", "no_change": "気にしない"}),
+    "long_vacation": S("長期休み", "pref", {"heavy": "がっつり", "normal": "いつも通り"}),
+    "start_time_pref": S("学校のあと", "pref", {"right_after_school": "放課後すぐ", "after_club": "部活のあと"}),
+    # homemaker
+    "available_hours": S("働ける時間", "fact", {"9-14": "9〜14時くらい", "10-16": "10〜16時くらい", "evening": "夕方以降", "varies": "日によってバラバラ"}),
+    "sudden_leave": S("急なお休み", "fact", {"frequent": "けっこうある", "sometimes": "たまにある", "rare": "ほぼない"}),
+    "fuyou": S("扶養", "fact", {"within": "扶養内で", "beyond_ok": "気にしない", "unknown_needs_help": "わからない"}),
+    "remote": S("在宅", "pref", {"yes": "在宅がいい", "no": "外がいい", "either": "どちらでも"}),
+    "shift_flex": S("シフトの決め方", "pref", {"fixed": "固定がいい", "flexible": "自分で選びたい"}),
+    "leave_support": S("休むときの安心", "pref", {"instant": "すぐ休める", "cover": "代わりがいる"}),
+    # side_job
+    "side_job_allowed": S("副業の可否", "fact", {"ok": "OK", "needs_notice": "届け出が必要", "banned": "禁止", "unknown": "わからない・グレー", "civil_servant": "公務員"}),
+    "weekday_or_weekend": S("平日・週末", "pref", {"weekday_evening": "平日の夜", "weekend": "土日", "either": "どちらでも"}),
+    "energy_left": S("本業後の体力", "pref", {"high": "けっこう残ってる", "some": "少しだけ", "none": "ほぼゼロ"}),
+    "avoid_coworkers": S("会社の人に会う", "pref", {"no": "気にしない", "yes": "絶対イヤ"}),
+    "work_style": S("働き方", "pref", {"steady": "安定（毎週）", "spot": "スポット"}),
+    "weekend_length": S("週末の長さ", "pref", {"full_day": "1日", "half_day": "半日"}),
+}
+ALL_SLOTS = set(SLOTS)
+FACT_SLOTS = {s for s, v in SLOTS.items() if v["kind"] == "fact"}
+COMMON = {"age_band": HARD, "days_per_week": HARD, "time_slots": HARD, "commute": HARD,
+          "hourly_wage_min": MID, "shift_length": MID, "customer_facing": MID, "physical": MID, "purpose": MID,
+          "pace": LOW, "teaching_style": LOW, "social": LOW, "environment_noise": LOW, "wage_priority": LOW, "recognition": LOW}
+SLOT_PRIORITY = {
+    "student": {**COMMON, "school_permission": HARD, "exam_flex": MID, "long_vacation": LOW, "coworker_age": LOW, "start_time_pref": LOW},
+    "homemaker": {**COMMON, "available_hours": HARD, "sudden_leave": HARD, "fuyou": MID, "remote": MID,
+                  "shift_flex": LOW, "leave_support": LOW, "coworker_age": LOW},
+    "side_job": {**COMMON, "side_job_allowed": HARD, "weekday_or_weekend": HARD, "energy_left": MID,
+                 "avoid_coworkers": LOW, "work_style": LOW, "weekend_length": LOW},
+    "other": {**COMMON, "coworker_age": LOW},
+    "unknown": dict(COMMON),
+}
+MINOR_BANDS = {"under_15", "15_17", "under_18"}
+DERIVED_NG_MINOR = ["深夜シフト", "重量物・危険な作業"]
+
+# ----------------------------------------------------------------- fixed notices (deterministic, never model-written)
+NOTICE = {
+    "under_15": "中学生のうちは、法律で原則アルバイトができないんだ（子役など特別な許可がある場合をのぞく）。高校生になったらまた一緒に探そう！それまでは、おうちの人や学校の先生に相談してみてね。",
+    "minor_rules": "18歳未満は、22時〜翌5時の深夜と、重い物を運ぶような危険な作業はNGなんだ。1日8時間・週40時間までがルールだよ。その条件で探すね。",
+    "age_declined": "年齢を教えてもらえなかったから、安全のため18歳未満と同じ条件（深夜・重い作業なし）で探すね。あとで変えられるよ。",
+    "late_night_removed": "18歳未満（または年齢未回答）だと深夜（22時〜翌5時）は働けないから、深夜はのぞいておくね。",
+    "school_banned": "学校のルールで禁止なら、まずは先生やおうちの人に相談してみてね。ここでは「もしOKになったら」の参考として続けるね。",
+    "school_unknown": "学校のバイトのルールは、生徒手帳や先生に一度確認しておくと安心だよ。",
+    "side_banned": "会社で副業が禁止なら、無理に始めずに就業規則を確認してね。ここでは「もしOKになったら」の参考として続けるね。",
+    "side_unknown": "副業OKかわからないときは、就業規則や人事に一度確認してね。",
+    "civil_servant": "公務員は副業に法律上の制限があるよ。始める前に職場のルールを必ず確認してね。ここでは参考として続けるね。",
+    "fuyou": "扶養のラインは家族の勤め先や制度で変わるから、具体的な金額は家族・勤務先・税務署などで確認してね。",
+    "danger": "⚠️「SNSで高額」「受け取るだけ」「すぐ稼げる」みたいな話は、闇バイト（犯罪）の可能性があるよ。絶対に応募しないでね。もう連絡しちゃった・脅されてるときは、警察相談専用電話 #9110 に相談してね。",
+    "minor_hours": "18歳未満は1日8時間・週40時間までだから、日数か時間を少し調整するかも。",
+    "student_fuyou": "親の扶養に入っている学生は、稼ぎすぎると親の税金や保険に影響することがあるよ。くわしくはおうちの人に確認してね。",
+    "side_tax": "副業の収入は、確定申告が必要になることや、本業と労働時間が合算されることがあるよ。くわしくは勤務先や税務署で確認してね。",
+    "rules_only": "※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。",
+}
+CLOSING_JA = "推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆"
+REVIEW_OK = "これでOK"
+CLARIFY_TEXT = "お、どのへんがちがう？ひとことで教えて！"
+RETRY_TEXT = "ごめん、うまく受け取れなかった！もう一回だけ教えて。"
+CONFIRM_TEXT = "確認させてね！今のあなたに近いのはどれ？"
+POST_RESULT_TEXT = "おすすめはここまでだよ。条件を変えてもう一回探すなら「最初から」と送ってね。"
+GUESS_TAIL = "（確認できていない推測の条件だよ。ちがっていたら「最初から」でやり直せるよ）"
+DANGER_RE = re.compile(r"闇バイト|ホワイト案件|受け子|出し子|運び屋|叩き|荷物を?受け取るだけ|受け取るだけ|口座.*(売|貸|渡)|名義.*(貸|売)|"
+                       r"即日.*高(収入|額)|高(収入|額).*即日|1日で?\s*\d+\s*万|日給\s*\d+\s*万|SNS.*(高額|高収入)|簡単.*高収入")
+MONEY_RE = re.compile(r"\d+(\.\d+)?\s*万|１０３万|103万|106万|130万|150万|160万")
+JHS_RE = re.compile(r"中学|中[1-3１-３](?!\d)")
+NOPREF_RE = re.compile(r"こだわりなし|どっちでもいい|どちらでもいい|なんでもいい|何でもいい|気にしない")
+DECLINE_RE = re.compile(r"ひみつ|秘密|答えたくない|言いたくない|内緒|スキップ")
+
+PII_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|0\d{1,4}-?\d{1,4}-?\d{3,4}|\d{3}-?\d{4}|〒")
+
+def scrub_note(raw):
+    """notes keep only a short, PII-scrubbed copy of an unnormalizable model value (02-#14)."""
+    t = PII_RE.sub("＊", str(raw))
+    return t[:30]
+
+def nfkc(s):
+    return unicodedata.normalize("NFKC", str(s)).strip()
+
+# ----------------------------------------------------------------- normalizers (03-D4, 02-#4, 04-M3)
+def _hours(s):
+    m = re.search(r"(\d+(?:\.\d+)?)\s*時間", s)
+    return float(m.group(1)) if m else None
+
+def normalize_value(slot, value):
+    """Return canonical value (list for multi slots), NOPREF, or None if not normalizable."""
+    spec = SLOTS[slot]
+    vals = spec["values"]
+    if value is None:
+        return None
+    if spec["multi"]:
+        items = value if isinstance(value, list) else re.split(r"[、,，/／・と&\s]+", nfkc(value)) if isinstance(value, str) else [value]
+        out = []
+        for it in items:
+            if it in (None, ""):
+                continue
+            if isinstance(it, str) and NOPREF_RE.search(nfkc(it)):
+                return NOPREF if spec["kind"] == "pref" else None
+            n = _norm_single(slot, it)
+            if n is not None and n != NOPREF and n not in out:
+                out.append(n)
+        return out or None
+    if isinstance(value, list):
+        value = value[0] if value else None   # list for single slot -> first item (logged by caller)
+        if value is None:
+            return None
+    return _norm_single(slot, value)
+
+def _norm_single(slot, value):
+    spec = SLOTS[slot]; vals = spec["values"]
+    if isinstance(value, bool):
+        if slot == "age_band":
+            return "under_18" if value else "18_plus"
+        return None
+    if value in vals:
+        return value
+    s = nfkc(value)
+    if s in vals:
+        return s
+    for k, ja in vals.items():
+        if s == nfkc(ja):
+            return k
+    if slot == "age_band":
+        if JHS_RE.search(s):
+            return "under_15"
+        if DECLINE_RE.search(s) or NOPREF_RE.search(s):
+            return "declined"
+        if re.search(r"高[1-3]|高校", s):
+            return "15_17"
+        if re.search(r"大学|大[1-4]|専門|短大|社会人|会社員", s):
+            return "18_plus"
+        m = re.search(r"(\d{1,3})\s*(歳|才)?", s)
+        if m:
+            a = int(m.group(1))
+            return "under_15" if a < 15 else "15_17" if a < 18 else "18_plus"
+        if "未成年" in s or "18歳未満" in s:
+            return "under_18"
+        if "成人" in s or "大人" in s or "18歳以上" in s:
+            return "18_plus"
+        return None
+    if spec["kind"] == "pref" and NOPREF_RE.search(s):
+        return NOPREF
+    if spec["kind"] == "fact" and DECLINE_RE.search(s) and "unknown" in vals:
+        return "unknown"
+    if slot == "shift_length":
+        h = _hours(s)
+        if h is not None:
+            return "short" if h < 4 else "mid" if h < 6 else "long"
+        if "短" in s or "サクッと" in s: return "short"
+        if "長" in s or "ガッツリ" in s: return "long"
+    if slot == "hourly_wage_min":
+        m = re.search(r"(\d[\d,]*)", s)
+        if m:
+            w = int(m.group(1).replace(",", ""))
+            if w < 100: w *= 100 if w < 20 else 1   # "12" ?
+            return 1000 if w < 1200 else 1200 if w < 1500 else 1500
+    if slot == "days_per_week":
+        m = re.search(r"(\d)", s)
+        if m:
+            d = int(m.group(1)); return "1-2" if d <= 2 else "3-4" if d <= 4 else "5+"
+    if slot == "time_slots":
+        if "深夜" in s: return "late_night"
+        if "朝" in s or "午前" in s: return "morning"
+        if "昼" in s or "日中" in s: return "daytime"
+        if "夕" in s or "夜" in s or "放課後" in s: return "evening"
+    if slot == "commute":
+        if "徒歩" in s or "自転車" in s or "近所" in s: return "walk_bike"
+        if "1時間" in s: return "train_60"
+        m = re.search(r"(\d+)\s*分", s)
+        if m:
+            return "walk_bike" if int(m.group(1)) <= 15 and "電車" not in s else "train_30" if int(m.group(1)) <= 30 else "train_60"
+    if slot == "physical":
+        if "座" in s: return "seated"
+        if "軽" in s: return "light"
+    if slot == "customer_facing":
+        if "苦手" in s or "避け" in s or "イヤ" in s or "嫌" in s: return "avoid"
+        if "好き" in s: return "like"
+    return None
+
+def value_ja(slot, v):
+    if v is None:
+        return "未定"
+    if v == NOPREF:
+        return NOPREF
+    vals = SLOTS[slot]["values"]
+    if isinstance(v, list):
+        return "・".join(vals.get(x, str(x)) for x in v)
+    return vals.get(v, str(v))
+
+def is_filled(slot_entry):
+    return slot_entry is not None and slot_entry.get("value") not in (None, [], "")
+
+# ----------------------------------------------------------------- state (04-m1 serialization)
+@dataclass
+class State:
+    version: str = VERSION
+    phase: str = "icebreak"
+    segment: str = "unknown"
+    slots: dict = field(default_factory=dict)          # slot -> {"value","confidence","from"}
+    user_ng: list = field(default_factory=list)
+    derived_ng: list = field(default_factory=list)
+    pending: dict = field(default_factory=dict)        # slot -> entry (not yet active for segment)
+    archived: dict = field(default_factory=dict)       # segment -> {slot: entry}
+    conflicts: dict = field(default_factory=dict)      # slot -> [values]
+    unresolved: dict = field(default_factory=dict)     # slot -> [candidate values] after final review (§12-2)
+    notes: dict = field(default_factory=dict)          # slot -> raw free text that could not be normalized
+    asked: list = field(default_factory=list)          # qids in ask order (list for JSON)
+    attempts: dict = field(default_factory=dict)       # slot -> direct ask count
+    topic_count: dict = field(default_factory=dict)
+    turns: int = 0
+    phase_turns: dict = field(default_factory=dict)
+    aside_count: int = 0
+    clarify_used: int = 0
+    clarified: list = field(default_factory=list)      # qids already clarified once
+    retried: list = field(default_factory=list)        # qids re-asked after extract failure
+    current: dict = None                               # {"qid","mode","choices"}
+    pending_segment: str = None
+    review_rounds: int = 0
+    last_card: dict = None
+    review_log: list = field(default_factory=list)
+    flags: list = field(default_factory=list)          # school_banned, side_unknown, danger_warned, ...
+    notices_sent: list = field(default_factory=list)
+    blocked: str = None                                # "under_15"
+    restarts: int = 0
+    result: dict = None
+    log: list = field(default_factory=list)            # audit events (dropped / rejected / fallback ...)
+
+    def to_dict(self):
+        return copy.deepcopy({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
+
+    @classmethod
+    def from_dict(cls, d):
+        st = cls()
+        for k, v in d.items():
+            if hasattr(st, k):
+                setattr(st, k, copy.deepcopy(v))
+        # JSON turns int keys of hourly_wage_min into strings: re-normalize slot values
+        for s, e in list(st.slots.items()):
+            if s == "hourly_wage_min" and isinstance(e.get("value"), str) and e["value"].isdigit():
+                e["value"] = int(e["value"])
+        return st
+
+def new_state():
+    """Fresh state.  derived_ng starts with the minor rule NG because age is unknown (05-N4)."""
+    st = State()
+    recompute_derived(st)
+    if hasattr(st, "_new_notices"):
+        del st._new_notices
+    return st
+
+def ev(state, kind, **kw):
+    state.log.append({"t": state.turns, "kind": kind, **kw})
+
+def active_slots(state):
+    return SLOT_PRIORITY.get(state.segment, SLOT_PRIORITY["unknown"])
+
+def hard_slots(state):
+    return [s for s, p in active_slots(state).items() if p == HARD]
+
+def minor_mode(state):
+    """True when minor OR age unknown/declined -> minor rules apply (04-B4)."""
+    e = state.slots.get("age_band")
+    v = e.get("value") if e else None
+    return v is None or v in MINOR_BANDS or v == "declined"
+
+def recompute_derived(state):
+    state.derived_ng = list(DERIVED_NG_MINOR) if minor_mode(state) else []
+    if minor_mode(state):
+        e = state.slots.get("time_slots")
+        if e and isinstance(e.get("value"), list) and "late_night" in e["value"]:
+            e["value"] = [x for x in e["value"] if x != "late_night"]
+            ev(state, "rejected_by_rule", slot="time_slots", value="late_night", rule="minor")
+            _notice(state, "late_night_removed")
+            if not e["value"]:
+                del state.slots["time_slots"]
+        e = state.slots.get("physical")
+        if e and e.get("value") == "heavy_ok":
+            e["value"] = "standing_ok"; ev(state, "rejected_by_rule", slot="physical", value="heavy_ok", rule="minor")
+
+def _notice(state, key):
+    _init_volatile(state)
+    if key not in state.notices_sent:
+        state.notices_sent.append(key)
+        state._new_notices.append(key)
+
+# ----------------------------------------------------------------- merge (03-A1/A2, 04-B3)
+def confidence_for(src_kind, phase, slot, evidence_ok):
+    """Harness-assigned confidence.  model-provided confidence is ignored."""
+    if src_kind in ("review", "choice_direct", "confirm"):
+        return "high"
+    if src_kind == "free_current" and phase in DIRECT:
+        return "high"
+    if slot in FACT_SLOTS and evidence_ok:
+        return "high"          # explicit statement of a fact ("17歳です") anywhere
+    return "low"
+
+def apply_update(state, slot, value, conf, frm, review=False):
+    """Returns status string. Never raises."""
+    if slot not in ALL_SLOTS:
+        ev(state, "discarded_unknown_slot", slot=slot); return "discarded"
+    if slot not in active_slots(state):
+        state.pending[slot] = {"value": value, "confidence": conf, "from": frm}
+        return "pending"
+    spec = SLOTS[slot]
+    # fact slots never accept こだわりなし (age skip != こだわりなし, 04-B4)
+    if value == NOPREF and spec["kind"] == "fact":
+        if slot == "age_band":
+            value = "declined"
+        else:
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="nopref_on_fact"); return "rejected"
+    # minor rules at merge (04-B4)
+    if minor_mode(state):
+        if slot == "time_slots" and isinstance(value, list) and "late_night" in value:
+            value = [v for v in value if v != "late_night"]
+            ev(state, "rejected_by_rule", slot=slot, value="late_night", rule="minor")
+            _notice(state, "late_night_removed")
+            if not value:
+                return "rejected"
+        if slot == "physical" and value == "heavy_ok":
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="minor"); value = "standing_ok"
+    old = state.slots.get(slot)
+    new = {"value": value, "confidence": conf, "from": frm}
+    if not is_filled(old):
+        state.slots[slot] = new
+        status = "set"
+    elif spec["multi"] and slot == "purpose":
+        merged = list(old["value"]) if isinstance(old["value"], list) else []
+        for v in (value if isinstance(value, list) else [value]):
+            if v not in merged and v != NOPREF:
+                merged.append(v)
+        conf2 = "high" if "high" in (old["confidence"], conf) else "low"
+        state.slots[slot] = {"value": merged or value, "confidence": conf2, "from": frm if conf == "high" else old["from"]}
+        status = "set"
+    elif old["confidence"] == "high" and conf == "low":
+        if old["value"] != value:
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="low_over_high")
+            return "rejected"
+        return "noop"
+    elif old["confidence"] == "low" and conf == "low" and old["value"] != value and not spec["multi"]:
+        c = state.conflicts.setdefault(slot, [old["value"]])
+        if value not in c:
+            c.append(value)
+        state.slots[slot] = new    # latest kept as tentative; card shows both (どっち？)
+        status = "conflict"
+    elif spec["multi"] and conf == "low" and old["confidence"] == "low":
+        merged = list(old["value"]) + [v for v in value if v not in old["value"]] if isinstance(value, list) and isinstance(old["value"], list) else value
+        state.slots[slot] = {"value": merged, "confidence": "low", "from": frm}
+        status = "set"
+    else:
+        state.slots[slot] = new
+        status = "set"
+        if conf == "high":
+            state.conflicts.pop(slot, None)
+    if slot == "age_band":
+        recompute_derived(state)
+        v = state.slots[slot]["value"]
+        update_block(state)
+        if v == "declined":
+            _notice(state, "age_declined")
+        elif v in MINOR_BANDS:
+            _notice(state, "minor_rules")
+    if slot == "school_permission":
+        _flag_notice(state, {"banned": "school_banned", "unknown": "school_unknown"}.get(state.slots[slot]["value"]))
+    if slot == "side_job_allowed":
+        _flag_notice(state, {"banned": "side_banned", "unknown": "side_unknown",
+                             "civil_servant": "civil_servant"}.get(state.slots[slot]["value"]))
+    if slot == "fuyou":
+        _flag_notice(state, "fuyou")
+    if slot == "available_hours" and state.slots[slot]["value"] in ("9-14", "10-16", "evening") and not is_filled(state.slots.get("time_slots")):
+        derived = {"9-14": ["morning", "daytime"], "10-16": ["daytime"], "evening": ["evening"]}[state.slots[slot]["value"]]
+        state.slots["time_slots"] = {"value": derived, "confidence": conf, "from": "derived"}
+    return status
+
+def update_block(state, final=False):
+    """05-B10: under_15 blocks only when confirmed (confidence high).  A low (guessed) under_15 keeps minor mode,
+    hf_age is still asked, and at finalize() (final=True) it blocks for safety."""
+    e = state.slots.get("age_band") or {}
+    if e.get("value") == "under_15" and (e.get("confidence") == "high" or final):
+        state.blocked = "under_15"
+    else:
+        state.blocked = None
+
+def _flag_notice(state, key):
+    if key and key not in state.flags:
+        state.flags.append(key)
+    if key:
+        _notice(state, key)
+
+def set_segment(state, seg, source):
+    """source: choice|confirm|review_explicit|free.  unknown is never set back (04-M8)."""
+    if seg not in SEGMENTS:
+        ev(state, "invalid_segment", value=seg); return "ignored"
+    if seg == state.segment:
+        state.pending_segment = None; return "noop"
+    if state.segment == "unknown" or source in ("choice", "confirm"):
+        _switch_segment(state, seg); return "set"
+    state.pending_segment = seg     # known -> different known via free text: confirm first
+    ev(state, "segment_change_pending", old=state.segment, new=seg)
+    return "pending_confirm"
+
+def _switch_segment(state, seg):
+    old = state.segment
+    if old != "unknown":
+        keep = set(SLOT_PRIORITY[seg])
+        arch = {s: e for s, e in state.slots.items() if s not in keep}
+        if arch:
+            state.archived[old] = arch
+            for s in arch:
+                state.slots.pop(s); state.conflicts.pop(s, None)
+        ev(state, "segment_switched", old=old, new=seg, archived=sorted(arch))
+    state.segment = seg
+    state.pending_segment = None
+    for s, e in state.archived.pop(seg, {}).items():     # 05-M7: restore through the normal merge rules
+        if not is_filled(state.slots.get(s)):
+            apply_update(state, s, e["value"], e["confidence"], e["from"])
+    for s in list(state.pending):
+        if s in active_slots(state):
+            e = state.pending.pop(s)
+            apply_update(state, s, e["value"], e["confidence"], e["from"])
+
+# ----------------------------------------------------------------- LLM output validation (03-C1/C2, 04-B5)
+def parse_json(raw):
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    s = re.sub(r"^```(?:json)?|```$", "", s, flags=re.M).strip()
+    try:
+        d = json.loads(s)
+        return d if isinstance(d, dict) else None
+    except Exception:
+        m = re.search(r"\{.*\}", s, flags=re.S)
+        if m:
+            try:
+                d = json.loads(m.group(0)); return d if isinstance(d, dict) else None
+            except Exception:
+                return None
+    return None
+
+SEG_SYNONYM = {"学生": "student", "大学生": "student", "高校生": "student", "専門学生": "student", "主婦": "homemaker",
+               "主夫": "homemaker", "会社員": "side_job", "社会人": "side_job", "副業": "side_job",
+               "フリーター": "other", "求職中": "other", "その他": "other"}
+
+def validate_extract(raw):
+    """-> (clean dict, problems list) or (None, problems) when unusable.
+    clean = {"slot_updates":[{"slot","value","evidence"}], "ng_updates":[str], "ng_removals":[str],
+             "segment": seg|None, "intent": str, "review_ack": "all"|"partial"|"none"|None}"""
+    probs = []
+    d = parse_json(raw)
+    if d is None:
+        return None, ["not_json"]
+    out = {"slot_updates": [], "ng_updates": [], "ng_removals": [], "segment": None, "intent": "answer", "review_ack": None}
+    su = d.get("slot_updates")
+    if su is None:
+        su = []; probs.append("slot_updates_null") if "slot_updates" in d else probs.append("slot_updates_missing")
+    if isinstance(su, dict):        # {"slot": value} shorthand
+        su = [{"slot": k, "value": v} for k, v in su.items()]
+    if not isinstance(su, list):
+        su = []; probs.append("slot_updates_bad_type")
+    if len(su) > 10:
+        probs.append("slot_updates_truncated")
+    for u in su[:10]:
+        if not isinstance(u, dict) or not isinstance(u.get("slot"), str):
+            probs.append("update_bad_item"); continue
+        slot = u["slot"].strip()
+        if slot == "age_under_18":            # legacy v3 name -> age_band
+            slot = "age_band"
+        if slot == "segment":
+            d.setdefault("segment", u.get("value")); continue
+        if slot not in ALL_SLOTS:
+            probs.append("unknown_slot:" + slot); continue
+        if "confidence" not in u:
+            probs.append("confidence_missing")      # harmless: harness assigns confidence anyway
+        val = u.get("value")
+        if isinstance(val, list) and not SLOTS[slot]["multi"]:
+            probs.append("list_for_single:" + slot)
+        nv = normalize_value(slot, val)
+        if nv is None:
+            probs.append("unnormalizable:" + slot)
+            out["slot_updates"].append({"slot": slot, "value": None, "raw": val, "evidence": u.get("evidence")})
+            continue
+        out["slot_updates"].append({"slot": slot, "value": nv, "evidence": u.get("evidence")})
+    for key in ("ng_updates", "ng_removals"):
+        v = d.get(key) or []
+        if isinstance(v, str):
+            v = [v]
+        lst = [nfkc(x) for x in v if isinstance(x, str) and nfkc(x)] if isinstance(v, list) else []
+        if len(lst) > 5:
+            probs.append(key + "_truncated")
+        out[key] = lst[:5]
+    seg = d.get("segment")
+    if isinstance(seg, str) and seg:
+        s2 = seg if seg in SEGMENTS else SEG_SYNONYM.get(nfkc(seg))
+        if s2 is None or s2 == "unknown":
+            probs.append("invalid_segment:" + seg)
+        out["segment"] = s2 if s2 in SEGMENTS else None
+    it = d.get("intent", "answer")
+    if d.get("clarify") is True:
+        it = "clarify"
+    out["intent"] = it if it in INTENTS else "answer"
+    ra = d.get("review_ack")
+    out["review_ack"] = ra if ra in ("all", "partial", "none") else None
+    return out, probs
+
+def validate_reply(raw, view):
+    d = parse_json(raw)
+    reply = d.get("reply") if d else (raw if isinstance(raw, str) and raw.strip() and not raw.strip().startswith("{") else None)
+    if not isinstance(reply, str) or not reply.strip():
+        return None, "no_reply"
+    if len(reply) > 600:
+        return None, "too_long"
+    if MONEY_RE.search(reply):
+        return None, "money_amount"
+    if view.get("mode") == "review":
+        if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
+            return None, "card_altered"
+    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside"):
+        if nfkc(view["text"]) not in nfkc(reply):
+            return None, "question_missing"     # the WHAT is fixed by the harness; model adds tone only
+        if len(reply) - len(view["text"]) > 120:
+            return None, "too_much_extra"
+    return reply.strip(), None
+
+# ----------------------------------------------------------------- question selection
+def gap_weight(entry):
+    if not is_filled(entry):
+        return 1.0
+    return 0.5 if entry.get("confidence") == "low" else 0.0
+
+def _segment_ok(q, state):
+    seg = state.segment
+    if "all" in q["segments"]:
+        return True
+    return seg in q["segments"]
+
+def visible_choices(q, state):
+    ch = []
+    for c in q["choices"]:
+        fl = q["choice_flags"].get(c, [])
+        if minor_mode(state) and ("late_night" in fl or "heavy" in fl):
+            continue
+        ch.append(c)
+    return ch
+
+def pick_question(state, bank, phase):
+    pri = active_slots(state)
+    if phase == "hard_filter" and "hf_age" not in state.asked and gap_weight(state.slots.get("age_band")) > 0:
+        return qmap(bank)["hf_age"], "ask"           # safety gate: age first (04-B4)
+    phases = {phase, "hard_filter"} if phase == "fill_gaps" else {phase}   # fill_gaps re-asks HARD with alt_text
+    best, best_score, best_mode = None, 0.0, "ask"
+    for q in bank:                                   # tie-break = bank order (strict >)  04-M10/m4
+        if q["phase"] not in phases or not _segment_ok(q, state):
+            continue
+        if q["id"] == "q_segment":
+            if state.segment == "unknown" and q["id"] not in state.asked:
+                if SEGMENT_SCORE > best_score:
+                    best, best_score, best_mode = q, SEGMENT_SCORE, "ask"
+            continue
+        mode = "ask"
+        if q["id"] in state.asked:
+            if phase == "fill_gaps" and q["phase"] in DIRECT and all(state.attempts.get(t, 0) < MAX_ATTEMPTS for t in q["targets"] if t in pri):
+                mode = "reask"
+            else:
+                continue
+        targets = [t for t in q["targets"] if t in pri]
+        if phase in DIRECT:
+            targets = [t for t in targets if state.attempts.get(t, 0) < MAX_ATTEMPTS]
+        elif phase == "scenario_game":
+            targets = [t for t in targets if state.topic_count.get(t, 0) < TOPIC_CAP]
+        if phase == "reverse_pick":
+            score = 1.0                               # always asked once (03-A12)
+        else:
+            score = sum(pri[t] * gap_weight(state.slots.get(t)) for t in targets)
+            if score > 0 and "all" not in q["segments"]:
+                score += 0.5
+        if len(visible_choices(q, state)) < 2:
+            continue
+        if score > best_score:
+            best, best_score, best_mode = q, score, mode
+    return (best, best_mode) if best else (None, None)
+
+def open_hard(state):
+    return [s for s in hard_slots(state) if gap_weight(state.slots.get(s)) > 0]
+
+def remaining_gaps(state):
+    pri = active_slots(state)
+    return [s for s, p in pri.items() if p >= MID and (p == HARD and gap_weight(state.slots.get(s)) > 0 or
+            p == MID and not is_filled(state.slots.get(s))) and state.attempts.get(s, 0) < MAX_ATTEMPTS]
+
+def next_phase(state, bank):
+    p = state.phase
+    if state.blocked:
+        return "result"
+    if p == "result":
+        return "result"
+    if state.turns >= MAX_TURNS:                     # 05-B6: hard cap, checked before anything else
+        return "result"
+    if p == "review":
+        return "review" if (state._need_more_review and state.review_rounds < MAX_REVIEW_ROUNDS
+                            and "show_result" not in state.flags) else "result"
+    if state.turns >= MAX_TURNS - REVIEW_RESERVE or "show_result" in state.flags:
+        return "review"
+    n = state.phase_turns.get(p, 0)
+    if p == "icebreak":
+        if state.segment != "unknown" or n >= 3:
+            return "hard_filter"
+        return "icebreak"
+    if p == "hard_filter":
+        if n >= HF_MAX or not [s for s in open_hard(state) if state.attempts.get(s, 0) < 1]:
+            return "scenario_game"
+        return "hard_filter"
+    if p == "scenario_game":
+        budget_tight = state.turns >= MAX_TURNS - REVIEW_RESERVE - 3
+        if n >= SC_MAX or (n >= SC_MIN and budget_tight):
+            return "reverse_pick"
+        return "scenario_game"
+    if p == "reverse_pick":
+        return "fill_gaps"
+    if p == "fill_gaps":
+        return "fill_gaps" if remaining_gaps(state) else "review"
+    return "review"
+
+def advance(state, bank):
+    """Decide next presented item. Sets state.current. Never loops (bounded by ORDER)."""
+    if state.pending_segment and state.phase != "result":
+        # 05-B4: the confirm turn is counted in the phase that would come next, so it can never exceed a cap
+        np = next_phase(state, bank)
+        if np in ("review", "result"):
+            ev(state, "confirm_skipped", pending=state.pending_segment)   # the card still lets the user fix it
+            state.pending_segment = None
+        else:
+            state.phase = np
+            state.phase_turns.setdefault(np, 0)
+            state.current = {"qid": "confirm_segment", "mode": "confirm",
+                             "choices": [c for c in qmap(bank)["q_segment"]["choices"]]}
+            return
+    for _ in range(len(ORDER) + 2):
+        np = next_phase(state, bank)
+        state.phase = np
+        if np in ("review", "result"):
+            break
+        q, mode = pick_question(state, bank, np)
+        if q:
+            _present(state, q, mode)
+            return
+        # nothing to ask in this phase -> next phase in ORDER (bounded; never loops)
+        state.phase = ORDER[ORDER.index(np) + 1]
+        if state.phase == "review":
+            break
+        state.phase_turns.setdefault(state.phase, 0)
+    else:
+        state.phase = "review"
+    if state.phase == "review":
+        state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK]}
+        state.last_card = build_card(state)
+    else:
+        finalize(state)
+        state.current = {"qid": "result", "mode": "result", "choices": []}
+
+def _present(state, q, mode):
+    pri = active_slots(state)
+    if q["id"] not in state.asked:
+        state.asked.append(q["id"])
+    for t in q["targets"]:
+        if t in pri:
+            state.topic_count[t] = state.topic_count.get(t, 0) + 1
+            if q["phase"] in DIRECT and gap_weight(state.slots.get(t)) > 0:
+                state.attempts[t] = state.attempts.get(t, 0) + 1
+    state.current = {"qid": q["id"], "mode": mode, "choices": visible_choices(q, state)}
+
+def qmap(bank):
+    return {q["id"]: q for q in bank}
+_qmap = qmap        # backward-compatible alias
+
+# ----------------------------------------------------------------- review (04-B7, 02-#3, 03-B2)
+def cross_warnings(state):
+    v = lambda s: (state.slots.get(s) or {}).get("value")
+    w = []
+    if v("energy_left") == "none" and v("days_per_week") == "5+":
+        w.append("本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？")
+    if state.segment == "side_job" and v("weekday_or_weekend") == "weekday_evening" and isinstance(v("time_slots"), list) and "evening" not in v("time_slots"):
+        w.append("「平日の夜」希望だけど、時間帯に夜が入ってないよ。")
+    if v("available_hours") in ("9-14", "10-16") and isinstance(v("time_slots"), list) and "evening" in v("time_slots"):
+        w.append("働ける時間は日中なのに、時間帯に夕方〜夜が入ってるよ。")
+    if any("立ち仕事" in n for n in state.user_ng) and v("physical") in ("standing_ok", "heavy_ok"):
+        w.append("NGに「立ち仕事」があるけど、体力面は「立ち仕事OK」になってるよ。")
+    if minor_mode(state) and v("days_per_week") == "5+" and v("shift_length") == "long":
+        w.append(NOTICE["minor_hours"])
+    if v("fuyou") == "within" and v("days_per_week") == "5+" and v("shift_length") == "long":
+        w.append("扶養内希望なら、週5日×長時間は多めかも（金額のラインは家族・勤務先で確認してね）。")
+    return w
+
+def build_card(state):
+    pri = active_slots(state)
+    def item(s):
+        e = state.slots.get(s)
+        filled = is_filled(e)
+        it = {"slot": s, "label_ja": SLOTS[s]["label"], "tier": TIER[pri[s]],
+              "priority": pri[s], "value": e["value"] if filled else None,
+              "value_ja": value_ja(s, e["value"]) if filled else "未定",
+              "inferred": bool(filled and e["confidence"] == "low"), "missing": not filled,
+              "conflict_values": None, "conflict": None, "note": state.notes.get(s)}
+        if s in state.conflicts:
+            it["conflict_values"] = list(state.conflicts[s])
+            it["conflict"] = [value_ja(s, x) for x in state.conflicts[s]]
+        if s == "age_band" and (not filled or e["value"] == "declined"):
+            it["safety_note"] = "安全のため18歳未満と同じ条件で探すよ"
+        return it
+    hard = [item(s) for s, p in pri.items() if p == HARD]
+    prefs = [item(s) for s, p in pri.items() if p == MID] + [item(s) for s, p in pri.items() if p == LOW and is_filled(state.slots.get(s))]
+    focus = []
+    if state.review_rounds >= 1:
+        focus = [i["slot"] for i in hard + prefs if i["conflict"] or (i["tier"] == "hard" and (i["missing"] or i["inferred"]))]
+    return {"round": state.review_rounds + 1, "segment": state.segment, "segment_ja": SEGMENT_JA[state.segment],
+            "hard": hard, "prefs": prefs, "ng_user": list(state.user_ng), "ng_rule": list(state.derived_ng),
+            "warnings": cross_warnings(state), "focus": focus}
+
+def render_card(card):
+    def line(i):
+        if i["conflict"]:
+            return f"・{i['label_ja']}：{' / '.join(i['conflict'])}（どっち？）"
+        if i["missing"]:
+            tail = "（ここだけ教えて！）" if i["tier"] == "hard" else "（よければ教えてね）"
+            extra = f"※{i['safety_note']}" if i.get("safety_note") else ""
+            memo = f"（メモ：{i['note']}）" if i.get("note") else ""      # unnormalizable answer kept as a note (04-M8)
+            return f"・{i['label_ja']}：未定{memo}{tail}{extra}"
+        extra = f"※{i['safety_note']}" if i.get("safety_note") else ""
+        return f"・{i['label_ja']}：{i['value_ja']}{'（推測）' if i['inferred'] else ''}{extra}"
+    L = []
+    if card["focus"]:
+        L.append("ここだけもう一回！")
+        for i in card["hard"] + card["prefs"]:
+            if i["slot"] in card["focus"]:
+                L.append(line(i))
+    else:
+        L.append(f"【あなた】{card['segment_ja']}")
+        L.append("【ゆずれない条件】")
+        L += [line(i) for i in card["hard"]]
+        L.append("【好み】")
+        L += [line(i) for i in card["prefs"]]
+    ng = card["ng_user"] + [f"{n}（ルール）" for n in card["ng_rule"]]
+    L.append("【NG】" + ("、".join(ng) if ng else "なし"))
+    for w in card["warnings"]:
+        L.append("⚠️ " + w)
+    return "\n".join(L)
+
+def apply_review(state, ext, button_ok, promote=True):
+    """ext: validated extract (or None).  Returns nothing; sets state._need_more_review.
+    promote=False (review reply unparsed twice, 05-B8): nothing is promoted, the round still counts."""
+    card = state.last_card or build_card(state)
+    shown = {i["slot"]: i for i in card["hard"] + card["prefs"]}
+    state.review_rounds += 1
+    ack = "all" if button_ok else (ext or {}).get("review_ack")
+    touched, hard_changed = set(), False
+    if ext and not button_ok:
+        for u in ext["slot_updates"]:
+            s = u["slot"]
+            if u["value"] is None:
+                state.notes[s] = scrub_note(u.get("raw")); ev(state, "note_unnormalizable", slot=s); continue
+            old = state.slots.get(s)
+            st = apply_update(state, s, u["value"], "high", "review", review=True)
+            touched.add(s)
+            if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
+                    active_slots(state).get(s) == HARD and old.get("confidence") == "high":
+                hard_changed = True
+        for n in ext["ng_updates"]:
+            if n not in state.user_ng:
+                state.user_ng.append(n)
+        for n in ext["ng_removals"]:
+            if n in state.user_ng:
+                state.user_ng.remove(n)
+        if ext.get("segment"):
+            set_segment(state, ext["segment"], "review_explicit")
+    promoted = []
+    for s, i in (shown.items() if promote else ()):
+        e = state.slots.get(s)
+        if s in touched or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
+            continue
+        if i["tier"] == "hard" and ack != "all":
+            continue                              # HARD inference is promoted only on explicit full OK
+        e["confidence"] = "high"; e["from"] = "review_accepted"; promoted.append(s)
+    update_block(state)
+    state.review_log.append({"round": state.review_rounds, "ack": ack, "touched": sorted(touched),
+                             "promoted": promoted, "hard_changed": hard_changed})
+    need = hard_changed or bool(state.conflicts) or bool(state.pending_segment)
+    if state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)):
+        need = True
+    state._need_more_review = need
+
+def finalize(state):
+    """Before result: unresolved conflicts -> 未定 with both candidates (§12-2 provisional), HARD gaps listed."""
+    for s, vals in list(state.conflicts.items()):
+        state.unresolved[s] = list(vals)
+        state.slots.pop(s, None)
+        ev(state, "conflict_unresolved", slot=s)
+    state.conflicts = {}
+    recompute_derived(state)
+    update_block(state, final=True)
+
+# ----------------------------------------------------------------- result (02-#14, 03-D10)
+def ng_hits(job, ngs):
+    for n in ngs:
+        n2 = nfkc(n)
+        if n2 == "深夜シフト" and job["night_only"]:
+            return True
+        if "重量物" in n2 and job["phys"] == "heavy":
+            return True
+        if any(n2 in k or k in n2 for k in job["keys"]) or n2 in job["name"]:
+            return True
+    return False
+_ng_hits = ng_hits  # backward-compatible alias
+
+def job_safe(state, j):
+    """Post-check rule (§8-7): catalog job, not excluded for minors, no NG hit."""
+    if not j:
+        return False
+    if minor_mode(state) and (j["min_age"] >= 18 or j["phys"] == "heavy" or j["night_only"]):
+        return False
+    return not ng_hits(j, state.user_ng + state.derived_ng)
+
+def eligible_jobs(state, catalog):
+    v = lambda s: (state.slots.get(s) or {}).get("value")
+    minor = minor_mode(state)
+    out = []
+    for j in catalog:
+        if minor and (j["min_age"] >= 18 or j["phys"] == "heavy" or j["night_only"]):
+            continue
+        if ng_hits(j, state.user_ng + state.derived_ng):
+            continue
+        ts = v("time_slots")
+        if isinstance(ts, list) and ts:
+            usable = set(ts) - ({"late_night"} if minor else set())
+            if usable and not (j["times"] & usable):
+                continue
+        if v("customer_facing") == "avoid" and j["cf"] == "high":
+            continue
+        if v("physical") == "seated" and j["phys"] in ("standing", "heavy"):
+            continue
+        if v("physical") == "light" and j["phys"] == "heavy":
+            continue
+        score, why = 0.0, []
+        if v("customer_facing") in ("like", "ok") and j["cf"] in ("high", "mid"):
+            score += 1; why.append("customer_facing")
+        if v("customer_facing") == "avoid" and j["cf"] in ("none", "low"):
+            score += 1; why.append("customer_facing")
+        if v("physical") == "seated" and j["phys"] == "seated":
+            score += 1; why.append("physical")
+        if v("environment_noise") and v("environment_noise") == j["noise"]:
+            score += 0.5; why.append("environment_noise")
+        if v("remote") == "yes" and j["remote"]:
+            score += 1.5; why.append("remote")
+        if v("work_style") == "spot" and j["spot"]:
+            score += 0.5; why.append("work_style")
+        if v("avoid_coworkers") == "yes" and j["remote"]:
+            score += 0.5; why.append("avoid_coworkers")
+        if isinstance(ts, list) and ts and j["times"] & set(ts):
+            score += 0.5; why.append("time_slots")
+        out.append({"job_id": j["id"], "name": j["name"], "score": score, "why_slots": why})
+    out.sort(key=lambda x: -x["score"])          # stable: catalog order breaks ties
+    return out
+
+def build_result_payload(state, catalog):
+    card = build_card(state); card["focus"] = []
+    unknown_hard = [s for s in hard_slots(state) if not is_filled(state.slots.get(s))]
+    guessed = [s for s in hard_slots(state) if is_filled(state.slots.get(s)) and state.slots[s]["confidence"] == "low"]
+    blocked = state.blocked
+    cands = [] if blocked else eligible_jobs(state, catalog)[:6]
+    notices = [NOTICE[k] for k in ("under_15",) if blocked] or []
+    for k in ("school_banned", "side_banned", "civil_servant", "school_unknown", "side_unknown", "fuyou", "danger"):
+        if k in state.flags or (k == "danger" and "danger_warned" in state.flags):
+            notices.append(NOTICE[k])
+    if not blocked and state.segment == "student":
+        notices.append(NOTICE["student_fuyou"])
+    if not blocked and state.segment == "side_job":
+        notices.append(NOTICE["side_tax"])
+    if minor_mode(state) and not blocked:
+        notices.append(NOTICE["minor_rules"] if not state.slots.get("age_band") or state.slots["age_band"]["value"] != "declined" else NOTICE["age_declined"])
+    if notices:
+        notices.append(NOTICE["rules_only"])
+    conditional = any(f in state.flags for f in ("school_banned", "side_banned", "civil_servant"))
+    return {"card": card, "card_text": render_card(card), "candidates": cands, "need": min(3, len(cands)),
+            "unknown_hard": [SLOTS[s]["label"] for s in unknown_hard], "unknown_hard_slots": unknown_hard,
+            "guessed_hard": [f"{SLOTS[s]['label']}＝{value_ja(s, state.slots[s]['value'])}" for s in guessed],
+            "guessed_hard_slots": guessed,
+            "unresolved": {SLOTS[s]["label"]: [value_ja(s, x) for x in v] for s, v in state.unresolved.items()},
+            "notices": notices, "blocked": blocked, "conditional": conditional}
+
+def validate_result(raw, payload):
+    d = parse_json(raw)
+    if not d:
+        return None, "not_json"
+    recs = d.get("recommendations")
+    need = payload["need"]
+    if not isinstance(recs, list) or len(recs) != need:
+        return None, "wrong_count"
+    ids = {c["job_id"] for c in payload["candidates"]}
+    seen = set()
+    for r in recs:
+        if not isinstance(r, dict) or r.get("job_id") not in ids or r["job_id"] in seen:
+            return None, "not_in_allowlist"
+        if not isinstance(r.get("reason"), str) or not r["reason"].strip() or MONEY_RE.search(r["reason"]):
+            return None, "bad_reason"
+        seen.add(r["job_id"])
+    reply = d.get("reply", "")
+    if not isinstance(reply, str) or MONEY_RE.search(reply):
+        return None, "bad_reply"
+    return {"reply": reply, "recommendations": [{"job_id": r["job_id"], "reason": r["reason"].strip()} for r in recs]}, None
+
+def fallback_reason(c):
+    why = "・".join(SLOTS[s]["label"] for s in c["why_slots"][:2]) or "条件"
+    return f"{why}の条件に合いそうだから"
+
+def fallback_result(payload):
+    recs = [{"job_id": c["job_id"], "reason": fallback_reason(c)} for c in payload["candidates"][:payload["need"]]]
+    return {"reply": "条件から、合いそうなバイトを選んだよ！", "recommendations": recs}
+
+def compose_result_text(payload, out, catalog_by_id):
+    L = []
+    L += payload["notices"]
+    if payload["blocked"]:
+        return "\n".join(L)
+    L.append(out["reply"])
+    if payload["conditional"]:
+        L.append("（ルールの確認がとれたら、の参考だよ）")
+    for i, r in enumerate(out["recommendations"], 1):
+        L.append(f"{i}. {catalog_by_id[r['job_id']]['name']}：{r['reason']}")
+    if not out["recommendations"]:
+        L.append("今の条件だと合うものが見つからなかった…条件を少しゆるめてもう一回探してみよう。")
+    elif len(out["recommendations"]) < 3:
+        L.append("今の条件だと合うのはここまで。時間帯や通勤の条件を少し広げると、候補が増えるよ。")
+    if payload.get("guessed_hard"):
+        L.append("推測：" + "、".join(payload["guessed_hard"]) + GUESS_TAIL)
+    if payload["unknown_hard"]:
+        L.append("未定：" + "、".join(payload["unknown_hard"]) + "（決まったらもっと絞り込めるよ）")
+    for k, v in payload["unresolved"].items():
+        L.append(f"未定：{k}（{' / '.join(v)} のどちらか。決まったら教えてね）")
+    return "\n".join(L)
+
+# ----------------------------------------------------------------- views / payloads for prompts (04-B6)
+def slots_json(state):
+    pri = active_slots(state)
+    filled = [{"slot": s, "label_ja": SLOTS[s]["label"], "tier": TIER[pri[s]],
+               "value_ja": value_ja(s, e["value"]), "confidence": e["confidence"], "from": e["from"]}
+              for s, e in state.slots.items() if is_filled(e) and s in pri]
+    return json.dumps({"slots": filled, "missing_hard": [SLOTS[s]["label"] for s in hard_slots(state) if not is_filled(state.slots.get(s))],
+                       "ng": state.user_ng + state.derived_ng, "minor_mode": minor_mode(state),
+                       "turn": state.turns, "max_turns": MAX_TURNS}, ensure_ascii=False, separators=(",", ":"))
+
+def view(state, bank, aside=False):
+    """Presentation view for Stage 3.  aside=True: same item re-presented after an aside (05-B7)."""
+    cur = state.current or {}
+    mode = cur.get("mode")
+    v = {"phase": state.phase, "segment": f"{state.segment}（{SEGMENT_JA[state.segment]}）", "mode": mode,
+         "qid": cur.get("qid"), "choices": list(cur.get("choices", [])), "notices": [NOTICE[k] for k in state._new_notices],
+         "slots_json": slots_json(state)}
+    q = qmap(bank).get(cur.get("qid"))
+    if mode == "confirm":
+        v["text"] = CONFIRM_TEXT
+    elif mode == "review":
+        v["card_json"] = state.last_card
+        v["card_text"] = render_card(state.last_card)
+        v["text"] = v["card_text"]
+        v["closing"] = CLOSING_JA
+    elif q:
+        v["text"] = q["alt_text"] if mode == "reask" else q["text"]
+        if mode == "clarify" and not aside:
+            v["text"] = CLARIFY_TEXT + "（" + q["text"] + "）"
+        if mode == "retry" and not aside:
+            v["text"] = RETRY_TEXT + q["text"]
+    else:
+        v["text"] = ""
+    if aside and mode not in ("review", "result"):
+        v["base_mode"] = mode
+        v["mode"] = "aside"
+    v["next_question"] = json.dumps({"id": v["qid"], "mode": v["mode"], "text": v.get("text", ""), "choices": v["choices"]},
+                                    ensure_ascii=False)
+    return v
+
+def extract_payload(state, bank, user_text):
+    """Stage-1 payload (05-B8).  question/choices/targets depend on the presented item."""
+    cur = state.current or {}
+    mode = cur.get("mode")
+    allowed = sorted(active_slots(state))
+    if mode == "review":
+        card = state.last_card or build_card(state)
+        question, choices = render_card(card), [REVIEW_OK]
+        targets = list(card["focus"]) or [i["slot"] for i in card["hard"] + card["prefs"]]
+    elif mode == "confirm":
+        question, choices, targets = CONFIRM_TEXT, list(cur.get("choices", [])), ["segment"]
+    elif mode == "result":
+        question, choices, targets = "（おすすめを表示したあと）", [], (["age_band"] if state.blocked else [])
+    else:
+        q = qmap(bank).get(cur.get("qid"))
+        question = (q["alt_text"] if mode == "reask" else q["text"]) if q else (cur.get("qid") or "")
+        choices, targets = list(cur.get("choices", [])), (list(q["targets"]) if q else [])
+    return {"phase": state.phase, "segment": state.segment, "user_text": user_text, "question": question,
+            "choices": choices, "targets": targets,
+            "allowed_slots": {s: list(map(str, SLOTS[s]["values"])) for s in allowed}}
+
+# ----------------------------------------------------------------- the turn API
+def _init_volatile(state, reset=False):
+    """Per-process scratch fields (prefixed _ ; never serialized)."""
+    for k, v in (("_new_notices", None), ("_need_more_review", False)):
+        if reset or not hasattr(state, k):
+            setattr(state, k, [] if v is None else v)
+
+def start(state, bank):
+    """Opening (not a turn). Idempotent: calling twice returns the same question."""
+    _init_volatile(state); state._new_notices = []
+    if state.current is None:
+        advance(state, bank)
+    return view(state, bank)
+
+def resume(state, bank):
+    v = start(state, bank); v["resumed"] = True
+    return v
+
+MULTI_SEP_RE = re.compile(r"[、,，/／]\s*")
+
+def match_button(state, bank, text):
+    """Exact (NFKC) match of a visible choice first; multi questions also accept several choices joined
+    by 、 , ， / ／ (05-N10).  Anything else (incl. empty) -> None (free text)."""
+    cur = state.current or {}
+    t = nfkc(text)
+    if not t:
+        return None
+    ch = cur.get("choices", [])
+    nch = {nfkc(c): c for c in ch}
+    if t in nch:
+        return [nch[t]]
+    q = qmap(bank).get(cur.get("qid"))
+    if q and q.get("multi"):
+        parts = [p for p in MULTI_SEP_RE.split(t) if p]
+        if parts and all(p in nch for p in parts):
+            out = []
+            for p in parts:
+                if nch[p] not in out:
+                    out.append(nch[p])
+            return out
+    return None
+
+def _call_llm(fn, payload, validator, state, stage):
+    probs_all = []
+    for attempt in range(1 + LLM_RETRIES):
+        try:
+            raw = fn(payload)
+        except Exception as e:                          # model/transport error must not crash
+            raw = None; probs_all.append(f"exception:{type(e).__name__}")
+        res, probs = validator(raw)
+        if res is not None:
+            if probs:
+                ev(state, f"{stage}_repaired", problems=probs)
+            if attempt:
+                ev(state, f"{stage}_retry_ok")
+            return res
+        probs_all += probs if isinstance(probs, list) else [probs]
+    ev(state, f"{stage}_fallback", problems=probs_all)
+    return None
+
+def _apply_effects(state, bank, q, choices, src_kind):
+    if len(choices) > 1:          # multi-select buttons: union values per multi slot first (02-#4)
+        merged = {}
+        for c in choices:
+            for k, val in q["choice_effects"].get(c, {}).items():
+                if k in SLOTS and SLOTS[k]["multi"]:
+                    merged.setdefault(k, [])
+                    merged[k] += [x for x in (val if isinstance(val, list) else [val]) if x not in merged[k]]
+        if merged:
+            conf = confidence_for("choice_direct" if q["phase"] in DIRECT else "choice", q["phase"], None, False)
+            for k, val in merged.items():
+                apply_update(state, k, val, conf, f"choice:{q['id']}")
+            q = dict(q, choice_effects={c: {k: v for k, v in q["choice_effects"].get(c, {}).items() if k not in merged} for c in choices})
+    for c in choices:
+        eff = q["choice_effects"].get(c, {})
+        for k, val in eff.items():
+            if k == "__ng__":
+                for n in val:
+                    if n not in state.user_ng:
+                        state.user_ng.append(n)
+            elif k == "__segment__":
+                set_segment(state, val, "confirm" if src_kind == "confirm" else "choice")
+            else:
+                conf = confidence_for("choice_direct" if (q["phase"] in DIRECT or src_kind == "confirm") else "choice", q["phase"], k, False)
+                apply_update(state, k, val, conf, f"choice:{q['id']}")
+
+def _count(state, bucket=None):
+    """One counted turn: +1 to turns and +1 to phase_turns[bucket] (05-B5).  bucket = the phase the message
+    ARRIVED in; counted asides / danger use the pseudo bucket "aside" so they never eat a phase cap.
+    Invariant: sum(phase_turns.values()) == turns."""
+    b = bucket or state.phase
+    state._counted_phase = b
+    state.turns += 1
+    state.phase_turns[b] = state.phase_turns.get(b, 0) + 1
+
+def _uncount(state):
+    p = getattr(state, "_counted_phase", state.phase)
+    state.turns -= 1
+    state.phase_turns[p] -= 1
+
+def clarify_room(state):
+    """clarify keeps the question; offered only if the phase cap and the review reserve still allow one more turn."""
+    cap = PHASE_CAP.get(state.phase)
+    if cap is not None and state.phase_turns.get(state.phase, 0) >= cap:
+        return False
+    return state.turns < MAX_TURNS - REVIEW_RESERVE
+
+def turn(state, user_text, bank, llm, catalog=None):
+    """Process one user message. Returns dict(reply, view, done, counted).
+    Never raises: bad LLM output is handled inside; any other internal exception rolls the state back to the
+    snapshot taken at turn start and re-presents the current item (05-M15)."""
+    _init_volatile(state)
+    snap = state.to_dict()
+    try:
+        return _turn(state, user_text, bank, llm, catalog)
+    except Exception as e:
+        restored = State.from_dict(snap)
+        state.__dict__.clear(); state.__dict__.update(restored.__dict__); _init_volatile(state, reset=True)
+        ev(state, "internal_error", error=type(e).__name__)
+        if state.result:
+            return {"reply": state.result["text"], "view": view(state, bank), "done": True, "counted": False}
+        return _represent(state, bank, counted=False)
+
+def _turn(state, user_text, bank, llm, catalog):
+    state._new_notices = []
+    if state.current is None:
+        advance(state, bank)
+    text = user_text if isinstance(user_text, str) else ""
+    if state.phase == "result" and state.result:
+        return _post_result(state, text, bank, llm, catalog)
+    cur = state.current
+    qm = qmap(bank)
+    q = qm.get("q_segment") if cur["qid"] == "confirm_segment" else qm.get(cur["qid"])
+    if not nfkc(text):                                      # empty input: nothing happens (05-N10)
+        ev(state, "empty_input")
+        return _represent(state, bank, counted=False)
+    # ---- deterministic pre-check
+    if DANGER_RE.search(nfkc(text)):
+        return _aside(state, bank, llm, catalog, kind="danger")
+    # ---- Stage 1
+    buttons = match_button(state, bank, text)
+    ext = None
+    if buttons is None:
+        ext = _call_llm(lambda p: llm.extract(p), extract_payload(state, bank, text), validate_extract, state, "extract")
+        # 05-B10: the raw-text 中学 fallback is used ONLY when the presented question asks for age_band
+        if ext and q is not None and cur["mode"] != "confirm" and "age_band" in q["targets"] and JHS_RE.search(nfkc(text)) \
+                and not any(u["slot"] == "age_band" for u in ext["slot_updates"]):
+            ext["slot_updates"].append({"slot": "age_band", "value": "under_15", "evidence": text})
+            ev(state, "jhs_fallback")
+    intent = (ext or {}).get("intent", "answer")
+    if intent == "restart":
+        return _restart(state, bank, llm, catalog)
+    if intent == "danger":                       # model-detected danger (regex missed it)
+        return _aside(state, bank, llm, catalog, kind="danger")
+    if intent == "aside":
+        return _aside(state, bank, llm, catalog, kind="aside")
+    # ---- counted turn
+    _count(state)
+    mode = cur["mode"]
+    if mode == "review":
+        if buttons is None and ext is None:
+            key = f"review{state.review_rounds + 1}"
+            if key not in state.retried:           # 1st failure: not counted, card re-presented deterministically
+                state.retried.append(key); _uncount(state)
+                ev(state, "review_reply_unparsed", retry=True)
+                return _represent(state, bank, counted=False, prefix=RETRY_TEXT)
+            ev(state, "review_reply_unparsed", retry=False)
+            apply_review(state, None, button_ok=False, promote=False)    # 2nd failure: round counted, nothing promoted
+        else:
+            _apply_ext(state, bank, ext, q=None, text=text, review=True)
+            apply_review(state, ext, button_ok=bool(buttons))
+        if intent == "show_result":
+            state._need_more_review = False
+            _flag(state, "show_result")
+        advance(state, bank)
+        return _say(state, bank, llm, catalog)
+    if buttons is not None:
+        _apply_effects(state, bank, q, buttons, "confirm" if mode == "confirm" else "choice")
+        if mode == "confirm":
+            state.pending_segment = None
+    elif ext is None:
+        if mode == "confirm":                       # 05-B8: confirm unparsed -> keep current segment
+            ev(state, "confirm_unparsed", kept=state.segment)
+            state.pending_segment = None
+        elif cur["qid"] not in state.retried:      # 1st failure: re-ask once, not counted (04-B5)
+            state.retried.append(cur["qid"]); _uncount(state)
+            state.current = dict(cur, mode="retry")
+            return _say(state, bank, llm, catalog, counted=False)
+        else:
+            ev(state, "extract_gave_up", qid=cur["qid"])
+    elif intent == "clarify" and mode != "confirm" and cur["qid"] not in state.clarified \
+            and state.clarify_used < MAX_CLARIFY and clarify_room(state):
+        state.clarified.append(cur["qid"]); state.clarify_used += 1
+        state.current = dict(cur, mode="clarify")
+        return _say(state, bank, llm, catalog)
+    else:
+        if intent == "clarify":
+            ev(state, "clarify_suppressed", qid=cur["qid"])
+        _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
+        if mode == "confirm":
+            state.pending_segment = None
+    if intent == "show_result":
+        _flag(state, "show_result")
+    advance(state, bank)
+    return _say(state, bank, llm, catalog)
+
+def _flag(state, key):
+    if key not in state.flags:
+        state.flags.append(key)
+
+def _restart(state, bank, llm, catalog):
+    restarts = state.restarts + 1
+    fresh = new_state(); fresh.restarts = restarts
+    state.__dict__.clear(); state.__dict__.update(fresh.__dict__); _init_volatile(state, reset=True)
+    ev(state, "restart", n=restarts)
+    advance(state, bank)
+    return _say(state, bank, llm, catalog, counted=False, extra={"restarted": True})
+
+def _post_result(state, text, bank, llm, catalog):
+    """Messages after the result was shown (05-B9).  Never re-runs the interview except restart / under-15 age fix."""
+    v = view(state, bank)
+    stored = {"reply": POST_RESULT_TEXT + "\n" + state.result["text"], "view": v, "done": True, "counted": False}
+    if not nfkc(text):
+        return stored
+    if DANGER_RE.search(nfkc(text)):
+        _flag(state, "danger_warned"); ev(state, "danger_skip", where="post_result")
+        return {"reply": NOTICE["danger"], "view": v, "done": True, "counted": False}
+    ext = _call_llm(lambda p: llm.extract(p), extract_payload(state, bank, text), validate_extract, state, "extract")
+    intent = (ext or {}).get("intent", "answer")
+    if intent == "restart":
+        return _restart(state, bank, llm, catalog)
+    if intent == "danger":
+        _flag(state, "danger_warned"); ev(state, "danger_skip", where="post_result")
+        return {"reply": NOTICE["danger"], "view": v, "done": True, "counted": False}
+    if state.blocked and ext:
+        ages = [u["value"] for u in ext["slot_updates"] if u["slot"] == "age_band" and u["value"] in ("15_17", "under_18", "18_plus")]
+        if ages:                                     # under-15 block lifted by an explicit age correction
+            _count(state)
+            apply_update(state, "age_band", ages[-1], "high", "free:post_result")
+            state.result = None; state.unresolved = {}
+            state.phase = "hard_filter"
+            ev(state, "unblocked", value=ages[-1])
+            advance(state, bank)
+            return _say(state, bank, llm, catalog)
+    ev(state, "post_result_message", intent=intent)
+    return stored
+
+def _apply_ext(state, bank, ext, q, text, review, confirm=False):
+    if not ext:
+        return
+    if ext.get("segment"):
+        set_segment(state, ext["segment"], "confirm" if confirm else ("review_explicit" if review else "free"))
+    if review:
+        return              # review slot updates handled by apply_review
+    # same slot with different values inside ONE extraction = ambiguous -> never high (04-M / spam guard)
+    seen = {}
+    for u in ext["slot_updates"]:
+        if u["value"] is not None:
+            seen.setdefault(u["slot"], [])
+            if u["value"] not in seen[u["slot"]]:
+                seen[u["slot"]].append(u["value"])
+    ambiguous = {s for s, vals in seen.items() if len(vals) > 1 and not SLOTS.get(s, {}).get("multi")}
+    for s in ambiguous:
+        ev(state, "ambiguous_extract", slot=s, values=seen[s])
+    targets = [] if (q is None or confirm) else q["targets"]
+    for u in ext["slot_updates"]:
+        s = u["slot"]
+        if u["value"] is None:
+            state.notes[s] = scrub_note(u.get("raw")); ev(state, "note_unnormalizable", slot=s); continue
+        current = s in targets
+        # 05-M12 / N2: evidence counts only when it is a substring of the message after NFKC
+        ev_ok = isinstance(u.get("evidence"), str) and bool(nfkc(u["evidence"])) and nfkc(u["evidence"]) in nfkc(text)
+        kind = "free_current" if current else "free_other"
+        conf = "low" if s in ambiguous else confidence_for(kind, state.phase, s, ev_ok)
+        qid = q["id"] if q is not None and not confirm else ("confirm_segment" if confirm else None)
+        frm = f"free:{qid}" if current else (f"free_other:{qid}" if qid else "free_other")
+        apply_update(state, s, u["value"], conf, frm)
+    for n in ext["ng_updates"]:
+        if n not in state.user_ng:
+            state.user_ng.append(n)
+    for n in ext["ng_removals"]:
+        if n in state.user_ng:
+            state.user_ng.remove(n)
+
+def _count_aside(state):
+    """aside + danger share MAX_ASIDES (05-M5).  Beyond it, each one is a counted turn."""
+    state.aside_count += 1
+    if state.aside_count > MAX_ASIDES:
+        _count(state, "aside")
+        return True
+    return False
+
+def _aside(state, bank, llm, catalog, kind):
+    """Off-topic / danger: the current item is re-presented unchanged (mode=aside, 05-B7).
+    Not counted toward M-repeat / TOPIC_CAP / attempts.  danger: no extraction, no generation."""
+    if kind == "danger":
+        _flag(state, "danger_warned")
+        ev(state, "danger_skip")
+    counted = _count_aside(state)
+    if counted and state.turns >= MAX_TURNS:
+        advance(state, bank)
+        return _say(state, bank, llm, catalog, counted=True, extra={"aside": kind})
+    if kind == "danger":
+        r = _represent(state, bank, counted=counted, aside=True, lead=[NOTICE["danger"]])
+        r["view"]["aside"] = "danger"
+        return r
+    return _say(state, bank, llm, catalog, counted=counted, extra={"aside": kind}, aside=True)
+
+def _represent(state, bank, counted, prefix=None, aside=False, lead=None):
+    """Deterministic re-presentation of the current item (no LLM)."""
+    v = view(state, bank, aside=aside)
+    body = v["card_text"] + "\n\n" + CLOSING_JA if v["mode"] == "review" else v.get("text", "")
+    parts = list(lead or []) + [n for n in v["notices"] if n not in (lead or [])] + ([prefix] if prefix else []) + [body]
+    return {"reply": "\n".join(parts), "view": v, "done": False, "counted": counted}
+
+def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
+    """Stage 3."""
+    v = view(state, bank, aside=aside)
+    if extra:
+        v.update(extra)
+    notices = list(v["notices"])
+    if state.current["mode"] == "result":
+        from catalog_v4 import CATALOG
+        cat = catalog or CATALOG
+        cby = {j["id"]: j for j in cat}
+        payload = build_result_payload(state, cat)
+        v["result_json"] = json.dumps({k: payload[k] for k in ("card", "candidates", "need", "unknown_hard", "unresolved", "notices", "blocked", "conditional")}, ensure_ascii=False, default=str)
+        out = None
+        if payload["need"] > 0:                       # need == 0 (blocked / no candidates): no LLM call
+            def _vres(raw):
+                r, err = validate_result(raw, payload)
+                return r, ([err] if err else [])
+            out = _call_llm(lambda p: llm.generate(p), v, _vres, state, "result")
+        if out is None:
+            out = fallback_result(payload)
+        out = post_check_result(state, payload, out, cby)
+        txt = compose_result_text(payload, out, cby)
+        txt = "\n".join([NOTICE[k] for k in state._new_notices if NOTICE[k] not in payload["notices"]
+                          and not (payload["blocked"] and k == "minor_rules")] + [txt])
+        state.result = {"text": txt, "recommendations": out["recommendations"], "payload": payload}
+        return {"reply": txt, "view": v, "done": True, "counted": counted}
+    def _vr(raw):
+        r, err = validate_reply(raw, v)
+        return r, ([err] if err else [])
+    reply = _call_llm(lambda p: llm.generate(p), v, _vr, state, "generate")
+    if reply is None:
+        reply = v["text"] if v["mode"] != "review" else v["card_text"] + "\n\n" + CLOSING_JA
+    reply = "\n".join(notices + [reply])
+    return {"reply": reply, "view": v, "done": False, "counted": counted}
+
+def post_check_result(state, payload, out, cby):
+    """Post-hoc safety check on the final recommendations (04-B4/B8), then refill (05-M13):
+    dropped items are replaced by the next safe candidates in payload order with the fixed fallback reason."""
+    ok, used = [], set()
+    for r in out["recommendations"]:
+        j = cby.get(r["job_id"])
+        if r["job_id"] in used or not job_safe(state, j):
+            ev(state, "result_postcheck_drop", job=r["job_id"]); continue
+        ok.append(r); used.add(r["job_id"])
+    need = payload.get("need", len(ok)) if isinstance(payload, dict) else len(ok)
+    for c in (payload.get("candidates", []) if isinstance(payload, dict) else []):
+        if len(ok) >= need:
+            break
+        if c["job_id"] in used or not job_safe(state, cby.get(c["job_id"])):
+            continue
+        ok.append({"job_id": c["job_id"], "reason": fallback_reason(c)}); used.add(c["job_id"])
+        ev(state, "result_refill", job=c["job_id"])
+    out["recommendations"] = ok
+    return out
+_post_check_result = post_check_result   # backward-compatible alias
+
+# ------------------------------------------------------------------ prompt assembly (03-B5 / 04-m1)
+import os as _os
+_PDIR = _os.path.dirname(_os.path.abspath(__file__))
+PROMPT_FILES = {                      # always-on main prompt + per-phase add-on (02-#13 / 01-26)
+    "extract": ["prompt_extract_v4_ja.txt"],
+    "say":     ["prompt_main_v4_ja.txt"],
+    "review":  ["prompt_main_v4_ja.txt", "prompt_review_v4_ja.txt"],
+    "result":  ["prompt_main_v4_ja.txt", "prompt_result_v4_ja.txt"],
+}
+def prompt_stage(v):
+    return {"review": "review", "result": "result"}.get(v.get("mode"), "say")
+
+def render_prompt(stage, variables):
+    """Fill {{var}} placeholders. Every placeholder MUST be supplied (KeyError otherwise)."""
+    text = "\n\n".join(open(_os.path.join(_PDIR, f), encoding="utf-8").read() for f in PROMPT_FILES[stage])
+    names = sorted(set(re.findall(r"\{\{(\w+)\}\}", text)))
+    missing = [n for n in names if n not in variables]
+    if missing:
+        raise KeyError(f"prompt variables missing for {stage}: {missing}")
+    for n in names:
+        val = variables[n]
+        if not isinstance(val, str):
+            val = json.dumps(val, ensure_ascii=False, default=str)
+        text = text.replace("{{" + n + "}}", val)
+    return text
