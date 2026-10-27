@@ -40,6 +40,11 @@
   質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
   (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
   言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+- 区切りの境目(task 268。P3 で review の「シフトは4時間くらい」を「4時間未満」で入れ、返事は「4時間くらいね」と言った):
+  区切りのある項目(BUCKETS: 1回の勤務時間・時給の下限・週の日数)に打った数が境目にあれば(bucket_reads)、入れずに 2 つの区切りを
+  ボタンで聞き直す(_bucket_hold・_ask_pick。項目ごとに 1 回まで。聞き直しへの打った答えは、抽出の値を入れる)。区切りに寄せて
+  入れたら、返事の前に決まり文句 SNAP_TEXT で保存した区切りの文字を出し、入れた区切りと 1 つに決まらない数を返事が口にすれば
+  検証で落とす(view の unsaid)
 - sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
   choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
@@ -182,6 +187,8 @@ CLARIFY_TEXT = "お、どのへんがちがう？ひとことで教えて！"
 RETRY_TEXT = "ごめん、うまく受け取れなかった！もう一回だけ教えて。"
 CONFIRM_TEXT = "確認させてね！今のあなたに近いのはどれ？"
 DISCARD_TEXT = "{labels}の話は、今回の条件には入れないでおくね。"  # 保留した答えを捨てたとき(「覚えた」と言わない)
+PICK_TEXT = "「{typed}」だと、{label}はどっちに近い？"  # 打った数が区切りの境目にあるとき、2 つの区切りをボタンで聞く(task 268)
+SNAP_TEXT = "{label}は「{value}」で入れておくね。"  # 打った数を区切りに寄せて入れたとき(保存した区切りの文字をそのまま出す)
 POST_RESULT_TEXT = "おすすめはここまでだよ。条件を変えてもう一回探すなら「最初から」と送ってね。"
 GUESS_TAIL = "（確認できていない推測の条件だよ。ちがっていたら「最初から」でやり直せるよ）"
 
@@ -417,6 +424,76 @@ def _norm_single(slot, value):
         if "好き" in s:
             return "like"
     return None
+
+
+# 打った数を区切りに寄せる項目(task 268): 数と単位の形、数から区切りを決める関数、境目の数、境目ちょうど(「くらい」なし)でも
+# 聞くか、数の前にあれば読まない文字(「月2〜3日」は週の日数ではない)。通勤は区切りが手段(徒歩・電車)と時間の組なので入れない。
+BUCKETS = {
+    "shift_length": {"num": r"\d+(?:\.\d+)?", "unit": r"時間(?![半目])", "edges": (4, 6), "exact": True,
+                     "of": lambda h: "short" if h < 4 else "mid" if h < 6 else "long"},
+    "hourly_wage_min": {"num": r"\d+", "unit": r"円", "edges": (1200, 1500), "exact": False,
+                        "of": lambda w: 1000 if w < 1200 else 1200 if w < 1500 else 1500},
+    "days_per_week": {"num": r"\d{1,2}", "unit": r"[日回](?![前後目間])", "edges": (), "exact": False,  # 日は整数。境目は幅だけ
+                      "of": lambda d: "1-2" if d <= 2 else "3-4" if d <= 4 else "5+", "not_after": r"月に?\s*$"},
+}
+RANGE_SEP = r"[〜\-ー−、,]|から"
+APPROX_PRE = r"約|だいたい|大体|およそ"
+APPROX_POST = r"くらい|ぐらい|位|前後|程度|ほど"
+# 向きのある言い方は聞き直さない(読み方はモデルに任せる)
+DIRECTED_PRE = r"最低|最大|最長|最短|少なくとも|長くても|短くても|多くても|せめて"
+DIRECTED = r"以上|以下|以内|未満|まで|超|より|弱|強|ちょっと|ちょい|過ぎ|すぎ"
+
+
+def _fold(s):
+    """NFKC にそろえ、全角のチルダ(「4～6時間」)を表示名の「〜」に、桁の区切り(「1,200円」)を取った形にする。"""
+    return re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", nfkc(s).replace("~", "〜"))
+
+
+def _bucket_re(slot):
+    n, unit = BUCKETS[slot]["num"], BUCKETS[slot]["unit"]
+    return re.compile(rf"(?P<pre>(?:{APPROX_PRE}|{DIRECTED_PRE})\s*)?(?P<core>(?<![\d.])(?P<a>{n})"
+                      rf"(?:\s*(?:{RANGE_SEP})\s*(?P<b>{n}))?\s*(?:{unit}))\s*(?P<post>{APPROX_POST}|{DIRECTED}|ちょうど)?")
+
+
+BUCKET_RE = {s: _bucket_re(s) for s in BUCKETS}
+
+
+def _bucket_names(slot):
+    """値 -> 表示名と、その値を入れるバンクの選択肢の文字(「3時間でサクッと」)。"""
+    from_bank = [(e[slot], c) for q in BANK for c, e in q["choice_effects"].items() if slot in e]
+    return {k: [ja] + [c for v, c in from_bank if v == k] for k, ja in SLOTS[slot]["values"].items()}
+
+
+BUCKET_NAMES = {s: _bucket_names(s) for s in BUCKETS}
+
+
+def bucket_reads(slot, text):
+    """打った文の中の、この項目の数(task 268)。[{"core": "4時間", "cands": 区切りの候補(並びは表のとおり) | None, "edge": bool}]。
+    表示名か選択肢の文字があれば、はっきり答えているので読まない([])。cands が 2 つで edge なら境目の答え: 境目の数ちょうど
+    (exact の項目)か「くらい」付き、または区切りをまたぐ幅(幅の上の端が境目なら、その下の区切りまで。「4〜6時間」は 4〜6時間)。
+    向きのある言い方(「4時間以上」「最低4時間」)は None。区切りを決めるためだけに読むので、読み方を増やさない。"""
+    t = _fold(text) if isinstance(text, str) else ""
+    if any(_fold(n) in t for names in BUCKET_NAMES[slot].values() for n in names):
+        return []
+    spec, order = BUCKETS[slot], list(SLOTS[slot]["values"])
+    out = []
+    for m in BUCKET_RE[slot].finditer(t):
+        if spec.get("not_after") and re.search(spec["not_after"], t[:m.start()]):
+            continue
+        a, b = float(m["a"]), float(m["b"]) if m["b"] else None
+        pre, post = (m["pre"] or "").strip(), m["post"] or ""
+        if re.fullmatch(DIRECTED_PRE, pre) or re.fullmatch(DIRECTED, post):
+            cands, edge = None, False
+        elif b is not None and b > a:
+            lo = order.index(spec["of"](a))
+            hi = order.index(spec["of"](b - 1e-6 if b in spec["edges"] else b))
+            cands, edge = order[lo:hi + 1], hi - lo == 1
+        else:
+            n = b if b is not None else a
+            edge = n in spec["edges"] and (spec["exact"] or bool(pre) or bool(re.fullmatch(APPROX_POST, post)))
+            cands = [spec["of"](n - 1e-6), spec["of"](n)] if edge else [spec["of"](n)]
+        out.append({"core": m["core"], "cands": cands, "edge": edge and len(cands) == 2})
+    return out
 
 
 def value_ja(slot, v):
@@ -840,13 +917,15 @@ def validate_reply(raw, view):
     if review:
         if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
             return None, "card_altered"
-    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside"):
+    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside", "pick"):
         if nfkc(view["text"]) not in nfkc(reply):
             return None, "question_missing"
         if len(reply) - len(view["text"]) > 120:
             return None, "too_much_extra"
     if _mentions_unkept(reply, view.get("unkept"), view.get("card_text") if review else view.get("text")):
         return None, "unkept_mentioned"
+    if _says_unsaid(reply, view.get("unsaid"), view.get("card_text") if review else view.get("text")):
+        return None, "unsaid_value"
     return reply.strip(), None
 
 
@@ -858,6 +937,20 @@ def _mentions_unkept(text, labels, fixed=None):
     if fixed:
         t = t.replace(nfkc(fixed), "")
     return any(nfkc(x) in t for x in labels)
+
+
+ALL_BUCKET_NAMES = sorted({_fold(n) for names in BUCKET_NAMES.values() for ns in names.values() for n in ns}, key=len, reverse=True)
+
+
+def _says_unsaid(text, phrases, fixed=None):
+    """入れていない数(phrases。「4時間」)を、決まった文(質問・カード)と区切りの表示名の外で口にしているか(task 268)。
+    「4時間未満」に寄せたのに「4時間くらいね、りょーかい！」と言わせない(「4時間未満」の中の「4時間」はよい)。"""
+    if not phrases or not isinstance(text, str):
+        return False
+    t = _fold(text)
+    for f in ([_fold(fixed)] if fixed else []) + ALL_BUCKET_NAMES:
+        t = t.replace(f, "")
+    return any(re.search(r"(?<![\d.])" + re.escape(_fold(x)), t) for x in phrases)  # 「24時間営業」は「4時間」ではない
 
 
 # ----------------------------- 質問の選び方(§8-3) -----------------------------
@@ -1163,8 +1256,9 @@ def _age_first(updates):
     return [u for u in updates if u["slot"] == "age_band"] + [u for u in updates if u["slot"] != "age_band"]
 
 
-def apply_review(state, ext, button_ok, promote=True):
-    """review の返事を反映する。promote=False(返事が 2 回読めなかった)なら何も上げず、巡回だけ数える(05-B8)。"""
+def apply_review(state, ext, button_ok, promote=True, hold=()):
+    """review の返事を反映する。promote=False(返事が 2 回読めなかった)なら何も上げず、巡回だけ数える(05-B8)。
+    hold は、境目の答えをボタンで聞き直す項目(task 268。入れず、推測も確定しない)。"""
     card = state.last_card or build_card(state)
     items = card["hard"] + card["prefs"]
     shown = {i["slot"]: i for i in items if not card["focus"] or i["slot"] in card["focus"]}  # M-3: 出した項目だけ
@@ -1172,26 +1266,11 @@ def apply_review(state, ext, button_ok, promote=True):
     ack = "all" if button_ok else (ext or {}).get("review_ack")
     touched, hard_changed = set(), False
     if ext and not button_ok:
-        _ambiguous(state, ext)  # B-2: review は最後の値を high で入れ、ログだけ残す
-        for u in _age_first(ext["slot_updates"]):
-            s = u["slot"]
-            if u["value"] is None:
-                state.notes[s] = scrub_note(u.get("raw"))
-                ev(state, "note_unnormalizable", slot=s)
-                continue
-            old = state.slots.get(s)
-            st = apply_update(state, s, u["value"], "high", "review", review=True)
-            touched.add(s)
-            if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
-                    active_slots(state).get(s) == HARD and old.get("confidence") == "high":
-                hard_changed = True
-        _apply_ng(state, ext)
-        if ext.get("segment"):
-            set_segment(state, ext["segment"], "review_explicit")
+        touched, hard_changed = _apply_review_updates(state, ext)
     promoted = []
     for s, i in (shown.items() if promote else ()):
         e = state.slots.get(s)
-        if s in touched or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
+        if s in touched or s in hold or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
             continue
         if i["tier"] == "hard" and ack != "all":
             continue  # HARD の推測は「これでOK」(all)のときだけ確定する
@@ -1201,10 +1280,36 @@ def apply_review(state, ext, button_ok, promote=True):
     update_block(state)
     state.review_log.append({"round": state.review_rounds, "ack": ack, "touched": sorted(touched),
                              "promoted": promoted, "hard_changed": hard_changed})
-    need = hard_changed or bool(state.conflicts) or bool(state.pending_segment)
-    if state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)):
-        need = True
-    state._need_more_review = need
+    state._need_more_review = _review_need(state, hard_changed)
+
+
+def _review_need(state, hard_changed):
+    """review をもう 1 巡するか: ゆずれない条件を直した・矛盾・区分の確認待ち、1 巡目でゆずれない条件に空き・推測がある。"""
+    return hard_changed or bool(state.conflicts) or bool(state.pending_segment) or \
+        (state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)))
+
+
+def _apply_review_updates(state, ext):
+    """review の自由入力の項目を high で入れる(B-2: 同じ項目に複数の値があれば最後の値を入れ、ログだけ残す)。
+    review の中の境目の聞き直しへの答え(task 268)でも使う。-> (入れた項目, ゆずれない条件の high の値を変えたか)"""
+    touched, hard_changed = set(), False
+    _ambiguous(state, ext)
+    for u in _age_first(ext["slot_updates"]):
+        s = u["slot"]
+        if u["value"] is None:
+            state.notes[s] = scrub_note(u.get("raw"))
+            ev(state, "note_unnormalizable", slot=s)
+            continue
+        old = state.slots.get(s)
+        st = apply_update(state, s, u["value"], "high", "review", review=True)
+        touched.add(s)
+        if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
+                active_slots(state).get(s) == HARD and old.get("confidence") == "high":
+            hard_changed = True
+    _apply_ng(state, ext)
+    if ext.get("segment"):
+        set_segment(state, ext["segment"], "review_explicit")
+    return touched, hard_changed
 
 
 def finalize(state):
@@ -1214,6 +1319,7 @@ def finalize(state):
         state.slots.pop(s, None)
         ev(state, "conflict_unresolved", slot=s)
     state.conflicts = {}
+    settle_pick(state)  # 境目の聞き直しの答えを待ったまま結果になった(脱線で 15 ターン目): 最初の答えの値を入れる
     _settle_held(state, force=True)  # 確かめられなかった保留は捨てる(ログ held_discarded)
     recompute_derived(state)
     update_block(state, final=True)
@@ -1339,12 +1445,16 @@ def validate_result(raw, payload):
             return None, "bad_reason"
         if _mentions_unkept(r["reason"], payload.get("unkept")):
             return None, "unkept_mentioned"
+        if _says_unsaid(r["reason"], payload.get("unsaid")):
+            return None, "unsaid_value"
         seen.add(r["job_id"])
     reply = d.get("reply", "")
     if not isinstance(reply, str) or MONEY_RE.search(reply):
         return None, "bad_reply"
     if _mentions_unkept(reply, payload.get("unkept")):
         return None, "unkept_mentioned"
+    if _says_unsaid(reply, payload.get("unsaid")):
+        return None, "unsaid_value"
     return {"reply": reply, "recommendations": [{"job_id": r["job_id"], "reason": r["reason"].strip()} for r in recs]}, None
 
 
@@ -1427,9 +1537,14 @@ def view(state, bank, aside=False):
     unkept = unkept_slots(state)
     if unkept:  # 生成の検証だけが読む(プロンプトの変数ではない)
         v["unkept"] = [SLOTS[s]["label"] for s in unkept]
+    unsaid = unsaid_phrases(state)
+    if unsaid:  # 同じく、生成の検証だけが読む
+        v["unsaid"] = unsaid
     q = qmap(bank).get(cur.get("qid"))
     if mode == "confirm":
         v["text"] = _held_text(cur, bank)
+    elif mode == "pick":
+        v["text"] = _pick_text(cur)
     elif mode == "review":
         v["card_json"] = state.last_card
         v["card_text"] = render_card(state.last_card)
@@ -1463,6 +1578,8 @@ def extract_payload(state, bank, user_text):
         targets = list(card["focus"]) or [i["slot"] for i in card["hard"] + card["prefs"]]
     elif mode == "confirm":
         question, choices, targets = _held_text(cur, bank), list(cur.get("choices", [])), ["segment"]
+    elif mode == "pick":
+        question, choices, targets = _pick_text(cur), list(cur.get("choices", [])), [cur["slot"]]
     elif mode == "result":
         question, choices, targets = "（おすすめを表示したあと）", [], (["age_band"] if state.blocked else [])
     else:
@@ -1477,7 +1594,8 @@ def extract_payload(state, bank, user_text):
 # ----------------------------- ターン(§5) -----------------------------
 def _init_volatile(state, reset=False):
     """そのターン限りの値(先頭が _。保存しない)。"""
-    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", ""), ("_discarded", None)):
+    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", ""), ("_discarded", None),
+                 ("_snapped", None)):
         if reset or not hasattr(state, k):
             setattr(state, k, [] if v is None else v)
 
@@ -1706,8 +1824,143 @@ def _age_asked_again(state):
     state.attempts["age_band"] = max(state.attempts.get("age_band", 0), MAX_ATTEMPTS)
 
 
+# ----------------------------- 区切りの境目(task 268) -----------------------------
+def unsaid_phrases(state):
+    """このターンの本人の文の数(「4時間」)のうち、入れた区切りと 1 つに決まらないもの。返事が「覚えた」と言わないよう、
+    生成の検証に渡す。区切りに寄せて入れた項目(_snapped)と、ボタンで聞き直している項目(pick)の分。"""
+    _init_volatile(state)
+    cur = state.current or {}
+    picking = cur.get("slot") if cur.get("mode") == "pick" else None
+    out = []
+    for s in state._snapped + ([picking] if picking else []):
+        stored = (state.slots.get(s) or {}).get("value")
+        for r in bucket_reads(s, state._user_text):
+            if r["cands"] is not None and (s == picking or r["cands"] != [stored]) and r["core"] not in out:
+                out.append(r["core"])
+    return out
+
+
+def _pick_text(cur):
+    return PICK_TEXT.format(typed=cur["typed"], label=SLOTS[cur["slot"]]["label"])
+
+
+def _bucket_hold(state, ext, text, q=None, review=False):
+    """境目の答え: 抽出が区切りのある項目を返し、打った数が区切りの境目にあり(bucket_reads の edge)、抽出の値がその 2 つの
+    区切りのどちらかなら(ほかの数の話ではない)、その項目を ext から外して、聞き直しの内容を返す(項目ごとに 1 回まで)。
+    最初の答えの抽出の値は held に取っておく(聞き直しへの答えが読めないとき・聞き直さずに終わるときに入れる)。"""
+    if not ext:
+        return None
+    for s in BUCKETS:
+        ups = [u for u in ext["slot_updates"] if u["slot"] == s]
+        if not ups or s not in active_slots(state) or f"pick:{s}" in state.retried:
+            continue
+        edge = [r for r in bucket_reads(s, text) if r["edge"]]
+        got = [u["value"] for u in ups if u["value"] is not None]
+        if len({tuple(r["cands"]) for r in edge}) != 1 or not got or got[-1] not in edge[0]["cands"]:
+            continue
+        if review:
+            conf, frm = "high", "review"
+        else:
+            current = q is not None and s in q["targets"]
+            conf = confidence_for("free_current" if current else "free_other", state.phase, s, False)
+            frm = f"free:{q['id']}" if current else (f"free_other:{q['id']}" if q else "free_other")
+        ext["slot_updates"] = [u for u in ext["slot_updates"] if u["slot"] != s]
+        values = list(edge[0]["cands"])
+        return {"qid": "bucket_pick", "mode": "pick", "slot": s, "values": values,
+                "choices": [SLOTS[s]["values"][v] for v in values], "typed": edge[0]["core"], "review": review,
+                "held": {"value": got[-1], "confidence": conf, "from": frm}}
+    return None
+
+
+def _ask_pick(state, pick):
+    state.retried.append(f"pick:{pick['slot']}")
+    ev(state, "bucket_pick", slot=pick["slot"], values=pick["values"])
+    state.current = pick
+
+
+def _release_pick(state, pick):
+    """聞き直す余地が無い・答えが読めない: 最初の答えの抽出の値をそのまま入れる(返事の前に区切りの文字を出す)。"""
+    _init_volatile(state)
+    h = pick.get("held")
+    if h:
+        apply_update(state, pick["slot"], h["value"], h["confidence"], h["from"])
+        if is_filled(state.slots.get(pick["slot"])) and pick["slot"] not in state._snapped:
+            state._snapped.append(pick["slot"])
+
+
+def _note_snaps(state, ext, text, before):
+    """打った数を区切りに寄せて入れた項目(このターンに値か確信度が変わり、文に表示名・選択肢の文字が無い)を覚える。"""
+    for s in BUCKETS:
+        if not any(u["slot"] == s and u["value"] is not None for u in (ext or {}).get("slot_updates", [])):
+            continue
+        e = state.slots.get(s)
+        if is_filled(e) and e != before.get(s) and bucket_reads(s, text) and s not in state._snapped:
+            state._snapped.append(s)
+
+
+def _snap_lead(state):
+    """このターンに区切りに寄せて入れた値を、保存した区切りの文字のまま伝える(返事が別の数を「覚えた」と言わないように)。
+    中学生以下で止めたときは言わない(推薦に進まないので)。"""
+    _init_volatile(state)
+    if state.blocked:
+        return []
+    return [SNAP_TEXT.format(label=SLOTS[s]["label"], value=value_ja(s, state.slots[s]["value"]))
+            for s in state._snapped if is_filled(state.slots.get(s))]
+
+
+def settle_pick(state):
+    """相談を閉じる前(session._finish)と結果の前(finalize): 聞き直しの答えを待っていれば、最初の答えの抽出の値を入れる。"""
+    cur = state.current or {}
+    if cur.get("mode") == "pick":
+        _release_pick(state, cur)
+
+
+def _pick_answer(state, bank, llm, catalog, cur, text, buttons, ext, intent, before):
+    """境目の聞き直しへの答え(数えるターン)。ボタンなら、その区切りを high で入れる。打った答えは聞き直さない(1 回まで):
+    抽出がこの項目を返せばそれを、無ければ最初の答えの抽出の値(held)を入れ、返事の前に区切りの文字を出す。
+    いっしょに打ったほかの項目は、review の中なら review の答えと同じく high で入れる。review の中では、読めない答えの
+    「中学」(_review_jhs)で止め、review をもう 1 巡するかをここで決め直す。"""
+    s = cur["slot"]
+    old = copy.deepcopy(state.slots.get(s))
+    hard_changed = False
+    if buttons is not None:
+        apply_update(state, s, cur["values"][cur["choices"].index(buttons[0])], "high", "choice:bucket_pick")
+        ev(state, "bucket_picked", slot=s, value=state.slots[s]["value"])
+    else:
+        if ext is None and cur.get("review") and _review_jhs(state, text):
+            ext = _jhs_stop(state, None, text)
+        ups = [u for u in (ext or {}).get("slot_updates", []) if u["slot"] == s and u["value"] is not None]
+        rest = dict(ext, slot_updates=[u for u in ext["slot_updates"] if u["slot"] != s]) if ext else None
+        if rest and cur.get("review"):
+            hard_changed = _apply_review_updates(state, rest)[1]
+        elif rest:
+            _apply_ext(state, bank, rest, q=None, text=text, review=False)
+        _note_snaps(state, rest, text, before)
+        ev(state, "bucket_pick_typed", slot=s, read=bool(ups) and intent in ("answer", "show_result"))
+        if ups and intent in ("answer", "show_result"):
+            apply_update(state, s, ups[-1]["value"], "high", "free:bucket_pick")
+        else:
+            _release_pick(state, cur)
+        if is_filled(state.slots.get(s)) and state.slots[s] != old and s not in state._snapped:
+            state._snapped.append(s)
+    if intent == "show_result":
+        _flag(state, "show_result")
+    if cur.get("review"):
+        e = state.slots.get(s)
+        changed = active_slots(state).get(s) == HARD and is_filled(old) and old["confidence"] == "high" and \
+            is_filled(e) and e["value"] != old["value"]
+        last = bool(state.review_log and state.review_log[-1]["hard_changed"])
+        update_block(state)
+        state._need_more_review = "show_result" not in state.flags and _review_need(state, last or changed or hard_changed)
+    state.current = None  # 答えた聞き直しは、結果の前(finalize の settle_pick)に入れ直さない
+    advance(state, bank)
+    return _say(state, bank, llm, catalog)
+
+
+
+
 def _turn(state, user_text, bank, llm, catalog):
-    state._new_notices, state._discarded = [], []
+    state._new_notices, state._discarded, state._snapped = [], [], []
     text = user_text if isinstance(user_text, str) else ""
     state._user_text = text
     if state.current is None:
@@ -1733,6 +1986,7 @@ def _turn(state, user_text, bank, llm, catalog):
     if DANGER_RE.search(nfkc(text)):
         return _aside(state, bank, llm, catalog, kind="danger")
     # ---- Stage 1
+    before = {s: copy.deepcopy(state.slots.get(s)) for s in BUCKETS}
     buttons = match_button(state, bank, text)
     ext = None
     if buttons is None:
@@ -1751,6 +2005,8 @@ def _turn(state, user_text, bank, llm, catalog):
     # ---- 数えるターン
     _count(state)
     mode = cur["mode"]
+    if mode == "pick":
+        return _pick_answer(state, bank, llm, catalog, cur, text, buttons, ext, intent, before)
     if mode == "review":
         if buttons is None and ext is None:
             key = f"review{state.review_rounds + 1}"
@@ -1770,8 +2026,18 @@ def _turn(state, user_text, bank, llm, catalog):
         if buttons is None and ext is None:
             apply_review(state, None, button_ok=False, promote=False)  # 2 回目: 巡回は数え、何も上げない
         else:
+            # 境目の答え(task 268)は入れずにボタンで聞き直す。15 ターン目と「早く結果」では聞かない
+            pick = _bucket_hold(state, ext, text, review=True) if buttons is None and intent != "show_result" \
+                and state.turns < MAX_TURNS else None
             _apply_ext(state, bank, ext, q=None, text=text, review=True)
-            apply_review(state, ext, button_ok=bool(buttons))
+            apply_review(state, ext, button_ok=bool(buttons), hold=[pick["slot"]] if pick else ())
+            _note_snaps(state, ext, text, before)
+            if pick and (state.blocked or state._need_more_review and state.turns + 2 > MAX_TURNS):
+                _release_pick(state, pick)  # 2 巡目の review を先にする(カードに入れた区切りが出る)
+                pick = None
+            if pick:
+                _ask_pick(state, pick)
+                return _say(state, bank, llm, catalog)
         if intent == "show_result":
             state._need_more_review = False
             _flag(state, "show_result")
@@ -1806,7 +2072,15 @@ def _turn(state, user_text, bank, llm, catalog):
     else:
         if intent == "clarify":
             ev(state, "clarify_suppressed", qid=cur["qid"])
+        pick = _bucket_hold(state, ext, text, q=q) if mode != "confirm" and intent != "show_result" \
+            and not _asks_age(cur, q) and clarify_room(state) else None
         _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
+        _note_snaps(state, ext, text, before)
+        if pick and state.blocked:
+            _release_pick(state, pick)
+        elif pick:  # 境目の答え(task 268): 同じフェーズで、2 つの区切りをボタンで 1 回だけ聞き直す
+            _ask_pick(state, pick)
+            return _say(state, bank, llm, catalog)
         if mode == "confirm":
             state.pending_segment = None
         elif _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
@@ -1977,7 +2251,8 @@ def _represent(state, bank, counted, prefix=None, aside=False, lead=None):
     v = view(state, bank, aside=aside)
     body = v["card_text"] + "\n\n" + CLOSING_JA if v["mode"] == "review" else v.get("text", "")
     lead = list(lead or [])
-    parts = lead + [n for n in v["notices"] if n not in lead] + _discard_lead(state) + ([prefix] if prefix else []) + [body]
+    parts = lead + [n for n in v["notices"] if n not in lead] + _discard_lead(state) + _snap_lead(state) + \
+        ([prefix] if prefix else []) + [body]
     return {"reply": "\n".join(parts), "view": v, "done": False, "counted": counted}
 
 
@@ -1994,12 +2269,12 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
     v = view(state, bank, aside=aside)
     if extra:
         v.update(extra)
-    notices = list(v["notices"]) + _discard_lead(state)
+    notices = list(v["notices"]) + _discard_lead(state) + _snap_lead(state)
     if state.current["mode"] == "result":
         cat = catalog or CATALOG
         cby = {j["id"]: j for j in cat}
         payload = build_result_payload(state, cat)
-        payload["unkept"] = v.get("unkept")  # 生成の検証だけが読む(result_json には入れない)
+        payload["unkept"], payload["unsaid"] = v.get("unkept"), v.get("unsaid")  # 生成の検証だけが読む(result_json には入れない)
         keys = ("card", "candidates", "need", "unknown_hard", "unresolved", "notices", "blocked", "conditional")
         v["result_json"] = json.dumps({k: payload[k] for k in keys}, ensure_ascii=False, default=str)
         out = None
@@ -2013,7 +2288,8 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
         out = post_check_result(state, payload, out, cby)
         txt = compose_result_text(payload, out, cby)
         lead = [NOTICE[k] for k in state._new_notices
-                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")] + _discard_lead(state)
+                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")] + \
+            _discard_lead(state) + _snap_lead(state)
         txt = "\n".join(lead + [txt])
         state.result = {"text": txt, "recommendations": out["recommendations"], "payload": payload}
         return {"reply": txt, "view": v, "done": True, "counted": counted}
