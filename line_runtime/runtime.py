@@ -39,7 +39,7 @@ from dip_mcp.logic import (
     career_harness_on,
     liff_url,
 )
-from line_runtime import baito_chat, career_chat, config, progress_ui
+from line_runtime import baito_chat, career_chat, career_ui, config, progress_ui
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
@@ -579,8 +579,9 @@ class LineRuntime:
         mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
         # プロフィールの進み具合(ハーネスが数えた progress)から、帯・プロフィールカード・完成を 0〜1 つ付ける(設計メモ §3.4)。
         # 返信の本文(LineReply の JSON。相談の後にトークの AI が読む)には入れず、コードだけが書く additional_kwargs に置く。
-        # 帯とカードはアルバイト・パートの相談だけ(正社員の進み具合は、ハーネスが返信の吹き出しに入れる)
-        ui = progress_ui.build(r.get("progress")) if kind == "baito" else None
+        # 正社員は形 D のときだけ、ハーネスが選んだ部品(ui。職歴カード、まとめ、完成なども)を Flex にする(task 246)。
+        # 形 B と C の進み具合は、ハーネスが返信の吹き出しに入れる
+        ui = progress_ui.build(r.get("progress")) if kind == "baito" else career_ui.build(r.get("ui"))
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
         msgs += [HumanMessage(content, additional_kwargs=mark),
                  AIMessage(reply.model_dump_json(), additional_kwargs=mark | ({"progress": ui} if ui else {}))]
@@ -747,15 +748,20 @@ def render(state: dict) -> dict:
     opened = next(((t["name"], t["result"]["question"]) for t in turn_tools if t["name"] in (BAITO_START, CAREER_START)
                    and isinstance(t["result"], dict) and isinstance(t["result"].get("question"), dict)), None)
     bubbles = reply.bubbles
+    started_ui = None
     if opened is not None:  # ハーネスの相談を始めたターン: 選択肢はハーネスの最初の質問のもの(バンクの原文。モデルに任せない)
         quick_replies = opened[1]["choices"]
         if opened[0] == CAREER_START and opened[1].get("bubbles"):
             # 正社員は吹き出しもハーネスのもの(読む字を時間の予算に数えているので。設計メモ §3.3)
             bubbles = list(opened[1]["bubbles"])
+            # 形 D は「始める」の 1 枚の Flex も付ける(task 246。start の結果の ui。コードが作り、モデルの出力からは取らない)
+            started_ui = career_ui.build(next((t["result"].get("ui") for t in turn_tools if t["name"] == CAREER_START
+                                               and isinstance(t["result"], dict) and t["result"].get("question")), None))
     greeting = state.get("greeting_entries")
     gave_up = msgs[-1].type == "ai" and msgs[-1].additional_kwargs.get("turn_limit")  # 呼び出しの上限で返した謝り
-    # プロフィールの進み具合の部品(バイトの相談のターンだけ。_baito_turn がコードで付ける。モデルの出力からは取らない)
+    # プロフィールの進み具合の部品(ハーネスの相談のターンだけ。_harness_turn がコードで付ける。モデルの出力からは取らない)
     progress = msgs[-1].additional_kwargs.get("progress") if msgs[-1].type == "ai" else None
+    progress = progress or started_ui
     if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
         # 挨拶のターン(挨拶で始まった会話の最初の返信。task 237): 入口のボタンはコードが決めたものにする。モデルが付けた
         # 入口(音声相談・履歴書・ゲーム)は使わない(やり終えた入口や、モデルが落とした入口を、そのまま出さない)。

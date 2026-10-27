@@ -1,4 +1,4 @@
-"""正社員のヒアリングのハーネス(dip_mcp/career)の回帰: モックの本人役 6 人 × 形 B と C(費用 0。実 API を呼ばない)。
+"""正社員のヒアリングのハーネス(dip_mcp/career)の回帰: モックの本人役 6 人 × 形 B、C、D(費用 0。実 API を呼ばない)。
 
     ./.venv/bin/python -m evals.career_sim                      # 表と合否。最後に「すべて合格」
     ./.venv/bin/python -m evals.career_sim --log evidence/career_sim   # 同じ。結果の JSON と会話ログを DIR にも書く
@@ -13,6 +13,9 @@
   (吹き出しが 80 字を超えた、もう答えた欄を聞かれた)だけ。5 分を超えるか、いらいらが 3 回で離脱
 - 読み取り(OracleLLM): 本人役が言いたかったことを、そのまま正解として返す。モックで確かめられるのはハーネスの動きだけ(§6.2)
 - 履歴書を先に送っている人(p5)は、resume.filled の欄を事実表の値で prefill する(1/5 の ScriptGood と同じ)
+- 形 D(task 246)は、そのターンの Flex(dip_mcp/career/ui.py が選び、line_runtime/career_ui.py が作る)の中の字も本人役が読む
+  (§6.1)。「始める」の 1 枚は「始める」を押す。Flex の字数(職歴カード 60 字、帯 24 字、プロフィールカード 80 字)も見る。
+  帯を切った形 D は run_one(band=False)
 """
 
 from __future__ import annotations
@@ -25,11 +28,13 @@ from collections import Counter
 from pathlib import Path
 
 from dip_mcp.career import harness as H
+from dip_mcp.career import ui as UI
 from evals.fulltime_hearing import judge as J
 from evals.fulltime_hearing.actor import SHORT_ANSWER, AIReply, Clock, fact_text
 from evals.fulltime_hearing.personas import hard_keys, load_personas
+from line_runtime import career_ui, progress_ui
 
-FORMS = ("B", "C")
+FORMS = ("B", "C", "D")
 MAX_STEPS = 60  # 1 会話の処理の上限(PRD §4-1 の M-loop)
 NOTHING = "特にない"
 # 合否の指標(どれも 0 で合格)。PRD v4.1 §4-1 と v3 §11.3 の置き換え
@@ -110,6 +115,8 @@ class MockActor:
     def answer(self, state, bank, out: dict, tired: bool) -> tuple[str, bool, dict]:
         cur = state.current
         buttons = out["choices"]
+        if cur["mode"] == "start":
+            return H.START_GO, True, {}
         if cur["mode"] == "review":
             return H.REVIEW_OK, True, {"review_ack": "all"}
         q = H.qmap(state, bank)[cur["qid"]]
@@ -166,24 +173,50 @@ def _ui_problems(out: dict, state) -> list[str]:
     return bad
 
 
-def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False) -> dict:
-    """1 つの会話。roundtrip=True は、毎ターンの前に状態を JSON にして戻す(dip が毎回保存した状態から始めるのと同じ)。"""
+def _flex_problems(part: dict | None, built: dict | None) -> list[str]:
+    """形 D の Flex の字数(§3.3、hearing-progress-ui.md §3)と、1 ターンに 0〜1 つ。"""
+    if not part:
+        return []
+    if not built or not built.get("flex"):
+        return [f"Flex を作れない: {part['kind']}"]
+    flex = built["flex"]
+    n = sum(len(t) for t in progress_ui.flex_texts(flex))
+    bad = [] if 0 < len(flex.get("altText", "")) <= 400 else ["altText"]
+    if part["kind"] == UI.CAREER_CARD and sum(H.chars(t) for t in career_ui.flex_lines(flex)) > UI.CAREER_CARD_MAX:
+        bad.append(f"職歴カード {n} 字")
+    if part["kind"] == UI.BAND and len(progress_ui.band_line(part["progress"])) > progress_ui.BAND_MAX:
+        bad.append("帯")
+    if part["kind"] == UI.CARD and progress_ui.flex_chars(flex) > progress_ui.CARD_MAX:
+        bad.append("プロフィールカード")
+    return bad
+
+
+def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band=True) -> dict:
+    """1 つの会話。roundtrip=True は、毎ターンの前に状態を JSON にして戻す(dip が毎回保存した状態から始めるのと同じ)。
+    band=False は帯を切った形 D(dip_mcp.career.ui.BAND_ENV と同じ)。"""
     bank = bank or H.BANK
     st = H.new_state(form=form, prefill=prefill(persona))
     llm, actor, clock = llm or OracleLLM(), MockActor(persona), Clock()
-    transcript, ui, presented = [], [], Counter()
+    transcript, ui, presented, parts = [], [], Counter(), []
     crash = loop = False
     reask = 0
+    mem = UI.fresh_mem(st, band)
     try:
         out = H.start(st, bank)
+        part = UI.start_payload(st)
+        UI.add_read(st, part)
         for step in range(MAX_STEPS + 1):
             if step == MAX_STEPS:
                 loop = True
                 break
+            built = career_ui.build(part)
+            flex = career_ui.flex_lines(built["flex"]) if built else []
+            parts.append(part and part["kind"])
             transcript.append(f"AI({st.phase}/{(st.current or {}).get('qid')}): " + out["reply"].replace("\n", " / ")
-                              + (f"  [ボタン] {' / '.join(out['choices'])}" if out["choices"] else ""))
-            ui += _ui_problems(out, st)
-            reply = AIReply(bubbles=out["bubbles"], buttons=out["choices"])
+                              + (f"  [ボタン] {' / '.join(out['choices'])}" if out["choices"] else "")
+                              + (f"  [{part['kind']}] {' / '.join(flex)}" if part else ""))
+            ui += _ui_problems(out, st) + _flex_problems(part, built)
+            reply = AIReply(bubbles=out["bubbles"], buttons=out["choices"], flex=flex)
             clock.read(reply)
             again = actor.asked_again(st, bank)
             if again:
@@ -201,7 +234,9 @@ def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False) -> d
             llm.meaning = meaning
             if roundtrip:
                 st = H.State.from_dict(json.loads(json.dumps(st.to_dict(), ensure_ascii=False)))
+            prev = UI.before(st)
             out = H.turn(st, text, bank, llm)
+            part, mem = UI.update(st, mem, prev, out)
             key = ((st.current or {}).get("qid"), (st.current or {}).get("mode"), st.turns)
             presented[key] += 1
             if presented[key] >= 5:
@@ -211,7 +246,7 @@ def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False) -> d
         crash = True
         transcript.append(f"CRASH: {type(e).__name__}: {e}")
     return {"persona": persona["id"], "form": form, "state": st, "clock": clock, "llm": llm, "transcript": transcript,
-            "ui": ui, "crash": crash, "loop": loop, "reask": reask}
+            "ui": ui, "crash": crash, "loop": loop, "reask": reask, "parts": parts}
 
 
 def metrics(r: dict, persona: dict) -> dict:
@@ -268,6 +303,7 @@ def metrics(r: dict, persona: dict) -> dict:
         "button_ratio": round(clock.presses / max(1, clock.presses + clock.typed_replies), 2),
         "facts": f"{sum(facts)}/{len(facts)}", "blank_cards": len(H.blank_cards(st)),
         "phase_turns": dict(st.phase_turns), "llm_calls": dict(r["llm"].calls),
+        "flex": dict(Counter(k for k in r["parts"] if k)),
     }
     return m
 

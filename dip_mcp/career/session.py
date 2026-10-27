@@ -14,6 +14,9 @@ dip_mcp/baito/session.py と同じ。
   「あとで」・本人がやめると言った・区分が正社員から外れた・新しい会話を始めたときも、そこまでの分(high)を保存して閉じる。
   続きから再開はしない(次の相談は、保存した分を聞かずに始め直す)
 
+- 形 D(LINE の Flex。task 246): 返信に ui(そのターンに付ける部品。dip_mcp.career.ui)を足す。LINE 側はこれを Flex にする
+  (line_runtime.career_ui)。ui の字を読む時間は、ハーネスの推定時間に足してから保存する
+
 状態は 1 人の dict の "career"(進めている間だけ)。「すべて消す」は 1 人の dict ごと消すので、これも career_profile も消える。
 """
 
@@ -31,6 +34,7 @@ from dip_mcp.baito.session import (
 )
 from dip_mcp.career import harness as H
 from dip_mcp.career import store
+from dip_mcp.career import ui as UI
 from dip_mcp.data import State
 
 KEY = "career"
@@ -71,12 +75,15 @@ def _load(state: State, line_user_id: str) -> H.State | None:
     return H.State.from_dict(d)
 
 
-def _save(state: State, line_user_id: str, h: H.State, track: str | None = None, saved_segment: str | None = None) -> None:
-    """ハーネスの状態を書く。track(始めたときの雇用区分)と saved_segment は始めるときだけ渡す(後は持ち越す)。"""
+def _save(state: State, line_user_id: str, h: H.State, track: str | None = None, saved_segment: str | None = None,
+          ui: dict | None = None) -> None:
+    """ハーネスの状態を書く。track(始めたときの雇用区分)と saved_segment は始めるときだけ渡す(後は持ち越す)。
+    ui は形 D の部品のための覚え(dip_mcp.career.ui の mem。渡さなければ持ち越す)。"""
     def apply(u):
         before = u.get(KEY) or {}
         u[KEY] = {"harness": h.to_dict(), "track": track if track is not None else before.get("track"),
-                  SAVED_SEGMENT: saved_segment if track is not None else before.get(SAVED_SEGMENT)}
+                  SAVED_SEGMENT: saved_segment if track is not None else before.get(SAVED_SEGMENT),
+                  "ui": ui if ui is not None else before.get("ui")}
     state.update(line_user_id, apply)
 
 
@@ -114,10 +121,14 @@ def start(state: State, line_user_id: str) -> dict:
         H.apply_saved(h, segment, items, ng_known=store.ng_known(prefs))
         prefilled = (["segment"] if h.segment != "unknown" else []) + sorted(items) + (["avoids"] * store.ng_known(prefs))
     out = H.start(h, H.BANK)
-    _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None, segment)
+    ui = UI.start_payload(h)  # 形 D の「始める」の 1 枚
+    if started:
+        UI.add_read(h, ui)
+    _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None, segment,
+          UI.fresh_mem(h) if started else None)
     pb = logic.counseling_playbook(CAREER_TRACK, "chat")  # 結果の後とやめた後はトークの AI が続けるので、決まりも渡す
     return {"started": started, "active": True, "question": _question(out), "prefilled": prefilled, "note": START_NOTE,
-            "rules": pb["rules"], "playbook": pb["playbook"]}
+            "rules": pb["rules"], "playbook": pb["playbook"]} | ({"ui": ui} if ui else {})
 
 
 def end(state: State, line_user_id: str) -> dict:
@@ -142,7 +153,7 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - {"active": False}: 相談をしていない(やめた合図・区分が外れたなら ended と saved)。トークの AI がこのターンを受け持つ
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
-    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする
+    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある
     - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目"""
     h = _load(state, line_user_id)
     if h is None:
@@ -153,6 +164,7 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     if left or (first and _exits(h, said)):
         return {"active": False, "ended": "track" if left else "exit", "saved": _finish(state, line_user_id, h)}
     llm = ReplayLLM(llm_outputs, H.render_prompt, lambda view: "say")
+    prev = UI.before(h)
     try:
         r = H.turn(h, said, H.BANK, llm)
     except NeedLLM as need:
@@ -163,14 +175,15 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         raise RuntimeError(f"正社員の相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
     if llm.used != len(llm.outputs):
         raise RuntimeError("正社員の相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
+    ui, mem = UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
     out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase, "question": r["qid"],
            "reply": r["reply"], "bubbles": list(r["bubbles"]), "choices": list(r["choices"]), "counted": r["counted"],
-           "llm_calls": llm.used}
+           "llm_calls": llm.used} | ({"ui": ui} if ui else {})
     if r["done"]:
         saved = _finish(state, line_user_id, h)
         return out | {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved,
                       "blank_cards": H.blank_cards(h)}
-    _save(state, line_user_id, h)
+    _save(state, line_user_id, h, ui=mem)
     return out
 
 

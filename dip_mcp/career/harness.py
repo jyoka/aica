@@ -13,8 +13,12 @@
 - 自由に打った文を正規表現で読まない: 文の中身は抽出(LLM)が読む。読めなかった答えは、ボタンで聞き直す(1 回だけ。数えない)。
   2 回目も読めなければ、本人の文を low のまま入れ、まとめで確かめる(聞き直さない)
 - 「あとで」: そこまでの状態(summary)を返して終える。保存は呼ぶ側(2b のタスク)
-- 形 B と C(§6.5): B は場面の二択と逆選択をせず、MID を直接聞き、進み具合と 1 行を見せない。C は全部。new_state(form=)、
+- 形 B、C、D(§6.5): B は場面の二択と逆選択をせず、MID を直接聞き、進み具合と 1 行を見せない。C は全部。new_state(form=)、
   無ければ環境変数 CAREER_HARNESS_FORM、既定は C
+- 形 D(task 246)は、C の問いに LINE の Flex を足した形。問いと予算は C と同じで、違うのは 3 つだけ: 最初に「始める」の 1 枚を
+  出す(mode=start)、職歴カードの「✓職歴」の 1 行を吹き出しに入れない(職歴カードの Flex が見せる)、まとめの行は吹き出しでなく
+  Flex に入れ、行の「直す」のボタン(FIX_TEXT の文)で直す欄を選べる(mode=fix)。何を Flex にするかと、その字を読む時間は
+  dip_mcp/career/ui.py が受け持つ
 """
 
 from __future__ import annotations
@@ -46,7 +50,8 @@ PHASE_CAP = {"icebreak": 2 + MAX_CLARIFY, "hard_filter": 5 + MAX_CLARIFY, "caree
              "scenario_game": 2, "reverse_pick": 1, "fill_gaps": 3}
 MAX_ASIDES = 3
 LLM_RETRIES = 1
-FORMS = ("B", "C")
+FORMS = ("B", "C", "D")
+UI_FORMS = ("D",)  # LINE の Flex を付ける形(問いは C と同じ)
 DEFAULT_FORM = "C"
 FORM_ENV = "CAREER_HARNESS_FORM"
 
@@ -75,6 +80,12 @@ INTENTS = ("answer", "pass", "dont_know", "later", "clarify", "aside", "show_res
 STATUSES = ("filled", "passed", "dont_know")
 
 START_LEAD = "職務経歴書の材料を3分で集めます。"
+START_GO = "始める"  # 形 D の「始める」の 1 枚のボタン(履歴書の写真から始めるボタンは、LINE 側が LIFF の画面へのリンクにする)
+REVIEW_LEAD_UI = "まとめです。違うところを押すか、送ってください。"  # 形 D(行は Flex に入れる)
+FIX_LEAD = "直します。"
+FIX_KEEP = "そのまま"  # 直す問いのボタン。前の値を変えずにまとめに戻る(押し間違えた「直す」をやめる)
+FIX_LIMIT_LEAD = "ここからは、違うところを文で送ってください。"
+CARD_UI_LABELS = {"role": "仕事", "scale": "規模", "result": "結果"}  # 形 D のカードとボタンの短い名前
 RETRY_TEXT = "うまく受け取れませんでした。ボタンか、ひとことでお願いします。"
 CLARIFY_TEXT = "答えにくければ、ひとことかボタンで大丈夫です。"
 REVIEW_LEAD = "まとめです。違うところだけ送ってください。"
@@ -161,6 +172,19 @@ def load_bank():
 
 
 BANK = load_bank()
+
+
+def bank_form(state):
+    """質問バンクの forms で見る形(D は C と同じ問い)。"""
+    return "C" if state.form in UI_FORMS else state.form
+
+
+def fix_text(slot):
+    """形 D のまとめの「直す」のボタンが送る文(本人の発言として出る)。"""
+    if slot.startswith("career"):
+        n, f = slot[len("career"):].split(".")
+        return f"職歴{n}の{CARD_UI_LABELS[f]}を直す"
+    return f"{SLOTS[slot]['label']}を直す"
 
 
 def default_form():
@@ -285,7 +309,7 @@ def questions(state, bank):
     """今の形で出せる問い(職歴カードは 1 枚ずつ広げる。1 枚目の 3 問、2 枚目の 3 問の順)。"""
     out, cards = [], []
     for q in bank:
-        if state.form not in q["forms"]:
+        if bank_form(state) not in q["forms"]:
             continue
         if q["phase"] == "career_cards":
             cards.append(q)
@@ -444,6 +468,11 @@ def _why_stop(state, bank):
 
 def choices_of(q):
     return list(q["choices"]) + list(q.get("escape", [])) + [LATER]
+
+
+def fix_choices(q):
+    """直す問いのボタン。「そのまま」で、前の値を変えずにまとめに戻れる。"""
+    return list(q["choices"]) + list(q.get("escape", [])) + [FIX_KEEP, LATER]
 
 
 def _present(state, q, mode="ask"):
@@ -665,6 +694,11 @@ def _disp(slot, e, width):
 
 
 def card_lines(state, width, keep_mid=True, keep_low=True, focus=False):
+    return [line for _, line in card_rows(state, width, keep_mid, keep_low, focus)]
+
+
+def card_rows(state, width, keep_mid=True, keep_low=True, focus=False):
+    """まとめのカードの行 [(行の欄, 行)]。欄は形 D の「直す」のボタンに使う(NG の行は欄を持たない)。"""
     pri = active_slots(state)
     lines = []
     for s, p in pri.items():
@@ -675,28 +709,58 @@ def card_lines(state, width, keep_mid=True, keep_low=True, focus=False):
             continue
         if p == MID and not keep_mid or p == LOW and (not keep_low or e is None):
             continue
-        lines.append(f"{SLOTS[s]['short']}: {_disp(s, e, width)}")
+        lines.append(([s], f"{SLOTS[s]['short']}: {_disp(s, e, width)}"))
     if not focus:
         for n in range(1, CARD_COUNT + 1):
             es = [state.slots.get(card_key(n, f)) for f in CARD_FIELDS]
             if all(e is None for e in es) or (es[0] is not None and es[0]["status"] != "filled" and all(e is None for e in es[1:])):
                 continue
-            lines.append(f"職歴{n}: " + " / ".join(_disp(card_key(n, f), e, width) for f, e in zip(CARD_FIELDS, es, strict=True)))
+            keys = [card_key(n, f) for f in CARD_FIELDS if not _card_skipped(state, card_key(n, f))]
+            lines.append((keys, f"職歴{n}: " + " / ".join(_disp(card_key(n, f), e, width)
+                                                          for f, e in zip(CARD_FIELDS, es, strict=True))))
         if state.user_ng:
-            lines.append("NG: " + "、".join(n if chars(n) <= width else n[:width] + "…" for n in state.user_ng))
-    return [x if chars(x) <= BUBBLE_MAX else x[:BUBBLE_MAX - 1] + "…" for x in lines]
+            lines.append(([], "NG: " + "、".join(n if chars(n) <= width else n[:width] + "…" for n in state.user_ng)))
+    return [(k, x if chars(x) <= BUBBLE_MAX else x[:BUBBLE_MAX - 1] + "…") for k, x in lines]
 
 
 def build_card(state):
     """まとめのカード。文(REVIEW_LEAD)とカードの中の字を合わせて CARD_MAX まで。長ければ値を短くし、LOW と MID の行を落とす。"""
     focus = state.review_rounds >= 1
-    lead = REVIEW_FOCUS_LEAD if focus else REVIEW_LEAD
+    lead = REVIEW_FOCUS_LEAD if focus else REVIEW_LEAD_UI if state.form in UI_FORMS else REVIEW_LEAD
     for width, mid, low in ((16, True, True), (12, True, True), (12, True, False), (8, True, False), (8, False, False),
                             (5, False, False)):
-        lines = card_lines(state, width, mid, low, focus)
+        rows = card_rows(state, width, mid, low, focus)
+        lines = [x for _, x in rows]
         if chars(lead) + sum(chars(x) for x in lines) <= CARD_MAX:
             break
-    return {"round": state.review_rounds + 1, "lead": lead, "lines": lines, "focus": focus, "shown": list(active_slots(state))}
+    return {"round": state.review_rounds + 1, "lead": lead, "lines": lines, "focus": focus, "shown": list(active_slots(state)),
+            "slots": [k for k, _ in rows]}
+
+
+def review_bubbles(state, card):
+    """まとめの吹き出し。形 B と C は行を 80 字までの吹き出しに分けて送り、D は文だけ(行は Flex。dip_mcp/career/ui.py)。"""
+    return [card["lead"]] if state.form in UI_FORMS else [card["lead"], *pack_bubbles(card["lines"])]
+
+
+def fix_targets(state):
+    """形 D のまとめと直している間に、「直す」のボタンが送る文 → 欄。今の segment で使う欄なら、前のまとめの Flex に残った
+    ボタンも受ける(直している間に別の「直す」を押した、前の回のまとめのボタンを押した)。何をしていたかをパスした職歴カードの
+    残りの欄は受けない。"""
+    if state.form not in UI_FORMS or (state.current or {}).get("mode") not in ("review", "fix"):
+        return {}
+    return {nfkc(fix_text(s)): s for s in active_slots(state) if not _card_skipped(state, s)}
+
+
+def can_fix(state):
+    """まだ直せるか。直した答えは review のターンに数えるので、まとめの「これでOK」の 1 ターンを残す(まとめを必ず確かめる)。"""
+    return state.turns < MAX_TURNS - 1
+
+
+def fix_question(state, bank, slot):
+    """欄を直すときに出す問い。直接聞くフェーズの問いを先に(場面の二択しか無い欄は、その問い)。"""
+    qs = [q for q in questions(state, bank) if slot in q["targets"]]
+    qs.sort(key=lambda q: q["phase"] not in DIRECT)
+    return qs[0] if qs else None
 
 
 def pack_bubbles(lines, limit=BUBBLE_MAX):
@@ -818,7 +882,9 @@ def start(state, bank=BANK):
     """最初の質問(ターンに数えない)。何回呼んでも同じものを返す。読む時間は 1 回目だけ数える。"""
     _init_volatile(state)
     first = state.current is None
-    if first:
+    if first and state.form in UI_FORMS:  # 形 D: 先に「始める」の 1 枚(最初の問いは「始める」の後)
+        state.current = {"qid": "start", "mode": "start", "choices": [START_GO, LATER]}
+    elif first:
         advance(state, bank)
     out = _represent(state, bank, counted=False, lead=START_LEAD if state.turns == 0 else None, read=False)
     if not first:
@@ -921,9 +987,27 @@ def _turn(state, user_text, bank, llm):
     cur = state.current
     q = qmap(state, bank).get(cur["qid"])
     button = match_button(state, text)
-    state.seconds += BUTTON_SECONDS if button else type_seconds(text)
+    fix = fix_targets(state).get(nfkc(text))
+    state.seconds += BUTTON_SECONDS if button or fix else type_seconds(text)
     if button == LATER:
         return _close(state, "later")
+    if cur["mode"] == "start":  # 形 D の「始める」: 最初の問いを出す。打った文は、最初の問いへの答えとして読む
+        advance(state, bank)
+        if button is not None:
+            ev(state, "started")
+            return _represent(state, bank, counted=False)
+        cur = state.current
+        q = qmap(state, bank).get(cur["qid"])
+        button = match_button(state, text)
+    if fix is not None:  # 形 D のまとめの「直す」: その欄の問いを出す(数えない)
+        fq = fix_question(state, bank, fix)
+        if fq is not None and can_fix(state):
+            state.current = {"qid": fq["id"], "mode": "fix", "slot": fix, "choices": fix_choices(fq)}
+            ev(state, "fix", slot=fix, qid=fq["id"])
+            return _represent(state, bank, counted=False, lead=FIX_LEAD)
+        ev(state, "fix_refused", slot=fix)  # ターンの予算が尽きた: まとめを出し直す(文で直すのは受ける)
+        _back_to_review(state)
+        return _represent(state, bank, counted=False, lead=FIX_LIMIT_LEAD)
     ext = None
     if button is None:
         ext = _call_llm(llm.extract, extract_payload(state, bank, text), validate_extract, state, "extract")
@@ -934,6 +1018,15 @@ def _turn(state, user_text, bank, llm):
         return _close(state, "later")
     if intent == "aside":
         return _aside(state, bank, llm)
+    if cur["mode"] == "fix":
+        _count(state, "review")
+        if button == FIX_KEEP:  # 直すのをやめる: 値も確かさも変えずにまとめに戻る
+            ev(state, "fix_kept", slot=cur["slot"], by="keep")
+            _back_to_review(state)
+            return _say(state, bank, llm)
+        _apply_fix(state, q, cur["slot"], button, ext, intent, text)
+        _back_to_review(state)  # 直した値でまとめを作り直す(まとめの回数は増やさない。can_fix で 1 ターンを残してある)
+        return _say(state, bank, llm)
     _count(state, q["phase"] if q is not None and cur["mode"] != "review" else None)  # 問いのフェーズに数える
     if cur["mode"] == "review":
         if button is None and ext is None:
@@ -982,15 +1075,51 @@ def _turn(state, user_text, bank, llm):
         _flag(state, "show_result")
     phase_before = state.phase
     advance(state, bank)
-    if state.form == "C":
+    if state.form != "B":
         _progress(state, bank, before, phase_before)
     return _say(state, bank, llm)
 
 
+def _back_to_review(state):
+    state.phase = "review"
+    state.last_card = build_card(state)
+    state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK, LATER]}
+
+
+def _apply_fix(state, q, slot, button, ext, intent, text):
+    """形 D のまとめで選んだ欄への答え。前の値を外してから当て、何も入らなければ前の値に戻す。入った値は、本人が直接直したので
+    high(場面の二択しか無い欄も)。パスと「覚えていない」は、前の値が本人の打った値(high)でも、問いのフェーズによらず空欄
+    (条件の欄は「こだわりなし」)にする。本人が「直す」を選んでから空にしたので(推し量った前の値を残すと、「これでOK」で
+    確かめたことになる)。値を残して戻りたいときは「そのまま」(FIX_KEEP)を押す。_turn がここを呼ばずにまとめに戻す。"""
+    old = state.slots.pop(slot, None)
+    escape = button if button is not None and button in q.get("escape", []) else \
+        (DONT_KNOW if intent == "dont_know" and DONT_KNOW in q.get("escape", []) else PASS) \
+        if button is None and intent in ("pass", "dont_know") else None
+    if escape == DONT_KNOW:
+        state.slots[slot] = entry("dont_know", DONT_KNOW, frm=f"fix:{q['id']}")
+    elif escape is not None:
+        state.slots[slot] = entry("passed", PASS, NOPREF if slot in CONDITION_SLOTS else None, frm=f"fix:{q['id']}")
+    elif button is not None:
+        _apply_choice(state, q, button)
+    elif ext is not None:
+        _apply_text(state, q, ext, text, retry=False)
+        if state.slots.get(slot) is None and intent == "answer" and nfkc(text):
+            state.slots[slot] = entry("filled", nfkc(text), frm=f"fix:{q['id']}")
+    e = state.slots.get(slot)
+    if e is None:
+        if old is not None:
+            state.slots[slot] = old
+        ev(state, "fix_kept", slot=slot)
+        return
+    e["confidence"], e["from"] = "high", f"fix:{q['id']}"
+    ev(state, "fixed", slot=slot, status=e["status"])
+
+
 def _progress(state, bank, before, phase_before):
-    """形 C: 職歴カードの欄が埋まったら、本人の言葉の 1 行と「n/3」。フェーズが変わったら「あと N 問」(§5.1)。"""
+    """形 C: 職歴カードの欄が埋まったら、本人の言葉の 1 行と「n/3」。フェーズが変わったら「あと N 問」(§5.1)。
+    形 D は「あと N 問」だけ(職歴カードは Flex が見せる)。"""
     out = []
-    for n in range(1, CARD_COUNT + 1):
+    for n in range(1, CARD_COUNT + 1) if state.form not in UI_FORMS else ():
         for f in CARD_FIELDS:
             k = card_key(n, f)
             e = state.slots.get(k)
@@ -1023,7 +1152,7 @@ def _aside(state, bank, llm):
     state.aside_count += 1
     # MAX_ASIDES を超えた分は数える。ただし review のための 2 ターンと review の中では数えない(review を必ず 1 回出すため)
     counted = state.aside_count > MAX_ASIDES and state.turns < MAX_TURNS - REVIEW_RESERVE \
-        and state.current["mode"] not in ("review", "result")
+        and state.current["mode"] not in ("review", "result", "fix")
     if counted:
         _count(state, "aside")
     if state.current["mode"] in ("review", "result"):
@@ -1053,8 +1182,11 @@ def _represent(state, bank, counted, lead=None, read=True):
     cur = state.current or {}
     if cur.get("mode") == "review":
         card = state.last_card or build_card(state)
-        bubbles = [(lead + "\n" if lead else "") + card["lead"], *pack_bubbles(card["lines"])]
+        bubbles = review_bubbles(state, card)
+        bubbles[0] = (lead + "\n" if lead else "") + bubbles[0]
         return _out(state, bubbles, cur["choices"], counted=counted, card=card["lines"], read=read)
+    if cur.get("mode") == "start":
+        return _out(state, [lead or START_LEAD], cur["choices"], counted=counted, read=read)
     if cur.get("mode") in ("result", "closed"):
         return _stored(state)
     v = view(state, bank)
@@ -1066,7 +1198,7 @@ def _say(state, bank, llm, counted=True, aside=False):
     cur = state.current
     if cur["mode"] == "review":
         card = state.last_card
-        return _out(state, [card["lead"], *pack_bubbles(card["lines"])], cur["choices"], counted=counted, card=card["lines"])
+        return _out(state, review_bubbles(state, card), cur["choices"], counted=counted, card=card["lines"])
     if cur["mode"] == "result":
         return _finish(state, counted)
     v = view(state, bank, aside=aside)

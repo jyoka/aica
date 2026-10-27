@@ -437,6 +437,19 @@ async def arcade_static(name: str):
     return FileResponse(ARCADE / name, headers={"Cache-Control": "no-cache"})
 
 
+# 正社員のヒアリングの職歴カードの「完成」のスタンプ(line_runtime/career_ui.py。アーケードと同じドット絵の色)。
+# scripts/career_stamp.py が作る。LINE の Flex は AICA_PUBLIC_URL を前に付けて読む
+CAREER_STATIC = {"stamp.png"}
+
+
+@app.get("/static/career/{name}")
+async def career_static(name: str):
+    """正社員のヒアリングの絵。"""
+    if name not in CAREER_STATIC:
+        raise HTTPException(404)
+    return FileResponse(STATIC / "career" / name, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/liff/arcade")
 async def liff_arcade():
     """レジュメ・アーケードのハブ(ゲームを選ぶ画面)。"""
