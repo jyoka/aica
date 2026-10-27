@@ -5,6 +5,11 @@
   新しい相談は入口のカード(quick_pick。設計メモ docs/design/baito-quick-start.md §4、task 265)から始める。
   その AI は 1 文で声をかけるだけで、問いと選択肢はカード(question の card)とボタンで出る。
   進めている相談(今の State を持つもの)は、今聞いている質問から続ける
+- 近くで探す(task 266。設計メモ §6): ハーネスが年齢・エリア・時間帯を聞き、条件(未成年なら minor=True)を決める。
+  ここ(near_search)がその条件で dip の recommend(アルバイト・パートの求人)を呼び、0 件なら relax の 1 つも渡す。
+  求人は turn の jobs(LINE 側が求人のカルーセルにする)。求人を出した後の、ボタン([もっと絞る] [ちがう] など)でない発言
+  (カルーセルの「詳しく見る」「保存」も)は、相談を閉じてトークの AI に渡す(年齢の訂正・闇バイトの言葉・窓口の案内の後の
+  「続ける」は、ハーネスが受ける)
 - 進める: その後の本人の発言は、LINE 側のランタイムが baito_turn に渡す(トークの AI は呼ばない)。
   ハーネスの turn()(抽出 → 判断 → 生成。dip_mcp/baito/harness.py)を、保存した状態から毎回やり直す。
   turn() がモデルを呼ぶところで、まだ受け取っていない出力があれば、status=llm でそのプロンプトを返す。
@@ -134,6 +139,10 @@ def _exits(h: H.State, text: str) -> bool:
     希死念慮・自傷の言葉があれば、やめる頼みを含んでいてもハーネスに渡す(「もう消えたい。求人見せて」に窓口を案内する)。"""
     if H.crisis_hit(text) or (h.current and text in h.current.get("choices", [])):
         return False
+    if h.phase == H.NEAR_JOBS:  # 求人を出した後のボタンでない発言(カルーセルの「詳しく見る」など)は、トークの AI が受ける。
+        # ただし、年齢に触れた発言(says_age)、闇バイトの言葉、窓口の案内の後の「続ける」は、ハーネスが受ける
+        return not (H.says_age(text) or H.DANGER_RE.search(H.nfkc(text))
+                    or ("crisis_shown" in h.flags and H.wants_resume(text)))
     return text in EXIT_WORDS or (h.phase not in ("review", "result") and not h.blocked
                                   and bool(EXIT_REQUEST.search(text)) and not EXIT_HOLD.search(text))
 
@@ -190,7 +199,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - status=result: 結果(reply)。中学生以下で止めた結果でなければ相談は閉じた(saved は保存した項目)
     reply と result には progress(プロフィールの進み具合。dip_mcp.baito.progress.update。出さないターンは None)が付く。
     LINE 側は、これから帯・プロフィールカード・完成の Flex を 0〜1 つ選ぶ(line_runtime.progress_ui)。
-    入口のカードと職種の結果のターン(task 265)には card(ハーネスの view の quick)が付く。LINE 側がカードに描く"""
+    入口のカードと職種の結果のターン(task 265)には card(ハーネスの view の quick)が付く。LINE 側がカードに描く。
+    「近くで探す」の求人のターン(task 266)には jobs(dip の求人カード。near_search)が付く。LINE 側が求人のカルーセルにする"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
@@ -202,7 +212,7 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     prev = P.before(h)
     llm = ReplayLLM(llm_outputs)
     try:
-        r = H.turn(h, said, H.BANK, llm)
+        r = H.turn(h, said, H.BANK, llm, search=lambda cond: near_search(state, line_user_id, cond))
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("バイトの相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
@@ -217,6 +227,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
            "choices": list(r["view"].get("choices", [])), "llm_calls": llm.used, "progress": progress}
     if r["view"].get("quick"):
         out["card"] = r["view"]["quick"]
+    if "jobs" in r["view"]:
+        out["jobs"] = r["view"]["jobs"]
     if r["done"] and h.blocked:  # 中学生以下: 閉じずに、その後の発言もハーネスが受ける(年齢の訂正・やり直し)
         _save(state, line_user_id, h, progress=mem)
         return out | {"blocked": h.blocked, "choices": []}
@@ -224,6 +236,24 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         return out | {"choices": list(RESULT_CHOICES), "saved": _finish(state, line_user_id, h)}
     _save(state, line_user_id, h, progress=mem)
     return out
+
+
+def near_search(state: State, line_user_id: str, cond: dict) -> dict:
+    """「近くで探す」の求人(設計メモ §6.4)。ハーネスが決めた条件(cond。H.near_search。未成年なら minor=True)で、
+    アルバイト・パートの求人を dip の recommend で探す。0 件なら relax の、いちばん件数の増える 1 つ(options の先頭)も返す
+    (relax は minor を外す候補にしない)。中学生以下で止めた印があれば探さない(job_block と同じ)。"""
+    if logic.MINOR_ARG not in cond:  # 未成年かどうかを渡し忘れた条件では探さない(ハーネスは必ず付ける)
+        raise ValueError(f"near_search: {logic.MINOR_ARG} がありません")
+    if job_block(state, line_user_id):
+        return {"total": 0, "jobs": [], "relax": None}
+    args = dict(cond, employment_type=BAITO_TRACK)
+    found = logic.recommend(state, line_user_id, **args)
+    if "error" in found:
+        raise ValueError(f"near_search: {found['error']}")
+    relax = None
+    if not found["total"]:
+        relax = next(iter(logic.relax(state, line_user_id, **args).get("options") or []), None)
+    return {"total": found["total"], "jobs": found["jobs"], "relax": relax}
 
 
 def _finish(state: State, line_user_id: str, h: H.State, partial: bool = False) -> list[str]:
@@ -274,10 +304,12 @@ def _label(h: H.State, slot: str) -> str | None:
 def result_preferences(h: H.State, partial: bool = False) -> dict[str, str]:
     """条件のうち、プロフィールの項目(dip_mcp.logic.PREFERENCE_KEYS)に入るもの。確かめた値(high)だけ
     (結果の時点で推測のまま残った HARD は保存しない)。NG は、未成年のルールの NG も避けたいことに入れる
-    (トークの AI が後で求人を探すときに、深夜と重い作業を外すため)。partial(途中でやめた)でも同じ決まり。"""
+    (トークの AI が後で求人を探すときに、深夜と重い作業を外すため)。partial(途中でやめた)でも同じ決まり。
+    エリアは「近くで探す」でボタンで選んだもの(task 266)。"""
     time = [x for x in (_label(h, s) for s in ("time_slots", "available_hours", "weekday_or_weekend")) if x]
     wage = h.slots.get("hourly_wage_min")
     out = {"time_band": "、".join(time), "days_per_week": _label(h, "days_per_week"),
+           "area": H.NEAR_AREAS.get(h.near.get("area")),  # 「近くで探す」のエリアのボタン(どこでもは入れない。task 266)
            "purpose": _label(h, "purpose"), "avoids": "、".join(_ng(h)),
            "min_wage": str(wage["value"]) if wage and wage["confidence"] == "high" and type(wage["value"]) is int else None}
     return {k: v for k, v in out.items() if v}
