@@ -32,6 +32,7 @@ from evals.fulltime_hearing.forms import (
     SALARY,
     SCALE,
     FormA,
+    FormHarness,
     ScriptBad,
     ScriptGood,
     a_reply,
@@ -39,7 +40,8 @@ from evals.fulltime_hearing.forms import (
     declined,
 )
 from evals.fulltime_hearing.personas import hard_keys, load_personas, select
-from evals.fulltime_hearing.report import improved, report, summarize, verdicts
+from evals.fulltime_hearing.report import combine, improved, report, summarize, verdicts
+from evals.fulltime_hearing.report import main as report_main
 from evals.fulltime_hearing.run import main, parse_args
 from evals.scenarios import load_resume
 
@@ -77,7 +79,10 @@ class ScriptedActor:
             return ActorTurn(button=want if want in buttons else "パス", text="")
         if "直すところ" in last:
             return ActorTurn(button=buttons[0], text="")
-        asked = "\n".join(x for x in last.splitlines() if not x.startswith("[ボタン] "))
+        if "始める" in buttons:  # 形 D の「始める」の 1 枚
+            return ActorTurn(button="始める", text="")
+        # 問いは吹き出しから読む(形 D の Flex の字(カード)は、問いの手がかりにしない)
+        asked = "\n".join(x for x in last.splitlines() if not x.startswith(("[ボタン] ", "[カード] ")))
         key = next((k for w, k in TOPICS if w in asked), None)
         if key and key.startswith("career"):
             self.card = key[6]
@@ -586,8 +591,7 @@ def test_command_needs_a_limit_and_known_forms():
         parse_args(["--form", "A", "--limit-usd", "1", "--max-turns", "0"])
     with pytest.raises(SystemExit):
         parse_args(["--form", "A", "--limit-usd", "1", "--same-samples", "0"])
-    with pytest.raises(SystemExit, match="2/5"):
-        check_forms(["B"])
+    check_forms(["A", "B", "C", "D", "D-noband"])  # 形 B〜D は 5/5 のタスクで実 LLM につないだ
     with pytest.raises(SystemExit, match="知らない形"):
         check_forms(["Z"])
 
@@ -680,3 +684,96 @@ def test_form_a_through_the_real_runtime_and_dip(tmp_path, monkeypatch):
     assert r["captured"]["area"]["text"] == "福岡市内"
     # 先に送った履歴書は、形 A の事実の取り出しにも渡す(B〜D が high として入れるのと同じ扱い)
     assert "本人が先に送った履歴書" in client.extract_input and "みほんホテル株式会社" in client.extract_input
+
+
+# ----------------------------- 形 B、C、D: ハーネス + 実 LLM(ここでは台本のモデル) -----------------------------
+
+
+def harness_model(calls: list | None = None, fail: set | None = None):
+    """ハーネスのモデルの台本(line_runtime.career_chat.default_llm と同じ形)。読み取りは本人の発言をそのまま今の問いの欄に、
+    生成は次に聞く問いの文をそのまま返す。fail に入れた段(stage)は、失敗(例外)にする。"""
+    async def call(stage, system, messages):
+        if calls is not None:
+            calls.append((stage, messages))
+        if stage in (fail or set()):
+            raise RuntimeError("API が落ちた")
+        if stage == "say":
+            return {"reply": json.loads(re.search(r"次に聞くこと\(JSON\): (.*)", system).group(1))["text"]}, {}
+        targets = json.loads(re.search(r"この質問が埋めたい欄: (.*)", system).group(1))
+        said = re.search(r"本人の発言: (.*)", system).group(1).strip()
+        intent = {"特にない": "pass", "パス": "pass", "覚えていない": "dont_know"}.get(said, "answer")
+        ups = []
+        if intent == "answer" and targets:
+            m = re.match(r"(\d+)(\D*)", said)
+            ups = [{"slot": targets[0], "text": said, "number": float(m.group(1)) if m else None,
+                    "unit": (m.group(2) or None) if m else None, "choice": None}]
+        return {"slot_updates": ups, "ng_updates": [], "segment": None, "intent": intent,
+                "review_ack": None if ups else "all"}, {}
+    return call
+
+
+@pytest.mark.parametrize("form", ["B", "C", "D"])
+def test_harness_forms_reach_the_result_and_report_the_end_state(form):
+    """形 B〜D を、ハーネスと台本のモデルで回す。result に着いた会話は完了で、取れた値はハーネスの終わりの状態。
+    聞き直しと作った数字は 0。形 D だけ Flex の字を本人役が読む。"""
+    persona = PERSONAS["p1-sales"]
+    calls: list = []
+    form_ = FormHarness(persona, form, call=harness_model(calls))
+    r, _ = converse(form_, persona)
+    assert r["metrics"]["completed"] and not r["extracted"]
+    assert set(hard_keys(persona)) <= set(r["captured"]) and r["gates"]["wasted"] == 0
+    assert r["gates"]["made_up_numbers"] == [] and r["gates"]["hard_empty"] == []
+    assert form_.st.result is not None and "## 職務経歴" in form_.saved_texts()[-1]  # 下書きも保存した文に入る
+    flex = [t for row in r["turns"] for t in row["reply"]["flex"]]
+    assert bool(flex) == (form == "D")
+    assert {s for s, _ in calls} == {"extract", "say"}
+    # 生成には直前のやりとりを渡す(ランタイムの _harness_turn と同じ)。読み取りは今の発言だけ
+    assert all(len(m) == 1 for s, m in calls if s == "extract")
+    first_say = next(m for s, m in calls if s == "say")
+    assert first_say[0]["role"] == "user" and first_say[1]["role"] == "assistant"  # 最初の問いも履歴に入る
+
+
+def test_harness_form_resume_persona_starts_with_the_resume_fields():
+    persona = PERSONAS["p5-resume"]
+    f = FormHarness(persona, "C", call=harness_model())
+    assert f.st.has_resume and all(f.st.slots[k]["from"] == "resume" for k in persona["resume"]["filled"])
+
+
+def test_harness_form_counts_failed_model_calls_and_still_answers():
+    """モデルが落ちても(ランタイムと同じく失敗の印を渡す)、ハーネスが質問の原文で返し、会話は止まらない。"""
+    persona = PERSONAS["p1-sales"]
+    f = FormHarness(persona, "C", call=harness_model(fail={"say"}))
+    asyncio.run(f.start())
+    r = asyncio.run(f.send("同じ仕事で上へ", True))
+    assert r.bubbles and not r.done and f.st.turns == 1
+
+
+def test_harness_form_later_is_leaving_not_completing():
+    persona = PERSONAS["p1-sales"]
+    f = FormHarness(persona, "C", call=harness_model())
+    asyncio.run(f.start())
+    r = asyncio.run(f.send("あとで", True))
+    assert not r.done and r.closed == "declined"
+
+
+def test_combine_reports_from_several_runs_and_excludes_by_file(tmp_path):
+    """別々に回した実行(A と B〜D など)を 1 つの報告にまとめる。外す会話はファイルの番号で決める(回し直した会話を外さない)。"""
+    def doc(form, reps, cost):
+        runs = [_run(form, p) | {"persona": p, "rep": r} for r in range(reps) for p in ("p1", "p2")]
+        return {"started_at": "2026-10-27 10:00", "spent_usd": cost, "ledger_total_usd": cost, "runs": runs,
+                "config": {"forms": [form], "personas": ["p1", "p2"], "repeat": reps, "sim_model": "s", "judge_model": "j",
+                           "same_samples": 2, "ledger": "x.jsonl", "limit_usd": 10}}
+    first, redo = doc("B", 2, 1.0), doc("B", 1, 0.5)
+    merged = combine([first, redo], {"1:B/p1#2"})
+    p1 = [r for r in merged["runs"] if r["persona"] == "p1"]
+    assert len(p1) == 2 and [r["rep"] for r in p1] == [0, 1]  # 1 つ目の 2 回目を外し、回し直した分は残す。回は振り直す
+    assert merged["spent_usd"] == 1.5 and merged["config"]["forms"] == ["B"]
+    with pytest.raises(ValueError, match="2:B/p1#2"):
+        combine([first, redo], {"2:B/p1#2"})  # 回し直した方には 2 回目が無い: 打ち間違いとして止める
+    paths = []
+    for i, d in enumerate((first, redo)):
+        paths.append(tmp_path / f"r{i}.json")
+        paths[-1].write_text(json.dumps(d, ensure_ascii=False))
+    out = tmp_path / "x.md"
+    assert report_main([str(paths[0]), str(paths[1]), "--exclude", "1:B/p1#2", "--out", str(out)]) == 0
+    assert "| B | 5 |" in out.read_text()

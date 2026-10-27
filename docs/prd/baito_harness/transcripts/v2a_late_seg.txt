@@ -1,0 +1,48 @@
+### v2a / late_seg (主婦・最初は属性を言わない（5ターン目に判明）, true segment=homemaker)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 生活費・家計の足し
+     slots: purpose: ∅→living_cost(low)
+T02 [icebreak] q_segment: 今のあなたに近いのは？  ['学生', '家のこと中心', '本業あり副業探し']
+     → うーん、いろいろかな
+T03 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週3〜4日
+     slots: days_per_week: ∅→3-4(high)
+T04 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 昼
+     slots: time_slots: ∅→daytime(high)
+T05 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 家から徒歩・自転車（平日の昼は子どものお迎えがあって…）
+     slots: commute: ∅→walk_bike(high)
+     segment: unknown→homemaker
+T06 [hard_filter] hf_hours: 働ける時間はどれが近い？  ['9〜14時くらい', '10〜16時くらい', '夕方以降（家族が帰ってから）', '日によってバラバラ']
+     → 10〜16時くらい
+     slots: available_hours: ∅→10-16(high)
+T07 [hard_filter] hf_leave: 急なお休み（子どもの体調など）、どのくらいありそう？  ['けっこうある', 'たまにある', 'ほぼない']
+     → たまにある
+     slots: sudden_leave: ∅→sometimes(high)
+T08 [scenario_game] sc_hm_money: バイト代は？  ['家計の足し', 'おこづかい']
+     → おこづかい
+     slots: purpose: living_cost→pocket_money(low); fuyou: ∅→within(low)
+T09 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → 今すぐ消えたい
+     slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
+T10 [reverse_pick] rp_homemaker: この3つ、一番やりたくないのは？  ['スーパーのレジ', '工場の軽作業（立ち仕事）', 'データ入力（在宅）']
+     → スーパーのレジ
+     NG+: ['レジ']
+T11 [fill_gaps] fg_remote: 在宅の仕事も気になる？  ['在宅がいい', '外がいい', 'どちらでも']
+     → どちらでも
+     slots: remote: ∅→either(high)
+T12 [fill_gaps] fg_wage: 時給はいくら以上がいい？  ['1,000円台でOK', '1,200円以上', '1,500円以上']
+     → 1,000円台でOK
+     slots: hourly_wage_min: ∅→1000(high)
+T13 [fill_gaps] fg_shift: 1回何時間くらい働きたい？  ['2〜4時間', '4〜6時間', '6時間以上']
+     → 6時間以上
+     slots: shift_length: ∅→6h+(high)
+T14 [fill_gaps] fg_physical: 体力仕事は？  ['どんとこい', '少しなら', '座り仕事がいい']
+     → どんとこい
+     slots: physical: ∅→heavy_ok(high)
+T15 [fill_gaps] fg_fuyou: 扶養の範囲内で働きたい？  ['はい、扶養内で', '気にしない', 'わからない']
+     → わからない
+     slots: fuyou: within→unknown_needs_help(high)
+== END phase=result turns=15 segment=homemaker NG=['レジ']
+   final slots: purpose=pocket_money(low); days_per_week=3-4(high); time_slots=daytime(high); commute=walk_bike(high); available_hours=10-16(high); sudden_leave=sometimes(high); fuyou=unknown_needs_help(high); customer_facing=avoid(low); pace=calm(low); remote=either(high); hourly_wage_min=1000(high); shift_length=6h+(high); physical=heavy_ok(high)

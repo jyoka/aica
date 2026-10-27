@@ -6,7 +6,8 @@
 
 - A: 今の正社員の相談(LINE 側のランタイムをそのまま。状態を持たないので captured は None)
 - script-good / script-bad: 台本の良い AI と悪い AI(実 API を使わない。本人役とジャッジだけが LLM)
-- B、C は 2/5 のタスク(ハーネス)、D は 3/5 のタスク(UI)が FORMS に足す。まだ無い形を選ぶと、費用を使う前に止める。
+- B、C、D、D-noband: ハーネス(dip_mcp/career)を実 LLM(トークと同じ line_runtime.career_chat のモデル)でつないだもの
+  (FormHarness。5/5 のタスク)。D-noband は帯を切った形 D(CAREER_UI_BAND=off)。モックでの回帰は evals/career_sim.py(費用 0)。
 """
 
 from __future__ import annotations
@@ -17,10 +18,11 @@ import re
 from evals.fulltime_hearing.actor import AIReply, Clock, fact_text
 from evals.fulltime_hearing.personas import COMMON_HARD, SEGMENT_HARD, label
 
-PLANNED = {"B": "2/5 のタスク(ハーネス)", "C": "2/5 のタスク(ハーネス)", "D": "3/5 のタスク(UI)"}
+PLANNED: dict[str, str] = {}  # これから足す形(名前 -> 足すタスク)。今は無い
 TARGET_SECONDS = {True: 180.0, False: 300.0}  # 目標時間(履歴書あり / なし。設計メモ §3.3)
 REVIEW_RESERVE = 90.0  # 質問を止める時刻 = 目標時間 - これ(まとめ 2 回分の 70 秒とゆとり 20 秒)
 A_USER = "sim-new"  # 形 A の本人(未連携の新規。会話ごとに dip の状態を戻す)
+START_SAID = "正社員の仕事を探したい"  # 形 B〜D の会話の頭に置く、相談を始めた本人の発言(生成に渡す履歴だけ。本人役は打たない)
 DECLINES = {"今はいい", "今はいいです", "いまはいい", "いまはいいです"}  # 形 A の断り(common_chat.md の「今はいい」)
 
 
@@ -283,6 +285,100 @@ class ScriptBad:
         return self.n_wasted
 
 
+# ----------------------------- 形 B、C、D: ハーネス + 実 LLM -----------------------------
+
+
+class FormHarness:
+    """ハーネス(dip_mcp/career)を、トークと同じモデルの呼び方でつないだ形(B、C、D)。
+    1 ターンは dip_mcp.career.session.turn と同じく、ハーネスがモデルの出力を求めたら(NeedLLM)ターンの始めの状態に戻し、
+    モデルを呼んで、それまでの出力を全部渡してやり直す。モデルの呼び方とメッセージは LINE 側のランタイム(_harness_turn)と同じ
+    (line_runtime.career_chat.default_llm と baito_chat.messages_for。生成には直前のやりとりを渡す)。
+    dip の保存とトークの AI は通らない(相談の外のことなので)。履歴書を先に送っている人は、モックの回帰(evals/career_sim.py)と
+    同じく、履歴書の欄を事実表の値で prefill する(「履歴書の写真から始める」のつなぎはまだ無い。設計メモ §8)。
+    形 D は、ハーネスが選んだ部品(dip_mcp/career/ui.py)を LINE の Flex にして(line_runtime/career_ui.py)、中の字を本人役が読む。
+    result に着いたら完了。「あとで」で閉じたら、本人が断った離脱に数える。
+    取れた値は、モックの回帰と同じく終わりの状態(harness.captured)。保存した文は、その文と、職歴カードから作った下書き。"""
+
+    def __init__(self, persona: dict, form: str, band: bool = True, call=None):
+        from dip_mcp.career import harness as H
+        from dip_mcp.career import ui as UI
+        from evals.career_sim import prefill
+        from line_runtime import career_chat
+
+        self.H, self.UI = H, UI
+        self.persona, self.call = persona, call or career_chat.default_llm()
+        self.st = H.new_state(form=form, prefill=prefill(persona))
+        self.mem = UI.fresh_mem(self.st, band)
+        # 画面に出たやりとり(生成に渡す直前のやりとり)。トークでは、相談を始めた本人の発言が最初の返信の前にある
+        # (無いと baito_chat.recent が assistant で始まる最初の問いを落とす)
+        self.convo: list[dict] = [{"role": "user", "content": START_SAID}]
+        self.llm_calls = 0
+
+    def _reply(self, out: dict, part: dict | None) -> AIReply:
+        from line_runtime import baito_chat, career_ui
+
+        built = career_ui.build(part)
+        flex = career_ui.flex_lines(built["flex"]) if built else []
+        baito_chat._append(self.convo, "assistant", "\n".join(out["bubbles"]))
+        later = bool(out["done"] and self.st.closed)
+        return AIReply(bubbles=list(out["bubbles"]), buttons=list(out["choices"]), flex=flex,
+                       done=bool(out["done"]) and not later, closed="declined" if later else "")
+
+    async def start(self) -> AIReply:
+        out = self.H.start(self.st, self.H.BANK)
+        part = self.UI.start_payload(self.st)
+        self.UI.add_read(self.st, part)
+        return self._reply(out, part)
+
+    async def send(self, text: str, pressed: bool) -> AIReply:
+        from dip_mcp.baito.session import NeedLLM, ReplayLLM
+        from line_runtime import baito_chat
+
+        convo = baito_chat.recent(self.convo)
+        outputs: list[dict] = []
+        snap = self.st.to_dict()
+        while True:
+            st = self.H.State.from_dict(snap)  # ターンの始めの状態からやり直す(dip が保存した状態から毎回始めるのと同じ)
+            replay = ReplayLLM(outputs, self.H.render_prompt, lambda view: "say")
+            prev = self.UI.before(st)
+            try:
+                out = self.H.turn(st, text, self.H.BANK, replay)
+                break
+            except NeedLLM as need:
+                c = need.call
+                if len(outputs) >= 4:  # dip_mcp.career.session.MAX_LLM_CALLS
+                    raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
+                try:
+                    o, _ = await self.call(c["stage"], c["system"], baito_chat.messages_for(c["stage"], text, convo))
+                    outputs.append({"stage": c["stage"], "output": o})
+                except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(ランタイムと同じ)
+                    outputs.append({"stage": c["stage"], "error": type(e).__name__})
+                self.llm_calls += 1
+        self.st = st
+        baito_chat._append(self.convo, "user", text)
+        part, self.mem = self.UI.update(st, self.mem, prev, out)
+        return self._reply(out, part)
+
+    def captured(self) -> dict:
+        return self.H.captured(self.st)
+
+    def saved_texts(self) -> list[str]:
+        from dip_mcp.career import draft
+
+        texts = [v["text"] for v in self.captured().values() if v["text"]]
+        return texts + ([draft.build(self.st)[0]] if self.st.result is not None else [])
+
+    def wasted(self) -> int:
+        """もう high で埋まっている欄を聞いた回数(evals/career_sim.py の wasted と同じ数え方)。"""
+        pri = self.H.active_slots(self.st)
+        return sum(1 for e in self.st.log if e["kind"] == "ask" and not e["open"] and any(t in pri for t in e["targets"]))
+
+
+@contextlib.asynccontextmanager
+async def _harness_forms(form: str, band: bool = True):
+    yield lambda persona: FormHarness(persona, form, band)
+
+
 @contextlib.asynccontextmanager
 async def _a_forms():
     from line_runtime.runtime import LineRuntime
@@ -297,7 +393,9 @@ async def _plain(cls):
 
 
 # 形の名前 -> 会話ごとの形を作る関数を出す context manager(ランタイムなどを 1 回の実行で使い回すため)
-FORMS = {"A": _a_forms, "script-good": lambda: _plain(ScriptGood), "script-bad": lambda: _plain(ScriptBad)}
+FORMS = {"A": _a_forms, "B": lambda: _harness_forms("B"), "C": lambda: _harness_forms("C"),
+         "D": lambda: _harness_forms("D"), "D-noband": lambda: _harness_forms("D", band=False),
+         "script-good": lambda: _plain(ScriptGood), "script-bad": lambda: _plain(ScriptBad)}
 # 実 API を呼ばずに回せる形(本人役とジャッジだけが LLM)
 SCRIPTED = ("script-good", "script-bad")
 

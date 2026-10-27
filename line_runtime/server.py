@@ -410,6 +410,20 @@ async def shared_static(name: str):
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
+# アルバイトの相談の入口と結果のカードのアイコン(docs/design/baito-quick-start.md の §8)。64×64 の PNG で、
+# scripts/baito_icons.py が docs/images/baito-quick-start/sprites.json から作る。LINE の Flex は AICA_PUBLIC_URL を前に付けて読む
+BAITO_ICONS = STATIC / "baito"
+BAITO_ICON_STATIC = {f"{n}.png" for n in ("talk", "move", "solo", "sit", "light")}
+
+
+@app.get("/static/baito/{name}")
+async def baito_icon_static(name: str):
+    """アルバイトの相談のアイコン。"""
+    if name not in BAITO_ICON_STATIC:
+        raise HTTPException(404)
+    return FileResponse(BAITO_ICONS / name, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/legal/{name}", response_class=HTMLResponse)
 async def legal_page(name: str):
     """利用規約(terms)とプライバシーポリシー(privacy)。原文は docs/legal/。だれでも開ける(Cookie を発行も要求もしない)。"""
@@ -435,6 +449,19 @@ async def arcade_static(name: str):
     if name not in ARCADE_STATIC:
         raise HTTPException(404)
     return FileResponse(ARCADE / name, headers={"Cache-Control": "no-cache"})
+
+
+# 正社員のヒアリングの職歴カードの「完成」のスタンプ(line_runtime/career_ui.py。アーケードと同じドット絵の色)。
+# scripts/career_stamp.py が作る。LINE の Flex は AICA_PUBLIC_URL を前に付けて読む
+CAREER_STATIC = {"stamp.png"}
+
+
+@app.get("/static/career/{name}")
+async def career_static(name: str):
+    """正社員のヒアリングの絵。"""
+    if name not in CAREER_STATIC:
+        raise HTTPException(404)
+    return FileResponse(STATIC / "career" / name, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/liff/arcade")
@@ -484,8 +511,11 @@ def _arcade_draft_edit(user: str, rid: int, markdown: str, scenario_user: str = 
 def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcade.DRAFT_PATH) -> str:
     """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
     todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
-    return (f"<p>ゲーム({escape(arcade.GAME_NAMES.get(rec['game'], rec['game']))})で、あなたの答えから作った"
-            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない数字です。"
+    # 正社員のヒアリングの下書き(dip_mcp/career/draft.py)は、職歴カードの言葉の空欄もある
+    where, blanks = (("正社員の相談", "数字や言葉") if rec["game"] == arcade.CAREER_DRAFT
+                     else (f"ゲーム({arcade.GAME_NAMES.get(rec['game'], rec['game'])})", "数字"))
+    return (f"<p>{escape(where)}で、あなたの答えから作った"
+            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない{blanks}です。"
             "氏名と連絡先は保存していません。内容は必ずご自身で確認・修正してください。</p>"
             + (f"<h3 style='font-size:14px;margin:14px 0 4px'>確かめたい点</h3><ul style='font-size:13px'>{todo}</ul>"
                if todo else "")
@@ -494,7 +524,7 @@ def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcad
             f"<form method='post' action='{escape(action)}'>"
             f"<input type='hidden' name='rid' value='{rec['id']}'>"
             f"<input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
-            "<label for='draft-edit'>書類を直す(数字の空欄を埋める、行を書き換える)</label>"
+            "<label for='draft-edit'>書類を直す(空欄を埋める、行を書き換える)</label>"
             "<textarea id='draft-edit' name='markdown' rows='16' style='width:100%;box-sizing:border-box;font-size:14px;"
             f"padding:8px;border:1px solid #ccd;border-radius:8px'>{escape(rec['markdown'])}</textarea>"
             "<button>直した内容を保存する</button></form>")
@@ -1337,6 +1367,22 @@ async def profile_delete(key: str, request: Request):
         profile.delete_summary(state, user_id)
     else:
         _checked(profile.delete_item(state, user_id, key))
+    return _profile_view(user_id)
+
+
+@app.put("/api/profile/career/{key}")
+async def profile_career_edit(key: str, body: ProfileEditIn, request: Request):
+    """職歴カード(正社員のヒアリングで話したこと)の欄を本人の言葉で直す。key はハーネスの欄(career1.role など)。"""
+    user_id = _profile_writer(request, adds=True)
+    _checked(profile.edit_career_item(state, user_id, key, body.value))
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/career/{key}")
+async def profile_career_delete(key: str, request: Request):
+    """職歴カードの欄(か segment、segment だけの問いの答え)を 1 つ消す。"""
+    user_id = _profile_writer(request)
+    _checked(profile.delete_career_item(state, user_id, key))
     return _profile_view(user_id)
 
 

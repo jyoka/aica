@@ -143,23 +143,34 @@ function createTalk(o) {
     resume_upload: { label: "📄 ファイルを選ぶ", run: () => pickResume() },
     voice_consult: { label: "🎤 話して伝える(音声・約5分)", run: () => openVoice() },
   };
+  // progress: ハーネスの相談で、プロフィールが育つのを見せる部品(帯・プロフィールカード・完成。正社員の形 D は職歴カード・まとめも)。
+  // Web のトークは Flex を描かず、文の形(progress.text)を最後の吹き出しの最後の行に足す(設計メモ hearing-progress-ui.md §5)。
+  // 正社員のまとめの「直す」のボタン(progress.quick_replies)は、選択肢の後ろに足す(task 246)
   function renderReply(r, col, time = now()) {
     col.querySelector(".typing")?.remove();
     if (r.track_switch) trackSwitch(r.track_switch, col.parentElement);
-    for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
-    if (r.bubbles.length && time) col.appendChild(el("span", "time", time));
+    const bubbles = [...r.bubbles];
+    if (r.progress?.text) {
+      const last = bubbles.pop();
+      bubbles.push(last ? `${last}\n${r.progress.text}` : r.progress.text);
+    }
+    // baito_card: アルバイトの相談を 1 タップで始めるカード(入口・職種の結果。設計メモ baito-quick-start.md §9)。
+    // Web のトークは Flex を描かず、文の形(baito_card.text)を吹き出し 1 つにする。ボタンは quick_replies のまま
+    if (r.baito_card?.text) bubbles.push(r.baito_card.text);
+    for (const b of bubbles) col.appendChild(el("div", "bubble", b));
+    if (bubbles.length && time) col.appendChild(el("span", "time", time));
     if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
     for (const b of r.buttons) {
       const w = el("div", "liff"), a = el("a", null, b.label);
       a.href = b.url; a.target = "_blank"; a.rel = "noopener"; w.appendChild(a); log.appendChild(w);
     }
     const actions = (r.actions || []).filter(a => ACTIONS[a]);
-    if (actions.length || r.quick_replies.length) {
+    if (actions.length || r.quick_replies.length || r.progress?.quick_replies?.length) {
       const box = el("div", "chips");
       for (const a of actions) {
         const b = el("button", "action", ACTIONS[a].label); b.type = "button"; b.dataset.action = a; b.onclick = ACTIONS[a].run; box.appendChild(b);
       }
-      for (const q of r.quick_replies) { const b = el("button", null, q); b.type = "button"; b.onclick = () => o.send(q); box.appendChild(b); }
+      for (const q of [...r.quick_replies, ...(r.progress?.quick_replies || [])]) { const b = el("button", null, q); b.type = "button"; b.onclick = () => o.send(q); box.appendChild(b); }
       log.appendChild(box);
     }
     scroll();

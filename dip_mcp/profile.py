@@ -1,7 +1,8 @@
 """わたしのプロフィール(task 95): aica が本人について覚えていることを、本人が見て、直して、消す。
 
 見せるもの(CONTEXT.md の「プロフィール」): 雇用区分と切り替えの記録・目的・希望・経歴(stated_preferences の項目)・
-相談のまとめ・アップロードした履歴書・音声相談の下書き・ゲームで作った下書き・保存した求人・応募した求人。
+相談のまとめ・正社員のヒアリングの職歴カード(career_profile。task 255)・アップロードした履歴書・音声相談の下書き・
+ゲームで作った下書き・保存した求人・応募した求人。
 
 - 保存した求人と応募した求人は、dip のツールと同じく行動の要約(と、この会話で書いた分)から読む(dip_mcp/behavior.py)。
   保存をやめると、元データに unsave のイベントを書く
@@ -22,18 +23,22 @@ import copy
 import json
 
 from dip_mcp import accounts, arcade, behavior, logic, retention
+from dip_mcp.career import store as career_store
 from dip_mcp.data import State, now
 from resume_draft.pii import personal_value
 from resume_draft.schema import document_kind_of
 
-# 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す
+# 画面の区分けと並び(値の無い項目も「まだありません」として出す)。正社員の条件は、区分が正社員か値があるときだけ出す。
+# 正社員のヒアリングだけが聞く項目(なぜ今など)は、値があるときだけ出す(ヒアリングを使わない本番の既定では、画面を今までどおりにする)
 SECTIONS = (
-    ("purpose", "目的", ("purpose",)),
+    ("purpose", "目的", ("purpose", "why_now")),
     ("wishes", "希望", ("area", "time_band", "job_type", "min_wage", "days_per_week",
-                       "min_annual_salary", "work_style", "start_timing", "wants", "avoids", "concerns")),
+                       "min_annual_salary", "work_style", "start_timing", "direction", "team_style",
+                       "wants", "avoids", "concerns")),
     ("career", "経歴", ("experience", "skills", "certifications", "strengths")),
 )
 assert {k for _, _, keys in SECTIONS for k in keys} == set(logic.PREFERENCE_KEYS)  # 全項目をどこかに出す
+FULLTIME_ONLY = (*logic.FULLTIME_PREFERENCE_KEYS, *logic.CAREER_PREFERENCE_KEYS)
 
 SUMMARY_LABEL = "相談のまとめ"
 RESUME_LABEL = "履歴書の読み取り結果"
@@ -59,7 +64,7 @@ def view(state: State, line_user_id: str) -> dict:
     for sid, title, keys in SECTIONS:
         items = [{"key": k, "label": logic.PREFERENCE_KEYS[k], "value": prefs.get(k, {}).get("value"),
                   "saved": prefs.get(k, {}).get("saved")} for k in keys
-                 if k not in logic.FULLTIME_PREFERENCE_KEYS or track == "正社員" or k in prefs]
+                 if k in prefs or k not in FULLTIME_ONLY or track == "正社員" and k not in logic.CAREER_PREFERENCE_KEYS]
         sections.append({"id": sid, "title": title, "items": items})
     jobs = logic.load_jobs()
     drafts = [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": document_kind_of(r)}
@@ -70,6 +75,7 @@ def view(state: State, line_user_id: str) -> dict:
              "undo": h["undo"]} for h in user.get("track_history") or []]},
         "sections": sections,
         "consultation_summary": logic.consultation_summary(user),
+        "career_profile": career_store.view(user, logic._md),
         "resume": copy.deepcopy(user.get("resume_upload")),
         "voice_drafts": sorted(drafts, key=lambda d: d["id"], reverse=True),
         "arcade_drafts": [{"id": r["id"], "at": logic._md(r["at"]), "document_kind": r["document_kind"],
@@ -168,6 +174,43 @@ def delete_summary(state: State, line_user_id: str) -> dict:
 
     state.update(line_user_id, apply)
     return {"deleted": "consultation_summary"}
+
+
+def edit_career_item(state: State, line_user_id: str, key: str, value: str) -> dict:
+    """本人が職歴カード(か segment だけの問いの答え)の欄を本人の言葉で直す(上書き)。個人情報らしい値・長すぎる値は弾く。"""
+    value = str(value or "").strip()
+    err = None
+
+    def apply(u):
+        nonlocal err
+        if err := career_store.edit(u, key, value, now(line_user_id).isoformat(), checked=True):
+            return
+        _note(u, "直した", career_store.label(key), value)
+
+    state.update(line_user_id, apply)
+    if err:
+        return {"error": err, "message": CAREER_ERRORS.get(err) or ERRORS[err]}
+    return {"saved": key, "value": value}
+
+
+CAREER_ERRORS = {"too_long": f"{career_store.VALUE_MAX}字以内で入力してください。"}
+
+
+def delete_career_item(state: State, line_user_id: str, key: str) -> dict:
+    """職歴カードの欄(か segment、segment だけの問いの答え)を 1 つ消す。次の正社員の相談では、また聞く。"""
+    known = True
+
+    def apply(u):
+        nonlocal known
+        found = career_store.delete(u, key)
+        known = found is not None
+        if found:
+            _note(u, "消した", career_store.label(key))
+
+    state.update(line_user_id, apply)
+    if not known:
+        return {"error": "unknown_key", "message": ERRORS["unknown_key"]}
+    return {"deleted": key}
 
 
 def set_track(state: State, line_user_id: str, track: str) -> dict:
@@ -371,6 +414,7 @@ def notice(state: State, line_user_id: str, changes: list[dict]) -> str:
     now_ = {"search_track": logic.search_track(user),
             "stated_preferences": {k: v["value"] for k, v in logic.stated_preferences(user).items()},
             "consultation_summary": (logic.consultation_summary(user) or {}).get("text"),
+            "career_profile": career_store.summary(user),
             "uploaded_resume": "あり" if user.get("resume_upload") else "なし",
             "arcade_draft": "あり" if user.get("arcade_drafts") else "なし"}
     where = ("トークの表示のボタンで" if all(c["action"] == "取り消した" for c in changes)

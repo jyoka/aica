@@ -344,6 +344,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
 | `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
+| `python -m evals.career_sim [--log DIR]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。最後に「すべて合格」 | 使わない |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
 | `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |
@@ -352,6 +353,11 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
+| `python -m scripts.check_image_certs [--no-build] [--probe]` | image の CA 証明書の確かめ。コンテナを作り、certifi が 2026.10.19 以上で、ca-certificates が Debian の今の版かを確かめる(eMudhra の漏洩。[docs/deploy/render.md](docs/deploy/render.md)) | 使わない |
+| `python -m scripts.career_ui_preview` | 正社員のヒアリングの形 D の UI(「始める」の 1 枚、帯、プロフィールカード、職歴カード、まとめ、全部の完成)の写真を `docs/images/career-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
+| `python -m scripts.career_stamp` | 職歴カードの「完成」のスタンプ(16×16 のドット絵を 4 倍にした PNG。アーケードと同じ色)を `line_runtime/static/career/stamp.png` に作り直す。`/static/career/stamp.png` で出る | 使わない |
+| `python -m scripts.progress_ui_preview [--segment homemaker]` | アルバイト・パートの相談の、プロフィールが育つ UI(帯、プロフィールカード、完成)の写真を `docs/images/progress-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
+| `python -m scripts.baito_icons [--sheet docs/images/baito-quick-start/icons.png]` | アルバイト・パートの相談の入口と結果のカードのアイコン(64×64 の PNG 5 枚)を、`docs/images/baito-quick-start/sprites.json` から `line_runtime/static/baito/` に作り直す。`/static/baito/{名前}.png` で出る。`--sheet` は 5 枚を並べた見本も作る | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
 | `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
@@ -386,6 +392,9 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `LINE_SIM_PROVIDER` | `anthropic` | LLM のプロバイダ(`anthropic`、`openai`)。エージェント、ゲームの AI、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
 | `LINE_SIM_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | エージェントとゲームのまとめのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
+| `AICA_PROGRESS_UI` | `flex` | アルバイト・パートの相談(`BAITO_HARNESS_VERSION=v4`)で、プロフィールが育つのを見せる部品の出し方。`flex` は帯・プロフィールカード・完成を LINE の Flex で、`text` は Flex を切って吹き出しの文で、`no_band` は帯だけ切る。Web のトークはいつも文。ターンごとに読む | 可 |
+| `CAREER_HARNESS_FORM` | `C` | 正社員の相談(`CAREER_HARNESS_VERSION=c1`)の形。`B` はゲームの仕組みなし、`C` は場面の二択と進み具合の 1 行あり、`D` は C に LINE の Flex(「始める」の 1 枚、職歴カード、帯、プロフィールカード、まとめ、全部の完成)を足す。相談を始めたときに読み、終わるまで変えない | 可 |
+| `CAREER_UI_BAND` | `on` | 正社員の相談の形 D で、帯を付けるか。`off` で帯だけ切る(帯を切った D と比べるため)。相談を始めたときに読む | 可 |
 | `LINE_SIM_PORT` | `8030` | Web サーバーのポート(コンテナでは `PORT`、既定 10000) | 不可 |
 | `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
 | `AICA_SECURE_COOKIE` | なし(コンテナの image では `1`) | `1` のとき、匿名ユーザーIDの Cookie に Secure を付ける。https で公開するときに使う。http で開くと Cookie が送り返されない | 可 |

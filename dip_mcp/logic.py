@@ -22,6 +22,7 @@ from statistics import median
 from urllib.parse import urlencode
 
 from dip_mcp import arcade, behavior, embedding, summarize
+from dip_mcp.career import store as career_store
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -104,8 +105,21 @@ PROFILE_NOTE = ("stated_preferences には、希望の条件のほか、相談�
                 "consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。"
                 "続きから始める材料にする。")
 
+CAREER_NOTE = ("stated_preferences には、正社員のヒアリングが保存したなぜ今(why_now)・次にやりたいこと(direction)・"
+               "人と働く形(team_style)も入る。career_profile(あるときだけ)は、正社員のヒアリングで本人が話した職歴カード"
+               "(career_cards。直近の職歴の、何をしていたか role・どのくらい scale・どうなったか result。"
+               "「パス」「覚えていない」は空欄)と、今のあなたに近いの(segment)と、segment だけの問いの答え(answers)。"
+               "経歴を聞き直さず、求人の keywords に本人の言葉で使う。本人が言い直したら、職歴カードの欄と answers は "
+               "update_career_card(item の career<n> の n は各カードの n。もう出ている欄だけを直す)、why_now・direction・team_style は save_user_preferences で直す。")
+
+def _career_note(user: dict) -> str:
+    """CAREER_NOTE は、正社員のハーネスを使っている(機能フラグ)か、保存した職歴カードがあるときだけ足す
+    (フラグが無い本番の既定では、要約の説明を今までどおりにする)。"""
+    return CAREER_NOTE if career_harness_on() or user.get(career_store.KEY) else ""
+
+
 ENTRY_NOTE = ("used_entries は本人がやり終えた入口(voice_consult = 音声相談で下書きができた、resume_upload = 履歴書を"
-              "読み込んだ、arcade = ゲームで下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
+              "読み込んだ、arcade = ゲームか正社員の相談で下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
 
 # 挨拶で案内する 3 つの入口(task 237)。並びはリッチメニュー(scripts/line_rich_menu.py)と同じ
 ENTRIES = ("voice_consult", "resume_upload", "arcade")
@@ -116,7 +130,8 @@ def used_entries(user: dict) -> list[str]:
     (記録を消せば、また案内される)。開いただけ・途中でやめたものは数えない。
     - voice_consult: 音声相談の結果に下書き(draft_markdown)がある(プロフィール画面で下書きを消すと空になる)
     - resume_upload: 履歴書を読み込んだ(resume_upload がある)
-    - arcade: ゲームで下書きを保存した(arcade_drafts がある)"""
+    - arcade: ゲームで下書きを保存した(arcade_drafts がある)。正社員の相談の下書き(dip_mcp/career/draft.py)も同じ場所なので、
+      これも数える(書類の下書きがあれば、ゲームを勧めない。playbook の「arcade_draft があれば、ボタンは出さない」と同じ)"""
     done = {"voice_consult": any(str(r.get("draft_markdown") or "").strip() for r in user.get("voice_results") or []),
             "resume_upload": bool(user.get("resume_upload")),
             "arcade": bool(user.get("arcade_drafts"))}
@@ -130,8 +145,10 @@ def _track_summary(user: dict) -> dict:
     return {"search_track": search_track(user), "track_history": track_history(user)}
 
 
-ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)で作った書類の下書きの要点(本人の答えから作った行だけ)。"
+ARCADE_NOTE = ("arcade_draft は本人がゲーム(レジュメ・アーケード)か正社員の相談(game が「正社員の相談」。職歴カードから作った)で"
+               "作った書類の下書きの要点(本人の答えから作った行だけ)。"
                "blank_lines は数字の空欄 [… ← 数字を入れる] が残る行で、本人に数字を聞いてよい(作らない)。"
+               "blanks は空欄の数(正社員の相談の下書きは、言葉の空欄 [… ← 言葉を入れる] も数える)。"
                "arcade_draft の view_url は下書きの画面の URL(本人が数字を入れて直す画面)。"
                "「下書きを見る」のボタンは、この URL だけをそのまま buttons に使う(view_url が無ければボタンを出さない)。"
                "arcade_url はゲームの画面の URL。ゲームのボタンを出すときは、この URL だけをそのまま buttons に使う"
@@ -145,6 +162,8 @@ def _profile_summary(user: dict) -> dict:
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
            "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user),
            "used_entries": used_entries(user)}
+    if career := career_store.summary(user):  # 正社員のヒアリングで保存したものがあるときだけ(task 255)
+        out["career_profile"] = career
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
     return out | ({"arcade_url": url} if url else {})
 
@@ -218,7 +237,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
                 "condition_options": condition_options(user, search_track(user)),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE + _career_note(user)}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -264,7 +283,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "condition_options": condition_options(user, search_track(user), b["tendency"], last_app),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE + _career_note(user),
     }
 
 
@@ -381,6 +400,35 @@ FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
 LEVELS = (1, 2, 3)
 # remote の値 → 出す求人の work_style.remote。可 = 原則在宅の求人だけ、一部可 = 週に何日か以上在宅できる求人(可を含む)
 REMOTE_CHOICES = {"可": ("可",), "一部可": ("可", "一部可")}
+# 未成年(18歳未満と、年齢が分からない人)の決まり(設計メモ docs/design/baito-quick-start.md §6.3)。recommend / relax /
+# MCP の recommend_jobs・relax_conditions / 音声の voice_resume/jobs.py で同じ名前を使う(テストで同期を確認)。
+# relax はこの引数を外す候補にしない(「未成年を外すと N 件」を出さない)
+MINOR_ARG = "minor"
+# 未成年が働ける時刻(分)。22時〜翌5時は法律の深夜なので、始まりが 5 時より前か、終わりが 22 時より後の求人は出さない
+MINOR_EARLIEST, MINOR_LATEST = 5 * 60, 22 * 60
+_SHIFT_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[〜~～]\s*(翌)?\s*(\d{1,2}):(\d{2})")
+
+
+def shift_ranges(shift: str) -> list[tuple[int, int]]:
+    """shift の文にある勤務の時刻の幅(始まりと終わりを、その日の 0 時からの分で)。翌日にまたがる終わりは 24 時間を足す。"""
+    out = []
+    for h1, m1, nxt, h2, m2 in _SHIFT_RANGE.findall(shift or ""):
+        start, end = int(h1) * 60 + int(m1), int(h2) * 60 + int(m2)
+        if nxt or end < start:
+            end += 24 * 60
+        out.append((start, end))
+    return out
+
+
+def minor_ok(job: BaitoJob) -> bool:
+    """未成年に出してよい求人か。深夜の帯がある・重い作業(physical_level 3)・勤務の幅のどれかが 5〜22 時をはみ出すものは出さない。
+    時刻が読めない shift と、フレックス(18歳未満には使えない働き方。労働基準法 60 条)も出さない(安全側)。"""
+    if "深夜" in job.time_bands or job.physical_level >= 3 or "フレックス" in job.shift:
+        return False
+    ranges = shift_ranges(job.shift)
+    return bool(ranges) and all(MINOR_EARLIEST <= s and e <= MINOR_LATEST for s, e in ranges)
+
+
 # 属性で絞ったときに理由に出す一言(求人に付けた属性の値の言い換え。事実はこの値だけ)
 TALK_REASONS = {1: "人と話すことが少ない仕事", 2: "お客様と話すことは少ない仕事", 3: "人と話すのが中心の仕事"}
 PHYSICAL_REASONS = {1: "座り仕事が中心", 2: "力仕事は少ない仕事", 3: "体を動かす仕事"}
@@ -697,9 +745,10 @@ def match_breakdown(job: BaitoJob, tend: dict, mixed: bool = False) -> dict[str,
 def recommend(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
               keywords=None, exclude_ids: list[str] | None = None, limit: int = MAX_JOBS,
               posted_within_days: int | None = None, employment_type=None, min_annual_salary=None,
-              **filters) -> dict:
+              minor: bool = False, **filters) -> dict:
     """employment_type(アルバイト・パート / 正社員)で区分を絞る。未定(指定なし・「未定」)なら両方の区分から出す。
     min_annual_salary は希望年収の下限(万円)。年収・月給の求人の年収の中央値と比べ、給与の高さを並びにも加味する。
+    minor(MINOR_ARG)が true なら、未成年に出せない求人(minor_ok)を外す。
     filters は属性(ATTRIBUTE_ARGS)と正社員の働き方・休日(FULLTIME_STYLE_ARGS)。"""
     if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
         raise TypeError(f"recommend() に知らない引数: {sorted(unknown)}")
@@ -723,7 +772,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     acts = behavior.view(state, line_user_id)
     exclude = set(exclude_ids or []) | set(acts["applied_job_ids"])  # 応募済みの求人は出さない(要約の全件)
     tend = acts["tendency"] if behavior.dip_id(state, line_user_id) else {"job_type": [], "area": [], "time_band": []}
-    cands = [j for j in pool.values() if j.job_id not in exclude
+    cands = [j for j in pool.values() if j.job_id not in exclude and (not minor or minor_ok(j))
              and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
     sims, unmatched = None, False
     if keywords:
@@ -753,9 +802,10 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
 
 def relax(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
           keywords=None, employment_type=None, min_annual_salary=None, exclude_ids: list[str] | None = None,
-          **filters) -> dict:
+          minor: bool = False, **filters) -> dict:
     """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。
-    属性・働き方・休日の引数(filters)も外す候補にする。exclude_ids(出さない求人)は外す候補にせず、どの件数からも除く。"""
+    属性・働き方・休日の引数(filters)も外す候補にする。exclude_ids(出さない求人)は外す候補にせず、どの件数からも除く。
+    未成年の決まり(minor)も外す候補にせず、どの件数にも効かせる(「未成年を外すと N 件」を出さない)。"""
     if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
         raise TypeError(f"relax() に知らない引数: {sorted(unknown)}")
     employment_type = _employment_type(employment_type)
@@ -765,12 +815,12 @@ def relax(state: State, line_user_id: str | None, area=None, time_band=None, job
     cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage,
             "min_annual_salary": min_annual_salary, "keywords": keywords}
     cond |= {k: filters.get(k) for k in (*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)}
-    base = recommend(state, line_user_id, **cond, employment_type=employment_type, exclude_ids=exclude_ids)["total"]
+    fixed = {"employment_type": employment_type, "exclude_ids": exclude_ids, "minor": minor}
+    base = recommend(state, line_user_id, **cond, **fixed)["total"]
     options = []
     for k, v in cond.items():
         if v is not None and v is not False and v != "":  # max_overtime_hours=0 も外す候補にする
-            n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type,
-                          exclude_ids=exclude_ids)["total"]
+            n = recommend(state, line_user_id, **{**cond, k: None}, **fixed)["total"]
             if n > base:
                 options.append({"remove": k, "current": v, "total_after": n})
     options.sort(key=lambda o: o["total_after"], reverse=True)
@@ -970,9 +1020,12 @@ PREFERENCE_KEYS = {"area": "エリア・駅", "time_band": "時間帯", "job_typ
                    "skills": "できること", "certifications": "資格・免許",
                    "purpose": "目的", "strengths": "強み", "wants": "やりたいこと", "avoids": "避けたいこと",
                    "concerns": "不安", "min_annual_salary": "希望年収の下限", "work_style": "働き方",
-                   "start_timing": "働き始める時期"}
+                   "start_timing": "働き始める時期", "why_now": "なぜ今", "direction": "次にやりたいこと",
+                   "team_style": "人と働く形"}
 # 正社員を探すときだけ聞く条件(アルバイト・パートの相談では聞かない。保存は区分に関係なく受け付ける)
 FULLTIME_PREFERENCE_KEYS = ("min_annual_salary", "work_style", "start_timing")
+# 正社員のチャットのヒアリング(dip_mcp/career。task 255)が聞いて保存する項目。音声の面談は聞かない(音声は playbook のまま)
+CAREER_PREFERENCE_KEYS = ("why_now", "direction", "team_style")
 PREFERENCE_VALUE_MAX = 100  # 本人の言葉のまま短い文で。長い値は要約・会話ログの貼り付けになりがちなので保存しない
 
 
@@ -1090,6 +1143,11 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 # ----------------------------- 相談の playbook(ADR-0001) -----------------------------
 # 雇用区分とチャネルごとの、相談の進め方の指針(明らかにすること・掘り下げ方)。次に何を聞くかは決めない。
 # 区分ごとの playbook に、区分に共通の決まり(common_{channel}.md)を足して返す。
+# アルバイト・パートのチャットの相談は、機能フラグ BAITO_HARNESS_VERSION=v4 のときだけ例外で、何を聞くかを dip の
+# ハーネスが決める(dip_mcp/baito、ADR-0009)。その playbook(parttime_chat_harness.md)は、ハーネスに渡すこと
+# (start_baito_consultation)と、保存先・提案の決まりだけを書く。フラグが無ければ今までどおり(本番は切り替えない)。
+# 正社員のチャットの相談も同じく、CAREER_HARNESS_VERSION=c1 のときだけハーネス(dip_mcp/career、ADR-0010)が決める
+# (fulltime_chat_harness.md、start_career_consultation)。
 
 PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
 CHANNELS = ("chat", "voice")
@@ -1110,13 +1168,29 @@ CONVERSATION_RULES = {
 VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for track in TRACKS}
 
 
+BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 のときだけハーネスで相談する
+# 正社員のチャットのヒアリング(dip_mcp/career、ADR-0010、task 255)の機能フラグ。c1 のときだけハーネスで相談する。
+# 無ければ今までどおり fulltime_chat.md の playbook で相談する(本番は切り替えない)
+CAREER_HARNESS_FLAG = "CAREER_HARNESS_VERSION"
+
+
+def baito_harness_on() -> bool:
+    return os.environ.get(BAITO_HARNESS_FLAG, "").strip() == "v4"
+
+
+def career_harness_on() -> bool:
+    return os.environ.get(CAREER_HARNESS_FLAG, "").strip() == "c1"
+
+
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
     """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
     if track not in TRACKS:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
     if channel not in CHANNELS:
         return {"error": f"channel は {' / '.join(CHANNELS)} のいずれか"}
-    path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}.md"
+    harness = "_harness" if channel == "chat" and (track == "アルバイト・パート" and baito_harness_on()
+                                                   or track == "正社員" and career_harness_on()) else ""
+    path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}{harness}.md"
     if not path.is_file():
         return {"error": f"{channel} の playbook はまだありません"}
     common = PLAYBOOKS / f"common_{channel}.md"

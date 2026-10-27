@@ -1,0 +1,98 @@
+### v3 / no_seg (大学生・属性を最後まで言わない(19歳), true segment=student)
+T01 [icebreak] q_money: バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+     → 貯金・将来のため
+     slots: purpose: ∅→saving(low)
+T02 [icebreak] q_segment: 今のあなたに近いのは？  ['学生', '家のこと中心', '本業あり副業探し']
+     → ひみつ
+T03 [hard_filter] hf_days: 週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+     → 週5日以上
+     slots: days_per_week: ∅→5+(high)
+T04 [hard_filter] hf_time: 働けるのはどの時間帯？  ['朝', '昼', '夕方〜夜', '深夜もOK']
+     → 深夜もOK
+     slots: time_slots: ∅→late_night_ok(high)
+T05 [hard_filter] hf_commute: 通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+     → 家から徒歩・自転車
+     slots: commute: ∅→walk_bike(high)
+T06 [hard_filter] hf_age: 今、18歳未満？  ['はい', 'いいえ']
+     → いいえ
+     slots: age_under_18: ∅→False(high)
+T07 [scenario_game] sc_line: お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+     → 今すぐ消えたい
+     slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
+T08 [scenario_game] sc_shift: 理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+     → 3時間でサクッと
+     slots: shift_length: ∅→short(low)
+T09 [scenario_game] sc_wage_commute: 時給100円の差。徒歩5分の店と電車30分の店、どっち？  ['近いほう', '時給が高いほう']
+     → 時給が高いほう
+     slots: hourly_wage_min: ∅→wage_priority(low)
+T10 [scenario_game] sc_teach: 仕事の教わり方、どっちがいい？  ['マニュアル通りにきっちり', 'ざっくり教わって自分で考える']
+     → ざっくり教わって自分で考える
+     slots: atmosphere: ∅→autonomous(low)
+T11 [scenario_game] sc_noise: 働く場所、どっちがいい？  ['にぎやか', '静か']
+     → にぎやか
+     slots: environment_noise: ∅→lively(low)
+T12 [scenario_game] sc_praise: ほめられてうれしいのは？  ['お客さん', '店長']
+     → お客さん
+     slots: customer_facing: avoid→ok(low)
+     conflicts: {'customer_facing': ['avoid', 'ok']}
+T13 [fill_gaps] fg_physical: 体力仕事は？  ['どんとこい', '少しなら', '座り仕事がいい']
+     → 少しなら
+     slots: physical: ∅→light(high)
+     conflicts: {'customer_facing': ['avoid', 'ok']}
+T14 [review] review_1  ----- card -----
+     | 📋 あなたのバイト条件まとめ
+     | （あなた：（未回答））
+     | 
+     | 【ゆずれない条件】
+     | ・週の日数：週5日以上
+     | ・働く時間帯：深夜もOK
+     | ・通勤：家から徒歩・自転車
+     | ・18歳未満：いいえ
+     | 
+     | 【こだわり・好み】
+     | ・時給：時給優先（多少遠くても）（推測）
+     | ・1回のシフトの長さ：短め（3時間くらい）（推測）
+     | ・接客：どっち？ 接客は避けたい / 接客OK
+     | ・体力・立ち仕事：軽めの作業がいい
+     | ・バイトの目的：貯金・将来のため（推測）
+     | ・忙しさ：落ち着いたペースがいい（推測）
+     | ・職場の雰囲気：ざっくり・自分で考える（推測）
+     | ・職場のにぎやかさ：にぎやか（推測）
+     | 
+     | 【NG】とくになし
+     | 
+     | （推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！
+     → これでOK。あ、実は大学生です／接客は「接客は避けたい」のほう
+     slots: purpose: saving→saving(high); customer_facing: ok→avoid(high); pace: calm→calm(high); shift_length: short→short(high); hourly_wage_min: wage_priority→wage_priority(high); atmosphere: autonomous→autonomous(high); environment_noise: lively→lively(high)
+     segment: unknown→student
+     review_log: {'round': 1, 'touched': ['customer_facing'], 'promoted': ['purpose', 'pace', 'shift_length', 'hourly_wage_min', 'atmosphere', 'environment_noise'], 'hard_changed': [], 'open_conflicts': {}, 'new_hard_gaps': ['school_permission'], 'segment_change': ('unknown', 'student')}
+T15 [review] review_2  ----- card -----
+     | 📋 あなたのバイト条件まとめ（もう一度だけ確認！）
+     | （あなた：学生）
+     | 
+     | 【ゆずれない条件】
+     | ・週の日数：週5日以上
+     | ・働く時間帯：深夜もOK
+     | ・通勤：家から徒歩・自転車
+     | ・18歳未満：いいえ
+     | ・学校のバイト許可：未定（よければ教えてね）
+     | 
+     | 【こだわり・好み】
+     | ・時給：時給優先（多少遠くても）
+     | ・1回のシフトの長さ：短め（3時間くらい）
+     | ・接客：接客は避けたい
+     | ・体力・立ち仕事：軽めの作業がいい
+     | ・バイトの目的：貯金・将来のため
+     | ・テスト期間：未定（よければ教えてね）
+     | ・忙しさ：落ち着いたペースがいい
+     | ・職場の雰囲気：ざっくり・自分で考える
+     | ・職場のにぎやかさ：にぎやか
+     | 
+     | 【NG】とくになし
+     | 
+     | （推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！
+     → 学校はバイトOKだよ
+     slots: school_permission: ∅→ok(high)
+     review_log: {'round': 2, 'touched': ['school_permission'], 'promoted': [], 'hard_changed': ['school_permission'], 'open_conflicts': {}, 'new_hard_gaps': [], 'segment_change': ('student', 'student')}
+== END phase=result turns=15 segment=student NG=[]
+   final slots: purpose=saving(high); days_per_week=5+(high); time_slots=late_night_ok(high); commute=walk_bike(high); age_under_18=False(high); customer_facing=avoid(high); pace=calm(high); shift_length=short(high); hourly_wage_min=wage_priority(high); atmosphere=autonomous(high); environment_noise=lively(high); physical=light(high); school_permission=ok(high)

@@ -1,0 +1,121 @@
+### v4 / spam_high (会社員・自由記述、モデルが全部high＋幻覚スロット, true segment=side_job, llm_mode=spam_high)
+BOT  バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+USER [icebreak/q_money/ask] 推し活・趣味かな
+     slots: purpose: ∅→['hobby'](low); commute: ∅→walk_bike(low); days_per_week: ∅→5+(low)
+BOT  (1) いいね！今のあなたに近いのは？  ['学生', '家のこと中心（主婦・主夫など）', '本業あり副業探し', 'フリーター・求職中・その他']
+USER [icebreak/q_segment/ask] 本業あり副業探しかな
+     slots: side_job_allowed: ∅→ok(low)
+     segment: unknown→side_job
+BOT  (2) いいね！年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）  ['中学生以下', '15〜17歳', '18歳以上', 'ひみつ']
+USER [hard_filter/hf_age/ask] 18歳以上かな
+     slots: age_band: ∅→18_plus(high)
+BOT  (3) いいね！働くなら平日？週末？  ['平日の夜', '土日', 'どちらでも']
+USER [hard_filter/hf_weekday/ask] 平日の夜かな
+     slots: weekday_or_weekend: ∅→weekday_evening(high)
+BOT  (4) いいね！働けるのはどの時間帯？（いくつでも）  ['朝', '昼', '夕方〜夜', '深夜もOK']
+USER [hard_filter/hf_time/ask] 夕方〜夜かな
+     slots: time_slots: ∅→['evening'](high)
+BOT  (5) いいね！今の会社、副業はOK？  ['OK', '届け出が必要', '禁止されてる', 'わからない・グレー', '公務員です']
+USER [hard_filter/hf_sideok/ask] 届け出が必要かな
+     event: {'t': 6, 'kind': 'ambiguous_extract', 'slot': 'side_job_allowed', 'values': ['needs_notice', 'ok']}
+BOT  (6) いいね！週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+USER [hard_filter/hf_days/ask] 週1〜2日かな
+     event: {'t': 7, 'kind': 'ambiguous_extract', 'slot': 'days_per_week', 'values': ['1-2', '5+']}
+BOT  (7) いいね！通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+USER [hard_filter/hf_commute/ask] 電車で30分までかな
+     event: {'t': 8, 'kind': 'ambiguous_extract', 'slot': 'commute', 'values': ['train_30', 'walk_bike']}
+BOT  (8) いいね！どっちを選ぶ？  ['時給高め立ちっぱなし', 'ふつう座れる']
+USER [scenario_game/sc_sj_stand/ask] 時給高め立ちっぱなしかな
+     slots: physical: ∅→standing_ok(low); wage_priority: ∅→wage_first(low)
+BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
+USER [scenario_game/sc_line/ask] よし、燃えてきたかな
+     slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
+BOT  (10) いいね！理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+USER [scenario_game/sc_shift/ask] 6時間でガッツリ稼ぐかな
+     slots: shift_length: ∅→long(low)
+BOT  (11) いいね！この3つ、一番やりたくないのは？  ['居酒屋ホール（夜）', '倉庫ピッキング', 'イベント設営']
+USER [reverse_pick/rp_side_job/ask] 倉庫ピッキングかな
+     slots: physical: standing_ok→light(low)
+BOT  (12) いいね！本業のあと、体力はどれくらい残ってる？  ['けっこう残ってる', '少しだけ', 'ほぼゼロ']
+USER [fill_gaps/fg_energy/ask] ほぼゼロかな
+     slots: energy_left: ∅→none(high)
+BOT  (13) ここまでの話をまとめたよ！
+     【あなた】本業あり副業探し
+     【ゆずれない条件】
+     ・年齢：18歳以上
+     ・週の日数：週5日以上 / 週1〜2日（どっち？）
+     ・時間帯：夕方〜夜
+     ・通勤：徒歩・自転車 / 電車30分まで（どっち？）
+     ・副業の可否：OK / 届け出が必要（どっち？）
+     ・平日・週末：平日の夜
+     【好み】
+     ・時給の下限：未定（よければ教えてね）
+     ・1回の勤務時間：6時間以上（推測）
+     ・接客：ふつう（できる）（推測）
+     ・体力面：立ち仕事OK / 軽めがいい（どっち？）
+     ・目的：推し活・趣味（推測）
+     ・本業後の体力：ほぼゼロ
+     ・忙しさ：忙しくてもOK（推測）
+     ・時給と働きやすさ：時給優先（推測）
+     【NG】倉庫作業
+     ⚠️ 本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？
+     
+     推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆  ['これでOK']
+     | 【あなた】本業あり副業探し
+     | 【ゆずれない条件】
+     | ・年齢：18歳以上
+     | ・週の日数：週5日以上 / 週1〜2日（どっち？）
+     | ・時間帯：夕方〜夜
+     | ・通勤：徒歩・自転車 / 電車30分まで（どっち？）
+     | ・副業の可否：OK / 届け出が必要（どっち？）
+     | ・平日・週末：平日の夜
+     | 【好み】
+     | ・時給の下限：未定（よければ教えてね）
+     | ・1回の勤務時間：6時間以上（推測）
+     | ・接客：ふつう（できる）（推測）
+     | ・体力面：立ち仕事OK / 軽めがいい（どっち？）
+     | ・目的：推し活・趣味（推測）
+     | ・本業後の体力：ほぼゼロ
+     | ・忙しさ：忙しくてもOK（推測）
+     | ・時給と働きやすさ：時給優先（推測）
+     | 【NG】倉庫作業
+     | ⚠️ 本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？
+USER [review/review/review] これでOK
+     slots: purpose: ['hobby']→['hobby'](high); wage_priority: wage_first→wage_first(high); customer_facing: ok→ok(high); pace: busy_ok→busy_ok(high); shift_length: long→long(high)
+BOT  (14) ここまでの話をまとめたよ！
+     ここだけもう一回！
+     ・週の日数：週5日以上 / 週1〜2日（どっち？）
+     ・通勤：徒歩・自転車 / 電車30分まで（どっち？）
+     ・副業の可否：OK / 届け出が必要（どっち？）
+     ・体力面：立ち仕事OK / 軽めがいい（どっち？）
+     【NG】倉庫作業
+     ⚠️ 本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？
+     
+     推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆  ['これでOK']
+     | ここだけもう一回！
+     | ・週の日数：週5日以上 / 週1〜2日（どっち？）
+     | ・通勤：徒歩・自転車 / 電車30分まで（どっち？）
+     | ・副業の可否：OK / 届け出が必要（どっち？）
+     | ・体力面：立ち仕事OK / 軽めがいい（どっち？）
+     | 【NG】倉庫作業
+     | ⚠️ 本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？
+USER [review/review/review] これでOK
+     event: {'t': 15, 'kind': 'conflict_unresolved', 'slot': 'side_job_allowed'}
+     event: {'t': 15, 'kind': 'conflict_unresolved', 'slot': 'days_per_week'}
+     event: {'t': 15, 'kind': 'conflict_unresolved', 'slot': 'commute'}
+     event: {'t': 15, 'kind': 'conflict_unresolved', 'slot': 'physical'}
+BOT  (15) 副業の収入は、確定申告が必要になることや、本業と労働時間が合算されることがあるよ。くわしくは勤務先や税務署で確認してね。
+     ※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。
+     あなたに合いそうなのはこれ！
+     1. コンビニスタッフ：コンビニスタッフは条件に合いそう
+     2. スーパーのレジ：スーパーのレジは条件に合いそう
+     3. カフェスタッフ：カフェスタッフは条件に合いそう
+     未定：週の日数、通勤、副業の可否（決まったらもっと絞り込めるよ）
+     未定：副業の可否（OK / 届け出が必要 のどちらか。決まったら教えてね）
+     未定：週の日数（週5日以上 / 週1〜2日 のどちらか。決まったら教えてね）
+     未定：通勤（徒歩・自転車 / 電車30分まで のどちらか。決まったら教えてね）
+     未定：体力面（立ち仕事OK / 軽めがいい のどちらか。決まったら教えてね）
+== END phase=result turns=15 asides=0 segment=side_job blocked=None
+   slots: purpose=['hobby'](high,review_accepted); age_band=18_plus(high,free:hf_age); weekday_or_weekend=weekday_evening(high,free:hf_weekday); time_slots=['evening'](high,free:hf_time); wage_priority=wage_first(high,review_accepted); customer_facing=ok(high,review_accepted); pace=busy_ok(high,review_accepted); shift_length=long(high,review_accepted); energy_left=none(high,free:fg_energy)
+   NG user=['倉庫作業'] rule=[] flags=[] unresolved={'side_job_allowed': ['ok', 'needs_notice'], 'days_per_week': ['5+', '1-2'], 'commute': ['walk_bike', 'train_30'], 'physical': ['standing_ok', 'light']}
+   METRICS {"adversarial": true, "turns": 15, "asides": 0, "reached": true, "loop": false, "crash": null, "per_phase": {"icebreak": 2, "hard_filter": 6, "scenario_game": 3, "reverse_pick": 1, "fill_gaps": 1, "review": 2, "aside": 0}, "final_seg": "side_job", "true_seg": "side_job", "review_rounds": 2, "blocked": null, "hard_empty_pre_review": [], "hard_low_pre_review": ["days_per_week", "commute", "side_job_allowed"], "hard_unresolved_end": ["days_per_week", "commute", "side_job_allowed"], "silent_empty_hard": [], "silent_low_hard": [], "guessed_hard_listed": [], "phase_turns_mismatch": {}, "phase_cap_violation": {}, "over_max_turns": false, "unknown_hard_listed": ["commute", "days_per_week", "side_job_allowed"], "review_accepted_hard": [], "review_accepted_pref": ["purpose", "wage_priority", "customer_facing", "pace", "shift_length"], "mid_empty_end": ["hourly_wage_min", "physical"], "unresolved": {"side_job_allowed": ["ok", "needs_notice"], "days_per_week": ["5+", "1-2"], "commute": ["walk_bike", "train_30"], "physical": ["standing_ok", "light"]}, "irrelevant": [], "asked_before_seg_known": [], "wasted": [], "repeated": [], "reasks": [], "clarify": 0, "dropped": 0, "rejected_by_rule": 0, "minor_mode": false, "derived_ng": [], "minor_violation": [], "result_violation": [], "recs": ["conv", "super_register", "cafe"], "spam_hard_high": [], "danger_warned": false, "llm_repaired": 0, "llm_retry_ok": 0, "llm_fallback": 0, "discarded": 0, "restarts": 0, "flags": []}

@@ -13,7 +13,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt pytest r
 
 python -m pytest -q                 # テスト。直したところに関係するファイルだけなら python -m pytest -q tests/test_xxx.py
 ./.venv/bin/ruff check .            # lint(ruff.toml)
-python -m evals.baito_sim           # アルバイト・パートのハーネスの回帰(モックの LLM。PR #115 で入る)
+python -m evals.baito_sim           # アルバイト・パートのハーネスの回帰(モックの LLM)
 ```
 
 - `.env` があると、LiveKit などの設定を読んで、テストの一部が `AICA_INTERNAL_KEY` が無いと落ちます。
@@ -33,26 +33,28 @@ CI は API キーを持たない環境で、次の 3 つを回します。すべ
 | lint | `ruff check .` | 指摘が 0 |
 | バイトのハーネスの回帰 | `python -m evals.baito_sim` | 終了コード 0。最後に「すべて合格」と出る |
 
-`evals.baito_sim` は、PRD の `simulate.py v3` の 8 ペルソナをモックの LLM で最後まで話させ、
-PRD(`docs/prd/baito_harness/PRD_baito_agent.md`)の次の基準に照らします。
+`evals.baito_sim` は、PRD v4.1(`docs/prd/baito_harness/PRD_baito_agent_v4.md`)の参照資料を一時ディレクトリに写し、
+移植版(`BAITO_HARNESS=aica_port`。本体は `dip_mcp/baito/harness.py`)で次の 2 つを回します。写しの中で回すので、
+基準値のファイル(`results_v4.json`、`transcripts/v4_*.txt`)は上書きしません。
 
-- §11.3 の受け入れチェックの 1〜7: 8/8 のペルソナが結果まで届く(`LOOP`、`CRASH` がない、`turns ≤ 15`)、review を
-  1 回以上する、空の HARD と low の HARD が 0、hs16 に深夜の NG が付く、セグメントの質問を必ず出す、終わりに矛盾が
-  残らない、`irrelevant`、`dropped`、`wasted` が 0
-- §11.3 の 8: §4.1 のベースラインより悪くならない(ターン数、シナリオのターン数、空の MID、同じ質問の繰り返し)
+- 単体チェック `unit_checks_v4.py`: 131/131 が合格する
+- シミュレーター `simulate.py v4`(20 ペルソナ、モックの LLM): §13-1 P4 の 1 の条件に照らす
+  - §4-1 の合否指標(`v4_agg` の `crash`、`loop`、`not_reached`、`minor_violation`、`result_violation`、
+    `silent_empty_hard`、`dropped`、`irrelevant`、`wasted`、`repeated` など)がすべて 0、`max_turns` が 15 以下
+  - §4-2 の「はい」の 4 項目(Q-turns、Q-scenario、Q-mid、Q-review)が §11-5 の基準値(`results_v4.json`)の範囲内
 
-§11.3 の 9(実 LLM につないだあとの transcript の確認)は実 API を使うので、CI では確かめません。
+CI は `--log evidence/baito_sim` を付けて回し、単体チェックとシミュレーターの出力、移植版の結果、会話ログの写し、合否を
+証跡に残します。pytest の `tests/test_baito_harness.py` も同じ検査を回します。
+
+§13-1 P3(実 LLM での測定、`python -m evals.baito_sim --real`)は実 API を使うので、CI では確かめません。
 人が予算を決めて回します。
 
-`evals.baito_sim` が main に入るまで(PR #115)は、CI はバイトのハーネスの回帰を回しません。
-そのときはチェックの画面に警告(「バイトのハーネスの回帰を回していない」)が出て、ジョブは緑のままです。
-緑でも、警告が出ていれば回帰は確かめていません。PR の説明にそう書きます。
 `line_runtime/baito_chat.py` があるのに `evals.baito_sim` が無いときは、CI を落とします。
 
 ### CI が確かめないこと
 
 - ブラウザのテスト(Playwright を入れていないので skip)
-- 実 API を使う評価(`python -m evals.run`、§11.3 の 9 など)
+- 実 API を使う評価(`python -m evals.run`、`python -m evals.baito_sim --real` など)
 - デプロイと LINE の実機での動き
 
 PR の説明でこれらに触れるときは、手元で回したのか、回していないのかを書き分けます。

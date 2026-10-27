@@ -42,7 +42,7 @@ jobs:
       - name: Lint
         if: ${{ !cancelled() }}
         run: ruff check . 2>&1 | tee evidence/ruff.log
-      # evals.baito_sim は PR #115 で入る。入る前だけ、回さずに警告を出す(緑のまま黙って飛ばさない)。
+      # evals.baito_sim が無いときは、回さずに警告を出す(緑のまま黙って飛ばさない)。
       # ハーネス(line_runtime/baito_chat.py)があるのに evals.baito_sim が無いときは、名前を変えたなどの事故なので落とす
       - name: Find the baito harness regression
         id: baito
@@ -54,11 +54,11 @@ jobs:
             echo "::error::line_runtime/baito_chat.py があるのに evals.baito_sim が無い。AGENTS.md の回帰の合格基準と ci.yml をそろえる"
             exit 1
           else
-            echo "::warning::evals.baito_sim が無いので、バイトのハーネスの回帰を回していない(PR #115 が main に入るまで)"
-            echo "バイトのハーネスの回帰: **回していない**(evals.baito_sim が無い。PR #115 が main に入るまで)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::evals.baito_sim が無いので、バイトのハーネスの回帰を回していない"
+            echo "バイトのハーネスの回帰: **回していない**(evals.baito_sim が無い)" >> "$GITHUB_STEP_SUMMARY"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Baito harness regression (mock LLM, PRD §11.3)
+      - name: Baito harness regression (mock LLM, PRD v4.1 unit checks + 20 personas)
         if: ${{ !cancelled() && steps.baito.outputs.run == 'true' }}
         run: python -m evals.baito_sim --log evidence/baito_sim 2>&1 | tee evidence/baito_sim.log
       - name: Test evidence

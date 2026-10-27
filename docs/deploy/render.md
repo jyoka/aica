@@ -10,6 +10,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | `Dockerfile` | Python 3.12 の image。Web プロセス(`line_runtime.server`)と、その子プロセスの dip の MCP サーバーが入る。2 つのサービスで同じものを使う。`AICA_VOICE_MODELS=1` で build すると、音声のモデルも入る |
 | `scripts/container_start.sh` | Web サービスの起動。`0.0.0.0:$PORT` で Web プロセスを動かす。`AICA_DIP_PORT` があれば、音声ワーカー向けの dip の MCP サーバーも動かす。`AICA_VOICE_WORKER=1` なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間) |
 | `scripts/voice_worker_start.sh` | 音声ワーカーのサービスの起動(`render.yaml` の `dockerCommand`)。Web サービスの private network の名前から、結果を返す先と dip の URL を作る |
+| `scripts/check_image_certs.py` | image の CA 証明書の確かめ。certifi と ca-certificates の版(実 API は使わない。下の「CA 証明書の版を確かめる」) |
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
 | `GET /healthz` | ヘルスチェック。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない |
 | `scripts/deploy_smoke.py` | デプロイの smoke。ヘルスチェックと初回の挨拶の 1 往復を確かめる(実 API を 1 回使う) |
@@ -39,6 +40,30 @@ docker と、リポジトリ直下の `.env` の `ANTHROPIC_API_KEY` と `OPENAI
 - `/app/data` がコンテナの外のボリュームで、コンテナを再起動しても会話の履歴と同意と dip の状態が残る
 
 2026-10-25 に手元(OrbStack)で通しました。挨拶の後のコンテナのメモリは約 200MB でした(Starter は 512MB)。
+
+## CA 証明書の版を確かめる
+
+外向きの HTTPS が信頼する CA の束は 2 つあります。どちらも build のたびに新しい版を入れます。
+
+| 束 | 使うもの | 入れ方 |
+|---|---|---|
+| certifi | httpx、openai、anthropic(OpenAI、Anthropic、LINE の呼び出し) | `requirements.txt` の `certifi>=2026.10.19` |
+| OS の `/etc/ssl/certs`(Debian の `ca-certificates`) | aiohttp を使うもの(LiveKit など) | `Dockerfile` の `apt-get install ca-certificates` |
+
+eMudhra の中間証明書の秘密鍵の漏洩([Render の通告](https://render.com/docs/advisory-emudhra)、2026-10-27)で、
+certifi は 2026.10.19 以上が要ります。image の版は次で確かめます。API キーは要りません。
+
+```bash
+./.venv/bin/python -m scripts.check_image_certs              # build → certifi と ca-certificates の版を確かめる
+./.venv/bin/python -m scripts.check_image_certs --no-build --probe   # 作ってある image(aica:certs)。通告の試験用のホストにもつなぐ
+```
+
+- ca-certificates は、image の中で `apt-get update` をして Debian の今の候補の版と比べます。古いキャッシュの層で build すると NG になるので、
+  `docker build --no-cache` で作り直します
+- `--probe` の試験用のホストは、鎖の根(emSign ECC Root CA - G3)がどちらの束にも無く、古い certifi(2026.10.18)でも
+  つながりません。版が古いことはこれでは見分けられないので、版の確かめが本体です
+
+2026-10-27 に手元(OrbStack)で通しました。certifi 2026.10.23、ca-certificates 20250419+deb13u1(Debian の候補と同じ)でした。
 
 ## Render に公開する
 

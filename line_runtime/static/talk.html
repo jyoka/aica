@@ -316,20 +316,21 @@
     b.append(btn(okText, "danger", run), btn("やめる", null, () => c.remove()));
     c.append(el("span", null, text), b); row.appendChild(c);
   }
-  // 1項目の行: 値(無ければ「まだありません」)と、直す・消す。直すと本人の言葉で上書き
-  function itemRow(label, value, saved, path, multiline) {
-    const row = el("div", "prow"); row.dataset.key = path;
+  // 1項目の行: 値(無ければ「まだありません」)と、直す・消す。直すと本人の言葉で上書き。
+  // base は直す・消す口(既定は希望の項目。職歴カードは /career)。editable=false は消すだけ(今のあなたに近いの)
+  function itemRow(label, value, saved, path, multiline, base = "/items", editable = true) {
+    const row = el("div", "prow"); row.dataset.key = base === "/items" ? path : `career-${path}`;
     row.appendChild(el("span", "pl", label));
     const v = el("div", "pv" + (value ? "" : " empty"), value || EMPTY);
     if (value && saved) v.appendChild(el("small", null, `${saved}`));
     const btns = el("div", "pbtns");
-    btns.appendChild(btn("直す", "edit", () => {
+    if (editable) btns.appendChild(btn("直す", "edit", () => {
       const f = el("div", "pedit"), t = el("textarea"), err = el("div", "perr"), b = el("div", "pbtns");
       t.value = value || ""; t.rows = multiline ? 4 : 1; t.setAttribute("aria-label", label);
-      b.append(btn("保存", "ok", () => change("PUT", `/items/${path}`, { value: t.value }, err)), btn("やめる", null, () => { f.remove(); btns.hidden = false; }));
+      b.append(btn("保存", "ok", () => change("PUT", `${base}/${path}`, { value: t.value }, err)), btn("やめる", null, () => { f.remove(); btns.hidden = false; }));
       f.append(t, err, b); row.appendChild(f); btns.hidden = true; t.focus();
     }));
-    if (value) btns.appendChild(btn("消す", "del", () => change("DELETE", `/items/${path}`)));
+    if (value) btns.appendChild(btn("消す", "del", () => change("DELETE", `${base}/${path}`)));
     row.append(v, btns); return row;
   }
 
@@ -374,6 +375,19 @@
     sc.appendChild(itemRow("前の会話で残したまとめ", cs ? cs.text : null, cs ? cs.recorded : null, "consultation_summary", true));
     box.appendChild(sc);
 
+    // 職歴カード(正社員のヒアリングで話したこと。task 255)。保存したものがあるときだけ。欄ごとに直す・消す
+    const cp = p.career_profile;
+    if (cp) {
+      const kc = card("職歴カード", "正社員の相談で話したことです。消した欄は、次の相談でまた聞きます。");
+      if (cp.segment) kc.appendChild(itemRow(cp.segment.label, cp.segment.value, cp.segment.saved, "segment", false, "/career", false));
+      for (const it of cp.answers) kc.appendChild(itemRow(it.label, it.value, it.saved, it.key, true, "/career"));
+      for (const c of cp.cards) {
+        kc.appendChild(el("h4", null, c.title));
+        for (const it of c.items) kc.appendChild(itemRow(it.label, it.value, it.saved, it.key, true, "/career"));
+      }
+      box.appendChild(kc);
+    }
+
     // アップロードした履歴書の読み取り結果(全文は「読み取り結果を見る」)。丸ごと消せる
     const rc = card("履歴書の読み取り結果"), rr = el("div", "prow"); rr.dataset.key = "resume";
     if (p.resume) {
@@ -405,7 +419,7 @@
     for (const d of p.arcade_drafts) {
       const r = el("div", "prow"); r.dataset.key = `arcade-${d.id}`;
       r.appendChild(el("div", "pv", `${d.at} に「${d.game}」で作った${d.document_kind}の下書き`));
-      if (d.blanks) r.appendChild(el("span", "pl", `数字の空欄が${d.blanks}か所あります`));
+      if (d.blanks) r.appendChild(el("span", "pl", `空欄が${d.blanks}か所あります`));
       const b = el("div", "pbtns"), a = el("a", null, "見る・直す");
       a.href = d.view_url; a.target = "_blank"; a.rel = "noopener";
       b.append(a, btn("消す", "del", () => confirmIn(r, "この下書きを丸ごと消します。チャットでも使われなくなります。", "消す", () => change("DELETE", `/arcade/${d.id}`))));

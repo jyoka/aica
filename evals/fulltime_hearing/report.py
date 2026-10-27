@@ -1,8 +1,20 @@
-"""指標と関門の報告(設計メモ §6.4)。形ごとの表、ペルソナごとの表、合格の線、良くなったとみなす差。"""
+"""指標と関門の報告(設計メモ §6.4)。形ごとの表、ペルソナごとの表、合格の線、良くなったとみなす差。
+
+いくつかの実行の結果(evals/results/fulltime-hearing-*.json)を 1 つの報告にまとめることもできる(費用 0。実 API を呼ばない):
+
+    ./.venv/bin/python -m evals.fulltime_hearing.report A.json BCD.json --exclude "2:D/p6-unknown#1" --out x.md
+
+--exclude は外す会話(「ファイルの番号:形/ペルソナ#回」をカンマ区切り。ファイルの番号は引数の順で 1 から、回はそのファイルの中での
+1 から)。回の番号は、まとめた順に振り直す。
+"""
 
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 from collections import defaultdict
+from pathlib import Path
 from statistics import mean
 
 from evals.fulltime_hearing.actor import IRRITATIONS, SHORT_ANSWER
@@ -198,3 +210,51 @@ def conversation_md(r: dict) -> list[str]:
             out.append(f"- 本人: {'[ボタン] ' if a['pressed'] else ''}{a['text']}" + ("(疲れ)" if a["tired"] else ""))
     out.append("")
     return out
+
+
+def combine(docs: list[dict], exclude: set[str] = frozenset()) -> dict:
+    """いくつかの実行の結果を 1 つにまとめる(形とペルソナは出てきた順)。exclude の会話(「ファイルの番号:形/ペルソナ#回」)は
+    外す。費用は実行の和。"""
+    runs: list[dict] = []
+    seen: dict[tuple, int] = defaultdict(int)
+    hit: set[str] = set()
+    for i, d in enumerate(docs, 1):
+        for r in d["runs"]:
+            key = f"{i}:{r['form']}/{r['persona']}#{r['rep'] + 1}"
+            if key in exclude:
+                hit.add(key)
+                continue
+            k = (r["form"], r["persona"])
+            runs.append(dict(r, rep=seen[k]))
+            seen[k] += 1
+    if missed := sorted(set(exclude) - hit):  # 打ち間違えた会話を黙って残さない
+        raise ValueError(f"--exclude の会話が結果に無い: {', '.join(missed)}")
+    c0 = docs[0]["config"]
+    forms = list(dict.fromkeys(f for d in docs for f in d["config"]["forms"]))
+    personas = list(dict.fromkeys(p for d in docs for p in d["config"]["personas"]))
+    stopped = next((d.get("stopped") for d in docs if d.get("stopped")), None)
+    return {"harness": "fulltime-hearing", "started_at": " + ".join(d["started_at"] for d in docs),
+            "config": c0 | {"forms": forms, "personas": personas, "repeat": max(seen.values(), default=0),
+                            "limit_usd": max(d["config"]["limit_usd"] for d in docs)},
+            "runs": runs, "spent_usd": sum(d.get("spent_usd", 0) for d in docs),
+            "ledger_total_usd": max(d.get("ledger_total_usd", 0) for d in docs), "stopped": stopped}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m evals.fulltime_hearing.report", description="結果の JSON を 1 つの報告にまとめる")
+    ap.add_argument("paths", nargs="+", type=Path, help="evals/results/fulltime-hearing-*.json(表の差は、最初に出る形と比べる)")
+    ap.add_argument("--exclude", default="", help="外す会話(「ファイルの番号:形/ペルソナ#回」のカンマ区切り)")
+    ap.add_argument("--out", type=Path, help="報告(Markdown)の書き先。無ければ標準出力")
+    a = ap.parse_args(argv)
+    doc = combine([json.loads(p.read_text(encoding="utf-8")) for p in a.paths],
+                  {x.strip() for x in a.exclude.split(",") if x.strip()})
+    md = report(doc)
+    if a.out:
+        a.out.write_text(md, encoding="utf-8")
+    else:
+        sys.stdout.write(md)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

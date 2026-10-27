@@ -1,0 +1,102 @@
+### v4 / seg_flip (学生と答えたが途中で社会人（夜間大学）と判明, true segment=side_job, llm_mode=None)
+BOT  バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+USER [icebreak/q_money/ask] 旅行・遊び
+     slots: purpose: ∅→fun(low)
+BOT  (1) いいね！今のあなたに近いのは？  ['学生', '家のこと中心（主婦・主夫など）', '本業あり副業探し', 'フリーター・求職中・その他']
+USER [icebreak/q_segment/ask] 学生
+     segment: unknown→student
+BOT  (2) いいね！年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）  ['中学生以下', '15〜17歳', '18歳以上', 'ひみつ']
+USER [hard_filter/hf_age/ask] 18歳以上
+     slots: age_band: ∅→18_plus(high)
+BOT  (3) いいね！学校のバイトのルールは？  ['OK', '届け出すればOK', '禁止されてる', 'わからない']
+USER [hard_filter/hf_school/ask] OK
+     slots: school_permission: ∅→ok(high)
+BOT  (4) いいね！週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+USER [hard_filter/hf_days/ask] 週1〜2日
+     slots: days_per_week: ∅→1-2(high)
+BOT  (5) いいね！働けるのはどの時間帯？（いくつでも）  ['朝', '昼', '夕方〜夜', '深夜もOK']
+USER [hard_filter/hf_time/ask] 夕方〜夜
+     slots: time_slots: ∅→['evening'](high)
+BOT  (6) いいね！通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+USER [hard_filter/hf_commute/ask] ごめん、実は社会人で、夜間の大学に通ってるんだ
+     event: {'t': 7, 'kind': 'segment_change_pending', 'old': 'student', 'new': 'side_job'}
+BOT  (7) いいね！確認させてね！今のあなたに近いのはどれ？  ['学生', '家のこと中心（主婦・主夫など）', '本業あり副業探し', 'フリーター・求職中・その他']
+USER [scenario_game/confirm_segment/confirm] 本業あり副業探し
+     segment: student→side_job
+     event: {'t': 8, 'kind': 'segment_switched', 'old': 'student', 'new': 'side_job', 'archived': ['school_permission']}
+BOT  (8) いいね！どっちを選ぶ？  ['時給高め立ちっぱなし', 'ふつう座れる']
+USER [scenario_game/sc_sj_stand/ask] 時給高め立ちっぱなし
+     slots: physical: ∅→standing_ok(low); wage_priority: ∅→wage_first(low)
+BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
+USER [scenario_game/sc_line/ask] 今すぐ抜けたい
+     slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
+BOT  (10) いいね！この3つ、一番やりたくないのは？  ['居酒屋ホール（夜）', '倉庫ピッキング', 'イベント設営']
+USER [reverse_pick/rp_side_job/ask] 居酒屋ホール（夜）
+BOT  (11) いいね！今の会社、副業はOK？  ['OK', '届け出が必要', '禁止されてる', 'わからない・グレー', '公務員です']
+USER [fill_gaps/hf_sideok/ask] OK
+     slots: side_job_allowed: ∅→ok(high)
+BOT  (12) いいね！働くなら平日？週末？  ['平日の夜', '土日', 'どちらでも']
+USER [fill_gaps/hf_weekday/ask] 平日の夜
+     slots: weekday_or_weekend: ∅→weekday_evening(high)
+BOT  (13) ここまでの話をまとめたよ！
+     【あなた】本業あり副業探し
+     【ゆずれない条件】
+     ・年齢：18歳以上
+     ・週の日数：週1〜2日
+     ・時間帯：夕方〜夜
+     ・通勤：未定（ここだけ教えて！）
+     ・副業の可否：OK
+     ・平日・週末：平日の夜
+     【好み】
+     ・時給の下限：未定（よければ教えてね）
+     ・1回の勤務時間：未定（よければ教えてね）
+     ・接客：できれば避けたい（推測）
+     ・体力面：立ち仕事OK（推測）
+     ・目的：旅行・遊び（推測）
+     ・本業後の体力：未定（よければ教えてね）
+     ・忙しさ：落ち着いた職場（推測）
+     ・時給と働きやすさ：時給優先（推測）
+     【NG】夜の飲食ホール
+     
+     推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆  ['これでOK']
+     | 【あなた】本業あり副業探し
+     | 【ゆずれない条件】
+     | ・年齢：18歳以上
+     | ・週の日数：週1〜2日
+     | ・時間帯：夕方〜夜
+     | ・通勤：未定（ここだけ教えて！）
+     | ・副業の可否：OK
+     | ・平日・週末：平日の夜
+     | 【好み】
+     | ・時給の下限：未定（よければ教えてね）
+     | ・1回の勤務時間：未定（よければ教えてね）
+     | ・接客：できれば避けたい（推測）
+     | ・体力面：立ち仕事OK（推測）
+     | ・目的：旅行・遊び（推測）
+     | ・本業後の体力：未定（よければ教えてね）
+     | ・忙しさ：落ち着いた職場（推測）
+     | ・時給と働きやすさ：時給優先（推測）
+     | 【NG】夜の飲食ホール
+USER [review/review/review] これでOK
+     slots: purpose: fun→fun(high); physical: standing_ok→standing_ok(high); wage_priority: wage_first→wage_first(high); customer_facing: avoid→avoid(high); pace: calm→calm(high)
+BOT  (14) ここまでの話をまとめたよ！
+     ここだけもう一回！
+     ・通勤：未定（ここだけ教えて！）
+     【NG】夜の飲食ホール
+     
+     推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆  ['これでOK']
+     | ここだけもう一回！
+     | ・通勤：未定（ここだけ教えて！）
+     | 【NG】夜の飲食ホール
+USER [review/review/review] これでOK
+BOT  (15) 副業の収入は、確定申告が必要になることや、本業と労働時間が合算されることがあるよ。くわしくは勤務先や税務署で確認してね。
+     ※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。
+     あなたに合いそうなのはこれ！
+     1. スーパーの品出し：スーパーの品出しは条件に合いそう
+     2. 倉庫の仕分け・ピッキング：倉庫の仕分け・ピッキングは条件に合いそう
+     3. イベント設営：イベント設営は条件に合いそう
+     未定：通勤（決まったらもっと絞り込めるよ）
+== END phase=result turns=15 asides=0 segment=side_job blocked=None
+   slots: purpose=fun(high,review_accepted); age_band=18_plus(high,choice:hf_age); days_per_week=1-2(high,choice:hf_days); time_slots=['evening'](high,choice:hf_time); physical=standing_ok(high,review_accepted); wage_priority=wage_first(high,review_accepted); customer_facing=avoid(high,review_accepted); pace=calm(high,review_accepted); side_job_allowed=ok(high,choice:hf_sideok); weekday_or_weekend=weekday_evening(high,choice:hf_weekday)
+   NG user=['夜の飲食ホール'] rule=[] flags=[] unresolved={}
+   METRICS {"adversarial": true, "turns": 15, "asides": 0, "reached": true, "loop": false, "crash": null, "per_phase": {"icebreak": 2, "hard_filter": 5, "scenario_game": 3, "reverse_pick": 1, "fill_gaps": 2, "review": 2, "aside": 0}, "final_seg": "side_job", "true_seg": "side_job", "review_rounds": 2, "blocked": null, "hard_empty_pre_review": ["commute"], "hard_low_pre_review": [], "hard_unresolved_end": ["commute"], "silent_empty_hard": [], "silent_low_hard": [], "guessed_hard_listed": [], "phase_turns_mismatch": {}, "phase_cap_violation": {}, "over_max_turns": false, "unknown_hard_listed": ["commute"], "review_accepted_hard": [], "review_accepted_pref": ["purpose", "physical", "wage_priority", "customer_facing", "pace"], "mid_empty_end": ["hourly_wage_min", "shift_length", "energy_left"], "unresolved": {}, "irrelevant": [], "asked_before_seg_known": ["hf_school"], "wasted": [], "repeated": [], "reasks": [], "clarify": 0, "dropped": 0, "rejected_by_rule": 0, "minor_mode": false, "derived_ng": [], "minor_violation": [], "result_violation": [], "recs": ["super_stock", "warehouse", "event_setup"], "spam_hard_high": [], "danger_warned": false, "llm_repaired": 0, "llm_retry_ok": 0, "llm_fallback": 0, "discarded": 0, "restarts": 0, "flags": []}

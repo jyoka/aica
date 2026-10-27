@@ -1,3 +1,7 @@
+# PRD の参照資料(バイト探しの相棒の質問バンク・ハーネス・シミュレーター)は原文のまま置くので、lint しない。
+# 移した先(dip_mcp/baito、evals/baito_sim.py)は lint する
+extend-exclude = ["docs/prd/baito_harness"]
+
 # line-sim 配下のみに効く。実行ディレクトリによらず dip_mcp / line_runtime / evals / resume_intake / voice_resume を
 # ローカルパッケージとして扱い、import の並び(I001)の判定を安定させる。
 [lint.isort]

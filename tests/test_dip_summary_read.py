@@ -92,14 +92,14 @@ def results(mkdir=tempfile.mkdtemp) -> dict:
 
 # main の後に足した、行動の読み方と関係ない項目(task 188 のゲームの下書きとゲームの URL、task 233 の条件の問いの選択肢の候補、
 # task 237 のやり終えた入口)。比べない
-LATER = ("arcade_draft", "arcade_url", "arcade_drafts", "condition_options", "used_entries")
+LATER = ("arcade_draft", "arcade_url", "arcade_drafts", "condition_options", "used_entries", "career_profile")
 
 
 def _plain(x, drop: tuple[str, ...] = ("as_of",)):
     """JSON に通した形(タプルをリストに)から、比べない鍵(と LATER)を落とす。要約の note からは、後で足した説明
-    (logic.ARCADE_NOTE、logic.CONDITION_NOTE、logic.ENTRY_NOTE)を外す。"""
+    (logic.ARCADE_NOTE、logic.CONDITION_NOTE、logic.ENTRY_NOTE、logic.CAREER_NOTE)を外す。"""
     if isinstance(x, dict):
-        return {k: (v.removesuffix(logic.ENTRY_NOTE).removesuffix(logic.CONDITION_NOTE).removesuffix(logic.ARCADE_NOTE)
+        return {k: (v.removesuffix(logic.CAREER_NOTE).removesuffix(logic.ENTRY_NOTE).removesuffix(logic.CONDITION_NOTE).removesuffix(logic.ARCADE_NOTE)
                     if k == "note" and isinstance(v, str) else _plain(v, drop))
                 for k, v in x.items() if k not in drop + LATER}
     if isinstance(x, list):
@@ -150,6 +150,13 @@ TOOL_ARGS = {
     "save_user_preferences": {"preferences": {"area": "新宿"}},
     "set_search_track": {"track": "アルバイト・パート", "evidence": "バイトを探しています"},
     "get_counseling_playbook": {"track": "未定"},
+    "start_baito_consultation": {},
+    "baito_turn": {"text": "推し活・趣味"},
+    "end_baito_consultation": {},
+    "start_career_consultation": {},
+    "career_turn": {"text": "同じ仕事で上へ"},
+    "end_career_consultation": {},
+    "update_career_card": {"item": "career1.result", "text": "誤出荷がゼロになった"},
     "record_conversation_outcome": {"outcome": "consult", "reason": "相談した", "confidence": 0.8},
 }
 
