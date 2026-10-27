@@ -73,6 +73,7 @@ LABEL_MAX = 20
 CARD_MAX = 200  # まとめ 1 回(文とカードの中の字の合計)。読む 30 秒 + ボタン 2 秒で 35 秒以内(§3.3)
 REACTION_MAX = 25  # 生成の受け止め(質問の文の外)の字数
 PROGRESS_WORDS = 10  # 形 C の 1 行に出す本人の言葉の字数
+KNOWN_ROLE_CHARS = 10  # 履歴書から入った職歴の問いの頭に付ける、仕事の言葉の字数(_expand)
 SAVED_TEXT_MAX = 200  # 保存する 1 つの欄の字数の上限(dip_mcp.career.store.VALUE_MAX。超える値は保存しない)
 
 PASS, DONT_KNOW, LATER, REVIEW_OK = "パス", "覚えていない", "あとで", "これでOK"
@@ -311,12 +312,17 @@ def type_seconds(text):
 
 
 # ----------------------------- 質問 -----------------------------
-def _expand(q, n, segment):
-    """職歴カードのひな形を n 枚目の問いにする。"""
+def _expand(q, n, segment, state=None):
+    """職歴カードのひな形を n 枚目の問いにする。何をしていたかが履歴書か前の相談から入っている(本人がこの会話で言っていない)
+    カードの残りの問いは、どの職歴の話か分かるように、仕事の言葉を頭に付ける(text_known。「それで」だけでは何の話か分からないため)。"""
     def sub(s):
         return s.replace("{n}", str(n))
     text = ((q.get("text_by_segment") or {}).get(segment) or {}).get(str(n)) or \
         q["text"].replace("{which}", "直近の" if n == 1 else "その前の")
+    role = (state.slots.get(card_key(n, "role")) if state else None) or {}
+    if q.get("text_known") and role.get("from") in ("resume", "saved") and role.get("status") == "filled" and role.get("text"):
+        r = " ".join(nfkc(role["text"]).split())  # 改行や続く空白を 1 つの空白に(問いの文は 1 行。validate_reply が文のまま探す)
+        text = q["text_known"].replace("{role}", r if len(r) <= KNOWN_ROLE_CHARS else r[:KNOWN_ROLE_CHARS] + "…")
     return dict(q, id=f"{q['id']}{n}", card=n, text=text, targets=[sub(t) for t in q["targets"]],
                 choice_effects={c: {sub(k): v for k, v in eff.items()} for c, eff in q["choice_effects"].items()})
 
@@ -332,7 +338,7 @@ def questions(state, bank):
             continue
         out.append(q)
     for n in range(1, CARD_COUNT + 1):
-        out += [_expand(q, n, state.segment) for q in cards]
+        out += [_expand(q, n, state.segment, state) for q in cards]
     return out
 
 
@@ -369,6 +375,8 @@ def score(state, q, budget=True):
         ok = state.segment == "unknown" and (not budget or can_ask(state, "segment"))
         return HARD + 0.5 if ok else 0.0
     if q["targets"] == ["__ng__"]:
+        if state.user_ng or (state.slots.get("stop_doing") or {}).get("status") == "filled":
+            return 0.0  # もう避けたいこと(NG、やめたいこと)を言った人には、逆選択を聞かない(聞き直しに見えるため)
         return float(LOW) if not budget or (state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)) else 0.0
     total = 0.0
     for t in q["targets"]:
@@ -723,8 +731,8 @@ def card_rows(state, width, keep_mid=True, keep_low=True, focus=False):
         e = state.slots.get(s)
         if focus and not (p == HARD and (e is None or e["confidence"] == "low")):
             continue
-        if p == MID and not keep_mid or p == LOW and (not keep_low or e is None):
-            continue
+        if p == MID and (not keep_mid or e is None) or p == LOW and (not keep_low or e is None):
+            continue  # 聞かなかった MID と LOW は出さない(「未定」の行が、急いでいる本人に長い文を打たせるため。task 248)
         lines.append(([s], f"{SLOTS[s]['short']}: {_disp(s, e, width)}"))
     if not focus:
         for n in range(1, CARD_COUNT + 1):
@@ -732,8 +740,9 @@ def card_rows(state, width, keep_mid=True, keep_low=True, focus=False):
             if all(e is None for e in es) or (es[0] is not None and es[0]["status"] != "filled" and all(e is None for e in es[1:])):
                 continue
             keys = [card_key(n, f) for f in CARD_FIELDS if not _card_skipped(state, card_key(n, f))]
+            # 職歴カードの聞かなかった欄も出さない(空欄は下書きの画面で埋める。§4)
             lines.append((keys, f"職歴{n}: " + " / ".join(_disp(card_key(n, f), e, width)
-                                                          for f, e in zip(CARD_FIELDS, es, strict=True))))
+                                                          for f, e in zip(CARD_FIELDS, es, strict=True) if e is not None)))
         if state.user_ng:
             lines.append(([], "NG: " + "、".join(n if chars(n) <= width else n[:width] + "…" for n in state.user_ng)))
     return [(k, x if chars(x) <= BUBBLE_MAX else x[:BUBBLE_MAX - 1] + "…") for k, x in lines]
