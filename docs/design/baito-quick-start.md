@@ -45,7 +45,7 @@
 
 | 絵 | 文字 | ハーネスに入れる値(確信度 low) | 求人の検索に渡す値 |
 |---|---|---|---|
-| ふきだし | しゃべるの好き | `customer_facing` = `like` | `min_talk_level` = 2 |
+| ふきだし | しゃべるの好き | `customer_facing` = `like` | `min_talk_level` = 3 |
 | 走る人 | 動いてたい | `physical` = `standing_ok` | `min_physical_level` = 2 |
 | ヘッドホン | ひとりで黙々 | `customer_facing` = `avoid` | `max_talk_level` = 2 |
 | コーヒー | 座ってじっくり | `physical` = `seated` | `max_physical_level` = 1 |
@@ -106,10 +106,11 @@
 
 今の `logic.recommend` には年齢の引数が無い。中学生を止める処理(`dip_mcp/baito/session.py` の `job_block`)は、MCP のツールの層にしか無い。なので、次を足す。
 
-- `recommend` に、未成年かどうかの引数を足す。未成年のときは、次の求人を外す。
+- `recommend` と `relax` に、未成年かどうかの引数を足す。`relax` では、この引数を外す候補にしない(「未成年を外すと N 件」を出さないため)。未成年のときは、次の求人を外す。
   - `time_bands` に「深夜」がある求人
   - `shift` の終わりの時刻が 22 時より後の求人。`shift` の文から時刻が読めない求人も外す(安全側)。例:「居酒屋 18:00〜翌1:00」は外す。
   - `physical_level` が 3 の求人
+  - `shift` の始まりの時刻が 5 時より前の求人(今の求人には無いが、法律の深夜の範囲に入るため)
 - 中学生には、検索の前に止める(`job_block` と同じ扱い)。
 - ハーネスとランタイムは、未成年のとき必ずこの引数を付けて呼ぶ。付け忘れを防ぐため、年齢が不明のときも未成年として呼ぶ。
 
