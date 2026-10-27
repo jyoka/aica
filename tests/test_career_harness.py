@@ -225,6 +225,59 @@ def test_resume_filled_slots_are_not_asked():
         assert st.has_resume and H.stop_at(st) == 90
 
 
+def test_questions_on_a_card_known_from_the_resume_name_the_job():
+    """何をしていたかが履歴書から入った職歴の、残りの問いには仕事の言葉を付ける(task 248。実 API の本人役が
+    「それで、何が変わりましたか?」だけでは何の話か分からず、聞き返した)。この会話で本人が言った職歴には付けない。"""
+    p5 = PERSONAS["p5-resume"]
+    r = career_sim.run_one(p5, "C")
+    asked = {e["qid"]: e for e in r["state"].log if e["kind"] == "ask"}
+    q = H.qmap(r["state"], H.BANK)["card_result1"]
+    assert "card_result1" in asked and q["text"] == "「みほんホテルでフロン…」で、何が変わりましたか?"
+    assert H.chars(q["text"]) <= H.BUBBLE_MAX - H.REACTION_MAX
+    st = H.new_state(form="C")
+    H.start(st, H.BANK)
+    st.slots["career1.role"] = H.entry("filled", "物流会社で現場リーダー", frm="free_current:card_role1")
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "それで、何が変わりましたか?"
+    st.slots["career1.role"]["from"] = "saved"  # 前の相談で保存した職歴も、この会話では言っていない
+    assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「物流会社で現場リーダ…」の規模は?")  # 10 字で切る
+    st.slots["career1.role"]["text"] = "営業\n係長"  # 履歴書の改行は空白に(問いの文は 1 行)
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「営業 係長」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "物流センター長で1200人を統括"  # 切るなら最初の数の手前(「12…」は本人が言っていない数)
+    q = H.qmap(st, H.BANK)["card_result1"]
+    assert q["text"] == "「物流センター長で…」で、何が変わりましたか?" and not H.digits_in(q["text"])
+    st.slots["career1.role"]["text"] = "物流センター長で千二百人を統括"  # 漢数字も
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "物流センター長で1,200人"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    # 切った引用には数を 1 つも残さない(字の集まりの抜けで「1兆…」「3億5…」「1万…」を見せない)
+    for role in ("営業部長で年商1兆2000億円", "営業部長で年商3億5千万円"):
+        st.slots["career1.role"]["text"] = role
+        q = H.qmap(st, H.BANK)["card_scale1"]
+        assert q["text"].startswith("「営業部長で年商…」の規模は?") and not H.digits_in(q["text"])
+    for role in ("物流センター長で1万2000人", "物流センター長で千2百人"):
+        st.slots["career1.role"]["text"] = role
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    assert H._clip("営業部長で年商1兆円", 10) == "営業部長で年商1兆円"  # 切らずに済むなら、数があっても本人の言葉のまま
+    # 数の手前で切ると 4 字未満になるなら、引用をやめて決まった言い方にする
+    for role in ("1200人の物流センター長", "第一営業部の課長として", "一般職の事務と経理の担当", "ホテル1棟の総支配人として"):
+        assert H._clip(role, 10) is None, role
+        st.slots["career1.role"]["text"] = role
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "そのお仕事で、何が変わりましたか?"
+        assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("そのお仕事の規模は?")
+    assert H._clip("みほんホテルで接客2年", 10) == "みほんホテルで接客…"  # 数が上限の後ろなら、上限で切る
+
+def test_no_reverse_pick_after_the_person_named_what_to_stop():
+    """やめたいこと(early)か NG をもう言った人には、逆選択を聞かない(task 248。実 API で聞き直しに見えた)。"""
+    p4 = PERSONAS["p4-short"]
+    r = career_sim.run_one(p4, "C")
+    st = r["state"]
+    assert st.slots["stop_doing"]["status"] == "filled" and "rp_general" not in st.asked
+    st2 = H.new_state(form="C")
+    st2.user_ng.append("夜勤")
+    rp = next(q for q in H.BANK if q["id"] == "rp_general")
+    assert H.score(st2, rp) == 0.0 and H.score(H.new_state(form="C"), rp) > 0
+
+
 def test_prefill_skips_why_now():
     st = H.new_state(prefill={"why_now": {"text": "役職が上がらない"}})
     _to(st, "hf_area")
@@ -239,7 +292,9 @@ def test_form_b_has_no_scenarios_reverse_pick_or_progress():
     b_text, c_text = "\n".join(b["transcript"]), "\n".join(c["transcript"])
     assert "/sc_" not in b_text and "/rp_" not in b_text and "/fg_work_style" in b_text
     assert "✓職歴" not in b_text and "あと" not in b_text.replace("あとで", "")
-    assert "/sc_" in c_text and "/rp_" in c_text and "✓職歴1" in c_text and "問です" in c_text
+    # p4 はやめたいことを言うので、C でも逆選択は出ない(task 248)。逆選択が C の問いにあることは、状態で確かめる
+    assert "/sc_" in c_text and "/rp_" not in c_text and "✓職歴1" in c_text and "問です" in c_text
+    assert [q["id"] for q in H.questions(H.new_state(form="C"), H.BANK) if q["phase"] == "reverse_pick"] == ["rp_general"]
     assert H.new_state(form="B").form == "B"
     assert not [q for q in H.questions(H.new_state(form="B"), H.BANK) if q["phase"] in ("scenario_game", "reverse_pick")]
 
@@ -371,6 +426,19 @@ def test_review_card_budget_and_corrections():
     assert out["qid"] == "review" and st.last_card["focus"] and out["bubbles"][0] == H.REVIEW_FOCUS_LEAD
     out = H.turn(st, H.REVIEW_OK, H.BANK, LLM())
     assert out["done"] and st.result and st.review_rounds == 2
+
+
+def test_review_card_shows_no_unasked_mid_or_card_fields():
+    """まとめのカードに、聞かなかった MID と職歴カードの欄(「未定」)を出さない(task 248。実 API の本人役が「未定」を埋めようと
+    長い文を打ち、履歴書ありの人が目標時間を超えた)。空いている HARD は「未定」のまま出す(まとめの 2 回目で聞く)。"""
+    st = H.new_state(form="C", prefill={"why_now": {"text": "役職が上がらない"}, "career1.role": {"text": "ホテルのフロント"},
+                                         "career2.role": {"text": "旅行の営業"}})
+    st.segment = "same_path"
+    lines = H.card_lines(st, 16)
+    assert "勤務地: 未定" in lines  # HARD
+    assert not [x for x in lines if x.startswith(("働き方", "次は"))]  # MID
+    assert "職歴1: ホテルのフロント" in lines and "職歴2: 旅行の営業" in lines
+    assert not [x for x in lines if "未定" in x and not x.startswith(tuple(H.SLOTS[s]["short"] for s in H.hard_slots(st)))]
 
 
 def test_review_ok_promotes_inferred_values():

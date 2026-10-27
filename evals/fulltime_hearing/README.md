@@ -19,11 +19,13 @@
 | `--max-turns` | 1 会話の AI の返信の上限(費用の歯止め)。上限の返信が result でなければ、本人役と形にもう送らずに「ターン上限」で止める | 30 |
 | `--same-samples` | 文が同じ意味かを判定する回数(1 以上) | 2 |
 
-- 実 API を使います。本人役とジャッジはどの形でも、形 A はエージェントも使います。キーはリポジトリ直下の `.env` から読みます。
+- 実 API を使います。本人役とジャッジはどの形でも、形 A はエージェントも、形 B〜D はハーネスのモデルも使います。キーはリポジトリ直下の `.env` から読みます。
+- 1 会話の費用(task 248 の実績): 形 A は $0.06〜0.30(平均 $0.19)、形 B〜D は $0.05〜0.15(平均 約 $0.10)。設計メモ §7
 - 台帳は 1 会話ごとに 1 行足します。会話を始める前に累計を見て、上限に達していたら止めます(終了コード 2)。
 - 結果は `evals/results/fulltime-hearing-<日時>.json` と `.md` です。1 会話ごとに上書き保存するので、途中で止めても残ります。
   `evals/results/` は git に入りません。基準に残すものは `evals/baseline/` にコピーします。
 - 計測の結果は、設計メモの §7 に 1 行ずつ書きます。
+- いくつかの実行の結果を 1 つの報告にまとめるときは `python -m evals.fulltime_hearing.report <JSON>... [--exclude "2:D/p6-unknown#1"] --out x.md`(費用 0)。task 248 の結果と報告は `evals/baseline/fulltime-hearing/`
 
 例:
 
@@ -32,8 +34,8 @@
 ./.venv/bin/python -m evals.fulltime_hearing.run --form script-bad,script-good --persona p1-sales,p4-short --limit-usd 0.5
 # A を測る(§6.6 の 2)
 ./.venv/bin/python -m evals.fulltime_hearing.run --form A --repeat 2 --limit-usd 2
-# B〜D を A と比べる(§6.6 の 4。B と C は 2/5、D は 3/5 のタスクが足してから)
-./.venv/bin/python -m evals.fulltime_hearing.run --form A,B,C,D --repeat 2 --limit-usd 7
+# B〜D を比べる(§6.6 の 4。A は別に回した結果と比べる)
+./.venv/bin/python -m evals.fulltime_hearing.run --form B,C,D --repeat 2 --limit-usd 10
 ```
 
 ## 形
@@ -43,7 +45,7 @@
 | `A` | 今の正社員の相談(`dip_mcp/playbooks/fulltime_chat.md`)。LINE のトークとして回し、LIFF の画面は使わない。本人役が読むのは LINE に送るメッセージ(`line_channel.to_messages`)の字 | 会話の記録と、先に送った履歴書から、ジャッジが事実を取り出す |
 | `script-good` | 台本の良い AI。1 回に 1 問、80 字まで、聞き直さない、ボタンとパス、§3.3 の時間の予算 | 台本が本人の言葉のまま持つ |
 | `script-bad` | 台本の悪い AI。長い、2 つ聞く、聞き直す、面接口調 | 同上 |
-| `B`、`C`、`D` | 実 LLM ではまだ回せない。ハーネス(`dip_mcp/career/`)は 2/5 のタスクで作り、実 LLM につなぐ 2b(B、C)と 3/5(D)のタスクが `forms.py` の `FORMS` に足す。B と C のモックの回帰は `python -m evals.career_sim`(費用 0) | ハーネスの終わりの状態(`harness.captured`) |
+| `B`、`C`、`D`、`D-noband` | ハーネス(`dip_mcp/career/`)を、トークと同じモデルの呼び方(`line_runtime/career_chat.py`)でつないだもの(`forms.py` の `FormHarness`。5/5 のタスク)。1 ターンは `dip_mcp/career/session.py` の `turn` と同じく、モデルの出力が要るたびにターンの始めからやり直す。dip の保存とトークの AI は通らない。形 D は Flex の中の字(`line_runtime/career_ui.py`)を本人役が読む。`D-noband` は帯を切った D(`CAREER_UI_BAND=off`)。履歴書を先に送っている人は、モックの回帰と同じく履歴書の欄を事実表の値で先に埋める。「あとで」で閉じたら、本人が断った離脱。モックの回帰は `python -m evals.career_sim`(費用 0) | ハーネスの終わりの状態(`harness.captured`) |
 
 形は `start()`、`send(text, pressed)`、`captured()`、`saved_texts()`、`wasted()` を持ちます。`captured()` の形は `judge.py` の
 docstring にあります(`None` を返すと、会話の記録から取り出します)。形 A の完了と離脱は、次のように数えます。

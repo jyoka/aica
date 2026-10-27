@@ -1,0 +1,942 @@
+{
+  "harness": "fulltime-hearing",
+  "started_at": "2026-10-27 18:30",
+  "config": {
+    "forms": [
+      "D"
+    ],
+    "personas": [
+      "p6-unknown"
+    ],
+    "repeat": 1,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5",
+    "sim_model": "claude-sonnet-5-5",
+    "judge_model": "claude-sonnet-5-5",
+    "same_samples": 2,
+    "max_turns": 30,
+    "ledger": "evals/budget-fulltime-hearing.jsonl",
+    "limit_usd": 9.6
+  },
+  "runs": [
+    {
+      "form": "D",
+      "persona": "p6-unknown",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 7,
+        "facts_total": 10,
+        "facts_rate": 0.7,
+        "completed": true,
+        "left": null,
+        "seconds": 289.9,
+        "typed_chars": 85,
+        "button_ratio": 0.5,
+        "ai_turns": 11,
+        "irritations": 0,
+        "tired_ignored": 1,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": 0,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": []
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "今の仕事を続けていいか迷っているから",
+          "got": {
+            "status": "filled",
+            "text": "今の仕事を続けていいか迷っているから",
+            "number": null,
+            "range": null,
+            "unit": null,
+            "confidence": "high",
+            "from": "free_current:ib_why_now"
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "札幌市内",
+          "got": {
+            "status": "filled",
+            "text": "札幌市内",
+            "number": null,
+            "range": null,
+            "unit": null,
+            "confidence": "high",
+            "from": "free_current:hf_area"
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "380万円",
+          "got": {
+            "status": "filled",
+            "text": "300万円台",
+            "number": null,
+            "range": [
+              300,
+              399
+            ],
+            "unit": "万円",
+            "confidence": "high",
+            "from": "button:hf_salary"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "良いところがあれば",
+          "got": {
+            "status": "filled",
+            "text": "良いところがあれば",
+            "number": null,
+            "range": null,
+            "unit": null,
+            "confidence": "high",
+            "from": "button:hf_timing"
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんシステムでサポートの窓口、3年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "みほんシステムでサポートの窓口を3年やってます。今の会社です",
+            "number": 3.0,
+            "range": null,
+            "unit": "年",
+            "confidence": "high",
+            "from": "free_current:card_role1"
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "25件(1日の問い合わせ)",
+          "got": {
+            "status": "filled",
+            "text": "1日の問い合わせが25件くらいです",
+            "number": 25.0,
+            "range": null,
+            "unit": "件",
+            "confidence": "high",
+            "from": "free_current:card_scale1"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "よくある質問のページを作り、問い合わせを減らした",
+          "got": {
+            "status": "filled",
+            "text": "FAQを作って問い合わせが減った",
+            "number": null,
+            "range": null,
+            "unit": null,
+            "confidence": "high",
+            "from": "free_current:card_result1"
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん電機の店で家電の販売、2年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "パソコン売り場の担当を任された",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "area": {
+          "status": "filled",
+          "text": "札幌市内",
+          "number": null,
+          "range": null,
+          "unit": null,
+          "confidence": "high",
+          "from": "free_current:hf_area"
+        },
+        "blank_period": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "filled",
+          "text": "FAQを作って問い合わせが減った",
+          "number": null,
+          "range": null,
+          "unit": null,
+          "confidence": "high",
+          "from": "free_current:card_result1"
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "みほんシステムでサポートの窓口を3年やってます。今の会社です",
+          "number": 3.0,
+          "range": null,
+          "unit": "年",
+          "confidence": "high",
+          "from": "free_current:card_role1"
+        },
+        "career1.scale": {
+          "status": "filled",
+          "text": "1日の問い合わせが25件くらいです",
+          "number": 25.0,
+          "range": null,
+          "unit": "件",
+          "confidence": "high",
+          "from": "free_current:card_scale1"
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "change_reason": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "direction": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "keep_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "filled",
+          "text": "300万円台",
+          "number": null,
+          "range": [
+            300,
+            399
+          ],
+          "unit": "万円",
+          "confidence": "high",
+          "from": "button:hf_salary"
+        },
+        "raise_target": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "filled",
+          "text": "良いところがあれば",
+          "number": null,
+          "range": null,
+          "unit": null,
+          "confidence": "high",
+          "from": "button:hf_timing"
+        },
+        "stop_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "team_style": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "use_experience": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "why_now": {
+          "status": "filled",
+          "text": "今の仕事を続けていいか迷っているから",
+          "number": null,
+          "range": null,
+          "unit": null,
+          "confidence": "high",
+          "from": "free_current:ib_why_now"
+        },
+        "work_hours": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "work_style": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": false,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "職務経歴書の材料を3分で集めます。"
+            ],
+            "buttons": [
+              "始める",
+              "あとで"
+            ],
+            "flex": [
+              "職務経歴書を3分で",
+              "1",
+              "条件",
+              "2",
+              "職歴",
+              "3",
+              "まとめ",
+              "目安 3〜5分",
+              "始める",
+              "あとで"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 8.1,
+          "actor": {
+            "text": "始める",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "今のあなたに近いのは?"
+            ],
+            "buttons": [
+              "同じ仕事で上へ",
+              "仕事を変えたい",
+              "ブランクから戻る",
+              "経験が浅い",
+              "パス",
+              "あとで"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.5,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 16.6,
+          "actor": {
+            "text": "パス",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "わかりました。今回、仕事を探そうと思ったきっかけは?"
+            ],
+            "buttons": [
+              "パス",
+              "あとで"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 4.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 23.2,
+          "actor": {
+            "text": "今の仕事を続けていいか迷っているから",
+            "pressed": false,
+            "tired": false,
+            "seconds": 27.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "あと8問です\n迷いがあるのですね。働きたい場所はどこですか?(駅や市の名前で)"
+            ],
+            "buttons": [
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "プロフィール",
+              "1/12",
+              "＋ なぜ今: 今の仕事を続けていいか迷…"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 60.9,
+          "actor": {
+            "text": "札幌市内",
+            "pressed": false,
+            "tired": false,
+            "seconds": 6.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "札幌市内ですね。年収はいくらから考えますか?"
+            ],
+            "buttons": [
+              "300万円台",
+              "400万円台",
+              "500万円台",
+              "600万円以上",
+              "こだわらない",
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "プロフィール",
+              "2/12",
+              "＋ 勤務地: 札幌市内"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 78.4,
+          "actor": {
+            "text": "300万円台",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "300万円台ですね。いつから働けそうですか?"
+            ],
+            "buttons": [
+              "すぐ",
+              "3か月以内",
+              "半年以内",
+              "良いところがあれば",
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "プロフィール",
+              "3/12",
+              "＋ 年収の下限: 300万円台"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.5,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 90.9,
+          "actor": {
+            "text": "良いところがあれば",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "あと5問です\n時期は決めていないのですね。直近のお仕事を一言で教えてください(勤め先、役割、年数など)"
+            ],
+            "buttons": [
+              "覚えていない",
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "あなたのプロフィール",
+              "4/12",
+              "条件",
+              "今の仕事を続けていいか迷っているから / 札幌市内 / 300万円台 / 良いところがあれば",
+              "まだ",
+              "□ 職歴カード ほか2"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 19.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 112.1,
+          "actor": {
+            "text": "みほんシステムでサポートの窓口を3年やってます。今の会社です",
+            "pressed": false,
+            "tired": false,
+            "seconds": 45.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 8,
+          "reply": {
+            "bubbles": [
+              "サポート窓口を3年ですね。規模はどのくらいでしたか?人数、件数、社数など、数字ひとつで"
+            ],
+            "buttons": [
+              "5人くらい",
+              "10人くらい",
+              "20人以上",
+              "覚えていない",
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "職歴1(直近)",
+              "1/3",
+              "仕事",
+              "みほんシステムでサポートの窓口を3年やってます。今の会社です",
+              "規模",
+              "まだ",
+              "結果",
+              "まだ"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 18.0,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 175.1,
+          "actor": {
+            "text": "1日の問い合わせが25件くらいです",
+            "pressed": false,
+            "tired": false,
+            "seconds": 25.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 9,
+          "reply": {
+            "bubbles": [
+              "1日25件ですね。それで、何が変わりましたか?"
+            ],
+            "buttons": [
+              "覚えていない",
+              "パス",
+              "あとで"
+            ],
+            "flex": [
+              "職歴1(直近)",
+              "2/3",
+              "仕事",
+              "みほんシステムでサポートの窓口を3年やってます。…",
+              "規模",
+              "1日の問い合わせが25件くらいです",
+              "結果",
+              "まだ"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 14.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 214.7,
+          "actor": {
+            "text": "FAQを作って問い合わせが減った",
+            "pressed": false,
+            "tired": true,
+            "seconds": 24.0,
+            "invalid_button": false,
+            "tired_ignored": true
+          }
+        },
+        {
+          "turn": 10,
+          "reply": {
+            "bubbles": [
+              "まとめです。違うところを押すか、送ってください。"
+            ],
+            "buttons": [
+              "これでOK",
+              "あとで"
+            ],
+            "flex": [
+              "まとめ",
+              "なぜ今: 今の仕事を続けていいか迷っている…",
+              "直す",
+              "勤務地: 札幌市内",
+              "直す",
+              "年収: 300万円台",
+              "直す",
+              "時期: 良いところがあれば",
+              "直す",
+              "働き方: 未定",
+              "直す",
+              "次は: 未定",
+              "直す",
+              "職歴1: みほんシステムでサポートの窓口を… / 1日の問い合わせが25件くらいで… / FAQを作って問い合わせが減った",
+              "仕事",
+              "規模",
+              "結果"
+            ],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 25.5,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 264.2,
+          "actor": {
+            "text": "これでOK",
+            "pressed": true,
+            "tired": true,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 11,
+          "reply": {
+            "bubbles": [
+              "おつかれさまでした。職務経歴書の材料をまとめました。"
+            ],
+            "buttons": [],
+            "flex": [
+              "あなたのプロフィール",
+              "7/12",
+              "条件",
+              "今の仕事を続けていいか迷っているから / 札幌市内 / 300万円台 / 良いところが…",
+              "職歴",
+              "1枚、欄3/6",
+              "まだ",
+              "□ 働き方 ほか1",
+              "職歴1(直近)",
+              "3/3",
+              "仕事",
+              "みほんシステムでサポートの…",
+              "規模",
+              "1日の問い合わせが25件く…",
+              "結果",
+              "FAQを作って問い合わせが…",
+              "完成"
+            ],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 23.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 289.9
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "職務経歴書の材料を3分で集めます。\n[カード] 職務経歴書を3分で\n[カード] 1\n[カード] 条件\n[カード] 2\n[カード] 職歴\n[カード] 3\n[カード] まとめ\n[カード] 目安 3〜5分\n[カード] 始める\n[カード] あとで\n[ボタン] 始める / あとで"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 始める"
+        },
+        {
+          "who": "agent",
+          "text": "今のあなたに近いのは?\n[ボタン] 同じ仕事で上へ / 仕事を変えたい / ブランクから戻る / 経験が浅い / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] パス"
+        },
+        {
+          "who": "agent",
+          "text": "わかりました。今回、仕事を探そうと思ったきっかけは?\n[ボタン] パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "今の仕事を続けていいか迷っているから"
+        },
+        {
+          "who": "agent",
+          "text": "あと8問です\n迷いがあるのですね。働きたい場所はどこですか?(駅や市の名前で)\n[カード] プロフィール\n[カード] 1/12\n[カード] ＋ なぜ今: 今の仕事を続けていいか迷…\n[ボタン] パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "札幌市内"
+        },
+        {
+          "who": "agent",
+          "text": "札幌市内ですね。年収はいくらから考えますか?\n[カード] プロフィール\n[カード] 2/12\n[カード] ＋ 勤務地: 札幌市内\n[ボタン] 300万円台 / 400万円台 / 500万円台 / 600万円以上 / こだわらない / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 300万円台"
+        },
+        {
+          "who": "agent",
+          "text": "300万円台ですね。いつから働けそうですか?\n[カード] プロフィール\n[カード] 3/12\n[カード] ＋ 年収の下限: 300万円台\n[ボタン] すぐ / 3か月以内 / 半年以内 / 良いところがあれば / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 良いところがあれば"
+        },
+        {
+          "who": "agent",
+          "text": "あと5問です\n時期は決めていないのですね。直近のお仕事を一言で教えてください(勤め先、役割、年数など)\n[カード] あなたのプロフィール\n[カード] 4/12\n[カード] 条件\n[カード] 今の仕事を続けていいか迷っているから / 札幌市内 / 300万円台 / 良いところがあれば\n[カード] まだ\n[カード] □ 職歴カード ほか2\n[ボタン] 覚えていない / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "みほんシステムでサポートの窓口を3年やってます。今の会社です"
+        },
+        {
+          "who": "agent",
+          "text": "サポート窓口を3年ですね。規模はどのくらいでしたか?人数、件数、社数など、数字ひとつで\n[カード] 職歴1(直近)\n[カード] 1/3\n[カード] 仕事\n[カード] みほんシステムでサポートの窓口を3年やってます。今の会社です\n[カード] 規模\n[カード] まだ\n[カード] 結果\n[カード] まだ\n[ボタン] 5人くらい / 10人くらい / 20人以上 / 覚えていない / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "1日の問い合わせが25件くらいです"
+        },
+        {
+          "who": "agent",
+          "text": "1日25件ですね。それで、何が変わりましたか?\n[カード] 職歴1(直近)\n[カード] 2/3\n[カード] 仕事\n[カード] みほんシステムでサポートの窓口を3年やってます。…\n[カード] 規模\n[カード] 1日の問い合わせが25件くらいです\n[カード] 結果\n[カード] まだ\n[ボタン] 覚えていない / パス / あとで"
+        },
+        {
+          "who": "user",
+          "text": "FAQを作って問い合わせが減った"
+        },
+        {
+          "who": "agent",
+          "text": "まとめです。違うところを押すか、送ってください。\n[カード] まとめ\n[カード] なぜ今: 今の仕事を続けていいか迷っている…\n[カード] 直す\n[カード] 勤務地: 札幌市内\n[カード] 直す\n[カード] 年収: 300万円台\n[カード] 直す\n[カード] 時期: 良いところがあれば\n[カード] 直す\n[カード] 働き方: 未定\n[カード] 直す\n[カード] 次は: 未定\n[カード] 直す\n[カード] 職歴1: みほんシステムでサポートの窓口を… / 1日の問い合わせが25件くらいで… / FAQを作って問い合わせが減った\n[カード] 仕事\n[カード] 規模\n[カード] 結果\n[ボタン] これでOK / あとで"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] これでOK"
+        },
+        {
+          "who": "agent",
+          "text": "おつかれさまでした。職務経歴書の材料をまとめました。\n[カード] あなたのプロフィール\n[カード] 7/12\n[カード] 条件\n[カード] 今の仕事を続けていいか迷っているから / 札幌市内 / 300万円台 / 良いところが…\n[カード] 職歴\n[カード] 1枚、欄3/6\n[カード] まだ\n[カード] □ 働き方 ほか1\n[カード] 職歴1(直近)\n[カード] 3/3\n[カード] 仕事\n[カード] みほんシステムでサポートの…\n[カード] 規模\n[カード] 1日の問い合わせが25件く…\n[カード] 結果\n[カード] FAQを作って問い合わせが…\n[カード] 完成"
+        }
+      ]
+    }
+  ],
+  "spent_usd": 0.0789,
+  "stopped": null,
+  "ledger_total_usd": 6.1836
+}

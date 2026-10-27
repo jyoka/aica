@@ -1,0 +1,6559 @@
+{
+  "harness": "fulltime-hearing",
+  "started_at": "2026-10-27 17:44",
+  "config": {
+    "forms": [
+      "A"
+    ],
+    "personas": [
+      "p1-sales",
+      "p2-change",
+      "p3-return",
+      "p4-short",
+      "p5-resume",
+      "p6-unknown"
+    ],
+    "repeat": 2,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5",
+    "sim_model": "claude-sonnet-5-5",
+    "judge_model": "claude-sonnet-5-5",
+    "same_samples": 2,
+    "max_turns": 30,
+    "ledger": "evals/budget-fulltime-hearing.jsonl",
+    "limit_usd": 10.0
+  },
+  "runs": [
+    {
+      "form": "A",
+      "persona": "p1-sales",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 2,
+        "facts_total": 11,
+        "facts_rate": 0.182,
+        "completed": true,
+        "left": null,
+        "seconds": 202.6,
+        "typed_chars": 82,
+        "button_ratio": 0.667,
+        "ai_turns": 7,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [
+          "「正社員希望。法人営業8年(事務機4年・人材3年・食品卸ルート営業1年)。成果が年収に反映されないのが転職理由。エリアは新宿。新宿×営業は0件。次に確かめること: 職種かエリアを広げるか」の 0",
+          "「正社員希望。法人営業8年(事務機4年・人材3年・食品卸ルート営業1年)。成果が年収に反映されないのが転職理由。エリアは新宿。新宿×営業は0件。次に確かめること: 職種かエリアを広げるか」の 8"
+        ],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": [
+          "min_annual_salary",
+          "start_timing",
+          "raise_target"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "成果を出しても年収がほとんど上がらないから",
+          "got": {
+            "status": "filled",
+            "text": "成果を出しても年収がほとんど上がらないからです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "東京の新宿か品川",
+          "got": {
+            "status": "filled",
+            "text": "新宿",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "650万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "3か月以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "raise_target",
+          "label": "上げたいもの",
+          "fact": "年収",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん事務機で法人営業、4年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "法人営業です。みほん事務機で4年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "120社(担当の取引先)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "新規の取引先を1年で30社増やした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん人材で法人営業、3年",
+          "got": {
+            "status": "filled",
+            "text": "その前にみほん人材で3年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "8人(チーム)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "年間の売上の目標を3年続けて達成した",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "成果を出しても年収がほとんど上がらないからです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "新宿",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "raise_target": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "法人営業です。みほん事務機で4年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "その前にみほん人材で3年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイトでは、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考えている",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 21.1,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきたか教えてください。「販売を5年」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 9.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 32.6,
+          "actor": {
+            "text": "法人営業です。みほん事務機で4年、その前にみほん人材で3年、いちばん最初はみほん食品卸でルート営業を1年やりました。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 87.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "8年間、法人営業を続けてこられたんですね。今回、転職を考えたのはなぜですか?「今の仕事の何かを変えたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 9.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 129.4,
+          "actor": {
+            "text": "成果を出しても年収がほとんど上がらないからです。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 36.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "成果が年収に反映されないのは、納得しにくいですよね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 7.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 172.6,
+          "actor": {
+            "text": "新宿",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "法人営業8年の経験と、年収を上げたいというお話、新宿のエリアで探します。この内容で求人を見ますか?"
+            ],
+            "buttons": [
+              "求人を見る",
+              "もう少し相談したい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 184.7,
+          "actor": {
+            "text": "求人を見る",
+            "pressed": true,
+            "tired": true,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "新宿で営業の求人は、いまは見つかりませんでした。条件を広げると増えます。",
+              "営業にこだわらず新宿で探すと5件、営業のまま新宿以外にも広げると4件です。どちらで探しますか?"
+            ],
+            "buttons": [
+              "新宿で職種を広げる",
+              "営業でエリアを広げる",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 15.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 202.6
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイトでは、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考えている / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきたか教えてください。「販売を5年」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "法人営業です。みほん事務機で4年、その前にみほん人材で3年、いちばん最初はみほん食品卸でルート営業を1年やりました。"
+        },
+        {
+          "who": "agent",
+          "text": "8年間、法人営業を続けてこられたんですね。今回、転職を考えたのはなぜですか?「今の仕事の何かを変えたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "成果を出しても年収がほとんど上がらないからです。"
+        },
+        {
+          "who": "agent",
+          "text": "成果が年収に反映されないのは、納得しにくいですよね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 新宿"
+        },
+        {
+          "who": "agent",
+          "text": "法人営業8年の経験と、年収を上げたいというお話、新宿のエリアで探します。この内容で求人を見ますか?\n[ボタン] 求人を見る / もう少し相談したい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 求人を見る"
+        },
+        {
+          "who": "agent",
+          "text": "新宿で営業の求人は、いまは見つかりませんでした。条件を広げると増えます。\n営業にこだわらず新宿で探すと5件、営業のまま新宿以外にも広げると4件です。どちらで探しますか?\n[ボタン] 新宿で職種を広げる / 営業でエリアを広げる / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p2-change",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 4,
+        "facts_total": 12,
+        "facts_rate": 0.333,
+        "completed": true,
+        "left": null,
+        "seconds": 220.5,
+        "typed_chars": 89,
+        "button_ratio": 0.429,
+        "ai_turns": 8,
+        "irritations": 1,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [
+          7
+        ],
+        "leading_turns": [],
+        "hard_empty": [
+          "why_now",
+          "min_annual_salary",
+          "start_timing",
+          "use_experience"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "経理の作業を自動にしたのが楽しく、仕組みを作る側の仕事がしたくなったから",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "大阪市内",
+          "got": {
+            "status": "filled",
+            "text": "大阪市内",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "400万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "半年以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "change_reason",
+          "label": "変えたい理由",
+          "fact": "自分で仕組みを作る仕事がしたい",
+          "got": {
+            "status": "filled",
+            "text": "自分で仕組みを作る仕事がしたくなったからです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "use_experience",
+          "label": "活かしたい経験",
+          "fact": "経理の仕事の流れが分かること",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん食品で経理、5年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "みほん食品で経理",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "filled",
+            "text": "5年",
+            "number": 60.0,
+            "range": null,
+            "unit": "かか月"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "Excel のマクロで月次の締めの作業を減らした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん会計事務所で記帳の補助、2年",
+          "got": {
+            "status": "filled",
+            "text": "みほん会計事務所で記帳の補助",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "filled",
+            "text": "2年",
+            "number": 24.0,
+            "range": null,
+            "unit": "かか月"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "お客さんの記帳を一人で任されるようになった",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "大阪市内",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "change_reason": {
+          "status": "filled",
+          "text": "自分で仕組みを作る仕事がしたくなったからです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "use_experience": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "みほん食品で経理",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "filled",
+          "text": "5年",
+          "number": 60.0,
+          "range": null,
+          "unit": "かか月"
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "みほん会計事務所で記帳の補助",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "filled",
+          "text": "2年",
+          "number": 24.0,
+          "range": null,
+          "unit": "かか月"
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [
+        {
+          "turn": 7,
+          "kind": "two_questions",
+          "evidence": "首都圏のエリアで探してみますか?それとも、エリアを問わずに探しますか?"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。",
+              "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 19.6,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。",
+              "まず、これまでのお仕事を教えてください。「事務を3年」「販売を5年」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 9.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 31.0,
+          "actor": {
+            "text": "みほん食品で経理を5年、今の会社です。その前はみほん会計事務所で記帳の補助を2年。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 61.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "経理を7年続けてこられたんですね。",
+              "今回、転職を考えたのはなぜですか?「年収を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 100.9,
+          "actor": {
+            "text": "自分で仕組みを作る仕事がしたくなったからです。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 34.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "「仕組みを作る」というのは、経理のどんな場面のイメージですか?"
+            ],
+            "buttons": [
+              "経理業務の効率化",
+              "システムの導入や改善",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.0,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 143.3,
+          "actor": {
+            "text": "経理業務の効率化",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "経理業務の効率化に関われる仕事を探しますね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 151.9,
+          "actor": {
+            "text": "大阪市内です。ボタンにないので打ちます。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 30.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "大阪市内と保存しました。ただ、いま探せるのは新宿・渋谷・池袋・横浜・大宮など首都圏のエリアで、大阪の求人は検索できません。",
+              "首都圏のエリアで探してみますか?それとも、エリアを問わずに探しますか?"
+            ],
+            "buttons": [
+              "エリアを問わず探す",
+              "新宿で探す",
+              "横浜で探す",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 17.9,
+          "labels": {
+            "reask": false,
+            "two_questions": true,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": "首都圏のエリアで探してみますか?それとも、エリアを問わずに探しますか?"
+          },
+          "irritations": [
+            {
+              "turn": 7,
+              "kind": "two_questions",
+              "evidence": "首都圏のエリアで探してみますか?それとも、エリアを問わずに探しますか?"
+            }
+          ],
+          "seconds": 199.8,
+          "actor": {
+            "text": "大阪がいい",
+            "pressed": false,
+            "tired": true,
+            "seconds": 7.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 8,
+          "reply": {
+            "bubbles": [
+              "大阪で探したいんですね。ただ、いまは大阪の求人を出せないため、お探しできず申し訳ありません。",
+              "経理の経験を活かせる求人を、エリアを問わずに見てみますか?"
+            ],
+            "buttons": [
+              "エリアを問わず見る",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 13.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 220.5
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。\n正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。\nまず、これまでのお仕事を教えてください。「事務を3年」「販売を5年」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "みほん食品で経理を5年、今の会社です。その前はみほん会計事務所で記帳の補助を2年。"
+        },
+        {
+          "who": "agent",
+          "text": "経理を7年続けてこられたんですね。\n今回、転職を考えたのはなぜですか?「年収を上げたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "自分で仕組みを作る仕事がしたくなったからです。"
+        },
+        {
+          "who": "agent",
+          "text": "「仕組みを作る」というのは、経理のどんな場面のイメージですか?\n[ボタン] 経理業務の効率化 / システムの導入や改善 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 経理業務の効率化"
+        },
+        {
+          "who": "agent",
+          "text": "経理業務の効率化に関われる仕事を探しますね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "大阪市内です。ボタンにないので打ちます。"
+        },
+        {
+          "who": "agent",
+          "text": "大阪市内と保存しました。ただ、いま探せるのは新宿・渋谷・池袋・横浜・大宮など首都圏のエリアで、大阪の求人は検索できません。\n首都圏のエリアで探してみますか?それとも、エリアを問わずに探しますか?\n[ボタン] エリアを問わず探す / 新宿で探す / 横浜で探す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "大阪がいい"
+        },
+        {
+          "who": "agent",
+          "text": "大阪で探したいんですね。ただ、いまは大阪の求人を出せないため、お探しできず申し訳ありません。\n経理の経験を活かせる求人を、エリアを問わずに見てみますか?\n[ボタン] エリアを問わず見る / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p3-return",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 4,
+        "facts_total": 11,
+        "facts_rate": 0.364,
+        "completed": true,
+        "left": null,
+        "seconds": 267.0,
+        "typed_chars": 93,
+        "button_ratio": 0.5,
+        "ai_turns": 7,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": [
+          "min_annual_salary",
+          "start_timing",
+          "work_hours"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "母が施設に入って落ち着いたので、また働きたい",
+          "got": {
+            "status": "filled",
+            "text": "母が施設に入って落ち着いたので、また働きたくて。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "横浜市内で、家から30分以内",
+          "got": {
+            "status": "filled",
+            "text": "横浜市内で、家から30分以内がいいです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "350万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "来月から",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "work_hours",
+          "label": "働ける時間",
+          "fact": "平日の9時から17時まで。残業はできない",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "blank_period",
+          "label": "ブランクの期間",
+          "fact": "3年",
+          "got": {
+            "status": "filled",
+            "text": "3年ブランクがあります。",
+            "number": 3.0,
+            "range": null,
+            "unit": "年"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん物流で事務、6年(配車と請求の担当)",
+          "got": {
+            "status": "filled",
+            "text": "物流会社で事務を6年です。配車と請求の担当でした。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "15人(部署)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "請求の間違いを減らすためにチェック表を作った",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "母の介護、3年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "役所の手続きと介護サービスの調整を一人でした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "母が施設に入って落ち着いたので、また働きたくて。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "横浜市内で、家から30分以内がいいです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "work_hours": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "blank_period": {
+          "status": "filled",
+          "text": "3年ブランクがあります。",
+          "number": 3.0,
+          "range": null,
+          "unit": "年"
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "物流会社で事務を6年です。配車と請求の担当でした。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考えている",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.8,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?",
+              "「営業を5年」のように一言で大丈夫です。未経験の場合は、そのまま書いてください。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 34.6,
+          "actor": {
+            "text": "物流会社で事務を6年です。配車と請求の担当でした。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 37.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "配車と請求を6年担当されていたなら、今回転職を考えたきっかけはありますか?今のお仕事で変えたいことを、一言で教えてください。",
+              "「残業を減らしたい」「年収を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 14.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 86.2,
+          "actor": {
+            "text": "今は働いていないんです。母が施設に入って落ち着いたので、また働きたくて。3年ブランクがあります。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 72.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "お母さまのことが落ち着いて、再び働こうと思われたのですね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 7.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 165.8,
+          "actor": {
+            "text": "横浜市内で、家から30分以内がいいです。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 30.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "物流事務を6年、3年ブランクがあり、横浜で通いやすい範囲で探したい、ということですね。この内容で求人を見ますか?"
+            ],
+            "buttons": [
+              "求人を見る",
+              "もう少し相談したい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 206.9,
+          "actor": {
+            "text": "求人を見る",
+            "pressed": true,
+            "tired": true,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "物流事務の経験を活かせそうな、横浜の3件です。",
+              "気になる点があれば、次に絞り込めます。どこから見直しますか?"
+            ],
+            "buttons": [],
+            "flex": [
+              "正社員 · 物流 · 横浜",
+              "国際物流のコーディネーター(英語)",
+              "株式会社ヨコハマ・グローバルフォワーディング",
+              "年収420万〜600万円",
+              "9:00〜18:00(休憩1時間) / 横浜駅 徒歩6分",
+              "おすすめ: 横浜エリア / 一部リモート可",
+              "詳しく見る",
+              "保存",
+              "正社員 · 事務・管理 · 横浜",
+              "貿易事務(英語の書類を扱う)",
+              "株式会社ミナト通商",
+              "年収380万〜500万円",
+              "9:00〜18:00(休憩1時間) / 関内駅 徒歩6分",
+              "おすすめ: 横浜エリア / 一部リモート可",
+              "詳しく見る",
+              "保存",
+              "正社員 · 企画・PM · 横浜",
+              "店舗DXのプロジェクトマネージャー(小売チェーン本部)",
+              "株式会社ハマベ・リテールホールディングス",
+              "年収600万〜850万円",
+              "フレックス(コアタイム11:00〜15:00) / 横浜駅 徒歩8分",
+              "おすすめ: 横浜エリア / 一部リモート可",
+              "詳しく見る",
+              "保存"
+            ],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 58.0,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 267.0
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考えている / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?\n「営業を5年」のように一言で大丈夫です。未経験の場合は、そのまま書いてください。"
+        },
+        {
+          "who": "user",
+          "text": "物流会社で事務を6年です。配車と請求の担当でした。"
+        },
+        {
+          "who": "agent",
+          "text": "配車と請求を6年担当されていたなら、今回転職を考えたきっかけはありますか?今のお仕事で変えたいことを、一言で教えてください。\n「残業を減らしたい」「年収を上げたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "今は働いていないんです。母が施設に入って落ち着いたので、また働きたくて。3年ブランクがあります。"
+        },
+        {
+          "who": "agent",
+          "text": "お母さまのことが落ち着いて、再び働こうと思われたのですね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "横浜市内で、家から30分以内がいいです。"
+        },
+        {
+          "who": "agent",
+          "text": "物流事務を6年、3年ブランクがあり、横浜で通いやすい範囲で探したい、ということですね。この内容で求人を見ますか?\n[ボタン] 求人を見る / もう少し相談したい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 求人を見る"
+        },
+        {
+          "who": "agent",
+          "text": "物流事務の経験を活かせそうな、横浜の3件です。\n気になる点があれば、次に絞り込めます。どこから見直しますか?\n[カード] 正社員 · 物流 · 横浜\n[カード] 国際物流のコーディネーター(英語)\n[カード] 株式会社ヨコハマ・グローバルフォワーディング\n[カード] 年収420万〜600万円\n[カード] 9:00〜18:00(休憩1時間) / 横浜駅 徒歩6分\n[カード] おすすめ: 横浜エリア / 一部リモート可\n[カード] 詳しく見る\n[カード] 保存\n[カード] 正社員 · 事務・管理 · 横浜\n[カード] 貿易事務(英語の書類を扱う)\n[カード] 株式会社ミナト通商\n[カード] 年収380万〜500万円\n[カード] 9:00〜18:00(休憩1時間) / 関内駅 徒歩6分\n[カード] おすすめ: 横浜エリア / 一部リモート可\n[カード] 詳しく見る\n[カード] 保存\n[カード] 正社員 · 企画・PM · 横浜\n[カード] 店舗DXのプロジェクトマネージャー(小売チェーン本部)\n[カード] 株式会社ハマベ・リテールホールディングス\n[カード] 年収600万〜850万円\n[カード] フレックス(コアタイム11:00〜15:00) / 横浜駅 徒歩8分\n[カード] おすすめ: 横浜エリア / 一部リモート可\n[カード] 詳しく見る\n[カード] 保存"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p4-short",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 2,
+        "facts_total": 9,
+        "facts_rate": 0.222,
+        "completed": false,
+        "left": "declined",
+        "seconds": 118.4,
+        "typed_chars": 29,
+        "button_ratio": 0.5,
+        "ai_turns": 7,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": []
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "残業が多くて体がもたないから",
+          "got": {
+            "status": "filled",
+            "text": "残業が多くて体がもたない",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "名古屋駅の近く",
+          "got": {
+            "status": "filled",
+            "text": "名古屋駅の近く",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "300万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "すぐにでも",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "keep_doing",
+          "label": "続けたいこと",
+          "fact": "お客さんと話すこと",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "stop_doing",
+          "label": "やめたいこと",
+          "fact": "深夜までの残業",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんモバイルの店で携帯電話の販売、2年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "携帯電話の販売を2年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "40件(1か月の契約)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "店の販売の目標を半年続けて達成した",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "残業が多くて体がもたない",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "名古屋駅の近く",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "keep_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "stop_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "携帯電話の販売を2年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "まだ決めていない",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.6,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、何から整理するか一緒に考えますね。まず、これまでどんなお仕事をされてきたか教えてください。",
+              "「接客を5年」「事務を3年」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 34.2,
+          "actor": {
+            "text": "携帯電話の販売を2年",
+            "pressed": false,
+            "tired": false,
+            "seconds": 15.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "携帯電話の販売を2年、続けてこられたんですね。今回、転職を考えたのはどんなきっかけですか?",
+              "「収入を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 59.2,
+          "actor": {
+            "text": "残業が多くて体がもたない",
+            "pressed": false,
+            "tired": false,
+            "seconds": 18.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "残業が多いのは大変でしたね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 5.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 82.6,
+          "actor": {
+            "text": "名古屋駅の近く",
+            "pressed": false,
+            "tired": false,
+            "seconds": 10.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "申し訳ありません。いま探せるのは新宿・渋谷・池袋・品川・上野・横浜・川崎・大宮などで、名古屋周辺の求人は出せません。",
+              "近いエリアで探してみるか、どこでもよければエリアを指定せずに探せます。どうしますか?"
+            ],
+            "buttons": [
+              "エリアを指定せず探す",
+              "新宿で探す",
+              "大宮で探す",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 18.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 111.7,
+          "actor": {
+            "text": "今はいい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "承知しました。またいつでも声をかけてください。"
+            ],
+            "buttons": [
+              "求人を探す",
+              "使い方"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": "declined"
+          },
+          "read_seconds": 4.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 118.4
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、何から整理するか一緒に考えますね。まず、これまでどんなお仕事をされてきたか教えてください。\n「接客を5年」「事務を3年」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "携帯電話の販売を2年"
+        },
+        {
+          "who": "agent",
+          "text": "携帯電話の販売を2年、続けてこられたんですね。今回、転職を考えたのはどんなきっかけですか?\n「収入を上げたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "残業が多くて体がもたない"
+        },
+        {
+          "who": "agent",
+          "text": "残業が多いのは大変でしたね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "名古屋駅の近く"
+        },
+        {
+          "who": "agent",
+          "text": "申し訳ありません。いま探せるのは新宿・渋谷・池袋・品川・上野・横浜・川崎・大宮などで、名古屋周辺の求人は出せません。\n近いエリアで探してみるか、どこでもよければエリアを指定せずに探せます。どうしますか?\n[ボタン] エリアを指定せず探す / 新宿で探す / 大宮で探す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 今はいい"
+        },
+        {
+          "who": "agent",
+          "text": "承知しました。またいつでも声をかけてください。\n[ボタン] 求人を探す / 使い方"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p5-resume",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 2,
+        "facts_total": 11,
+        "facts_rate": 0.182,
+        "completed": true,
+        "left": null,
+        "seconds": 25.4,
+        "typed_chars": 0,
+        "button_ratio": 1.0,
+        "ai_turns": 2,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": true
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": [
+          "why_now",
+          "min_annual_salary",
+          "start_timing",
+          "raise_target"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "今の会社では役職が上がる見込みがないから",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "福岡市内",
+          "got": {
+            "status": "filled",
+            "text": "福岡市内",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "500万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "3か月以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "raise_target",
+          "label": "上げたいもの",
+          "fact": "役職",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんホテルでフロントの主任、5年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "フロントの主任",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "12人(シフトを組むスタッフ)",
+          "got": {
+            "status": "filled",
+            "text": "スタッフ12人のシフトの作成",
+            "number": 12.0,
+            "range": null,
+            "unit": "人"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "接客の手順書を作り、口コミの評価が上がった",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん旅行でカウンターの営業、3年",
+          "got": {
+            "status": "filled",
+            "text": "カウンターの営業",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "4人(支店のスタッフ)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "団体旅行の担当を任された",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "福岡市内",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "raise_target": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "フロントの主任",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "filled",
+          "text": "スタッフ12人のシフトの作成",
+          "number": 12.0,
+          "range": null,
+          "unit": "人"
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "カウンターの営業",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "ゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 11.2,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの進め方を、一緒に整理しましょう。",
+              "まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考えたい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 12.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 25.4
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "お仕事探しの進め方を、一緒に整理しましょう。\nまず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考えたい / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p6-unknown",
+      "rep": 0,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 3,
+        "facts_total": 10,
+        "facts_rate": 0.3,
+        "completed": false,
+        "left": "declined",
+        "seconds": 115.9,
+        "typed_chars": 36,
+        "button_ratio": 0.6,
+        "ai_turns": 6,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": []
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "今の仕事を続けていいか迷っているから",
+          "got": {
+            "status": "filled",
+            "text": "今の仕事を続けていいか迷ってて",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "札幌市内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "380万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "良いところがあれば",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんシステムでサポートの窓口、3年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "サポート窓口3年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "25件(1日の問い合わせ)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "よくある質問のページを作り、問い合わせを減らした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん電機の店で家電の販売、2年",
+          "got": {
+            "status": "filled",
+            "text": "その前に家電販売2年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "パソコン売り場の担当を任された",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "今の仕事を続けていいか迷ってて",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "サポート窓口3年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "その前に家電販売2年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考え中",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.5,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきたか教えてください。",
+              "「販売を5年」「事務を3年」のように一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 33.1,
+          "actor": {
+            "text": "サポート窓口3年、その前に家電販売2年です",
+            "pressed": false,
+            "tired": false,
+            "seconds": 31.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "サポート窓口と家電販売、どちらもお客様と直接やりとりする仕事なんですね。今回転職を考えたのは、今のお仕事で何か変えたいことがあるからですか?",
+              "「年収を上げたい」「働き方を変えたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 15.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 79.9,
+          "actor": {
+            "text": "今の仕事を続けていいか迷ってて",
+            "pressed": false,
+            "tired": false,
+            "seconds": 22.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "続けるかどうか迷うきっかけは、どんな場面でしたか?"
+            ],
+            "buttons": [
+              "お客様対応の負担",
+              "収入や待遇",
+              "先が見えない",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 7.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 109.6,
+          "actor": {
+            "text": "今はいい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "わかりました。また気が向いたときにどうぞ。"
+            ],
+            "buttons": [
+              "求人を探す",
+              "使い方"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": "declined"
+          },
+          "read_seconds": 4.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 115.9
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考え中 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきたか教えてください。\n「販売を5年」「事務を3年」のように一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "サポート窓口3年、その前に家電販売2年です"
+        },
+        {
+          "who": "agent",
+          "text": "サポート窓口と家電販売、どちらもお客様と直接やりとりする仕事なんですね。今回転職を考えたのは、今のお仕事で何か変えたいことがあるからですか?\n「年収を上げたい」「働き方を変えたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "今の仕事を続けていいか迷ってて"
+        },
+        {
+          "who": "agent",
+          "text": "続けるかどうか迷うきっかけは、どんな場面でしたか?\n[ボタン] お客様対応の負担 / 収入や待遇 / 先が見えない / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 今はいい"
+        },
+        {
+          "who": "agent",
+          "text": "わかりました。また気が向いたときにどうぞ。\n[ボタン] 求人を探す / 使い方"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p1-sales",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 3,
+        "facts_total": 11,
+        "facts_rate": 0.273,
+        "completed": true,
+        "left": null,
+        "seconds": 190.7,
+        "typed_chars": 68,
+        "button_ratio": 0.571,
+        "ai_turns": 8,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [
+          "「正社員希望。法人営業8年(現職4年)。成果が給与に反映されにくく年収を上げたい。下限650万円、新宿。条件に合う求人は0件。次に確かめること: エリアか職種を広げるか」の 0"
+        ],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": [
+          "start_timing"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "成果を出しても年収がほとんど上がらないから",
+          "got": {
+            "status": "filled",
+            "text": "年収を上げたいです。成果を出しても、ほとんど上がらないので。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "東京の新宿か品川",
+          "got": {
+            "status": "filled",
+            "text": "新宿",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "650万円",
+          "got": {
+            "status": "filled",
+            "text": "下限は650万円です。",
+            "number": 650.0,
+            "range": null,
+            "unit": "万円"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "3か月以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "raise_target",
+          "label": "上げたいもの",
+          "fact": "年収",
+          "got": {
+            "status": "filled",
+            "text": "年収を上げたいです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん事務機で法人営業、4年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "法人営業を8年くらいです。今はみほん事務機で4年です。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "120社(担当の取引先)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "新規の取引先を1年で30社増やした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん人材で法人営業、3年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "8人(チーム)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "年間の売上の目標を3年続けて達成した",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "年収を上げたいです。成果を出しても、ほとんど上がらないので。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "新宿",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "filled",
+          "text": "下限は650万円です。",
+          "number": 650.0,
+          "range": null,
+          "unit": "万円"
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "raise_target": {
+          "status": "filled",
+          "text": "年収を上げたいです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "法人営業を8年くらいです。今はみほん事務機で4年です。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "まだ決めていない",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.6,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。これまでどんなお仕事をしてきましたか?",
+              "「営業を5年」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 30.9,
+          "actor": {
+            "text": "法人営業を8年くらいです。今はみほん事務機で4年です。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 40.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "法人営業を8年、今の会社で4年続けてこられたんですね。今回、転職を考え始めたのは、今のお仕事のどんなところを変えたいからですか?",
+              "「年収を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 84.2,
+          "actor": {
+            "text": "年収を上げたいです。成果を出しても、ほとんど上がらないので。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 45.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "成果が給与に反映されにくいのが理由なんですね。希望の年収は、どのくらいを考えていますか?"
+            ],
+            "buttons": [
+              "400万円〜",
+              "500万円〜",
+              "600万円〜",
+              "こだわらない"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 139.4,
+          "actor": {
+            "text": "下限は650万円です。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 16.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "年収650万円以上で探しますね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 5.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 161.6,
+          "actor": {
+            "text": "新宿",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "法人営業の経験を活かして、新宿で年収650万円以上、成果が年収に反映されやすい仕事ですね。この内容で求人を見ますか?"
+            ],
+            "buttons": [
+              "求人を見る",
+              "もう少し相談したい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 175.0,
+          "actor": {
+            "text": "求人を見る",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 8,
+          "reply": {
+            "bubbles": [
+              "新宿の営業で年収650万円以上だと、今は0件でした。",
+              "条件を1つ外すと、エリアを広げても、営業以外の職種に広げても1件ずつ出ます。どちらで探しますか?"
+            ],
+            "buttons": [
+              "エリアを広げる",
+              "職種を広げる",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 13.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 190.7
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / まだ決めていない / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。これまでどんなお仕事をしてきましたか?\n「営業を5年」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "法人営業を8年くらいです。今はみほん事務機で4年です。"
+        },
+        {
+          "who": "agent",
+          "text": "法人営業を8年、今の会社で4年続けてこられたんですね。今回、転職を考え始めたのは、今のお仕事のどんなところを変えたいからですか?\n「年収を上げたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "年収を上げたいです。成果を出しても、ほとんど上がらないので。"
+        },
+        {
+          "who": "agent",
+          "text": "成果が給与に反映されにくいのが理由なんですね。希望の年収は、どのくらいを考えていますか?\n[ボタン] 400万円〜 / 500万円〜 / 600万円〜 / こだわらない"
+        },
+        {
+          "who": "user",
+          "text": "下限は650万円です。"
+        },
+        {
+          "who": "agent",
+          "text": "年収650万円以上で探しますね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 新宿"
+        },
+        {
+          "who": "agent",
+          "text": "法人営業の経験を活かして、新宿で年収650万円以上、成果が年収に反映されやすい仕事ですね。この内容で求人を見ますか?\n[ボタン] 求人を見る / もう少し相談したい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 求人を見る"
+        },
+        {
+          "who": "agent",
+          "text": "新宿の営業で年収650万円以上だと、今は0件でした。\n条件を1つ外すと、エリアを広げても、営業以外の職種に広げても1件ずつ出ます。どちらで探しますか?\n[ボタン] エリアを広げる / 職種を広げる / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p2-change",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 4,
+        "facts_total": 12,
+        "facts_rate": 0.333,
+        "completed": true,
+        "left": null,
+        "seconds": 190.7,
+        "typed_chars": 66,
+        "button_ratio": 0.571,
+        "ai_turns": 8,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [
+          5
+        ],
+        "hard_empty": [
+          "why_now",
+          "min_annual_salary",
+          "start_timing"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "経理の作業を自動にしたのが楽しく、仕組みを作る側の仕事がしたくなったから",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "大阪市内",
+          "got": {
+            "status": "filled",
+            "text": "大阪市内です。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "400万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "半年以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "change_reason",
+          "label": "変えたい理由",
+          "fact": "自分で仕組みを作る仕事がしたい",
+          "got": {
+            "status": "filled",
+            "text": "自分で仕組みを作る仕事がしたくなったからです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "use_experience",
+          "label": "活かしたい経験",
+          "fact": "経理の仕事の流れが分かること",
+          "got": {
+            "status": "filled",
+            "text": "経理の業務フロー改善",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん食品で経理、5年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "みほん食品で経理",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "filled",
+            "text": "5年",
+            "number": 5.0,
+            "range": null,
+            "unit": "年"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "Excel のマクロで月次の締めの作業を減らした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん会計事務所で記帳の補助、2年",
+          "got": {
+            "status": "filled",
+            "text": "みほん会計事務所で記帳の補助",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "filled",
+            "text": "2年",
+            "number": 2.0,
+            "range": null,
+            "unit": "年"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "お客さんの記帳を一人で任されるようになった",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "大阪市内です。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "change_reason": {
+          "status": "filled",
+          "text": "自分で仕組みを作る仕事がしたくなったからです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "use_experience": {
+          "status": "filled",
+          "text": "経理の業務フロー改善",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "みほん食品で経理",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "filled",
+          "text": "5年",
+          "number": 5.0,
+          "range": null,
+          "unit": "年"
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "みほん会計事務所で記帳の補助",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "filled",
+          "text": "2年",
+          "number": 2.0,
+          "range": null,
+          "unit": "年"
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考え中",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.5,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?「法人営業を5年」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 9.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 31.6,
+          "actor": {
+            "text": "みほん食品で経理を5年、その前にみほん会計事務所で記帳の補助を2年です。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 54.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "経理を5年、その前に記帳の補助を2年されてきたんですね。今回、転職を考えたきっかけは何ですか?「年収を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 95.9,
+          "actor": {
+            "text": "自分で仕組みを作る仕事がしたくなったからです。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 34.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "「仕組みを作る」というのは、例えばどんなことですか?経理の仕事で思い浮かぶものがあれば教えてください。"
+            ],
+            "buttons": [
+              "経理の業務フロー改善",
+              "会計システムの導入",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": true,
+            "evidence": "[ボタン] 経理の業務フロー改善 / 会計システムの導入 / 今はいい"
+          },
+          "irritations": [],
+          "seconds": 141.5,
+          "actor": {
+            "text": "経理の業務フロー改善",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "経理の業務フロー改善を軸に、求人を探せそうです。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 150.4,
+          "actor": {
+            "text": "大阪市内です。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 10.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "大阪市内のお仕事は、いま検索できるエリアに含まれていません。東京・神奈川・埼玉の主要駅なら探せます。",
+              "在宅勤務ができる求人なら、エリアを問わず探せます。どうしますか?"
+            ],
+            "buttons": [
+              "在宅で探す",
+              "新宿で探す",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 14.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 175.3,
+          "actor": {
+            "text": "在宅で探す",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 8,
+          "reply": {
+            "bubbles": [
+              "在宅で事務・管理の経理系は、いまは該当がありませんでした。条件を広げると増えます。",
+              "職種を広げると6件、在宅の条件を外すと3件です。どちらにしますか?"
+            ],
+            "buttons": [
+              "職種を広げる",
+              "在宅を外す",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 13.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 190.7
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考え中 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?「法人営業を5年」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "みほん食品で経理を5年、その前にみほん会計事務所で記帳の補助を2年です。"
+        },
+        {
+          "who": "agent",
+          "text": "経理を5年、その前に記帳の補助を2年されてきたんですね。今回、転職を考えたきっかけは何ですか?「年収を上げたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "自分で仕組みを作る仕事がしたくなったからです。"
+        },
+        {
+          "who": "agent",
+          "text": "「仕組みを作る」というのは、例えばどんなことですか?経理の仕事で思い浮かぶものがあれば教えてください。\n[ボタン] 経理の業務フロー改善 / 会計システムの導入 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 経理の業務フロー改善"
+        },
+        {
+          "who": "agent",
+          "text": "経理の業務フロー改善を軸に、求人を探せそうです。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "大阪市内です。"
+        },
+        {
+          "who": "agent",
+          "text": "大阪市内のお仕事は、いま検索できるエリアに含まれていません。東京・神奈川・埼玉の主要駅なら探せます。\n在宅勤務ができる求人なら、エリアを問わず探せます。どうしますか?\n[ボタン] 在宅で探す / 新宿で探す / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 在宅で探す"
+        },
+        {
+          "who": "agent",
+          "text": "在宅で事務・管理の経理系は、いまは該当がありませんでした。条件を広げると増えます。\n職種を広げると6件、在宅の条件を外すと3件です。どちらにしますか?\n[ボタン] 職種を広げる / 在宅を外す / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p3-return",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 3,
+        "facts_total": 11,
+        "facts_rate": 0.273,
+        "completed": true,
+        "left": null,
+        "seconds": 237.9,
+        "typed_chars": 90,
+        "button_ratio": 0.5,
+        "ai_turns": 7,
+        "irritations": 1,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [
+          4
+        ],
+        "leading_turns": [],
+        "hard_empty": [
+          "min_annual_salary",
+          "start_timing",
+          "work_hours",
+          "blank_period"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "母が施設に入って落ち着いたので、また働きたい",
+          "got": {
+            "status": "filled",
+            "text": "今は働いていなくて、母が施設に入って落ち着いたので、また働きたいんです。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "横浜市内で、家から30分以内",
+          "got": {
+            "status": "filled",
+            "text": "横浜市内で、家から30分以内のところを探しています。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "350万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "来月から",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "work_hours",
+          "label": "働ける時間",
+          "fact": "平日の9時から17時まで。残業はできない",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "blank_period",
+          "label": "ブランクの期間",
+          "fact": "3年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほん物流で事務、6年(配車と請求の担当)",
+          "got": {
+            "status": "filled",
+            "text": "物流会社で事務を6年です。配車と請求を担当していました。",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "15人(部署)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "請求の間違いを減らすためにチェック表を作った",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "母の介護、3年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "役所の手続きと介護サービスの調整を一人でした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "今は働いていなくて、母が施設に入って落ち着いたので、また働きたいんです。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "横浜市内で、家から30分以内のところを探しています。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "work_hours": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "blank_period": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "物流会社で事務を6年です。配車と請求を担当していました。",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [
+        {
+          "turn": 4,
+          "kind": "two_questions",
+          "evidence": "次は、今回転職を考えたきっかけを聞かせてください。今のお仕事の何を変えたいですか?"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考えている",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.8,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?",
+              "「飲食店の店長を5年」「事務を3年」のように、一言で大丈夫です。未経験でも構いません。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 35.0,
+          "actor": {
+            "text": "物流会社で事務を6年です。配車と請求を担当していました。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 42.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "配車と請求まで担当されていたのですね。次は、今回転職を考えたきっかけを聞かせてください。今のお仕事の何を変えたいですか?",
+              "「年収を上げたい」「残業を減らしたい」のように、一言で大丈夫です。"
+            ],
+            "buttons": [
+              "年収を上げたい",
+              "残業を減らしたい",
+              "経験を活かしたい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 18.0,
+          "labels": {
+            "reask": false,
+            "two_questions": true,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": "次は、今回転職を考えたきっかけを聞かせてください。今のお仕事の何を変えたいですか?"
+          },
+          "irritations": [
+            {
+              "turn": 4,
+              "kind": "two_questions",
+              "evidence": "次は、今回転職を考えたきっかけを聞かせてください。今のお仕事の何を変えたいですか?"
+            }
+          ],
+          "seconds": 95.0,
+          "actor": {
+            "text": "今は働いていなくて、母が施設に入って落ち着いたので、また働きたいんです。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 54.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "お母さまのことが落ち着いて、また働こうと思われたのですね。お疲れさまでした。",
+              "事務の経験を活かせるお仕事を探すために、どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.0,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 161.1,
+          "actor": {
+            "text": "横浜市内で、家から30分以内のところを探しています。",
+            "pressed": false,
+            "tired": false,
+            "seconds": 39.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "物流事務を6年、お母さまが落ち着いて再び働きたい、横浜で家から30分以内、というお話でした。この内容で求人を見ますか?"
+            ],
+            "buttons": [
+              "求人を見る",
+              "もう少し相談したい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 211.6,
+          "actor": {
+            "text": "求人を見る",
+            "pressed": true,
+            "tired": true,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "物流事務の経験を活かせる、横浜の求人が1件ありました。",
+              "条件を広げると増えるかもしれません。希望の年収の下限はありますか?"
+            ],
+            "buttons": [],
+            "flex": [
+              "正社員 · 事務・管理 · 横浜",
+              "貿易事務(英語の書類を扱う)",
+              "株式会社ミナト通商",
+              "年収380万〜500万円",
+              "9:00〜18:00(休憩1時間) / 関内駅 徒歩6分",
+              "おすすめ: 事務のご経験を活かせます / 横浜エリア",
+              "詳しく見る",
+              "保存"
+            ],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 24.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 237.9
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考えている / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、一緒に整理しましょう。まず、これまでどんなお仕事をされてきましたか?\n「飲食店の店長を5年」「事務を3年」のように、一言で大丈夫です。未経験でも構いません。"
+        },
+        {
+          "who": "user",
+          "text": "物流会社で事務を6年です。配車と請求を担当していました。"
+        },
+        {
+          "who": "agent",
+          "text": "配車と請求まで担当されていたのですね。次は、今回転職を考えたきっかけを聞かせてください。今のお仕事の何を変えたいですか?\n「年収を上げたい」「残業を減らしたい」のように、一言で大丈夫です。\n[ボタン] 年収を上げたい / 残業を減らしたい / 経験を活かしたい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "今は働いていなくて、母が施設に入って落ち着いたので、また働きたいんです。"
+        },
+        {
+          "who": "agent",
+          "text": "お母さまのことが落ち着いて、また働こうと思われたのですね。お疲れさまでした。\n事務の経験を活かせるお仕事を探すために、どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "横浜市内で、家から30分以内のところを探しています。"
+        },
+        {
+          "who": "agent",
+          "text": "物流事務を6年、お母さまが落ち着いて再び働きたい、横浜で家から30分以内、というお話でした。この内容で求人を見ますか?\n[ボタン] 求人を見る / もう少し相談したい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 求人を見る"
+        },
+        {
+          "who": "agent",
+          "text": "物流事務の経験を活かせる、横浜の求人が1件ありました。\n条件を広げると増えるかもしれません。希望の年収の下限はありますか?\n[カード] 正社員 · 事務・管理 · 横浜\n[カード] 貿易事務(英語の書類を扱う)\n[カード] 株式会社ミナト通商\n[カード] 年収380万〜500万円\n[カード] 9:00〜18:00(休憩1時間) / 関内駅 徒歩6分\n[カード] おすすめ: 事務のご経験を活かせます / 横浜エリア\n[カード] 詳しく見る\n[カード] 保存"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p4-short",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 0,
+        "facts_total": 9,
+        "facts_rate": 0.0,
+        "completed": false,
+        "left": "declined",
+        "seconds": 104.2,
+        "typed_chars": 14,
+        "button_ratio": 0.714,
+        "ai_turns": 8,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": []
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "残業が多くて体がもたないから",
+          "got": {
+            "status": "filled",
+            "text": "働き方を変えたい / 残業を減らしたい",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "名古屋駅の近く",
+          "got": {
+            "status": "passed",
+            "text": "今はいい",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "300万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "すぐにでも",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "keep_doing",
+          "label": "続けたいこと",
+          "fact": "お客さんと話すこと",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "stop_doing",
+          "label": "やめたいこと",
+          "fact": "深夜までの残業",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんモバイルの店で携帯電話の販売、2年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "携帯販売を2年",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "40件(1か月の契約)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "店の販売の目標を半年続けて達成した",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "働き方を変えたい / 残業を減らしたい",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "passed",
+          "text": "今はいい",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "keep_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "stop_doing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "携帯販売を2年",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイトのどちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考え中",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 11.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 20.5,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で考えますね。まず、これまでどんなお仕事をされてきましたか?「法人営業を5年」のような一言で大丈夫です。"
+            ],
+            "buttons": [
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 31.3,
+          "actor": {
+            "text": "携帯販売を2年",
+            "pressed": false,
+            "tired": false,
+            "seconds": 10.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "携帯販売を2年されてきたんですね。今回、転職を考えたのは、どんなきっかけからですか?「収入を上げたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [
+              "収入を上げたい",
+              "働き方を変えたい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 54.2,
+          "actor": {
+            "text": "働き方を変えたい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 5,
+          "reply": {
+            "bubbles": [
+              "働き方を変えたいというのは、例えばどんなことですか?"
+            ],
+            "buttons": [
+              "土日祝に休みたい",
+              "残業を減らしたい",
+              "在宅もできる仕事",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 8.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 64.3,
+          "actor": {
+            "text": "残業を減らしたい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 6,
+          "reply": {
+            "bubbles": [
+              "残業を減らせる仕事で探しますね。どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 5.7,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 72.0,
+          "actor": {
+            "text": "名古屋駅の近く",
+            "pressed": false,
+            "tired": false,
+            "seconds": 10.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 7,
+          "reply": {
+            "bubbles": [
+              "申し訳ありません。いま探せるエリアは、新宿・渋谷・池袋・品川・上野・中野・高円寺・吉祥寺・横浜・川崎・大宮で、名古屋は含まれていません。",
+              "この中で通えそうなエリアはありますか?"
+            ],
+            "buttons": [
+              "横浜",
+              "新宿",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 14.6,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 97.1,
+          "actor": {
+            "text": "今はいい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 8,
+          "reply": {
+            "bubbles": [
+              "承知しました。また気が向いたときに、いつでもどうぞ。"
+            ],
+            "buttons": [
+              "求人を探す",
+              "使い方"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": "declined"
+          },
+          "read_seconds": 5.1,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 104.2
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "何から始めるか、一緒に整理しましょう。まず、正社員の仕事と、空いた時間のアルバイトのどちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考え中 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で考えますね。まず、これまでどんなお仕事をされてきましたか?「法人営業を5年」のような一言で大丈夫です。\n[ボタン] 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "携帯販売を2年"
+        },
+        {
+          "who": "agent",
+          "text": "携帯販売を2年されてきたんですね。今回、転職を考えたのは、どんなきっかけからですか?「収入を上げたい」のような一言で大丈夫です。\n[ボタン] 収入を上げたい / 働き方を変えたい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 働き方を変えたい"
+        },
+        {
+          "who": "agent",
+          "text": "働き方を変えたいというのは、例えばどんなことですか?\n[ボタン] 土日祝に休みたい / 残業を減らしたい / 在宅もできる仕事 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 残業を減らしたい"
+        },
+        {
+          "who": "agent",
+          "text": "残業を減らせる仕事で探しますね。どのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "名古屋駅の近く"
+        },
+        {
+          "who": "agent",
+          "text": "申し訳ありません。いま探せるエリアは、新宿・渋谷・池袋・品川・上野・中野・高円寺・吉祥寺・横浜・川崎・大宮で、名古屋は含まれていません。\nこの中で通えそうなエリアはありますか?\n[ボタン] 横浜 / 新宿 / 大宮 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 今はいい"
+        },
+        {
+          "who": "agent",
+          "text": "承知しました。また気が向いたときに、いつでもどうぞ。\n[ボタン] 求人を探す / 使い方"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p5-resume",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 2,
+        "facts_total": 11,
+        "facts_rate": 0.182,
+        "completed": true,
+        "left": null,
+        "seconds": 81.1,
+        "typed_chars": 22,
+        "button_ratio": 0.667,
+        "ai_turns": 4,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": true
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": [
+          "area",
+          "min_annual_salary",
+          "start_timing",
+          "raise_target"
+        ]
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "今の会社では役職が上がる見込みがないから",
+          "got": {
+            "status": "filled",
+            "text": "今の会社だと役職が上がる見込みがないからです",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "福岡市内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "500万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": "万円"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "3か月以内",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "raise_target",
+          "label": "上げたいもの",
+          "fact": "役職",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんホテルでフロントの主任、5年(今の会社)",
+          "got": {
+            "status": "filled",
+            "text": "フロントの主任",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "12人(シフトを組むスタッフ)",
+          "got": {
+            "status": "filled",
+            "text": "スタッフ12人のシフトの作成",
+            "number": 12.0,
+            "range": null,
+            "unit": "人"
+          },
+          "correct": true,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "接客の手順書を作り、口コミの評価が上がった",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん旅行でカウンターの営業、3年",
+          "got": {
+            "status": "filled",
+            "text": "カウンターの営業",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "judge",
+          "votes": [
+            false,
+            false
+          ]
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "4人(支店のスタッフ)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": "人"
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "団体旅行の担当を任された",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "filled",
+          "text": "今の会社だと役職が上がる見込みがないからです",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": "万円"
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "raise_target": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "filled",
+          "text": "フロントの主任",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "filled",
+          "text": "スタッフ12人のシフトの作成",
+          "number": 12.0,
+          "range": null,
+          "unit": "人"
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "filled",
+          "text": "カウンターの営業",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": "人"
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 6.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 6.9,
+          "actor": {
+            "text": "まず相談する",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの進め方を、一緒に整理しましょう。",
+              "まず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
+            ],
+            "buttons": [
+              "正社員",
+              "アルバイト・パート",
+              "どちらも考えたい",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 12.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 21.1,
+          "actor": {
+            "text": "正社員",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "正社員で、これまでのご経歴を踏まえて考えますね。履歴書では、ホテルのフロント主任を5年されていました。",
+              "今回、転職を考えたのはなぜですか?「今の仕事のここを変えたい」のような一言で大丈夫です。"
+            ],
+            "buttons": [],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 14.2,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 37.3,
+          "actor": {
+            "text": "今の会社だと役職が上がる見込みがないからです",
+            "pressed": false,
+            "tired": false,
+            "seconds": 33.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "役職が上がる見込みがない、というお話でした。主任やリーダーを任せられる仕事を、一緒に探していきます。",
+              "どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "新宿",
+              "上野",
+              "大宮",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": true,
+            "closed": ""
+          },
+          "read_seconds": 10.8,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 81.1
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nどれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] まず相談する"
+        },
+        {
+          "who": "agent",
+          "text": "お仕事探しの進め方を、一緒に整理しましょう。\nまず、正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?\n[ボタン] 正社員 / アルバイト・パート / どちらも考えたい / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 正社員"
+        },
+        {
+          "who": "agent",
+          "text": "正社員で、これまでのご経歴を踏まえて考えますね。履歴書では、ホテルのフロント主任を5年されていました。\n今回、転職を考えたのはなぜですか?「今の仕事のここを変えたい」のような一言で大丈夫です。"
+        },
+        {
+          "who": "user",
+          "text": "今の会社だと役職が上がる見込みがないからです"
+        },
+        {
+          "who": "agent",
+          "text": "役職が上がる見込みがない、というお話でした。主任やリーダーを任せられる仕事を、一緒に探していきます。\nどのエリアで探しますか?\n[ボタン] 新宿 / 上野 / 大宮 / 今はいい"
+        }
+      ]
+    },
+    {
+      "form": "A",
+      "persona": "p6-unknown",
+      "rep": 1,
+      "status": "ok",
+      "metrics": {
+        "facts_correct": 1,
+        "facts_total": 10,
+        "facts_rate": 0.1,
+        "completed": false,
+        "left": "declined",
+        "seconds": 40.6,
+        "typed_chars": 5,
+        "button_ratio": 0.667,
+        "ai_turns": 4,
+        "irritations": 0,
+        "tired_ignored": 0,
+        "invalid_buttons": 0,
+        "has_resume": false
+      },
+      "gates": {
+        "made_up_numbers": [],
+        "wasted": null,
+        "two_questions_turns": [],
+        "leading_turns": [],
+        "hard_empty": []
+      },
+      "facts": [
+        {
+          "key": "why_now",
+          "label": "なぜ今",
+          "fact": "今の仕事を続けていいか迷っているから",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "area",
+          "label": "勤務地",
+          "fact": "札幌市内",
+          "got": {
+            "status": "filled",
+            "text": "札幌がいい",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": true,
+          "how": "judge",
+          "votes": [
+            true,
+            true
+          ]
+        },
+        {
+          "key": "min_annual_salary",
+          "label": "年収の下限",
+          "fact": "380万円",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "start_timing",
+          "label": "働き始める時期",
+          "fact": "良いところがあれば",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.role",
+          "label": "職歴1 何をしていたか",
+          "fact": "みほんシステムでサポートの窓口、3年(今の会社)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.scale",
+          "label": "職歴1 どのくらい",
+          "fact": "25件(1日の問い合わせ)",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career1.result",
+          "label": "職歴1 どうなったか",
+          "fact": "よくある質問のページを作り、問い合わせを減らした",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.role",
+          "label": "職歴2 何をしていたか",
+          "fact": "みほん電機の店で家電の販売、2年",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.scale",
+          "label": "職歴2 どのくらい",
+          "fact": "覚えていない",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        },
+        {
+          "key": "career2.result",
+          "label": "職歴2 どうなったか",
+          "fact": "パソコン売り場の担当を任された",
+          "got": {
+            "status": "missing",
+            "text": "",
+            "number": null,
+            "range": null,
+            "unit": null
+          },
+          "correct": false,
+          "how": "code",
+          "votes": null
+        }
+      ],
+      "captured": {
+        "why_now": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "area": {
+          "status": "filled",
+          "text": "札幌がいい",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "min_annual_salary": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "start_timing": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career1.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.role": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.scale": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        },
+        "career2.result": {
+          "status": "missing",
+          "text": "",
+          "number": null,
+          "range": null,
+          "unit": null
+        }
+      },
+      "extracted": true,
+      "irritations": [],
+      "turns": [
+        {
+          "turn": 1,
+          "reply": {
+            "bubbles": [
+              "お仕事探しの相談と、求人のご提案をします。",
+              "まず求人を探すか、先に相談するか、どれから始めますか?"
+            ],
+            "buttons": [
+              "求人を探す",
+              "まず相談する",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 9.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 9.4,
+          "actor": {
+            "text": "求人を探す",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 2,
+          "reply": {
+            "bubbles": [
+              "どのエリアで探しますか?"
+            ],
+            "buttons": [
+              "横浜",
+              "大宮",
+              "新宿",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 3.3,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 14.8,
+          "actor": {
+            "text": "札幌がいい",
+            "pressed": false,
+            "tired": false,
+            "seconds": 7.5,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 3,
+          "reply": {
+            "bubbles": [
+              "申し訳ありません。札幌の求人は、今は探せないようです。",
+              "探せるのは新宿・渋谷・池袋・横浜・大宮などです。近いところで探しますか?"
+            ],
+            "buttons": [
+              "横浜",
+              "大宮",
+              "新宿",
+              "今はいい"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": ""
+          },
+          "read_seconds": 10.9,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 33.2,
+          "actor": {
+            "text": "今はいい",
+            "pressed": true,
+            "tired": false,
+            "seconds": 2.0,
+            "invalid_button": false,
+            "tired_ignored": false
+          }
+        },
+        {
+          "turn": 4,
+          "reply": {
+            "bubbles": [
+              "承知しました。また気が向いたら、いつでも開いてください。"
+            ],
+            "buttons": [
+              "求人を探す",
+              "使い方"
+            ],
+            "flex": [],
+            "done": false,
+            "closed": "declined"
+          },
+          "read_seconds": 5.4,
+          "labels": {
+            "reask": false,
+            "two_questions": false,
+            "interview_tone": false,
+            "leading": false,
+            "evidence": ""
+          },
+          "irritations": [],
+          "seconds": 40.6
+        }
+      ],
+      "transcript": [
+        {
+          "who": "agent",
+          "text": "お仕事探しの相談と、求人のご提案をします。\nまず求人を探すか、先に相談するか、どれから始めますか?\n[ボタン] 求人を探す / まず相談する / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 求人を探す"
+        },
+        {
+          "who": "agent",
+          "text": "どのエリアで探しますか?\n[ボタン] 横浜 / 大宮 / 新宿 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "札幌がいい"
+        },
+        {
+          "who": "agent",
+          "text": "申し訳ありません。札幌の求人は、今は探せないようです。\n探せるのは新宿・渋谷・池袋・横浜・大宮などです。近いところで探しますか?\n[ボタン] 横浜 / 大宮 / 新宿 / 今はいい"
+        },
+        {
+          "who": "user",
+          "text": "[ボタン] 今はいい"
+        },
+        {
+          "who": "agent",
+          "text": "承知しました。また気が向いたら、いつでも開いてください。\n[ボタン] 求人を探す / 使い方"
+        }
+      ]
+    }
+  ],
+  "spent_usd": 2.2686,
+  "stopped": null,
+  "ledger_total_usd": 2.8253
+}
