@@ -88,6 +88,11 @@ MAX_SESSION_MINUTES = float(os.environ.get("VOICE_RESUME_MAX_SESSION_MINUTES", "
 # 1 回の相談で web を調べる回数の上限(web_research / wage_average / research_company の合計)
 MAX_WEB_SEARCHES = int(os.environ.get("VOICE_RESUME_MAX_WEB_SEARCHES", "5"))
 
+# --- dip ---
+# 別プロセスの dip の MCP サーバーの URL(line_runtime.config と同じ環境変数)。無ければ相談ごとに stdio の子プロセスを起動する。
+# Render では音声ワーカーが別サービスなので、Web サービスのコンテナの dip につなぐ(scripts/voice_worker_start.sh)
+DIP_MCP_URL = os.environ.get("DIP_MCP_URL", "").strip()
+
 # --- トーク・出力先 ---
 # トークのシミュレーター(line_runtime.server)。面談の結果(求人・下書き)をトークへ戻す先
 TALK_URL = os.environ.get("VOICE_RESUME_TALK_URL", "http://127.0.0.1:8030")
@@ -104,7 +109,7 @@ RESULTS_DIR = ROOT / "voice_resume" / "results"
 LIVEKIT_ROOM_PREFIX = "voice-resume"
 
 # --- ワーカーの同時ジョブ数とメモリ(agent.worker_options)---
-# 部屋ごとに、ジョブのプロセスと dip MCP の子プロセスが 1 つずつできる。Web プロセスと同じマシンを圧迫しないように、
+# 部屋ごとに、ジョブのプロセスと dip MCP の子プロセス(DIP_MCP_URL が無いとき)が 1 つずつできる。マシンを圧迫しないように、
 # 同時に受けるジョブを MAX_JOBS までにする(dev で起動しても満員を報告する)。1 人が開ける部屋は Web 側で同時に 1 つまで
 MAX_JOBS = int(os.environ.get("VOICE_RESUME_MAX_JOBS", "4"))
 # ジョブのプロセスのメモリの上限(MB)。超えたらそのジョブを止める(0 で上限なし。警告は livekit-agents の既定の 1000MB)

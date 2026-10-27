@@ -1,10 +1,12 @@
 # Render の Blueprint(docs/deploy/render.md)。運営者が Render のダッシュボードで「New → Blueprint」からこのリポジトリを選ぶ。
 # sync: false の値は、Blueprint を作るときにダッシュボードで入れる(リポジトリには書かない)。
+# Blueprint の Auto Sync は有効なので、main に入れると Render がサービスをこの内容に合わせる。
 services:
   - type: web
     name: aica
     runtime: docker
-    # 音声ワーカーも同じコンテナで動かす。Starter(512MB)では足りないので Standard(2GB)
+    # 音声ワーカーを別サービス(下の aica-voice)に移す間は、このコンテナでも動かすので Standard(2GB)。
+    # 移し終えたら Web だけなので Starter(512MB)で足りる見込み
     plan: standard
     region: singapore
     dockerfilePath: ./Dockerfile
@@ -15,7 +17,7 @@ services:
     disk:
       name: aica-data
       mountPath: /app/data
-      # 音声のモデル(約 460MB)も置く。増やせるが減らせない
+      # 増やせるが減らせない(前は音声のモデル約 460MB もここに置いていた)
       sizeGB: 2
     envVars:
       # トーク、ゲームの AI、履歴書の読み取り、音声相談(既定の LINE_SIM_PROVIDER=anthropic)
@@ -27,15 +29,26 @@ services:
       # Render のプロキシの後ろなので、IP を X-Forwarded-For の最後の値から取る
       - key: AICA_TRUST_PROXY
         value: "1"
-      # Web プロセスと音声ワーカー(同じコンテナ)が同じ値を読む
+      # Web プロセス、dip の MCP サーバー、音声ワーカー(aica-voice が写す)が同じ値を読む
       - key: AICA_INTERNAL_KEY
         generateValue: true
       # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
       - key: VOICE_RESUME_STT_PROVIDER
         value: deepgram
-      # 音声相談(docs/deploy/render.md の「音声相談」)。音声ワーカーを同じコンテナで動かす
+      # 音声ワーカーを aica-voice に移す間は、このコンテナでも動かす。aica-voice が動くのを確かめてから、別の PR で 0 にする
+      # (docs/deploy/render.md の「1 つのコンテナで動かしていたサービスを分ける」)。Blueprint から消しても
+      # サービスの環境変数は残る(Render の文書 Blueprint YAML Reference)ので、消さずに 0 にする
       - key: AICA_VOICE_WORKER
         value: "1"
+      # 同時に受ける相談と、温めておくプロセスの数(理由は下の aica-voice)。前の既定の 4 から減らし、待機のメモリを約 250MB 減らす。
+      # 相談 1 件の上限(VOICE_RESUME_JOB_MEMORY_LIMIT_MB)は既定の 2000 のまま。400 に収まるかを aica-voice で測る前に、
+      # 今動いている相談を止めないため
+      - key: VOICE_RESUME_MAX_JOBS
+        value: "2"
+      # 音声ワーカーが private network でつなぐ dip の MCP サーバーのポート(scripts/container_start.sh)
+      - key: AICA_DIP_PORT
+        value: "8020"
+      # 音声相談の鍵(docs/deploy/render.md の「音声相談」)。aica-voice はこのサービスから写すので、値はここにだけ入れる
       - key: LIVEKIT_URL
         sync: false
       - key: LIVEKIT_API_KEY
@@ -46,3 +59,76 @@ services:
         sync: false
       - key: CARTESIA_API_KEY
         sync: false
+
+  # 音声ワーカー(voice_resume.agent)。Web サービスと同じ image で、モデルを image に入れて動かす。ディスクは要らない
+  - type: worker
+    name: aica-voice
+    runtime: docker
+    # 待機の 1.4GB(turn detector の推論 約 820MB、本体と forkserver 約 300MB、待機のジョブ 124MB × 2)に、相談中の 2 件を足す
+    plan: standard
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerCommand: scripts/voice_worker_start.sh
+    autoDeployTrigger: "off"
+    numInstances: 1
+    envVars:
+      # build の引数。モデル(約 460MB)を image に入れる(Dockerfile)
+      - key: AICA_VOICE_MODELS
+        value: "1"
+      # 結果を返す先と dip の場所。Web サービスの private network の名前とポートを写す(scripts/voice_worker_start.sh)
+      - key: AICA_WEB_HOSTPORT
+        fromService:
+          name: aica
+          type: web
+          property: hostport
+      - key: AICA_DIP_PORT
+        fromService:
+          name: aica
+          type: web
+          envVarKey: AICA_DIP_PORT
+      - key: AICA_INTERNAL_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: AICA_INTERNAL_KEY
+      # 鍵は aica から写す。Blueprint を更新するとき、新しいサービスの sync: false の値は聞かれないため。
+      # aica の値を変えたら、Blueprint の「Manual sync」で写し直し、aica-voice を Manual Deploy する(写すのは同期のときだけ)
+      - key: ANTHROPIC_API_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: ANTHROPIC_API_KEY
+      - key: LIVEKIT_URL
+        fromService:
+          name: aica
+          type: web
+          envVarKey: LIVEKIT_URL
+      - key: LIVEKIT_API_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: LIVEKIT_API_KEY
+      - key: LIVEKIT_API_SECRET
+        fromService:
+          name: aica
+          type: web
+          envVarKey: LIVEKIT_API_SECRET
+      - key: DEEPGRAM_API_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: DEEPGRAM_API_KEY
+      - key: CARTESIA_API_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: CARTESIA_API_KEY
+      # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
+      - key: VOICE_RESUME_STT_PROVIDER
+        value: deepgram
+      # 同時に受ける相談と、温めておくプロセスの数(livekit-agents は同じ数にそろえる。voice_resume.agent.worker_options)
+      - key: VOICE_RESUME_MAX_JOBS
+        value: "2"
+      # 相談 1 件のプロセスの上限(MB)。2GB から待機の分を引いた残りを 2 件で分ける。超えたらその相談だけを止める
+      - key: VOICE_RESUME_JOB_MEMORY_LIMIT_MB
+        value: "400"
