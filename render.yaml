@@ -4,7 +4,7 @@ services:
   - type: web
     name: aica
     runtime: docker
-    # 音声ワーカーも同じコンテナで動かす。Starter(512MB)では足りないので Standard(2GB)
+    # 音声ワーカーは別サービス(下の aica-voice)。Web だけなら Starter(512MB)で足りる見込みだが、確かめるまで Standard(2GB)
     plan: standard
     region: singapore
     dockerfilePath: ./Dockerfile
@@ -15,10 +15,10 @@ services:
     disk:
       name: aica-data
       mountPath: /app/data
-      # 音声のモデル(約 460MB)も置く。増やせるが減らせない
+      # 増やせるが減らせない(前は音声のモデル約 460MB もここに置いていた)
       sizeGB: 2
     envVars:
-      # トーク、ゲームの AI、履歴書の読み取り、音声相談(既定の LINE_SIM_PROVIDER=anthropic)
+      # トーク、ゲームの AI、履歴書の読み取り
       - key: ANTHROPIC_API_KEY
         sync: false
       # 求人の意味検索の埋め込み(Anthropic には埋め込みの API がない。無ければ部分一致の検索に戻る)
@@ -27,15 +27,67 @@ services:
       # Render のプロキシの後ろなので、IP を X-Forwarded-For の最後の値から取る
       - key: AICA_TRUST_PROXY
         value: "1"
-      # Web プロセスと音声ワーカー(同じコンテナ)が同じ値を読む
+      # Web プロセス、dip の MCP サーバー、音声ワーカー(aica-voice が写す)が同じ値を読む
       - key: AICA_INTERNAL_KEY
         generateValue: true
+      # 音声ワーカーは別サービスなので、このコンテナでは動かさない。消さずに 0 にする
+      # (Blueprint から消したときに、前に入れた 1 がサービスから消えるかは確かめていない)
+      - key: AICA_VOICE_WORKER
+        value: "0"
+      # 音声ワーカーが private network でつなぐ dip の MCP サーバーのポート(scripts/container_start.sh)
+      - key: AICA_DIP_PORT
+        value: "8020"
+      # 音声相談の部屋に入る接続トークンを作る(docs/deploy/render.md の「音声相談」)
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+
+  # 音声ワーカー(voice_resume.agent)。Web サービスと同じ image で、モデルを image に入れて動かす。ディスクは要らない
+  - type: worker
+    name: aica-voice
+    runtime: docker
+    # 待機の 1.4GB(turn detector の推論 約 820MB、本体と forkserver 約 300MB、待機のジョブ 124MB × 2)に、相談中の 2 件を足す
+    plan: standard
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerCommand: scripts/voice_worker_start.sh
+    autoDeployTrigger: "off"
+    numInstances: 1
+    envVars:
+      # build の引数。モデル(約 460MB)を image に入れる(Dockerfile)
+      - key: AICA_VOICE_MODELS
+        value: "1"
+      # 結果を返す先と dip の場所。Web サービスの private network の名前とポートを写す(scripts/voice_worker_start.sh)
+      - key: AICA_WEB_HOSTPORT
+        fromService:
+          name: aica
+          type: web
+          property: hostport
+      - key: AICA_DIP_PORT
+        fromService:
+          name: aica
+          type: web
+          envVarKey: AICA_DIP_PORT
+      - key: AICA_INTERNAL_KEY
+        fromService:
+          name: aica
+          type: web
+          envVarKey: AICA_INTERNAL_KEY
+      # 会話、下書き、調べもの(既定の LINE_SIM_PROVIDER=anthropic)
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
       - key: VOICE_RESUME_STT_PROVIDER
         value: deepgram
-      # 音声相談(docs/deploy/render.md の「音声相談」)。音声ワーカーを同じコンテナで動かす
-      - key: AICA_VOICE_WORKER
-        value: "1"
+      # 同時に受ける相談と、温めておくプロセスの数(livekit-agents は同じ数にそろえる。voice_resume.agent.worker_options)
+      - key: VOICE_RESUME_MAX_JOBS
+        value: "2"
+      # 相談 1 件のプロセスの上限(MB)。2GB から待機の分を引いた残りを 2 件で分ける。超えたらその相談だけを止める
+      - key: VOICE_RESUME_JOB_MEMORY_LIMIT_MB
+        value: "400"
       - key: LIVEKIT_URL
         sync: false
       - key: LIVEKIT_API_KEY

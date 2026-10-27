@@ -37,24 +37,44 @@ def test_the_cookie_is_secure_only_when_served_over_https(tmp_path, monkeypatch)
 
 def test_the_image_and_the_blueprint_match_the_code():
     """Render の設定(render.yaml)と image(Dockerfile)が、ヘルスチェックの口と状態の置き場に合っている。"""
-    svc = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"][0]
-    assert svc["runtime"] == "docker" and svc["plan"] == "standard"  # 音声ワーカーも同じコンテナ
-    assert svc["healthCheckPath"] == "/healthz"
-    assert svc["numInstances"] == 1  # 会話数の上限(quota.json)は 1 つのプロセスで数える
-    env = {e["key"]: e for e in svc["envVars"]}
+    web = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"][0]
+    assert web["runtime"] == "docker" and web["plan"] == "standard"
+    assert web["healthCheckPath"] == "/healthz"
+    assert web["numInstances"] == 1  # 会話数の上限(quota.json)は 1 つのプロセスで数える
+    env = {e["key"]: e for e in web["envVars"]}
     assert env["AICA_TRUST_PROXY"]["value"] == "1"
-    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トーク、履歴書、音声は Anthropic(既定)、意味検索の埋め込みは OpenAI
+    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):  # トーク、履歴書は Anthropic(既定)、意味検索の埋め込みは OpenAI
         assert env[key] == {"key": key, "sync": False}  # 値はリポジトリに書かない
-    assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
-    assert env["AICA_VOICE_WORKER"]["value"] == "1" and svc["disk"]["sizeGB"] >= 2  # 音声のモデル(約 460MB)もディスクに置く
-    for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"):
+    # 音声ワーカーは別サービス。前に入れた 1 が残っても動かないよう、消さずに 0 にする
+    assert env["AICA_VOICE_WORKER"]["value"] == "0" and env["AICA_DIP_PORT"]["value"].isdigit()
+    for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):  # 部屋に入る接続トークンは Web が作る
         assert env[key] == {"key": key, "sync": False}
     # 状態と出力の既定の置き場はすべてリポジトリ直下の data/。image では /app/data で、そこにディスクをつなぐ
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "WORKDIR /app\n" in dockerfile and "AICA_SECURE_COOKIE=1" in dockerfile
-    assert svc["disk"]["mountPath"] == "/app/data"
+    assert web["disk"]["mountPath"] == "/app/data"
     ignored = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()
     assert ".env" in ignored and "data/" in ignored  # API キーと手元の会話を image に入れない
+
+
+def test_the_voice_worker_is_a_service_of_its_own_that_reaches_the_web_service():
+    """音声ワーカー(aica-voice)は同じ image の別サービス。Web サービスの名前、dip のポート、共有鍵を写し、ディスクは持たない。"""
+    web, voice = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"]
+    assert voice["type"] == "worker" and voice["runtime"] == "docker" and "disk" not in voice
+    assert voice["dockerfilePath"] == web["dockerfilePath"] and voice["region"] == web["region"]
+    assert (ROOT / voice["dockerCommand"]).is_file()
+    env = {e["key"]: e for e in voice["envVars"]}
+    web_env = {e["key"] for e in web["envVars"]}
+    copied = {k: e["fromService"] for k, e in env.items() if "fromService" in e}
+    assert copied["AICA_WEB_HOSTPORT"] == {"name": web["name"], "type": "web", "property": "hostport"}
+    for key in ("AICA_DIP_PORT", "AICA_INTERNAL_KEY"):
+        assert copied[key] == {"name": web["name"], "type": "web", "envVarKey": key} and key in web_env
+    assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
+    assert env["AICA_VOICE_MODELS"]["value"] == "1" and "ARG AICA_VOICE_MODELS" in (ROOT / "Dockerfile").read_text()
+    assert int(env["VOICE_RESUME_MAX_JOBS"]["value"]) >= 1 and float(env["VOICE_RESUME_JOB_MEMORY_LIMIT_MB"]["value"]) > 0
+    for key in ("ANTHROPIC_API_KEY", "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "DEEPGRAM_API_KEY",
+                "CARTESIA_API_KEY"):
+        assert env[key] == {"key": key, "sync": False}
 
 
 def test_the_container_does_not_let_uvicorn_rewrite_the_client_ip():

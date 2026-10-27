@@ -86,7 +86,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 ### Render で公開する
 
-1 つのコンテナ(`Dockerfile`)を、Render の Web サービスに永続ディスクつきで置きます。Blueprint は `render.yaml` です。
+同じ image(`Dockerfile`)を、Render の Web サービス(永続ディスクつき)と、音声ワーカーのサービスの 2 つで動かします。Blueprint は `render.yaml` です。
 手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と、同意してから初回の挨拶の
 1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
 Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](docs/deploy/render.md) にあります。
@@ -338,7 +338,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 |---|---|---|
 | `python -m line_runtime.server` | Web プロセスを起動する(`127.0.0.1:8030`) | 挨拶と会話で使う |
 | `python -m voice_resume.agent dev` | 音声ワーカーを起動する | 使う |
-| `python -m dip_mcp.server --http 8020` | dip の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す | - |
+| `python -m dip_mcp.server --http 8020` | dip の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す。`--host 0.0.0.0` で外に開くときは `AICA_INTERNAL_KEY` が要り、鍵の無い要求は 401 | - |
 | `python -m pytest -q` | テスト | 使わない |
 | `node --test tests/js/arcade-ja.test.js` | レジュメ・アーケードの日本語の判定のテスト(pytest からも回る) | 使わない |
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
@@ -390,7 +390,7 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
 | `AICA_SECURE_COOKIE` | なし(コンテナの image では `1`) | `1` のとき、匿名ユーザーIDの Cookie に Secure を付ける。https で公開するときに使う。http で開くと Cookie が送り返されない | 可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
-| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL | 不可 |
+| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL。Web プロセスと音声ワーカーが読む。音声ワーカーは `AICA_INTERNAL_KEY` を付けて送る(Render では `scripts/voice_worker_start.sh` が作る) | 不可 |
 | `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
 | `RESUME_INTAKE_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`) | 履歴書の読み取りのプロバイダ(`anthropic`、`openai`) | 不可 |
@@ -436,7 +436,8 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `DEEPGRAM_API_KEY` | なし(必須) | 文字起こし | 可 |
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](docs/design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
-| `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`) | 不可 |
+| `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`。手元の docker 向け。Render では別サービスなので `0`) | 不可 |
+| `AICA_DIP_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの dip の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
 | `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは dip の状態に入り、トークに届く([privacy.md](docs/design/privacy.md) の 3.3) | 不可 |

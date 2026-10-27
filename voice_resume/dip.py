@@ -1,6 +1,7 @@
 """dip 側 MCP サーバー(このリポジトリの dip_mcp = baitoru-mcp のシミュレーション)への薄いクライアント。
 
-`python -m dip_mcp.server`(stdio)を子プロセスとして起動し、MCP でつなぐ。
+`python -m dip_mcp.server`(stdio)を子プロセスとして起動し、MCP でつなぐ。DIP_MCP_URL があれば、子プロセスは作らず、
+その URL の dip(Render では Web サービスのコンテナで動く。scripts/container_start.sh)に HTTP でつなぐ。
 読み取りは `recommend_jobs` / `relax_conditions` / `get_user_conversation_summary` /
 `get_counseling_playbook`(雇用区分ごとの音声版の playbook)。
 トークから入った相談(ユーザーID が分かるとき)だけ、書き込みも使う:
@@ -16,11 +17,16 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
+from datetime import timedelta
 
 import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
+from line_runtime import line_channel
 from voice_resume import config
 
 logger = logging.getLogger("voice-resume.dip")
@@ -34,41 +40,44 @@ ANON_USER_ID = "voice-resume"
 # 合わせて livekit のジョブの終了の期限(shutdown_process_timeout の既定 10 秒)より短くする
 CLOSE_TIMEOUT = 3.0
 _CANCEL_WAIT = 2.0
+# つなぐまでと、1 回の呼び出しの返事を待つ秒数。HTTP の dip(Web サービスのコンテナ)は、Web サービスを入れ替える間に止まる。
+# 止まっている間の呼び出しは、mcp が返事を待ったまま起こさないことがあるので、期限で切る(相談はその道具なしで続く)
+START_TIMEOUT = 10.0
+CALL_TIMEOUT = 15.0
 
 
 class DipMCP:
     """dip のツールのうち voice-resume が使うものだけを公開する MCP クライアント。"""
 
-    def __init__(self, close_timeout: float = CLOSE_TIMEOUT) -> None:
+    def __init__(self, close_timeout: float = CLOSE_TIMEOUT, start_timeout: float = START_TIMEOUT,
+                 call_timeout: float = CALL_TIMEOUT) -> None:
         self._session: ClientSession | None = None
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._scope: anyio.CancelScope | None = None
         self._close_timeout = close_timeout
+        self._start_timeout = start_timeout
+        self._call_timeout = call_timeout
 
     async def start(self) -> None:
-        command = config.dip_server_command()
-        params = StdioServerParameters(
-            # 環境変数を渡す(line_runtime と同じ)。テストは DIP_STATE_PATH で状態を隔離する
-            command=command[0], args=command[1:], cwd=str(config.ROOT), env=dict(os.environ)
-        )
         # stdio_client と ClientSession(中は anyio の cancel scope)は、入ったタスクと同じタスクで
         # 出ないといけない。livekit は終了のコールバック(aclose)を別のタスクで呼ぶので、
         # 接続は専用のタスクが持ち、aclose はそのタスクに知らせて終わるのを待つ
         ready: asyncio.Future[ClientSession] = asyncio.get_running_loop().create_future()
-        self._task = asyncio.create_task(self._hold(params, ready), name="dip-mcp")
+        self._task = asyncio.create_task(self._hold(ready), name="dip-mcp")
         try:
-            self._session = await ready
+            self._session = await asyncio.wait_for(ready, self._start_timeout)
         except BaseException:
             await self._close(grace=0)  # つなぐ途中で失敗・取り消し: 待たずに止めて、子プロセスを残さない
             raise
-        logger.info("dip MCP サーバーに接続: %s", " ".join(command))
+        logger.info("dip MCP サーバーに接続: %s", config.DIP_MCP_URL or " ".join(config.dip_server_command()))
 
-    async def _hold(self, params: StdioServerParameters, ready: asyncio.Future[ClientSession]) -> None:
+    async def _hold(self, ready: asyncio.Future[ClientSession]) -> None:
         """MCP の接続を持つタスクの本体。つないで ready に渡し、閉じる知らせが来たら同じタスクの中で閉じる。"""
         with anyio.CancelScope() as self._scope:
             try:
-                async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+                async with _transport() as (read, write), ClientSession(
+                        read, write, read_timeout_seconds=timedelta(seconds=self._call_timeout)) as session:
                     await session.initialize()
                     if not ready.done():  # start() が取り消されていれば ready も取り消し済み
                         ready.set_result(session)
@@ -163,6 +172,26 @@ class DipMCP:
         done, _ = await asyncio.wait({task}, timeout=_CANCEL_WAIT)
         if not done:
             logger.error("dip MCP の接続を取り消しても %g 秒で終わりません", _CANCEL_WAIT)
+
+
+@asynccontextmanager
+async def _transport():
+    """dip への接続の (read, write)。DIP_MCP_URL があれば HTTP(共有鍵を付ける)、無ければ stdio の子プロセス。"""
+    if config.DIP_MCP_URL:
+        key = os.environ.get(line_channel.INTERNAL_KEY_ENV, "").strip()
+        headers = {"Authorization": f"Bearer {key}"} if key else None
+        async with create_mcp_http_client(headers=headers) as http, \
+                streamable_http_client(config.DIP_MCP_URL, http_client=http) as (read, write, _):
+            yield read, write
+        return
+    command = config.dip_server_command()
+    params = StdioServerParameters(
+        # 環境変数を渡す(line_runtime と同じ)。テストは DIP_STATE_PATH で状態を隔離する
+        command=command[0], args=command[1:], cwd=str(config.ROOT), env=dict(os.environ)
+    )
+    async with stdio_client(params) as (read, write):
+        yield read, write
+
 
 def _room(room: str | None) -> dict:
     """書き込むツールに付ける部屋の引数(部屋が分からなければ付けない)。"""

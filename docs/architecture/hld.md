@@ -1206,8 +1206,10 @@ flowchart TB
 - Web サーバーは `127.0.0.1` で待ち受けます。プロキシの後ろに置くとき(cloudflared のトンネルも含む)だけ `AICA_TRUST_PROXY=1` にします
 - LINE で試すときは、トンネル(cloudflared など)で手元の Web サーバーを https で公開し、その URL を LINE Developers の
   Webhook URL と `AICA_PUBLIC_URL` に設定します(手順は README)。トンネルの URL を知っていれば、誰でも Web のトーク画面も開けます
-- 公開は Render の 1 コンテナです(`Dockerfile`、`render.yaml`)。上の 2 つのプロセスと dip の子プロセスが同じコンテナで動き
-  (音声ワーカーは `AICA_VOICE_WORKER=1` のときだけ)、`data/` はコンテナの `/app/data` につないだ永続ディスクです。
+- 公開は Render の 2 つのサービスです(`Dockerfile`、`render.yaml`)。Web サービス `aica` のコンテナで、Web プロセスと dip の子プロセス、
+  音声ワーカー向けの dip の MCP サーバー(`AICA_DIP_PORT`、共有鍵つき)が動き、`data/` はコンテナの `/app/data` につないだ永続ディスクです。
+  音声ワーカーは同じ image の別サービス `aica-voice` で動き、Render の private network で `aica` に結果を返し、dip につなぎます
+  (`DIP_MCP_URL`)。dip の状態は `aica` のディスクにだけあるので、ファイルロックの前提は変わりません。
   Web サーバーは `0.0.0.0:$PORT` で待ち受け、`AICA_TRUST_PROXY=1` と `AICA_SECURE_COOKIE=1` で動きます。
   `.env` は image に入れず、API キーは Render の環境変数に置きます。手順は [docs/deploy/render.md](../deploy/render.md)
 
