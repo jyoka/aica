@@ -201,19 +201,22 @@ def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path):
 
 def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path):
     """レビュー M-4 を本人から見た形で: 年齢の質問に「中2です」と文で答え、抽出のモデルが 2 回とも失敗しても、
-    おすすめを出さずに止める。相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
-    baito = FakeBaitoLLM(by_stage={"extract": [RuntimeError("timeout"), RuntimeError("timeout")]})
+    おすすめを出さない。task 258: 1 回目は年齢のボタンで聞き直し、2 回目もはっきりしなければ止める。
+    相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
+    baito = FakeBaitoLLM(by_stage={"extract": [RuntimeError("timeout")] * 4})
     steps = [(UID, "visit", None), (UID, "message", "まず相談する"), (UID, "message", "旅行・遊び"),
-             (UID, "message", "学生"), (UID, "message", "中2です"), (UID, "message", "じゃあ求人を見せて")]
-    (*_, r5, r6), _ = _run([GREET, *START], baito, steps, tmp_path)
-    assert [c[0] for c in baito.calls][-2:] == ["extract", "extract"]  # 「中2です」の抽出が 2 回とも失敗した
-    assert r5["bubbles"] == [H.NOTICE["under_15"] + "\n" + H.NOTICE["rules_only"]]
-    assert r5["quick_replies"] == [] and r5["cards"] == []
-    assert r5["baito"] == {"phase": "result", "question": "result"}
+             (UID, "message", "学生"), (UID, "message", "中2です"), (UID, "message", "中2だってば"),
+             (UID, "message", "じゃあ求人を見せて")]
+    (*_, r5, r6, r7), _ = _run([GREET, *START], baito, steps, tmp_path)
+    assert [c[0] for c in baito.calls].count("extract") >= 4  # 「中2です」「中2だってば」の抽出が 2 回ずつ失敗した
+    assert r5["quick_replies"] == QM["hf_age"]["choices"] and r5["baito"] == {"phase": "hard_filter", "question": "hf_age"}
+    assert r6["bubbles"] == [H.NOTICE["under_15"] + "\n" + H.NOTICE["rules_only"]]
+    assert r6["quick_replies"] == [] and r6["cards"] == []
+    assert r6["baito"] == {"phase": "result", "question": "result"}
     h = _harness()
     assert h.blocked == "under_15" and h.result["recommendations"] == []
     # 止めた後の発言もハーネスが受ける(「求人を見せて」でもトークの AI に戻さない。年齢の訂正でなければ結果の文を繰り返す)
-    assert r6["bubbles"][0].startswith(H.POST_RESULT_TEXT) and r6["tools"] == []
+    assert r7["bubbles"][0].startswith(H.POST_RESULT_TEXT) and r7["tools"] == []
 
 
 def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):

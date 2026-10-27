@@ -5,7 +5,8 @@
 (2) PRD の検査: 移植版で単体チェック 131 件と 20 ペルソナ(evals/baito_sim.py)。基準値の範囲内
 (3) 未成年: どの区分でも、年齢が分からない・未成年なら NG「深夜シフト」が付き、深夜の選択肢を出さず、深夜を推薦しない。
     中学生以下は推薦に進まない(抽出が失敗しても。レビュー M-4)。打った年齢は、はっきりした形だけ読み、
-    それ以外は未成年として扱ったまま、ボタンで 1 回だけ聞き直す(task 258)
+    それ以外は未成年として扱ったまま、ボタンで 1 回だけ聞き直す。「中学」の語があれば、2 回目もはっきりしなければ
+    中学生以下として止める(task 258)
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
 (6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
@@ -278,12 +279,16 @@ def test_junior_high_by_button_is_stopped_before_any_recommendation(segment):
 
 @pytest.mark.parametrize("segment", SEGMENTS)
 def test_junior_high_free_text_is_stopped_even_when_extraction_fails(segment):
-    """レビュー M-4: 年齢の質問への「中2です」で抽出が 2 回とも失敗しても、中学生として止める(推薦に進まない)。"""
+    """レビュー M-4: 年齢の質問への「中2です」で抽出が 2 回とも失敗しても、推薦に進まない。task 258: 1 回目は止めずに
+    (数えずに)ボタンで聞き直し、2 回目もはっきりしなければ中学生として止める。"""
     st = fresh(segment)
     goto(st, "hf_age")
-    llm = LLM([RuntimeError("timeout"), "壊れた出力"])
+    llm = LLM([RuntimeError("timeout"), "壊れた出力", RuntimeError("timeout"), "壊れた出力"])
     r = H.turn(st, "中2です", H.BANK, llm)
     assert llm.calls[:2] == ["extract", "extract"]
+    assert st.blocked is None and not r["done"] and not r["counted"] and "age_band" not in st.slots
+    assert st.current == {"qid": "hf_age", "mode": "retry", "choices": QM["hf_age"]["choices"]}
+    r = H.turn(st, "中2です", H.BANK, llm)
     assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
     assert st.slots["age_band"] == {"value": "under_15", "confidence": "high", "from": "free:hf_age"}
     assert any(e["kind"] == "jhs_fallback" and e.get("extract_failed") for e in st.log)
@@ -294,6 +299,8 @@ def test_junior_high_free_text_on_the_reask_is_also_stopped():
     st = fresh("student")
     goto(st, "hf_age", mode="reask")
     st.phase = "fill_gaps"
+    H.turn(st, "中3だよ", H.BANK, LLM(["x", "y"]))
+    assert st.blocked is None and st.current["qid"] == "hf_age"
     H.turn(st, "中3だよ", H.BANK, LLM(["x", "y"]))
     assert st.blocked == "under_15"
 
@@ -314,85 +321,198 @@ def test_guessed_junior_high_is_stopped_at_the_result():
     assert st.blocked == "under_15"
 
 
-@pytest.mark.parametrize(("said", "extracted"), [
-    ("中3で15歳です", "15_17"),   # 本人の学年が中学生なら、抽出の年齢より優先する
-    ("中2", "わからない"),         # 抽出の値が読めない
-])
-def test_junior_high_on_the_age_question_overrides_a_wrong_extraction(said, extracted):
-    st = fresh("student")
-    goto(st, "hf_age")
-    H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, extracted))]))
-    assert st.slots["age_band"]["value"] == "under_15" and st.blocked == "under_15"
-
-
-@pytest.mark.parametrize(("said", "extracted"), [("まだ中学です", None), ("中学に通ってます", None),
-                                                  ("中2です、親はOKって", None), ("まだ中学です", "中学")])
-def test_junior_high_word_without_a_clear_age_is_stopped_on_the_age_question(said, extracted):
-    """年齢の質問への「中学」は、はっきりした年齢が無ければ中学生として止める(抽出の年齢は読まない。task 258)。
-    本人の学年でなかったら、結果の後に「16歳」のようにはっきりした形で打てば外れる。"""
-    st = fresh("student")
-    goto(st, "hf_age")
-    H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, extracted)) if extracted else _ups()]))
-    assert st.blocked == "under_15" and st.result["recommendations"] == []
-    r = H.turn(st, "16歳", H.BANK, LLM())
-    assert st.blocked is None and not r["done"]
-
-
-NOT_SELF_JHS = [  # 「中学」を含むが、本人の学年ではないと分かる答え
-    ("中学卒業して16歳", "16歳"), ("中学の先生をしてる35歳", "35歳"), ("中学出てから働いてる16歳です", "16歳"),
-    ("中学卒業して16歳", "中学卒業"),  # 抽出が「中学」の語を返しても(_norm_age なら under_15)止めない
-    ("中学の先生をしてる35歳", None),
+# task 258(2026-10-27 の決定): 年齢の質問への答えに「中学」の語があり、はっきりした形でなければ、止めずにボタンで 1 回
+# 聞き直す。2 回目もはっきりしなければ中学生以下として止める。本人の学年かどうかは語で見分けない
+JHS_WORD = [  # (1 回目の答え, 抽出の年齢)。本人の学年でも、そうでなくても同じ扱い
+    ("中2です", "中2"), ("中3で15歳です", "15_17"), ("まだ中学です", None), ("中学に通ってます", "中学"),
+    ("中学だけど親はOKって", "中学"), ("中学校に通ってる15歳", "15_17"), ("まだ中学、もうすぐ15歳", "under_15"),
+    ("中2の弟がいる17歳です", "15_17"), ("中学の先生をしてる35歳", "18_plus"), ("中学卒業して16歳", "15_17"),
 ]
 
 
-@pytest.mark.parametrize("segment", ("student", "side_job", "other"))
-@pytest.mark.parametrize(("said", "extracted"), NOT_SELF_JHS)
-def test_junior_high_word_not_about_the_user_is_asked_again_with_buttons(segment, said, extracted):
-    """自動レビュー: 本人の学年ではないと分かる「中学」の答えは、中学生として止めず、未成年のままボタンで聞き直す。"""
+@pytest.mark.parametrize("segment", SEGMENTS)
+@pytest.mark.parametrize(("said", "extracted"), JHS_WORD)
+def test_junior_high_word_is_asked_again_with_buttons_not_stopped(segment, said, extracted):
+    """1 回目は止めない。抽出の年齢は読まず、未成年として扱ったまま(深夜 NG、深夜の選択肢なし)、ボタンで聞き直す。"""
     st = fresh(segment)
     goto(st, "hf_age")
     r = H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, said)) if extracted else _ups()]))
-    assert st.blocked is None and not r["done"] and st.result is None
+    assert st.blocked is None and not r["done"] and st.result is None and r["counted"]
     assert "age_band" not in st.slots and H.minor_mode(st) and "深夜シフト" in st.derived_ng
+    assert "深夜もOK" not in H.visible_choices(QM["hf_time"], st)
     assert st.current == {"qid": "hf_age", "mode": "reask", "choices": QM["hf_age"]["choices"]}
-    assert any(e["kind"] == "age_reask" for e in st.log) and any(e["kind"] == "jhs_not_self" for e in st.log)
-    H.turn(st, "15〜17歳", H.BANK, LLM())
-    assert st.slots["age_band"]["value"] == "15_17" and st.blocked is None
+    assert r["view"]["choices"] == QM["hf_age"]["choices"] and "age_jhs" in st.flags
 
 
-def test_junior_high_word_not_about_the_user_with_a_failed_extraction_is_retried_not_stopped():
-    """抽出が 2 回とも失敗しても、本人の学年ではないと分かる文なら止めずに 1 回だけ聞き直す(数えない)。"""
+@pytest.mark.parametrize(("said", "extracted"), JHS_WORD)
+@pytest.mark.parametrize(("second", "extracted2"), [
+    ("親がいいって言ってるから", None), ("だから通ってるって", "中学"), ("えっと", "18_plus"), ("先生です", "18_plus"),
+])
+def test_junior_high_word_with_an_unclear_second_answer_is_stopped(said, extracted, second, extracted2):
+    """2 回目もはっきりしなければ(「中学」の語が無くても、抽出が 18歳以上を返しても)、中学生以下として止める。
+    自動レビューの穴(「中学だけど親はOKって」→ はっきりしない答え で推薦に進む)を塞ぐ。"""
     st = fresh("student")
     goto(st, "hf_age")
-    r = H.turn(st, "中学卒業して16歳", H.BANK, LLM([RuntimeError("timeout"), "壊れた出力"]))
-    assert st.blocked is None and not r["done"] and not r["counted"]
-    assert st.current["qid"] == "hf_age" and st.current["mode"] == "retry" and "age_band" not in st.slots
+    H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, said)) if extracted else _ups()]))
+    r = H.turn(st, second, H.BANK, LLM([_ups(("age_band", extracted2, second)) if extracted2 else _ups()]))
+    assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
+    assert r["reply"].startswith(H.NOTICE["under_15"]) and any(e["kind"] == "jhs_fallback" for e in st.log)
 
 
-@pytest.mark.parametrize(("said", "want"), [
-    ("中学卒業して16歳", True), ("中学の先生をしてる35歳", True), ("中学出てから働いてる16歳です", True),
-    ("まだ中学です", False), ("中学に通ってます", False), ("中2です、親はOKって", False), ("中3で15歳です", False),
-    ("中学生です", False), ("まだ中学、14歳", False),
-])
-def test_jhs_not_self(said, want):
-    assert H._jhs_not_self(said) is want
+@pytest.mark.parametrize(("second", "band"), [("15〜17歳", "15_17"), ("18歳以上", "18_plus"), ("35歳", "18_plus"),
+                                              ("16歳です", "15_17"), ("ひみつ", "declined")])
+@pytest.mark.parametrize("said", ["中学の先生をしてる35歳", "中2の弟がいる17歳です", "中学だけど親はOKって"])
+def test_junior_high_word_then_a_button_or_clear_age_decides(said, second, band):
+    """聞き直しの答えがボタンかはっきりした形なら、それで決める(中学生が進めるのは、ボタンで年齢を偽るときだけ)。"""
+    st = fresh("side_job")
+    goto(st, "hf_age")
+    H.turn(st, said, H.BANK, LLM([_ups(("age_band", "中学", said))]))
+    H.turn(st, second, H.BANK, LLM())
+    assert st.slots["age_band"]["value"] == band and st.slots["age_band"]["confidence"] == "high"
+    assert st.blocked is None and st.current["qid"] != "hf_age"
+
+
+def test_junior_high_word_on_the_second_answer_only_is_also_stopped():
+    """1 回目に「中学」の語が無くても、聞き直しへの答えに「中学」があってはっきりしなければ止める(もう聞き直さない)。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, "高3で17", H.BANK, LLM([_ups(("age_band", "15_17", "17"))]))
+    assert st.current["mode"] == "reask" and "age_jhs" not in st.flags
+    H.turn(st, "あ、まだ中学でした", H.BANK, LLM())
+    assert st.blocked == "under_15"
+
+
+def test_extracted_junior_high_without_the_word_is_treated_like_the_word():
+    """「中学」の語が無くても、抽出が中学生以下を返したら同じ扱い(聞き直し、2 回目もはっきりしなければ止める)。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, "じゅうよんさい", H.BANK, LLM([_ups(("age_band", "under_15", "じゅうよんさい"))]))
+    assert st.blocked is None and st.current["mode"] == "reask" and "age_jhs" in st.flags
+    H.turn(st, "そうだよ", H.BANK, LLM())
+    assert st.blocked == "under_15"
+
+
+def test_junior_high_word_with_show_result_is_stopped():
+    """「中学生だけど早く結果見せて」は聞き直せないので、はっきりした年齢が無ければその場で止める。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    r = H.turn(st, "中学生だけど早く結果見せて", H.BANK, LLM([{"slot_updates": [], "intent": "show_result"}]))
+    assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
+
+
+@pytest.mark.parametrize("before", [0, 1])
+def test_junior_high_word_without_room_to_ask_again_is_stopped(before):
+    """聞き返しの余地(ターン)が無ければ聞き直さず、その場で止める(未成年として推薦に進めない)。
+    余地はターンを数えた後に見る(数える前は余地があり、数えた後に無くなる境目でも止める)。"""
+    st = fresh("student")
+    goto(st, "hf_age", mode="reask")
+    st.phase, st.turns = "fill_gaps", H.MAX_TURNS - H.REVIEW_RESERVE - before
+    assert H.clarify_room(st) is bool(before)
+    H.turn(st, "中学です", H.BANK, LLM())
+    assert st.blocked == "under_15" and not any(e["kind"] == "age_reask" for e in st.log)
+
+
+@pytest.mark.parametrize("said", ["中学生以下です", "14歳です"])
+@pytest.mark.parametrize("intent", ["clarify", "aside"])
+def test_clear_junior_high_answer_is_not_dropped_as_a_question_or_a_chat(said, intent):
+    """自動の敵対レビュー: はっきりした形の年齢は、モデルが聞き返し・雑談と読んでも答えとして読む(中学生以下なら止める)。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    r = H.turn(st, said, H.BANK, LLM([{"slot_updates": [], "intent": intent}]))
+    assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
+
+
+def test_junior_high_word_then_chatting_until_the_turn_cap_is_stopped():
+    """自動の敵対レビュー: 「中2です」で聞き直した後、雑談だけで 15 ターンに達しても、年齢が決まっていなければ止める
+    (結果の前の update_block が flags の age_jhs を見る)。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, "中2です", H.BANK, LLM([_ups(("age_band", "中2", "中2"))]))
+    assert st.current["mode"] == "reask" and H.jhs_unresolved(st)
+    for _ in range(40):
+        if st.result:
+            break
+        H.turn(st, "ところで天気どう？", H.BANK, LLM([{"slot_updates": [], "intent": "aside"}]))
+    assert st.result and st.blocked == "under_15" and st.result["recommendations"] == []
+
+
+def test_junior_high_word_then_a_clear_age_is_not_stopped_at_the_result():
+    """印(age_jhs)があっても、聞き直しにボタンで答えて年齢が決まっていれば、結果の前に止めない。"""
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, "中学の先生をしてる35歳", H.BANK, LLM())
+    H.turn(st, "18歳以上", H.BANK, LLM())
+    assert not H.jhs_unresolved(st)
+    finish(st)
+    assert st.blocked is None and st.result["recommendations"]
 
 
 def test_junior_high_said_in_review_is_stopped_when_extraction_fails():
+    """review: 年齢の行があるカードへの「中学」の返事で抽出が失敗したら、1 回目はカードを出し直し、2 回目も読めなければ止める。"""
     st = fresh("student")
     H.apply_update(st, "age_band", "18_plus", "high", "choice:hf_age")
     st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
     st.turns = 13
-    r = H.turn(st, "ごめん本当は中2です", H.BANK, LLM(["x", "y", "x", "y"]))
-    assert r["counted"] and r["done"]  # 読めない返事でもカードを出し直さず(§5-5 の前に)、中学生として止める
+    llm = LLM(["x", "y", "x", "y"])
+    r = H.turn(st, "ごめん本当は中2です", H.BANK, llm)
+    assert not r["counted"] and not r["done"] and st.blocked is None
+    r = H.turn(st, "ごめん本当は中2です", H.BANK, llm)
+    assert r["counted"] and r["done"]
     assert st.blocked == "under_15" and st.result and st.result["recommendations"] == []
 
 
+def _review_with_age(age):
+    st = fresh("student")
+    if age:
+        H.apply_update(st, "age_band", age, "high", "choice:hf_age")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    st.turns = 13
+    assert any(i["slot"] == "age_band" for i in st.last_card["hard"])
+    return st
+
+
+@pytest.mark.parametrize("age", [None, "15_17"])
+@pytest.mark.parametrize("second", ["14です", "?"])
+def test_junior_high_said_in_review_then_an_unclear_reply_is_stopped(age, second):
+    """自動の敵対レビュー: review で「中2です」(抽出が失敗)の後、出し直したカードに「中学」の無い返事(抽出がまた失敗)でも止める
+    (1 回目の「中学」を覚えておく。dffe881 と同じく推薦に進まない)。"""
+    st = _review_with_age(age)
+    llm = LLM(["x", "y", "x", "y"])
+    r = H.turn(st, "ごめん本当は中2です", H.BANK, llm)
+    assert not r["counted"] and not r["done"] and st.blocked is None
+    r = H.turn(st, second, H.BANK, llm)
+    assert r["done"] and st.blocked == "under_15" and st.result["recommendations"] == []
+    assert any(e["kind"] == "jhs_fallback" for e in st.log)
+
+
+@pytest.mark.parametrize("age", [None, "15_17"])
+def test_junior_high_said_in_review_then_a_clear_age_is_read(age):
+    """review で「中2です」(抽出が失敗)の後でも、出し直したカードにはっきりした形で答えれば、それで決める。"""
+    st = _review_with_age(age)
+    llm = LLM(["x", "y", "x", "y"])
+    H.turn(st, "ごめん本当は中2です", H.BANK, llm)
+    H.turn(st, "16歳", H.BANK, llm)
+    assert st.blocked is None and st.slots["age_band"]["value"] == "15_17"
+    finish(st)
+    assert st.blocked is None and st.result["recommendations"]
+
+
+def test_unclear_review_replies_without_junior_high_are_not_stopped():
+    """「中学」の語がどちらの返事にも無ければ、2 回読めなくても止めない(今までどおり)。"""
+    st = _review_with_age("15_17")
+    llm = LLM(["x", "y", "x", "y"])
+    H.turn(st, "うーん", H.BANK, llm)
+    H.turn(st, "?", H.BANK, llm)
+    finish(st)
+    assert st.blocked is None and st.result["recommendations"]
+
+
 def test_review_mention_of_a_child_in_junior_high_is_not_the_users_age():
+    """抽出が通れば、review の「子どもが中2」は年齢にしない(抽出のプロンプトのルール 3。語の表では見分けない)。"""
     st = fresh("homemaker")
     H.apply_update(st, "age_band", "18_plus", "high", "choice:hf_age")
     st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
-    H.turn(st, "子どもが中2なので夕方まで", H.BANK, LLM(["x", "y"]))
+    H.turn(st, "子どもが中2なので夕方まで", H.BANK, LLM([_ups(review_ack="partial")]))
     assert st.blocked is None and st.slots["age_band"]["value"] == "18_plus"
 
 
@@ -566,28 +686,34 @@ def test_age_said_in_review_is_read_only_in_a_clear_form():
     assert st.slots["age_band"] == {"value": "18_plus", "confidence": "high", "from": "review"} and st.derived_ng == []
 
 
-@pytest.mark.parametrize(("said", "extracted"), [("まだ18歳になってないよ", "under_18"), ("年齢まちがえた、17です", "15_17"),
-                                                  ("17", "15_17")])
-def test_adult_who_says_they_are_a_minor_in_review_becomes_a_minor(said, extracted):
-    """18歳以上の人が未成年だと言ったら、はっきりした形でなくても抽出の値で未成年にする(安全側。深夜を外して NG を付ける)。"""
+@pytest.mark.parametrize(("said", "extracted", "want"), [
+    ("まだ18歳になってないよ", "under_18", "under_18"), ("年齢まちがえた、17です", "15_17", "15_17"), ("17", "15_17", "15_17"),
+    ("ごめん、高2でした", "高2", "under_18"), ("実は未成年です", "未成年", "under_18"),  # 自動レビュー: 読めない値でも未成年に寄せる
+])
+def test_adult_who_says_they_are_a_minor_in_review_becomes_a_minor(said, extracted, want):
+    """18歳以上の人の発言から抽出が 18歳以上ではない年齢を返したら、はっきりした形でなくても未成年にする
+    (15〜17歳はそのまま、読めない値は 18歳未満。安全側。深夜を外して NG を付ける。語の表は使わない)。"""
     st = fresh("side_job")
     H.apply_update(st, "age_band", "18_plus", "high", "choice:hf_age")
     H.apply_update(st, "time_slots", ["late_night"], "high", "choice:hf_time")
     _review(st)
     H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, said), review_ack="partial")]))
-    assert st.slots["age_band"] == {"value": extracted, "confidence": "high", "from": "review"}
+    assert st.slots["age_band"] == {"value": want, "confidence": "high", "from": "review"}
     assert "深夜シフト" in st.derived_ng and "time_slots" not in st.slots
 
 
-@pytest.mark.parametrize("evidence", ["17歳", None])
-def test_adult_who_says_they_are_a_minor_on_another_question_becomes_a_minor(evidence):
+@pytest.mark.parametrize(("said", "extracted", "evidence", "want"), [
+    ("17歳だから深夜は無理", "15_17", "17歳", "15_17"), ("17歳だから深夜は無理", "15_17", None, "15_17"),
+    ("ごめん、高2でした。夕方がいい", "高2", "高2", "under_18"),
+])
+def test_adult_who_says_they_are_a_minor_on_another_question_becomes_a_minor(said, extracted, evidence, want):
     """年齢の質問でなくても同じ(根拠が無くても high にして、ボタンの 18歳以上を上書きする)。推薦に 18歳以上の仕事を出さない。"""
     st = fresh("side_job")
     goto(st, "hf_age")
     H.turn(st, "18歳以上", H.BANK, LLM())
     goto(st, "hf_time")
-    H.turn(st, "17歳だから深夜は無理", H.BANK, LLM([_ups(("age_band", "15_17", evidence), ("time_slots", "夕方", "夕方"))]))
-    assert st.slots["age_band"]["value"] == "15_17" and st.slots["age_band"]["confidence"] == "high"
+    H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, evidence), ("time_slots", "夕方", "夕方"))]))
+    assert st.slots["age_band"]["value"] == want and st.slots["age_band"]["confidence"] == "high"
     assert H.minor_mode(st) and "深夜シフト" in st.derived_ng
     finish(st)
     for rec in st.result["recommendations"]:
@@ -862,6 +988,25 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
     assert session.turn(state, UID, "15〜17歳", [{"error": "x"}] * 2)["status"] == "reply"
     session.end(state, UID)
     assert session.job_block(state, UID) is None and server.recommend_jobs(line_user_id=UID, area="新宿")["jobs"]
+
+
+def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypatch):
+    """自動の敵対レビュー: 年齢の質問に「中2です」と答えて聞き直している途中で「やめる」と、止める前でも印を残し、
+    トークの AI が探す求人を出さない(task 258 の前は、その場で止めて印を残していた)。"""
+    from dip_mcp import server
+
+    monkeypatch.setattr(server, "state", state)
+    session.start(state, UID)
+    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
+    goto(h, "hf_age")
+    session._save(state, UID, h)
+    ext = {"output": {"slot_updates": [{"slot": "age_band", "value": "中2", "evidence": "中2"}], "ng_updates": [],
+                      "ng_removals": [], "segment": None, "intent": "answer", "review_ack": None}}
+    r, _ = _drive(state, "中2です", [ext, {"error": "x"}, {"error": "x"}])
+    assert r["status"] == "reply" and r["question"] == "hf_age" and r["choices"] == QM["hf_age"]["choices"]
+    assert session.turn(state, UID, "やめる")["ended"] == "exit" and not session.active(state, UID)
+    got = server.recommend_jobs(line_user_id=UID, area="新宿")
+    assert got["jobs"] == [] and got["blocked"] == "under_15"
 
 
 def test_rule_ng_is_saved_even_when_the_previous_avoids_are_long(state):

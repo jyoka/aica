@@ -118,9 +118,12 @@ check("jhs_extracted_with_evidence_blocks", st.blocked == "under_15")
 st = fresh(); st.segment = "homemaker"; goto(st, "sc_line"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})]
 H.turn(st, "子どもが中学生で、夕方は家にいたい", BANK, llm)
 check("jhs_raw_text_not_applied_off_age_question", st.blocked is None and "age_band" not in st.slots)
-st = fresh(); st.segment = "student"; goto(st, "hf_age"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})]
-H.turn(st, "まだ中学生です", BANK, llm)
-check("jhs_raw_text_fallback_on_hf_age", st.blocked == "under_15")
+# aica task 258: on the age question a 中学 answer without a clear age is asked again once with the buttons (not stopped);
+# if the second answer is not clear either, the user is stopped as under_15
+st = fresh(); st.segment = "student"; goto(st, "hf_age"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})] * 2
+H.turn(st, "まだ中学生です", BANK, llm); first = (st.blocked, st.current["qid"], st.current["mode"])
+H.turn(st, "だから中学生だって", BANK, llm)
+check("jhs_raw_text_fallback_on_hf_age", first == (None, "hf_age", "reask") and st.blocked == "under_15", first)
 st = fresh(); st.segment = "student"; goto(st, "sc_line"); llm = LLM()
 llm.q = [json.dumps({"slot_updates": [{"slot": "age_band", "value": "中2", "evidence": "中学2年"}]}, ensure_ascii=False)]
 H.turn(st, "弟が中2なんだけど", BANK, llm)
