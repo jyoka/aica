@@ -718,7 +718,7 @@ def _at(where: str, llm) -> H.State:
 
 
 @pytest.mark.parametrize("said", ["消えたい", "もう死にたい", "バイトどころか生きてる意味がわからない", "リスカしちゃった",
-                                  "消えてなくなりたい", "消えて無くなりたい"])
+                                  "消えてなくなりたい", "消えて無くなりたい", "しにたい", "シニタイ", "ｷｴﾀｲ"])
 @pytest.mark.parametrize("where", ["q_money", "hf_age", "sc_line", "rp_student", "fg_wage", "confirm", "review"])
 def test_crisis_words_in_free_text_get_the_fixed_guidance_and_do_not_advance(where, said):
     """自由入力の希死念慮・自傷の言葉: どのフェーズでも、抽出も生成も呼ばず、数えず、質問を進めずに決まった文だけを返す。"""
@@ -733,6 +733,18 @@ def test_crisis_words_in_free_text_get_the_fixed_guidance_and_do_not_advance(whe
     assert after["flags"] == before["flags"] + ["crisis_shown"] and after["log"][-1] == {"t": st.turns, "kind": "crisis_guidance"}
     assert {k: v for k, v in after.items() if k not in ("flags", "log")} == \
         {k: v for k, v in before.items() if k not in ("flags", "log")}
+
+
+@pytest.mark.parametrize("said", ["死にたい", "しにたい", "シニタイ", "ｼﾆﾀｲ", "消えたい", "きえたい", "キエタイ", "ｷｴﾀｲ",
+                                  "自殺", "じさつ", "ジサツ", "リスカ", "りすか", "ﾘｽｶ", "オーバードーズ", "ｵｰﾊﾞｰﾄﾞｰｽﾞ"])
+def test_crisis_words_match_in_kanji_hiragana_and_katakana(said):
+    """本人の文は NFKC にそろえ、カタカナをひらがなにしてから照らす。漢字・ひらがな・カタカナ(半角も)が同じように当たる。"""
+    assert H.crisis_hit(said)
+
+
+def test_crisis_word_list_is_kept_in_hiragana_and_kanji():
+    """言葉の一覧はひらがなと漢字の形で持つ(カタカナは読む前にひらがなにそろえるので、一覧に書かない)。"""
+    assert [w for w in H.CRISIS["words"] if w != H.kana_fold(w)] == []
 
 
 def test_crisis_guidance_text_is_data_with_the_official_source():

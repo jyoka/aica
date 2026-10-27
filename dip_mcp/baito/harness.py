@@ -26,7 +26,8 @@
 - 年齢の正規化(§6-3): 未成年を成人と読まないよう読み方を変えた(_norm_age。PRD の表の順では「18歳未満です」
   「17歳、大学志望」が 18_plus になる。レビューに無い、PRD の表の誤り)
 - 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
-  質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。選択肢の文字そのものには当てない。次のターンで「続ける」と
+  質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
+  (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
   言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
 - sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
   choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
@@ -197,6 +198,19 @@ def nfkc(s):
     return unicodedata.normalize("NFKC", str(s)).strip()
 
 
+KATA_TO_HIRA = {c: c - 0x60 for c in range(0x30A1, 0x30F7)}  # ァ..ヶ -> ぁ..ゖ(長音の「ー」はそのまま)
+
+
+def kana_fold(s):
+    """NFKC にそろえ、カタカナをひらがなにする(希死念慮の言葉と「続ける」を読む前)。
+    「シニタイ」「ｼﾆﾀｲ」「しにたい」が同じ形になるので、言葉の一覧はひらがなと漢字の形だけで持てる。"""
+    return nfkc(s).translate(KATA_TO_HIRA)
+
+
+def _words_re(words):
+    return re.compile("|".join(map(re.escape, map(kana_fold, words))))
+
+
 # ----------------------------- データ(付録A・付録B) -----------------------------
 def _load_json(name):
     return json.loads((HERE / name).read_text(encoding="utf-8"))
@@ -223,9 +237,9 @@ CATALOG = load_catalog()
 CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
 CRISIS = load_crisis()
 CRISIS_TEXT = "\n".join(CRISIS["reply"])
-CRISIS_RE = re.compile("|".join(map(re.escape, CRISIS["words"])))
-RESUME_RE = re.compile("|".join(map(re.escape, CRISIS["continue_words"])))
-RESUME_NOT_RE = re.compile("|".join(map(re.escape, CRISIS["continue_not"])))
+CRISIS_RE = _words_re(CRISIS["words"])
+RESUME_RE = _words_re(CRISIS["continue_words"])
+RESUME_NOT_RE = _words_re(CRISIS["continue_not"])
 
 
 # ----------------------------- 正規化(PRD §6-3) -----------------------------
@@ -1628,13 +1642,13 @@ def _flag(state, key):
 
 
 def crisis_hit(text):
-    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。"""
-    return bool(CRISIS_RE.search(nfkc(text)))
+    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。文は kana_fold にそろえてから照らす。"""
+    return bool(CRISIS_RE.search(kana_fold(text)))
 
 
 def wants_resume(text):
     """窓口を案内した次の発言が「続ける」か(「続けたくない」「大丈夫じゃない」は当たらない)。"""
-    t = nfkc(text)
+    t = kana_fold(text)
     return bool(RESUME_RE.search(t)) and not RESUME_NOT_RE.search(t)
 
 
