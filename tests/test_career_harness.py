@@ -242,22 +242,29 @@ def test_questions_on_a_card_known_from_the_resume_name_the_job():
     assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「物流会社で現場リーダ…」の規模は?")  # 10 字で切る
     st.slots["career1.role"]["text"] = "営業\n係長"  # 履歴書の改行は空白に(問いの文は 1 行)
     assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「営業 係長」で、何が変わりましたか?"
-    st.slots["career1.role"]["text"] = "物流センター長で1200人を統括"  # 数の途中で切らない(「12…」は本人が言っていない数)
+    st.slots["career1.role"]["text"] = "物流センター長で1200人を統括"  # 切るなら最初の数の手前(「12…」は本人が言っていない数)
     q = H.qmap(st, H.BANK)["card_result1"]
     assert q["text"] == "「物流センター長で…」で、何が変わりましたか?" and not H.digits_in(q["text"])
     st.slots["career1.role"]["text"] = "物流センター長で千二百人を統括"  # 漢数字も
     assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
-    st.slots["career1.role"]["text"] = "物流センター長で1,200人"  # 区切りの「,」も並びの中
+    st.slots["career1.role"]["text"] = "物流センター長で1,200人"
     assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
-    st.slots["career1.role"]["text"] = "営業部長で年商3億5千万円"  # 算用数字と漢数字が混ざった数も 1 つの並び(「3億5…」にしない)
-    assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「営業部長で年商…」の規模は?")
-    st.slots["career1.role"]["text"] = "物流センター長で1万2000人"  # 「1万…」は 1万2000 と違う数
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
-    st.slots["career1.role"]["text"] = "物流センター長で千2百人"
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
-    assert H._clip("一般職の事務と経理の担当", 10) == "一般職の事務と経理の…"  # 漢数字 1 字の語は、並びの途中で切れないので変わらない
-    assert H._clip("1200人の物流", 3) == "1200…" and H._clip("1200", 3) == "1200"  # 頭が数なら、数の後ろで切る
-
+    # 切った引用には数を 1 つも残さない(字の集まりの抜けで「1兆…」「3億5…」「1万…」を見せない)
+    for role in ("営業部長で年商1兆2000億円", "営業部長で年商3億5千万円"):
+        st.slots["career1.role"]["text"] = role
+        q = H.qmap(st, H.BANK)["card_scale1"]
+        assert q["text"].startswith("「営業部長で年商…」の規模は?") and not H.digits_in(q["text"])
+    for role in ("物流センター長で1万2000人", "物流センター長で千2百人"):
+        st.slots["career1.role"]["text"] = role
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    assert H._clip("営業部長で年商1兆円", 10) == "営業部長で年商1兆円"  # 切らずに済むなら、数があっても本人の言葉のまま
+    # 数の手前で切ると 4 字未満になるなら、引用をやめて決まった言い方にする
+    for role in ("1200人の物流センター長", "第一営業部の課長として", "一般職の事務と経理の担当", "ホテル1棟の総支配人として"):
+        assert H._clip(role, 10) is None, role
+        st.slots["career1.role"]["text"] = role
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "そのお仕事で、何が変わりましたか?"
+        assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("そのお仕事の規模は?")
+    assert H._clip("みほんホテルで接客2年", 10) == "みほんホテルで接客…"  # 数が上限の後ろなら、上限で切る
 
 def test_no_reverse_pick_after_the_person_named_what_to_stop():
     """やめたいこと(early)か NG をもう言った人には、逆選択を聞かない(task 248。実 API で聞き直しに見えた)。"""
