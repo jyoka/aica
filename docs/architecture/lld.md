@@ -121,6 +121,7 @@ flowchart TB
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
+| `baito_cards.py` | アルバイトの相談を 1 タップで始めるカード(入口、職種の結果)。ハーネスのターンの結果の `card` を、LINE の Flex(暗い色、static の PNG)と Web の文の形にする(下の「アルバイト・パートの相談(ハーネス)」) | `flex`、`text`、`view`、`entry_flex`、`result_flex`、`icon_url`、`CARD_BG` |
 | `progress_ui.py` | プロフィールが育つのを見せる部品(帯、プロフィールカード、完成)。ハーネスがターンの結果に足した `progress` から 0〜1 つ選び、LINE の Flex と文の形を作る。アルバイトと正社員で使う(下の「アルバイト・パートの相談(ハーネス)」) | `build`、`choose`、`mode`、`band_flex`、`card_flex`、`complete_flex`、`band_text`、`card_text`、`complete_text`、`profile_rows`、`flex_text`、`flex_chars`、`MODE_ENV`、`BAND_SIZE`、`BAR_COLOR` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
@@ -202,8 +203,9 @@ classDiagram
   本番のトーク画面(`/api/event`、`/api/event/stream`)は `line_channel.web_features()` を渡し、LiveKit の設定が無ければ
   窓口を `WEB_NO_VOICE_NOTE`(音声相談を勧めない)にします。Web の features が空(評価、テスト)なら 3 つとも使える扱いです
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
-- 返信は `ProviderStrategy(LineReply)` の構造化出力です。プロフィールの進み具合の部品(`progress`)は `LineReply` に入れません。
-  バイトの相談のターン(`_baito_turn`)がコードで、保存する AI メッセージの `additional_kwargs` に置き、`render` はそこからだけ読みます
+- 返信は `ProviderStrategy(LineReply)` の構造化出力です。プロフィールの進み具合の部品(`progress`)と、1 タップで始めるカード
+  (`baito_card`)は `LineReply` に入れません。
+  バイトの相談のターン(`_harness_turn`)がコードで、保存する AI メッセージの `additional_kwargs` に置き、`render` はそこからだけ読みます
   (モデルの出力からは取らない。返信の本文の JSON にも入れないので、相談の後にトークの AI が読む会話が Flex の JSON で長くならない)
 - `build_model` は `config.PROVIDER` で `ChatAnthropic`(既定)か `ChatOpenAI`(Responses API、`reasoning.effort`)を作ります。
   `ChatAnthropic` は `claude-sonnet-5-5` に次を送ります(Claude Sonnet 5.5 で 400 になる組み合わせを避ける。`tests/test_anthropic_request.py`)
@@ -1365,13 +1367,14 @@ sequenceDiagram
 
 | 部品 | 中身 |
 |---|---|
-| `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。移したときに直したところはファイルの先頭に書いてある |
+| `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。PRD の前に置いた入口のカードと職種の結果(`quick_pick`・`quick_result`、task 265)。移したときに直したところはファイルの先頭に書いてある |
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
 | `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンの言葉は `search_time_band` で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件) |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
 | `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
+| `line_runtime/baito_cards.py` | 入口のカードと職種の結果(ハーネスの `card`)を、Flex と文の形にする。職種もタグも選ばない |
 | `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ(`default_llm`。正社員も出力の形を渡して使う) |
 | `evals/baito_sim.py` | PRD の単体チェック 131 件と 20 ペルソナを移植版で回し(参照資料の写しの中で)、§11-5 の基準値に照らす。`--real` は P3 の実モデルの測定 |
 | `docs/prd/baito_harness/aica_port.py` | PRD の検査(`BAITO_HARNESS=aica_port`)から移植版を読むための入口 |
@@ -1391,6 +1394,24 @@ sequenceDiagram
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
    本人が答えた条件(high)とルールの NG を保存してトークの AI に戻る(避けたいことは前の値に足す)
 6. 結果に着いたら同じく保存して閉じる。中学生以下で止めた結果だけは閉じず、その後の発言もハーネスが受ける(年齢の訂正で続ける)
+
+1 タップで始める([設計メモ baito-quick-start.md](../design/baito-quick-start.md) §3〜§5・§9。task 265。「近くで探す」の 3 問と求人は次のカード):
+
+| 決まり | 中身 | どこで |
+|---|---|---|
+| 始まり | 新しい相談(`session.start`)は `new_state(quick=True)` で、フェーズ `quick_pick`(入口のカード)から始める。印 `quick_start` を `flags` に置き、「最初から」も入口に戻す。入口の前に始めた相談(今の State)は、今の質問から今の流れのまま続ける。`new_state()` の既定は今のまま icebreak から(PRD の検査) | `harness.new_state`、`session.start` |
+| 入口 | 「いちばん自分っぽいのは？」と絵 4 枚(しゃべるの好き・動いてたい・ひとりで黙々・座ってじっくり)と「どれもピンと来ない」。答えは確信度 low・`from` は `choice:quick_pick`(`DIRECT` に入れない)。値はメモ §4 の表(`QUICK_PICKS`)。選び直したら前の答えを外す | `harness._quick_entry`、`_quick_turn` |
+| 職種の結果 | `eligible_jobs` の上から 3 つ(年齢はまだ無いので未成年として扱い、`job_safe` を通ったものだけ)。「どれもピンと来ない」は、`remote` か `spot` の職種から未成年の決まりと NG で外した残りをカタログの順に 3 つ(見出し「ちょっとだけ」)。`physical` が `standing_ok` なら、立ち仕事 +1・にぎやか +0.5 | `harness.quick_jobs`、`eligible_jobs` |
+| タグ | カタログの値から 1 つ。在宅 > 1日だけOK > 人と話さない > 接客少なめ > 静か > にぎやか > 朝もOK の順で最初に当たるもの。無ければ付けない | `harness.job_tag`、`JOB_TAGS` |
+| モデル | 入口と職種の結果では抽出を呼ばない(ボタンの文字だけを読む。ほかの文には「下のボタンから選んでね！」とカードを出し直す)。職種の結果の吹き出しだけ、言い方のモデルがひとことリアクションを前に付ける(main のプロンプト。`QUICK_RESULT_TEXT` か `LIGHT_TEXT` が入っていなければ原文) | `harness._quick_turn`、`validate_reply` |
+| ターン | 入口と職種の結果のターンは数えない(15 ターンは PRD の流れの分)。`progress` は出さない | `harness._quick_turn`、`progress.update` |
+| ボタン | 職種の結果に [近くで探す](icebreak に入り、今の流れの最初の質問を出す)と [ほかのタイプも見る](入口のカードに戻す。モデルを呼ばない) | `harness._quick_turn` |
+| ランタイム | ハーネスの `view` の `quick` を、`baito_turn` が `card` で返し(始めたターンは `start` の `question.card`)、`_harness_turn` が返信の行の `additional_kwargs` の `baito_card` に置く。`render` が返信の `baito_card`(カードと文の形 `text`)にする | `session.turn`、`runtime._harness_turn`、`render` |
+| LINE | 吹き出しの後ろに Flex を 1 つ(bubble は `mega`、暗い色 `#1c1430`、字はふつう)。入口は絵のマス 4 つと下のボタン、職種の結果は絵と見出し、職種とタグ、2 つのボタン。押すと、その文字を本人の発言として送る(message アクション)。絵は `{公開 URL}/static/baito/{名前}.png`(64×64 をそのまま)。公開 URL が https でなければ絵を出さない。ボタンはカードの中にあるので、クイックリプライは付けない | `baito_cards.flex`、`line_channel.to_messages` |
+| Web のトーク | Flex を描かず、文の形を吹き出し 1 つにする(入口は問いと一言、職種の結果は「【見出し】」と「・職種：タグ」の行)。ボタンはクイックリプライのまま | `baito_cards.text`、`talk-core.js` の `renderReply` |
+
+画面の写真は `docs/images/baito-quick-start/card-*.png`(`python -m scripts.baito_quick_preview` が作る。LINE の Flex をまねた HTML を
+撮ったもので、実機の LINE の写真ではない)にあります。
 
 プロフィールが育つのを見せる UI([設計メモ hearing-progress-ui.md](../design/hearing-progress-ui.md)。task 259):
 

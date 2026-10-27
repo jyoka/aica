@@ -53,6 +53,13 @@
   検証で落とす(view の unsaid)
 - sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
   choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
+- 1 タップで始める(task 265。設計メモ docs/design/baito-quick-start.md §3〜§5・§9。PRD に無い): 新しい相談(session.start)は
+  new_state(quick=True) で、PRD の icebreak の前のフェーズ quick_pick(入口のカード。絵 4 枚と「どれもピンと来ない」)から始める。
+  1 タップで quick_result(合いそうな職種 3 つとタグ。quick_jobs)を出し、[近くで探す] で icebreak(今の流れ)に入る。
+  [ほかのタイプも見る] は入口のカードに戻す。入口の答えは確信度 low で入れる(DIRECT に入れない。from は choice:quick_pick)。
+  この 2 つのフェーズはモデルの抽出を呼ばず(ボタンだけ読む)、ターンに数えない(15 ターンは PRD の流れの分)。
+  eligible_jobs に、physical が standing_ok のときの加点(phys が standing に +1、noise が lively に +0.5)を足した。
+  new_state() の既定(quick=False)は今のまま icebreak から始める(PRD の検査と、途中の相談)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -91,6 +98,40 @@ SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心（主婦・�
               "other": "フリーター・求職中・その他", "unknown": "未判明"}
 INTENTS = ("answer", "clarify", "show_result", "restart", "aside", "danger")
 REPLY_MAX = 600
+
+# ----------------------------- 1 タップで始める(設計メモ baito-quick-start.md §4・§5。task 265) -----------------------------
+QUICK_PICK, QUICK_RESULT = "quick_pick", "quick_result"  # PRD の ORDER の前のフェーズ(入口のカード、職種の結果)
+QUICK_PHASES = (QUICK_PICK, QUICK_RESULT)
+QUICK_FLAG = "quick_start"  # 入口のカードから始めた相談(「最初から」も入口のカードに戻す)
+QUICK_TEXT = "いちばん自分っぽいのは？"
+QUICK_LEAD = "押すだけで、合いそうな仕事が出るよ"
+# 入口の絵 4 枚: 文字 -> (絵。line_runtime/static/baito/{絵}.png、ハーネスに入れる値。確信度 low)
+QUICK_PICKS = {
+    "しゃべるの好き": ("talk", {"customer_facing": "like"}),
+    "動いてたい": ("move", {"physical": "standing_ok"}),
+    "ひとりで黙々": ("solo", {"customer_facing": "avoid"}),
+    "座ってじっくり": ("sit", {"physical": "seated"}),
+}
+QUICK_NONE = "どれもピンと来ない"  # 値は入れない。「ちょっとだけ」の 3 つを出す
+QUICK_NEAR, QUICK_OTHER = "近くで探す", "ほかのタイプも見る"
+QUICK_RESULT_TEXT = "合いそうなのは、このへん！"  # 職種の結果の吹き出し(モデルが前にひとことリアクションを付ける)
+QUICK_JOBS_LEAD = "合いそうな仕事"
+LIGHT_ICON, LIGHT_TITLE = "light", "ちょっとだけ"
+LIGHT_TEXT = "それなら、まずは『ちょっとだけ』から試すのもアリ！"
+LIGHT_LEAD = "1日だけ・在宅で試せる仕事"
+QUICK_AGAIN_TEXT = "OK、もう一回選んでみて！"  # [ほかのタイプも見る]
+QUICK_TAP_TEXT = "下のボタンから選んでね！"  # 入口と職種の結果で、ボタンでない文が来たとき(モデルは呼ばない)
+QUICK_JOBS = 3
+# 職種の横のタグ(§5): カタログの値だけから、上から最初に当たる 1 つ。カタログに無いこと(まかない、時給など)は書かない
+JOB_TAGS = [
+    ("在宅", lambda j: j["remote"]),
+    ("1日だけOK", lambda j: j["spot"]),
+    ("人と話さない", lambda j: j["cf"] == "none"),
+    ("接客少なめ", lambda j: j["cf"] == "low"),
+    ("静か", lambda j: j["noise"] == "quiet"),
+    ("にぎやか", lambda j: j["noise"] == "lively"),
+    ("朝もOK", lambda j: "morning" in j["times"]),
+]
 
 
 # ----------------------------- スロット(PRD §6) -----------------------------
@@ -567,10 +608,14 @@ class State:
         return st
 
 
-def new_state():
-    """空の状態。年齢がまだ無いので、derived_ng は未成年のルールの NG で始まる(05-N4)。"""
+def new_state(quick=False):
+    """空の状態。年齢がまだ無いので、derived_ng は未成年のルールの NG で始まる(05-N4)。
+    quick=True は入口のカード(quick_pick)から始める(新しい相談。task 265)。既定は PRD の icebreak から。"""
     st = State()
     recompute_derived(st)
+    if quick:
+        st.flags.append(QUICK_FLAG)
+        _quick_entry(st)
     if hasattr(st, "_new_notices"):
         del st._new_notices
     return st
@@ -924,7 +969,8 @@ def validate_reply(raw, view):
     if review:
         if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
             return None, "card_altered"
-    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside", "pick"):
+    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside", "pick",
+                                                   QUICK_RESULT):
         if nfkc(view["text"]) not in nfkc(reply):
             return None, "question_missing"
         if len(reply) - len(view["text"]) > 120:
@@ -933,7 +979,20 @@ def validate_reply(raw, view):
         return None, "unkept_mentioned"
     if _says_unsaid(reply, view.get("unsaid"), view.get("card_text") if review else view.get("text")):
         return None, "unsaid_value"
+    if view.get("mode") == QUICK_RESULT and _names_other_jobs(reply, view["quick"]):
+        return None, "job_not_on_card"
     return reply.strip(), None
+
+
+def _names_other_jobs(text, card):
+    """職種の結果のリアクションが、カードに無い職種(名前か、keys の最初の語)を口にしているか。モデルは職種を知らないので、
+    年齢が分からない人のカードの上で 18 歳からの職種(居酒屋など)を勧めないように落とす(task 265)。"""
+    shown = {j["job_id"] for j in card["jobs"]}
+    t = nfkc(text)
+    for j in CATALOG:
+        if j["id"] in shown:
+            t = t.replace(nfkc(j["name"]), "")
+    return any(nfkc(w) in t for j in CATALOG if j["id"] not in shown for w in (j["name"], j["keys"][0]))
 
 
 def _mentions_unkept(text, labels, fixed=None):
@@ -1406,6 +1465,10 @@ def eligible_jobs(state, catalog):
         if v("physical") == "seated" and j["phys"] == "seated":
             score += 1
             why.append("physical")
+        if v("physical") == "standing_ok" and (j["phys"] == "standing" or j["noise"] == "lively"):
+            # task 265(設計メモ §5): 立ち仕事に +1、にぎやかな職場に +0.5(「動いてたい」がカタログの順にならないように)
+            score += (1 if j["phys"] == "standing" else 0) + (0.5 if j["noise"] == "lively" else 0)
+            why.append("physical")
         if v("environment_noise") and v("environment_noise") == j["noise"]:
             score += 0.5
             why.append("environment_noise")
@@ -1541,6 +1604,83 @@ def post_check_result(state, payload, out, cby):
     return out
 
 
+# ----------------------------- 1 タップで始める(task 265。設計メモ baito-quick-start.md §3〜§5) -----------------------------
+def job_tag(job):
+    """職種の横のタグ(§5 の順で最初に当たる 1 つ。JOB_TAGS)。当たらなければ None。"""
+    return next((tag for tag, hit in JOB_TAGS if hit(job)), None)
+
+
+def quick_jobs(state, catalog, light=False):
+    """1 タップ目の結果の職種 3 つ [{job_id, name, tag}]。light(「どれもピンと来ない」)は、remote か spot の職種から、
+    未成年の決まり(18 歳から・重い作業・深夜だけ)と NG で外した残りをカタログの順に。ほかは eligible_jobs の上から。
+    年齢はまだ聞いていないので未成年として扱う(minor_mode)。どちらも job_safe を通ったものだけ。"""
+    cby = {j["id"]: j for j in catalog}
+    if light:
+        jobs = [j for j in catalog if j["remote"] or j["spot"]]
+    else:
+        jobs = [cby[c["job_id"]] for c in eligible_jobs(state, catalog)]
+    out = [{"job_id": j["id"], "name": j["name"], "tag": job_tag(j)} for j in jobs if job_safe(state, j)]
+    return out[:QUICK_JOBS]
+
+
+def _clear_quick(state):
+    """入口の答え(choice:quick_pick)を外す(選び直したとき。low どうしの矛盾にしない)。"""
+    for s in [s for s, e in state.slots.items() if e.get("from") == "choice:" + QUICK_PICK]:
+        del state.slots[s]
+        state.conflicts.pop(s, None)
+
+
+def _quick_entry(state):
+    """入口のカードを出す(フェーズ quick_pick)。カードの中身は state.current の card(view の quick。ランタイムが描く)。"""
+    state.phase = QUICK_PICK
+    card = {"kind": "entry", "title": QUICK_TEXT, "lead": QUICK_LEAD,
+            "picks": [{"label": label, "icon": icon} for label, (icon, _) in QUICK_PICKS.items()], "other": QUICK_NONE}
+    state.current = {"qid": QUICK_PICK, "mode": QUICK_PICK, "choices": [*QUICK_PICKS, QUICK_NONE], "text": QUICK_TEXT,
+                     "card": card}
+
+
+def _quick_result(state, catalog, pick):
+    """1 タップ目の結果を出す(フェーズ quick_result)。職種とタグはコードが決める(モデルはリアクションの 1 文だけ)。"""
+    light = pick not in QUICK_PICKS
+    state.phase = QUICK_RESULT
+    card = {"kind": "result", "pick": None if light else pick, "icon": LIGHT_ICON if light else QUICK_PICKS[pick][0],
+            "title": LIGHT_TITLE if light else pick, "lead": LIGHT_LEAD if light else QUICK_JOBS_LEAD,
+            "jobs": quick_jobs(state, catalog, light), "buttons": [QUICK_NEAR, QUICK_OTHER]}
+    state.current = {"qid": QUICK_RESULT, "mode": QUICK_RESULT, "choices": [QUICK_NEAR, QUICK_OTHER],
+                     "text": LIGHT_TEXT if light else QUICK_RESULT_TEXT, "card": card}
+
+
+def _quick_reply(state, bank, text):
+    """モデルを呼ばない入口のターンの返事(決まった文と、今のカード)。"""
+    return {"reply": text, "view": view(state, bank), "done": False, "counted": False}
+
+
+def _quick_turn(state, text, bank, llm, catalog):
+    """入口のカード(quick_pick)と職種の結果(quick_result)への答え。ボタンの文字だけを読み(抽出のモデルは呼ばない)、
+    ターンに数えない。入口の答えは確信度 low で入れる(DIRECT に入れない)。[近くで探す] で icebreak(今の流れ)に入る。"""
+    buttons = match_button(state, bank, text)
+    if buttons is None:
+        ev(state, "quick_unmatched", phase=state.phase)
+        return _quick_reply(state, bank, QUICK_TAP_TEXT)
+    pick = buttons[0]
+    if state.phase == QUICK_PICK:
+        _clear_quick(state)
+        for slot, value in (QUICK_PICKS.get(pick) or (None, {}))[1].items():
+            apply_update(state, slot, value, "low", "choice:" + QUICK_PICK)
+        ev(state, "quick_pick", pick=pick)
+        _quick_result(state, catalog or CATALOG, pick)
+        return _say(state, bank, llm, catalog, counted=False)
+    if pick == QUICK_OTHER:
+        _clear_quick(state)
+        ev(state, "quick_again")
+        _quick_entry(state)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
+    ev(state, "quick_near")  # task 266 で「近くで探す」の 3 問にする。今は今の流れ(icebreak)に入る
+    state.phase, state.current = "icebreak", None
+    advance(state, bank)
+    return _say(state, bank, llm, catalog, counted=False)
+
+
 # ----------------------------- プロンプトの変数(§8-5) -----------------------------
 def slots_json(state):
     pri = active_slots(state)
@@ -1572,6 +1712,9 @@ def view(state, bank, aside=False):
         v["text"] = _held_text(cur, bank)
     elif mode == "pick":
         v["text"] = _pick_text(cur)
+    elif mode in QUICK_PHASES:  # 入口のカードと職種の結果(task 265)。カードはランタイムが描く
+        v["text"] = cur["text"]
+        v["quick"] = copy.deepcopy(cur["card"])
     elif mode == "review":
         v["card_json"] = state.last_card
         v["card_text"] = render_card(state.last_card)
@@ -2011,7 +2154,13 @@ def _turn(state, user_text, bank, llm, catalog):
             ev(state, "crisis_resume")
             return _represent(state, bank, counted=False, lead=[CRISIS["resume_lead"]])
     if DANGER_RE.search(nfkc(text)):
+        if state.phase in QUICK_PHASES:  # 入口では数えない(15 ターンは PRD の流れの分)。注意文とカードを出し直す
+            _flag(state, "danger_warned")
+            ev(state, "danger_skip", where=state.phase)
+            return _quick_reply(state, bank, NOTICE["danger"])
         return _aside(state, bank, llm, catalog, kind="danger")
+    if state.phase in QUICK_PHASES:
+        return _quick_turn(state, text, bank, llm, catalog)
     # ---- Stage 1
     before = {s: copy.deepcopy(state.slots.get(s)) for s in BUCKETS}
     buttons = match_button(state, bank, text)
@@ -2169,19 +2318,25 @@ def _crisis(state, bank, done=False):
     _flag(state, "crisis_shown")
     ev(state, "crisis_guidance")
     v = dict(view(state, bank), choices=[], crisis=True)
+    v.pop("quick", None)  # 窓口の案内には、入口のカードも職種の結果も付けない
     return {"reply": CRISIS_TEXT, "view": v, "done": done, "counted": False}
 
 
 def _restart(state, bank, llm, catalog):
     restarts = state.restarts + 1
     user_text = state._user_text
-    fresh = new_state()
+    # 入口のカードから始めた相談は入口に戻す。中学生以下で止めた(か、年齢の質問に「中学」と答えた)人は、職種を出す前に
+    # 年齢を聞く今の流れから(中学生以下には、職種のおすすめも出さない)
+    quick = QUICK_FLAG in state.flags and not (state.blocked or jhs_unresolved(state))
+    fresh = new_state(quick=quick)
     fresh.restarts = restarts
     state.__dict__.clear()
     state.__dict__.update(fresh.__dict__)
     _init_volatile(state, reset=True)
     state._user_text = user_text
     ev(state, "restart", n=restarts)
+    if quick:  # 入口のカードから始めた相談は、入口のカードに戻す(モデルは呼ばない)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT) | {"view": view(state, bank) | {"restarted": True}}
     advance(state, bank)
     return _say(state, bank, llm, catalog, counted=False, extra={"restarted": True})
 

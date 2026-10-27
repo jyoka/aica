@@ -2,7 +2,9 @@
 
 - 始める: トークの AI が、アルバイト・パートの相談に入ったターンに start_baito_consultation を呼ぶ
   (BAITO_HARNESS_VERSION=v4 のときだけ。PRD §13-3 の機能フラグ。既定は使わない = 本番は切り替えない)。
-  最初の質問(q_money)は、その AI が言い換えずに聞く
+  新しい相談は入口のカード(quick_pick。設計メモ docs/design/baito-quick-start.md §4、task 265)から始める。
+  その AI は 1 文で声をかけるだけで、問いと選択肢はカード(question の card)とボタンで出る。
+  進めている相談(今の State を持つもの)は、今聞いている質問から続ける
 - 進める: その後の本人の発言は、LINE 側のランタイムが baito_turn に渡す(トークの AI は呼ばない)。
   ハーネスの turn()(抽出 → 判断 → 生成。dip_mcp/baito/harness.py)を、保存した状態から毎回やり直す。
   turn() がモデルを呼ぶところで、まだ受け取っていない出力があれば、status=llm でそのプロンプトを返す。
@@ -47,6 +49,9 @@ EXIT_HOLD = re.compile(r"けど|けれど|前に|先に|まだ|あとで|後で|
 BAITO_TRACK = "アルバイト・パート"
 START_NOTE = ("相談を始めた。この返信で、一緒に整理することを1文で伝え、question の text を言い換えずに1問として聞く"
               "(選択肢は LINE 側が question の choices にする)。次の質問からはハーネスが進める。")
+# 入口のカード(question に card がある)から始めたとき。問いはカードに書いてあるので、AI は繰り返さない
+QUICK_START_NOTE = ("相談を始めた。この返信は、一緒に探すことを伝える短い1文だけにする。question の text と choices は書かない"
+                    "(問いと選択肢は、LINE 側が question の card とボタンで出す)。次からはハーネスが進める。")
 MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(PRD §5-4: 文の答えで抽出 2 回 + 生成 2 回)
 
 
@@ -91,25 +96,28 @@ def _drop(state: State, line_user_id: str) -> None:
 
 
 def _question(v: dict) -> dict:
-    """トークの AI と画面に渡す質問(id・質問文・選択肢)。"""
-    return {"id": v["qid"], "text": v.get("text", ""), "choices": list(v.get("choices", []))}
+    """トークの AI と画面に渡す質問(id・質問文・選択肢)。入口のカードと職種の結果なら、その中身(card。ランタイムが描く)も。"""
+    return {"id": v["qid"], "text": v.get("text", ""), "choices": list(v.get("choices", []))} | (
+        {"card": v["quick"]} if v.get("quick") else {})
 
 
-def start(state: State, line_user_id: str) -> dict:
-    """相談を始める(進めている相談があれば、今聞いている質問を返して続ける)。"""
+def start(state: State, line_user_id: str, quick: bool = True) -> dict:
+    """相談を始める(進めている相談があれば、今聞いている質問を返して続ける)。新しい相談は入口のカードから
+    (quick=False は PRD の icebreak から直に。dip のツールは渡さない。今の流れを検査するテストが使う)。"""
     h = _load(state, line_user_id)
     started = h is None
     if started and not enabled():
         return {"started": False, "active": False, "error": f"アルバイト・パートの相談のハーネスは使っていません({FLAG})。"
                 "get_counseling_playbook の playbook で相談する"}
-    if started:
-        h = H.new_state()
+    if started:  # 中学生以下で止めた印が残っている人は、職種を出す前に年齢を聞く今の流れから(職種のおすすめも出さない)
+        h = H.new_state(quick=quick and not state.user(line_user_id).get(BLOCK_KEY))
     v = H.resume(h, H.BANK) if not started else H.start(h, H.BANK)
     _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None,
           P.fresh_mem(h) if started else None)
     # 結果の後と途中でやめた後はトークの AI が続けるので、保存先と提案の決まり(playbook)もここで渡す
     pb = logic.counseling_playbook(BAITO_TRACK, "chat")
-    return {"started": started, "active": True, "question": _question(v), "note": START_NOTE,
+    q = _question(v)
+    return {"started": started, "active": True, "question": q, "note": QUICK_START_NOTE if q.get("card") else START_NOTE,
             "rules": pb["rules"], "playbook": pb["playbook"]}
 
 
@@ -181,7 +189,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - status=reply: reply をそのまま送り、choices をクイックリプライにする
     - status=result: 結果(reply)。中学生以下で止めた結果でなければ相談は閉じた(saved は保存した項目)
     reply と result には progress(プロフィールの進み具合。dip_mcp.baito.progress.update。出さないターンは None)が付く。
-    LINE 側は、これから帯・プロフィールカード・完成の Flex を 0〜1 つ選ぶ(line_runtime.progress_ui)"""
+    LINE 側は、これから帯・プロフィールカード・完成の Flex を 0〜1 つ選ぶ(line_runtime.progress_ui)。
+    入口のカードと職種の結果のターン(task 265)には card(ハーネスの view の quick)が付く。LINE 側がカードに描く"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
@@ -206,6 +215,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase,
            "question": (h.current or {}).get("qid"), "reply": r["reply"], "counted": r["counted"],
            "choices": list(r["view"].get("choices", [])), "llm_calls": llm.used, "progress": progress}
+    if r["view"].get("quick"):
+        out["card"] = r["view"]["quick"]
     if r["done"] and h.blocked:  # 中学生以下: 閉じずに、その後の発言もハーネスが受ける(年齢の訂正・やり直し)
         _save(state, line_user_id, h, progress=mem)
         return out | {"blocked": h.blocked, "choices": []}
