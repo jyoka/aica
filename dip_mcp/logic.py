@@ -381,6 +381,35 @@ FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
 LEVELS = (1, 2, 3)
 # remote の値 → 出す求人の work_style.remote。可 = 原則在宅の求人だけ、一部可 = 週に何日か以上在宅できる求人(可を含む)
 REMOTE_CHOICES = {"可": ("可",), "一部可": ("可", "一部可")}
+# 未成年(18歳未満と、年齢が分からない人)の決まり(設計メモ docs/design/baito-quick-start.md §6.3)。recommend / relax /
+# MCP の recommend_jobs・relax_conditions / 音声の voice_resume/jobs.py で同じ名前を使う(テストで同期を確認)。
+# relax はこの引数を外す候補にしない(「未成年を外すと N 件」を出さない)
+MINOR_ARG = "minor"
+# 未成年が働ける時刻(分)。22時〜翌5時は法律の深夜なので、始まりが 5 時より前か、終わりが 22 時より後の求人は出さない
+MINOR_EARLIEST, MINOR_LATEST = 5 * 60, 22 * 60
+_SHIFT_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[〜~～]\s*(翌)?\s*(\d{1,2}):(\d{2})")
+
+
+def shift_ranges(shift: str) -> list[tuple[int, int]]:
+    """shift の文にある勤務の時刻の幅(始まりと終わりを、その日の 0 時からの分で)。翌日にまたがる終わりは 24 時間を足す。"""
+    out = []
+    for h1, m1, nxt, h2, m2 in _SHIFT_RANGE.findall(shift or ""):
+        start, end = int(h1) * 60 + int(m1), int(h2) * 60 + int(m2)
+        if nxt or end < start:
+            end += 24 * 60
+        out.append((start, end))
+    return out
+
+
+def minor_ok(job: BaitoJob) -> bool:
+    """未成年に出してよい求人か。深夜の帯がある・重い作業(physical_level 3)・勤務の幅のどれかが 5〜22 時をはみ出すものは出さない。
+    時刻が読めない shift と、フレックス(18歳未満には使えない働き方。労働基準法 60 条)も出さない(安全側)。"""
+    if "深夜" in job.time_bands or job.physical_level >= 3 or "フレックス" in job.shift:
+        return False
+    ranges = shift_ranges(job.shift)
+    return bool(ranges) and all(MINOR_EARLIEST <= s and e <= MINOR_LATEST for s, e in ranges)
+
+
 # 属性で絞ったときに理由に出す一言(求人に付けた属性の値の言い換え。事実はこの値だけ)
 TALK_REASONS = {1: "人と話すことが少ない仕事", 2: "お客様と話すことは少ない仕事", 3: "人と話すのが中心の仕事"}
 PHYSICAL_REASONS = {1: "座り仕事が中心", 2: "力仕事は少ない仕事", 3: "体を動かす仕事"}
@@ -697,9 +726,10 @@ def match_breakdown(job: BaitoJob, tend: dict, mixed: bool = False) -> dict[str,
 def recommend(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
               keywords=None, exclude_ids: list[str] | None = None, limit: int = MAX_JOBS,
               posted_within_days: int | None = None, employment_type=None, min_annual_salary=None,
-              **filters) -> dict:
+              minor: bool = False, **filters) -> dict:
     """employment_type(アルバイト・パート / 正社員)で区分を絞る。未定(指定なし・「未定」)なら両方の区分から出す。
     min_annual_salary は希望年収の下限(万円)。年収・月給の求人の年収の中央値と比べ、給与の高さを並びにも加味する。
+    minor(MINOR_ARG)が true なら、未成年に出せない求人(minor_ok)を外す。
     filters は属性(ATTRIBUTE_ARGS)と正社員の働き方・休日(FULLTIME_STYLE_ARGS)。"""
     if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
         raise TypeError(f"recommend() に知らない引数: {sorted(unknown)}")
@@ -723,7 +753,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
     acts = behavior.view(state, line_user_id)
     exclude = set(exclude_ids or []) | set(acts["applied_job_ids"])  # 応募済みの求人は出さない(要約の全件)
     tend = acts["tendency"] if behavior.dip_id(state, line_user_id) else {"job_type": [], "area": [], "time_band": []}
-    cands = [j for j in pool.values() if j.job_id not in exclude
+    cands = [j for j in pool.values() if j.job_id not in exclude and (not minor or minor_ok(j))
              and _match(j, areas, time_band, job_type, min_wage, employment_type, min_annual_salary, filters)]
     sims, unmatched = None, False
     if keywords:
@@ -753,9 +783,10 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
 
 def relax(state: State, line_user_id: str | None, area=None, time_band=None, job_type=None, min_wage=None,
           keywords=None, employment_type=None, min_annual_salary=None, exclude_ids: list[str] | None = None,
-          **filters) -> dict:
+          minor: bool = False, **filters) -> dict:
     """条件を1つずつ外したら何件になるか。0件・少数のときの提案材料。雇用区分は外す候補にしない(本人が決めた探し方)。
-    属性・働き方・休日の引数(filters)も外す候補にする。exclude_ids(出さない求人)は外す候補にせず、どの件数からも除く。"""
+    属性・働き方・休日の引数(filters)も外す候補にする。exclude_ids(出さない求人)は外す候補にせず、どの件数からも除く。
+    未成年の決まり(minor)も外す候補にせず、どの件数にも効かせる(「未成年を外すと N 件」を出さない)。"""
     if unknown := set(filters) - {*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS}:
         raise TypeError(f"relax() に知らない引数: {sorted(unknown)}")
     employment_type = _employment_type(employment_type)
@@ -765,12 +796,12 @@ def relax(state: State, line_user_id: str | None, area=None, time_band=None, job
     cond = {"area": area, "time_band": time_band, "job_type": job_type, "min_wage": min_wage,
             "min_annual_salary": min_annual_salary, "keywords": keywords}
     cond |= {k: filters.get(k) for k in (*ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)}
-    base = recommend(state, line_user_id, **cond, employment_type=employment_type, exclude_ids=exclude_ids)["total"]
+    fixed = {"employment_type": employment_type, "exclude_ids": exclude_ids, "minor": minor}
+    base = recommend(state, line_user_id, **cond, **fixed)["total"]
     options = []
     for k, v in cond.items():
         if v is not None and v is not False and v != "":  # max_overtime_hours=0 も外す候補にする
-            n = recommend(state, line_user_id, **{**cond, k: None}, employment_type=employment_type,
-                          exclude_ids=exclude_ids)["total"]
+            n = recommend(state, line_user_id, **{**cond, k: None}, **fixed)["total"]
             if n > base:
                 options.append({"remove": k, "current": v, "total_after": n})
     options.sort(key=lambda o: o["total_after"], reverse=True)

@@ -63,6 +63,10 @@ WeekendsHolidays = Annotated[bool | None, Field(description=(
 MaxOvertimeHours = Annotated[int | None, Field(description=(
     "月の残業時間の上限(正社員の求人の残業の目安と比べる)。本人が時間を言ったらその数、"
     "「残業少なめ」「残業はほとんど無い方がいい」だけなら 10。正社員の求人だけが対象"))]
+Minor = Annotated[bool, Field(description=(
+    "true なら未成年の決まりで絞る(18歳未満と、年齢が分からない人)。深夜の帯がある求人、勤務が 5 時より前に始まるか"
+    "22 時より後に終わる求人、勤務の時刻が読めない求人とフレックスの求人、重い作業(体を使う量 3)の求人を出さない。"
+    "relax_conditions はこの条件を外す候補にしない"))]
 Area = Annotated[str | None, Field(description=(
     f"エリアか駅名。地名は次の中から選ぶ: {' / '.join(logic.AREAS)}(駅名も可。例: 中野駅)。"
     f"「{'」「'.join(logic.AREA_GROUPS)}」のような広い言い方は、そのまま渡すとその範囲の地名に広げて検索される。"
@@ -115,6 +119,7 @@ def recommend_jobs(
         "(意味の近さで探すので、避けたい仕事の方が上に出てしまう)"))] = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(すでに見せたもの)")] = None,
     posted_within_days: Annotated[int | None, Field(description="この日数以内に掲載された新着だけにする")] = None,
+    minor: Minor = False,
 ) -> dict:
     """条件に合う求人を最大3件、事実に基づく理由つきで返す。応募済みの求人は出さない。total は条件に合う総数。
     アルバイト・パートと正社員の求人を同じ形で扱う。雇用区分は employment_type で絞る(summary の search_track を渡す)。
@@ -136,7 +141,7 @@ def recommend_jobs(
                            min_annual_salary=min_annual_salary, max_talk_level=max_talk_level,
                            min_talk_level=min_talk_level, max_physical_level=max_physical_level,
                            min_physical_level=min_physical_level, remote=remote,
-                           weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
+                           weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours, minor=minor)
 
 
 @mcp.tool()
@@ -149,16 +154,19 @@ def relax_conditions(
     max_physical_level: MaxPhysicalLevel = None, min_physical_level: MinPhysicalLevel = None,
     remote: Remote = None, weekends_holidays: WeekendsHolidays = None, max_overtime_hours: MaxOvertimeHours = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(recommend_jobs に渡したもの)")] = None,
+    minor: Minor = False,
 ) -> dict:
     """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。
-    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。"""
+    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。
+    minor(未成年の決まり)は外す候補にせず、どの件数にも効かせる。"""
     if blocked := session.job_block(state, line_user_id):
         return blocked
     return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
                        employment_type=employment_type, min_annual_salary=min_annual_salary, exclude_ids=exclude_ids,
                        max_talk_level=max_talk_level, min_talk_level=min_talk_level,
                        max_physical_level=max_physical_level, min_physical_level=min_physical_level,
-                       remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
+                       remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours,
+                       minor=minor)
 
 
 @mcp.tool()
