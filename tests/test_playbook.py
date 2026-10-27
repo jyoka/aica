@@ -489,6 +489,33 @@ def test_continuing_after_more_consulting_is_not_counted_again():
     assert checks.consult_length_violations(turns, said) == []
 
 
+def test_career_harness_turns_are_not_counted_as_consult_questions():
+    """正社員のヒアリングのハーネスのターン(返信に career が付く。task 255)は、相談の4問にも、「特にない」が2回続いた後の
+    掘り下げにも数えない。問いの数はハーネスが時間とターンの予算で決める(設計メモ fulltime-hearing.md §3)。
+    印の無い同じ会話は、今までどおり違反になる。"""
+    said = [None, "相談したい", "特にないです", "特にないです", "c", "d", "e"]
+    plain = [GREETING, READ, *DIG, _q("規模はどのくらいでしたか?")]
+    harness = [GREETING, READ, *(dict(r, career={"phase": "career_cards", "question": "card_role1"}) for r in plain[2:])]
+    assert checks.consult_length_violations(plain, said) != []
+    assert checks.consult_questions(harness, said)["asked"] == [2]  # 入口の1問(トークの AI が出した最初の質問)だけ
+    assert checks.consult_length_violations(harness, said) == []
+
+
+def test_career_harness_turns_skip_the_agent_quick_reply_rules_but_not_the_bubble_rules():
+    """正社員のハーネスのターン(と始めたターン)の選択肢はハーネスが出す(答えの候補 + パス + あとで)ので、トークの AI の
+    選択肢の決まり(4 個まで、逃げ道は「今はいい」)は当てない。吹き出しの字数と問いの数は今までどおり見る(task 255)。"""
+    from evals.checks import turn_violations
+
+    quick = ["同じ仕事で上へ", "仕事を変えたい", "ブランクから戻る", "経験が浅い", "パス", "あとで"]
+    plain = t(["今のあなたに近いのは?"], quick_replies=quick)
+    assert turn_violations(0, plain, SEISHAIN) != []
+    assert turn_violations(0, dict(plain, career={"phase": "icebreak", "question": "q_segment"}), SEISHAIN) == []
+    started = t(["今のあなたに近いのは?"], [("start_career_consultation", {}, {})], quick_replies=quick)
+    assert turn_violations(0, started, SEISHAIN) == []
+    long_two = dict(t(["あ" * 121 + "?いいですか?"], quick_replies=quick), career={"phase": "review", "question": "review"})
+    assert turn_violations(0, long_two, SEISHAIN) == ["T1: 質問が2個(1ターン1問まで)", "T1: 吹き出しが128字(120字以内)"]
+
+
 def test_no_consult_no_count():
     """相談に入らず条件から探した会話(「求人を探す」・条件だけの発言)は数えない。"""
     said = [None, "求人を探す", "渋谷でカフェ"]
