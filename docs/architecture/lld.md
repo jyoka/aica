@@ -369,7 +369,7 @@ classDiagram
 | `search_eval.py`、`search_eval_set.json` | 意味検索の評価セットと、上位 3 件の再現率 |
 | `jobtype_repro.py`、`semantic_repro.py`、`wait_repro.py` | 個別の問題を実 API で再現するスクリプト |
 | `probe.py` | 「電話はしたくない」と音声でコールセンターを外す流れを、チャットと音声で数ターンずつ実 API で確かめる小さな計測。予算台帳と $4 の停止は `run.py` と同じ |
-| `baito_sim.py` | アルバイト・パートの相談のハーネス(`dip_mcp/baito`)の回帰。モックの LLM で 8 ペルソナを回し、PRD §11.3 の受け入れチェックと §4.1 のベースラインに照らす(実 API を呼ばない。`python -m evals.baito_sim`、pytest は `tests/test_baito_harness.py`) |
+| `baito_sim.py` | アルバイト・パートの相談のハーネス(`dip_mcp/baito`)の検査。PRD v4.1 の単体チェック 131 件と 20 ペルソナ(モックの LLM)を移植版で回し、§11-5 の基準値に照らす(実 API を呼ばない。`python -m evals.baito_sim`、pytest は `tests/test_baito_harness.py`)。`--real` は P3 の実モデルの測定(費用がかかる) |
 | `baseline/` | 比較の基準にした評価の結果 |
 
 ### 1.6 evalkit
@@ -1323,7 +1323,8 @@ sequenceDiagram
 | playbook | 中身 |
 |---|---|
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
-| `parttime_chat.md`(アルバイト・パート) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、`start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯・曜日・エリア)、興味・得意、経験、不安 |
+| `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION=v4` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
 | `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
@@ -1336,30 +1337,35 @@ sequenceDiagram
 
 #### アルバイト・パートの相談(ハーネス)
 
-アルバイト・パートのチャットの相談は、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを dip のハーネス(`dip_mcp/baito/`)が決めます
-([ADR-0009](../adr/0009-baito-consultation-harness.md)、[PRD](../prd/baito_harness/PRD_baito_agent.md))。プロンプトは言い方だけです。
+機能フラグ `BAITO_HARNESS_VERSION=v4` のとき、アルバイト・パートのチャットの相談は、何を聞くか・いつフェーズを切り替えるか・
+いつ終えるかを dip のハーネス(`dip_mcp/baito/`)が決めます([ADR-0009](../adr/0009-baito-consultation-harness.md)、
+[PRD v4.1](../prd/baito_harness/PRD_baito_agent_v4.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、
+上の `parttime_chat.md` で相談します。
 
 | 部品 | 中身 |
 |---|---|
-| `dip_mcp/baito/bank.json`、`bank.py` | 質問バンク 48 問(PRD の `bank.py` の原文のまま)。`load_bank` が PRD §7.1 の要件を確かめて読む |
-| `dip_mcp/baito/harness.py` | 条件表(HARD・MID・LOW・NG)、マージ、出題の点数、フェーズの遷移、review のカード。PRD の `harness_v3.py` に §12 の 1・3・4・5 を足したもの |
-| `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。システムプロンプトを組み立てる。結果で `stated_preferences` に保存する |
-| `dip_mcp/prompts/baito_main_ja.md`、`baito_review_ja.md`、`baito_notes_ja.md` | PRD §9.1 のメインプロンプト(確定版)、§9.2 の review の追加(原文のまま)、ハーネスの補足(変数の形、retry、ng_removals) |
-| `line_runtime/baito_chat.py` | モデルの JSON の形(`BaitoOutput`)と、モデルを呼ぶところ |
-| `evals/baito_sim.py` | モックの LLM で 8 ペルソナを回し、PRD §11.3 の受け入れチェックと §4.1 のベースラインに照らす |
+| `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。移したときに直したところはファイルの先頭に書いてある |
+| `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま |
+| `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
+| `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
+| `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ |
+| `evals/baito_sim.py` | PRD の単体チェック 131 件と 20 ペルソナを移植版で回し(参照資料の写しの中で)、§11-5 の基準値に照らす。`--real` は P3 の実モデルの測定 |
+| `docs/prd/baito_harness/aica_port.py` | PRD の検査(`BAITO_HARNESS=aica_port`)から移植版を読むための入口 |
 
 1 ターンの流れ(`LineRuntime._turn`。相談の間はトークの AI を呼びません):
 
 1. 本人の発言(`message`)が来たら、まず `baito_turn` を呼ぶ。相談をしていなければ `active=False` で、ふだんのトークの AI のターンになる。
    新しい会話と会話の外のイベント(挨拶、プッシュ、アップロード)では `end_baito_consultation` で途中の相談を閉じる
-2. 発言が今の質問の選択肢そのものなら、ハーネスが choice_effects をそのまま当てて次の質問を決める。文なら `status=extract` が返り、
-   ランタイムがモデルに読み取らせて(1 回目)、その JSON を `baito_turn` に渡し直す
-3. 次の質問(review ならカード、result なら最終のカード)を入れたシステムプロンプトでモデルを呼び(2 回目)、`reply` を吹き出しにする。
-   選択肢はハーネスのもの(NG で絞った後のバンクの原文)。この回の `slot_updates` は使わない
-4. 本人の発言と返信を、トークの AI の会話に続けて保存する(返信の行には `baito` が付く)
+2. dip は保存した状態からハーネスの `turn()` を回す。選択肢そのものならモデルを呼ばずに choice_effects を当てる。モデルが要るところ
+   (文の抽出、言い方、結果)まで来ると `status=llm` とシステムプロンプトを返す(状態は保存しない)
+3. ランタイムがモデルを呼び(抽出は本人の今の発言だけ、言い方は直前のやりとりも渡す)、それまでの出力を全部 `llm_outputs` に入れて
+   `baito_turn` を呼び直す。呼び出しが失敗したら失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文)。
+   1 ターンにモデルは最大 4 回(抽出 2 回 + 生成 2 回)
+4. 最後まで進むと、dip が状態を保存し、返事の文(注意文はハーネスが前に付ける)と選択肢(未成年に深夜を出さない、バンクの原文)を返す。
+   本人の発言と返信を、トークの AI の会話に続けて保存する(返信の行には `baito` が付く)
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
-   本人が答えた条件(high)だけを保存してトークの AI に戻る(避けたいことは前の値に足す)
-6. 返信の文が作れなかったとき(API のエラー、空の文)と、扶養の基準の額(103万円など)を示したとき(PRD §10)は、質問の原文(review と結果はカード)を出す
+   本人が答えた条件(high)とルールの NG を保存してトークの AI に戻る(避けたいことは前の値に足す)
+6. 結果に着いたら同じく保存して閉じる。中学生以下で止めた結果だけは閉じず、その後の発言もハーネスが受ける(年齢の訂正で続ける)
 
 #### 条件の問いの選択肢
 
@@ -1870,7 +1876,8 @@ sequenceDiagram
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
-| `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態}`(条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す) | `baito.session.start`、`turn`、`end` |
+| `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態, track}`(PRD v4.1 付録D。`version="v4"`、条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す。中学生以下で止めたときは残す) | `baito.session.start`、`turn`、`end` |
+| `baito_block` | バイトの相談で中学生以下として止めた印 `{blocked: "under_15"}`。相談を閉じても残し、あるあいだ `recommend_jobs`・`relax_conditions` は求人を返さない。後の相談で 15 歳以上と確かめたら消す | `baito.session._finish`、`job_block` |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
 | `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |
 | `resume_upload`、`resume_upload_seq` | 最新の読み取り結果(5.5 の envelope に `id`、`uploaded_at`、`file` を足した形)と次の番号 | `save_resume_upload` |

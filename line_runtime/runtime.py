@@ -28,9 +28,9 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from dip_mcp.baito.session import MAX_LLM_CALLS as BAITO_LLM_CALLS
 from dip_mcp.baito.session import RUNTIME_TOOLS as BAITO_RUNTIME_TOOLS
-from dip_mcp.baito.session import unsafe_reply as baito_unsafe_reply
-from dip_mcp.logic import ENTRIES, VOICE_ROOM_ARG, liff_url
+from dip_mcp.logic import ENTRIES, VOICE_ROOM_ARG, baito_harness_on, liff_url
 from line_runtime import baito_chat, config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
@@ -61,8 +61,9 @@ FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらか
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話の入口(会話の state の entry)
 SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む dip の要約(task 237)
-# アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito、task 242)。トークの AI が start で始め、その後の本人の発言は
-# ランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない)。新しい会話と会話の外のイベントで end する
+# アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito、task 242)。BAITO_HARNESS_VERSION=v4 のときだけ、トークの AI が
+# start で始める。その後の本人の発言はランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない。始めた相談はフラグを
+# 戻しても最後まで進める)。新しい会話と会話の外のイベントで end する
 BAITO_START, BAITO_TURN, BAITO_END = "start_baito_consultation", "baito_turn", "end_baito_consultation"
 # 会話の記録の表(AsyncSqliteSaver のスキーマ)。1人の会話を消すときは、これらから1つのトランザクションで消す
 CONVERSATION_TABLES = ("checkpoints", "writes")
@@ -165,13 +166,15 @@ def dip_connection() -> dict:
 
 def chat_tools(tools: list) -> list:
     """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。
-    ランタイムだけが呼ぶバイトの相談のツール(baito_turn・end_baito_consultation)も外す。"""
+    ランタイムだけが呼ぶバイトの相談のツール(baito_turn・end_baito_consultation)も外す。ハーネスの機能フラグが
+    v4 でなければ、相談を始めるツール(start_baito_consultation)も外す(本番は今までどおり playbook で相談する)。"""
     for tool in tools:
         schema = tool.args_schema
         if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
             props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
             tool.args_schema = schema | {"properties": props}
-    return [t for t in tools if t.name not in BAITO_RUNTIME_TOOLS]
+    hidden = set(BAITO_RUNTIME_TOOLS) | (set() if baito_harness_on() else {BAITO_START})
+    return [t for t in tools if t.name not in hidden]
 
 
 class LineRuntime:
@@ -465,13 +468,14 @@ class LineRuntime:
                 if talk_thread is not None:
                     queue.put_nowait({"kind": "thread", "thread": n})
                 cfg = self._cfg(user_id, n)
-                if EVENTS[event][1] == "user" and not starts:
+                baito_on = BAITO_TURN in self._dip_tools  # バイトの相談のツールが無い dip(前の版)なら、何もしない
+                if baito_on and EVENTS[event][1] == "user" and not starts:
                     # バイトの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
                     baito = await self._dip(BAITO_TURN, {"line_user_id": user_id, "text": content})
                     if baito.get("active"):
                         await self._baito_turn(queue, user_id, event, cfg, content, baito, notice)
                         return
-                else:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる
+                elif baito_on:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる
                     await self._dip(BAITO_END, {"line_user_id": user_id})
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
@@ -523,45 +527,45 @@ class LineRuntime:
 
     async def _baito_turn(self, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str, baito: dict,
                           notice: str | None) -> None:
-        """バイトの相談の1ターン(dip のハーネスが次の質問を決めた後)。選択肢そのものでない発言は、先にモデルに読み取らせて
-        ハーネスに渡し直す(status=extract)。次に、ハーネスのシステムプロンプトで返信の文を作らせる。選択肢はハーネスのもの。
-        返信の文を作れなかったら(API のエラー、空の文)か、コードで守る決まり(扶養の金額を示さない)に反していたら、
-        ハーネスの質問の原文(review・結果はカード)をそのまま出す。
-        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。
-        モデルが返した slot_updates をハーネスに渡すのは読み取りの回だけ(返信の文の回の slot_updates は使わない)。"""
+        """バイトの相談の1ターン。ハーネス(dip の baito_turn)がモデルの出力を求める間(status=llm)、そのシステムプロンプトで
+        モデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。PRD v4.1 §5-4)。呼び出しが失敗したら、
+        失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。返信の文と選択肢はハーネスのものをそのまま出す。
+        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。"""
         values = (await self.agent.aget_state(cfg)).values
         convo = baito_chat.history(values.get("messages", []))
-        if convo and convo[-1]["role"] == "user":
-            convo[-1] = {"role": "user", "content": convo[-1]["content"] + "\n" + content}
-        else:
-            convo.append({"role": "user", "content": content})
-        if baito["status"] == "extract":
-            out = await self._baito_call(queue, user_id, event, baito["system"], convo)
-            baito = await self._dip(BAITO_TURN, {"line_user_id": user_id, "text": content, "extracted": out.dump()})
+        outputs: list[dict] = []
+        while baito.get("status") == "llm":
+            if len(outputs) >= BAITO_LLM_CALLS:
+                raise ValueError("バイトの相談のモデルの呼び出しが、1 ターンの上限を超えました")
+            call = baito["call"]
+            try:
+                out = await self._baito_call(queue, user_id, event, call["stage"], call["system"],
+                                             baito_chat.messages_for(call["stage"], content, convo))
+                outputs.append({"stage": call["stage"], "output": out})
+            except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
+                log.warning("バイトの相談のモデルを呼べなかった(%s): %s", call["stage"], type(e).__name__)
+                outputs.append({"stage": call["stage"], "error": type(e).__name__})
+            baito = await self._dip(BAITO_TURN, {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
             if not baito.get("active"):
                 raise ValueError("バイトの相談が途中で閉じられました")
-        try:
-            text = (await self._baito_call(queue, user_id, event, baito["system"], convo)).reply.strip()
-        except Exception as e:  # noqa: BLE001  ハーネスはもう進んだので、質問(カード)の原文で返して会話をずらさない
-            log.warning("バイトの相談の返信の文を作れず、質問の原文で返した: %s", type(e).__name__)
-            text = ""
-        if reason := baito_unsafe_reply(text):  # 扶養の金額など、コードで守る決まりに反する文は出さない
-            log.warning("バイトの相談の返信の文を使わず、質問の原文で返した: %s", reason)
-            text = ""
-        reply = LineReply(bubbles=[text or baito["fallback"]], quick_replies=baito["choices"])
-        mark = {"baito": {"phase": baito["phase"], "question": (baito.get("question") or {}).get("id")}}
+        reply = LineReply(bubbles=[baito["reply"]], quick_replies=baito["choices"])
+        mark = {"baito": {"phase": baito["phase"], "question": baito.get("question")}}
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
         msgs += [HumanMessage(content, additional_kwargs=mark), AIMessage(reply.model_dump_json(), additional_kwargs=mark)]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
         queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
 
-    async def _baito_call(self, queue: asyncio.Queue, user_id: str, event: str, system: str,
-                          convo: list[dict]) -> baito_chat.BaitoOutput:
+    async def _baito_call(self, queue: asyncio.Queue, user_id: str, event: str, stage: str, system: str,
+                          messages: list[dict]) -> dict:
         """バイトの相談のモデルを1回呼ぶ(費用台帳に1行、画面に llm の行)。"""
         self._baito_llm = self._baito_llm or baito_chat.default_llm()
         t = time.perf_counter()
-        out, usage = await self._baito_llm(system, convo)
+        try:
+            out, usage = await self._baito_llm(stage, system, messages)
+        except baito_chat.BaitoLLMError as e:  # 形の崩れた出力にも費用はかかっている
+            self.ledger.record(user_id, event, config.MODEL, e.usage)
+            raise
         self.ledger.record(user_id, event, config.MODEL, usage)
         queue.put_nowait({"kind": "llm", "ms": round((time.perf_counter() - t) * 1000), **usage, "tool_calls": []})
         return out

@@ -1,657 +1,1781 @@
-"""バイト探しの相棒(PRD v3)のハーネス。何を聞くか・いつフェーズを切り替えるか・いつ終えるかを決める。LLM は使わない。
+"""バイト探しの相棒(PRD v4.1)のハーネス。何を聞くか・いつフェーズを切り替えるか・いつ終えるかを決める。
 
-モデルは毎ターン決まった JSON(reply / choices / slot_updates / ng_updates / segment)を返し、ここがそれを条件表に
-マージして次の質問を決める(PRD §8)。プロンプトは「どう言うか」だけを受け持つ(prompts/baito_main_ja.md)。
+1 ターン = 本人の発言 1 通を turn() で処理すること。turn() は 3 段でできている(PRD §5-4):
+  Stage1 抽出: 選択肢そのもの → choice_effects をここで当てる(LLM を呼ばない)。
+               文 → llm.extract(payload) → validate_extract()(失敗したら 1 回だけやり直し、だめなら代わりの処理)
+  Stage2 判断: 確信度と from はここが決める(モデルの値は読まない)。未成年・中学生・闇バイトの決まり、次の質問とフェーズ
+  Stage3 生成: llm.generate(view) → validate_reply()(1 回だけやり直し、だめなら質問の原文)
+モデル(LLM)は抽出の JSON と言い方({"reply"})だけを返す。llm は aica 側が渡す(session.py、line_runtime/baito_chat.py)。
 
-正は docs/prd/baito_harness/harness_v3.py(FIX1〜FIX8 と V3-a〜d)。そこから変えたところ:
-- 状態を dip の JSON に保存できるようにした(State.to_dict / from_dict)
-- PRD §12 の既知の課題のうち、1・3・4・5 を足した(§13 の P4)
-  - 1: 本人が文で言った値を、バンクの列挙値に寄せる(normalize。元の文は raw_text に残す)
-  - 3: モデルが ng_removals で返した NG を消す(未成年の「深夜シフト」は消さない)
-  - 4: NG で選べない選択肢を隠す(visible_choices。未成年に「深夜もOK」を出さない)
-  - 5: あいまいな答えで同じ質問を聞き直すときは retry を付ける(プロンプトが聞き方を変える)
-- 未成年の深夜の時間帯は、モデルの返り値によらずコードで受け付けない(merge_updates の最後。PRD §10)。
-  寄せられなかった文でも、深夜の語か深夜の時刻があれば、否定の有無によらず受け付けない
-- 18歳未満かが はい / いいえ に寄らなかった答え(「高3」など)は残さず、hf_age を聞き直す(法令に関わる値を文のまま埋めない)
-- §12 の 2(review を2回しても残る矛盾の扱い)はユーザーが決めていないので変えていない(最後の low の値が残る)
+正は docs/prd/baito_harness/PRD_baito_agent_v4.md(本書)と付録A・B のデータ。このファイルは参照実装 harness_v4.py を
+移したもの(PRD §13-1。付録C の名前をすべて持つ)。質問バンクと職種カタログは JSON のデータ(bank_v4.json・catalog_v4.json)
+から読み、プロンプトは dip_mcp/prompts/baito/ の 4 ファイル(原文のまま)を使う。
+参照実装から変えたところ(レビュー docs/prd/baito_harness/review/06_readiness_v41.md の ID):
+- M-4: 年齢を聞いている質問で抽出が 2 回とも失敗しても、発言に JHS_RE が当たれば age_band=under_15 を入れる(_force_jhs)。
+  本人の学年として「中2」などと言ったのに抽出が別の年齢を返したときも under_15。review(年齢の行があり、抽出が失敗)と
+  結果の後の年齢の訂正(ブロックを外さない)でも同じ
+- 年齢の矛盾(どっち？)の候補に未成年があれば未成年として扱い、中学生以下があれば結果の前に止める(minor_mode・update_block)
+- M-16: 複数のスロットは、区切る前に文全体を表示名・正規値と照らす(「推し活・趣味」を壊さない。normalize_value)
+- B-2: review の自由入力は参照実装どおり最後の値を high で入れ、同じスロットに複数の値があればログ ambiguous_extract を残す
+- M-5: 1 回の抽出では age_band を先に当てる(「20歳で深夜もOK」の深夜を、年齢が空のうちに捨てない)
+- M-6: 結果の後の年齢の訂正で中学生のブロックを外すとき、review の巡回と「早く結果」を戻し、15 ターンに達していれば数えない
+- M-3: 2 巡目の review の昇格は、カードに出した focus の項目だけ
+- M-7: 生成の view に本人の直近の発言(user_text)を入れる
+- N-3・N-4: review の返事は、カードの長さに合わせて上限を広げ、カードの中のユーザー由来の文は金額の検査から外す
+- N-17: 結果の文で、矛盾のまま未定にした項目を「未定：…」に二重に並べない(unknown_hard_slots には残す)
+- 年齢の正規化(§6-3): 未成年を成人と読まないよう読み方を変えた(_norm_age。PRD の表の順では「18歳未満です」
+  「17歳、大学志望」が 18_plus になる。レビューに無い、PRD の表の誤り)
+B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
 from __future__ import annotations
 
 import copy
+import json
 import re
 import unicodedata
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
+from pathlib import Path
 
-from dip_mcp.baito.bank import load_bank
+HERE = Path(__file__).resolve().parent
+PROMPT_DIR = HERE.parent / "prompts" / "baito"
 
+VERSION = "v4"
 HARD, MID, LOW = 3, 2, 1
-SLOT_PRIORITY = {
-    "common": {"days_per_week": HARD, "time_slots": HARD, "commute": HARD,
-               "hourly_wage_min": MID, "shift_length": MID, "customer_facing": MID,
-               "physical": MID, "purpose": MID, "pace": LOW,
-               "atmosphere": LOW, "environment_noise": LOW},
-    "student": {"age_under_18": HARD, "school_permission": HARD,
-                "exam_flex": MID, "long_vacation": LOW},
-    "homemaker": {"available_hours": HARD, "sudden_leave": HARD,
-                  "fuyou": MID, "remote": MID},
-    "side_job": {"side_job_allowed": HARD, "weekday_or_weekend": HARD,
-                 "energy_left": MID, "avoid_coworkers": LOW},
-    # FIX7: segment が最後まで分からなくても、法令に関わる年齢は聞く
-    "unknown": {"age_under_18": HARD},
-}
-SEGMENTS = ("student", "homemaker", "side_job", "unknown")
-ORDER = ["icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps", "review", "result"]  # V3: review
+ORDER = ["icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps", "review", "result"]
+PRE_REVIEW = set(ORDER[:5])
+DIRECT = {"hard_filter", "fill_gaps"}  # B-1: 直接質問のフェーズ(PRD §5-1・§7-2。§8-3 の「icebreak・hard_filter」は誤り)
 MAX_TURNS = 15
-REVIEW_RESERVE = 2      # V3: review(1回目 + 任意の2回目)のために残すターン
+REVIEW_RESERVE = 2
 MAX_REVIEW_ROUNDS = 2
-PRE_REVIEW = ORDER[:ORDER.index("review")]
-DIRECT = {"hard_filter", "fill_gaps"}          # 直接聞くフェーズ(答えは high)
-SEGMENT_SCORE = 1.5                            # FIX1: q_money(2)より小さくし、楽しい質問を先に出す
-TRUTHY = (True, "true", "True", "yes", "はい")  # FIX8
-NOPREF = "こだわりなし"                          # スキップ・どっちでもいい(PRD §5.1 の 6)
-LATE_NIGHT_NG = "深夜シフト"                     # 未成年に自動で足す NG(22:00〜5:00)
+HF_MAX, SC_MAX, SC_MIN = 6, 6, 3
+MAX_ATTEMPTS = 2
+TOPIC_CAP = 2
+MAX_CLARIFY = 2
+MAX_ASIDES = 3
+LLM_RETRIES = 1
+SEGMENT_SCORE = 1.5
+PHASE_CAP = {"icebreak": 3, "hard_filter": HF_MAX, "scenario_game": SC_MAX, "reverse_pick": 1}
+TIER = {HARD: "hard", MID: "mid", LOW: "low"}
+SEGMENTS = ("student", "homemaker", "side_job", "other")
+NOPREF = "こだわりなし"
+SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心（主婦・主夫など）", "side_job": "本業あり副業探し",
+              "other": "フリーター・求職中・その他", "unknown": "未判明"}
+INTENTS = ("answer", "clarify", "show_result", "restart", "aside", "danger")
+REPLY_MAX = 600
+
+
+# ----------------------------- スロット(PRD §6) -----------------------------
+def S(label, kind, values, multi=False):
+    return {"label": label, "kind": kind, "values": values, "multi": multi}
+
+
+SLOTS = {
+    # 共通
+    "age_band": S("年齢", "fact", {"under_15": "中学生以下", "15_17": "15〜17歳", "under_18": "18歳未満",
+                                  "18_plus": "18歳以上", "declined": "ひみつ（未回答）"}),
+    "days_per_week": S("週の日数", "pref", {"1-2": "週1〜2日", "3-4": "週3〜4日", "5+": "週5日以上"}),
+    "time_slots": S("時間帯", "pref", {"morning": "朝", "daytime": "昼", "evening": "夕方〜夜", "late_night": "深夜"},
+                    multi=True),
+    "commute": S("通勤", "pref", {"walk_bike": "徒歩・自転車", "train_30": "電車30分まで", "train_60": "1時間くらいまで"}),
+    "hourly_wage_min": S("時給の下限", "pref", {1000: "1,000円台でOK", 1200: "1,200円以上", 1500: "1,500円以上"}),
+    "shift_length": S("1回の勤務時間", "pref", {"short": "4時間未満", "mid": "4〜6時間", "long": "6時間以上"}),
+    "customer_facing": S("接客", "pref", {"like": "好き", "ok": "ふつう（できる）", "avoid": "できれば避けたい"}),
+    "physical": S("体力面", "pref", {"heavy_ok": "体力仕事もOK", "standing_ok": "立ち仕事OK", "light": "軽めがいい",
+                                    "seated": "座り仕事がいい"}),
+    "purpose": S("目的", "pref", {"hobby": "推し活・趣味", "saving": "貯金", "living_cost": "生活費・家計の足し",
+                                 "fun": "旅行・遊び", "career": "履歴書に書ける経験", "easygoing": "ゆるく",
+                                 "perk_meal": "まかない", "perk_discount": "社割", "pocket_money": "おこづかい",
+                                 "use_experience": "経験を活かす", "try_new": "違うことをしたい",
+                                 "no_brain": "頭を使わない", "skill_up": "本業にプラス", "earn": "稼ぐ",
+                                 "refresh": "気分転換", "money": "お金", "skill": "経験・スキル",
+                                 "people": "人とのつながり"}, multi=True),
+    "pace": S("忙しさ", "pref", {"busy_ok": "忙しくてもOK", "calm": "落ち着いた職場"}),
+    "teaching_style": S("教わり方", "pref", {"structured": "マニュアルできっちり", "autonomous": "自分で考えたい"}),
+    "social": S("職場の付き合い", "pref", {"friendly": "仲良くしたい", "dry": "あっさりがいい"}),
+    "environment_noise": S("にぎやかさ", "pref", {"lively": "にぎやか", "quiet": "静か"}),
+    "wage_priority": S("時給と働きやすさ", "pref", {"near_first": "近さ優先", "wage_first": "時給優先",
+                                                  "comfort_first": "ラクさ優先"}),
+    "recognition": S("うれしい評価", "pref", {"customers": "お客さんから", "manager": "店長から"}),
+    "coworker_age": S("一緒に働く人", "pref", {"same_age": "同年代", "mixed_age": "大人も", "similar_life": "同じような立場",
+                                             "any": "気にしない"}),
+    # 学生
+    "school_permission": S("学校の許可", "fact", {"ok": "OK", "needs_notice": "届け出すればOK", "banned": "禁止",
+                                                "unknown": "わからない"}),
+    "exam_flex": S("テスト期間", "pref", {"full_off": "休みたい", "reduced": "減らせればOK", "no_change": "気にしない"}),
+    "long_vacation": S("長期休み", "pref", {"heavy": "がっつり", "normal": "いつも通り"}),
+    "start_time_pref": S("学校のあと", "pref", {"right_after_school": "放課後すぐ", "after_club": "部活のあと"}),
+    # 家のこと中心
+    "available_hours": S("働ける時間", "fact", {"9-14": "9〜14時くらい", "10-16": "10〜16時くらい", "evening": "夕方以降",
+                                              "varies": "日によってバラバラ"}),
+    "sudden_leave": S("急なお休み", "fact", {"frequent": "けっこうある", "sometimes": "たまにある", "rare": "ほぼない"}),
+    "fuyou": S("扶養", "fact", {"within": "扶養内で", "beyond_ok": "気にしない", "unknown_needs_help": "わからない"}),
+    "remote": S("在宅", "pref", {"yes": "在宅がいい", "no": "外がいい", "either": "どちらでも"}),
+    "shift_flex": S("シフトの決め方", "pref", {"fixed": "固定がいい", "flexible": "自分で選びたい"}),
+    "leave_support": S("休むときの安心", "pref", {"instant": "すぐ休める", "cover": "代わりがいる"}),
+    # 本業あり副業探し
+    "side_job_allowed": S("副業の可否", "fact", {"ok": "OK", "needs_notice": "届け出が必要", "banned": "禁止",
+                                               "unknown": "わからない・グレー", "civil_servant": "公務員"}),
+    "weekday_or_weekend": S("平日・週末", "pref", {"weekday_evening": "平日の夜", "weekend": "土日", "either": "どちらでも"}),
+    "energy_left": S("本業後の体力", "pref", {"high": "けっこう残ってる", "some": "少しだけ", "none": "ほぼゼロ"}),
+    "avoid_coworkers": S("会社の人に会う", "pref", {"no": "気にしない", "yes": "絶対イヤ"}),
+    "work_style": S("働き方", "pref", {"steady": "安定（毎週）", "spot": "スポット"}),
+    "weekend_length": S("週末の長さ", "pref", {"full_day": "1日", "half_day": "半日"}),
+}
+ALL_SLOTS = set(SLOTS)
+FACT_SLOTS = {s for s, v in SLOTS.items() if v["kind"] == "fact"}
+COMMON = {"age_band": HARD, "days_per_week": HARD, "time_slots": HARD, "commute": HARD,
+          "hourly_wage_min": MID, "shift_length": MID, "customer_facing": MID, "physical": MID, "purpose": MID,
+          "pace": LOW, "teaching_style": LOW, "social": LOW, "environment_noise": LOW, "wage_priority": LOW,
+          "recognition": LOW}
+SLOT_PRIORITY = {
+    "student": {**COMMON, "school_permission": HARD, "exam_flex": MID, "long_vacation": LOW, "coworker_age": LOW,
+                "start_time_pref": LOW},
+    "homemaker": {**COMMON, "available_hours": HARD, "sudden_leave": HARD, "fuyou": MID, "remote": MID,
+                  "shift_flex": LOW, "leave_support": LOW, "coworker_age": LOW},
+    "side_job": {**COMMON, "side_job_allowed": HARD, "weekday_or_weekend": HARD, "energy_left": MID,
+                 "avoid_coworkers": LOW, "work_style": LOW, "weekend_length": LOW},
+    "other": {**COMMON, "coworker_age": LOW},
+    "unknown": dict(COMMON),
+}
+MINOR_BANDS = {"under_15", "15_17", "under_18"}
+DERIVED_NG_MINOR = ["深夜シフト", "重量物・危険な作業"]
+
+# ----------------------------- 決まり文句と注意文(PRD §10-5。法務の確認待ち。文面を変えない) -----------------------------
+NOTICE = {
+    "under_15": "中学生のうちは、法律で原則アルバイトができないんだ（子役など特別な許可がある場合をのぞく）。高校生になったらまた一緒に探そう！それまでは、おうちの人や学校の先生に相談してみてね。",
+    "minor_rules": "18歳未満は、22時〜翌5時の深夜と、重い物を運ぶような危険な作業はNGなんだ。1日8時間・週40時間までがルールだよ。その条件で探すね。",
+    "age_declined": "年齢を教えてもらえなかったから、安全のため18歳未満と同じ条件（深夜・重い作業なし）で探すね。あとで変えられるよ。",
+    "late_night_removed": "18歳未満（または年齢未回答）だと深夜（22時〜翌5時）は働けないから、深夜はのぞいておくね。",
+    "school_banned": "学校のルールで禁止なら、まずは先生やおうちの人に相談してみてね。ここでは「もしOKになったら」の参考として続けるね。",
+    "school_unknown": "学校のバイトのルールは、生徒手帳や先生に一度確認しておくと安心だよ。",
+    "side_banned": "会社で副業が禁止なら、無理に始めずに就業規則を確認してね。ここでは「もしOKになったら」の参考として続けるね。",
+    "side_unknown": "副業OKかわからないときは、就業規則や人事に一度確認してね。",
+    "civil_servant": "公務員は副業に法律上の制限があるよ。始める前に職場のルールを必ず確認してね。ここでは参考として続けるね。",
+    "fuyou": "扶養のラインは家族の勤め先や制度で変わるから、具体的な金額は家族・勤務先・税務署などで確認してね。",
+    "danger": "⚠️「SNSで高額」「受け取るだけ」「すぐ稼げる」みたいな話は、闇バイト（犯罪）の可能性があるよ。絶対に応募しないでね。もう連絡しちゃった・脅されてるときは、警察相談専用電話 #9110 に相談してね。",
+    "minor_hours": "18歳未満は1日8時間・週40時間までだから、日数か時間を少し調整するかも。",
+    "student_fuyou": "親の扶養に入っている学生は、稼ぎすぎると親の税金や保険に影響することがあるよ。くわしくはおうちの人に確認してね。",
+    "side_tax": "副業の収入は、確定申告が必要になることや、本業と労働時間が合算されることがあるよ。くわしくは勤務先や税務署で確認してね。",
+    "rules_only": "※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。",
+}
+CLOSING_JA = "推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆"
 REVIEW_OK = "これでOK"
-# §12-4: NG にあるとき隠す選択肢(NG の項目, スロット, 値)。未成年には「深夜もOK」を出さない
-CHOICE_BLOCKERS = ((LATE_NIGHT_NG, "time_slots", "late_night_ok"),)
+CLARIFY_TEXT = "お、どのへんがちがう？ひとことで教えて！"
+RETRY_TEXT = "ごめん、うまく受け取れなかった！もう一回だけ教えて。"
+CONFIRM_TEXT = "確認させてね！今のあなたに近いのはどれ？"
+POST_RESULT_TEXT = "おすすめはここまでだよ。条件を変えてもう一回探すなら「最初から」と送ってね。"
+GUESS_TAIL = "（確認できていない推測の条件だよ。ちがっていたら「最初から」でやり直せるよ）"
+
+# ----------------------------- 正規表現(PRD §5-8。規範) -----------------------------
+DANGER_RE = re.compile(r"闇バイト|ホワイト案件|受け子|出し子|運び屋|叩き|荷物を?受け取るだけ|受け取るだけ|口座.*(売|貸|渡)|名義.*(貸|売)|"
+                       r"即日.*高(収入|額)|高(収入|額).*即日|1日で?\s*\d+\s*万|日給\s*\d+\s*万|SNS.*(高額|高収入)|簡単.*高収入")
+MONEY_RE = re.compile(r"\d+(\.\d+)?\s*万|１０３万|103万|106万|130万|150万|160万")
+JHS_RE = re.compile(r"中学|中[1-3１-３](?!\d)")
+NOPREF_RE = re.compile(r"こだわりなし|どっちでもいい|どちらでもいい|なんでもいい|何でもいい|気にしない")
+DECLINE_RE = re.compile(r"ひみつ|秘密|答えたくない|言いたくない|内緒|スキップ")
+PII_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|0\d{1,4}-?\d{1,4}-?\d{3,4}|\d{3}-?\d{4}|〒")
+MULTI_SEP_RE = re.compile(r"[、,，/／]\s*")
+STRONG_SPLIT_RE = re.compile(r"[、,，/／\s]+")  # 複数スロットの文の区切り(PRD §6-3 の 1)。M-16: 先にこれで区切り、表示名と一致しない部分だけを「・と&」でも区切る
+WEAK_SPLIT_RE = re.compile(r"[・と&]+")
+# 18 以上の数があっても、まだその年齢になっていない言い方(「18歳未満」「まだ18歳になっていません」「来月18歳」)。
+# PRD §6-3 の表は数の行(8)が「18歳未満」の行(9)より先なので、そのままでは 18_plus と読む。安全側に under_18 にする
+NOT_YET_RE = re.compile(r"未満|未成年|以下|なって(い)?な|なって(い)?ませ|まだ|もうすぐ|あと|来月|来年|今年|になる|になります")
 
 
-@dataclass
-class State:
-    phase: str = "icebreak"
-    segment: str = "unknown"
-    slots: dict = field(default_factory=dict)
-    ng: list = field(default_factory=list)
-    asked: set = field(default_factory=set)
-    attempts: dict = field(default_factory=dict)
-    turns: int = 0
-    phase_turns: int = 0
-    pending: list = field(default_factory=list)  # FIX3: segment が決まる前に届いた、まだ無いスロットの更新
-    conflicts: dict = field(default_factory=dict)  # V3: スロット -> 食い違う low の値
-    review_rounds: int = 0                         # V3
-    need_more_review: bool = False                 # V3
-    review_log: list = field(default_factory=list) # V3
-    question: dict | None = None                   # 最後に聞いた質問(step が返したもの。答えの読み取りに使う)
-    rejected: list = field(default_factory=list)   # コードが受け付けなかった更新(未成年の深夜など)
-
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        d["asked"] = sorted(self.asked)
-        return d
-
-    @classmethod
-    def from_dict(cls, d: dict) -> State:
-        return cls(**(copy.deepcopy(d) | {"asked": set(d.get("asked", []))}))
+def scrub_note(raw):
+    """notes には、伏せ字にした 30 字までの写しだけを残す(PRD §10-6)。"""
+    return PII_RE.sub("＊", str(raw))[:30]
 
 
-def slots_for(state):
-    s = dict(SLOT_PRIORITY["common"])
-    s.update(SLOT_PRIORITY.get(state.segment, {}))
-    return s
+def nfkc(s):
+    return unicodedata.normalize("NFKC", str(s)).strip()
 
 
-def gap_weight(state, slot):
-    v = state.slots.get(slot)
-    if v is None:
-        return 1.0
-    if v["confidence"] == "low":
-        return 0.5
-    return 0.0
+# ----------------------------- データ(付録A・付録B) -----------------------------
+def _load_json(name):
+    return json.loads((HERE / name).read_text(encoding="utf-8"))
 
 
-def is_minor(state) -> bool:
-    a = state.slots.get("age_under_18")
-    return bool(a) and a["value"] in TRUTHY
+def load_bank():
+    """質問バンク(付録A、49 問)。プロンプトには書かない。"""
+    return _load_json("bank_v4.json")
 
 
-def merge_updates(state, out):
-    if out.get("segment") in SEGMENTS[:-1]:
-        state.segment = out["segment"]
-    known = slots_for(state)
-    ups = state.pending + [u for u in map(_clean_update, out.get("slot_updates") or []) if u]  # FIX3: 預けた更新から
-    state.pending = []
-    minor = is_minor(state) or any(u["slot"] == "age_under_18" and u["value"] in TRUTHY for u in ups)
-    for u in ups:
-        if u["slot"] == "age_under_18" and type(u["value"]) is not bool:  # 寄らない年齢は預けもしない(hf_age を聞き直す)
-            state.rejected.append(u | {"reason": "age_not_bool"})
-            continue
-        if u["slot"] not in known:
-            state.pending.append(u)                         # FIX3: 捨てずに預ける
-            continue
-        if minor and _late_night(u):                        # 未成年の深夜は受け付けない(今の値も上書きしない)
-            state.rejected.append(u | {"reason": "under_18_late_night"})
-            continue
-        old = state.slots.get(u["slot"])
-        if old and old["confidence"] == "high" and u["confidence"] == "low":
-            continue
-        _track_conflict(state, old, u)                      # V3
-        state.slots[u["slot"]] = u
-    for x in out.get("ng_updates") or []:
-        if isinstance(x, str) and x.strip() and x.strip() not in state.ng:
-            state.ng.append(x.strip())
-    for x in out.get("ng_removals") or []:                  # §12-3: 本人が「やっぱり大丈夫」と取り消した NG
-        if x in state.ng:
-            state.ng.remove(x)
-    _enforce_minor(state)
+def load_catalog():
+    """職種カタログ(付録B、24 件)。推薦の許可リスト。times は集合にする。"""
+    return [dict(j, times=set(j["times"])) for j in _load_json("catalog_v4.json")]
 
 
-def _enforce_minor(state):
-    """18歳未満なら NG に「深夜シフト」を足し(FIX8: TRUTHY で寛容に読む)、深夜の時間帯は残さない。モデルには頼らない。
-    年齢より先に届いた深夜の時間帯は消し(スロットは空に戻り、fill_gaps で深夜を隠した選択肢で聞き直す)、
-    矛盾の候補からも外す(カードの「どっち？」に深夜を出さない)。"""
-    if not is_minor(state):
-        return
-    if LATE_NIGHT_NG not in state.ng:
-        state.ng.append(LATE_NIGHT_NG)
-    vals = state.conflicts.get("time_slots")
-    if vals and any(map(_late_value, vals)):
-        vals[:] = [v for v in vals if not _late_value(v)]
-        if len(vals) < 2:
-            state.conflicts.pop("time_slots")
-    t = state.slots.get("time_slots")
-    if t and _late_night(t):
-        state.rejected.append(state.slots.pop("time_slots") | {"reason": "under_18_late_night"})
-        state.conflicts.pop("time_slots", None)
+BANK = load_bank()
+CATALOG = load_catalog()
+CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
 
 
-def _late_night(u) -> bool:
-    return u["slot"] == "time_slots" and _late_value(u["value"])
-
-
-LATE_WORDS = re.compile(r"深夜|夜中|夜勤")
-
-
-def _late_value(v) -> bool:
-    """深夜の時間帯の値か: late_night_ok か、寄せられなかった文に深夜の語か深夜の時刻(_late_clock)がある。
-    文は否定の有無によらない(「深夜も問題ないです」は NEGATION で寄せないが、未成年には残さない。
-    「深夜は無理」を捨てても、深夜を隠した選択肢で聞き直すだけ)。"""
-    if v == "late_night_ok":
-        return True
-    if not isinstance(v, str) or v in SLOT_VALUES.get("time_slots", []):
-        return False
-    s = unicodedata.normalize("NFKC", v)
-    return bool(LATE_WORDS.search(s)) or _late_clock(s)
-
-
-def _clean_update(u) -> dict | None:
-    """モデルが返した1件の更新をそろえる: slot が無いものは捨て、confidence は high / low に、値は列挙値に寄せる(§12-1)。"""
-    if not isinstance(u, dict) or not isinstance(u.get("slot"), str) or "value" not in u:
-        return None
-    value, raw = normalize(u["slot"], u["value"])
-    out = {"slot": u["slot"], "value": value, "confidence": "high" if u.get("confidence") == "high" else "low",
-           "from": str(u.get("from") or "")}
-    if raw is not None:
-        out |= {"raw_text": raw, "normalized": value != raw}
-    return out
-
-
-def _track_conflict(state, old, u):
-    # V3: 食い違う2つの low の更新は、どちらの値も残す。high の更新が来たら解消する
-    slot = u["slot"]
-    if u["confidence"] == "high":
-        state.conflicts.pop(slot, None)
-        return
-    if old and old["confidence"] == "low" and value_ja(slot, old["value"]) != value_ja(slot, u["value"]):
-        # 日本語のラベルで比べ、同じ意味の値(living_cost / household)を矛盾にしない
-        vals = state.conflicts.setdefault(slot, [old["value"]])
-        if u["value"] not in vals:
-            vals.append(u["value"])
-
-
-def open_gaps(state, min_pri, include_low):
-    out = []
-    for slot, pri in slots_for(state).items():
-        if pri < min_pri or state.attempts.get(slot, 0) >= 2:
-            continue
-        w = gap_weight(state, slot)
-        if w == 1.0 or (include_low and w == 0.5):
-            out.append(slot)
-    return out
-
-
-def _phase_ok(state, q):
-    if q["phase"] == state.phase:
-        return True
-    # FIX5: fill_gaps は hard_filter の直接質問も(また)使える(segment が遅く分かった / HARD の答えがあいまい)
-    return state.phase == "fill_gaps" and q["phase"] == "hard_filter"
-
-
-def _segment_ok(state, q, pri):
-    if "all" in q["segments"] or state.segment in q["segments"]:
-        return True
-    # FIX7: segment が分からないときは、targets がどれも今の条件表にある直接質問を許す
-    return (state.segment == "unknown" and q["phase"] in DIRECT
-            and all(t in pri for t in q["targets"]))
-
-
-def pick_question(state, bank):
-    pri = slots_for(state)
-    best, best_score = None, 0
-    for q in bank:
-        if not _phase_ok(state, q) or not _segment_ok(state, q, pri):
-            continue
-        if q["id"] in state.asked and not (state.phase == "fill_gaps" and q["phase"] in DIRECT):
-            continue                                        # FIX5: fill_gaps の直接質問は聞き直せる(attempts まで)
-        if "segment" in q["targets"]:                        # FIX1: segment は疑似ターゲット
-            score = SEGMENT_SCORE if state.segment == "unknown" and q["id"] not in state.asked else 0
-        else:
-            score = sum(pri[t] * gap_weight(state, t)
-                        for t in q["targets"]
-                        if t in pri and state.attempts.get(t, 0) < 2)
-        if score > 0 and state.segment in q["segments"]:
-            score += 0.5
-        if score > best_score:
-            best, best_score = q, score
-    return best
-
-
-def remaining_gaps(state):
-    # FIX6b: fill_gaps で埋めるもの = 空か low の HARD + 空の MID。
-    # シナリオで推測した(low の)MID はそのまま受け取る(シナリオゲームの狙い。review のカードでまとめて確かめる)
-    return sorted(set(open_gaps(state, HARD, True)) | set(open_gaps(state, MID, False)))
-
-
-def next_phase(state):
-    p, n = state.phase, state.phase_turns
-    if p == "review":                                   # V3: もう1回までで、あとは result
-        more = state.need_more_review and state.review_rounds < MAX_REVIEW_ROUNDS and state.turns < MAX_TURNS
-        return "review" if more else "result"
-    if state.turns >= MAX_TURNS:
-        return "result"
-    if p in PRE_REVIEW and state.turns >= MAX_TURNS - REVIEW_RESERVE:
-        return "review"                                 # V3: 予約したターンで review は必ず行う
-    if p == "icebreak":
-        return "hard_filter" if state.segment != "unknown" or n >= 3 else p   # FIX2
-    if p == "hard_filter":
-        return "scenario_game" if not open_gaps(state, HARD, False) or n >= 5 else p
-    if p == "scenario_game":
-        # FIX6: reverse_pick(1)と、空の HARD を埋めるターンを残す。
-        # V3: シナリオが会話の中心なので、短くするのは HARD の不足(+ reverse_pick + review の予約)だけ。
-        # 空の MID は fill_gaps のターンで聞くか、review のカードに「未定」で出す
-        budget_tight = state.turns + 1 + len(open_gaps(state, HARD, True)) + REVIEW_RESERVE >= MAX_TURNS
-        done = n >= 6 or (n >= 4 and not open_gaps(state, MID, False)) or (n >= 2 and budget_tight)
-        return "reverse_pick" if done else p
-    if p == "reverse_pick":
-        return "fill_gaps"
-    if p == "fill_gaps":
-        return "review" if not remaining_gaps(state) else p  # V3
-    return p
-
-
-def step(state, llm_out, bank):
-    """1ターン進める: マージ → turns+1 → next_phase → 次の質問 / review のカード / None(result)。
-    llm_out が None なら、何も受け取らずに最初の質問を決める。"""
-    if llm_out is not None:
-        if state.phase == "review":
-            apply_review(state, llm_out)                # V3
-        else:
-            merge_updates(state, llm_out)
-        state.turns += 1
-        state.phase_turns += 1
-    new = next_phase(state)
-    while True:
-        if new != state.phase:
-            state.phase, state.phase_turns = new, 0
-        if new == "result":
-            state.question = None
-            return None
-        if new == "review":                             # V3: カードを「質問」にする
-            state.review_rounds += 1
-            card = build_card(state)
-            state.question = {"id": f"review_{state.review_rounds}", "phase": "review", "segments": ["all"],
-                              "targets": [], "text": render_card_ja(card), "choices": [REVIEW_OK],
-                              "choice_effects": {REVIEW_OK: {}}, "card": card}
-            return state.question
-        q = pick_question(state, bank)
-        if q:
-            break
-        new = ORDER[ORDER.index(new) + 1]
-    retry = q["id"] in state.asked                      # §12-5: あいまいな答えの後の聞き直し
-    state.asked.add(q["id"])
-    if q["phase"] in DIRECT:                                 # FIX4: 聞き直しの枠を使うのは直接質問だけで、
-        for t in q["targets"]:                              #       まだ空か low のスロットだけ
-            if gap_weight(state, t) > 0:
-                state.attempts[t] = state.attempts.get(t, 0) + 1
-    state.question = _shown(state, q, retry)
-    return state.question
-
-
-def visible_choices(state, q) -> list[str]:
-    """§12-4: NG で選べない選択肢を除いた選択肢(順はバンクのまま)。除くと1つも残らない質問は、そのまま出す。"""
-    blocked = {(slot, value) for ng, slot, value in CHOICE_BLOCKERS if ng in state.ng}
-    keep = [c for c in q["choices"]
-            if not any((s, v) in blocked for s, v in q["choice_effects"][c].items() if not s.startswith("__"))]
-    return keep or list(q["choices"])
-
-
-def _shown(state, q, retry: bool) -> dict:
-    """本人に出す形の質問(バンクの dict の写し。選択肢は NG で絞り、聞き直しなら retry を付ける)。"""
-    choices = visible_choices(state, q)
-    return copy.deepcopy(q) | {"choices": choices, "choice_effects": {c: q["choice_effects"][c] for c in choices}} | (
-        {"retry": True} if retry else {})
-
-
-def answer_from_choice(state, text: str) -> dict | None:
-    """本人の発言が、最後に聞いた質問の選択肢そのもの(クイックリプライを押した)なら、choice_effects どおりの更新
-    (モデルの JSON と同じ形)。確信度は PRD §6: 直接質問は high、それ以外(icebreak・シナリオ・reverse_pick)は low。
-    選択肢でなければ None(モデルが文から読み取る)。"""
-    q = state.question
-    if not q or (text or "").strip() not in q["choices"]:
-        return None
-    eff = q["choice_effects"][text.strip()]
-    conf = "high" if q["phase"] in DIRECT else "low"
-    return {"slot_updates": [{"slot": k, "value": v, "confidence": conf, "from": q["id"]}
-                             for k, v in eff.items() if not k.startswith("__")],
-            "ng_updates": list(eff.get("__ng__", [])), "segment": eff.get("__segment__", "unknown")}
-
-
-# ======================= V3: review フェーズ / 結果のカード =======================
-SLOT_LABEL_JA = {
-    "days_per_week": "週の日数", "time_slots": "働く時間帯", "commute": "通勤", "hourly_wage_min": "時給",
-    "shift_length": "1回のシフトの長さ", "customer_facing": "接客", "physical": "体力・立ち仕事",
-    "purpose": "バイトの目的", "pace": "忙しさ", "atmosphere": "職場の雰囲気", "environment_noise": "職場のにぎやかさ",
-    "age_under_18": "18歳未満", "school_permission": "学校のバイト許可", "exam_flex": "テスト期間",
-    "long_vacation": "長期休み", "available_hours": "働ける時間", "sudden_leave": "急なお休み",
-    "fuyou": "扶養", "remote": "在宅/外", "side_job_allowed": "会社の副業OK", "weekday_or_weekend": "平日/週末",
-    "energy_left": "本業後の体力", "avoid_coworkers": "会社の人に会うのは",
-}
-SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心", "side_job": "本業あり・副業", "unknown": "（未回答）"}
-VALUE_JA = {True: "はい", False: "いいえ", NOPREF: NOPREF}
-# 推測した値(シナリオ・reverse_pick・icebreak)の読みやすいラベル。選択肢の文は補いにだけ使う:
-# 例えば reverse_pick の「引越しスタッフ」は、本人がやりたくないもの
-_E = {
- "customer_facing": {"ok": "接客OK", "avoid": "接客は避けたい", "backoffice_ok": "裏方もOK（店長にほめられたい）", "like": "接客が好き"},
- "pace": {"busy_ok": "忙しくてもOK", "calm": "落ち着いたペースがいい"},
- "shift_length": {"short": "短め（3時間くらい）", "long": "長め（6時間くらい）"},
- "atmosphere": {"structured": "マニュアルがしっかり", "autonomous": "ざっくり・自分で考える", "friendly": "仲良くわいわい",
-                "dry": "さっぱり各自解散", "same_age": "同年代が多い", "mixed_age": "大人が多くてもOK",
-                "parents": "子育て中の人が多い", "any": "こだわらない"},
- "environment_noise": {"lively": "にぎやか", "quiet": "静か", "lively_ok": "にぎやかでもOK"},
- "hourly_wage_min": {"wage_less_important": "時給より近さ優先", "wage_priority": "時給優先（多少遠くても）",
-                     "high": "高め希望（立ち仕事でも）", "normal": "ふつうでOK（座れるなら）"},
- "physical": {"light": "軽めの作業がいい", "seated": "座り仕事がいい", "standing_ok": "立ち仕事OK", "heavy_ok": "体力仕事どんとこい"},
- "purpose": {"hobby": "推し活・趣味", "saving": "貯金・将来のため", "living_cost": "家計の足し・生活費",
-             "household": "家計の足し・生活費", "fun": "旅行・遊び", "career": "履歴書に書ける経験", "easygoing": "ゆるく楽しく",
-             "perk_meal": "まかない", "perk_discount": "社割", "pocket_money": "自分のおこづかい",
-             "use_experience": "経験を活かしたい", "try_new": "新しいことをしたい", "no_brain": "頭を使わない作業",
-             "skill_up": "本業にプラスになる仕事", "earn": "しっかり稼ぐ", "refresh": "気分転換", "money": "お金",
-             "skill": "経験・スキル", "people": "人とのつながり"},
- "exam_flex": {"full_off": "テスト前は完全に休みたい", "reduced": "テスト前は少なめならOK", "no_change": "気にしない"},
- "long_vacation": {"heavy": "長期休みはがっつり", "normal": "長期休みもいつも通り"},
- "available_hours": {"fixed_morning": "週2・午前で固定", "flexible": "毎週自分で選びたい"},
- "sudden_leave": {"need_instant": "急に休める職場がいい", "cover_ok": "代わりの人がいれば安心"},
- "remote": {"yes": "在宅がいい", "no": "外で働きたい", "either": "どちらでも"},
- "fuyou": {"check_needed": "要確認（家計の足しにしたい）", "within": "扶養内", "beyond_ok": "扶養は気にしない",
-           "unknown_needs_help": "わからない（相談したい）"},
- "weekday_or_weekend": {"weekend_full_day": "週末に1日しっかり", "weekend_half_day": "週末に半日"},
- "avoid_coworkers": {"yes": "会社の人には会いたくない", "no": "気にしない"},
- "energy_left": {"steady_ok": "毎週安定して働ける", "limited": "空いた日だけ（スポット）"},
- "time_slots": {"after_school": "放課後すぐ", "after_club": "部活のあと"},
-}
-for _slot, _m in _E.items():
-    for _v, _ja in _m.items():
-        VALUE_JA[(_slot, _v)] = _ja
-# スロットごとの、バンクと _E に出てくる値(§12-1 の正規化で、列挙値かを見る)と、ラベル → 値
-SLOT_VALUES: dict[str, list] = {}
-LABEL_TO_VALUE: dict[str, dict[str, object]] = {}
-
-
-def set_value_labels(bank):
-    """保存した値の読みやすい日本語: その値を作った選択肢の文を使う(_E が先)。§12-1 の逆引きの表も作る。
-    逆引きには reverse_pick の選択肢の文を使わない(本人がやりたくないものの名前なので、値のラベルではない)。"""
-    for slot, m in _E.items():
-        for v, ja in m.items():
-            _add_value(slot, v, ja)
-    for q in bank:
-        for choice, eff in q.get("choice_effects", {}).items():
-            for slot, v in eff.items():
-                if not slot.startswith("__"):
-                    VALUE_JA.setdefault((slot, v), choice)
-                    _add_value(slot, v, None if q["phase"] == "reverse_pick" else choice)
-
-
-def _add_value(slot, v, label):
-    vals = SLOT_VALUES.setdefault(slot, [])
-    if not any(v == x and type(v) is type(x) for x in vals):
-        vals.append(v)
-    if label:
-        LABEL_TO_VALUE.setdefault(slot, {}).setdefault(label, v)
-
-
-def value_ja(slot, v):
-    if isinstance(v, bool):
-        return VALUE_JA[v]
-    try:
-        return VALUE_JA.get((slot, v), VALUE_JA.get(v, str(v)))
-    except TypeError:                                   # list など、表のキーにできない値
-        return str(v)
-
-
-# ----------------------------- §12-1: 本人が文で言った値を列挙値に寄せる -----------------------------
-
-
+# ----------------------------- 正規化(PRD §6-3) -----------------------------
 def _hours(s):
     m = re.search(r"(\d+(?:\.\d+)?)\s*時間", s)
     return float(m.group(1)) if m else None
 
 
-def _bucket(n, steps):
-    """n が入る区切りの値(steps は (上限, 値) の昇順。最後の上限は None)。"""
-    return next(v for top, v in steps if top is None or n <= top)
-
-
-# 否定や条件つきの言い方(「夜は無理」「深夜以外」「近くじゃなくてもいい」)は、読み方の規則で寄せると逆の値になるので寄せない
-NEGATION = re.compile(r"無理|以外|ダメ|だめ|NG|厳し|きつ|できな|でき(ません|ない)|じゃな|ではな|避け|嫌|いや|ない(です)?$|なく")
-
-
-def _days(s):
-    """「週2日」→ 1-2。範囲(「週2〜3日」)が区切りをまたぐときは寄せない。"""
-    steps = ((2, "1-2"), (4, "3-4"), (None, "5+"))
-    m = re.search(r"週\s*(\d)(?:\s*[〜~\-ー]\s*(\d))?", s) or re.search(r"(\d)(?:\s*[〜~\-ー]\s*(\d))?\s*日", s)
-    if not m:
+def _exact(slot, value):
+    """値が正規値か表示名とそのまま一致すれば正規値(区切りを含む表示名「推し活・趣味」もここで決まる)。"""
+    vals = SLOTS[slot]["values"]
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return None
-    lo, hi = _bucket(int(m.group(1)), steps), _bucket(int(m.group(2) or m.group(1)), steps)
-    return lo if lo == hi else None
+    if value in vals:
+        return value
+    s = nfkc(value)
+    if s in vals:
+        return s
+    for k, ja in vals.items():
+        if s == nfkc(ja):
+            return k
+    return None
 
 
-# 文の時刻(「22時」「夜10時」「23:30」)。前の語で午前・午後を見分け、後の「まで」・前の「〜」で終わりの時刻と読む
-CLOCK = re.compile(r"([〜~\-ー]\s*)?(深夜|夜中の?|夜の?|晩の?|午前|午後|朝)?\s*(\d{1,2})\s*(?:時(?!間)\s*(半)?|:(\d{2}))(\s*(?:まで|迄))?")
+def _weak_split(slot, part):
+    """「・と&」で区切る。ただし区切り文字を含む表示名(「推し活・趣味」「人とのつながり」)は、文の中にあればそのまま残す。"""
+    if _exact(slot, part) is not None:
+        return [part]
+    names = sorted({nfkc(ja) for ja in SLOTS[slot]["values"].values() if WEAK_SPLIT_RE.search(nfkc(ja))}, key=len, reverse=True)
+    if not names:
+        return WEAK_SPLIT_RE.split(part)
+    out = []
+    for i, piece in enumerate(re.split("(" + "|".join(map(re.escape, names)) + ")", part)):
+        out += [piece] if i % 2 else WEAK_SPLIT_RE.split(piece)
+    return out
 
 
-def _late_clock(s) -> bool:
-    """文の時刻が深夜(22:00〜5:00)にかかるか。「22時以降」「23時まで」「夜10時から」「24時」「夜中の2時」→ True。
-    「22時まで」「17〜22時」(22時ちょうどに終わる)と、前の語の無い「2時から」(午後と読む)は当たらない。"""
-    for m in CLOCK.finditer(s):
-        pre, n = m.group(2) or "", int(m.group(3))
-        if pre.startswith(("夜", "晩", "午後")) and 5 <= n < 12:
-            n += 12
-        if n < 5 and not (n == 0 or pre.startswith(("深夜", "夜", "晩", "午前", "朝"))):
+def normalize_value(slot, value):
+    """正規値(複数スロットはリスト)、NOPREF、正規化できなければ None。"""
+    spec = SLOTS[slot]
+    if value is None:
+        return None
+    if spec["multi"]:
+        whole = _exact(slot, value) if isinstance(value, str) else None
+        if whole is not None:  # M-16: 区切る前に文全体を照らす
+            return [whole]
+        if isinstance(value, list):
+            items = value
+        elif isinstance(value, str):
+            items = []
+            for part in STRONG_SPLIT_RE.split(nfkc(value)):
+                items += _weak_split(slot, part)
+        else:
+            items = [value]
+        out = []
+        for it in items:
+            if it in (None, ""):
+                continue
+            if isinstance(it, str) and NOPREF_RE.search(nfkc(it)):
+                return NOPREF if spec["kind"] == "pref" else None
+            n = _norm_single(slot, it)
+            if n is not None and n != NOPREF and n not in out:
+                out.append(n)
+        return out or None
+    if isinstance(value, list):
+        value = value[0] if value else None
+        if value is None:
+            return None
+    return _norm_single(slot, value)
+
+
+def _age_number(s):
+    """年齢らしい数。「〜歳・才」の付いた数を先に、無ければ単位(か月・年・時間など)の付かない数。生年(「2009年生まれ」)は読まない。"""
+    m = re.search(r"(\d{1,3})\s*(歳|才)", s)
+    if m:
+        return int(m.group(1))
+    for m in re.finditer(r"\d{1,4}", s):
+        if not re.match(r"\s*(か月|ヶ月|ヵ月|カ月|ヶ|年|月|日|時|分|万|円|週|回|人|学期)", s[m.end():]):
+            return int(m.group(0)) if len(m.group(0)) <= 3 else None
+    return None
+
+
+def _norm_age(s):
+    """PRD §6-3 の年齢の行。未成年を成人と読まないよう、参照実装から次を変えた(安全側):
+    「〜歳」の数を学校の語より先に読む(「17歳、大学志望」)、まだその年齢になっていない言い方は under_18
+    (「18歳未満」「まだ18歳になっていない」「あと半年で18」)、進学の予定(「大学受験生」「4月から大学生」)と
+    生年(「2009年生まれ」)と学年だけ(「1年生」)は決めない(None。未成年として扱い、年齢を聞く)、
+    成人・大人の打ち消し(「成人してない」)は under_18。"""
+    if JHS_RE.search(s):
+        return "under_15"
+    if DECLINE_RE.search(s) or NOPREF_RE.search(s):
+        return "declined"
+    a = _age_number(s)
+    if a is not None and re.search(r"(\d{1,3})\s*(歳|才)", s):
+        return _band(a, s)
+    if re.search(r"高[1-3]|高校|高専", s):
+        return "15_17"
+    if re.search(r"未成年|未満|以下", s) or re.search(r"(成人|大人).*(ない|ません|まだ|前)|(まだ|前).*(成人|大人)", s):
+        return "under_18"
+    if re.search(r"生まれ|年生", s) or re.search(r"志望|目指|受験|予定|から|なりたい|行きたい|入りたい", s):
+        return None
+    if re.search(r"大学|大[1-4]|専門|短大|社会人|会社員", s):
+        return "18_plus"
+    if a is not None:
+        return _band(a, s)
+    if "成人" in s or "大人" in s or "18歳以上" in s:
+        return "18_plus"
+    return None
+
+
+def _band(a, s):
+    if a >= 18 and NOT_YET_RE.search(s):
+        return "under_18"
+    return "under_15" if a < 15 else "15_17" if a < 18 else "18_plus"
+
+
+def _norm_single(slot, value):
+    spec = SLOTS[slot]
+    vals = spec["values"]
+    if isinstance(value, bool):
+        if slot == "age_band":
+            return "under_18" if value else "18_plus"
+        return None
+    exact = _exact(slot, value)
+    if exact is not None:
+        return exact
+    s = nfkc(value)
+    if slot == "age_band":
+        return _norm_age(s)
+    if spec["kind"] == "pref" and NOPREF_RE.search(s):
+        return NOPREF
+    if spec["kind"] == "fact" and DECLINE_RE.search(s) and "unknown" in vals:
+        return "unknown"
+    if slot == "shift_length":
+        h = _hours(s)
+        if h is not None:
+            return "short" if h < 4 else "mid" if h < 6 else "long"
+        if "短" in s or "サクッと" in s:
+            return "short"
+        if "長" in s or "ガッツリ" in s:
+            return "long"
+    if slot == "hourly_wage_min":
+        m = re.search(r"(\d[\d,]*)", s)
+        if m:
+            w = int(m.group(1).replace(",", ""))
+            if w < 20:
+                w *= 100
+            return 1000 if w < 1200 else 1200 if w < 1500 else 1500
+    if slot == "days_per_week":
+        m = re.search(r"(\d)", s)
+        if m:
+            d = int(m.group(1))
+            return "1-2" if d <= 2 else "3-4" if d <= 4 else "5+"
+    if slot == "time_slots":
+        if "深夜" in s:
+            return "late_night"
+        if "朝" in s or "午前" in s:
+            return "morning"
+        if "昼" in s or "日中" in s:
+            return "daytime"
+        if "夕" in s or "夜" in s or "放課後" in s:
+            return "evening"
+    if slot == "commute":
+        if "徒歩" in s or "自転車" in s or "近所" in s:
+            return "walk_bike"
+        if "1時間" in s:
+            return "train_60"
+        m = re.search(r"(\d+)\s*分", s)
+        if m:
+            n = int(m.group(1))
+            return "walk_bike" if n <= 15 and "電車" not in s else "train_30" if n <= 30 else "train_60"
+    if slot == "physical":
+        if "座" in s:
+            return "seated"
+        if "軽" in s:
+            return "light"
+    if slot == "customer_facing":
+        if "苦手" in s or "避け" in s or "イヤ" in s or "嫌" in s:
+            return "avoid"
+        if "好き" in s:
+            return "like"
+    return None
+
+
+def value_ja(slot, v):
+    if v is None:
+        return "未定"
+    if v == NOPREF:
+        return NOPREF
+    vals = SLOTS[slot]["values"]
+    if isinstance(v, list):
+        return "・".join(vals.get(x, str(x)) for x in v)
+    return vals.get(v, str(v))
+
+
+def is_filled(slot_entry):
+    return slot_entry is not None and slot_entry.get("value") not in (None, [], "")
+
+
+# ----------------------------- 状態(付録D) -----------------------------
+@dataclass
+class State:
+    version: str = VERSION
+    phase: str = "icebreak"
+    segment: str = "unknown"
+    slots: dict = field(default_factory=dict)          # slot -> {"value","confidence","from"}
+    user_ng: list = field(default_factory=list)
+    derived_ng: list = field(default_factory=list)
+    pending: dict = field(default_factory=dict)        # まだ有効でないスロットの値
+    archived: dict = field(default_factory=dict)       # セグメント -> {slot: entry}
+    conflicts: dict = field(default_factory=dict)      # slot -> [values]
+    unresolved: dict = field(default_factory=dict)     # 結果の時点で解けなかった矛盾(§12-2)
+    notes: dict = field(default_factory=dict)          # slot -> 正規化できなかった原文(伏せ字・30 字)
+    asked: list = field(default_factory=list)
+    attempts: dict = field(default_factory=dict)
+    topic_count: dict = field(default_factory=dict)
+    turns: int = 0
+    phase_turns: dict = field(default_factory=dict)
+    aside_count: int = 0
+    clarify_used: int = 0
+    clarified: list = field(default_factory=list)
+    retried: list = field(default_factory=list)
+    current: dict = None
+    pending_segment: str = None
+    review_rounds: int = 0
+    last_card: dict = None
+    review_log: list = field(default_factory=list)
+    flags: list = field(default_factory=list)
+    notices_sent: list = field(default_factory=list)
+    blocked: str = None
+    restarts: int = 0
+    result: dict = None
+    log: list = field(default_factory=list)
+
+    def to_dict(self):
+        return copy.deepcopy({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
+
+    @classmethod
+    def from_dict(cls, d):
+        st = cls()
+        for k, v in d.items():
+            if hasattr(st, k):
+                setattr(st, k, copy.deepcopy(v))
+        for s, e in list(st.slots.items()):  # JSON で文字列になった時給を整数に戻す
+            if s == "hourly_wage_min" and isinstance(e.get("value"), str) and e["value"].isdigit():
+                e["value"] = int(e["value"])
+        return st
+
+
+def new_state():
+    """空の状態。年齢がまだ無いので、derived_ng は未成年のルールの NG で始まる(05-N4)。"""
+    st = State()
+    recompute_derived(st)
+    if hasattr(st, "_new_notices"):
+        del st._new_notices
+    return st
+
+
+def ev(state, kind, **kw):
+    state.log.append({"t": state.turns, "kind": kind, **kw})
+
+
+def active_slots(state):
+    return SLOT_PRIORITY.get(state.segment, SLOT_PRIORITY["unknown"])
+
+
+def hard_slots(state):
+    return [s for s, p in active_slots(state).items() if p == HARD]
+
+
+def _age_values(state):
+    """今の年齢の値と、矛盾として残っている年齢の候補。"""
+    e = state.slots.get("age_band")
+    return [e.get("value") if e else None] + state.conflicts.get("age_band", []) + state.unresolved.get("age_band", [])
+
+
+def minor_mode(state):
+    """年齢が空・未成年・未回答なら未成年として扱う(§10-1)。どの区分でも同じ。年齢の候補が矛盾していて、
+    どれかが未成年なら未成年(最後の推測が 18歳以上でも、深夜を開けない)。"""
+    return any(v is None or v in MINOR_BANDS or v == "declined" for v in _age_values(state))
+
+
+def recompute_derived(state):
+    state.derived_ng = list(DERIVED_NG_MINOR) if minor_mode(state) else []
+    if minor_mode(state):
+        e = state.slots.get("time_slots")
+        if e and isinstance(e.get("value"), list) and "late_night" in e["value"]:
+            e["value"] = [x for x in e["value"] if x != "late_night"]
+            ev(state, "rejected_by_rule", slot="time_slots", value="late_night", rule="minor")
+            _notice(state, "late_night_removed")
+            if not e["value"]:
+                del state.slots["time_slots"]
+        e = state.slots.get("physical")
+        if e and e.get("value") == "heavy_ok":
+            e["value"] = "standing_ok"
+            ev(state, "rejected_by_rule", slot="physical", value="heavy_ok", rule="minor")
+
+
+def _notice(state, key):
+    _init_volatile(state)
+    if key not in state.notices_sent:
+        state.notices_sent.append(key)
+        state._new_notices.append(key)
+
+
+# ----------------------------- 統合(§7-2・§7-5) -----------------------------
+def confidence_for(src_kind, phase, slot, evidence_ok):
+    """確信度はハーネスが決める(モデルの confidence は読まない)。"""
+    if src_kind in ("review", "choice_direct", "confirm"):
+        return "high"
+    if src_kind == "free_current" and phase in DIRECT:
+        return "high"
+    if slot in FACT_SLOTS and evidence_ok:
+        return "high"
+    return "low"
+
+
+def apply_update(state, slot, value, conf, frm, review=False):
+    """戻り値は discarded / pending / rejected / noop / set / conflict。例外は出さない。"""
+    if slot not in ALL_SLOTS:
+        ev(state, "discarded_unknown_slot", slot=slot)
+        return "discarded"
+    if slot not in active_slots(state):
+        state.pending[slot] = {"value": value, "confidence": conf, "from": frm}
+        return "pending"
+    spec = SLOTS[slot]
+    if value == NOPREF and spec["kind"] == "fact":
+        if slot == "age_band":
+            value = "declined"
+        else:
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="nopref_on_fact")
+            return "rejected"
+    if minor_mode(state):  # 未成年の深夜・重労働はここで受け付けない(§10-1)
+        if slot == "time_slots" and isinstance(value, list) and "late_night" in value:
+            value = [v for v in value if v != "late_night"]
+            ev(state, "rejected_by_rule", slot=slot, value="late_night", rule="minor")
+            _notice(state, "late_night_removed")
+            if not value:
+                return "rejected"
+        if slot == "physical" and value == "heavy_ok":
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="minor")
+            value = "standing_ok"
+    old = state.slots.get(slot)
+    new = {"value": value, "confidence": conf, "from": frm}
+    if not is_filled(old):
+        state.slots[slot] = new
+        status = "set"
+    elif spec["multi"] and slot == "purpose":
+        merged = list(old["value"]) if isinstance(old["value"], list) else []
+        for v in (value if isinstance(value, list) else [value]):
+            if v not in merged and v != NOPREF:
+                merged.append(v)
+        conf2 = "high" if "high" in (old["confidence"], conf) else "low"
+        state.slots[slot] = {"value": merged or value, "confidence": conf2, "from": frm if conf == "high" else old["from"]}
+        status = "set"
+    elif old["confidence"] == "high" and conf == "low":
+        if old["value"] != value:
+            ev(state, "rejected_by_rule", slot=slot, value=value, rule="low_over_high")
+            return "rejected"
+        return "noop"
+    elif old["confidence"] == "low" and conf == "low" and old["value"] != value and not spec["multi"]:
+        c = state.conflicts.setdefault(slot, [old["value"]])
+        if value not in c:
+            c.append(value)
+        state.slots[slot] = new
+        status = "conflict"
+    elif spec["multi"] and conf == "low" and old["confidence"] == "low":
+        if isinstance(value, list) and isinstance(old["value"], list):
+            merged = list(old["value"]) + [v for v in value if v not in old["value"]]
+        else:
+            merged = value
+        state.slots[slot] = {"value": merged, "confidence": "low", "from": frm}
+        status = "set"
+    else:
+        state.slots[slot] = new
+        status = "set"
+        if conf == "high":
+            state.conflicts.pop(slot, None)
+    if slot == "age_band":
+        recompute_derived(state)
+        v = state.slots[slot]["value"]
+        update_block(state)
+        if v == "declined":
+            _notice(state, "age_declined")
+        elif v in MINOR_BANDS:
+            _notice(state, "minor_rules")
+    if slot == "school_permission":
+        _flag_notice(state, {"banned": "school_banned", "unknown": "school_unknown"}.get(state.slots[slot]["value"]))
+    if slot == "side_job_allowed":
+        _flag_notice(state, {"banned": "side_banned", "unknown": "side_unknown",
+                             "civil_servant": "civil_servant"}.get(state.slots[slot]["value"]))
+    if slot == "fuyou":
+        _flag_notice(state, "fuyou")
+    hours = state.slots[slot]["value"] if slot == "available_hours" else None
+    if hours in ("9-14", "10-16", "evening") and not is_filled(state.slots.get("time_slots")):
+        derived = {"9-14": ["morning", "daytime"], "10-16": ["daytime"], "evening": ["evening"]}[hours]
+        state.slots["time_slots"] = {"value": derived, "confidence": conf, "from": "derived"}
+    return status
+
+
+def update_block(state, final=False):
+    """under_15 は確信度 high のときだけ止める。low は会話を続けて hf_age で確かめ、finalize(final=True)で止める(05-B10)。"""
+    e = state.slots.get("age_band") or {}
+    sure = e.get("value") == "under_15" and e.get("confidence") == "high"
+    # 結果の前(final)は、推測の under_15 も、矛盾の候補にある under_15 も止める
+    state.blocked = "under_15" if sure or (final and "under_15" in _age_values(state)) else None
+
+
+def _flag_notice(state, key):
+    if key and key not in state.flags:
+        state.flags.append(key)
+    if key:
+        _notice(state, key)
+
+
+def set_segment(state, seg, source):
+    """source: choice|confirm|review_explicit|free。一度分かったセグメントは unknown に戻さない。"""
+    if seg not in SEGMENTS:
+        ev(state, "invalid_segment", value=seg)
+        return "ignored"
+    if seg == state.segment:
+        state.pending_segment = None
+        return "noop"
+    if state.segment == "unknown" or source in ("choice", "confirm"):
+        _switch_segment(state, seg)
+        return "set"
+    state.pending_segment = seg
+    ev(state, "segment_change_pending", old=state.segment, new=seg)
+    return "pending_confirm"
+
+
+def _switch_segment(state, seg):
+    old = state.segment
+    if old != "unknown":
+        keep = set(SLOT_PRIORITY[seg])
+        arch = {s: e for s, e in state.slots.items() if s not in keep}
+        if arch:
+            state.archived[old] = arch
+            for s in arch:
+                state.slots.pop(s)
+                state.conflicts.pop(s, None)
+        ev(state, "segment_switched", old=old, new=seg, archived=sorted(arch))
+    state.segment = seg
+    state.pending_segment = None
+    for s, e in state.archived.pop(seg, {}).items():  # 05-M7: 戻すときも統合の決まりを通す
+        if not is_filled(state.slots.get(s)):
+            apply_update(state, s, e["value"], e["confidence"], e["from"])
+    for s in list(state.pending):
+        if s in active_slots(state):
+            e = state.pending.pop(s)
+            apply_update(state, s, e["value"], e["confidence"], e["from"])
+
+
+# ----------------------------- LLM の出力の検証(§8-4) -----------------------------
+def parse_json(raw):
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    s = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+    try:
+        d = json.loads(s)
+        return d if isinstance(d, dict) else None
+    except ValueError:
+        m = re.search(r"\{.*\}", s, flags=re.DOTALL)
+        if m:
+            try:
+                d = json.loads(m.group(0))
+                return d if isinstance(d, dict) else None
+            except ValueError:
+                return None
+    return None
+
+
+SEG_SYNONYM = {"学生": "student", "大学生": "student", "高校生": "student", "専門学生": "student", "主婦": "homemaker",
+               "主夫": "homemaker", "会社員": "side_job", "社会人": "side_job", "副業": "side_job",
+               "フリーター": "other", "求職中": "other", "その他": "other"}
+
+
+def _empty_extract():
+    return {"slot_updates": [], "ng_updates": [], "ng_removals": [], "segment": None, "intent": "answer",
+            "review_ack": None}
+
+
+def validate_extract(raw):
+    """-> (clean, problems)。使えなければ (None, problems)。"""
+    probs = []
+    d = parse_json(raw)
+    if d is None:
+        return None, ["not_json"]
+    out = _empty_extract()
+    su = d.get("slot_updates")
+    if su is None:
+        su = []
+        probs.append("slot_updates_null" if "slot_updates" in d else "slot_updates_missing")
+    if isinstance(su, dict):
+        su = [{"slot": k, "value": v} for k, v in su.items()]
+    if not isinstance(su, list):
+        su = []
+        probs.append("slot_updates_bad_type")
+    if len(su) > 10:
+        probs.append("slot_updates_truncated")
+    for u in su[:10]:
+        if not isinstance(u, dict) or not isinstance(u.get("slot"), str):
+            probs.append("update_bad_item")
             continue
-        ends_on_the_hour = (m.group(1) or m.group(6)) and not (m.group(4) or int(m.group(5) or 0))
-        if n >= 23 or n < 5 or (n == 22 and not ends_on_the_hour):
+        slot = u["slot"].strip()
+        if slot == "age_under_18":  # v3 の名前
+            slot = "age_band"
+        if slot == "segment":
+            d.setdefault("segment", u.get("value"))
+            continue
+        if slot not in ALL_SLOTS:
+            probs.append("unknown_slot:" + slot)
+            continue
+        if "confidence" not in u:
+            probs.append("confidence_missing")
+        val = u.get("value")
+        if isinstance(val, list) and not SLOTS[slot]["multi"]:
+            probs.append("list_for_single:" + slot)
+        nv = normalize_value(slot, val)
+        if nv is None:
+            probs.append("unnormalizable:" + slot)
+            out["slot_updates"].append({"slot": slot, "value": None, "raw": val, "evidence": u.get("evidence")})
+            continue
+        out["slot_updates"].append({"slot": slot, "value": nv, "evidence": u.get("evidence")})
+    for key in ("ng_updates", "ng_removals"):
+        v = d.get(key) or []
+        if isinstance(v, str):
+            v = [v]
+        lst = [nfkc(x) for x in v if isinstance(x, str) and nfkc(x)] if isinstance(v, list) else []
+        if len(lst) > 5:
+            probs.append(key + "_truncated")
+        out[key] = lst[:5]
+    seg = d.get("segment")
+    if isinstance(seg, str) and seg:
+        s2 = seg if seg in SEGMENTS else SEG_SYNONYM.get(nfkc(seg))
+        if s2 is None or s2 == "unknown":
+            probs.append("invalid_segment:" + seg)
+        out["segment"] = s2 if s2 in SEGMENTS else None
+    it = d.get("intent", "answer")
+    if d.get("clarify") is True:
+        it = "clarify"
+    out["intent"] = it if it in INTENTS else "answer"
+    ra = d.get("review_ack")
+    out["review_ack"] = ra if ra in ("all", "partial", "none") else None
+    return out, probs
+
+
+def validate_reply(raw, view):
+    d = parse_json(raw)
+    if d:
+        reply = d.get("reply")
+    else:
+        reply = raw if isinstance(raw, str) and raw.strip() and not raw.strip().startswith("{") else None
+    if not isinstance(reply, str) or not reply.strip():
+        return None, "no_reply"
+    review = view.get("mode") == "review"
+    limit = REPLY_MAX
+    if review:  # N-3: カードと締めの一文がそのまま入る長さは許す
+        limit = max(REPLY_MAX, len(view["card_text"]) + len(CLOSING_JA) + 120)
+    if len(reply) > limit:
+        return None, "too_long"
+    # N-4: カードの中のユーザー由来の文(NG・メモ)は、金額の検査から外す
+    if MONEY_RE.search(reply.replace(view["card_text"], "") if review else reply):
+        return None, "money_amount"
+    if review:
+        if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
+            return None, "card_altered"
+    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside"):
+        if nfkc(view["text"]) not in nfkc(reply):
+            return None, "question_missing"
+        if len(reply) - len(view["text"]) > 120:
+            return None, "too_much_extra"
+    return reply.strip(), None
+
+
+# ----------------------------- 質問の選び方(§8-3) -----------------------------
+def gap_weight(entry):
+    if not is_filled(entry):
+        return 1.0
+    return 0.5 if entry.get("confidence") == "low" else 0.0
+
+
+def _segment_ok(q, state):
+    return "all" in q["segments"] or state.segment in q["segments"]
+
+
+def visible_choices(q, state):
+    """未成年(年齢が空・未回答を含む)には、深夜・重労働の選択肢を出さない。"""
+    ch = []
+    for c in q["choices"]:
+        fl = q["choice_flags"].get(c, [])
+        if minor_mode(state) and ("late_night" in fl or "heavy" in fl):
+            continue
+        ch.append(c)
+    return ch
+
+
+def pick_question(state, bank, phase):
+    pri = active_slots(state)
+    if phase == "hard_filter" and "hf_age" not in state.asked and gap_weight(state.slots.get("age_band")) > 0:
+        return qmap(bank)["hf_age"], "ask"  # 年齢を必ず最初に聞く
+    phases = {phase, "hard_filter"} if phase == "fill_gaps" else {phase}
+    best, best_score, best_mode = None, 0.0, "ask"
+    for q in bank:  # 同点はバンクの並び順(「より大きい」だけで比べる)
+        if q["phase"] not in phases or not _segment_ok(q, state):
+            continue
+        if q["id"] == "q_segment":
+            if state.segment == "unknown" and q["id"] not in state.asked and SEGMENT_SCORE > best_score:
+                best, best_score, best_mode = q, SEGMENT_SCORE, "ask"
+            continue
+        mode = "ask"
+        if q["id"] in state.asked:
+            if phase == "fill_gaps" and q["phase"] in DIRECT and all(
+                    state.attempts.get(t, 0) < MAX_ATTEMPTS for t in q["targets"] if t in pri):
+                mode = "reask"
+            else:
+                continue
+        targets = [t for t in q["targets"] if t in pri]
+        if phase in DIRECT:
+            targets = [t for t in targets if state.attempts.get(t, 0) < MAX_ATTEMPTS]
+        elif phase == "scenario_game":
+            targets = [t for t in targets if state.topic_count.get(t, 0) < TOPIC_CAP]
+        if phase == "reverse_pick":
+            score = 1.0
+        else:
+            score = sum(pri[t] * gap_weight(state.slots.get(t)) for t in targets)
+            if score > 0 and "all" not in q["segments"]:
+                score += 0.5
+        if len(visible_choices(q, state)) < 2:
+            continue
+        if score > best_score:
+            best, best_score, best_mode = q, score, mode
+    return (best, best_mode) if best else (None, None)
+
+
+def open_hard(state):
+    return [s for s in hard_slots(state) if gap_weight(state.slots.get(s)) > 0]
+
+
+def remaining_gaps(state):
+    pri = active_slots(state)
+    return [s for s, p in pri.items() if p >= MID and (p == HARD and gap_weight(state.slots.get(s)) > 0 or
+            p == MID and not is_filled(state.slots.get(s))) and state.attempts.get(s, 0) < MAX_ATTEMPTS]
+
+
+def next_phase(state, bank):
+    p = state.phase
+    if state.blocked:
+        return "result"
+    if p == "result":
+        return "result"
+    if state.turns >= MAX_TURNS:  # 15 ターンの上限は何より先(05-B6)
+        return "result"
+    if p == "review":
+        more = state._need_more_review and state.review_rounds < MAX_REVIEW_ROUNDS and "show_result" not in state.flags
+        return "review" if more else "result"
+    if state.turns >= MAX_TURNS - REVIEW_RESERVE or "show_result" in state.flags:
+        return "review"
+    n = state.phase_turns.get(p, 0)
+    if p == "icebreak":
+        return "hard_filter" if state.segment != "unknown" or n >= 3 else "icebreak"
+    if p == "hard_filter":
+        if n >= HF_MAX or not [s for s in open_hard(state) if state.attempts.get(s, 0) < 1]:
+            return "scenario_game"
+        return "hard_filter"
+    if p == "scenario_game":
+        budget_tight = state.turns >= MAX_TURNS - REVIEW_RESERVE - 3
+        return "reverse_pick" if n >= SC_MAX or (n >= SC_MIN and budget_tight) else "scenario_game"
+    if p == "reverse_pick":
+        return "fill_gaps"
+    if p == "fill_gaps":
+        return "fill_gaps" if remaining_gaps(state) else "review"
+    return "review"
+
+
+def advance(state, bank):
+    """次に出すものを決めて state.current に入れる。ORDER の長さで打ち切るので繰り返さない。"""
+    if state.pending_segment and state.phase != "result":
+        np = next_phase(state, bank)
+        if np in ("review", "result"):
+            ev(state, "confirm_skipped", pending=state.pending_segment)
+            state.pending_segment = None
+        else:  # 05-B4: 確認質問は次のフェーズに数える(フェーズの上限を超えない)
+            state.phase = np
+            state.phase_turns.setdefault(np, 0)
+            state.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(qmap(bank)["q_segment"]["choices"])}
+            return
+    for _ in range(len(ORDER) + 2):
+        np = next_phase(state, bank)
+        state.phase = np
+        if np in ("review", "result"):
+            break
+        q, mode = pick_question(state, bank, np)
+        if q:
+            _present(state, q, mode)
+            return
+        state.phase = ORDER[ORDER.index(np) + 1]
+        if state.phase == "review":
+            break
+        state.phase_turns.setdefault(state.phase, 0)
+    else:
+        state.phase = "review"
+    if state.phase == "review":
+        state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK]}
+        state.last_card = build_card(state)
+    else:
+        finalize(state)
+        state.current = {"qid": "result", "mode": "result", "choices": []}
+
+
+def _present(state, q, mode):
+    pri = active_slots(state)
+    if q["id"] not in state.asked:
+        state.asked.append(q["id"])
+    for t in q["targets"]:
+        if t in pri:
+            state.topic_count[t] = state.topic_count.get(t, 0) + 1
+            if q["phase"] in DIRECT and gap_weight(state.slots.get(t)) > 0:  # B-1: DIRECT は hard_filter・fill_gaps
+                state.attempts[t] = state.attempts.get(t, 0) + 1
+    state.current = {"qid": q["id"], "mode": mode, "choices": visible_choices(q, state)}
+
+
+def qmap(bank):
+    return {q["id"]: q for q in bank}
+
+
+# ----------------------------- review(§8-6) -----------------------------
+def cross_warnings(state):
+    def v(s):
+        return (state.slots.get(s) or {}).get("value")
+    w = []
+    if v("energy_left") == "none" and v("days_per_week") == "5+":
+        w.append("本業後の体力は「ほぼゼロ」なのに週5日以上になってるよ。どっちを優先する？")
+    ts = v("time_slots")
+    if state.segment == "side_job" and v("weekday_or_weekend") == "weekday_evening" and isinstance(ts, list) \
+            and "evening" not in ts:
+        w.append("「平日の夜」希望だけど、時間帯に夜が入ってないよ。")
+    if v("available_hours") in ("9-14", "10-16") and isinstance(ts, list) and "evening" in ts:
+        w.append("働ける時間は日中なのに、時間帯に夕方〜夜が入ってるよ。")
+    if any("立ち仕事" in n for n in state.user_ng) and v("physical") in ("standing_ok", "heavy_ok"):
+        w.append("NGに「立ち仕事」があるけど、体力面は「立ち仕事OK」になってるよ。")
+    if minor_mode(state) and v("days_per_week") == "5+" and v("shift_length") == "long":
+        w.append(NOTICE["minor_hours"])
+    if v("fuyou") == "within" and v("days_per_week") == "5+" and v("shift_length") == "long":
+        w.append("扶養内希望なら、週5日×長時間は多めかも（金額のラインは家族・勤務先で確認してね）。")
+    return w
+
+
+def build_card(state):
+    pri = active_slots(state)
+
+    def item(s):
+        e = state.slots.get(s)
+        filled = is_filled(e)
+        it = {"slot": s, "label_ja": SLOTS[s]["label"], "tier": TIER[pri[s]],
+              "priority": pri[s], "value": e["value"] if filled else None,
+              "value_ja": value_ja(s, e["value"]) if filled else "未定",
+              "inferred": bool(filled and e["confidence"] == "low"), "missing": not filled,
+              "conflict_values": None, "conflict": None, "note": state.notes.get(s)}
+        if s in state.conflicts:
+            it["conflict_values"] = list(state.conflicts[s])
+            it["conflict"] = [value_ja(s, x) for x in state.conflicts[s]]
+        if s == "age_band" and (not filled or e["value"] == "declined"):
+            it["safety_note"] = "安全のため18歳未満と同じ条件で探すよ"
+        return it
+    hard = [item(s) for s, p in pri.items() if p == HARD]
+    prefs = [item(s) for s, p in pri.items() if p == MID] + \
+        [item(s) for s, p in pri.items() if p == LOW and is_filled(state.slots.get(s))]
+    focus = []
+    if state.review_rounds >= 1:
+        focus = [i["slot"] for i in hard + prefs if i["conflict"] or (i["tier"] == "hard" and (i["missing"] or i["inferred"]))]
+    return {"round": state.review_rounds + 1, "segment": state.segment, "segment_ja": SEGMENT_JA[state.segment],
+            "hard": hard, "prefs": prefs, "ng_user": list(state.user_ng), "ng_rule": list(state.derived_ng),
+            "warnings": cross_warnings(state), "focus": focus}
+
+
+def render_card(card):
+    def line(i):
+        if i["conflict"]:
+            return f"・{i['label_ja']}：{' / '.join(i['conflict'])}（どっち？）"
+        extra = f"※{i['safety_note']}" if i.get("safety_note") else ""
+        if i["missing"]:
+            tail = "（ここだけ教えて！）" if i["tier"] == "hard" else "（よければ教えてね）"
+            memo = f"（メモ：{i['note']}）" if i.get("note") else ""
+            return f"・{i['label_ja']}：未定{memo}{tail}{extra}"
+        return f"・{i['label_ja']}：{i['value_ja']}{'（推測）' if i['inferred'] else ''}{extra}"
+    lines = []
+    if card["focus"]:
+        lines.append("ここだけもう一回！")
+        lines += [line(i) for i in card["hard"] + card["prefs"] if i["slot"] in card["focus"]]
+    else:
+        lines.append(f"【あなた】{card['segment_ja']}")
+        lines.append("【ゆずれない条件】")
+        lines += [line(i) for i in card["hard"]]
+        lines.append("【好み】")
+        lines += [line(i) for i in card["prefs"]]
+    ng = card["ng_user"] + [f"{n}（ルール）" for n in card["ng_rule"]]
+    lines.append("【NG】" + ("、".join(ng) if ng else "なし"))
+    lines += ["⚠️ " + w for w in card["warnings"]]
+    return "\n".join(lines)
+
+
+def _apply_ng(state, ext):
+    """ng_updates を足し、ng_removals を本人の NG から外す(ルールの NG は外さない。ユーザーの決定で ng_removals を採用)。"""
+    for n in ext["ng_updates"]:
+        if n not in state.user_ng:
+            state.user_ng.append(n)
+    for n in ext["ng_removals"]:
+        if n in state.user_ng:
+            state.user_ng.remove(n)
+
+
+def _ambiguous(state, ext):
+    """1 回の抽出で、同じ単一スロットに違う値が複数あるもの(ログ ambiguous_extract)。"""
+    seen = {}
+    for u in ext["slot_updates"]:
+        if u["value"] is not None:
+            seen.setdefault(u["slot"], [])
+            if u["value"] not in seen[u["slot"]]:
+                seen[u["slot"]].append(u["value"])
+    out = {s for s, vals in seen.items() if len(vals) > 1 and not SLOTS.get(s, {}).get("multi")}
+    for s in sorted(out):
+        ev(state, "ambiguous_extract", slot=s, values=seen[s])
+    return out
+
+
+def _age_first(updates):
+    """M-5: 1 回の抽出では age_band を先に当てる(残りはモデルが返した順)。"""
+    return [u for u in updates if u["slot"] == "age_band"] + [u for u in updates if u["slot"] != "age_band"]
+
+
+def apply_review(state, ext, button_ok, promote=True):
+    """review の返事を反映する。promote=False(返事が 2 回読めなかった)なら何も上げず、巡回だけ数える(05-B8)。"""
+    card = state.last_card or build_card(state)
+    items = card["hard"] + card["prefs"]
+    shown = {i["slot"]: i for i in items if not card["focus"] or i["slot"] in card["focus"]}  # M-3: 出した項目だけ
+    state.review_rounds += 1
+    ack = "all" if button_ok else (ext or {}).get("review_ack")
+    touched, hard_changed = set(), False
+    if ext and not button_ok:
+        _ambiguous(state, ext)  # B-2: review は最後の値を high で入れ、ログだけ残す
+        for u in _age_first(ext["slot_updates"]):
+            s = u["slot"]
+            if u["value"] is None:
+                state.notes[s] = scrub_note(u.get("raw"))
+                ev(state, "note_unnormalizable", slot=s)
+                continue
+            old = state.slots.get(s)
+            st = apply_update(state, s, u["value"], "high", "review", review=True)
+            touched.add(s)
+            if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
+                    active_slots(state).get(s) == HARD and old.get("confidence") == "high":
+                hard_changed = True
+        _apply_ng(state, ext)
+        if ext.get("segment"):
+            set_segment(state, ext["segment"], "review_explicit")
+    promoted = []
+    for s, i in (shown.items() if promote else ()):
+        e = state.slots.get(s)
+        if s in touched or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
+            continue
+        if i["tier"] == "hard" and ack != "all":
+            continue  # HARD の推測は「これでOK」(all)のときだけ確定する
+        e["confidence"] = "high"
+        e["from"] = "review_accepted"
+        promoted.append(s)
+    update_block(state)
+    state.review_log.append({"round": state.review_rounds, "ack": ack, "touched": sorted(touched),
+                             "promoted": promoted, "hard_changed": hard_changed})
+    need = hard_changed or bool(state.conflicts) or bool(state.pending_segment)
+    if state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)):
+        need = True
+    state._need_more_review = need
+
+
+def finalize(state):
+    """結果の前: 解けない矛盾は値を消して「未定」にし、候補を unresolved に移す(§12-2。ユーザーの決定)。"""
+    for s, vals in list(state.conflicts.items()):
+        state.unresolved[s] = list(vals)
+        state.slots.pop(s, None)
+        ev(state, "conflict_unresolved", slot=s)
+    state.conflicts = {}
+    recompute_derived(state)
+    update_block(state, final=True)
+
+
+# ----------------------------- 結果(§8-7) -----------------------------
+def ng_hits(job, ngs):
+    for n in ngs:
+        n2 = nfkc(n)
+        if n2 == "深夜シフト" and job["night_only"]:
+            return True
+        if "重量物" in n2 and job["phys"] == "heavy":
+            return True
+        if any(n2 in k or k in n2 for k in job["keys"]) or n2 in job["name"]:
             return True
     return False
 
 
-def _time_slots(s):
-    if _late_clock(s):                                  # 時刻の言い方を先に見る(「夜10時から」は夜ではなく深夜)
-        return "late_night_ok"
-    for pat, v in ((r"深夜|夜勤|夜中", "late_night_ok"), (r"夕方|夜", "evening"), (r"昼|日中", "daytime"), (r"朝|午前", "morning")):
-        if re.search(pat, s):
-            return v
+def job_safe(state, j):
+    """事後チェック: カタログにあり、未成年に出さない職種でなく、NG に当たらない。"""
+    if not j:
+        return False
+    if minor_mode(state) and (j["min_age"] >= 18 or j["phys"] == "heavy" or j["night_only"]):
+        return False
+    return not ng_hits(j, state.user_ng + state.derived_ng)
+
+
+def eligible_jobs(state, catalog):
+    def v(s):
+        return (state.slots.get(s) or {}).get("value")
+    minor = minor_mode(state)
+    out = []
+    for j in catalog:
+        if minor and (j["min_age"] >= 18 or j["phys"] == "heavy" or j["night_only"]):
+            continue
+        if ng_hits(j, state.user_ng + state.derived_ng):
+            continue
+        ts = v("time_slots")
+        times = set(j["times"])
+        if isinstance(ts, list) and ts:
+            usable = set(ts) - ({"late_night"} if minor else set())
+            if usable and not (times & usable):
+                continue
+        if v("customer_facing") == "avoid" and j["cf"] == "high":
+            continue
+        if v("physical") == "seated" and j["phys"] in ("standing", "heavy"):
+            continue
+        if v("physical") == "light" and j["phys"] == "heavy":
+            continue
+        score, why = 0.0, []
+        if v("customer_facing") in ("like", "ok") and j["cf"] in ("high", "mid"):
+            score += 1
+            why.append("customer_facing")
+        if v("customer_facing") == "avoid" and j["cf"] in ("none", "low"):
+            score += 1
+            why.append("customer_facing")
+        if v("physical") == "seated" and j["phys"] == "seated":
+            score += 1
+            why.append("physical")
+        if v("environment_noise") and v("environment_noise") == j["noise"]:
+            score += 0.5
+            why.append("environment_noise")
+        if v("remote") == "yes" and j["remote"]:
+            score += 1.5
+            why.append("remote")
+        if v("work_style") == "spot" and j["spot"]:
+            score += 0.5
+            why.append("work_style")
+        if v("avoid_coworkers") == "yes" and j["remote"]:
+            score += 0.5
+            why.append("avoid_coworkers")
+        if isinstance(ts, list) and ts and times & set(ts):
+            score += 0.5
+            why.append("time_slots")
+        out.append({"job_id": j["id"], "name": j["name"], "score": score, "why_slots": why})
+    out.sort(key=lambda x: -x["score"])  # 同点はカタログの並び順(安定ソート)
+    return out
+
+
+def build_result_payload(state, catalog):
+    card = build_card(state)
+    card["focus"] = []
+    unknown_hard = [s for s in hard_slots(state) if not is_filled(state.slots.get(s))]
+    guessed = [s for s in hard_slots(state) if is_filled(state.slots.get(s)) and state.slots[s]["confidence"] == "low"]
+    blocked = state.blocked
+    cands = [] if blocked else eligible_jobs(state, catalog)[:6]
+    notices = [NOTICE["under_15"]] if blocked else []
+    for k in ("school_banned", "side_banned", "civil_servant", "school_unknown", "side_unknown", "fuyou", "danger"):
+        if k in state.flags or (k == "danger" and "danger_warned" in state.flags):
+            notices.append(NOTICE[k])
+    if not blocked and state.segment == "student":
+        notices.append(NOTICE["student_fuyou"])
+    if not blocked and state.segment == "side_job":
+        notices.append(NOTICE["side_tax"])
+    if minor_mode(state) and not blocked:
+        declined = (state.slots.get("age_band") or {}).get("value") == "declined"
+        notices.append(NOTICE["age_declined"] if declined else NOTICE["minor_rules"])
+    if notices:
+        notices.append(NOTICE["rules_only"])
+    conditional = any(f in state.flags for f in ("school_banned", "side_banned", "civil_servant"))
+    return {"card": card, "card_text": render_card(card), "candidates": cands, "need": min(3, len(cands)),
+            "unknown_hard": [SLOTS[s]["label"] for s in unknown_hard], "unknown_hard_slots": unknown_hard,
+            "guessed_hard": [f"{SLOTS[s]['label']}＝{value_ja(s, state.slots[s]['value'])}" for s in guessed],
+            "guessed_hard_slots": guessed,
+            "unresolved": {SLOTS[s]["label"]: [value_ja(s, x) for x in v] for s, v in state.unresolved.items()},
+            "notices": notices, "blocked": blocked, "conditional": conditional}
+
+
+def validate_result(raw, payload):
+    d = parse_json(raw)
+    if not d:
+        return None, "not_json"
+    recs = d.get("recommendations")
+    need = payload["need"]
+    if not isinstance(recs, list) or len(recs) != need:
+        return None, "wrong_count"
+    ids = {c["job_id"] for c in payload["candidates"]}
+    seen = set()
+    for r in recs:
+        if not isinstance(r, dict) or r.get("job_id") not in ids or r["job_id"] in seen:
+            return None, "not_in_allowlist"
+        if not isinstance(r.get("reason"), str) or not r["reason"].strip() or MONEY_RE.search(r["reason"]):
+            return None, "bad_reason"
+        seen.add(r["job_id"])
+    reply = d.get("reply", "")
+    if not isinstance(reply, str) or MONEY_RE.search(reply):
+        return None, "bad_reply"
+    return {"reply": reply, "recommendations": [{"job_id": r["job_id"], "reason": r["reason"].strip()} for r in recs]}, None
+
+
+def fallback_reason(c):
+    why = "・".join(SLOTS[s]["label"] for s in c["why_slots"][:2]) or "条件"
+    return f"{why}の条件に合いそうだから"
+
+
+def fallback_result(payload):
+    recs = [{"job_id": c["job_id"], "reason": fallback_reason(c)} for c in payload["candidates"][:payload["need"]]]
+    return {"reply": "条件から、合いそうなバイトを選んだよ！", "recommendations": recs}
+
+
+def compose_result_text(payload, out, catalog_by_id):
+    lines = list(payload["notices"])
+    if payload["blocked"]:
+        return "\n".join(lines)
+    lines.append(out["reply"])
+    if payload["conditional"]:
+        lines.append("（ルールの確認がとれたら、の参考だよ）")
+    for i, r in enumerate(out["recommendations"], 1):
+        lines.append(f"{i}. {catalog_by_id[r['job_id']]['name']}：{r['reason']}")
+    if not out["recommendations"]:
+        lines.append("今の条件だと合うものが見つからなかった…条件を少しゆるめてもう一回探してみよう。")
+    elif len(out["recommendations"]) < 3:
+        lines.append("今の条件だと合うのはここまで。時間帯や通勤の条件を少し広げると、候補が増えるよ。")
+    if payload.get("guessed_hard"):
+        lines.append("推測：" + "、".join(payload["guessed_hard"]) + GUESS_TAIL)
+    unknown = [x for x in payload["unknown_hard"] if x not in payload["unresolved"]]  # N-17: 候補つきの行だけにする
+    if unknown:
+        lines.append("未定：" + "、".join(unknown) + "（決まったらもっと絞り込めるよ）")
+    for k, v in payload["unresolved"].items():
+        lines.append(f"未定：{k}（{' / '.join(v)} のどちらか。決まったら教えてね）")
+    return "\n".join(lines)
+
+
+def post_check_result(state, payload, out, cby):
+    """推薦の事後チェック(重複・カタログ外・未成年に出さない職種・NG)と、落とした分の補充(05-M13)。"""
+    ok, used = [], set()
+    for r in out["recommendations"]:
+        j = cby.get(r["job_id"])
+        if r["job_id"] in used or not job_safe(state, j):
+            ev(state, "result_postcheck_drop", job=r["job_id"])
+            continue
+        ok.append(r)
+        used.add(r["job_id"])
+    need = payload.get("need", len(ok)) if isinstance(payload, dict) else len(ok)
+    for c in (payload.get("candidates", []) if isinstance(payload, dict) else []):
+        if len(ok) >= need:
+            break
+        if c["job_id"] in used or not job_safe(state, cby.get(c["job_id"])):
+            continue
+        ok.append({"job_id": c["job_id"], "reason": fallback_reason(c)})
+        used.add(c["job_id"])
+        ev(state, "result_refill", job=c["job_id"])
+    out["recommendations"] = ok
+    return out
+
+
+# ----------------------------- プロンプトの変数(§8-5) -----------------------------
+def slots_json(state):
+    pri = active_slots(state)
+    filled = [{"slot": s, "label_ja": SLOTS[s]["label"], "tier": TIER[pri[s]],
+               "value_ja": value_ja(s, e["value"]), "confidence": e["confidence"], "from": e["from"]}
+              for s, e in state.slots.items() if is_filled(e) and s in pri]
+    missing = [SLOTS[s]["label"] for s in hard_slots(state) if not is_filled(state.slots.get(s))]
+    return json.dumps({"slots": filled, "missing_hard": missing, "ng": state.user_ng + state.derived_ng,
+                       "minor_mode": minor_mode(state), "turn": state.turns, "max_turns": MAX_TURNS},
+                      ensure_ascii=False, separators=(",", ":"))
+
+
+def view(state, bank, aside=False):
+    """生成段の入力。aside=True は脱線の後に同じものを出し直すとき(05-B7)。"""
+    _init_volatile(state)
+    cur = state.current or {}
+    mode = cur.get("mode")
+    v = {"phase": state.phase, "segment": f"{state.segment}（{SEGMENT_JA[state.segment]}）", "mode": mode,
+         "qid": cur.get("qid"), "choices": list(cur.get("choices", [])), "notices": [NOTICE[k] for k in state._new_notices],
+         "slots_json": slots_json(state), "user_text": state._user_text}
+    q = qmap(bank).get(cur.get("qid"))
+    if mode == "confirm":
+        v["text"] = CONFIRM_TEXT
+    elif mode == "review":
+        v["card_json"] = state.last_card
+        v["card_text"] = render_card(state.last_card)
+        v["text"] = v["card_text"]
+        v["closing"] = CLOSING_JA
+    elif q:
+        v["text"] = q["alt_text"] if mode == "reask" else q["text"]
+        if mode == "clarify" and not aside:
+            v["text"] = CLARIFY_TEXT + "（" + q["text"] + "）"
+        if mode == "retry" and not aside:
+            v["text"] = RETRY_TEXT + q["text"]
+    else:
+        v["text"] = ""
+    if aside and mode not in ("review", "result"):
+        v["base_mode"] = mode
+        v["mode"] = "aside"
+    v["next_question"] = json.dumps({"id": v["qid"], "mode": v["mode"], "text": v.get("text", ""), "choices": v["choices"]},
+                                    ensure_ascii=False)
+    return v
+
+
+def extract_payload(state, bank, user_text):
+    """抽出段の入力(05-B8)。question / choices / targets は出しているものによる。"""
+    cur = state.current or {}
+    mode = cur.get("mode")
+    allowed = sorted(active_slots(state))
+    if mode == "review":
+        card = state.last_card or build_card(state)
+        question, choices = render_card(card), [REVIEW_OK]
+        targets = list(card["focus"]) or [i["slot"] for i in card["hard"] + card["prefs"]]
+    elif mode == "confirm":
+        question, choices, targets = CONFIRM_TEXT, list(cur.get("choices", [])), ["segment"]
+    elif mode == "result":
+        question, choices, targets = "（おすすめを表示したあと）", [], (["age_band"] if state.blocked else [])
+    else:
+        q = qmap(bank).get(cur.get("qid"))
+        question = (q["alt_text"] if mode == "reask" else q["text"]) if q else (cur.get("qid") or "")
+        choices, targets = list(cur.get("choices", [])), (list(q["targets"]) if q else [])
+    return {"phase": state.phase, "segment": state.segment, "user_text": user_text, "question": question,
+            "choices": choices, "targets": targets,
+            "allowed_slots": {s: list(map(str, SLOTS[s]["values"])) for s in allowed}}
+
+
+# ----------------------------- ターン(§5) -----------------------------
+def _init_volatile(state, reset=False):
+    """そのターン限りの値(先頭が _。保存しない)。"""
+    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", "")):
+        if reset or not hasattr(state, k):
+            setattr(state, k, [] if v is None else v)
+
+
+def start(state, bank):
+    """最初の質問(ターンに数えない)。何回呼んでも同じ質問を返す。"""
+    _init_volatile(state)
+    state._new_notices = []
+    if state.current is None:
+        advance(state, bank)
+    return view(state, bank)
+
+
+def resume(state, bank):
+    v = start(state, bank)
+    v["resumed"] = True
+    return v
+
+
+def match_button(state, bank, text):
+    """出している選択肢と(NFKC で)そのまま一致すればボタン。multi の質問は区切った各部分がすべて選択肢なら複数ボタン。"""
+    cur = state.current or {}
+    t = nfkc(text)
+    if not t:
+        return None
+    nch = {nfkc(c): c for c in cur.get("choices", [])}
+    if t in nch:
+        return [nch[t]]
+    q = qmap(bank).get(cur.get("qid"))
+    if q and q.get("multi"):
+        parts = [p for p in MULTI_SEP_RE.split(t) if p]
+        if parts and all(p in nch for p in parts):
+            out = []
+            for p in parts:
+                if nch[p] not in out:
+                    out.append(nch[p])
+            return out
     return None
 
 
-def _commute(s):
-    if re.search(r"徒歩|自転車|近所|近く", s):
-        return "walk_bike"
-    if re.search(r"1\s*時間|60\s*分", s):
-        return "train_60"
-    m = re.search(r"(\d+)\s*分", s)
-    return _bucket(int(m.group(1)), ((30, "train_30"), (None, "train_60"))) if m else None
+def _call_llm(fn, payload, validator, state, stage):
+    probs_all = []
+    for attempt in range(1 + LLM_RETRIES):
+        try:
+            raw = fn(payload)
+        except Exception as e:  # noqa: BLE001  モデル・通信の失敗で落とさない(失敗 1 回として数える)
+            raw = None
+            probs_all.append(f"exception:{type(e).__name__}")
+        res, probs = validator(raw)
+        if res is not None:
+            if probs:
+                ev(state, f"{stage}_repaired", problems=probs)
+            if attempt:
+                ev(state, f"{stage}_retry_ok")
+            return res
+        probs_all += probs if isinstance(probs, list) else [probs]
+    ev(state, f"{stage}_fallback", problems=probs_all)
+    return None
 
 
-def _shift(s):
-    """「4時間くらい」→ 2-4h。区切りの時間ちょうどは、「以上」「から」なら上の区切り(「6時間以上」→ 6h+)。"""
-    h = _hours(s)
-    if h is None:
-        return None
-    if re.search(r"以上|から|超", s):
-        return "6h+" if h >= 6 else "4-6h" if h >= 4 else "2-4h"
-    return _bucket(h, ((4, "2-4h"), (6, "4-6h"), (None, "6h+")))
+def _apply_effects(state, bank, q, choices, src_kind):
+    direct = q["phase"] in DIRECT or src_kind == "confirm"
+    if len(choices) > 1:  # 複数のボタン: 複数スロットは和集合にしてから 1 回で当てる
+        merged = {}
+        for c in choices:
+            for k, val in q["choice_effects"].get(c, {}).items():
+                if k in SLOTS and SLOTS[k]["multi"]:
+                    merged.setdefault(k, [])
+                    merged[k] += [x for x in (val if isinstance(val, list) else [val]) if x not in merged[k]]
+        if merged:
+            conf = confidence_for("choice_direct" if q["phase"] in DIRECT else "choice", q["phase"], None, False)
+            for k, val in merged.items():
+                apply_update(state, k, val, conf, f"choice:{q['id']}")
+            effects = {c: {k: v for k, v in q["choice_effects"].get(c, {}).items() if k not in merged} for c in choices}
+            q = dict(q, choice_effects=effects)
+    for c in choices:
+        for k, val in q["choice_effects"].get(c, {}).items():
+            if k == "__ng__":
+                for n in val:
+                    if n not in state.user_ng:
+                        state.user_ng.append(n)
+            elif k == "__segment__":
+                set_segment(state, val, "confirm" if src_kind == "confirm" else "choice")
+            else:
+                conf = confidence_for("choice_direct" if direct else "choice", q["phase"], k, False)
+                apply_update(state, k, val, conf, f"choice:{q['id']}")
 
 
-def _wage(s):
-    """「1,200円以上」→ 1200。円か時給の語が無い数(「2026年」)は寄せない。"""
-    m = re.search(r"(\d{3,5})\s*円", s.replace(",", "")) or (
-        re.search(r"(\d{3,5})", s.replace(",", "")) if "時給" in s else None)
-    return int(m.group(1)) if m and int(m.group(1)) >= 500 else None
+def _count(state, bucket=None):
+    """数えるターン: turns と phase_turns[計上先] を 1 つ足す(sum(phase_turns) == turns)。"""
+    b = bucket or state.phase
+    state._counted_phase = b
+    state.turns += 1
+    state.phase_turns[b] = state.phase_turns.get(b, 0) + 1
 
 
-# 18歳未満と分かる言い方(学年・未成年・「〜歳未満」)。高3・高三・高校生・大学生は18歳のこともあるので入れない
-MINOR = r"中学|中[123一二三]|高[12一二]|高校[12一二]年|未成年|(?<!\d)(?:1[0-8]|[0-9])\s*(?:歳|才)\s*(?:未満|より下)"
-# その言い方そのものを打ち消す形(「未成年ではありません」「中学生じゃないです」「18歳未満とは違います」)
-DENIED_MINOR = re.compile(rf"(?:{MINOR})[生のです]{{0,3}}\s*(?:では|じゃ|とは)\s*(?:ありませ|ない|なく|違|ちが)")
-# 打ち消すと18歳以上と分かる言い方(「中学生ではない」「16歳未満ではない」は高校生・17歳のこともある)
-DENIED_ADULT = re.compile(r"(?:未成年|18\s*(?:歳|才)\s*(?:未満|より下))\s*(?:では|じゃ|とは)\s*(?:ありませ|ない|なく|違|ちが)")
+def _uncount(state):
+    p = getattr(state, "_counted_phase", state.phase)
+    state.turns -= 1
+    state.phase_turns[p] -= 1
 
 
-def _minor_said(s) -> bool:
-    """文に18歳未満と分かる言い方か、18未満の「〜歳」(「16歳です」)があるか。"""
-    return bool(re.search(MINOR, s)) or any(
-        int(n) < 18 for n in re.findall(r"(?<!\d)(\d{1,2})\s*(?:歳|才)(?!\s*(?:以上|より上|未満|より下))", s))
-
-
-def _age(s):
-    """18歳未満か。「はい」「16歳」「17才」「16」「18歳未満です」「高1」「高一」「中3」「未成年」→ True、
-    「いいえ」「19歳」「18歳以上」→ False。高3・高三・高校生・大学生のように18歳のこともある言い方は寄せない。
-    18 ちょうどは、年齢だけの答え(「18」「18歳です」)のときだけ False。「まだ18歳になっていません」「もうすぐ18歳」
-    「18歳になる年です」は17歳のことなので寄せない(聞き直す)。
-    打ち消しの文は、何を打ち消しているかで読む。未成年の言い方そのものを打ち消した部分(「未成年ではありません」)を
-    除いても、まだ未成年の言い方が残れば True(「いいえ、ちがいます。高2です」「いいえ、大学生ではありません。高校1年です」)。
-    残らず、「いいえ」で始まり「未成年」「18歳未満」を打ち消していれば False。ほかは寄せない(聞き直す。
-    「いいえ、中学生ではありません」は高校生のこともある)。
-    NEGATION に「ません」は足さない(「深夜でもかまいません」が寄らなくなる)。"""
-    if re.fullmatch(r"(はい|true|yes)", s, re.IGNORECASE):
-        return True
-    if re.fullmatch(r"(いいえ|false|no)", s, re.IGNORECASE):
+def clarify_room(state):
+    """聞き返しは、フェーズの上限と review の予備ターンを侵さないときだけ。"""
+    cap = PHASE_CAP.get(state.phase)
+    if cap is not None and state.phase_turns.get(state.phase, 0) >= cap:
         return False
-    if re.search(r"(では|じゃ|とは)(ありませ|ない|なく)|違|ちが[うい]", s):
-        rest = DENIED_MINOR.sub("", s)
-        if _minor_said(rest):                       # 打ち消したのは別のこと(カードの値・大学生)。未成年は言っている
-            return True
-        return False if DENIED_ADULT.search(s) and s.startswith("いいえ") else None
-    minor = re.search(MINOR, s)
-    if minor and not re.search(r"\d\s*(歳|才)", minor.group()):
-        return True
-    m = re.search(r"(\d+)\s*(?:歳|才)\s*(未満|以上|より下|より上)?", s) or re.fullmatch(r"(\d+)()", s)
-    if not m:                                       # 「高3で17歳」は学年の 3 ではなく 17歳 を読む
-        return None
-    n, rel = int(m.group(1)), m.group(2)
-    if rel in ("未満", "より下"):
-        return True if n <= 18 else None            # 「20歳未満」は17歳のこともある
-    if rel in ("以上", "より上"):
-        return False if n >= 18 else None
-    if n == 18:                                     # 「まだ18歳になっていません」「来月18歳」は17歳。年齢だけの答えのときだけ成人
-        return False if re.fullmatch(r"18\s*(?:歳|才)?\s*(?:です|だよ|だ)?\s*[。.!]?", s) else None
-    return n < 18
+    return state.turns < MAX_TURNS - REVIEW_RESERVE
 
 
-NORMALIZERS = {"days_per_week": _days, "time_slots": _time_slots, "commute": _commute, "shift_length": _shift,
-               "hourly_wage_min": _wage, "age_under_18": _age}
+def turn(state, user_text, bank, llm, catalog=None):
+    """本人の発言 1 通を処理して {reply, view, done, counted} を返す。例外は出さない: ハーネスの中の例外は、
+    ターンの始めの状態に戻して、今出しているものを出し直す(05-M15)。"""
+    _init_volatile(state)
+    snap = state.to_dict()
+    try:
+        return _turn(state, user_text, bank, llm, catalog)
+    except Exception as e:  # noqa: BLE001
+        restored = State.from_dict(snap)
+        state.__dict__.clear()
+        state.__dict__.update(restored.__dict__)
+        _init_volatile(state, reset=True)
+        ev(state, "internal_error", error=type(e).__name__)
+        if state.result:
+            return {"reply": state.result["text"], "view": view(state, bank), "done": True, "counted": False}
+        return _represent(state, bank, counted=False)
 
 
-def normalize(slot, value):
-    """(値, 元の文)。値がもう列挙値(バンクか _E にある値・こだわりなし)なら (値, None)。文なら、そのスロットの
-    選択肢の文かラベルに一致するもの、次にスロットごとの読み方(「4時間くらい」→ 2-4h、「平日の夜」→ evening、
-    「1,200円」→ 1200)で列挙値に寄せる。寄せられなければ文のまま(どちらも元の文を返し、raw_text に残す)。"""
-    if value == NOPREF or any(value == x and type(value) is type(x) for x in SLOT_VALUES.get(slot, [])):
-        return value, None
-    if slot == "age_under_18" and type(value) is int:   # 年齢そのもの(16)
-        return value < 18, value
-    if not isinstance(value, str):
-        return value, None
-    s = unicodedata.normalize("NFKC", value).strip()
-    for label, v in LABEL_TO_VALUE.get(slot, {}).items():
-        if unicodedata.normalize("NFKC", label) == s:
-            return v, value
-    v = NORMALIZERS[slot](s) if slot in NORMALIZERS and not NEGATION.search(s) else None
-    return (v, value) if v is not None else (value, value)
+# 本人の学年としての「中学生」(「中2」「中学3年」「中学生です」)。卒業・昔の話と、家族・先生の話は除く(_jhs_self)
+JHS_SELF_RE = re.compile(r"中[1-3１-３](?!\d)|中学[1-3１-３一二三]年|中学生")
+NOT_SELF_RE = re.compile(r"卒|の(時|とき|頃|ころ)|だった|子ども|子供|娘|息子|弟|妹|兄|姉|生徒|先生|親")
 
 
-# ----------------------------- カード -----------------------------
+def _jhs_applies(cur, q, text):
+    """中学生以下の文字列で年齢を補う場面: 年齢を聞いている質問(確認質問・review でない)で、発言が JHS_RE に当たる。"""
+    return q is not None and cur["mode"] != "confirm" and "age_band" in q["targets"] and bool(JHS_RE.search(nfkc(text)))
 
 
-def build_card(state):
-    pri = slots_for(state)
-    card = {"segment": state.segment, "segment_ja": SEGMENT_JA.get(state.segment, state.segment),
-            "hard": [], "prefs": [], "ng": list(state.ng), "conflicts": sorted(state.conflicts),
-            "missing": [], "round": state.review_rounds}
-    for slot, p in sorted(pri.items(), key=lambda kv: -kv[1]):
-        u = state.slots.get(slot)
-        item = {"slot": slot, "label": SLOT_LABEL_JA.get(slot, slot), "priority": p,
-                "value": None if u is None else u["value"],
-                "value_ja": "未定" if u is None else value_ja(slot, u["value"]),
-                "inferred": bool(u and u["confidence"] == "low"),
-                "missing": u is None,
-                "conflict": [value_ja(slot, v) for v in state.conflicts[slot]] if slot in state.conflicts else None,
-                "conflict_values": list(state.conflicts.get(slot, []))}
-        if u is None:
-            if p < MID:
-                continue                     # 空の LOW はカードに出さない
-            card["missing"].append(slot)
-        (card["hard"] if p == HARD else card["prefs"]).append(item)
-    return card
+def _jhs_self(text):
+    t = nfkc(text)
+    return bool(JHS_SELF_RE.search(t)) and not NOT_SELF_RE.search(t)
 
 
-def render_card_ja(card, final: bool = False):
-    """カードの日本語(PRD §8.6 の原文)。final は結果のカード(確認の呼びかけを付けない)。"""
-    def line(it):
-        if it["conflict"]:
-            return f"・{it['label']}：どっち？ " + " / ".join(it["conflict"])
-        mark = "（推測）" if it["inferred"] else ""
-        if it["missing"]:
-            return f"・{it['label']}：未定（よければ教えてね）"
-        return f"・{it['label']}：{it['value_ja']}{mark}"
-    out = ["📋 あなたのバイト条件まとめ" + ("（もう一度だけ確認！）" if card["round"] > 1 and not final else ""),
-           f"（あなた：{card['segment_ja']}）", "", "【ゆずれない条件】"]
-    out += [line(i) for i in card["hard"]]
-    out += ["", "【こだわり・好み】"] + [line(i) for i in card["prefs"]]
-    out += ["", "【NG】" + ("、".join(card["ng"]) if card["ng"] else "とくになし")]
-    if not final:
-        out += ["", ("（推測）は会話からの推測です。推測のところ、ちがってたらまとめて教えてね！"
-                    "「どっち？」はどちらか選んでね。ぜんぶ合ってたら「これでOK」で！")]
-    return "\n".join(out)
+def _force_jhs(state, ext, text):
+    """年齢を聞いている質問への中学生の発言(§5-4 の 5)。抽出が失敗しても(M-4)、抽出の年齢が無い・読めないときも、
+    本人の学年として「中2」などを言ったのに抽出が別の年齢を返したときも、age_band=under_15 にする(安全側)。"""
+    if ext is None:
+        ext = _empty_extract()
+        ev(state, "jhs_fallback", extract_failed=True)
+    ages = [u for u in ext["slot_updates"] if u["slot"] == "age_band"]
+    if ages and all(u["value"] == "under_15" for u in ages):
+        return ext
+    if ages and all(u["value"] is not None for u in ages) and not _jhs_self(text):
+        return ext  # 「中学の先生」のような語だけで、抽出がはっきりした年齢を返したときは抽出のまま
+    if ages:
+        ev(state, "jhs_override", values=[u["value"] for u in ages])
+    elif not any(e["kind"] == "jhs_fallback" for e in state.log[-1:]):
+        ev(state, "jhs_fallback")
+    ext["slot_updates"] = [u for u in ext["slot_updates"] if u["slot"] != "age_band"] + \
+        [{"slot": "age_band", "value": "under_15", "evidence": text}]
+    return ext
 
 
-def apply_review(state, out):
-    """review の返信: 直した項目は high、触れなかった low の項目は確定(review_accepted)にする。
-    HARD の値が変わった、矛盾が残っている、segment が変わって HARD に空きができた、のどれかなら、もう1回確かめる。"""
-    before = {k: v["value"] for k, v in state.slots.items()}
-    seg_before = state.segment
-    out = copy.deepcopy(out)
-    for u in out.get("slot_updates") or []:
-        if isinstance(u, dict):
-            u["confidence"] = "high"
-    n_rejected = len(state.rejected)
-    merge_updates(state, out)
-    pri = slots_for(state)
-    rejected = {u["slot"] for u in state.rejected[n_rejected:]}  # 受け付けなかった直し(未成年の深夜)は、直したに数えない
-    touched = {u["slot"] for u in out.get("slot_updates") or []
-               if isinstance(u, dict) and u.get("slot") in state.slots and u.get("slot") not in rejected}
-    promoted = []
-    for slot, u in list(state.slots.items()):
-        if slot in touched or slot in state.conflicts or u["confidence"] != "low":
+def _turn(state, user_text, bank, llm, catalog):
+    state._new_notices = []
+    text = user_text if isinstance(user_text, str) else ""
+    state._user_text = text
+    if state.current is None:
+        advance(state, bank)
+    if state.phase == "result" and state.result:
+        return _post_result(state, text, bank, llm, catalog)
+    cur = state.current
+    qm = qmap(bank)
+    q = qm.get("q_segment") if cur["qid"] == "confirm_segment" else qm.get(cur["qid"])
+    if not nfkc(text):
+        ev(state, "empty_input")
+        return _represent(state, bank, counted=False)
+    if DANGER_RE.search(nfkc(text)):
+        return _aside(state, bank, llm, catalog, kind="danger")
+    # ---- Stage 1
+    buttons = match_button(state, bank, text)
+    ext = None
+    if buttons is None:
+        ext = _call_llm(llm.extract, extract_payload(state, bank, text), validate_extract, state, "extract")
+        if _jhs_applies(cur, q, text):
+            ext = _force_jhs(state, ext, text)
+        elif cur["mode"] == "review" and ext is None and _jhs_self(text) and \
+                any(i["slot"] == "age_band" for i in (state.last_card or {}).get("hard", [])):
+            ext = _force_jhs(state, None, text)  # review: 年齢の行があり、抽出が 2 回とも失敗したときだけ
+    intent = (ext or {}).get("intent", "answer")
+    if intent == "restart":
+        return _restart(state, bank, llm, catalog)
+    if intent == "danger":
+        return _aside(state, bank, llm, catalog, kind="danger")
+    if intent == "aside":
+        return _aside(state, bank, llm, catalog, kind="aside")
+    # ---- 数えるターン
+    _count(state)
+    mode = cur["mode"]
+    if mode == "review":
+        if buttons is None and ext is None:
+            key = f"review{state.review_rounds + 1}"
+            if key not in state.retried:  # 1 回目: 数えずにカードを出し直す
+                state.retried.append(key)
+                _uncount(state)
+                ev(state, "review_reply_unparsed", retry=True)
+                return _represent(state, bank, counted=False, prefix=RETRY_TEXT)
+            ev(state, "review_reply_unparsed", retry=False)
+            apply_review(state, None, button_ok=False, promote=False)  # 2 回目: 巡回は数え、何も上げない
+        else:
+            _apply_ext(state, bank, ext, q=None, text=text, review=True)
+            apply_review(state, ext, button_ok=bool(buttons))
+        if intent == "show_result":
+            state._need_more_review = False
+            _flag(state, "show_result")
+        advance(state, bank)
+        return _say(state, bank, llm, catalog)
+    if buttons is not None:
+        _apply_effects(state, bank, q, buttons, "confirm" if mode == "confirm" else "choice")
+        if mode == "confirm":
+            state.pending_segment = None
+    elif ext is None:
+        if mode == "confirm":  # 05-B8: 読めなければ今のセグメントのまま
+            ev(state, "confirm_unparsed", kept=state.segment)
+            state.pending_segment = None
+        elif cur["qid"] not in state.retried:  # 1 回目: 数えずに 1 回だけ聞き直す
+            state.retried.append(cur["qid"])
+            _uncount(state)
+            state.current = dict(cur, mode="retry")
+            return _say(state, bank, llm, catalog, counted=False)
+        else:
+            ev(state, "extract_gave_up", qid=cur["qid"])
+    elif intent == "clarify" and mode != "confirm" and cur["qid"] not in state.clarified \
+            and state.clarify_used < MAX_CLARIFY and clarify_room(state):
+        state.clarified.append(cur["qid"])
+        state.clarify_used += 1
+        state.current = dict(cur, mode="clarify")
+        return _say(state, bank, llm, catalog)
+    else:
+        if intent == "clarify":
+            ev(state, "clarify_suppressed", qid=cur["qid"])
+        _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
+        if mode == "confirm":
+            state.pending_segment = None
+    if intent == "show_result":
+        _flag(state, "show_result")
+    advance(state, bank)
+    return _say(state, bank, llm, catalog)
+
+
+def _flag(state, key):
+    if key not in state.flags:
+        state.flags.append(key)
+
+
+def _restart(state, bank, llm, catalog):
+    restarts = state.restarts + 1
+    user_text = state._user_text
+    fresh = new_state()
+    fresh.restarts = restarts
+    state.__dict__.clear()
+    state.__dict__.update(fresh.__dict__)
+    _init_volatile(state, reset=True)
+    state._user_text = user_text
+    ev(state, "restart", n=restarts)
+    advance(state, bank)
+    return _say(state, bank, llm, catalog, counted=False, extra={"restarted": True})
+
+
+def _post_result(state, text, bank, llm, catalog):
+    """結果を出した後の発言(05-B9)。やり直しと、中学生のブロックを外す年齢の訂正のほかは面談に戻らない。"""
+    v = view(state, bank)
+    stored = {"reply": POST_RESULT_TEXT + "\n" + state.result["text"], "view": v, "done": True, "counted": False}
+    if not nfkc(text):
+        return stored
+    if DANGER_RE.search(nfkc(text)):
+        _flag(state, "danger_warned")
+        ev(state, "danger_skip", where="post_result")
+        return {"reply": NOTICE["danger"], "view": v, "done": True, "counted": False}
+    ext = _call_llm(llm.extract, extract_payload(state, bank, text), validate_extract, state, "extract")
+    intent = (ext or {}).get("intent", "answer")
+    if intent == "restart":
+        return _restart(state, bank, llm, catalog)
+    if intent == "danger":
+        _flag(state, "danger_warned")
+        ev(state, "danger_skip", where="post_result")
+        return {"reply": NOTICE["danger"], "view": v, "done": True, "counted": False}
+    if state.blocked and ext:
+        ages = [u["value"] for u in ext["slot_updates"]
+                if u["slot"] == "age_band" and u["value"] in ("15_17", "under_18", "18_plus")]
+        if ages and not _jhs_self(text):  # 「中3だけど16になった」は中学生のまま(ブロックを外さない)  # 年齢の訂正でブロックを外す
+            if state.turns < MAX_TURNS:  # M-6: 15 ターンに達していれば数えず、そのまま結果を作り直す
+                _count(state)
+            apply_update(state, "age_band", ages[-1], "high", "free:post_result")
+            state.result = None
+            state.unresolved = {}
+            state.review_rounds = 0  # M-6: review をはじめからやり直せるようにする
+            state.last_card = None
+            state.flags = [f for f in state.flags if f != "show_result"]
+            state.phase = "hard_filter"
+            ev(state, "unblocked", value=ages[-1])
+            advance(state, bank)
+            return _say(state, bank, llm, catalog)
+    ev(state, "post_result_message", intent=intent)
+    return stored
+
+
+def _apply_ext(state, bank, ext, q, text, review, confirm=False):
+    if not ext:
+        return
+    if ext.get("segment"):
+        set_segment(state, ext["segment"], "confirm" if confirm else ("review_explicit" if review else "free"))
+    if review:
+        return  # review のスロットは apply_review が当てる
+    ambiguous = _ambiguous(state, ext)
+    targets = [] if (q is None or confirm) else q["targets"]
+    qid = q["id"] if q is not None and not confirm else ("confirm_segment" if confirm else None)
+    for u in _age_first(ext["slot_updates"]):
+        s = u["slot"]
+        if u["value"] is None:
+            state.notes[s] = scrub_note(u.get("raw"))
+            ev(state, "note_unnormalizable", slot=s)
             continue
-        state.slots[slot] = dict(u, confidence="high", **{"from": "review_accepted"})
-        promoted.append(slot)
-    hard_changed = [s for s in touched if pri.get(s) == HARD and before.get(s) != state.slots[s]["value"]]
-    new_hard_gaps = [s for s, p in pri.items() if p == HARD and s not in state.slots] if state.segment != seg_before else []
-    state.need_more_review = bool(hard_changed or state.conflicts or new_hard_gaps)
-    state.review_log.append({"round": state.review_rounds, "touched": sorted(touched), "promoted": promoted,
-                             "hard_changed": hard_changed, "open_conflicts": dict(state.conflicts),
-                             "new_hard_gaps": new_hard_gaps, "segment_change": (seg_before, state.segment)})
+        current = s in targets
+        evidence = u.get("evidence")  # 05-M12: NFKC 後の発言の部分文字列のときだけ根拠として数える
+        ev_ok = isinstance(evidence, str) and bool(nfkc(evidence)) and nfkc(evidence) in nfkc(text)
+        kind = "free_current" if current else "free_other"
+        conf = "low" if s in ambiguous else confidence_for(kind, state.phase, s, ev_ok)
+        frm = f"free:{qid}" if current else (f"free_other:{qid}" if qid else "free_other")
+        apply_update(state, s, u["value"], conf, frm)
+    _apply_ng(state, ext)
 
 
-BANK = load_bank()
-set_value_labels(BANK)
+def _count_aside(state):
+    """脱線と危険話題は MAX_ASIDES を分け合う(05-M5)。超えた分は数える。"""
+    state.aside_count += 1
+    if state.aside_count > MAX_ASIDES:
+        _count(state, "aside")
+        return True
+    return False
+
+
+def _aside(state, bank, llm, catalog, kind):
+    """脱線・危険話題: 状態を変えずに、今のものを出し直す。危険話題は抽出も生成もしない。"""
+    if kind == "danger":
+        _flag(state, "danger_warned")
+        ev(state, "danger_skip")
+    counted = _count_aside(state)
+    if counted and state.turns >= MAX_TURNS:
+        advance(state, bank)
+        return _say(state, bank, llm, catalog, counted=True, extra={"aside": kind})
+    if kind == "danger":
+        r = _represent(state, bank, counted=counted, aside=True, lead=[NOTICE["danger"]])
+        r["view"]["aside"] = "danger"
+        return r
+    return _say(state, bank, llm, catalog, counted=counted, extra={"aside": kind}, aside=True)
+
+
+def _represent(state, bank, counted, prefix=None, aside=False, lead=None):
+    """今のものを LLM を呼ばずに出し直す。"""
+    v = view(state, bank, aside=aside)
+    body = v["card_text"] + "\n\n" + CLOSING_JA if v["mode"] == "review" else v.get("text", "")
+    lead = list(lead or [])
+    parts = lead + [n for n in v["notices"] if n not in lead] + ([prefix] if prefix else []) + [body]
+    return {"reply": "\n".join(parts), "view": v, "done": False, "counted": counted}
+
+
+def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
+    """Stage 3。注意文は生成した返事の前にここで付ける。"""
+    v = view(state, bank, aside=aside)
+    if extra:
+        v.update(extra)
+    notices = list(v["notices"])
+    if state.current["mode"] == "result":
+        cat = catalog or CATALOG
+        cby = {j["id"]: j for j in cat}
+        payload = build_result_payload(state, cat)
+        keys = ("card", "candidates", "need", "unknown_hard", "unresolved", "notices", "blocked", "conditional")
+        v["result_json"] = json.dumps({k: payload[k] for k in keys}, ensure_ascii=False, default=str)
+        out = None
+        if payload["need"] > 0:  # need=0(ブロック・候補なし)では LLM を呼ばない
+            def _vres(raw):
+                r, err = validate_result(raw, payload)
+                return r, ([err] if err else [])
+            out = _call_llm(llm.generate, v, _vres, state, "result")
+        if out is None:
+            out = fallback_result(payload)
+        out = post_check_result(state, payload, out, cby)
+        txt = compose_result_text(payload, out, cby)
+        lead = [NOTICE[k] for k in state._new_notices
+                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")]
+        txt = "\n".join(lead + [txt])
+        state.result = {"text": txt, "recommendations": out["recommendations"], "payload": payload}
+        return {"reply": txt, "view": v, "done": True, "counted": counted}
+
+    def _vr(raw):
+        r, err = validate_reply(raw, v)
+        return r, ([err] if err else [])
+    reply = _call_llm(llm.generate, v, _vr, state, "generate")
+    if reply is None:
+        reply = v["text"] if v["mode"] != "review" else v["card_text"] + "\n\n" + CLOSING_JA
+    return {"reply": "\n".join(notices + [reply]), "view": v, "done": False, "counted": counted}
+
+
+# ----------------------------- プロンプトの組み立て(§9-1) -----------------------------
+PROMPT_FILES = {  # 常時オンの main と、フェーズ別の追加
+    "extract": ["prompt_extract_v4_ja.txt"],
+    "say": ["prompt_main_v4_ja.txt"],
+    "review": ["prompt_main_v4_ja.txt", "prompt_review_v4_ja.txt"],
+    "result": ["prompt_main_v4_ja.txt", "prompt_result_v4_ja.txt"],
+}
+
+
+def prompt_stage(v):
+    return {"review": "review", "result": "result"}.get(v.get("mode"), "say")
+
+
+def render_prompt(stage, variables):
+    """{{変数}} を埋める。足りない変数があれば KeyError。文字列でない値は JSON にする。"""
+    text = "\n\n".join((PROMPT_DIR / f).read_text(encoding="utf-8") for f in PROMPT_FILES[stage])
+    names = sorted(set(re.findall(r"\{\{(\w+)\}\}", text)))
+    missing = [n for n in names if n not in variables]
+    if missing:
+        raise KeyError(f"prompt variables missing for {stage}: {missing}")
+    for n in names:
+        val = variables[n]
+        if not isinstance(val, str):
+            val = json.dumps(val, ensure_ascii=False, default=str)
+        text = text.replace("{{" + n + "}}", val)
+    return text

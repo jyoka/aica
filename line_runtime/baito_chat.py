@@ -1,65 +1,131 @@
-"""アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito)のターンで、モデルを呼ぶところ。
+"""アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito)のターンで、モデルを呼ぶところ(PRD v4.1 §9 の LLM 層)。
 
-何を聞くか・いつ終えるかは dip のハーネスが決め(dip のツール baito_turn)、ここはハーネスが返したシステムプロンプトで
-モデルを呼び、決まった JSON(BaitoOutput。PRD §8.7)を受け取るだけ。モデルの JSON は構造化出力で強制する。
-選択肢(クイックリプライ)はモデルの choices ではなく、ハーネスの choices を使う(バンクの原文と NG の絞り込みのとおり)。
+何を聞くか・いつ終えるかは dip のハーネスが決める(dip のツール baito_turn)。ハーネスがモデルの出力を求めたら
+(status=llm)、ここがそのシステムプロンプトでモデルを呼び、段ごとに決まった JSON を受け取る:
+  extract(Stage1) = ExtractOut、say / review = ReplyOut({"reply"})、result = ResultOut。構造化出力で形を強制する。
+出力の中身(スロットの値・確信度・返事の文)を確かめるのはハーネス(validate_extract / validate_reply / validate_result)。
+API のタイムアウトとやり直しの間隔はここ(SDK)の受け持ちで、ハーネスは失敗を 1 回と数えるだけ(PRD §8-4)。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from line_runtime import config, llm
 
-MAX_TOKENS = 4000  # 結果(条件カード + おすすめ3つ)が入る長さ
-HISTORY_MESSAGES = 8  # モデルに渡す、直前のやりとり(リアクションと、言ったことの繰り返しを避けるため)
+MAX_TOKENS = 2000  # 結果(ひとこととおすすめ 3 つ)が入る長さ
+HISTORY_MESSAGES = 8  # 生成段に渡す、直前のやりとり(リアクションと、言ったことの繰り返しを避けるため)
 
 
 class SlotUpdate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    slot: str = Field(description="スロット名(質問の choice_effects にあるもの)")
-    value: str | int | bool = Field(description="値(質問の choice_effects にある値。無ければ本人の言葉)")
-    confidence: Literal["high", "low"]
-    from_: str = Field(alias="from", description="質問の ID(review なら review)")
+    slot: str = Field(description="allowed_slots のキー")
+    value: str | list[str] | None = Field(description="allowed_slots の値(キーか表示名)。合うものが無ければ本人の言葉そのまま")
+    evidence: str | None = Field(description="発言から言い換えずに抜き出した部分")
 
 
-class BaitoOutput(BaseModel):
-    """モデルが毎ターン返す JSON(PRD §9.1 の出力。ng_removals は §12-3 のために足した任意のキー)。"""
+class ExtractOut(BaseModel):
+    """抽出(Stage1)の出力(PRD §8-5)。confidence は持たない(確信度はハーネスが決める)。"""
 
-    reply: str = Field(description="本人に送る文")
-    choices: list[str] = Field(description="次に聞く質問の選択肢(そのまま)")
-    slot_updates: list[SlotUpdate] = Field(description="本人の最新の発言から読み取った条件")
-    ng_updates: list[str] = Field(description="新しい NG")
-    segment: Literal["student", "homemaker", "side_job", "unknown"]
-    ng_removals: list[str] = Field(default_factory=list, description="本人が取り消した NG")
-
-    def dump(self) -> dict:
-        return self.model_dump(by_alias=True)
+    slot_updates: list[SlotUpdate]
+    ng_updates: list[str]
+    ng_removals: list[str]
+    segment: Literal["student", "homemaker", "side_job", "other"] | None
+    intent: Literal["answer", "clarify", "show_result", "restart", "aside", "danger"]
+    review_ack: Literal["all", "partial", "none"] | None
 
 
-# (システムプロンプト, メッセージ) → (モデルの JSON, 使った量)。テストは偽物を渡す
-BaitoLLM = Callable[[str, list[dict]], Awaitable[tuple[BaitoOutput, dict]]]
+class ReplyOut(BaseModel):
+    """生成(Stage3)の出力。"""
+
+    reply: str
+
+
+class Recommendation(BaseModel):
+    job_id: str = Field(description="candidates の job_id")
+    reason: str = Field(description="なぜ合うか(40字まで。金額・会社名を書かない)")
+
+
+class BaitoLLMError(ValueError):
+    """モデルが決まった JSON を返さなかった。使った量(usage)は持っておく(費用台帳に入れるため)。"""
+
+    def __init__(self, usage: dict):
+        super().__init__("バイトの相談のモデルが決まった JSON を返しませんでした")
+        self.usage = usage
+
+
+class ResultOut(BaseModel):
+    """結果の出力(PRD §8-7)。"""
+
+    reply: str
+    recommendations: list[Recommendation]
+
+
+SCHEMAS = {"extract": ExtractOut, "say": ReplyOut, "review": ReplyOut, "result": ResultOut}
+
+# (段, システムプロンプト, メッセージ) → (モデルの JSON, 使った量)。テストは偽物を渡す
+BaitoLLM = Callable[[str, str, list[dict]], Awaitable[tuple[dict, dict]]]
 
 
 def default_llm() -> BaitoLLM:
-    """LINE_SIM_PROVIDER のモデル(エージェントと同じ)を、思考を切って呼ぶ(1 ターンで 1〜2 回呼ぶので速さを優先)。"""
+    """LINE_SIM_PROVIDER のモデル(エージェントと同じ)を、思考を切って呼ぶ(1 ターンで最大 4 回呼ぶので速さを優先)。"""
     client = None
 
-    async def call(system: str, messages: list[dict]) -> tuple[BaitoOutput, dict]:
+    async def call(stage: str, system: str, messages: list[dict]) -> tuple[dict, dict]:
         nonlocal client
         client = client or llm.client()
-        out, usage = await llm.parse(client, model=config.MODEL, system=system, messages=messages, schema=BaitoOutput,
+        out, usage = await llm.parse(client, model=config.MODEL, system=system, messages=messages, schema=SCHEMAS[stage],
                                      max_tokens=MAX_TOKENS, effort="none", with_usage=True)
         if out is None:
-            raise ValueError("バイトの相談のモデルが決まった JSON を返しませんでした")
-        return out, usage
+            raise BaitoLLMError(usage)
+        return out.model_dump(), usage
 
     return call
+
+
+def messages_for(stage: str, user_text: str, convo: list[dict] | None = None) -> list[dict]:
+    """モデルに渡すメッセージ。抽出は本人の今の発言だけ(会話から推測で埋めない。PRD §9-3 の 1)。
+    生成は直前のやりとりに今の発言を足したもの(脱線への1文の返事と、繰り返しを避けるため。§9-1)。"""
+    said = user_text or "(はじめ)"
+    if stage == "extract" or not convo:
+        return [{"role": "user", "content": said}]
+    out = [dict(m) for m in convo]
+    if out[-1]["role"] == "user":
+        out[-1]["content"] += "\n" + said
+    else:
+        out.append({"role": "user", "content": said})
+    return out
+
+
+class SyncLLM:
+    """ハーネスの llm(extract / generate)を、同期で実モデルにつなぐ(PRD §13-1 P3 の測定。evals/baito_sim.py --real)。
+    call は default_llm() と同じ形。used に段ごとの呼び出しと使った量を残す。"""
+
+    def __init__(self, call: BaitoLLM, render_prompt, prompt_stage):
+        self.call = call
+        self.render_prompt = render_prompt
+        self.prompt_stage = prompt_stage
+        self.used: list[dict] = []
+        self._loop = asyncio.new_event_loop()
+
+    def _run(self, stage: str, system: str, user_text: str):
+        out, usage = self._loop.run_until_complete(self.call(stage, system, messages_for(stage, user_text)))
+        self.used.append({"stage": stage, **usage})
+        return json.dumps(out, ensure_ascii=False)
+
+    def extract(self, payload: dict):
+        return self._run("extract", self.render_prompt("extract", payload), payload.get("user_text", ""))
+
+    def generate(self, view: dict):
+        stage = self.prompt_stage(view)
+        return self._run(stage, self.render_prompt(stage, view), view.get("user_text", ""))
+
+    def close(self) -> None:
+        self._loop.close()
 
 
 def history(messages: list) -> list[dict]:

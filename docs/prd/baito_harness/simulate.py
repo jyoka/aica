@@ -208,6 +208,12 @@ MODES = {"v1": ("harness", ("segment",)), "v1w": ("harness", ("segment", "purpos
 
 def main(modes):
     os.makedirs("transcripts", exist_ok=True); res = {}
+    if "v4" in modes:                      # v4: 3-stage turn harness, separate simulator & results file
+        import sim_v4
+        sim_v4.main()
+        modes = [m for m in modes if m != "v4"]
+        if not modes:
+            return                         # do not clobber results.json (v1-v3) when only v4 runs
     for mode in modes:
         modname, segt = MODES[mode]
         H = importlib.import_module(modname); bank = bankmod.make_bank(segt)
@@ -242,4 +248,4 @@ def p_is_minor(m): return m["persona"] == "hs16"
 
 if __name__ == "__main__":
     arg = sys.argv[1] if len(sys.argv) > 1 else "all"
-    main(list(MODES) if arg == "all" else [arg])
+    main(list(MODES) + ["v4"] if arg == "all" else [arg])

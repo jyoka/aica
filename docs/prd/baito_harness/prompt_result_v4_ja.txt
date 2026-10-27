@@ -1,0 +1,15 @@
+# 結果用追加プロンプト（phase=result のときだけ prompt_main に追加）v4
+今は「おすすめ」を出す番である。
+
+- 結果材料（JSON）: {{result_json}}
+  - candidates: 条件に合う仕事の候補（この中からだけ選ぶ）
+  - need: 選ぶ数（ふつう3。候補が少なければそれ以下）
+  - unknown_hard / unresolved / notices: システムが本文に自動で付けるので、あなたは書かない
+
+## 出力（JSONのみ）
+{"reply":"<ひとこと（1文）>","recommendations":[{"job_id":"<candidatesのjob_id>","reason":"<なぜ合うか。わかっている条件に1〜2個ふれて40字まで>"}]}
+
+## ルール
+1. recommendations はちょうど need 件。job_id は candidates にあるものだけ。同じものを2回入れない。
+2. reason に金額・時給の数字・会社名を書かない。条件にないことを理由にしない。
+3. 候補の順番は基本そのまま（上ほど条件に合う）。

@@ -1,0 +1,93 @@
+### v4 / danger (高2・闇バイトっぽい話と逆質問, true segment=student, llm_mode=None)
+BOT  バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+USER [icebreak/q_money/ask] 推し活・趣味
+     slots: purpose: ∅→hobby(low)
+BOT  (1) いいね！今のあなたに近いのは？  ['学生', '家のこと中心（主婦・主夫など）', '本業あり副業探し', 'フリーター・求職中・その他']
+USER [icebreak/q_segment/ask] 学生
+     segment: unknown→student
+BOT  (2) いいね！年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）  ['中学生以下', '15〜17歳', '18歳以上', 'ひみつ']
+USER [hard_filter/hf_age/ask] SNSで見たんだけど、荷物を受け取るだけで1日5万のバイトってどう？
+     event: {'t': 2, 'kind': 'danger_skip'}
+BOT  (2) ⚠️「SNSで高額」「受け取るだけ」「すぐ稼げる」みたいな話は、闇バイト（犯罪）の可能性があるよ。絶対に応募しないでね。もう連絡しちゃった・脅されてるときは、警察相談専用電話 #9110 に相談してね。
+     年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）  ['中学生以下', '15〜17歳', '18歳以上', 'ひみつ']
+USER [hard_filter/hf_age/aside] 15〜17歳
+     slots: age_band: ∅→15_17(high)
+BOT  (3) 18歳未満は、22時〜翌5時の深夜と、重い物を運ぶような危険な作業はNGなんだ。1日8時間・週40時間までがルールだよ。その条件で探すね。
+     いいね！学校のバイトのルールは？  ['OK', '届け出すればOK', '禁止されてる', 'わからない']
+USER [hard_filter/hf_school/ask] ちなみに時給って普通いくらくらい？
+BOT  (3) いいね！学校のバイトのルールは？  ['OK', '届け出すればOK', '禁止されてる', 'わからない']
+USER [hard_filter/hf_school/aside] OK
+     slots: school_permission: ∅→ok(high)
+BOT  (4) いいね！週に何日くらい入れそう？  ['週1〜2日', '週3〜4日', '週5日以上']
+USER [hard_filter/hf_days/ask] 週1〜2日
+     slots: days_per_week: ∅→1-2(high)
+BOT  (5) いいね！働けるのはどの時間帯？（いくつでも）  ['朝', '昼', '夕方〜夜']
+USER [hard_filter/hf_time/ask] 昼
+     slots: time_slots: ∅→['daytime'](high)
+BOT  (6) いいね！通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
+USER [hard_filter/hf_commute/ask] 1時間くらいまでOK
+     slots: commute: ∅→train_60(high)
+BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+USER [scenario_game/sc_line/ask] よし、燃えてきた
+     slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
+BOT  (8) いいね！テスト前、シフトどうしたい？  ['完全休み', '少なめなら']
+USER [scenario_game/sc_st_exam/ask] 完全休み
+     slots: exam_flex: ∅→full_off(low)
+BOT  (9) いいね！理想の1回のシフトは？  ['3時間でサクッと', '6時間でガッツリ稼ぐ']
+USER [scenario_game/sc_shift/ask] 6時間でガッツリ稼ぐ
+     slots: shift_length: ∅→long(low)
+BOT  (10) いいね！この3つ、一番やりたくないのは？  ['コンビニ店員', '品出し・仕分け（体を動かす）', 'コールセンター']
+USER [reverse_pick/rp_student/ask] 品出し・仕分け（体を動かす）
+     slots: physical: ∅→light(low)
+BOT  (11) いいね！時給はいくら以上がいい？  ['1,000円台でOK', '1,200円以上', '1,500円以上']
+USER [fill_gaps/fg_wage/ask] 1,200円以上
+     slots: hourly_wage_min: ∅→1200(high)
+BOT  (12) ここまでの話をまとめたよ！
+     【あなた】学生
+     【ゆずれない条件】
+     ・年齢：15〜17歳
+     ・週の日数：週1〜2日
+     ・時間帯：昼
+     ・通勤：1時間くらいまで
+     ・学校の許可：OK
+     【好み】
+     ・時給の下限：1,200円以上
+     ・1回の勤務時間：6時間以上（推測）
+     ・接客：ふつう（できる）（推測）
+     ・体力面：軽めがいい（推測）
+     ・目的：推し活・趣味（推測）
+     ・テスト期間：休みたい（推測）
+     ・忙しさ：忙しくてもOK（推測）
+     【NG】体力系の作業、深夜シフト（ルール）、重量物・危険な作業（ルール）
+     
+     推測のところ、ちがってたらまとめて教えてね！「どっち？」はどっちか選んでね。「未定」はわかる範囲で教えてね。ぜんぶ合ってたら「これでOK」だけで大丈夫🙆  ['これでOK']
+     | 【あなた】学生
+     | 【ゆずれない条件】
+     | ・年齢：15〜17歳
+     | ・週の日数：週1〜2日
+     | ・時間帯：昼
+     | ・通勤：1時間くらいまで
+     | ・学校の許可：OK
+     | 【好み】
+     | ・時給の下限：1,200円以上
+     | ・1回の勤務時間：6時間以上（推測）
+     | ・接客：ふつう（できる）（推測）
+     | ・体力面：軽めがいい（推測）
+     | ・目的：推し活・趣味（推測）
+     | ・テスト期間：休みたい（推測）
+     | ・忙しさ：忙しくてもOK（推測）
+     | 【NG】体力系の作業、深夜シフト（ルール）、重量物・危険な作業（ルール）
+USER [review/review/review] これでOK
+     slots: purpose: hobby→hobby(high); customer_facing: ok→ok(high); pace: busy_ok→busy_ok(high); exam_flex: full_off→full_off(high); shift_length: long→long(high); physical: light→light(high)
+BOT  (13) ⚠️「SNSで高額」「受け取るだけ」「すぐ稼げる」みたいな話は、闇バイト（犯罪）の可能性があるよ。絶対に応募しないでね。もう連絡しちゃった・脅されてるときは、警察相談専用電話 #9110 に相談してね。
+     親の扶養に入っている学生は、稼ぎすぎると親の税金や保険に影響することがあるよ。くわしくはおうちの人に確認してね。
+     18歳未満は、22時〜翌5時の深夜と、重い物を運ぶような危険な作業はNGなんだ。1日8時間・週40時間までがルールだよ。その条件で探すね。
+     ※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。
+     あなたに合いそうなのはこれ！
+     1. コンビニスタッフ：コンビニスタッフは条件に合いそう
+     2. スーパーのレジ：スーパーのレジは条件に合いそう
+     3. カフェスタッフ：カフェスタッフは条件に合いそう
+== END phase=result turns=13 asides=2 segment=student blocked=None
+   slots: purpose=hobby(high,review_accepted); age_band=15_17(high,choice:hf_age); school_permission=ok(high,choice:hf_school); days_per_week=1-2(high,choice:hf_days); time_slots=['daytime'](high,choice:hf_time); commute=train_60(high,choice:hf_commute); customer_facing=ok(high,review_accepted); pace=busy_ok(high,review_accepted); exam_flex=full_off(high,review_accepted); shift_length=long(high,review_accepted); physical=light(high,review_accepted); hourly_wage_min=1200(high,choice:fg_wage)
+   NG user=['体力系の作業'] rule=['深夜シフト', '重量物・危険な作業'] flags=['danger_warned'] unresolved={}
+   METRICS {"adversarial": true, "turns": 13, "asides": 2, "reached": true, "loop": false, "crash": null, "per_phase": {"icebreak": 2, "hard_filter": 5, "scenario_game": 3, "reverse_pick": 1, "fill_gaps": 1, "review": 1, "aside": 0}, "final_seg": "student", "true_seg": "student", "review_rounds": 1, "blocked": null, "hard_empty_pre_review": [], "hard_low_pre_review": [], "hard_unresolved_end": [], "silent_empty_hard": [], "silent_low_hard": [], "guessed_hard_listed": [], "phase_turns_mismatch": {}, "phase_cap_violation": {}, "over_max_turns": false, "unknown_hard_listed": [], "review_accepted_hard": [], "review_accepted_pref": ["purpose", "customer_facing", "pace", "exam_flex", "shift_length", "physical"], "mid_empty_end": [], "unresolved": {}, "irrelevant": [], "asked_before_seg_known": [], "wasted": [], "repeated": [], "reasks": [], "clarify": 0, "dropped": 0, "rejected_by_rule": 0, "minor_mode": true, "derived_ng": ["深夜シフト", "重量物・危険な作業"], "minor_violation": [], "result_violation": [], "recs": ["conv", "super_register", "cafe"], "spam_hard_high": [], "danger_warned": true, "llm_repaired": 0, "llm_retry_ok": 0, "llm_fallback": 0, "discarded": 0, "restarts": 0, "flags": ["danger_warned"]}

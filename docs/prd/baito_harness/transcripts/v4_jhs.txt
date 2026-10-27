@@ -1,0 +1,16 @@
+### v4 / jhs (中学3年生, true segment=student, llm_mode=None)
+BOT  バイト代、何に使いたい？  ['推し活・趣味', '貯金・将来のため', '生活費・家計の足し', '旅行・遊び']
+USER [icebreak/q_money/ask] 推し活・趣味
+     slots: purpose: ∅→hobby(low)
+BOT  (1) いいね！今のあなたに近いのは？  ['学生', '家のこと中心（主婦・主夫など）', '本業あり副業探し', 'フリーター・求職中・その他']
+USER [icebreak/q_segment/ask] 学生
+     segment: unknown→student
+BOT  (2) いいね！年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）  ['中学生以下', '15〜17歳', '18歳以上', 'ひみつ']
+USER [hard_filter/hf_age/ask] 中学生以下
+     slots: age_band: ∅→under_15(high)
+BOT  (3) 中学生のうちは、法律で原則アルバイトができないんだ（子役など特別な許可がある場合をのぞく）。高校生になったらまた一緒に探そう！それまでは、おうちの人や学校の先生に相談してみてね。
+     ※ここで伝えているのは一般的なルールの目安で、法律相談ではないよ。
+== END phase=result turns=3 asides=0 segment=student blocked=under_15
+   slots: purpose=hobby(low,choice:q_money); age_band=under_15(high,choice:hf_age)
+   NG user=[] rule=['深夜シフト', '重量物・危険な作業'] flags=[] unresolved={}
+   METRICS {"adversarial": true, "turns": 3, "asides": 0, "reached": true, "loop": false, "crash": null, "per_phase": {"icebreak": 2, "hard_filter": 1, "scenario_game": 0, "reverse_pick": 0, "fill_gaps": 0, "review": 0, "aside": 0}, "final_seg": "student", "true_seg": "student", "review_rounds": 0, "blocked": "under_15", "hard_empty_pre_review": null, "hard_low_pre_review": null, "hard_unresolved_end": ["days_per_week", "time_slots", "commute", "school_permission"], "silent_empty_hard": [], "silent_low_hard": [], "guessed_hard_listed": [], "phase_turns_mismatch": {}, "phase_cap_violation": {}, "over_max_turns": false, "unknown_hard_listed": ["commute", "days_per_week", "school_permission", "time_slots"], "review_accepted_hard": [], "review_accepted_pref": [], "mid_empty_end": ["hourly_wage_min", "shift_length", "customer_facing", "physical", "exam_flex"], "unresolved": {}, "irrelevant": [], "asked_before_seg_known": [], "wasted": [], "repeated": [], "reasks": [], "clarify": 0, "dropped": 0, "rejected_by_rule": 0, "minor_mode": true, "derived_ng": ["深夜シフト", "重量物・危険な作業"], "minor_violation": [], "result_violation": [], "recs": [], "spam_hard_high": [], "danger_warned": false, "llm_repaired": 0, "llm_retry_ok": 0, "llm_fallback": 0, "discarded": 0, "restarts": 0, "flags": []}

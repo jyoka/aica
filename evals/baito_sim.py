@@ -1,353 +1,266 @@
-"""バイト探しの相棒(dip_mcp/baito)の回帰: モックの LLM で8ペルソナを最後まで話させ、PRD §11.3 の受け入れチェックと
-§4.1 のベースラインに照らす。実 LLM は呼ばない(費用 0)。
+"""バイト探しの相棒(dip_mcp/baito)の検査: PRD v4.1 の参照資料の単体チェックとシミュレーターで、aica の移植版を回す。
 
-    ./.venv/bin/python -m evals.baito_sim            # 集計表と、チェックの結果を出す(PRD の summary_v3.txt と同じ形)
-    ./.venv/bin/python -m evals.baito_sim --log DIR  # ペルソナごとの会話のログも DIR に書く
+    ./.venv/bin/python -m evals.baito_sim                 # 単体チェック 131 件 + 20 ペルソナ(モック LLM。費用 0)
+    ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/results/budget-baito.jsonl --limit-usd 2
+                                                          # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる)
 
-ペルソナとモックの決まりは docs/prd/baito_harness/simulate.py の v3 をそのまま移した:
-直接質問(hard_filter・fill_gaps)の答えは high、ほかは low。「どっちでもいい」はこだわりなし(high)、
-「どっちでもない…」からは何も読み取らない。review では、ペルソナが決めた修正を返し、残った「どっち？」は先の値を選ぶ。
-モデルの JSON は、実際の経路と同じく JSON の文字列を通してから渡す。
+モック(既定): docs/prd/baito_harness を一時ディレクトリに写し、BAITO_HARNESS=aica_port(移植版。docs/prd/baito_harness/
+aica_port.py)で `unit_checks_v4.py` と `simulate.py v4` を回す。写しの中で回すので、基準値(results_v4.json・transcripts/)は
+上書きしない(レビュー M-10)。PRD §13-1 の P4 の条件で、§11-5 の基準値(results_v4.json)と比べる(acceptance)。
 pytest は tests/test_baito_harness.py がこれを回す。
+
+実 LLM(--real。PRD §13-1 の P3、レビュー B-3 の解釈):
+- 対象は 20 ペルソナのうち、LLM の誤りを模す malformed・spam_high を除く 18 人。本人の発言はペルソナの台本のまま。
+  モデルは line_runtime/baito_chat.py(トークと同じ LLM 層)で呼ぶ
+- M-drop の「正しい更新」は、台本に付いた抽出(sim_v4 の extraction)とする。sim_v4 の dropped がそのまま照らす
+- 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
+- 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
+import importlib
 import json
-import zlib
-from collections import Counter
-from dataclasses import dataclass, field
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import types
+from datetime import UTC, datetime
 from pathlib import Path
 
-from dip_mcp.baito import harness as H
-
-NOPREF, UNCLEAR = "どっちでもいい", "どっちでもない…"
-STEP_LIMIT = 60  # これを超えて質問が続いたら LOOP
-
-
-@dataclass
-class Persona:
-    name: str
-    desc: str
-    true_segment: str
-    answers: dict = field(default_factory=dict)
-    facts: dict = field(default_factory=dict)       # qid -> 文で言った、はっきりした更新
-    nopref: set = field(default_factory=set)         # 「どっちでもいい」と答える qid("*sc" はシナリオ全部)
-    unclear: set = field(default_factory=set)        # 「どっちでもない…」と答える qid
-    reveal: tuple = None                             # (ターン, segment, 文) 遅れて文で属性が分かる
-    review: list = field(default_factory=list)       # review の回ごと: dict(text, updates, ng, segment, resolve)
-
-    def choose(self, q):
-        if q["id"] in self.unclear:
-            return UNCLEAR
-        if q["id"] in self.nopref or ("*sc" in self.nopref and q["phase"] == "scenario_game"):
-            return NOPREF
-        if q["id"] in self.answers:
-            return self.answers[q["id"]]
-        cs = q["choices"]
-        return cs[zlib.crc32((self.name + q["id"]).encode()) % len(cs)]
+ROOT = Path(__file__).resolve().parent.parent
+REF = ROOT / "docs" / "prd" / "baito_harness"
+PORT = "aica_port"
+NORMAL = ("hs16", "univ", "homemaker", "office", "nopref", "unclear", "late_seg", "no_seg")  # §11-2 の通常ペルソナ
+MOCK_ONLY = ("malformed", "spam_high")  # LLM の誤りを模すペルソナ(実 LLM では回さない)
+TIMEOUT = 180  # 単体チェック・シミュレーターそれぞれの上限(秒。ふだんは数秒)
+P3_TARGETS = {"generate_pass": 0.95, "fallback": 0.02, "extract_pass": 0.98}  # §16-1 の 12
 
 
-PERSONAS = [
-    Persona("hs16", "高1・16歳", "student",
-            review=[{"text": "シフトは4時間くらいがいいな！あとはOK", "updates": [("shift_length", "4時間くらい")]}],
-            answers={"q_money": "推し活・趣味", "q_segment": "学生", "hf_days": "週1〜2日", "hf_time": "夕方〜夜",
-                     "hf_commute": "家から徒歩・自転車", "hf_age": "はい", "hf_school": "届け出すればOK",
-                     "sc_line": "よし、燃えてきた", "sc_shift": "3時間でサクッと", "sc_st_peers": "同年代",
-                     "sc_st_exam": "完全休み", "sc_st_after": "部活のあと", "rp_student": "引越しスタッフ",
-                     "fg_wage": "1,000円台でOK", "fg_physical": "少しなら", "fg_exam": "休みたい"},
-            facts={"q_segment": [("age_under_18", True)]}),   # 文で「高1です！」
-    Persona("univ", "大学2年", "student",
-            review=[{"text": "これでOK", "resolve": False}],
-            answers={"q_money": "旅行・遊び", "q_segment": "学生", "hf_days": "週3〜4日", "hf_time": "夕方〜夜",
-                     "hf_commute": "電車で30分まで", "hf_age": "いいえ", "hf_school": "OK",
-                     "sc_shift": "6時間でガッツリ稼ぐ", "sc_st_exam": "少なめなら", "sc_st_summer": "がっつり",
-                     "fg_wage": "1,200円以上"}),
-    Persona("homemaker", "未就学児2人の母", "homemaker",
-            review=[{"text": "在宅もアリかも。あと夜の仕事はNGで！", "updates": [("remote", "either")], "ng": ["夜の仕事"]}],
-            answers={"q_money": "生活費・家計の足し", "q_segment": "家のこと中心", "hf_days": "週3〜4日",
-                     "hf_time": "昼", "hf_commute": "家から徒歩・自転車", "hf_hours": "9〜14時くらい",
-                     "hf_leave": "けっこうある", "sc_hm_fever": "すぐ休める", "sc_hm_remote": "外に出たい",
-                     "sc_hm_money": "家計の足し", "sc_line": "今すぐ消えたい", "fg_fuyou": "はい、扶養内で",
-                     "fg_remote": "外がいい", "fg_physical": "少しなら"}),
-    Persona("office", "会社員・副業探し", "side_job",
-            review=[{"text": "時給は1,200円以上はほしい。あとはOK", "updates": [("hourly_wage_min", 1200)]}],
-            answers={"q_money": "貯金・将来のため", "q_segment": "本業あり副業探し", "hf_days": "週1〜2日",
-                     "hf_time": "夕方〜夜", "hf_commute": "電車で30分まで", "hf_sideok": "届け出が必要",
-                     "hf_weekday": "土日", "sc_sj_coworker": "絶対イヤ", "sc_sj_stand": "ふつう座れる",
-                     "sc_sj_stable": "スポット（空いた日だけ）", "fg_energy": "少しだけ", "fg_wage": "1,200円以上"}),
-    Persona("nopref", "大学生・ほぼ『どっちでもいい』", "student",
-            review=[{"text": "これでOK"}],
-            answers={"q_money": "旅行・遊び", "q_segment": "学生", "hf_days": "週3〜4日", "hf_age": "いいえ",
-                     "hf_school": "OK"},
-            nopref={"*sc", "hf_time", "hf_commute", "fg_shift", "fg_customer", "fg_physical", "fg_purpose",
-                    "rp_student", "q_money"}),
-    Persona("unclear", "会社員・あいまい回答多め", "side_job",
-            review=[{"text": "時間は平日の夜なら大丈夫。通勤は30分までで", "updates": [("time_slots", "平日の夜"), ("commute", "train_30")]}],
-            answers={"q_segment": "本業あり副業探し", "hf_days": "週1〜2日", "hf_sideok": "OK"},
-            unclear={"hf_commute", "hf_time", "hf_weekday", "sc_line", "sc_shift", "sc_sj_stand", "sc_sj_goal",
-                     "fg_wage", "fg_customer", "rp_side_job", "fg_physical"}),
-    Persona("late_seg", "主婦・最初は属性を言わない（5ターン目に判明）", "homemaker",
-            review=[{"text": "扶養内でお願いします。あとはOK", "updates": [("fuyou", "within")]}],
-            answers={"q_money": "生活費・家計の足し", "q_segment": "うーん、いろいろかな",
-                     "hf_time": "昼", "hf_hours": "10〜16時くらい", "hf_leave": "たまにある"},
-            reveal=(5, "homemaker", "平日の昼は子どものお迎えがあって…")),
-    Persona("no_seg", "大学生・属性を最後まで言わない(19歳)", "student",
-            review=[{"text": "これでOK。あ、実は大学生です", "segment": "student"},
-                    {"text": "学校はバイトOKだよ", "updates": [("school_permission", "ok")]}],
-            answers={"q_segment": "ひみつ", "hf_age": "いいえ"}),
-]
-
-# PRD §4.1 の v3 のベースライン(docs/prd/baito_harness/summary_v3.txt)。退化しないことを見る
-BASELINE = {
-    "hs16": {"turns": 14, "phases": (2, 4, 6, 1, 0), "review_rounds": 1, "empty_mid": [], "repeated": []},
-    "univ": {"turns": 14, "phases": (2, 5, 5, 1, 0), "review_rounds": 1, "empty_mid": [], "repeated": []},
-    "homemaker": {"turns": 14, "phases": (2, 5, 5, 1, 0), "review_rounds": 1, "empty_mid": [], "repeated": []},
-    "office": {"turns": 14, "phases": (2, 5, 4, 1, 1), "review_rounds": 1, "empty_mid": [], "repeated": []},
-    "nopref": {"turns": 14, "phases": (2, 5, 5, 1, 0), "review_rounds": 1, "empty_mid": [], "repeated": []},
-    "unclear": {"turns": 15, "phases": (2, 5, 2, 1, 3), "review_rounds": 2,
-                "empty_mid": ["shift_length", "customer_facing", "physical"], "repeated": ["hf_weekday", "hf_time"]},
-    "late_seg": {"turns": 14, "phases": (2, 5, 5, 1, 0), "review_rounds": 1, "empty_mid": ["physical"], "repeated": []},
-    "no_seg": {"turns": 15, "phases": (2, 4, 6, 0, 1), "review_rounds": 2, "empty_mid": ["exam_flex"], "repeated": []},
-}
-PHASE_COLS = ("icebreak", "hard_filter", "scenario_game", "reverse_pick", "fill_gaps")
+def _env() -> dict:
+    return dict(os.environ, BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT), PYTHONDONTWRITEBYTECODE="1")
 
 
-def _roundtrip(out: dict) -> dict:
-    return json.loads(json.dumps(out, ensure_ascii=False))
+def run_reference(timeout: int = TIMEOUT) -> dict:
+    """参照資料の写しで、移植版の単体チェックと 20 ペルソナを回す。基準値(写す前の results_v4.json)も返す。"""
+    with tempfile.TemporaryDirectory(prefix="baito-v4-") as tmp:
+        work = Path(tmp) / "baito_harness"
+        shutil.copytree(REF, work, ignore=shutil.ignore_patterns("__pycache__"))
+        unit = subprocess.run([sys.executable, "unit_checks_v4.py"], cwd=work, env=_env(), capture_output=True, check=False,
+                              text=True, timeout=timeout)
+        sim = subprocess.run([sys.executable, "simulate.py", "v4"], cwd=work, env=_env(), capture_output=True, text=True, check=False,
+                             timeout=timeout)
+        results = json.loads((work / "results_v4.json").read_text(encoding="utf-8")) if sim.returncode == 0 else None
+        transcripts = {p.name: p.read_text(encoding="utf-8") for p in sorted((work / "transcripts").glob("v4_*.txt"))}
+    lines = unit.stdout.strip().splitlines()
+    return {"unit_returncode": unit.returncode, "unit_summary": lines[-1] if lines else "",
+            "unit_fails": [x for x in lines if x.startswith("FAIL")], "sim_returncode": sim.returncode,
+            "sim_stdout": sim.stdout, "sim_stderr": sim.stderr[-2000:], "results": results,
+            "baseline": json.loads((REF / "results_v4.json").read_text(encoding="utf-8")), "transcripts": transcripts}
 
 
-def mock_review(q, persona):
-    card, rnd = q["card"], q["card"]["round"]
-    sc = persona.review[rnd - 1] if rnd <= len(persona.review) else {"text": REVIEW_OK, "resolve": True}
-    ups = [{"slot": k, "value": v, "confidence": "high", "from": "review"} for k, v in sc.get("updates", [])]
-    text = sc["text"]
-    if sc.get("resolve", True):
-        for it in card["hard"] + card["prefs"]:
-            if it["conflict_values"] and it["slot"] not in {u["slot"] for u in ups}:
-                v = it["conflict_values"][0]           # ペルソナは先に並んだほうを選ぶ
-                ups.append({"slot": it["slot"], "value": v, "confidence": "high", "from": "review"})
-                text += f"／{it['label']}は「{it['conflict'][0]}」のほう"
-    out = {"reply": "了解！", "choices": [], "slot_updates": ups, "ng_updates": sc.get("ng", []),
-           "segment": sc.get("segment") or "unknown"}
-    return text, _roundtrip(out)
-
-
-REVIEW_OK = H.REVIEW_OK
-
-
-def mock_llm(q, persona, turn):
-    """(本人の答え, プロンプトが決める JSON)。"""
-    if q["phase"] == "review":
-        return mock_review(q, persona)
-    ans = persona.choose(q)
-    conf = "high" if q["phase"] in H.DIRECT else "low"
-    ups, ngs, seg = [], [], None
-    tgt = [t for t in q["targets"] if t != "segment"]
-    if ans == NOPREF:
-        ups = [{"slot": t, "value": H.NOPREF, "confidence": "high", "from": q["id"]} for t in tgt]
-    elif ans == UNCLEAR or ans not in q["choice_effects"]:
-        pass                                   # 読み取れるものが無い
-    else:
-        for k, v in q["choice_effects"][ans].items():
-            if k == "__ng__":
-                ngs += v
-            elif k == "__segment__":
-                seg = v
-            else:
-                ups.append({"slot": k, "value": v, "confidence": conf, "from": q["id"]})
-    for slot, v in persona.facts.get(q["id"], []):
-        ups.append({"slot": slot, "value": v, "confidence": "high", "from": q["id"] + ":free_text"})
-    if persona.reveal and turn == persona.reveal[0]:
-        seg = persona.reveal[1]
-        ans += f"（{persona.reveal[2]}）"
-    out = {"reply": "なるほど！", "choices": q["choices"], "slot_updates": ups, "ng_updates": ngs,
-           "segment": seg or "unknown"}
-    return ans, _roundtrip(out)
-
-
-def all_slots(seg):
-    s = dict(H.SLOT_PRIORITY["common"])
-    s.update(H.SLOT_PRIORITY.get(seg, {}))
-    return s
-
-
-def run(p: Persona, bank: list[dict] | None = None, log: list[str] | None = None) -> dict:
-    """1人を最後まで話させ、PRD の simulate.py と同じ指標を返す。"""
-    bank = H.BANK if bank is None else bank
-    log = [] if log is None else log
-    st, rows, crash, loop, steps = H.State(), [], None, False, 0
-    try:
-        q = H.step(st, None, bank)
-        while q:
-            steps += 1
-            if steps > STEP_LIMIT:
-                loop = True
-                break
-            turn = st.turns + 1
-            gaps = {t: H.gap_weight(st, t) for t in q["targets"] if t != "segment"}
-            before = {k: (v["value"], v["confidence"]) for k, v in st.slots.items()}
-            seg0, ng0, phase = st.segment, list(st.ng), st.phase
-            ans, out = mock_llm(q, p, turn)
-            nq = H.step(st, out, bank)
-            after = {k: (v["value"], v["confidence"]) for k, v in st.slots.items()}
-            ch = [f"{k}: {before.get(k, ('∅', ''))[0]}→{v[0]}({v[1]})" for k, v in after.items() if before.get(k) != v]
-            # マージが捨てた更新(§12-1 の正規化で値が列挙値に寄ったものは、寄せた値で比べる)
-            dropped = [u["slot"] for u in out["slot_updates"]
-                       if after.get(u["slot"]) != (H.normalize(u["slot"], u["value"])[0],
-                                                   "high" if phase == "review" else u["confidence"])
-                       and before.get(u["slot"], (None, None))[1] != "high"]
-            rows.append({"turn": turn, "phase": phase, "qid": q["id"], "qphase": q["phase"], "text": q["text"], "ans": ans,
-                             "changes": ch, "seg": (seg0, st.segment), "ng": [x for x in st.ng if x not in ng0],
-                             "gaps_at_ask": gaps, "segs": q["segments"], "dropped": dropped, "choices": list(q["choices"]),
-                             "retry": bool(q.get("retry"))})
-            if phase == "review":
-                log.append(f"T{turn:02d} [review] {q['id']}  ----- card -----")
-                log += ["     | " + line for line in q["text"].split("\n")]
-            else:
-                log.append(f"T{turn:02d} [{phase}] {q['id']}: {q['text']}  {q['choices']}" + ("  (retry)" if q.get("retry") else ""))
-            log.append(f"     → {ans}")
-            if ch:
-                log.append("     slots: " + "; ".join(ch))
-            if dropped:
-                log.append("     !! update DROPPED by merge: " + ", ".join(dropped))
-            if seg0 != st.segment:
-                log.append(f"     segment: {seg0}→{st.segment}")
-            if rows[-1]["ng"]:
-                log.append(f"     NG+: {rows[-1]['ng']}")
-            if phase == "review":
-                log.append(f"     review_log: {st.review_log[-1]}")
-                rows[-1]["card"] = q["card"]
-            elif st.conflicts:
-                log.append(f"     conflicts: {st.conflicts}")
-            q = nq
-    except Exception as e:  # noqa: BLE001  落ちたことも指標にする(CRASH)
-        crash = repr(e)
-    reached = not loop and crash is None and st.phase == "result"
-    log.append(f"== END phase={st.phase} turns={st.turns} segment={st.segment} NG={st.ng}")
-    log.append("   final slots: " + "; ".join(f"{k}={v['value']}({v['confidence']})" for k, v in st.slots.items()))
-    truth = all_slots(p.true_segment)
-    empty = {lvl: [s for s, pr in truth.items() if pr == L and s not in st.slots] for lvl, L in (("HARD", 3), ("MID", 2))}
-    low = {lvl: [s for s, pr in truth.items() if pr == L and s in st.slots and st.slots[s]["confidence"] == "low"]
-           for lvl, L in (("HARD", 3), ("MID", 2))}
-    qc = Counter(r["qid"] for r in rows)
-    rv = [r for r in rows if r["phase"] == "review"]
-    return {
-        "persona": p.name, "turns": st.turns, "reached": reached, "loop": loop, "crash": crash,
-        "per_phase": dict(Counter(r["phase"] for r in rows)), "final_seg": st.segment, "empty": empty, "low": low, "ng": st.ng,
-        "repeated": [k for k, v in qc.items() if v > 1],
-        "irrelevant": [r["qid"] for r in rows if "all" not in r["segs"] and p.true_segment not in r["segs"]],
-        "skipped": [ph for ph in H.ORDER[:-1] if ph not in {r["phase"] for r in rows}],
-        "wasted": [r["qid"] for r in rows if r["gaps_at_ask"] and all(w == 0 for w in r["gaps_at_ask"].values())],
-        "dropped": sum(len(r["dropped"]) for r in rows),
-        "hit_max": st.turns >= H.MAX_TURNS and bool(empty["HARD"] or low["HARD"] or empty["MID"]),
-        "late_night_ng": (H.LATE_NIGHT_NG in st.ng), "asked_segment_q": ("q_segment" in qc),
-        "late_night_choice_shown": [r["qid"] for r in rows if "深夜もOK" in r["choices"] and H.LATE_NIGHT_NG in st.ng],
-        "retried": [r["qid"] for r in rows if r["retry"]],
-        "review_rounds": st.review_rounds, "review_turns": [r["turn"] for r in rv],
-        "conflicts_on_first_card": (rv[0]["card"]["conflicts"] if rv else None),
-        "conflicts_open_at_end": dict(st.conflicts),
-        "unconfirmed": [s for s in truth if truth[s] >= 2 and (s not in st.slots or st.slots[s]["confidence"] != "high")],
-        "unconfirmed_low": [s for s in truth if truth[s] == 1 and s in st.slots and st.slots[s]["confidence"] != "high"],
-        "empty_low_pri": [s for s in truth if truth[s] == 1 and s not in st.slots],
-        "raw_texts": {k: v["raw_text"] for k, v in st.slots.items() if "raw_text" in v},
-        "final_slots": {k: v["value"] for k, v in st.slots.items()},
-    }
-
-
-def phases(m: dict) -> tuple[int, ...]:
-    return tuple(m["per_phase"].get(x, 0) for x in PHASE_COLS)
-
-
-def acceptance(results: list[dict]) -> list[str]:
-    """PRD §11.3 の受け入れチェック(1〜8。9 は実 LLM の会話を見る)と、§4.1 のベースラインとの比較。違反の一覧(空なら合格)。
-    §11.3 の 6(会話の終わりに残る矛盾)は、§12 の 2 が決まっていないので、ペルソナで起きない今のまま 0 を見る。"""
+def acceptance(port: dict, base: dict) -> list[str]:
+    """PRD §13-1 の P4 の 1: §4-1 の合否指標がすべて 0、§4-2 の「はい」の 4 項目が §11-5 の基準値の範囲内。"""
     bad = []
-    for m in results:
-        p, base = m["persona"], BASELINE[m["persona"]]
-        if not m["reached"] or m["loop"] or m["crash"]:
-            bad.append(f"{p}: result に届かない(loop={m['loop']} crash={m['crash']})")
-        if m["turns"] > H.MAX_TURNS:
-            bad.append(f"{p}: {m['turns']} ターン(上限 {H.MAX_TURNS})")
-        if m["review_rounds"] < 1:
-            bad.append(f"{p}: review をしていない")
-        if m["empty"]["HARD"] or m["low"]["HARD"]:
-            bad.append(f"{p}: 空か low の HARD {m['empty']['HARD'] + m['low']['HARD']}")
-        if not m["asked_segment_q"]:
-            bad.append(f"{p}: セグメントの質問をしていない")
-        if m["conflicts_open_at_end"]:
-            bad.append(f"{p}: 終わりに矛盾が残った {m['conflicts_open_at_end']}")
-        for key in ("irrelevant", "wasted"):
-            if m[key]:
-                bad.append(f"{p}: {key}={m[key]}")
-        if m["dropped"]:
-            bad.append(f"{p}: dropped={m['dropped']}")
-        # §4.1 より悪くならない: ターン数、シナリオのターン数(v2a の2ターンへ戻らない)、空の MID、同じ質問の繰り返し
-        if m["turns"] > base["turns"]:
-            bad.append(f"{p}: ターンが増えた {base['turns']} → {m['turns']}")
-        if phases(m)[2] < base["phases"][2]:
-            bad.append(f"{p}: シナリオのターンが減った {base['phases'][2]} → {phases(m)[2]}")
-        if not set(m["empty"]["MID"]) <= set(base["empty_mid"]):
-            bad.append(f"{p}: 空の MID が増えた {base['empty_mid']} → {m['empty']['MID']}")
-        if not set(m["repeated"]) <= set(base["repeated"]):
-            bad.append(f"{p}: 繰り返した質問が増えた {base['repeated']} → {m['repeated']}")
-    minors = [m for m in results if m["persona"] == "hs16"]
-    for m in minors:
-        if not m["late_night_ng"]:
-            bad.append(f"{m['persona']}: 未成年なのに NG に「{H.LATE_NIGHT_NG}」が無い")
-        if m["late_night_choice_shown"]:
-            bad.append(f"{m['persona']}: 未成年に「深夜もOK」を出した {m['late_night_choice_shown']}")
+    agg = port["v4_agg"]
+    for k, v in agg.items():
+        if k == "max_turns":
+            if v > 15:
+                bad.append(f"max_turns={v}")
+        elif v:
+            bad.append(f"{k}={v}")
+    by = {m["persona"]: m for m in port["v4"]}
+    base_by = {m["persona"]: m for m in base["v4"]}
+    for name in NORMAL:
+        m, b = by[name], base_by[name]
+        if m["turns"] > 15 or abs(m["turns"] - b["turns"]) > 1:  # Q-turns
+            bad.append(f"{name}: turns={m['turns']}(基準 {b['turns']})")
+        if m["per_phase"]["scenario_game"] < 3:  # Q-scenario
+            bad.append(f"{name}: scenario={m['per_phase']['scenario_game']}")
+    mid = sum(len(by[n]["mid_empty_end"]) for n in NORMAL)  # Q-mid
+    if mid > 11:
+        bad.append(f"mid_empty_end={mid}(基準 9+2)")
+    bad += [f"{m['persona']}: review_rounds={m['review_rounds']}" for m in port["v4"] if m["review_rounds"] > 2]  # Q-review
     return bad
 
 
-def table(results: list[dict]) -> str:
-    out = [f"{'persona':10}{'turns':>6} {'result':>6} {'seg':>10}  phases(ib/hf/sc/rp/fg)  emptyHARD | lowHARD | emptyMID | lowMID | other"]
-    for m in results:
-        other = []
-        if m["repeated"]:
-            other.append(f"repeat={m['repeated']}")
-        for key in ("irrelevant", "wasted"):
-            if m[key]:
-                other.append(f"{key}={m[key]}")
-        if m["dropped"]:
-            other.append(f"dropped_updates={m['dropped']}")
-        if m["hit_max"]:
-            other.append("CUT_BY_MAX_TURNS")
-        if m["loop"]:
-            other.append("LOOP")
-        if m["crash"]:
-            other.append(f"CRASH {m['crash']}")
-        if m["persona"] == "hs16":
-            other.append(f"深夜NG={m['late_night_ng']}")
-        ph = "/".join(map(str, phases(m)))
-        out.append(f"{m['persona']:10}{m['turns']:>6} {m['reached']!s:>6} {m['final_seg']:>10}  {ph:22}  "
-                   f"{m['empty']['HARD']} | {m['low']['HARD']} | {m['empty']['MID']} | {m['low']['MID']} | {' '.join(other)}")
-    out += ["", "--- review ---",
-            f"{'persona':10}{'turns':>6} {'rounds':>6} review@turn  unconfirmed(HARD/MID) | conflicts on 1st card -> open at end | raw_text"]
-    for m in results:
-        out.append(f"{m['persona']:10}{m['turns']:>6} {m['review_rounds']:>6} {m['review_turns']!s:12} "
-                   f"{m['unconfirmed']} | {m['conflicts_on_first_card']} -> {m['conflicts_open_at_end']} | {m['raw_texts']}")
-    return "\n".join(out)
+def check(timeout: int = TIMEOUT) -> tuple[dict, list[str]]:
+    """モックの検査の全部: 単体チェックが全件合格し、シミュレーターが落ちず、acceptance に問題が無い。"""
+    r = run_reference(timeout)
+    bad = [] if r["unit_returncode"] == 0 else [f"unit_checks: {r['unit_summary']}", *r["unit_fails"]]
+    if r["results"] is None:
+        bad.append(f"simulate.py v4 の終了コード {r['sim_returncode']}: {r['sim_stderr']}")
+    else:
+        bad += acceptance(r["results"], r["baseline"])
+    return r, bad
 
 
-def main() -> int:
+# ----------------------------- P3: 実 LLM -----------------------------
+
+
+def _import_sim(work: Path):
+    """写しの sim_v4 を、移植版を検査する形で import する(BAITO_HARNESS は import の前に入れる)。"""
+    os.environ.update(BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT))
+    sys.path.insert(0, str(work))
+    for name in ("sim_v4", "bank_v4", "catalog_v4", PORT):
+        sys.modules.pop(name, None)
+    return importlib.import_module("sim_v4")
+
+
+class StageCounter:
+    """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。"""
+
+    def __init__(self, harness):
+        self.harness = harness
+        self.orig = harness._call_llm
+        self.stats: dict[str, dict] = {}
+
+    def __enter__(self):
+        def counted(fn, payload, validator, state, stage):
+            calls = [0]
+
+            def fn2(p):
+                calls[0] += 1
+                return fn(p)
+            res = self.orig(fn2, payload, validator, state, stage)
+            s = self.stats.setdefault(stage, {"first": 0, "first_ok": 0, "fallback": 0, "calls": 0})
+            s["first"] += 1
+            s["calls"] += calls[0]
+            s["first_ok"] += int(res is not None and calls[0] == 1)
+            s["fallback"] += int(res is None)
+            return res
+        self.harness._call_llm = counted
+        return self
+
+    def __exit__(self, *exc):
+        self.harness._call_llm = self.orig
+
+
+def rates(stats: dict) -> dict:
+    gen = [stats.get(k, {}) for k in ("generate", "result")]
+    first = sum(s.get("first", 0) for s in gen)
+    ex = stats.get("extract", {})
+    return {"generate_pass": sum(s.get("first_ok", 0) for s in gen) / first if first else None,
+            "fallback": sum(s.get("fallback", 0) for s in gen) / first if first else None,
+            "extract_pass": ex["first_ok"] / ex["first"] if ex.get("first") else None}
+
+
+def p3_ok(r: dict, agg: dict) -> list[str]:
+    bad = [f"{k}={v}" for k, v in agg.items() if k != "max_turns" and v] + ([f"max_turns={agg['max_turns']}"]
+                                                                          if agg.get("max_turns", 0) > 15 else [])
+    for k, target in P3_TARGETS.items():
+        v = r.get(k)
+        if v is None or (v < target if k != "fallback" else v > target):
+            bad.append(f"{k}={v}(基準 {'≦' if k == 'fallback' else '≧'} {target})")
+    return bad
+
+
+def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[str] | None = None) -> dict:
+    """P3 の測定。call は line_runtime.baito_chat.default_llm() と同じ形(テストは偽物を渡す)。"""
+    from evals import budget
+    from line_runtime import baito_chat, config
+    from line_runtime.ledger import cost_usd
+
+    with tempfile.TemporaryDirectory(prefix="baito-p3-") as tmp:
+        work = Path(tmp) / "baito_harness"
+        shutil.copytree(REF, work, ignore=shutil.ignore_patterns("__pycache__"))
+        cwd, env = os.getcwd(), {k: os.environ.get(k) for k in ("BAITO_HARNESS", "AICA_ROOT")}
+        os.chdir(work)
+        try:
+            sim = _import_sim(work)
+            H = sim.H
+            call = call or baito_chat.default_llm()
+            personas = [p for p in sim.PERSONAS if p.name not in MOCK_ONLY and (not only or p.name in only)]
+            made: list[baito_chat.SyncLLM] = []
+
+            def real_llm(mode=None):
+                llm = baito_chat.SyncLLM(call, H.render_prompt, H.prompt_stage)
+                llm.next_extract, llm.mode = {}, None  # sim_v4 が台本の抽出を入れる(実 LLM は読まない。M-drop の正解)
+                made.append(llm)
+                return llm
+            sim.MockLLM = real_llm
+            # sim_v4 は 1 会話を 5 秒で打ち切る(モック用)。実 LLM では 1 会話 10 分までにする
+            sim.signal = types.SimpleNamespace(signal=signal.signal, SIGALRM=signal.SIGALRM,
+                                               alarm=lambda s: signal.alarm(600 if s else 0))
+            res, spent, stopped = [], 0.0, False
+            with StageCounter(H) as counter:
+                for rep in range(runs):
+                    for p in personas:
+                        try:
+                            budget.check(ledger, limit_usd)
+                        except budget.BudgetExceeded:
+                            stopped = True
+                            break
+                        log: list[str] = []
+                        m = sim.run(copy.deepcopy(p), log)
+                        usage = made[-1].used
+                        made[-1].close()
+                        cost = sum(cost_usd(config.MODEL, u.get("input_tokens", 0) - u.get("cache_read", 0)
+                                            - u.get("cache_write", 0), u.get("output_tokens", 0), u.get("cache_write", 0),
+                                            u.get("cache_read", 0)) for u in usage)
+                        spent += cost
+                        budget.record(ledger, "baito-p3", cost, case=p.name, rep=rep)
+                        res.append(m | {"rep": rep, "llm_calls": len(usage), "cost_usd": round(cost, 4), "log": log})
+                        print(f"{p.name:11} rep={rep} turns={m['turns']} reached={m['reached']} calls={len(usage)} "
+                              f"${cost:.4f}", flush=True)
+                    if stopped:
+                        break
+            stats = counter.stats
+        finally:
+            os.chdir(cwd)
+            sys.path.remove(str(work))
+            for k, v in env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    agg = {"crash": sum(1 for m in res if m["crash"]), "loop": sum(1 for m in res if m["loop"]),
+           "not_reached": [m["persona"] for m in res if not m["reached"]],
+           **{k: sum(len(m[k]) for m in res) for k in ("minor_violation", "result_violation", "silent_empty_hard",
+                                                         "irrelevant", "wasted", "repeated", "spam_hard_high",
+                                                         "silent_low_hard")},
+           "dropped": sum(m["dropped"] for m in res),
+           "phase_turns_mismatch": sum(1 for m in res if m["phase_turns_mismatch"]),
+           "phase_cap_violation": sum(1 for m in res if m["phase_cap_violation"]),
+           "over_max_turns": sum(1 for m in res if m["over_max_turns"]),
+           "max_turns": max((m["turns"] for m in res), default=0)}
+    r = rates(stats)
+    return {"runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
+            "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "results": res}
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--log", type=Path, help="ペルソナごとの会話のログを書くディレクトリ")
-    args = ap.parse_args()
-    results = []
-    for p in PERSONAS:
-        log = [f"### {p.name} ({p.desc}, true segment={p.true_segment})"]
-        results.append(run(p, log=log))
-        if args.log:
-            args.log.mkdir(parents=True, exist_ok=True)
-            (args.log / f"{p.name}.txt").write_text("\n".join(log) + "\n", encoding="utf-8")
-    print(table(results))
-    bad = acceptance(results)
-    print("\n--- PRD §11.3 の受け入れチェックと §4.1 のベースライン ---")
-    print("\n".join(bad) if bad else "すべて合格")
+    ap.add_argument("--real", action="store_true", help="P3: 実 LLM で回す(費用がかかる。--ledger と --limit-usd が要る)")
+    ap.add_argument("--runs", type=int, default=3, help="--real のとき、1 ペルソナを何回回すか(PRD は 3)")
+    ap.add_argument("--only", help="--real のとき、回すペルソナ(カンマ区切り)")
+    ap.add_argument("--ledger", type=Path, help="--real の費用台帳(このカード用のものを渡す)")
+    ap.add_argument("--limit-usd", type=float, help="--real で、台帳の累計がこの額に達したら止める")
+    a = ap.parse_args(argv)
+    if a.real:
+        if a.ledger is None or a.limit_usd is None:
+            ap.error("--real には --ledger と --limit-usd が要る")
+        out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None)
+        dest = ROOT / "evals" / "results" / f"baito-p3-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(json.dumps(out, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+        print(json.dumps({k: out[k] for k in ("conversations", "spent_usd", "rates", "agg", "problems")},
+                         ensure_ascii=False, default=str))
+        print(f"結果: {dest}")
+        return 1 if out["problems"] else 0
+    t = time.perf_counter()
+    r, bad = check()
+    print(r["unit_summary"])
+    print(r["sim_stdout"].split("=== v3")[0].strip())
+    print("すべて合格" if not bad else "不合格:\n- " + "\n- ".join(bad), f"({time.perf_counter() - t:.1f}s)")
     return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

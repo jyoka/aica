@@ -1,11 +1,15 @@
-"""バイト探しの相棒の相談を、dip のユーザー状態に保存して1ターンずつ進める(dip のツールの中身。LLM は使わない)。
+"""バイト探しの相棒の相談を、dip のユーザー状態に保存して1ターンずつ進める(dip のツールの中身。dip は LLM を呼ばない)。
 
-- 始める: トークの AI が、アルバイト・パートの相談に入ったターンに start_baito_consultation を呼ぶ(dip の Prompt の「相談」)。
+- 始める: トークの AI が、アルバイト・パートの相談に入ったターンに start_baito_consultation を呼ぶ
+  (BAITO_HARNESS_VERSION=v4 のときだけ。PRD §13-3 の機能フラグ。既定は使わない = 本番は切り替えない)。
   最初の質問(q_money)は、その AI が言い換えずに聞く
 - 進める: その後の本人の発言は、LINE 側のランタイムが baito_turn に渡す(トークの AI は呼ばない)。
-  クイックリプライの選択肢そのものなら choice_effects どおりにマージし、そうでなければ、モデルに読み取らせる
-  システムプロンプトを返す(status=extract)。どちらも次に聞く質問を決め、言い方のためのシステムプロンプトを返す
-- 終える: result に着いたら、確かめた条件を stated_preferences に保存して相談を閉じる(プロフィール画面で見て直せる)。
+  ハーネスの turn()(抽出 → 判断 → 生成。dip_mcp/baito/harness.py)を、保存した状態から毎回やり直す。
+  turn() がモデルを呼ぶところで、まだ受け取っていない出力があれば、status=llm でそのプロンプトを返す。
+  ランタイムがモデルを呼び、それまでの出力を全部 llm_outputs に入れて呼び直す。turn() は同じ状態と同じ出力からは
+  同じ道をたどるので、最後まで進んだ回だけ状態を保存する(途中の回は保存しない)
+- 終える: 結果を出したら、確かめた条件を stated_preferences に保存して相談を閉じる(プロフィール画面で見て直せる)。
+  中学生以下で止めた結果だけは閉じない(その後の発言もハーネスが受け、年齢の訂正でブロックを外す。PRD §5-7)。
   本人がやめると言った・区分が外れた・新しい会話を始めたら、そこまでに本人が答えた条件(high)だけを保存して閉じ、
   トークの AI に戻す
 
@@ -14,17 +18,20 @@
 
 from __future__ import annotations
 
-import json
 import re
 
 from dip_mcp import logic
 from dip_mcp.baito import harness as H
-from dip_mcp.data import ROOT, State
+from dip_mcp.data import State
 
 KEY = "baito"
-PROMPTS = ROOT / "dip_mcp" / "prompts"
+# 中学生以下で止めた印(相談を閉じた後も残す)。残っている間は求人を出さない(recommend_jobs・relax_conditions。job_block)。
+# 後の相談で 15 歳以上と確かめたら消す。「すべて消す」は 1 人の dict ごと消すので、これも消える
+BLOCK_KEY = "baito_block"
+FLAG = logic.BAITO_HARNESS_FLAG  # PRD §13-3。v4 のときだけ新しい相談を始める。始めた相談は版を変えずに最後まで進める
 # LINE 側のランタイムだけが呼ぶツール(トークの AI には見せない。line_runtime.runtime.chat_tools が外す)
 RUNTIME_TOOLS = ("baito_turn", "end_baito_consultation")
+START_TOOL = "start_baito_consultation"
 # 結果の後の選択肢(dip の Prompt の、求人を見るかの問いの選択肢と同じ文言)
 RESULT_CHOICES = ["求人を見る", "今はいい"]
 # 相談をやめる本人の発言。選択肢そのもの(今の質問の choices)は、やめる合図にしない
@@ -36,16 +43,14 @@ EXIT_REQUEST = re.compile(r"求人を?(見せて|見たい|探して|出して|�
                           r"|正社員(で|の(仕事|求人)を?)\s*(探|さが|見)|やっぱり正社員|正社員(が|に)(いい|なりたい)")
 # 頼みに見えても、後回しや打ち消しなら相談を続ける(「求人を見たいけど、先に条件を整理したい」「正社員じゃなくて」)
 EXIT_HOLD = re.compile(r"けど|けれど|前に|先に|まだ|あとで|後で|じゃな|ではな|わけでは|なくて")
-# 扶養の金額の基準(「103万円」「130万の壁」など)は示さない(PRD §10)。扶養か「の壁」の話と、基準の額(100万〜209万)が
-# 同じ返信にあれば使わない(1 回の返信は短いので、文をまたいでも同じ話として見る。「月5万円」のような額は当たらない)
-FUYOU_AMOUNT = re.compile(r"(?<![\d,，])(1\d\d|20\d)\s*万")
 BAITO_TRACK = "アルバイト・パート"
 START_NOTE = ("相談を始めた。この返信で、一緒に整理することを1文で伝え、question の text を言い換えずに1問として聞く"
               "(選択肢は LINE 側が question の choices にする)。次の質問からはハーネスが進める。")
+MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(PRD §5-4: 文の答えで抽出 2 回 + 生成 2 回)
 
 
-def _read(name: str) -> str:
-    return (PROMPTS / name).read_text(encoding="utf-8")
+def enabled() -> bool:
+    return logic.baito_harness_on()
 
 
 def active(state: State, line_user_id: str) -> bool:
@@ -54,7 +59,13 @@ def active(state: State, line_user_id: str) -> bool:
 
 def _load(state: State, line_user_id: str) -> H.State | None:
     s = state.user(line_user_id).get(KEY)
-    return H.State.from_dict(s["harness"]) if s else None
+    if not s:
+        return None
+    d = s.get("harness") or {}
+    if d.get("version", "v3") != H.VERSION:  # PRD §8-8。v3 の状態は本番に出していないので、閉じて始め直す
+        _drop(state, line_user_id)
+        return None
+    return H.State.from_dict(d)
 
 
 def _save(state: State, line_user_id: str, h: H.State, track: str | None = None) -> None:
@@ -75,23 +86,26 @@ def _drop(state: State, line_user_id: str) -> None:
     state.update(line_user_id, lambda u: u.pop(KEY, None))
 
 
-def public(q: dict | None) -> dict | None:
+def _question(v: dict) -> dict:
     """トークの AI と画面に渡す質問(id・質問文・選択肢)。"""
-    return None if q is None else {"id": q["id"], "text": q["text"], "choices": list(q["choices"])}
+    return {"id": v["qid"], "text": v.get("text", ""), "choices": list(v.get("choices", []))}
 
 
 def start(state: State, line_user_id: str) -> dict:
     """相談を始める(進めている相談があれば、今聞いている質問を返して続ける)。"""
     h = _load(state, line_user_id)
     started = h is None
+    if started and not enabled():
+        return {"started": False, "active": False, "error": f"アルバイト・パートの相談のハーネスは使っていません({FLAG})。"
+                "get_counseling_playbook の playbook で相談する"}
     if started:
-        h = H.State()
-        H.step(h, None, H.BANK)
-        _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)))
+        h = H.new_state()
+    v = H.resume(h, H.BANK) if not started else H.start(h, H.BANK)
+    _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None)
     # 結果の後と途中でやめた後はトークの AI が続けるので、保存先と提案の決まり(playbook)もここで渡す
     pb = logic.counseling_playbook(BAITO_TRACK, "chat")
-    return {"started": started, "active": True, "question": public(h.question), "note": START_NOTE,
-            "rules": pb["rules"], "playbook": (logic.PLAYBOOKS / "parttime_chat.md").read_text(encoding="utf-8")}
+    return {"started": started, "active": True, "question": _question(v), "note": START_NOTE,
+            "rules": pb["rules"], "playbook": pb["playbook"]}
 
 
 def end(state: State, line_user_id: str) -> dict:
@@ -103,118 +117,141 @@ def end(state: State, line_user_id: str) -> dict:
 
 
 def _exits(h: H.State, text: str) -> bool:
-    if h.question and text in h.question["choices"]:
+    """やめる合図か。中学生以下で止めた後は「求人を見せて」で相談の外へ出さない(トークの AI が求人を出さないように)。"""
+    if h.current and text in h.current.get("choices", []):
         return False
-    return text in EXIT_WORDS or (h.phase != "review" and bool(EXIT_REQUEST.search(text))
-                                  and not EXIT_HOLD.search(text))
+    return text in EXIT_WORDS or (h.phase not in ("review", "result") and not h.blocked
+                                  and bool(EXIT_REQUEST.search(text)) and not EXIT_HOLD.search(text))
 
 
-def _model_out(extracted: dict) -> dict:
-    """モデルの JSON のうち、ハーネスが読むところだけ(形の崩れたものは捨てる)。"""
-    def strs(v):
-        return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
-    ups = extracted.get("slot_updates")
-    return {"slot_updates": [u for u in ups if isinstance(u, dict)] if isinstance(ups, list) else [],
-            "ng_updates": strs(extracted.get("ng_updates")), "ng_removals": strs(extracted.get("ng_removals")),
-            "segment": extracted.get("segment") if isinstance(extracted.get("segment"), str) else "unknown"}
+class NeedLLM(BaseException):  # ハーネスの except Exception を通り抜けて turn() の外へ出す
+    """turn() がまだ受け取っていないモデルの出力を求めた(call にプロンプト)。"""
+
+    def __init__(self, call: dict):
+        super().__init__(call["stage"])
+        self.call = call
 
 
-def turn(state: State, line_user_id: str, text: str, extracted: dict | None = None) -> dict:
+class ReplayMismatch(BaseException):  # 同じく turn() の外へ出す(ハーネスに失敗 1 回と数えさせない)
+    """受け取った出力が、やり直した turn() の求めと合わない(呼び直しの間に状態が変わった)。"""
+
+
+class ReplayLLM:
+    """ハーネスの llm(extract / generate)。受け取った出力を順に返し、尽きたら NeedLLM で止める。
+    出力の 1 つは {"stage", "output": モデルの JSON} か、呼び出しが失敗した印 {"stage", "error": 型の名前}
+    (ハーネスは失敗 1 回として数える)。stage が求めと違えば ReplayMismatch。"""
+
+    def __init__(self, outputs: list | None):
+        self.outputs = list(outputs or [])
+        self.used = 0
+
+    def _next(self, stage: str, system: str, user_text: str):
+        if self.used >= len(self.outputs):
+            raise NeedLLM({"stage": stage, "system": system, "user_text": user_text, "n": self.used})
+        out = self.outputs[self.used]
+        self.used += 1
+        if not isinstance(out, dict) or out.get("stage", stage) != stage:
+            raise ReplayMismatch(f"{self.used}: {stage}")
+        if "error" in out or "output" not in out:
+            raise RuntimeError(str(out.get("error", "bad_output")))
+        return out["output"]
+
+    def extract(self, payload: dict):
+        return self._next("extract", H.render_prompt("extract", payload), payload.get("user_text", ""))
+
+    def generate(self, view: dict):
+        stage = H.prompt_stage(view)
+        return self._next(stage, H.render_prompt(stage, view), view.get("user_text", ""))
+
+
+def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = None) -> dict:
     """本人の発言 1 つで相談を進める。返すもの:
     - {"active": False}: 相談をしていない(やめた合図なら ended="exit")。トークの AI がこのターンを受け持つ
-    - status=extract: 選択肢そのものではないので、system でモデルに読み取らせ、その JSON を extracted に入れて呼び直す
-    - status=ask: 次の質問。system でモデルに言い方を作らせ、choices をクイックリプライにする
-    - status=result: 結果。system でモデルに条件カードとおすすめ3つを書かせる。相談は閉じた(saved は保存した項目)"""
+    - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
+      それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
+    - status=reply: reply をそのまま送り、choices をクイックリプライにする
+    - status=result: 結果(reply)。中学生以下で止めた結果でなければ相談は閉じた(saved は保存した項目)"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
     said = (text or "").strip()
-    left = extracted is None and _track_left(state, line_user_id)
-    if left or (extracted is None and _exits(h, said)):
+    first = not llm_outputs
+    left = first and _track_left(state, line_user_id)
+    if left or (first and _exits(h, said)):
         return {"active": False, "ended": "track" if left else "exit", "saved": _finish(state, line_user_id, h, partial=True)}
-    out = H.answer_from_choice(h, said) if extracted is None else _model_out(extracted)
-    if out is None:
-        return {"active": True, "status": "extract", "phase": h.phase, "system": system_prompt(h)}
-    q = H.step(h, out, H.BANK)
-    if q is None:
-        saved = _finish(state, line_user_id, h)
-        return {"active": True, "status": "result", "phase": "result", "system": system_prompt(h),
-                "choices": list(RESULT_CHOICES), "saved": saved, "fallback": fallback(h)}
+    llm = ReplayLLM(llm_outputs)
+    try:
+        r = H.turn(h, said, H.BANK, llm)
+    except NeedLLM as need:
+        if need.call["n"] >= MAX_LLM_CALLS:
+            raise RuntimeError("バイトの相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
+        return {"active": True, "status": "llm", "call": need.call}
+    except ReplayMismatch as e:
+        raise RuntimeError(f"バイトの相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
+    if llm.used != len(llm.outputs):
+        raise RuntimeError("バイトの相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
+    out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase,
+           "question": (h.current or {}).get("qid"), "reply": r["reply"], "counted": r["counted"],
+           "choices": list(r["view"].get("choices", [])), "llm_calls": llm.used}
+    if r["done"] and h.blocked:  # 中学生以下: 閉じずに、その後の発言もハーネスが受ける(年齢の訂正・やり直し)
+        _save(state, line_user_id, h)
+        return out | {"blocked": h.blocked, "choices": []}
+    if r["done"]:
+        return out | {"choices": list(RESULT_CHOICES), "saved": _finish(state, line_user_id, h)}
     _save(state, line_user_id, h)
-    return {"active": True, "status": "ask", "phase": h.phase, "question": public(q), "system": system_prompt(h),
-            "choices": list(q["choices"]), "fallback": fallback(h)}
-
-
-def unsafe_reply(text: str) -> str | None:
-    """モデルの返信の文が、コードで守る決まりに反していれば、その理由(反していなければ None)。
-    反していたら、ランタイムは返信の文を使わず fallback を出す。"""
-    text = text or ""
-    return "fuyou_amount" if FUYOU_AMOUNT.search(text) and ("扶養" in text or "の壁" in text) else None
-
-
-def fallback(h: H.State) -> str:
-    """モデルが返信の文を作れなかったときに、そのまま出す文: 質問文(原文)、review のカード、結果の条件カード。
-    ハーネスはもう次の質問に進んでいるので、本人が見ていない質問に答える形にしない。"""
-    return next_question(h).get("card_text") or h.question["text"]
+    return out
 
 
 def _finish(state: State, line_user_id: str, h: H.State, partial: bool = False) -> list[str]:
     """相談を閉じ、条件を本人の希望として保存する。保存した項目。避けたいこと(avoids)は、前に本人が話したものに足す
-    (save_preferences は項目ごとに上書きするので、前の「接客は苦手」を NG で消さない)。"""
+    (save_preferences は項目ごとに上書きするので、前の「接客は苦手」を NG で消さない)。字数の上限を超えるときは、
+    ルールの NG と今回の NG を残し、前の値は入るところまで(ルールの NG を落とさない)。
+    中学生以下で止めていたら、閉じた後も印(BLOCK_KEY)を残す。15 歳以上と確かめていたら印を消す。"""
     _drop(state, line_user_id)
+    age = h.slots.get("age_band") or {}
+    if h.blocked:
+        state.update(line_user_id, lambda u: u.__setitem__(BLOCK_KEY, {"blocked": h.blocked}))
+    elif age.get("confidence") == "high" and age.get("value") not in (None, "under_15", "declined"):
+        state.update(line_user_id, lambda u: u.pop(BLOCK_KEY, None))
     prefs = result_preferences(h, partial)
     before = ((state.user(line_user_id).get("preferences") or {}).get("avoids") or {}).get("value")
     if before and "avoids" in prefs:
-        prefs["avoids"] = "、".join(dict.fromkeys([before, *(x for x in h.ng if x not in before)]))
+        items = list(dict.fromkeys([*_ng(h), *(x for x in re.split(r"[、,，]\s*", before) if x)]))
+        keep = []
+        for x in items:
+            if len("、".join([*keep, x])) <= logic.PREFERENCE_VALUE_MAX:
+                keep.append(x)
+        prefs["avoids"] = "、".join(keep)
     return logic.save_preferences(state, line_user_id, prefs)["saved"] if prefs else []
+
+
+def job_block(state: State, line_user_id: str | None) -> dict | None:
+    """中学生以下で止めた人には、トークの AI が求人を探しても出さない(dip の recommend_jobs・relax_conditions が先に見る)。"""
+    if not line_user_id or not state.user(line_user_id).get(BLOCK_KEY):
+        return None
+    return {"jobs": [], "total": 0, "blocked": "under_15", "notice": H.NOTICE["under_15"],
+            "note": "中学生以下なので求人は出さない。notice を本人に伝える。年齢がちがうなら、アルバイト・パートの相談をやり直す"}
+
+
+def _ng(h: H.State) -> list[str]:
+    """本人の NG と、ルールの NG(未成年なら「深夜シフト」「重量物・危険な作業」)。"""
+    return list(dict.fromkeys(h.user_ng + h.derived_ng))
 
 
 def _label(h: H.State, slot: str) -> str | None:
     u = h.slots.get(slot)
-    if u is None or u["confidence"] != "high":
+    if not H.is_filled(u) or u["confidence"] != "high":
         return None
-    return u.get("raw_text") if u.get("normalized") is False else H.value_ja(slot, u["value"])
+    return H.value_ja(slot, u["value"])
 
 
 def result_preferences(h: H.State, partial: bool = False) -> dict[str, str]:
-    """カードの条件のうち、プロフィールの項目(dip_mcp.logic.PREFERENCE_KEYS)に入るもの。確かめた値(high)だけ。
-    result では review で推測も確定しているので、カードのとおりになる。partial(途中でやめた)は本人が答えた値だけ。"""
+    """条件のうち、プロフィールの項目(dip_mcp.logic.PREFERENCE_KEYS)に入るもの。確かめた値(high)だけ
+    (結果の時点で推測のまま残った HARD は保存しない)。NG は、未成年のルールの NG も避けたいことに入れる
+    (トークの AI が後で求人を探すときに、深夜と重い作業を外すため)。partial(途中でやめた)でも同じ決まり。"""
     time = [x for x in (_label(h, s) for s in ("time_slots", "available_hours", "weekday_or_weekend")) if x]
     wage = h.slots.get("hourly_wage_min")
     out = {"time_band": "、".join(time), "days_per_week": _label(h, "days_per_week"),
-           "purpose": _label(h, "purpose"), "avoids": "、".join(h.ng),
+           "purpose": _label(h, "purpose"), "avoids": "、".join(_ng(h)),
            "min_wage": str(wage["value"]) if wage and wage["confidence"] == "high" and type(wage["value"]) is int else None}
     return {k: v for k, v in out.items() if v}
-
-
-# ----------------------------- プロンプト(PRD §9) -----------------------------
-
-
-def _slots_json(h: H.State) -> str:
-    slots = {k: {"label": H.SLOT_LABEL_JA.get(k, k), "value": v["value"], "value_ja": H.value_ja(k, v["value"]),
-                 "confidence": v["confidence"]} for k, v in h.slots.items()}
-    return json.dumps({"slots": slots, "ng": h.ng}, ensure_ascii=False)
-
-
-def next_question(h: H.State) -> dict:
-    """{{next_question}} に入れるもの: 質問バンクの1問 / review のカード / result の最終カード。"""
-    if h.phase == "result":
-        card = H.build_card(h)
-        return {"result": True, "card": card, "card_text": H.render_card_ja(card, final=True)}
-    q = h.question
-    if h.phase == "review":
-        return {"card": q["card"], "card_text": q["text"]}
-    keys = ("id", "phase", "text", "choices", "choice_effects", "targets", "retry")
-    return {k: q[k] for k in keys if k in q}
-
-
-def system_prompt(h: H.State) -> str:
-    """そのターンのシステムプロンプト: §9.1 のメインプロンプト(変数を埋める) + ハーネスの補足 + review なら §9.2 の追加。
-    変数はメインプロンプトの「現在の状態」の行だけを埋める(ルールの中の {{next_question}} は、その行を指す語として残す)。"""
-    text = (_read("baito_main_ja.md")
-            .replace("{{phase}}", h.phase, 1)
-            .replace("{{segment}}", h.segment, 1)
-            .replace("{{slots_json}}", _slots_json(h), 1)
-            .replace("{{next_question}}", json.dumps(next_question(h), ensure_ascii=False), 1))
-    parts = [text, _read("baito_notes_ja.md")] + ([_read("baito_review_ja.md")] if h.phase == "review" else [])
-    return "\n".join(parts)

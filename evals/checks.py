@@ -806,15 +806,9 @@ DONT_KNOW = re.compile(r"(分から|わから)(ない|なく|ん)|(分か|わか
 SUGGESTING = re.compile(r"向いて|合いそう|近そう|おすすめ|候補|考えられ|いかが|どれ|どちら")
 
 
-# アルバイト・パートのチャットの相談は、playbook の代わりにハーネス(dip_mcp/baito)を始める(task 242)
-BAITO_START_TOOL = "start_baito_consultation"
-
-
 def playbook_reads(r: dict) -> list[str]:
-    """そのターンで読んだ playbook の区分(エラーになった呼び出しは数えない)。バイトの相談のハーネスを始めたターンは、
-    アルバイト・パートの playbook を読んだのと同じに数える。"""
-    return [t["args"].get("track") if t["name"] == PLAYBOOK_TOOL else "アルバイト・パート" for t in r["tools"]
-            if t["name"] in (PLAYBOOK_TOOL, BAITO_START_TOOL)
+    """そのターンで読んだ playbook の区分(エラーになった呼び出しは数えない)。"""
+    return [t["args"].get("track") for t in r["tools"] if t["name"] == PLAYBOOK_TOOL
             and not (isinstance(t.get("result"), dict) and "error" in t["result"])]
 
 

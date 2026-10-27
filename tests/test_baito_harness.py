@@ -1,645 +1,646 @@
-"""バイト探しの相棒のハーネス(dip_mcp/baito)のテスト。実 LLM なし。
+"""バイト探しの相棒のハーネス(PRD v4.1。dip_mcp/baito)。LLM は偽物(呼ばれた順に台本の JSON を返す)。
 
-確かめること:
-(1) 質問バンク(bank.json)とプロンプトが、PRD の資料(docs/prd/baito_harness)の原文のまま。プロンプトに質問を書いていない
-(2) 8ペルソナの回帰(evals.baito_sim)が PRD §11.3 の受け入れチェックに通り、§4.1 のベースラインより悪くならない
-(3) コンプライアンスをコードで強制する: 未成年 → NG「深夜シフト」、segment が分からなくても年齢を聞く、深夜の時間帯を残さない
-(4) PRD §12 の 1・3・4・5 への対応と、2 を実装していないこと(v3 のまま)
-(5) dip の状態に保存して進める相談(session): 選択肢・文の読み取り・やめる合図・結果の保存・プロンプトの変数
+(1) データとプロンプト: 質問バンク・職種カタログ(JSON)とプロンプト 4 種が、PRD の資料(docs/prd/baito_harness)の原文のまま。
+    プロンプトに質問とカタログを書いていない
+(2) PRD の検査: 移植版で単体チェック 131 件と 20 ペルソナ(evals/baito_sim.py)。基準値の範囲内
+(3) 未成年: どの区分でも、年齢が分からない・未成年なら NG「深夜シフト」が付き、深夜の選択肢を出さず、深夜を推薦しない。
+    中学生以下は推薦に進まない(抽出が失敗しても。レビュー M-4)
+(4) 移植で直したところの回帰: M-16(「推し活・趣味」)、年齢の「18歳未満」、M-5・M-6・M-3・N-17・B-2
+(5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
+(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 
 import pytest
 
+from dip_mcp import logic
 from dip_mcp.baito import harness as H
 from dip_mcp.baito import session
-from dip_mcp.baito.bank import load_bank, validate
 from dip_mcp.data import ROOT, State
 from evals import baito_sim
 
-PRD_DIR = ROOT / "docs" / "prd" / "baito_harness"
-PROMPTS = ROOT / "dip_mcp" / "prompts"
+REF = ROOT / "docs" / "prd" / "baito_harness"
+SEGMENTS = ("student", "homemaker", "side_job", "other", "unknown")
+QM = H.qmap(H.BANK)
 
 
-def _prd_module(name: str):
-    spec = importlib.util.spec_from_file_location(f"prd_{name}", PRD_DIR / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def _ref(name: str):
+    """参照資料の付録(bank_v4 は catalog_v4 を import するので、資料のフォルダを path に足して読む)。"""
+    sys.path.insert(0, str(REF))
+    try:
+        spec = importlib.util.spec_from_file_location(f"ref_{name}", REF / f"{name}.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        sys.path.remove(str(REF))
 
 
-def _out(*ups, ng=(), seg="unknown", removals=()):
-    return {"slot_updates": [{"slot": s, "value": v, "confidence": c, "from": "t"} for s, v, c in ups],
-            "ng_updates": list(ng), "segment": seg, "ng_removals": list(removals)}
+class LLM:
+    """extract は台本(dict / 文字列 / 例外)を順に返す。generate は質問・カードをそのまま返し、結果は候補の上から選ぶ。"""
+
+    def __init__(self, extracts=(), generates=()):
+        self.extracts, self.generates = list(extracts), list(generates)
+        self.calls: list[str] = []
+
+    @staticmethod
+    def _give(x):
+        if isinstance(x, Exception):
+            raise x
+        return x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)
+
+    def extract(self, payload):
+        self.calls.append("extract")
+        return self._give(self.extracts.pop(0)) if self.extracts else json.dumps({"slot_updates": []})
+
+    def generate(self, v):
+        self.calls.append(H.prompt_stage(v))
+        if self.generates:
+            return self._give(self.generates.pop(0))
+        if v.get("result_json"):
+            r = json.loads(v["result_json"])
+            recs = [{"job_id": c["job_id"], "reason": "合いそう"} for c in r["candidates"][:r["need"]]]
+            return json.dumps({"reply": "どうぞ", "recommendations": recs}, ensure_ascii=False)
+        if v["mode"] == "review":
+            return json.dumps({"reply": v["card_text"] + "\n\n" + H.CLOSING_JA}, ensure_ascii=False)
+        return json.dumps({"reply": v["text"]}, ensure_ascii=False)
 
 
-# ----------------------------- (1) 原文のまま -----------------------------
+def _ups(*ups, **kw) -> dict:
+    return {"slot_updates": [{"slot": s, "value": v, "evidence": e} for s, v, e in ups], **kw}
 
 
-def test_bank_json_is_the_prd_bank_verbatim():
-    prd = _prd_module("bank").make_bank()
-    ours = load_bank()
-    assert len(ours) == len(prd) == 48
-    for a, b in zip(ours, prd, strict=True):
-        assert a == b  # id・phase・segments・targets・質問文・選択肢(順も)・choice_effects
-    assert validate(ours) == []
+def fresh(segment: str = "unknown") -> H.State:
+    st = H.new_state()
+    H.start(st, H.BANK)
+    if segment != "unknown":
+        H.set_segment(st, segment, "choice")
+    return st
 
 
-def test_bank_counts_match_prd_7_2():
-    counts = {}
-    for q in load_bank():
-        for seg in q["segments"]:
-            counts[(q["phase"], seg)] = counts.get((q["phase"], seg), 0) + 1
-    assert counts == {("icebreak", "all"): 2, ("hard_filter", "all"): 3, ("hard_filter", "student"): 2,
-                      ("hard_filter", "homemaker"): 2, ("hard_filter", "side_job"): 2, ("scenario_game", "all"): 7,
-                      ("scenario_game", "student"): 6, ("scenario_game", "homemaker"): 6, ("scenario_game", "side_job"): 6,
-                      ("reverse_pick", "student"): 1, ("reverse_pick", "homemaker"): 1, ("reverse_pick", "side_job"): 1,
-                      ("fill_gaps", "all"): 5, ("fill_gaps", "student"): 1, ("fill_gaps", "homemaker"): 2,
-                      ("fill_gaps", "side_job"): 1}
+def goto(st: H.State, qid: str, mode: str = "ask") -> None:
+    q = QM[qid]
+    st.phase = q["phase"]
+    st.current = {"qid": qid, "mode": mode, "choices": H.visible_choices(q, st)}
+    if qid not in st.asked:
+        st.asked.append(qid)
 
 
-def test_bank_validation_catches_broken_questions():
-    q = {"id": "x", "phase": "scenario_game", "segments": ["all"], "targets": ["pace"], "text": "?",
-         "choice_effects": {"a": {"pace": "calm"}}}
-    assert any("選択肢が 1 個" in e for e in validate([q]))
-    q2 = q | {"choice_effects": {"a": {"pace": "calm"}, "b": {"shift_length": "short"}}}
-    assert any("targets" in e for e in validate([q2]))
+def finish(st: H.State, llm=None, choose=None, limit: int = 40) -> dict:
+    """最後まで進める(ボタンは choose(qid, choices) か先頭、review は「これでOK」)。最後の turn() の結果。"""
+    llm = llm or LLM()
+    r = None
+    for _ in range(limit):
+        if st.result:
+            return r
+        cur = st.current
+        text = H.REVIEW_OK if cur["mode"] == "review" else (choose and choose(cur["qid"], cur["choices"])) or cur["choices"][0]
+        r = H.turn(st, text, H.BANK, llm)
+    raise AssertionError("結果に着かない")
 
 
-def test_main_prompt_is_prd_9_1_and_review_prompt_is_verbatim():
-    prd = (PRD_DIR / "PRD_baito_agent.md").read_text(encoding="utf-8")
-    block = prd.split("### 9.1 メインのシステムプロンプト")[1].split("```text\n", 1)[1].split("\n```", 1)[0]
-    assert (PROMPTS / "baito_main_ja.md").read_text(encoding="utf-8") == block + "\n"
-    assert ((PROMPTS / "baito_review_ja.md").read_text(encoding="utf-8")
-            == (PRD_DIR / "prompt_review_ja.txt").read_text(encoding="utf-8"))
-    # 9.1 のルール 1〜9 と出力の JSON の契約
-    for rule in ("1. 1ターンに質問は1つだけ。", "5. 「どっちでもない」と言われたら、軽く1回だけ聞く：「お、どのへんがちがう？一言で教えて！」",
-                 "8. 面接っぽい言い方", "9. ユーザーがはっきり言っていないことを事実として記録しない。",
-                 '{"reply": "...", "choices": ["..."],'):
-        assert rule in block
+# ----------------------------- (1) データとプロンプト -----------------------------
 
 
-def test_prompts_do_not_contain_the_question_bank():
-    """質問はデータ(bank.json)にだけある。プロンプトのファイルに質問文と選択肢を書かない(P0-4)。"""
-    text = "".join((PROMPTS / n).read_text(encoding="utf-8") for n in ("baito_main_ja.md", "baito_notes_ja.md", "baito_review_ja.md"))
-    for q in load_bank():
-        assert q["text"] not in text, q["id"]
-        if q["id"] == "q_segment":
-            continue  # 属性の名前(学生／家のこと中心／本業あり副業探し)は、§9.1 と §9.2 の原文が役割の説明に使う
-        for c in q["choices"]:
-            if len(c) >= 4:  # 「OK」「はい」のような短い語は、ふつうの文にも出る
-                assert c not in text, (q["id"], c)
+def test_bank_and_catalog_json_are_the_prd_appendices_verbatim():
+    """質問バンク(付録A、49 問)と職種カタログ(付録B、24 件)は、データファイル(JSON)に原文のまま。"""
+    cat = _ref("catalog_v4")
+    assert H.BANK == _ref("bank_v4").BANK and len(H.BANK) == 49
+    assert H.CATALOG == cat.CATALOG and len(H.CATALOG) == 24  # times は集合で読む
+    assert all(isinstance(j["times"], set) for j in H.CATALOG)
 
 
-# ----------------------------- (2) 8ペルソナの回帰 -----------------------------
+def test_prompts_are_the_prd_prompt_files_verbatim():
+    for name in ("prompt_main_v4_ja.txt", "prompt_extract_v4_ja.txt", "prompt_review_v4_ja.txt", "prompt_result_v4_ja.txt"):
+        assert (H.PROMPT_DIR / name).read_text(encoding="utf-8") == (REF / name).read_text(encoding="utf-8"), name
+
+
+def test_prompts_do_not_contain_the_question_bank_or_the_catalog():
+    """質問と職種はデータにだけある。プロンプトは変数で受け取る(PRD §0-1)。"""
+    text = "".join((H.PROMPT_DIR / f).read_text(encoding="utf-8") for fs in H.PROMPT_FILES.values() for f in fs)
+    words = {q["text"] for q in H.BANK} | {c for q in H.BANK for c in q["choices"] if len(c) >= 4} | {j["name"] for j in H.CATALOG}
+    assert [w for w in words if w in text] == []
+    for stage in H.PROMPT_FILES:  # 変数はすべてハーネスが埋める(足りなければ KeyError)
+        st = fresh("student")
+        v = H.extract_payload(st, H.BANK, "週3") if stage == "extract" else H.view(st, H.BANK)
+        if stage == "review":
+            st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": []}, H.build_card(st)
+            v = H.view(st, H.BANK)
+        if stage == "result":
+            v = v | {"mode": "result", "result_json": "{}"}
+        assert "{{" not in H.render_prompt(stage, v)
+
+
+# ----------------------------- (2) PRD の検査 -----------------------------
 
 
 @pytest.fixture(scope="module")
-def results():
-    return [baito_sim.run(p) for p in baito_sim.PERSONAS]
+def reference():
+    return baito_sim.check()
 
 
-def test_eight_personas_pass_the_prd_acceptance_checks(results):
-    assert baito_sim.acceptance(results) == []
-    for m in results:
-        assert m["turns"] <= H.MAX_TURNS and m["reached"] and not m["loop"] and m["crash"] is None
-        assert m["review_rounds"] >= 1 and m["empty"]["HARD"] == [] and m["low"]["HARD"] == []
-        assert m["irrelevant"] == [] and m["dropped"] == 0 and m["wasted"] == []
+def test_port_passes_the_prd_unit_checks_and_the_20_personas(reference):
+    """BAITO_HARNESS=aica_port で unit_checks_v4.py が 131/131、simulate.py v4 の v4_agg が全部 0 で、§11-5 の範囲内。"""
+    r, bad = reference
+    assert r["unit_summary"] == "131/131 passed", r["unit_fails"]
+    assert bad == []
+    agg = r["results"]["v4_agg"]
+    assert agg["max_turns"] <= 15 and agg["not_reached"] == []
+    assert all(v == 0 for k, v in agg.items() if k not in ("max_turns", "not_reached"))
 
 
-def test_personas_match_the_v3_baseline(results):
-    """§4.1 の表と同じ(良くなったところ以外)。ターン数、フェーズごとのターン数、review の回数、空の MID。"""
-    for m in results:
-        base = baito_sim.BASELINE[m["persona"]]
-        assert m["turns"] == base["turns"], m["persona"]
-        assert baito_sim.phases(m) == base["phases"], m["persona"]
-        assert m["review_rounds"] == base["review_rounds"], m["persona"]
-        assert m["empty"]["MID"] == base["empty_mid"], m["persona"]
-    assert {m["persona"]: m["final_seg"] for m in results} == {
-        "hs16": "student", "univ": "student", "homemaker": "homemaker", "office": "side_job", "nopref": "student",
-        "unclear": "side_job", "late_seg": "homemaker", "no_seg": "student"}
+def test_port_matches_the_reference_baseline_persona_by_persona(reference):
+    """ターン数・フェーズの配分・review の回数・結果の推薦は、参照実装の基準値(results_v4.json)と同じ。"""
+    r, _ = reference
+    keys = ("turns", "per_phase", "review_rounds", "recs", "blocked", "unresolved", "mid_empty_end", "derived_ng")
+    port = {m["persona"]: {k: m[k] for k in keys} for m in r["results"]["v4"]}
+    base = {m["persona"]: {k: m[k] for k in keys} for m in r["baseline"]["v4"]}
+    assert port == base
 
 
-def test_acceptance_catches_regressions(results):
-    """チェック自体が退化を見つける(シナリオが v2a の2ターンに縮んだ、HARD が空、未成年に深夜 NG が無い)。"""
-    bad = [dict(m) for m in results]
-    bad[0] = bad[0] | {"per_phase": bad[0]["per_phase"] | {"scenario_game": 2}, "late_night_ng": False}
-    bad[1] = bad[1] | {"empty": {"HARD": ["commute"], "MID": []}}
-    found = baito_sim.acceptance(bad)
-    assert any("hs16: シナリオのターンが減った" in v for v in found)
-    assert any("深夜シフト" in v for v in found)
-    assert any("univ: 空か low の HARD" in v for v in found)
+def test_the_baseline_files_are_not_overwritten(reference):
+    """移植版のシミュレーションは写しの中で回す(レビュー M-10)。基準値のファイルは変わらない。"""
+    r, _ = reference
+    base = (REF / "transcripts" / "v4_hs16.txt").read_text(encoding="utf-8")
+    assert r["transcripts"]["v4_hs16.txt"] == base and r["baseline"] == json.loads((REF / "results_v4.json").read_text())
+    # N-17 で結果の文の「未定」が 1 行減ったところだけが、基準の会話ログと違う
+    diff = [x for x in r["transcripts"] if r["transcripts"][x] != (REF / "transcripts" / x).read_text(encoding="utf-8")]
+    assert diff == ["v4_spam_high.txt"]
 
 
-def test_hs16_gets_the_late_night_ng_and_never_sees_the_late_night_choice(results):
-    hs16 = next(m for m in results if m["persona"] == "hs16")
-    assert hs16["late_night_ng"] and hs16["late_night_choice_shown"] == []
+def test_acceptance_catches_regressions(reference):
+    r, _ = reference
+    worse = json.loads(json.dumps(r["results"]))
+    worse["v4_agg"]["minor_violation"] = 1
+    worse["v4"][0]["turns"] += 2
+    assert baito_sim.acceptance(worse, r["baseline"]) == ["minor_violation=1", "hs16: turns=15(基準 13)"]
 
 
-# ----------------------------- (3) コンプライアンス -----------------------------
+# ----------------------------- (3) 未成年と中学生 -----------------------------
 
 
-def test_age_before_segment_is_buffered_and_adds_the_late_night_ng():
-    """FIX3 + FIX8(PRD の unit_checks.py)。segment が決まる前の年齢も捨てない。文字列の "true" でも深夜 NG。"""
-    s = H.State(segment="unknown")
-    s.slots.clear()
-    H.merge_updates(s, _out(("school_permission", "ok", "high")))  # unknown にはまだ無いスロット: 預ける
-    assert s.pending and "school_permission" not in s.slots
-    H.merge_updates(s, _out(seg="student"))
-    assert s.slots["school_permission"]["value"] == "ok" and s.pending == []
-    for v in ("true", "はい", "True", True):
-        s = H.State(segment="student")
-        H.merge_updates(s, _out(("age_under_18", v, "high")))
-        assert s.ng == [H.LATE_NIGHT_NG], v
+@pytest.mark.parametrize("segment", SEGMENTS)
+def test_unknown_age_is_a_minor_in_every_segment(segment):
+    """年齢をまだ答えていなければ未成年として扱う: NG「深夜シフト」が付き、深夜の選択肢を出さない。"""
+    st = fresh(segment)
+    assert H.minor_mode(st) and "深夜シフト" in st.derived_ng
+    assert "深夜もOK" not in H.visible_choices(QM["hf_time"], st)
+    assert "age_band" in H.active_slots(st) and H.active_slots(st)["age_band"] == H.HARD
 
 
-def test_unknown_segment_still_asks_the_age():
-    """FIX7: segment が最後まで分からなくても hf_age を出す(no_seg)。"""
-    no_seg = next(p for p in baito_sim.PERSONAS if p.name == "no_seg")
-    log: list[str] = []
-    baito_sim.run(no_seg, log=log)
-    assert any("hf_age" in line and "[hard_filter]" in line for line in log)
+@pytest.mark.parametrize("segment", SEGMENTS)
+@pytest.mark.parametrize("age", ["15〜17歳", "ひみつ"])
+def test_minor_or_declined_age_by_button_keeps_late_night_out(segment, age):
+    """年齢のボタンが 15〜17歳・ひみつなら、深夜を文で言っても入らず、結果にも深夜専用・18歳以上の仕事が出ない。"""
+    st = fresh(segment)
+    goto(st, "hf_age")
+    H.turn(st, age, H.BANK, LLM())
+    assert "深夜シフト" in st.derived_ng and "深夜もOK" not in H.visible_choices(QM["hf_time"], st)
+    goto(st, "hf_time")
+    H.turn(st, "深夜もいけるよ", H.BANK, LLM([_ups(("time_slots", "深夜", "深夜"))]))
+    assert "late_night" not in ((st.slots.get("time_slots") or {}).get("value") or [])
+    r = finish(st)
+    assert r["done"] and "深夜シフト" in st.derived_ng
+    for rec in st.result["recommendations"]:
+        job = H.CATALOG_BY_ID[rec["job_id"]]
+        assert job["min_age"] < 18 and not job["night_only"] and job["phys"] != "heavy"
 
 
-def test_minor_cannot_keep_a_late_night_time_slot():
-    """先に「深夜もOK」と答えてから18歳未満と分かっても、深夜の時間帯は残さず、深夜を隠して聞き直す。"""
-    s = H.State(segment="student", phase="fill_gaps")
-    H.merge_updates(s, _out(("days_per_week", "1-2", "high"), ("commute", "walk_bike", "high"),
-                            ("school_permission", "ok", "high"), ("time_slots", "late_night_ok", "high")))
-    H.merge_updates(s, _out(("age_under_18", True, "high")))
-    assert "time_slots" not in s.slots and s.rejected[0]["value"] == "late_night_ok"
-    assert H.LATE_NIGHT_NG in s.ng
-    q = H.step(s, None, H.BANK)
-    assert q["id"] == "hf_time" and "深夜もOK" not in q["choices"] and q["choices"] == ["朝", "昼", "夕方〜夜"]
-    # 文で言われた深夜も受け付けない(モデルの返り値によらない)
-    H.merge_updates(s, _out(("time_slots", "深夜でも大丈夫", "high")))
-    assert "time_slots" not in s.slots
+@pytest.mark.parametrize("segment", ("homemaker", "side_job", "other"))
+def test_age_said_in_free_text_on_another_question_applies_in_every_segment(segment):
+    """区分が学生でなくても、本人が文で言った年齢(根拠つき)は high で入り、深夜 NG が付く(v3 で漏れた区分)。"""
+    st = fresh(segment)
+    st.slots["age_band"] = {"value": "18_plus", "confidence": "low", "from": "x"}
+    H.recompute_derived(st)
+    goto(st, "sc_line")
+    H.turn(st, "17歳だから夜はちょっと", H.BANK, LLM([_ups(("age_band", "17歳", "17歳"))]))
+    assert st.slots["age_band"] == {"value": "15_17", "confidence": "high", "from": "free_other:sc_line"}
+    assert "深夜シフト" in st.derived_ng and "深夜もOK" not in H.visible_choices(QM["hf_time"], st)
 
 
-@pytest.mark.parametrize("said", ["22時以降もOK", "23時まで", "夜10時から", "22時半まで", "夜中の2時",
-                                  # 文末の「ない」で寄せない(NEGATION)肯定の言い方も、深夜の語があれば受け付けない
-                                  "深夜も問題ないです", "22時以降でも問題ないです", "夜中でもかまわない",
-                                  "深夜は無理"])  # 否定でも捨てる(深夜を隠した選択肢で聞き直すだけ)
-def test_minor_cannot_keep_a_late_night_time_said_as_a_clock_time(said):
-    """深夜もOK の選択肢を隠すので、モデルは本人の文(時刻)をそのまま返しやすい。時刻で言っても深夜は受け付けない。"""
-    s = H.State(segment="student", phase="fill_gaps")
-    H.merge_updates(s, _out(("age_under_18", True, "high"), ("time_slots", said, "high")))
-    assert "time_slots" not in s.slots and s.rejected[-1]["raw_text"] == said
-    assert "深夜" not in session.result_preferences(s).get("time_band", "")
-    assert not any("時間帯" in line and "未定" not in line for line in H.render_card_ja(H.build_card(s), final=True).split("\n"))
+@pytest.mark.parametrize("segment", SEGMENTS)
+def test_junior_high_by_button_is_stopped_before_any_recommendation(segment):
+    st = fresh(segment)
+    goto(st, "hf_age")
+    r = H.turn(st, "中学生以下", H.BANK, LLM())
+    assert r["done"] and st.blocked == "under_15" and st.result["recommendations"] == []
+    assert r["reply"].startswith(H.NOTICE["under_15"])
 
 
-def test_minor_late_night_text_said_before_the_age_is_dropped():
-    """年齢より先に文で届いた深夜(列挙値に寄らない)も、未成年と分かったら消し、矛盾の候補からも外す。"""
-    s = H.State(segment="student")
-    H.merge_updates(s, _out(("time_slots", "evening", "low")))
-    H.merge_updates(s, _out(("time_slots", "夜中でもかまわない", "low")))
-    assert s.conflicts == {"time_slots": ["evening", "夜中でもかまわない"]}
-    H.merge_updates(s, _out(("age_under_18", True, "high")))
-    assert s.conflicts == {} and "time_slots" not in s.slots and s.rejected[-1]["value"] == "夜中でもかまわない"
+@pytest.mark.parametrize("segment", SEGMENTS)
+def test_junior_high_free_text_is_stopped_even_when_extraction_fails(segment):
+    """レビュー M-4: 年齢の質問への「中2です」で抽出が 2 回とも失敗しても、中学生として止める(推薦に進まない)。"""
+    st = fresh(segment)
+    goto(st, "hf_age")
+    llm = LLM([RuntimeError("timeout"), "壊れた出力"])
+    r = H.turn(st, "中2です", H.BANK, llm)
+    assert llm.calls[:2] == ["extract", "extract"]
+    assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
+    assert st.slots["age_band"] == {"value": "under_15", "confidence": "high", "from": "free:hf_age"}
+    assert any(e["kind"] == "jhs_fallback" and e.get("extract_failed") for e in st.log)
 
 
-@pytest.mark.parametrize("said", ["22時まで", "17〜22時", "2時から5時まで"])
-def test_minor_time_that_ends_by_22_is_kept(said):
-    s = H.State(segment="student", phase="fill_gaps")
-    H.merge_updates(s, _out(("age_under_18", True, "high"), ("time_slots", said, "high")))
-    assert s.slots["time_slots"]["value"] == said and s.rejected == []
+def test_junior_high_free_text_on_the_reask_is_also_stopped():
+    """fill_gaps の言い換え(reask)で聞いた年齢も同じ。"""
+    st = fresh("student")
+    goto(st, "hf_age", mode="reask")
+    st.phase = "fill_gaps"
+    H.turn(st, "中3だよ", H.BANK, LLM(["x", "y"]))
+    assert st.blocked == "under_15"
 
 
-def test_minor_late_night_correction_in_review_keeps_the_answer_they_gave():
-    """review で未成年が深夜に直そうとしても、前の答え(夕方〜夜)を消さずに残し、深夜は受け付けない。"""
-    s = H.State(segment="student", phase="review", review_rounds=1)
-    H.merge_updates(s, _out(("age_under_18", True, "high"), ("time_slots", "evening", "high")))
-    H.apply_review(s, _out(("time_slots", "深夜もOK", "high")))
-    assert s.slots["time_slots"]["value"] == "evening" and s.rejected[-1]["value"] == "late_night_ok"
-    assert s.review_log[-1]["touched"] == [] and s.need_more_review is False
+def test_family_member_in_junior_high_is_not_the_users_age():
+    """年齢を聞いていない質問の「子どもが中学生」は年齢にしない(抽出が失敗しても)。"""
+    st = fresh("homemaker")
+    goto(st, "sc_line")
+    H.turn(st, "子どもが中学生で", H.BANK, LLM(["x", "y"]))
+    assert st.blocked is None and "age_band" not in st.slots
 
 
-def test_minor_conflict_does_not_offer_late_night():
-    """年齢より先に、食い違う low の時間帯(深夜もOK / 夕方〜夜)が届いても、カードの「どっち？」に深夜を出さない。"""
-    s = H.State(segment="student")
-    H.merge_updates(s, _out(("time_slots", "evening", "low")))
-    H.merge_updates(s, _out(("time_slots", "late_night_ok", "low")))
-    assert s.conflicts == {"time_slots": ["evening", "late_night_ok"]}
-    H.merge_updates(s, _out(("age_under_18", True, "high")))
-    assert s.conflicts == {} and "time_slots" not in s.slots
-    assert not any("深夜" in line for line in H.render_card_ja(H.build_card(s)).split("\n") if "時間帯" in line)
+def test_guessed_junior_high_is_stopped_at_the_result():
+    st = fresh("student")
+    H.apply_update(st, "age_band", "under_15", "low", "free_other:sc_line")
+    assert st.blocked is None and H.minor_mode(st)
+    H.finalize(st)
+    assert st.blocked == "under_15"
 
 
-def test_minor_late_night_ng_cannot_be_removed():
-    s = H.State(segment="student")
-    H.merge_updates(s, _out(("age_under_18", True, "high"), ng=["レジ"]))
-    H.merge_updates(s, _out(removals=[H.LATE_NIGHT_NG, "レジ"]))
-    assert s.ng == [H.LATE_NIGHT_NG]
-
-
-# ----------------------------- (4) PRD §12 -----------------------------
-
-
-@pytest.mark.parametrize(("slot", "said", "value"), [
-    ("shift_length", "4時間くらい", "2-4h"),
-    ("shift_length", "6時間以上がいい", "6h+"),
-    ("time_slots", "平日の夜", "evening"),
-    ("time_slots", "朝", "morning"),
-    ("commute", "通勤は30分まで", "train_30"),
-    ("commute", "家の近くがいい", "walk_bike"),
-    ("hourly_wage_min", "1,200円以上はほしい", 1200),
-    ("days_per_week", "週２日くらい", "1-2"),
-    ("age_under_18", "16歳です", True),
-    ("customer_facing", "接客は避けたい", "avoid"),   # カードのラベルそのもの
-    ("fuyou", "はい、扶養内で", "within"),           # 選択肢の文そのもの
-    ("days_per_week", "週3〜4日", "3-4"),
-    ("age_under_18", "18歳未満です", True),
-    ("age_under_18", "17才", True),
-    ("age_under_18", "高校1年", True),
-    ("age_under_18", "18歳以上", False),
-    ("age_under_18", "高一です", True),
-    ("age_under_18", "高校二年", True),
-    ("age_under_18", "中3", True),
-    ("age_under_18", "中一です", True),
-    ("age_under_18", "未成年です", True),
-    ("age_under_18", "高3で17歳", True),        # 学年の 3 ではなく 17歳 を読む
-    ("age_under_18", "18歳です", False),        # 年齢だけの答えの 18 は成人
-    ("age_under_18", "18", False),
+@pytest.mark.parametrize(("said", "extracted", "band"), [
+    ("中3で15歳です", "15_17", "under_15"),       # 本人の学年が中学生なら、抽出の年齢より優先する
+    ("中2", "わからない", "under_15"),             # 抽出の値が読めない
+    ("中学の先生をしてる35歳", "35歳", "18_plus"),  # 本人の学年ではない
+    ("中学卒業して16歳", "16歳", "15_17"),
 ])
-def test_review_corrections_are_normalized_and_keep_the_raw_text(slot, said, value):
-    """§12-1: 本人の文を列挙値に寄せ、元の文は raw_text に残す。"""
-    s = H.State(segment="student" if slot != "fuyou" else "homemaker", phase="review", review_rounds=1)
-    H.apply_review(s, _out((slot, said, "high")))
-    u = s.slots[slot]
-    assert u["value"] == value and type(u["value"]) is type(value)
-    assert u["raw_text"] == said and u["normalized"] is True and u["from"] == "t"
+def test_junior_high_on_the_age_question_overrides_a_wrong_extraction(said, extracted, band):
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, said, H.BANK, LLM([_ups(("age_band", extracted, extracted))]))
+    assert st.slots["age_band"]["value"] == band and (st.blocked == "under_15") == (band == "under_15")
 
 
-@pytest.mark.parametrize(("slot", "said"), [
-    ("time_slots", "深夜以外ならいつでも"),   # 否定・条件つきの言い方は、寄せると逆の値になる
-    ("time_slots", "夜は無理"),
-    ("time_slots", "夕方は厳しい、朝がいい"),
-    ("shift_length", "6時間以上は無理"),
-    ("commute", "近くじゃなくてもいい"),
-    ("days_per_week", "週2〜3日"),            # 範囲が区切り(1-2 / 3-4)をまたぐ
-    ("hourly_wage_min", "2026年までに"),       # 円も時給の語も無い数
-    ("age_under_18", "高3"),                  # 18歳のこともある
-    ("age_under_18", "高三です"),
-    ("age_under_18", "20歳未満です"),          # 17歳のこともある
+def test_junior_high_said_in_review_is_stopped_when_extraction_fails():
+    st = fresh("student")
+    H.apply_update(st, "age_band", "18_plus", "high", "choice:hf_age")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    st.turns = 13
+    r = H.turn(st, "ごめん本当は中2です", H.BANK, LLM(["x", "y", "x", "y"]))
+    assert r["counted"] and r["done"]  # 読めない返事でもカードを出し直さず(§5-5 の前に)、中学生として止める
+    assert st.blocked == "under_15" and st.result and st.result["recommendations"] == []
+
+
+def test_review_mention_of_a_child_in_junior_high_is_not_the_users_age():
+    st = fresh("homemaker")
+    H.apply_update(st, "age_band", "18_plus", "high", "choice:hf_age")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    H.turn(st, "子どもが中2なので夕方まで", H.BANK, LLM(["x", "y"]))
+    assert st.blocked is None and st.slots["age_band"]["value"] == "18_plus"
+
+
+def test_junior_high_block_is_not_lifted_by_a_grade_said_with_an_age():
+    st = fresh("student")
+    goto(st, "hf_age")
+    H.turn(st, "中学生以下", H.BANK, LLM())
+    H.turn(st, "中3だけど16になった", H.BANK, LLM([_ups(("age_band", "16", "16"))]))
+    assert st.blocked == "under_15" and st.result["recommendations"] == []
+
+
+def test_conflicting_guesses_of_the_age_keep_minor_mode():
+    """推測どうしで年齢が食い違ったら(どっち？)、最後の推測が 18歳以上でも未成年として扱い、中学生以下の候補があれば止める。"""
+    st = fresh("side_job")
+    H.apply_update(st, "age_band", "15_17", "low", "free_other:a")
+    H.apply_update(st, "age_band", "18_plus", "low", "free_other:b")
+    assert st.slots["age_band"]["value"] == "18_plus" and H.minor_mode(st) and "深夜シフト" in st.derived_ng
+    assert "深夜もOK" not in H.visible_choices(QM["hf_time"], st)
+    st2 = fresh("other")
+    H.apply_update(st2, "age_band", "under_15", "low", "free_other:a")
+    H.apply_update(st2, "age_band", "18_plus", "low", "free_other:b")
+    H.finalize(st2)
+    assert st2.blocked == "under_15"
+
+
+@pytest.mark.parametrize(("said", "band"), [
+    ("18歳未満です", "under_18"), ("まだ18歳になっていません", "under_18"), ("来月18歳になります", "under_18"),
+    ("20歳未満", "under_18"), ("未成年です", "under_18"), ("17歳だけど来月18歳", "15_17"), ("16", "15_17"),
+    ("高2", "15_17"), ("中1", "under_15"), ("18歳です", "18_plus"), ("19歳になったばかり", "18_plus"),
+    ("18歳以上", "18_plus"), ("大学2年", "18_plus"), ("ひみつ", "declined"),
+    # 学校の語より「〜歳」を先に読む。進学の予定・生年・学年だけは決めない(未成年のまま年齢を聞く)
+    ("17歳、大学志望", "15_17"), ("会社員だけど17歳", "15_17"), ("社会人1年目、16歳", "15_17"), ("大学受験生です", None),
+    ("4月から大学生", None), ("2009年生まれ", None), ("H21生まれ", None), ("1年生です", None), ("高専1年", "15_17"),
+    ("成人してない", "under_18"), ("まだ大人じゃない", "under_18"), ("18歳まであと半年", "under_18"),
+    ("あと3か月で18", "under_18"), ("今年で18", "under_18"), ("18歳以下", "under_18"), ("社会人です", "18_plus"),
 ])
-def test_risky_free_text_is_kept_as_said_instead_of_guessed(slot, said):
-    assert H.normalize(slot, said) == (said, said)
+def test_age_said_in_words_is_read_on_the_safe_side(said, band):
+    """PRD §6-3 の表のままだと「18歳未満です」「17歳、大学志望」が 18_plus になる。未成年を成人と読まない。"""
+    assert H.normalize_value("age_band", said) == band
 
 
-@pytest.mark.parametrize("said", ["高3", "高三です", "20歳未満です", "未成年ではないです", "ひみつ",
-                                  "未成年ではありません", "未成年じゃありません", "18歳未満ではありません",
-                                  # 18 を含む17歳の言い方(「18歳」だけを読むと成人になり、深夜が通っていた)
-                                  "まだ18歳になっていません", "まだ18歳になってないよ", "18歳になってません",
-                                  "来月18歳になります", "今年18歳になる高3です", "もうすぐ18歳", "18歳の誕生日はまだです",
-                                  "18歳になる年です", "高3で18歳"])
-@pytest.mark.parametrize("segment", ["student", "unknown", "homemaker"])
-def test_age_that_is_not_yes_or_no_is_not_kept(said, segment):
-    """18歳未満かが はい / いいえ に寄らない答えは、スロットにも pending にも入れない(文のまま high で埋めると、
-    未成年を見落としたまま hf_age を聞き直さない)。"""
-    s = H.State(segment=segment)
-    H.merge_updates(s, _out(("age_under_18", said, "high")))
-    assert "age_under_18" not in s.slots and s.pending == [] and H.LATE_NIGHT_NG not in s.ng
-    assert s.rejected[-1]["reason"] == "age_not_bool" and s.rejected[-1]["raw_text"] == said
-    assert H.gap_weight(s, "age_under_18") == 1.0
+def test_minor_who_says_not_18_yet_in_review_gets_the_late_night_ng():
+    st = fresh("side_job")
+    H.apply_update(st, "age_band", "18_plus", "low", "free_other:x")
+    H.apply_update(st, "time_slots", ["late_night"], "low", "free_other:x")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    st.turns = 13
+    H.turn(st, "まだ18歳になってないよ", H.BANK, LLM([_ups(("age_band", "まだ18歳になってない", "まだ18歳になってない"),
+                                                      review_ack="partial")]))
+    assert st.slots["age_band"]["value"] == "under_18" and "深夜シフト" in st.derived_ng
+    assert "late_night" not in ((st.slots.get("time_slots") or {}).get("value") or [])
 
 
-@pytest.mark.parametrize("said", ["いいえ、未成年ではありません", "いいえ、18歳未満ではありません"])
-def test_adult_who_denies_being_a_minor_keeps_late_night(said):
-    """「未成年ではありません」の打ち消しを 18歳未満と読まない(成人に NG「深夜シフト」が付き、深夜の時間帯が消えていた)。"""
-    assert H.normalize("age_under_18", said) == (False, said)
-    s = H.State(segment="student")
-    H.merge_updates(s, _out(("time_slots", "late_night_ok", "high")))
-    H.merge_updates(s, _out(("age_under_18", said, "high")))
-    assert s.slots["age_under_18"]["value"] is False and H.LATE_NIGHT_NG not in s.ng
-    assert s.slots["time_slots"]["value"] == "late_night_ok" and s.rejected == []
+# ----------------------------- (4) 移植で直したところ -----------------------------
 
 
-@pytest.mark.parametrize("said", ["いいえ、ちがいます。高2です", "いいえ、違います、高2です", "いいえ、大学生ではありません。高校1年です",
-                                  "いいえ、中学生ではありません。高校1年です", "いいえ、ちがうよ、中3", "違います、高2です",
-                                  "いいえ、未成年ではありません。16歳です"])
-def test_denying_something_else_while_saying_a_grade_is_a_minor(said):
-    """打ち消しているのが未成年の言い方でなければ(カードの値・大学生)、文に残る学年や年齢で 18歳未満と読む。"""
-    assert H.normalize("age_under_18", said) == (True, said)
+@pytest.mark.parametrize(("value", "want"), [
+    ("推し活・趣味", ["hobby"]), ("生活費・家計の足し", ["living_cost"]), ("経験・スキル", ["skill"]),
+    ("人とのつながり", ["people"]), ("hobby", ["hobby"]), ("貯金、旅行・遊び", ["saving", "fun"]),
+    (["推し活・趣味", "貯金"], ["hobby", "saving"]), ("推し活・趣味と貯金", ["hobby", "saving"]),
+    ("お金と人とのつながり", ["money", "people"]), ("旅行・遊び&まかない", ["fun", "perk_meal"]),
+])
+def test_multi_value_display_names_with_separators_are_not_split(value, want):
+    """レビュー M-16: 区切り文字(・と)を含む表示名を、文のまま来ても壊さない。"""
+    assert H.normalize_value("purpose", value) == want
 
 
-@pytest.mark.parametrize("said", ["いいえ、中学生ではありません", "いいえ、16歳未満ではありません", "いいえ、ちがいます"])
-def test_denial_that_does_not_say_adult_is_asked_again(said):
-    """中学生でない・16歳未満でない・カードの値がちがう、だけでは成人と分からない(高校生・17歳のこともある)。"""
-    assert H.normalize("age_under_18", said) == (said, said)
+def test_purpose_display_name_typed_as_free_text_is_stored_not_dropped():
+    st = fresh()
+    goto(st, "q_money")
+    H.turn(st, "推し活・趣味かな", H.BANK, LLM([_ups(("purpose", "推し活・趣味", "推し活・趣味"))]))
+    assert st.slots["purpose"]["value"] == ["hobby"] and "purpose" not in st.notes
 
 
-def test_minor_who_corrects_a_guessed_adult_in_review_gets_late_night_ng():
-    """review のカードの「18歳未満：いいえ（推測）」「深夜もOK（推測）」を、本人が「いいえ、ちがいます。高2です」と直す。
-    18歳未満と読み、NG「深夜シフト」を付け、推測の深夜は確定させずに消す(成人と読むと深夜もOK が確定していた)。"""
-    s = H.State(segment="student", phase="review", review_rounds=1)
-    H.merge_updates(s, _out(("age_under_18", False, "low"), ("time_slots", "late_night_ok", "low")))
-    card = H.render_card_ja(H.build_card(s))
-    assert "（推測）" in card and "深夜" in card
-    H.apply_review(s, _out(("age_under_18", "いいえ、ちがいます。高2です", "high")))
-    assert s.slots["age_under_18"]["value"] is True and s.slots["age_under_18"]["confidence"] == "high"
-    assert H.LATE_NIGHT_NG in s.ng and "time_slots" not in s.slots
-    assert s.rejected[-1]["reason"] == "under_18_late_night" and s.need_more_review is True
+def test_age_is_applied_before_other_slots_in_one_extraction():
+    """レビュー M-5: 「20歳で深夜もOK」で深夜が年齢より先に来ても、未成年として深夜を捨てない。"""
+    st = fresh("other")
+    goto(st, "hf_time")
+    H.turn(st, "20歳で深夜もOK", H.BANK, LLM([_ups(("time_slots", "深夜", "深夜"), ("age_band", "20歳", "20歳"))]))
+    assert st.slots["time_slots"]["value"] == ["late_night"] and st.derived_ng == []
 
 
-def test_age_given_as_a_number_is_read():
-    assert H.normalize("age_under_18", 16) == (True, 16)
-    assert H.normalize("age_under_18", 19) == (False, 19)
-    s = H.State(segment="unknown")
-    H.merge_updates(s, _out(("age_under_18", 16, "high")))
-    assert s.ng == [H.LATE_NIGHT_NG]
+def test_review_free_text_with_two_values_keeps_the_last_one_high_and_logs_it():
+    """レビュー B-2: review の自由入力は最後の値を high で入れ(参照実装どおり)、曖昧だったことをログに残す。"""
+    st = fresh("student")
+    H.apply_update(st, "age_band", "18_plus", "high", "t")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    H.turn(st, "通勤は徒歩、いや電車30分", H.BANK, LLM([_ups(("commute", "徒歩", "徒歩"), ("commute", "電車30分", "電車30分"))]))
+    assert st.slots["commute"] == {"value": "train_30", "confidence": "high", "from": "review"}
+    assert any(e["kind"] == "ambiguous_extract" and e["slot"] == "commute" for e in st.log)
 
 
-def test_values_that_cannot_be_normalized_stay_as_said():
-    s = H.State(segment="student")
-    H.merge_updates(s, _out(("purpose", "ゲーム代", "high")))
-    assert s.slots["purpose"] | {} == {"slot": "purpose", "value": "ゲーム代", "confidence": "high", "from": "t",
-                                       "raw_text": "ゲーム代", "normalized": False}
-    assert H.normalize("purpose", "hobby") == ("hobby", None)          # もう列挙値
-    assert H.normalize("customer_facing", H.NOPREF) == (H.NOPREF, None)
+def test_unblocking_at_the_turn_cap_does_not_count_past_15():
+    """レビュー M-6: 15 ターンで中学生として止めた後の年齢の訂正は数えず、そのまま結果を作り直す。"""
+    st = fresh("student")
+    st.turns, st.phase_turns = 14, {"hard_filter": 14}
+    goto(st, "hf_age")
+    H.turn(st, "中学生以下", H.BANK, LLM())
+    assert st.blocked and st.turns == 15
+    r = H.turn(st, "ごめん、本当は16歳", H.BANK, LLM([_ups(("age_band", "16歳", "16歳"))]))
+    assert st.turns == 15 and st.blocked is None and r["done"] and st.result["recommendations"]
+    assert "深夜シフト" in st.derived_ng
 
 
-def test_reverse_pick_choices_are_not_value_labels():
-    """reverse_pick の選択肢はやりたくないもの。「引越しスタッフ」は physical=light のラベルにも逆引きにも使わない。"""
-    assert H.value_ja("physical", "light") == "軽めの作業がいい"
-    assert "引越しスタッフ" not in H.LABEL_TO_VALUE.get("physical", {})
-    assert "コンビニ店員" not in H.LABEL_TO_VALUE.get("customer_facing", {})
+def test_round_two_promotes_only_the_items_shown_on_the_card():
+    """レビュー M-3: 2 巡目のカードは focus の項目だけを出すので、上げる(確定する)のもその項目だけ。"""
+    st = fresh("student")
+    H.apply_update(st, "age_band", "18_plus", "high", "t")
+    st.review_rounds = 1
+    H.apply_update(st, "commute", "walk_bike", "low", "free_other:x")
+    H.apply_update(st, "pace", "calm", "low", "choice:sc_line")
+    st.last_card = H.build_card(st)
+    assert "commute" in st.last_card["focus"] and "pace" not in st.last_card["focus"]
+    H.apply_review(st, None, button_ok=True)
+    assert st.slots["commute"]["confidence"] == "high" and st.slots["pace"]["confidence"] == "low"
 
 
-def test_ng_can_be_removed():
-    """§12-3: 本人が「やっぱり大丈夫」と取り消した NG は消える(ng_removals)。"""
-    s = H.State(segment="homemaker")
-    H.merge_updates(s, _out(ng=["夜の仕事", "レジ"]))
-    H.merge_updates(s, _out(removals=["レジ", "無い NG"]))
-    assert s.ng == ["夜の仕事"]
+def test_unresolved_hard_is_listed_once_with_its_candidates():
+    """§12-2(ユーザーの決定)と N-17: 解けない矛盾は値を消して「未定」にし、候補を並べる。同じ項目を 2 行にしない。
+    推薦の絞り込みでは空として扱う。"""
+    st = fresh("student")
+    H.apply_update(st, "age_band", "18_plus", "high", "t")
+    H.apply_update(st, "commute", "walk_bike", "low", "a")
+    H.apply_update(st, "commute", "train_60", "low", "b")
+    H.apply_update(st, "customer_facing", "like", "low", "a")
+    H.apply_update(st, "customer_facing", "avoid", "low", "b")
+    H.finalize(st)
+    assert "commute" not in st.slots and st.unresolved["commute"] == ["walk_bike", "train_60"]
+    p = H.build_result_payload(st, H.CATALOG)
+    assert "commute" in p["unknown_hard_slots"]  # M-silent の検査にはそのまま残す
+    txt = H.compose_result_text(p, H.fallback_result(p), H.CATALOG_BY_ID)
+    assert "未定：通勤（徒歩・自転車 / 1時間くらいまで のどちらか。決まったら教えてね）" in txt
+    assert "未定：接客（好き / できれば避けたい のどちらか。決まったら教えてね）" in txt
+    assert txt.count("通勤") == 1
+    # 接客は空として扱う(「避けたい」で接客の多い仕事を外さない)
+    assert any(H.CATALOG_BY_ID[c["job_id"]]["cf"] == "high" for c in p["candidates"])
 
 
-def test_choices_are_filtered_by_ng_only_when_needed():
-    """§12-4: 成人には「深夜もOK」を出す。NG に「深夜シフト」があるときだけ隠す。"""
-    s = H.State(segment="student", phase="hard_filter")
-    q = next(q for q in H.BANK if q["id"] == "hf_time")
-    assert H.visible_choices(s, q) == ["朝", "昼", "夕方〜夜", "深夜もOK"]
-    s.ng.append(H.LATE_NIGHT_NG)
-    assert H.visible_choices(s, q) == ["朝", "昼", "夕方〜夜"]
+# ----------------------------- (5) ng_removals -----------------------------
 
 
-def test_unclear_reasks_are_marked_retry(results):
-    """§12-5: あいまいな答えの後、fill_gaps で同じ直接質問を聞き直すときは retry を付ける(プロンプトが聞き方を変える)。"""
-    unclear = next(m for m in results if m["persona"] == "unclear")
-    assert unclear["retried"] == ["hf_time", "hf_weekday"]
-    assert all(m["retried"] == [] for m in results if m["persona"] != "unclear")
+def test_ng_removals_remove_user_ng_but_never_the_minor_rule_ng():
+    st = fresh("student")
+    goto(st, "rp_student")
+    H.turn(st, "居酒屋はイヤ", H.BANK, LLM([{"slot_updates": [], "ng_updates": ["居酒屋"]}]))
+    assert st.user_ng == ["居酒屋"]
+    goto(st, "hf_days")
+    H.turn(st, "やっぱ居酒屋も深夜もOK", H.BANK, LLM([{"slot_updates": [], "ng_removals": ["居酒屋", "深夜シフト"]}]))
+    assert st.user_ng == [] and "深夜シフト" in st.derived_ng
 
 
-def test_open_conflict_after_two_reviews_keeps_the_last_low_value():
-    """§12-2 はユーザーが決めていないので実装しない: 「これでOK」が続くと result に進み、矛盾は残り、
-    最後の low の値(avoid)が残る(PRD の unit_checks_v3.py と同じ経路・同じ結果)。"""
-    s = H.State(segment="student", turns=12, phase="fill_gaps")
-    for v in ("ok", "avoid"):
-        H.merge_updates(s, _out(("customer_facing", v, "low")))
-    q = H.step(s, None, H.BANK)
-    assert s.phase == "fill_gaps"
-    q = H.step(s, _out(), H.BANK)  # 13 ターン目: review の予約に入る
-    assert q["id"] == "review_1" and [x for x in q["text"].split("\n") if x.startswith("・接客")] == ["・接客：どっち？ 接客OK / 接客は避けたい"]
-    q = H.step(s, _out(), H.BANK)  # 「これでOK」(矛盾が残る): もう1回だけ
-    assert q["id"] == "review_2" and s.need_more_review and s.conflicts == {"customer_facing": ["ok", "avoid"]}
-    q = H.step(s, _out(), H.BANK)
-    assert q is None and s.phase == "result" and s.turns == 15 and s.review_rounds == 2
-    assert s.conflicts == {"customer_facing": ["ok", "avoid"]}
-    assert s.slots["customer_facing"]["value"] == "avoid" and s.slots["customer_facing"]["confidence"] == "low"
+def test_rule_ng_goes_away_when_the_age_is_corrected_to_adult():
+    """年齢を 18 歳以上に直すと、自動で付いた NG(深夜シフト・重量物)は外れる。"""
+    st = fresh("student")
+    H.apply_update(st, "age_band", "15_17", "high", "choice:hf_age")
+    st.phase, st.current, st.last_card = "review", {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}, H.build_card(st)
+    H.turn(st, "19歳です", H.BANK, LLM([_ups(("age_band", "19歳", "19歳"), review_ack="partial")]))
+    assert st.slots["age_band"]["value"] == "18_plus" and st.derived_ng == []
 
 
-# ----------------------------- (5) dip の状態に保存して進める -----------------------------
-
-UID = "baito-user"
+# ----------------------------- (6) dip の相談(session.py) -----------------------------
 
 
 @pytest.fixture
-def state(tmp_path):
-    return State(tmp_path / "state.json")
+def state(tmp_path, monkeypatch):
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+    s = State(tmp_path / "state.json")
+    s.reset()
+    return s
 
 
-def test_session_starts_with_q_money_and_taps_follow_choice_effects(state):
+UID = "sim-new"
+
+
+def _drive(state, text, outputs):
+    """runtime と同じ: status=llm の間、台本の出力を 1 つずつ足して呼び直す。返すのは (最後の結果, 求められた段の列)。"""
+    got, stages = [], []
+    r = session.turn(state, UID, text)
+    while r.get("status") == "llm":
+        stages.append(r["call"]["stage"])
+        got.append(outputs.pop(0))
+        r = session.turn(state, UID, text, got)
+    return r, stages
+
+
+def _say(text):
+    return {"output": {"reply": text}}
+
+
+def test_session_start_needs_the_flag(tmp_path, monkeypatch):
+    monkeypatch.delenv(logic.BAITO_HARNESS_FLAG, raising=False)
+    s = State(tmp_path / "state.json")
+    s.reset()
+    r = session.start(s, UID)
+    assert r["active"] is False and "error" in r and session.KEY not in s.user(UID)
+    assert "相談の進め方(ハーネス)" not in logic.counseling_playbook("アルバイト・パート")["playbook"]
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+    assert "start_baito_consultation" in logic.counseling_playbook("アルバイト・パート")["playbook"]
+    assert "start_baito_consultation" not in logic.counseling_playbook("アルバイト・パート", "voice")["playbook"]
+    assert "start_baito_consultation" not in logic.counseling_playbook("正社員")["playbook"]
+
+
+def test_session_replays_turn_with_the_model_outputs_and_saves_only_at_the_end(state):
     r = session.start(state, UID)
-    assert r["started"] and r["question"] == {"id": "q_money", "text": "バイト代、何に使いたい？",
-                                               "choices": ["推し活・趣味", "貯金・将来のため", "生活費・家計の足し", "旅行・遊び"]}
-    assert session.start(state, UID)["started"] is False  # 進めている相談の続き
-    r = session.turn(state, UID, "推し活・趣味")
-    assert r["status"] == "ask" and r["question"]["id"] == "q_segment" and r["choices"] == ["学生", "家のこと中心", "本業あり副業探し"]
+    assert r["question"] == {"id": "q_money", "text": "バイト代、何に使いたい？", "choices": QM["q_money"]["choices"]}
+    saved = json.dumps(state.user(UID)[session.KEY], ensure_ascii=False)
+    # ボタン: 抽出は呼ばず、言い方を 1 回だけ求める
+    first = session.turn(state, UID, "推し活・趣味")
+    assert first["status"] == "llm" and first["call"]["stage"] == "say"
+    assert "今のあなたに近いのは？" in first["call"]["system"] and first["call"]["user_text"] == "推し活・趣味"
+    assert json.dumps(state.user(UID)[session.KEY], ensure_ascii=False) == saved  # 途中では保存しない
+    r = session.turn(state, UID, "推し活・趣味", [_say("推し活いいね！今のあなたに近いのは？")])
+    assert r["status"] == "reply" and r["reply"] == "推し活いいね！今のあなたに近いのは？"
+    assert r["choices"] == QM["q_segment"]["choices"] and r["question"] == "q_segment" and r["llm_calls"] == 1
+    # 文: 抽出 → 言い方。抽出のプロンプトに本人の発言が入る。年齢は根拠つきで high、未成年の注意文はハーネスが先に付ける
+    ext = {"output": {"slot_updates": [{"slot": "age_band", "value": "高1", "evidence": "高1"}], "ng_updates": [],
+                      "ng_removals": [], "segment": "student", "intent": "answer", "review_ack": None}}
+    r1 = session.turn(state, UID, "高1です！")
+    assert r1["call"]["stage"] == "extract" and "ユーザーの発言: 高1です！" in r1["call"]["system"]
+    r, stages = _drive(state, "高1です！", [ext, _say("高1なんだ！学校のバイトのルールは？")])
+    assert stages == ["extract", "say"]
+    assert r["reply"] == H.NOTICE["minor_rules"] + "\n高1なんだ！学校のバイトのルールは？" and r["question"] == "hf_school"
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-    assert h.slots["purpose"] == {"slot": "purpose", "value": "hobby", "confidence": "low", "from": "q_money"}  # icebreak は low
-    r = session.turn(state, UID, "学生")
-    assert r["phase"] == "hard_filter" and r["question"]["id"] == "hf_age"
-    r = session.turn(state, UID, "はい")
-    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-    assert h.segment == "student" and h.slots["age_under_18"]["confidence"] == "high" and h.ng == [H.LATE_NIGHT_NG]
+    assert h.slots["age_band"]["value"] == "15_17" and h.segment == "student" and "深夜シフト" in h.derived_ng
 
 
-def test_free_text_asks_the_model_to_extract_then_merges_its_json(state):
+def test_session_model_errors_fall_back_to_the_question_text(state):
     session.start(state, UID)
-    session.turn(state, UID, "推し活・趣味")
-    r = session.turn(state, UID, "高1です！")
-    assert r == {"active": True, "status": "extract", "phase": "icebreak", "system": r["system"]}
-    assert '"id": "q_segment"' in r["system"]  # 読み取りは、聞いた質問(q_segment)のプロンプトで
-    extracted = {"reply": "高1なんだ！", "choices": [], "segment": "student", "ng_updates": [],
-                 "slot_updates": [{"slot": "age_under_18", "value": True, "confidence": "high", "from": "q_segment"}]}
-    r = session.turn(state, UID, "高1です！", extracted)
-    assert r["status"] == "ask" and r["phase"] == "hard_filter" and r["question"]["id"] == "hf_school"
-    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-    assert h.segment == "student" and H.LATE_NIGHT_NG in h.ng
+    r, stages = _drive(state, "旅行・遊び", [{"error": "APIError"}, _say("扶養は103万円までだよ")])
+    assert stages == ["say", "say"] and r["reply"] == "今のあなたに近いのは？"
 
 
-def test_exit_word_closes_the_session_and_keeps_only_answered_conditions(state):
+def test_session_result_saves_the_conditions_with_the_rule_ng_and_closes(state):
     session.start(state, UID)
-    for said in ("推し活・趣味", "本業あり副業探し", "OK", "土日"):
-        assert session.turn(state, UID, said)["status"] == "ask"
-    r = session.turn(state, UID, "求人を見せて")
-    assert r["active"] is False and r["ended"] == "exit" and r["saved"] == ["time_band"]
-    assert session.KEY not in state.user(UID)
-    prefs = state.user(UID)["preferences"]
-    assert prefs["time_band"]["value"] == "土日"
-    assert "purpose" not in prefs  # 推し活・趣味は icebreak の推測(low)なので、途中でやめたときは保存しない
-    assert session.turn(state, UID, "こんにちは") == {"active": False}
-
-
-def test_track_undo_ends_the_consultation(state):
-    """始めた後に区分がアルバイト・パートから外れたら(トークの表示のボタンで取り消した)、ハーネスを閉じてトークの AI に返す。"""
-    from dip_mcp import logic
-
-    logic.set_search_track(state, UID, "アルバイト・パート", "バイトを探したい")
-    session.start(state, UID)
-    assert session.turn(state, UID, "推し活・趣味")["status"] == "ask"
-    logic.set_search_track(state, UID, "未定", "取り消し", undo=True)
-    r = session.turn(state, UID, "学生")
-    assert r["active"] is False and r["ended"] == "track" and session.KEY not in state.user(UID)
-
-
-def test_start_hands_the_parttime_playbook_to_the_agent(state):
-    """結果の後・途中でやめた後はトークの AI が続けるので、保存先と提案の決まりを始めるときに渡す。"""
-    r = session.start(state, UID)
-    assert "## 保存先" in r["playbook"] and "## 提案に進むとき" in r["playbook"] and r["rules"]["bubble_max"] == 80
-
-
-def test_end_keeps_the_answered_conditions_and_avoids_are_added_not_replaced(state):
-    logic_prefs = {"avoids": "接客は苦手"}
-    from dip_mcp import logic
-
-    logic.save_preferences(state, UID, logic_prefs)
-    session.start(state, UID)
-    for said in ("推し活・趣味", "本業あり副業探し", "OK", "土日"):
-        session.turn(state, UID, said)
-    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-    h.ng.append("夜の飲食ホール")
-    session._save(state, UID, h)
-    assert session.end(state, UID) == {"ended": True, "saved": ["time_band", "avoids"]}
-    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
-    assert prefs == {"avoids": "接客は苦手、夜の飲食ホール", "time_band": "土日"}
-    assert session.end(state, UID) == {"ended": False}
-
-
-def test_choices_are_not_exit_words(state):
-    session.start(state, UID)
-    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-    h.question = h.question | {"choices": ["今はいい", "あとで"], "choice_effects": {"今はいい": {}, "あとで": {}}}
-    assert session._exits(h, "今はいい") is False
-    assert session._exits(H.State(phase="review"), "これでOK、求人見せて") is False
-    assert session._exits(H.State(phase="scenario_game"), "もういい") is True
-    assert session._exits(H.State(phase="scenario_game"), "求人を探すのは初めて") is False
-    assert session._exits(H.State(phase="scenario_game"), "求人を見せて") is True
-    assert session._exits(H.State(phase="hard_filter"), "やっぱり正社員で探したい") is True
-
-
-@pytest.mark.parametrize("said", ["正社員で働いてて、副業を探してます", "正社員じゃなくて、あくまでバイトで",
-                                  "求人を見たいけど、先に条件を整理したい"])
-def test_answers_that_mention_full_time_or_jobs_keep_the_consultation(state, said):
-    """今の働き方(正社員で働いている)や後回しの頼みは、相談を抜ける合図ではない。モデルに読み取らせて続ける。"""
-    session.start(state, UID)
-    session.turn(state, UID, "貯金・将来のため")
-    r = session.turn(state, UID, said)
-    assert r["status"] == "extract" and session.active(state, UID)
-
-
-def _run_session(state, free: dict[str, tuple[str, dict]], limit=baito_sim.STEP_LIMIT):
-    """相談を最後まで進める。free の質問(id -> (本人の文, モデルの JSON))には、最初の1回だけ文で答える
-    (読み取らせてから呼び直す)。ほかは最初の選択肢をタップし、review は「これでOK」。聞いた質問の (id, retry)。"""
-    session.start(state, UID)
-    asked = []
-    for _ in range(limit):
-        h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-        asked.append((h.question["id"], bool(h.question.get("retry"))))
-        if h.phase == "review":
-            r = session.turn(state, UID, "これでOK")
-        elif h.question["id"] in free:
-            said, extracted = free.pop(h.question["id"])
-            assert session.turn(state, UID, said)["status"] == "extract"
-            r = session.turn(state, UID, said, extracted)
-        else:
-            r = session.turn(state, UID, h.question["choices"][0])
-        if r["status"] == "result":
-            return r, asked
-    raise AssertionError(asked)
-
-
-def _said(slot, value, qid):
-    return {"reply": "", "choices": [], "segment": "unknown", "ng_updates": [],
-            "slot_updates": [{"slot": slot, "value": value, "confidence": "high", "from": qid}]}
-
-
-def test_minor_who_says_late_night_is_fine_never_gets_it_saved(state):
-    """E2E: 高校生(hf_age「はい」)が、深夜を隠した hf_time に「深夜も問題ないです」と文で答え、モデルが文のまま返す。
-    深夜は受け付けず(時間帯は空のまま。この流れでは後のシナリオ「放課後すぐ」で埋まる)、結果のカードにも保存した希望にも出ない。"""
-    r, _ = _run_session(state, {"hf_time": ("深夜も問題ないです", _said("time_slots", "深夜も問題ないです", "hf_time"))})
-    assert "深夜も問題ないです" not in r["system"] and "深夜も問題ないです" not in r["fallback"]
-    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
-    assert prefs["time_band"] == "放課後すぐ" and H.LATE_NIGHT_NG in prefs["avoids"]
-
-
-def test_age_answered_vaguely_is_asked_again(state):
-    """E2E: hf_age に「高3です」と答え、モデルが文のまま返す。年齢は埋めずに hf_age を聞き直し、「はい」で深夜 NG が付く。"""
-    _, asked = _run_session(state, {"hf_age": ("高3です", _said("age_under_18", "高3です", "hf_age"))})
-    assert [a for a in asked if a[0] == "hf_age"] == [("hf_age", False), ("hf_age", True)]
-    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
-    assert H.LATE_NIGHT_NG in prefs["avoids"]
-
-
-def test_minor_who_says_not_18_yet_is_asked_again_and_never_gets_late_night(state):
-    """E2E: hf_age に「まだ18歳になっていません」と文で答え、モデルが文のまま返す。17歳なので成人と読まず、
-    hf_age を聞き直す(「18歳」だけを読んで成人にすると、hf_time に「深夜もOK」が出て、結果に深夜が保存されていた)。"""
-    said = "まだ18歳になっていません"
-    _, asked = _run_session(state, {"hf_age": (said, _said("age_under_18", said, "hf_age"))})
-    assert [a for a in asked if a[0] == "hf_age"] == [("hf_age", False), ("hf_age", True)]
-    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
-    assert H.LATE_NIGHT_NG in prefs["avoids"] and prefs.get("time_band") != "深夜もOK"
-
-
-def test_session_runs_to_the_result_and_saves_the_card_as_preferences(state):
-    """hs16 と同じ答えをタップで最後まで。結果で相談を閉じ、確かめた条件をプロフィールの項目に保存する。"""
-    hs16 = next(p for p in baito_sim.PERSONAS if p.name == "hs16")
-    session.start(state, UID)
-    phases, systems = [], []
-    age = {"reply": "", "choices": [], "segment": "student", "ng_updates": [],
-           "slot_updates": [{"slot": "age_under_18", "value": True, "confidence": "high", "from": "q_segment"}]}
-    for _ in range(baito_sim.STEP_LIMIT):
-        h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
-        if h.phase == "review":
-            r = session.turn(state, UID, "これでOK")
-        elif h.question["id"] == "q_segment":  # 文で「高1です！」: 読み取らせてから
-            assert session.turn(state, UID, "高1です！")["status"] == "extract"
-            r = session.turn(state, UID, "高1です！", age)
-        else:
-            said = hs16.choose(h.question)
-            r = session.turn(state, UID, said if said in h.question["choices"] else h.question["choices"][0])
-        phases.append(r["phase"])
-        systems.append(r["system"])
+    picks = {"q_segment": "学生", "hf_age": "15〜17歳"}
+    r = {"status": "reply", "choices": QM["q_money"]["choices"], "question": "q_money"}
+    for _ in range(30):
         if r["status"] == "result":
             break
+        text = picks.get(r["question"]) or r["choices"][0]
+        r = session.turn(state, UID, text)
+        while r.get("status") == "llm":  # 偽のモデル: 求められたものを、ハーネスの代わりの文で返す(検証で落ちれば原文)
+            r = session.turn(state, UID, text, [{"error": "x"}] * (r["call"]["n"] + 1))
     assert r["status"] == "result" and r["choices"] == session.RESULT_CHOICES and session.KEY not in state.user(UID)
-    assert "review" in phases and len(phases) <= H.MAX_TURNS
-    assert '"result": true' in r["system"] and "【ゆずれない条件】" in r["system"]
-    assert "推測のところ、ちがってたらまとめて教えてね！「どっち？」はどちらか選んでね。" not in r["system"].split("# ルール")[0]
-    prefs = {k: v["value"] for k, v in state.user(UID)["preferences"].items()}
-    assert prefs["days_per_week"] == "週1〜2日" and prefs["time_band"] == "夕方〜夜" and prefs["purpose"] == "推し活・趣味"
-    assert H.LATE_NIGHT_NG in prefs["avoids"]
-    assert set(r["saved"]) == set(prefs)
-    review_systems = [s for s, p in zip(systems, phases, strict=True) if p == "review"]
-    assert review_systems and all("【フェーズ: review（まとめカードの確認）】追加ルール" in s for s in review_systems)
-    assert not any("【フェーズ: review" in s for s, p in zip(systems, phases, strict=True) if p != "review")
+    prefs = state.user(UID)["preferences"]
+    assert "深夜シフト" in prefs["avoids"]["value"] and "重量物・危険な作業" in prefs["avoids"]["value"]
+    assert "1. " in r["reply"] and H.NOTICE["minor_rules"] in r["reply"]
 
 
-def test_system_prompt_fills_the_state_variables_once(state):
+def test_session_keeps_a_junior_high_block_open_and_lifts_it_on_an_age_fix(state):
     session.start(state, UID)
-    r = session.turn(state, UID, "推し活・趣味")
-    s = r["system"]
-    assert "- フェーズ: icebreak\n- ユーザーの属性: unknown\n" in s
-    slots = json.loads(s.split("- これまでにわかった条件: ")[1].split("\n")[0])
-    assert slots == {"slots": {"purpose": {"label": "バイトの目的", "value": "hobby", "value_ja": "推し活・趣味",
-                                            "confidence": "low"}}, "ng": []}
-    nq = json.loads(s.split("- 次に聞く質問（ハーネスが決定）: ")[1].split("\n")[0])
-    assert nq["id"] == "q_segment" and nq["choices"] == ["学生", "家のこと中心", "本業あり副業探し"]
-    assert "{{phase}}" not in s and "{{slots_json}}" not in s
-    assert "1. 1ターンに質問は1つだけ。聞くのは {{next_question}} だけ。" in s  # ルールの中の語はそのまま
-    assert "# ハーネスからの補足" in s
+    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
+    goto(h, "hf_age")
+    session._save(state, UID, h)
+    r = session.turn(state, UID, "中学生以下")
+    assert r["status"] == "result" and r["blocked"] == "under_15" and r["choices"] == []
+    assert r["reply"].startswith(H.NOTICE["under_15"]) and session.active(state, UID)
+    fix = {"output": {"slot_updates": [{"slot": "age_band", "value": "16歳", "evidence": "16歳"}], "ng_updates": [],
+                      "ng_removals": [], "segment": None, "intent": "answer", "review_ack": None}}
+    r, stages = _drive(state, "ごめん本当は16歳", [fix, {"error": "x"}, {"error": "x"}])
+    assert stages == ["extract", "say", "say"] and r["status"] == "reply" and session.active(state, UID)
+    assert r["reply"].endswith(QM[r["question"]]["text"])
+    assert H.State.from_dict(state.user(UID)[session.KEY]["harness"]).blocked is None
 
 
-def test_result_preferences_use_labels_and_skip_unconfirmed_values():
-    h = H.State(segment="side_job")
-    H.merge_updates(h, _out(("hourly_wage_min", 1200, "high"), ("time_slots", "平日の夜", "high"),
-                            ("weekday_or_weekend", "weekend", "high"), ("purpose", "earn", "low"), ng=["倉庫作業"]))
-    assert session.result_preferences(h) == {"time_band": "夕方〜夜、土日", "min_wage": "1200", "avoids": "倉庫作業"}
+def test_session_exit_word_saves_answered_conditions_and_hands_back(state):
+    session.start(state, UID)
+    session.turn(state, UID, "貯金・将来のため", [_say("いいね")])
+    r = session.turn(state, UID, "今はいい")
+    assert r == {"active": False, "ended": "exit", "saved": ["avoids"]} and not session.active(state, UID)
+    assert "深夜シフト" in state.user(UID)["preferences"]["avoids"]["value"]
 
 
-@pytest.mark.parametrize(("text", "bad"), [
-    ("扶養内で働きたいんだね！103万円を超えないようにしよう", True),
-    ("130万の壁があるから気をつけてね", True),
-    ("年収106万円までなら扶養のままだよ", True),
-    ("扶養の範囲内で働きたい？", False),
-    ("時給1,200円以上がいいんだね！扶養はわからない？", False),
-    ("扶養のことは、家族か勤務先、専門の窓口に確かめてみてね", False),
-    ("扶養内でOK！月5万円くらいを目安にした事務はどう？", False),   # 基準の額ではない
-])
-def test_replies_that_state_a_fuyou_amount_are_not_used(text, bad):
-    """PRD §10: 扶養の金額の基準は示さない。モデルの返信に出たら、ランタイムは使わずに質問の原文を出す。"""
-    assert (session.unsafe_reply(text) is not None) is bad
+def test_session_drops_a_saved_state_from_another_version(state):
+    state.update(UID, lambda u: u.__setitem__(session.KEY, {"harness": {"phase": "hard_filter"}, "track": None}))
+    assert session.turn(state, UID, "はい") == {"active": False} and session.KEY not in state.user(UID)
+
+
+def test_session_free_text_with_every_model_call_failing_ends_in_four_calls(state):
+    """文の答えでモデルが毎回失敗しても、1 ターンの呼び出しは抽出 2 回 + 生成 2 回まで(PRD §5-4)。質問の原文で聞き直す。"""
+    session.start(state, UID)
+    r, stages = _drive(state, "なんだろう", [{"error": "x"}] * session.MAX_LLM_CALLS)
+    assert stages == ["extract", "extract", "say", "say"] and r["status"] == "reply"
+    assert r["reply"] == H.RETRY_TEXT + QM["q_money"]["text"] and r["counted"] is False
+
+
+def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state, monkeypatch):
+    """中学生以下で止めた後に「やめる」・新しい会話で相談を閉じても、トークの AI が探す求人は出ない(印が残る)。
+    後の相談で 15 歳以上と確かめたら出す。"""
+    from dip_mcp import server
+
+    monkeypatch.setattr(server, "state", state)
+    session.start(state, UID)
+    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
+    goto(h, "hf_age")
+    session._save(state, UID, h)
+    session.turn(state, UID, "中学生以下")
+    assert session.turn(state, UID, "やめる")["ended"] == "exit" and not session.active(state, UID)
+    for got in (server.recommend_jobs(line_user_id=UID, area="新宿"), server.relax_conditions(line_user_id=UID)):
+        assert got["jobs"] == [] and got["blocked"] == "under_15" and got["notice"] == H.NOTICE["under_15"]
+    session.start(state, UID)
+    h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
+    goto(h, "hf_age")
+    session._save(state, UID, h)
+    assert session.turn(state, UID, "15〜17歳", [{"error": "x"}] * 2)["status"] == "reply"
+    session.end(state, UID)
+    assert session.job_block(state, UID) is None and server.recommend_jobs(line_user_id=UID, area="新宿")["jobs"]
+
+
+def test_rule_ng_is_saved_even_when_the_previous_avoids_are_long(state):
+    long = "、".join(f"苦手なこと{i}番目のもの" for i in range(8))
+    logic.save_preferences(state, UID, {"avoids": long})
+    session.start(state, UID)
+    session.turn(state, UID, "今はいい")
+    avoids = state.user(UID)["preferences"]["avoids"]["value"]
+    assert avoids.startswith("深夜シフト、重量物・危険な作業、苦手なこと0番目") and len(avoids) <= logic.PREFERENCE_VALUE_MAX
+
+
+def test_replayed_outputs_must_match_what_the_harness_asks_for(state):
+    session.start(state, UID)
+    with pytest.raises(RuntimeError, match="合いません"):  # 言い方を求めているのに、抽出の出力が来た
+        session.turn(state, UID, "推し活・趣味", [{"stage": "extract", "output": {}}])
+    with pytest.raises(RuntimeError, match="多く"):  # 求めより多い(呼び直しの間に状態が変わった)
+        session.turn(state, UID, "推し活・趣味", [{"stage": "say", "output": {"reply": "x"}}] * 3)
+    assert H.State.from_dict(state.user(UID)[session.KEY]["harness"]).turns == 0
+
+
+# ----------------------------- P3 の入口(レビュー B-3) -----------------------------
+
+
+def test_real_llm_runner_counts_first_calls_and_records_the_cost(tmp_path):
+    """--real の道具立てを、偽のモデルで通す(API は呼ばない): 18 人から選んだペルソナが結果に着き、段ごとの 1 回目の
+    呼び出しと合否を数え、台帳に書く。偽のモデルは抽出を空で返し、言い方は検証に落ちる(→ 代替)。"""
+    async def fake(stage, system, messages):
+        out = {"extract": {"slot_updates": [], "ng_updates": [], "ng_removals": [], "segment": None, "intent": "answer",
+                           "review_ack": None}, "result": {"reply": "x", "recommendations": []}}.get(stage, {"reply": ""})
+        return out, {"input_tokens": 0, "output_tokens": 0}
+
+    ledger = tmp_path / "budget.jsonl"
+    out = baito_sim.run_real(1, ledger, 1.0, call=fake, only=["nopref", "malformed"])
+    assert out["conversations"] == 1 and out["results"][0]["persona"] == "nopref" and out["results"][0]["reached"]
+    st = out["stats"]
+    assert st["generate"]["first"] == st["generate"]["fallback"] and st["generate"]["calls"] == 2 * st["generate"]["first"]
+    assert out["rates"]["extract_pass"] == 1.0 and out["rates"]["generate_pass"] == 0.0
+    assert "generate_pass=0.0(基準 ≧ 0.95)" in out["problems"] and ledger.read_text().count("baito-p3") == 1
+    assert "aica_port" not in sys.modules or sys.modules["aica_port"] is H

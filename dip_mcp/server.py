@@ -129,6 +129,8 @@ def recommend_jobs(
     本人が保存したやりたいこと・経験(save_user_preferences)と keywords の両方に、求人の職種の語(カフェ、ホール、営業など)があれば、
     その求人の reasons に決まった形の1文が入る(「カフェのご経験を活かせます」)。避けたいこと・不安にある語からは作らない。
     人と話す量・体を使う量(max_talk_level など)は両方の区分の求人に、リモート・土日祝休み・残業は正社員の求人だけに効く。"""
+    if blocked := session.job_block(state, line_user_id):  # バイトの相談で中学生以下と分かった人には出さない
+        return blocked
     return logic.recommend(state, line_user_id, area, time_band, job_type, min_wage, keywords, exclude_ids,
                            posted_within_days=posted_within_days, employment_type=employment_type,
                            min_annual_salary=min_annual_salary, max_talk_level=max_talk_level,
@@ -150,6 +152,8 @@ def relax_conditions(
 ) -> dict:
     """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。
     recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。"""
+    if blocked := session.job_block(state, line_user_id):
+        return blocked
     return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
                        employment_type=employment_type, min_annual_salary=min_annual_salary, exclude_ids=exclude_ids,
                        max_talk_level=max_talk_level, min_talk_level=min_talk_level,
@@ -251,15 +255,14 @@ def get_counseling_playbook(
     次に何を聞くかは決めない。
     相談に入ったターンに今の区分で呼ぶ。区分が変わったターン(切り替え・取り消し)に新しい区分で呼び直すのは、
     相談の途中か一度 playbook を読んだ後のときと、正社員に切り替えたときだけ。
-    相談に入る前(まだ読んでいない)のアルバイト・パートか未定への切り替えでは呼ばない。同じ区分のあいだは呼び直さない。
-    アルバイト・パートのトーク(chat)の相談は、これの代わりに start_baito_consultation を呼ぶ(何を聞くかはハーネスが決める)。"""
+    相談に入る前(まだ読んでいない)のアルバイト・パートか未定への切り替えでは呼ばない。同じ区分のあいだは呼び直さない。"""
     return logic.counseling_playbook(track, channel)
 
 
 @mcp.tool()
 def start_baito_consultation(line_user_id: UserId) -> dict:
-    """アルバイト・パートのトーク(chat)の相談を、ハーネス(バイト探しの相棒)で始める。区分がアルバイト・パートで相談に
-    入ったターン(相談の途中でアルバイト・パートに切り替えたターンも)に、get_counseling_playbook の代わりに呼ぶ。
+    """アルバイト・パートのトーク(chat)の相談を、ハーネス(バイト探しの相棒)で始める。アルバイト・パートの playbook
+    (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
     返った question の text を言い換えずに1問として聞く(選択肢は LINE 側が question の choices にする)。
     2問目から、条件のまとめ(review)と結果(条件カードとおすすめのバイトの種類3つ)までは、ハーネスが本人とやりとりする。
     結果に着くと、確かめた条件は stated_preferences に保存される。進めている相談があれば、今聞いている質問を返す。"""
@@ -270,11 +273,12 @@ def start_baito_consultation(line_user_id: UserId) -> dict:
 def baito_turn(
     line_user_id: UserId,
     text: Annotated[str, Field(description="本人の発言")],
-    extracted: Annotated[dict | None, Field(description="status=extract のとき、モデルが返した JSON")] = None,
+    llm_outputs: Annotated[list[dict] | None, Field(description=(
+        "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
 ) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を本人の発言 1 つで進める。
     相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。"""
-    return session.turn(state, line_user_id, text, extracted)
+    return session.turn(state, line_user_id, text, llm_outputs)
 
 
 @mcp.tool()
