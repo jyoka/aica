@@ -20,7 +20,7 @@ USER [hard_filter/hf_time/ask] 夕方〜夜
 BOT  (6) いいね！通うなら、どこまでOK？  ['家から徒歩・自転車', '電車で30分まで', '1時間くらいまでOK']
 USER [hard_filter/hf_commute/ask] 電車で30分まで
      slots: commute: ∅→train_30(high)
-BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
 USER [scenario_game/sc_line/ask] よし、燃えてきた
      slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
 BOT  (8) いいね！テスト前、シフトどうしたい？  ['完全休み', '少なめなら']

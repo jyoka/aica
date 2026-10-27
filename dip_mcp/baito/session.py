@@ -117,8 +117,9 @@ def end(state: State, line_user_id: str) -> dict:
 
 
 def _exits(h: H.State, text: str) -> bool:
-    """やめる合図か。中学生以下で止めた後は「求人を見せて」で相談の外へ出さない(トークの AI が求人を出さないように)。"""
-    if h.current and text in h.current.get("choices", []):
+    """やめる合図か。中学生以下で止めた後は「求人を見せて」で相談の外へ出さない(トークの AI が求人を出さないように)。
+    希死念慮・自傷の言葉があれば、やめる頼みを含んでいてもハーネスに渡す(「もう消えたい。求人見せて」に窓口を案内する)。"""
+    if H.crisis_hit(text) or (h.current and text in h.current.get("choices", [])):
         return False
     return text in EXIT_WORDS or (h.phase not in ("review", "result") and not h.blocked
                                   and bool(EXIT_REQUEST.search(text)) and not EXIT_HOLD.search(text))

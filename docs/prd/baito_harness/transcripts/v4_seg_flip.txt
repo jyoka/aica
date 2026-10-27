@@ -27,8 +27,8 @@ USER [scenario_game/confirm_segment/confirm] 本業あり副業探し
 BOT  (8) いいね！どっちを選ぶ？  ['時給高め立ちっぱなし', 'ふつう座れる']
 USER [scenario_game/sc_sj_stand/ask] 時給高め立ちっぱなし
      slots: physical: ∅→standing_ok(low); wage_priority: ∅→wage_first(low)
-BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
-USER [scenario_game/sc_line/ask] 今すぐ消えたい
+BOT  (9) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
+USER [scenario_game/sc_line/ask] 今すぐ抜けたい
      slots: customer_facing: ∅→avoid(low); pace: ∅→calm(low)
 BOT  (10) いいね！この3つ、一番やりたくないのは？  ['居酒屋ホール（夜）', '倉庫ピッキング', 'イベント設営']
 USER [reverse_pick/rp_side_job/ask] 居酒屋ホール（夜）

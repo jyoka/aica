@@ -23,7 +23,7 @@ BOT  (6) いいね！通うなら、どこまでOK？  ['家から徒歩・自�
 USER [hard_filter/hf_commute/ask] どっちでもいい
      slots: commute: ∅→こだわりなし(high)
      event: {'t': 6, 'kind': 'extract_repaired', 'problems': ['confidence_missing']}
-BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
 USER [scenario_game/sc_line/ask] どっちでもいい
      slots: customer_facing: ∅→こだわりなし(low); pace: ∅→こだわりなし(low)
      event: {'t': 7, 'kind': 'extract_repaired', 'problems': ['confidence_missing', 'confidence_missing']}
