@@ -1791,10 +1791,12 @@ def _near_turn(state, text, buttons, bank, llm, catalog, search):
     b = buttons[0]
     if phase == NEAR_AREA:
         state.near["area"] = b
+        _undrop(state, "area")
         return _near_next(state, bank, llm, catalog, search)
     if phase == NEAR_TIME:
         apply_update(state, "time_slots", [QS.time_slot(b)], "high", "choice:" + NEAR_TIME)
         state.near["time"] = b
+        _undrop(state, "time_band")
         return _near_next(state, bank, llm, catalog, search)
     if b == NEAR_MORE:  # 今のハーネスの流れ(区分、残りの HARD、MID)へ。入った値(年齢・時間帯)は聞かない(gap_weight が 0)
         ev(state, "near_more")
@@ -1808,6 +1810,15 @@ def _near_turn(state, text, buttons, bank, llm, catalog, search):
         return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
     state.near["drop"] = [*state.near.get("drop", []), state.current["drop"]]  # 0 件のときの「〜を外して探す」
     return _near_jobs(state, bank, search)
+
+
+def _undrop(state, key):
+    """聞き直した条件を、0 件のときに外した条件(near の drop)から戻す(選び直した答えで絞る。黙って無視しない)。"""
+    drop = [k for k in state.near.get("drop", []) if k != key]
+    if drop:
+        state.near["drop"] = drop
+    else:
+        state.near.pop("drop", None)
 
 
 AGE_HINT_RE = re.compile(r"\d{1,2}\s*[歳才]|未成年|高校|高[1-3](?!\d)")  # 年齢に触れた語(読めなくても年齢を聞き直す)

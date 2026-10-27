@@ -1419,7 +1419,7 @@ sequenceDiagram
 | 未成年 | 年齢の「中学生以下」はそこで止める(今の流れの結果と同じ文。モデルは呼ばない)。「ひみつ」は未成年として進む。未成年と年齢が分からない人には「夜」「深夜」のボタンを出さない(`quick_start.time_buttons`)。打っても選択肢に無いので読まない | `harness._near_turn`、`near_choices` |
 | 検索の条件 | エリア(`AREA_GROUPS` の広い言い方。どこでもは絞らない)、時間帯(§6.2 の表で直した `time_band`)、入口の絵の talk・physical の値(§4 の表。`QUICK_SEARCH`)、`minor`(`minor_mode`。年齢が分からなければ true。必ず付ける)。区分はアルバイト・パート | `harness.near_search`、`session.near_search` |
 | 検索 | ハーネスは探さない。`turn()` の `search`(session が渡す)が dip の `recommend` を呼び、0 件なら `relax` の options の先頭(いちばん件数が増える条件。`minor` は外す候補にならない)も返す。中学生以下で止めた印(`baito_block`)があれば探さない | `harness._near_jobs`、`session.near_search` |
-| 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」のように、効いた条件と件数(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
+| 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」のように、効いた条件と件数(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す。外した条件は `drop` に残し、その問いを聞き直して答え直したら `drop` から戻す。`harness._undrop`)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
 | ボタン | [もっと絞る] は icebreak(今の流れ)に入る。年齢・時間帯は high で入っているので聞かない(エリアはハーネスの項目に無い)。[ちがう] は入口のカードに戻す(絵の答えは外し、3 問の答えは残す。選び直した後の [近くで探す] は、聞き直さずに求人を出す) | `harness._near_turn`、`_clear_quick` |
 | ターンと帯 | 3 問と求人のターンは数えない。`progress` は出さない。入口から始めた相談(`quick_start`)は、[もっと絞る] で icebreak に入ったターンから帯とプロフィールカードを出す | `progress.update` |
 | ランタイム | `baito_turn` が求人を `jobs`(dip の求人カード)で返し、`_harness_turn` が返信の行の `additional_kwargs` の `baito_jobs` に置く。`render` がそれを返信の `cards`(LINE は `_cards_message` のカルーセル、Web のトークは求人カード)にする。後のターンでトークの AI が同じ求人を指せるよう、`render` の求人の出どころにも入れる | `session.turn`、`runtime._harness_turn`、`render` |

@@ -342,6 +342,26 @@ def test_zero_jobs_show_the_one_relax_option_that_adds_the_most(state):
     assert r["reply"] == f"埼玉で、人と話す仕事は {again['total']} 件！" and r["choices"] == [H.NEAR_MORE, H.NEAR_WRONG]
 
 
+def test_a_time_asked_again_after_dropping_it_narrows_the_search_again(state):
+    """0 件で時間帯を外した後に年齢を言い直すと、時間帯を未成年のボタンで聞き直す。選び直した時間帯で探す(外したままにしない)。"""
+    *_, r = walk(state, "座ってじっくり", H.QUICK_NEAR, "18歳以上", "埼玉", "深夜")
+    assert r["jobs"] == [] and r["choices"][0] == "時間帯を外して探す"
+    r = tap(state, "時間帯を外して探す")
+    assert r["reply"].startswith("埼玉で、")
+    r = tap(state, "16歳です")
+    assert r["phase"] == H.NEAR_TIME and r["choices"] == MINOR_TIMES
+    r = tap(state, "朝")
+    found = jobs_of(state, area="埼玉", time_band="早朝", max_physical_level=1, minor=True)
+    assert r["phase"] == H.NEAR_JOBS and r["reply"].startswith("朝・埼玉で、座ってできる仕事は")
+    assert r["jobs"] == found["jobs"]
+    # ハーネスだけで: 検索の条件に、選び直した時間帯が入る
+    st, search = H.new_state(quick=True), _Found(total=0, relax={"remove": "time_band", "current": "深夜", "total_after": 4})
+    for said in ("座ってじっくり", H.QUICK_NEAR, "18歳以上", "埼玉", "深夜", "時間帯を外して探す", "16歳です", "朝"):
+        H.turn(st, said, H.BANK, Quiet(), search=search)
+    assert search.calls[-2] == {"area": "埼玉", "max_physical_level": 1, logic.MINOR_ARG: False}
+    assert search.calls[-1] == {"area": "埼玉", "time_band": "早朝", "max_physical_level": 1, logic.MINOR_ARG: True}
+
+
 def test_relax_options_name_the_pick_and_the_area_and_never_the_minor_rule():
     for remove, what in (("min_talk_level", "「しゃべるの好き」"), ("area", "エリア")):
         st, search = H.new_state(quick=True), _Found(total=0, relax={"remove": remove, "current": 1, "total_after": 7})
