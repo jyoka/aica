@@ -189,3 +189,46 @@ def test_time_button_values_are_ones_the_harness_and_search_know(state):
     assert logic.recommend(state, None, time_band="朝")["total"] == 0
     for b in Q.time_buttons(minor=True):  # 未成年に出すボタンは、未成年の決まりで探しても求人が出る
         assert logic.recommend(state, None, time_band=Q.search_time_band(b), minor=True)["total"] > 0, b
+
+
+def test_several_time_bands_find_jobs_that_match_any_of_them(state):
+    """time_band を list で渡すと、どれか 1 つに合う求人を出す(task 287)。1 つの文字は今までと同じ。"""
+    def ids(**kw):
+        seen: set[str] = set()
+        while got := {c["job_id"] for c in logic.recommend(state, None, exclude_ids=sorted(seen), **kw)["jobs"]}:
+            seen |= got
+        return seen
+
+    day, evening = ids(time_band="日中"), ids(time_band="夕方")
+    both = ids(time_band=["日中", "夕方"])
+    assert both == day | evening and len(both) > max(len(day), len(evening))
+    assert logic.recommend(state, None, time_band=["日中"])["total"] == len(day)
+    assert logic.recommend(state, None, time_band=[])["total"] == logic.recommend(state, None)["total"]
+    assert Q.search_time_bands(["夕方", "夜", "夕方"]) == ["夕方", "夜"] and Q.time_slots(["夕方", "夜"]) == ["evening"]
+    # 理由は、合った時間帯の 1 つ(求人の帯にある方。頼んだ順の先に合ったもの)
+    jobs = load_jobs()
+    shown = 0
+    for c in logic.recommend(state, None, time_band=["深夜", "日中"], employment_type="アルバイト・パート")["jobs"]:
+        bands = jobs[c["job_id"]].time_bands
+        for r in c["reasons"]:
+            if "の勤務(" in r:
+                assert r.split("の勤務(")[0] == next(x for x in ("深夜", "日中") if x in bands), c
+                shown += 1
+    assert shown
+    # relax は list の時間帯も外す候補にする。未成年の決まりはそのまま
+    r = logic.relax(state, None, area="埼玉", time_band=["早朝"], min_talk_level=3, minor=True)
+    assert r["options"][0]["remove"] == "time_band" and r["options"][0]["current"] == ["早朝"]
+
+
+def test_mcp_recommend_jobs_takes_several_time_bands(state, monkeypatch):
+    """トークの AI も、保存した時間帯(「昼・夕方〜夜」)を list で渡して探せる(task 287)。"""
+    tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    for name in ("recommend_jobs", "relax_conditions"):
+        prop = tools[name].inputSchema["properties"]["time_band"]
+        assert {"string", "array"} <= {t.get("type") for t in prop["anyOf"]}, name
+        assert "どれか 1 つ" in prop["description"], name
+    monkeypatch.setattr(server, "state", state)
+    r = server.recommend_jobs(time_band=["日中", "夕方"], employment_type="アルバイト・パート")
+    assert r["total"] == logic.recommend(state, None, time_band=["日中", "夕方"], employment_type="アルバイト・パート")["total"]
+    jobs = load_jobs()
+    assert r["jobs"] and all({"日中", "夕方"} & set(jobs[c["job_id"]].time_bands) for c in r["jobs"])

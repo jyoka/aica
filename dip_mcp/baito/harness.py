@@ -68,6 +68,10 @@
   [もっと絞る] で icebreak(今の流れ)に入る(入った年齢・時間帯は聞かない)。[ちがう] は入口のカードに戻す(3 問の答えは残す)。
   エリア・時間帯の問いと求人の後に打った年齢(says_age)は、年齢の答えとして読み直す。検索が失敗したら謝りの文で先へ進める(時間帯の問いに戻し続けない)。
   この 4 つのフェーズも、モデルの抽出を呼ばず、ターンに数えない
+- 時間帯は複数選べる(task 287。PRD に無い): near_time のボタンは押すたびに足し(選んだものはボタンから消え、[これで探す]
+  [選び直す] が出る)、[これで探す] で決める。[どれでもOK] は出しているボタンを全部選んで決める。打った「昼 夕方 夜全部OK」
+  「昼と夕方」のように 2 つ以上か「全部」「だけ」を言えば、そのまま決める(read_times)。near の time はボタンの list
+  (前の相談の 1 つの文字も読む。near_times)、求人の検索の time_band も list(どれか 1 つに合う求人を出す)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -147,7 +151,10 @@ JOB_TAGS = [
     ("朝もOK", lambda j: "morning" in j["times"]),
 ]
 # ----------------------------- 近くで探す(設計メモ baito-quick-start.md §6・§7。task 266) -----------------------------
-NEAR_TEXT = {NEAR_AGE: "3つだけ！年齢は？", NEAR_AREA: "どのあたりで？", NEAR_TIME: "いつ働けそう？"}
+NEAR_TEXT = {NEAR_AGE: "3つだけ！年齢は？", NEAR_AREA: "どのあたりで？", NEAR_TIME: "いつ働けそう？（いくつでも選べるよ）"}
+# 時間帯を 1 つ以上選んだ後の吹き出し(モデルは呼ばない。task 287)
+NEAR_TIME_PICKED_TEXT = "{picked}ね！ほかにもあればどうぞ。決まったら「{done}」を押してね"
+NEAR_TIME_RESET_TEXT = "OK、選び直してね！"
 # エリアのボタン → 求人の検索の area(dip_mcp.logic.AREA_GROUPS の広い言い方)。「どこでも」はエリアで絞らない
 NEAR_AREAS = {"東京": "東京", "神奈川": "神奈川", "埼玉": "埼玉", "どこでも": None}
 # 入口の絵 → 求人の検索に渡す値(§4 の表。求人の talk_level・physical_level の段階)と、件数の吹き出しでの呼び方
@@ -626,7 +633,9 @@ class State:
     restarts: int = 0
     result: dict = None
     log: list = field(default_factory=list)
-    near: dict = field(default_factory=dict)          # 入口と「近くで探す」の答え(pick・age・area・time・drop。task 266)
+    # 入口と「近くで探す」の答え(pick・age・area・time・drop。task 266)。time はボタンの list、time_pick は決める前に選んだ
+    # 時間帯(task 287)
+    near: dict = field(default_factory=dict)
 
     def to_dict(self):
         return copy.deepcopy({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
@@ -1731,6 +1740,8 @@ def _near_next(state, bank, llm, catalog, search):
     3 つとも答えていれば(入口から選び直したとき)、聞き直さずに求人を出す。"""
     for phase, key in ((NEAR_AGE, "age"), (NEAR_AREA, "area"), (NEAR_TIME, "time")):
         if key not in state.near:
+            if phase == NEAR_TIME:
+                state.near.pop("time_pick", None)  # 聞き直すときは、決める前に選んでいた時間帯を空にする
             state.phase = phase
             state.current = {"qid": phase, "mode": phase, "choices": near_choices(state, phase), "text": NEAR_TEXT[phase]}
             return _say(state, bank, llm, catalog, counted=False)
@@ -1738,12 +1749,89 @@ def _near_next(state, bank, llm, catalog, search):
 
 
 def near_choices(state, phase):
-    """3 問のボタン。時間帯は、未成年(15〜17 歳、ひみつ、年齢が分からない)には「夜」「深夜」を出さない(§6.2)。"""
+    """3 問のボタン。時間帯は、未成年(15〜17 歳、ひみつ、年齢が分からない)には「夜」「深夜」を出さない(§6.2)。
+    時間帯の最後は [どれでもOK](task 287)。"""
     if phase == NEAR_AGE:
         return list(NEAR_AGES)
     if phase == NEAR_AREA:
         return list(NEAR_AREAS)
-    return QS.time_buttons(minor=minor_mode(state))
+    return [*QS.time_buttons(minor=minor_mode(state)), QS.ANY_BUTTON]
+
+
+def near_times(state):
+    """決めた時間帯のボタン(list)。前の相談(task 287 より前)は 1 つの文字で持っているので、list にして読む。"""
+    t = state.near.get("time")
+    return [t] if isinstance(t, str) else list(t or [])
+
+
+# 時間帯の打った答え(task 287)。ボタンの言葉(「深夜」を「夜」より先に)と、「全部」「だけ」、つなぎの言葉だけでできていれば読む。
+# 〜 と ~ はつなぎの言葉にしない。「朝〜夕方」は範囲(間の「昼」も含む)なので、「朝から夕方まで」と同じく読まずに聞き直す
+TIME_WORD_RE = re.compile("|".join(sorted(QS.TIME_BUTTONS, key=len, reverse=True)))
+TIME_ALL_RE = re.compile(r"全部|ぜんぶ|どれでも|いつでも|何時でも|なんでも|何でも")
+TIME_ONLY_RE = re.compile(r"だけ|のみ")
+TIME_FILLER_RE = re.compile(r"ok|okay|オッケー|大丈夫|いける|いけます|です|なら|と|も|か|が|で|は|[\s、,，/／・。.!！?？]",
+                            re.IGNORECASE)
+
+
+def read_times(text, buttons):
+    """時間帯の問いへの答え → (選んだボタン, すぐ決めるか, 前に選んだものと入れ替えるか)。読めなければ None。
+    buttons は出している時間帯のボタン(未成年なら夜・深夜が無い。無いボタンの言葉が入っていたら読まない)。
+    ボタン 1 つ(「昼」「夕方も」)は足すだけ。2 つ以上(「昼と夕方」「昼 夕方 夜全部OK」)は足して決める。「〜だけ」は、前に
+    選んだものと入れ替えて決める。ボタンの言葉が無く「全部」「どれでもOK」なら、出している時間帯を全部選んで決める。"""
+    t = nfkc(text)
+    words = list(dict.fromkeys(TIME_WORD_RE.findall(t)))
+    rest = TIME_WORD_RE.sub("", t)
+    every, only = bool(TIME_ALL_RE.search(rest)), bool(TIME_ONLY_RE.search(rest))
+    if TIME_FILLER_RE.sub("", TIME_ONLY_RE.sub("", TIME_ALL_RE.sub("", rest))) or any(w not in buttons for w in words):
+        return None
+    if not words:
+        return (list(buttons), True, True) if every else None
+    return words, every or only or len(words) > 1, only
+
+
+def _near_time_ask(state, picked, bank, text):
+    """時間帯をいくつか選んだところ(決める前)。選んだものはボタンから消し、[これで探す] を先頭、[選び直す] を最後に出す。"""
+    if picked:
+        state.near["time_pick"] = picked
+        buttons = QS.time_buttons(minor=minor_mode(state))
+        choices = [QS.DONE_BUTTON, *(b for b in buttons if b not in picked), QS.ANY_BUTTON, QS.RESET_BUTTON]
+    else:
+        state.near.pop("time_pick", None)
+        choices = near_choices(state, NEAR_TIME)
+    state.current = {"qid": NEAR_TIME, "mode": NEAR_TIME, "choices": choices, "text": text}
+    return _quick_reply(state, bank, text)
+
+
+def _near_time_turn(state, text, bank, llm, catalog, search):
+    """時間帯の問いへの答え(task 287)。ボタンを押すたびに足し、[これで探す] か [どれでもOK]、出しているボタンを全部選んだら
+    決める(確信度 high で time_slots に入れ、near の time にボタンの list を置く)。読めない答えは聞き直す(選んだものは残す)。"""
+    buttons = QS.time_buttons(minor=minor_mode(state))
+    picked = [b for b in state.near.get("time_pick", []) if b in buttons]
+    t = nfkc(text)
+    if picked and t == nfkc(QS.DONE_BUTTON):
+        return _near_time_set(state, picked, bank, llm, catalog, search)
+    if picked and t == nfkc(QS.RESET_BUTTON):
+        ev(state, "near_time_reset")
+        return _near_time_ask(state, [], bank, NEAR_TIME_RESET_TEXT)
+    read = read_times(text, buttons)
+    if read is None:
+        ev(state, "quick_unmatched", phase=NEAR_TIME)
+        return _near_time_ask(state, picked, bank, QUICK_TAP_TEXT)
+    words, final, only = read
+    picked = [b for b in buttons if b in words or (b in picked and not only)]  # ボタンの並び
+    if final or len(picked) == len(buttons):
+        return _near_time_set(state, picked, bank, llm, catalog, search)
+    ev(state, "near_time_pick", value=list(picked))
+    return _near_time_ask(state, picked, bank, NEAR_TIME_PICKED_TEXT.format(picked="・".join(picked), done=QS.DONE_BUTTON))
+
+
+def _near_time_set(state, picked, bank, llm, catalog, search):
+    state.near.pop("time_pick", None)
+    apply_update(state, "time_slots", QS.time_slots(picked), "high", "choice:" + NEAR_TIME)
+    state.near["time"] = picked
+    ev(state, "near_time", value=list(picked))
+    _undrop(state, "time_band")
+    return _near_next(state, bank, llm, catalog, search)
 
 
 def _near_turn(state, text, buttons, bank, llm, catalog, search):
@@ -1778,13 +1866,15 @@ def _near_turn(state, text, buttons, bank, llm, catalog, search):
         apply_update(state, "age_band", band, "high", ("choice:" if buttons else "free:") + NEAR_AGE)
         state.near["age"] = band
         ev(state, "near_age", value=band)
-        if minor_mode(state) and QS.TIME_BUTTONS.get(state.near.get("time"), QS.TIME_BUTTONS["朝"]).adult_only:
+        if minor_mode(state) and any(QS.TIME_BUTTONS[b].adult_only for b in near_times(state) if b in QS.TIME_BUTTONS):
             del state.near["time"]  # 求人の後に未成年と分かった: 夜・深夜の答えは使わず、未成年のボタンで聞き直す
         if state.blocked:
             state.phase, state.current = "hard_filter", None
             advance(state, bank)  # 止めた人は結果(中学生以下の案内)。モデルは呼ばない
             return _say(state, bank, llm, catalog, counted=False)
         return _near_next(state, bank, llm, catalog, search)
+    if phase == NEAR_TIME:
+        return _near_time_turn(state, text, bank, llm, catalog, search)
     if buttons is None:
         ev(state, "quick_unmatched", phase=phase)
         return _quick_reply(state, bank, QUICK_TAP_TEXT)
@@ -1792,11 +1882,6 @@ def _near_turn(state, text, buttons, bank, llm, catalog, search):
     if phase == NEAR_AREA:
         state.near["area"] = b
         _undrop(state, "area")
-        return _near_next(state, bank, llm, catalog, search)
-    if phase == NEAR_TIME:
-        apply_update(state, "time_slots", [QS.time_slot(b)], "high", "choice:" + NEAR_TIME)
-        state.near["time"] = b
-        _undrop(state, "time_band")
         return _near_next(state, bank, llm, catalog, search)
     if b == NEAR_MORE:  # 今のハーネスの流れ(区分、残りの HARD、MID)へ。入った値(年齢・時間帯)は聞かない(gap_weight が 0)
         ev(state, "near_more")
@@ -1833,11 +1918,12 @@ def says_age(text):
 
 
 def near_search(state):
-    """求人の検索(dip_mcp.logic.recommend)に渡す条件(§6.4): エリア(広い言い方)、時間帯(§6.2 の表で直した time_band)、
+    """求人の検索(dip_mcp.logic.recommend)に渡す条件(§6.4): エリア(広い言い方)、時間帯(§6.2 の表で直した time_band の
+    list。どれか 1 つに合う求人。task 287)、
     入口の絵の talk・physical の値(§4 の表)、未成年か。未成年か年齢が分からなければ、必ず minor=True(minor_mode)。
     0 件のときに外した条件(near の drop)は渡さない。minor は外さない。"""
     n = state.near
-    cond = {"area": NEAR_AREAS.get(n.get("area")), "time_band": QS.search_time_band(n["time"])}
+    cond = {"area": NEAR_AREAS.get(n.get("area")), "time_band": QS.search_time_bands(near_times(state))}
     cond |= QUICK_SEARCH.get(n.get("pick"), ({}, None))[0]
     for k in n.get("drop", []):
         cond.pop(k, None)
@@ -1847,8 +1933,11 @@ def near_search(state):
 def near_text(state, cond, found):
     """件数と効いた条件を言う吹き出しと、ボタン。0 件なら relax の 1 つ(いちばん件数の増える条件)と、それを外すボタン。"""
     n = state.near
-    where = "・".join(x for x in (n["time"] if "time_band" in cond else None, n.get("area") if cond.get("area") else None)
-                      if x)
+    times = near_times(state)
+    if set(times) >= set(QS.time_buttons(minor=minor_mode(state))):  # 全部選んだ(どれでもOK)は、時間帯を言わない
+        times = []
+    where = "・".join(x for x in ("・".join(times) if "time_band" in cond else None,
+                                  n.get("area") if cond.get("area") else None) if x)
     where = f"{where}で、" if where else ""
     pick = n.get("pick")
     attrs = QUICK_SEARCH.get(pick, ({}, None))[0]

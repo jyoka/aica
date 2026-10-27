@@ -472,6 +472,13 @@ def _match_filters(job: BaitoJob, f: dict) -> bool:
     return f.get("max_overtime_hours") is None or (w is not None and w.overtime_hours <= f["max_overtime_hours"])
 
 
+def time_bands(time_band) -> list[str]:
+    """time_band(1 つの文字か、その list)を list にする。複数なら、どれか 1 つに合う求人を出す(task 287)。"""
+    if not time_band:
+        return []
+    return [time_band] if isinstance(time_band, str) else [b for b in time_band if b]
+
+
 def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage,
            employment_type=None, min_annual_salary=None, filters: dict | None = None) -> bool:
     if filters and not _match_filters(job, filters):
@@ -480,7 +487,8 @@ def _match(job: BaitoJob, areas: set[str] | None, time_band, job_type, min_wage,
         return False
     if areas and job.area not in areas and job.station.removesuffix("駅") not in areas:
         return False
-    if time_band and time_band not in job.time_bands:  # 正社員の求人は time_bands が空なので、時間帯を指定すると出ない
+    bands = time_bands(time_band)
+    if bands and not set(bands) & set(job.time_bands):  # 正社員の求人は time_bands が空なので、時間帯を指定すると出ない
         return False
     if job_type and job_type != job.job_type:
         return False
@@ -664,8 +672,8 @@ def _reasons(job: BaitoJob, area, time_band, job_type, acts: dict, jobs: dict[st
             d = parse_ts(a["applied_at"])
             reasons.append(f"{d.month}月に応募した{past.job_type}と同系統")
             break
-    if time_band and time_band in job.time_bands:
-        reasons.append(f"{time_band}の勤務({job.shift})")
+    if band := next((b for b in time_bands(time_band) if b in job.time_bands), None):
+        reasons.append(f"{band}の勤務({job.shift})")
     if job.walk_min <= 5:
         reasons.append(f"{job.station.removesuffix('駅')}駅から徒歩{job.walk_min}分")
     elif area:
@@ -747,6 +755,7 @@ def recommend(state: State, line_user_id: str | None, area=None, time_band=None,
               posted_within_days: int | None = None, employment_type=None, min_annual_salary=None,
               minor: bool = False, **filters) -> dict:
     """employment_type(アルバイト・パート / 正社員)で区分を絞る。未定(指定なし・「未定」)なら両方の区分から出す。
+    time_band は 1 つの文字か list(どれか 1 つに合う求人。task 287)。
     min_annual_salary は希望年収の下限(万円)。年収・月給の求人の年収の中央値と比べ、給与の高さを並びにも加味する。
     minor(MINOR_ARG)が true なら、未成年に出せない求人(minor_ok)を外す。
     filters は属性(ATTRIBUTE_ARGS)と正社員の働き方・休日(FULLTIME_STYLE_ARGS)。"""

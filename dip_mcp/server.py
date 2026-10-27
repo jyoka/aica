@@ -76,6 +76,8 @@ Minor = Annotated[bool, Field(description=(
     "true なら未成年の決まりで絞る(18歳未満と、年齢が分からない人)。深夜の帯がある求人、勤務が 5 時より前に始まるか"
     "22 時より後に終わる求人、勤務の時刻が読めない求人とフレックスの求人、重い作業(体を使う量 3)の求人を出さない。"
     "relax_conditions はこの条件を外す候補にしない"))]
+TimeBand = Annotated[str | list[str] | None, Field(description=(
+    "早朝 / 日中 / 夕方 / 夜 / 深夜。いくつも働けるなら list で渡す(どれか 1 つに合う求人が出る。例: [\"日中\", \"夕方\"])"))]
 Area = Annotated[str | None, Field(description=(
     f"エリアか駅名。地名は次の中から選ぶ: {' / '.join(logic.AREAS)}(駅名も可。例: 中野駅)。"
     f"「{'」「'.join(logic.AREA_GROUPS)}」のような広い言い方は、そのまま渡すとその範囲の地名に広げて検索される。"
@@ -108,7 +110,7 @@ def get_user_form_exit(line_user_id: UserId) -> dict:
 def recommend_jobs(
     line_user_id: Annotated[str | None, Field(description="LINE のユーザーID(本人の傾向を反映するため)")] = None,
     area: Area = None,
-    time_band: Annotated[str | None, Field(description="早朝 / 日中 / 夕方 / 夜 / 深夜")] = None,
+    time_band: TimeBand = None,
     job_type: JobType = None,
     min_wage: Annotated[int | None, Field(description="時給の下限(円)。時給の求人(アルバイト・パート)だけが対象")] = None,
     employment_type: EmploymentType = None,
@@ -156,7 +158,7 @@ def recommend_jobs(
 @mcp.tool()
 def relax_conditions(
     line_user_id: UserId,
-    area: Area = None, time_band: str | None = None, job_type: JobType = None,
+    area: Area = None, time_band: TimeBand = None, job_type: JobType = None,
     min_wage: int | None = None, keywords: str | None = None,
     employment_type: EmploymentType = None, min_annual_salary: MinAnnualSalary = None,
     max_talk_level: MaxTalkLevel = None, min_talk_level: MinTalkLevel = None,

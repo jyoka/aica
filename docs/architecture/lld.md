@@ -1375,7 +1375,7 @@ sequenceDiagram
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。「近くで探す」の求人を dip の `recommend`・`relax` で探す(`near_search`)。結果で `stated_preferences` に保存する |
-| `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンをハーネスの `time_slots` の値にする(`time_slot`)。ボタンの言葉は `search_time_band` で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件) |
+| `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンをハーネスの `time_slots` の値にする(`time_slot`、複数は `time_slots`)。ボタンの言葉は `search_time_band`(複数は `search_time_bands`)で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件)。時間帯を複数選ぶときのボタン [どれでもOK] [これで探す] [選び直す](`ANY_BUTTON`・`DONE_BUTTON`・`RESET_BUTTON`。task 287) |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
 | `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
 | `line_runtime/baito_cards.py` | 入口のカードと職種の結果(ハーネスの `card`)を、Flex と文の形にする。職種もタグも選ばない |
@@ -1418,12 +1418,13 @@ sequenceDiagram
 
 | 決まり | 中身 | どこで |
 |---|---|---|
-| 3 問 | [近くで探す] の後に、年齢(`near_age`。「3つだけ！年齢は？」中学生以下 / 15〜17歳 / 18歳以上 / ひみつ)、エリア(`near_area`。東京 / 神奈川 / 埼玉 / どこでも)、時間帯(`near_time`。§6.2 のボタン)を 1 つずつ聞く。言い方のモデルは、問いの前のひとことリアクションだけ(問いの原文が入っていなければ原文。職種の名前を口にしたら原文) | `harness._near_next`、`near_choices`、`validate_reply` |
+| 3 問 | [近くで探す] の後に、年齢(`near_age`。「3つだけ！年齢は？」中学生以下 / 15〜17歳 / 18歳以上 / ひみつ)、エリア(`near_area`。東京 / 神奈川 / 埼玉 / どこでも)、時間帯(`near_time`。§6.2 のボタンと [どれでもOK])を 1 つずつ聞く。言い方のモデルは、問いの前のひとことリアクションだけ(問いの原文が入っていなければ原文。職種の名前を口にしたら原文) | `harness._near_next`、`near_choices`、`validate_reply` |
 | 答え | ボタンだけを読み(抽出のモデルは呼ばない)、確信度 high で入れる(`from` は `choice:near_*`)。年齢は、打った答えも task 258 の `typed_age` で読む。読めない答えは「下のボタンから選んでね！」で聞き直す(「中学」の語には印 `age_jhs` を付け、その後の「ひみつ」は中学生以下として止める)。エリア・時間帯の問いと求人の後でも、年齢に触れた発言(はっきりした年齢、「中学」、「実は16歳です」「高2」「未成年」。`says_age`)は年齢の答えとして読み直す(「14歳です」は止める。読めない言い方は前の答えを外して年齢を聞き直し、その間は未成年として扱う。読み直した後は、まだの問いに戻る)。答えは `state.near`(pick・age・area・time・drop)にも置く | `harness._near_turn` |
 | 未成年 | 年齢の「中学生以下」はそこで止める(今の流れの結果と同じ文。モデルは呼ばない)。「ひみつ」は未成年として進む。未成年と年齢が分からない人には「夜」「深夜」のボタンを出さない(`quick_start.time_buttons`)。打っても選択肢に無いので読まない | `harness._near_turn`、`near_choices` |
-| 検索の条件 | エリア(`AREA_GROUPS` の広い言い方。どこでもは絞らない)、時間帯(§6.2 の表で直した `time_band`)、入口の絵の talk・physical の値(§4 の表。`QUICK_SEARCH`)、`minor`(`minor_mode`。年齢が分からなければ true。必ず付ける)。区分はアルバイト・パート | `harness.near_search`、`session.near_search` |
+| 時間帯の複数選択 | 押すたびに足し(`near` の `time_pick`。選んだものはボタンから消し、[これで探す] を先頭、[選び直す] を最後に出す。モデルは呼ばない)、[これで探す] で決める。[どれでもOK] と、出しているボタンを全部押したときは、すぐ決める。打った答えは、ボタンの言葉と「全部」「だけ」・つなぎの言葉だけなら読み(「朝〜夕方」のような範囲は読まずに聞き直す)、2 つ以上か「全部」「だけ」ならそのまま決める(「だけ」は前に押したものと入れ替える。`read_times`)。決めた答えは `time_slots`(high)と `near` の `time`(ボタンの list。前の相談の 1 つの文字も `near_times` が読む)。task 287 | `harness._near_time_turn`、`read_times`、`near_times` |
+| 検索の条件 | エリア(`AREA_GROUPS` の広い言い方。どこでもは絞らない)、時間帯(§6.2 の表で直した `time_band` の list。`recommend` は、どれか 1 つに合う求人を出す)、入口の絵の talk・physical の値(§4 の表。`QUICK_SEARCH`)、`minor`(`minor_mode`。年齢が分からなければ true。必ず付ける)。区分はアルバイト・パート | `harness.near_search`、`session.near_search` |
 | 検索 | ハーネスは探さない。`turn()` の `search`(session が渡す)が dip の `recommend` を呼び、0 件なら `relax` の options の先頭(いちばん件数が増える条件。`minor` は外す候補にならない)も返す。中学生以下で止めた印(`baito_block`)があれば探さない | `harness._near_jobs`、`session.near_search` |
-| 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」のように、効いた条件と件数(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す。外した条件は `drop` に残し、その問いを聞き直して答え直したら `drop` から戻す。`harness._undrop`)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
+| 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」「昼・夕方・東京で、〜」のように、効いた条件と件数(時間帯を全部選んだときは時間帯を言わない)(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す。外した条件は `drop` に残し、その問いを聞き直して答え直したら `drop` から戻す。`harness._undrop`)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
 | ボタン | [もっと絞る] は icebreak(今の流れ)に入る。年齢・時間帯は high で入っているので聞かない(エリアはハーネスの項目に無い)。[ちがう] は入口のカードに戻す(絵の答えは外し、3 問の答えは残す。選び直した後の [近くで探す] は、聞き直さずに求人を出す) | `harness._near_turn`、`_clear_quick` |
 | ターンと帯 | 3 問と求人のターンは数えない。`progress` は出さない。入口から始めた相談(`quick_start`)は、[もっと絞る] で icebreak に入ったターンから帯とプロフィールカードを出す | `progress.update` |
 | ランタイム | `baito_turn` が求人を `jobs`(dip の求人カード)で返し、`_harness_turn` が返信の行の `additional_kwargs` の `baito_jobs` に置く。`render` がそれを返信の `cards`(LINE は `_cards_message` のカルーセル、Web のトークは求人カード)にする。後のターンでトークの AI が同じ求人を指せるよう、`render` の求人の出どころにも入れる | `session.turn`、`runtime._harness_turn`、`render` |
