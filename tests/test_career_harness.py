@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -292,8 +293,11 @@ def test_form_b_has_no_scenarios_reverse_pick_or_progress():
     b_text, c_text = "\n".join(b["transcript"]), "\n".join(c["transcript"])
     assert "/sc_" not in b_text and "/rp_" not in b_text and "/fg_work_style" in b_text
     assert "✓職歴" not in b_text and "あと" not in b_text.replace("あとで", "")
-    # p4 はやめたいことを言うので、C でも逆選択は出ない(task 248)。逆選択が C の問いにあることは、状態で確かめる
-    assert "/sc_" in c_text and "/rp_" not in c_text and "✓職歴1" in c_text and "問です" in c_text
+    assert not any(line in b_text for line in H.PHASE_LINES.values())
+    # p4 はやめたいことを言うので、C でも逆選択は出ない(task 248)。逆選択が C の問いにあることは、状態で確かめる。
+    # フェーズが変わったときの 1 行は、残りの問いの数でなく、次に何を聞くか(task 288)
+    assert "/sc_" in c_text and "/rp_" not in c_text and "✓職歴1" in c_text and H.PHASE_LINES["hard_filter"] in c_text
+    assert not re.search(r"あと\d+問", c_text)
     assert [q["id"] for q in H.questions(H.new_state(form="C"), H.BANK) if q["phase"] == "reverse_pick"] == ["rp_general"]
     assert H.new_state(form="B").form == "B"
     assert not [q for q in H.questions(H.new_state(form="B"), H.BANK) if q["phase"] in ("scenario_game", "reverse_pick")]

@@ -5,17 +5,23 @@ LINE 側(LY Runtime のスタンドイン)はこのサーバーにだけ依存�
 
     ./.venv/bin/python -m dip_mcp.server               # stdio(ランタイムが子プロセスとして起動)
     ./.venv/bin/python -m dip_mcp.server --http 8020   # HTTP(streamable-http, /mcp)
+    ./.venv/bin/python -m dip_mcp.server --http 8020 --host 0.0.0.0   # 外から(別サービスの音声ワーカー)。鍵が要る
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import secrets
+import sys
 from pathlib import Path
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
+from starlette.responses import PlainTextResponse
 
 from dip_mcp import logic
 from dip_mcp.baito import session
@@ -393,12 +399,50 @@ def baitoru_assistant(entry: str = "A") -> str:
     return f"{base}\n## この会話の入口\n{entries.get(entry, entries['A'])}\n"
 
 
+# HTTP の口を 127.0.0.1 の外に開くとき(Render で、別サービスの音声ワーカーがつなぐ)に要る共有鍵。
+# Web プロセスと音声ワーカーが使う line_runtime.line_channel.INTERNAL_KEY_ENV と同じ鍵
+KEY_ENV = "AICA_INTERNAL_KEY"
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def http_app(key: str):
+    """streamable-http の口(/mcp)。key があれば、Authorization: Bearer <key> の要求だけを通す(ほかは 401)。"""
+    app = mcp.streamable_http_app()
+    if not key:
+        return app
+    expected = f"Bearer {key}".encode()
+
+    async def guarded(scope, receive, send):
+        if scope["type"] == "http" and not secrets.compare_digest(dict(scope["headers"]).get(b"authorization", b""),
+                                                                  expected):
+            await PlainTextResponse("unauthorized", status_code=401)(scope, receive, send)
+            return
+        await app(scope, receive, send)
+
+    return guarded
+
+
+def serve_http(port: int, host: str) -> None:
+    """HTTP で動かす。127.0.0.1 なら今までどおり鍵なし。外に開くなら鍵が要り、無ければ起動しない。"""
+    import uvicorn
+
+    key = ""
+    if host not in LOOPBACK:
+        key = os.environ.get(KEY_ENV, "").strip()
+        if not key:
+            sys.exit(f"dip の MCP サーバーを {host} で開くには {KEY_ENV} が要ります")
+        # Host は Render の内部の名前になる。DNS rebinding の守り(127.0.0.1 の名前だけを通す)は手元のブラウザ向けなので外し、
+        # 鍵で守る。streamable_http_app() を作る前に決める
+        mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    uvicorn.run(http_app(key), host=host, port=port, log_level=mcp.settings.log_level.lower())
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--http", type=int, help="HTTP で起動するポート(省略時は stdio)")
+    ap.add_argument("--host", default="127.0.0.1", help="HTTP で待ち受けるアドレス。127.0.0.1 の外なら AICA_INTERNAL_KEY が要る")
     args = ap.parse_args()
     if args.http:
-        mcp.settings.port = args.http
-        mcp.run(transport="streamable-http")
+        serve_http(args.http, args.host)
     else:
         mcp.run()

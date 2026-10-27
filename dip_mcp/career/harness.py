@@ -86,7 +86,12 @@ SEGMENT_JA = {"same_path": "同じ仕事で上へ", "change": "仕事を変え�
 INTENTS = ("answer", "pass", "dont_know", "later", "clarify", "aside", "show_result")
 STATUSES = ("filled", "passed", "dont_know")
 
-START_LEAD = "職務経歴書の材料を3分で集めます。"
+# 入口では残りの問いの数とかかる時間を出さない(task 288。「あと12問」で、せっかちな人はほぼ離れる、と利用者の指摘)。
+# 何のためか(職務経歴書の材料)と、1 問ずつなことだけを言う
+START_LEAD = "職務経歴書の材料を、1問ずつ集めます。"
+# フェーズが変わったときの 1 行(形 C と D。task 288)。残りの問いの数は出さず、次に何を聞くかだけを言う
+PHASE_LINES = {"hard_filter": "次は希望の条件です", "career_cards": "次は職歴です", "scenario_game": "次は二択の質問です",
+               "reverse_pick": "次は選ぶだけの質問です", "fill_gaps": "あと少しで完成です"}
 START_GO = "始める"  # 形 D の「始める」の 1 枚のボタン(履歴書の写真から始めるボタンは、LINE 側が LIFF の画面へのリンクにする)
 REVIEW_LEAD_UI = "まとめです。違うところを押すか、送ってください。"  # 形 D(行は Flex に入れる)
 FIX_LEAD = "直します。"
@@ -383,7 +388,7 @@ def _card_skipped(state, slot):
 
 
 def score(state, q, budget=True):
-    """出題のスコア。0 なら出さない。budget=False は予算を見ない(review に進んだ理由と「あと N 問」に使う)。"""
+    """出題のスコア。0 なら出さない。budget=False は予算を見ない(review に進んだ理由に使う)。"""
     pri = active_slots(state)
     if not _segment_ok(q, state):
         return 0.0
@@ -423,33 +428,6 @@ def remaining(state, bank, budget=True):
         if q["phase"] in PRE_REVIEW and q["id"] not in state.asked and score(state, q, budget) > 0:
             out.append(q["id"])
     return out
-
-
-def questions_left(state, bank):
-    """「あと N 問」の目安(今出している問いを含む)。同じ欄をねらう問いは 1 つに数え、フェーズの上限で切る。
-    HARD でない問いは、ここまでの 1 ターンあたりの時間で、質問を止める時刻までに入る数で切る。"""
-    hard, other, seen = {}, {}, set()
-    cur = (state.current or {}).get("qid")
-    pri = active_slots(state)
-    for q in questions(state, bank):
-        if q["phase"] not in PRE_REVIEW or (q["id"] in state.asked and q["id"] != cur):
-            continue
-        if q["id"] != cur and score(state, q) <= 0:
-            continue
-        key = tuple(q["targets"])
-        if key in seen:
-            continue
-        seen.add(key)
-        bucket = hard if q["id"] == "q_segment" or all(pri.get(t) == HARD for t in q["targets"]) else other
-        bucket[q["phase"]] = bucket.get(q["phase"], 0) + 1
-
-    def capped(d):
-        return sum(min(n, PHASE_CAP.get(p, 99) - state.phase_turns.get(p, 0)) for p, n in d.items())
-    n_other = capped(other)
-    if state.turns:
-        per_turn = state.seconds / state.turns
-        n_other = min(n_other, max(0, int((stop_at(state) - state.seconds) / per_turn)))
-    return capped(hard) + n_other
 
 
 def next_phase(state):
@@ -1118,7 +1096,7 @@ def _turn(state, user_text, bank, llm):
     phase_before = state.phase
     advance(state, bank)
     if state.form != "B":
-        _progress(state, bank, before, phase_before)
+        _progress(state, before, phase_before)
     return _say(state, bank, llm)
 
 
@@ -1157,9 +1135,9 @@ def _apply_fix(state, q, slot, button, ext, intent, text):
     ev(state, "fixed", slot=slot, status=e["status"])
 
 
-def _progress(state, bank, before, phase_before):
-    """形 C: 職歴カードの欄が埋まったら、本人の言葉の 1 行と「n/3」。フェーズが変わったら「あと N 問」(§5.1)。
-    形 D は「あと N 問」だけ(職歴カードは Flex が見せる)。"""
+def _progress(state, before, phase_before):
+    """形 C: 職歴カードの欄が埋まったら、本人の言葉の 1 行と「n/3」。フェーズが変わったら、次に何を聞くかの 1 行(PHASE_LINES)。
+    残りの問いの数は出さない(task 288)。形 D はフェーズの 1 行だけ(職歴カードは Flex が見せる)。"""
     out = []
     for n in range(1, CARD_COUNT + 1) if state.form not in UI_FORMS else ():
         for f in CARD_FIELDS:
@@ -1169,10 +1147,8 @@ def _progress(state, bank, before, phase_before):
                 words = e["text"] if chars(e["text"]) <= PROGRESS_WORDS else e["text"][:PROGRESS_WORDS] + "…"
                 done = sum(1 for x in CARD_FIELDS if state.slots.get(card_key(n, x)) is not None)
                 out.append(f"✓職歴{n}「{words}」{done}/3")
-    if state.phase != phase_before and state.phase in PRE_REVIEW:
-        left = min(questions_left(state, bank), max(0, MAX_TURNS - REVIEW_RESERVE - state.turns))
-        if left:
-            out.append(f"あと{left}問です")
+    if state.phase != phase_before and state.phase in PHASE_LINES:
+        out.append(PHASE_LINES[state.phase])
     state._progress = out[-2:]
 
 

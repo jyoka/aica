@@ -205,7 +205,7 @@ class SessionGuard:
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
-    # 求人の提案: dip 側 MCP サーバー(dip_mcp)へ stdio でつなぐ。失敗しても面談は続ける
+    # 求人の提案: dip 側 MCP サーバー(dip_mcp)へつなぐ(stdio、DIP_MCP_URL があれば HTTP)。失敗しても面談は続ける
     dip: DipMCP | None = DipMCP()
     try:
         await dip.start()
