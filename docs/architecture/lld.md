@@ -123,6 +123,7 @@ flowchart TB
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
 | `baito_cards.py` | アルバイトの相談を 1 タップで始めるカード(入口、職種の結果)。ハーネスのターンの結果の `card` を、LINE の Flex(暗い色、static の PNG)と Web の文の形にする(下の「アルバイト・パートの相談(ハーネス)」) | `flex`、`text`、`view`、`entry_flex`、`result_flex`、`icon_url`、`CARD_BG` |
 | `progress_ui.py` | プロフィールが育つのを見せる部品(帯、プロフィールカード、完成)。ハーネスがターンの結果に足した `progress` から 0〜1 つ選び、LINE の Flex と文の形を作る。アルバイトと正社員で使う(下の「アルバイト・パートの相談(ハーネス)」) | `build`、`choose`、`mode`、`band_flex`、`card_flex`、`complete_flex`、`band_text`、`card_text`、`complete_text`、`profile_rows`、`flex_text`、`flex_chars`、`MODE_ENV`、`BAND_SIZE`、`BAR_COLOR` |
+| `career_ui.py` | 正社員のヒアリングの形 D の部品(「始める」の 1 枚、職歴カード、まとめ、全部の完成のカルーセル)を Flex と文の形にする。帯とプロフィールカードは `progress_ui` を使う。どれを付けるかは dip の `career/ui.py` が決める(下の「正社員の相談(ハーネス)」) | `build`、`start_flex`、`career_card_bubble`、`review_flex`、`complete_flex`、`flex_lines`、`flex_text`、`STAMP_PATH` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
@@ -1452,7 +1453,7 @@ sequenceDiagram
 機能フラグ `CAREER_HARNESS_VERSION=c1` のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
 dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
 [設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
-形 B と C の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。
+形 B、C、D の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。D は C に LINE の Flex を足した形です(task 246。下の「形 D の UI」)。
 
 | 部品 | 中身 |
 |---|---|
@@ -1461,14 +1462,36 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
 | `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
 | `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
-| `evals/career_sim.py` | モックの本人役 6 人 × 形 B と C の回帰(`python -m evals.career_sim`) |
+| `dip_mcp/career/ui.py` | 形 D で、そのターンに付ける部品(`ui`)と、その字を読む時間(task 246)。`session` が `turn()` の前後から呼ぶ |
+| `line_runtime/career_ui.py` | `ui` を LINE の Flex と文の形にする(task 246) |
+| `evals/career_sim.py` | モックの本人役 6 人 × 形 B、C、D の回帰(`python -m evals.career_sim`) |
 
 1 ターンの流れは、アルバイト・パートの 1〜4 と同じです(`career_turn`、`end_career_consultation`。返信の行には `career` が付く)。違うところ:
 
 - 最初の返信の吹き出しも、ハーネスのもの(`render` が `start_career_consultation` の `question.bubbles` に置き換える)。読む字を時間の予算に数えているため
-- まとめのカードは 80 字までの吹き出しに分けて送るので、1 回の返信が吹き出し 2 つ以上になる(5 つまで。`line_channel.to_messages` が束ねる)
+- まとめのカードは、形 B と C では 80 字までの吹き出しに分けて送るので、1 回の返信が吹き出し 2 つ以上になる(5 つまで。`line_channel.to_messages` が束ねる)。
+  形 D は吹き出し 1 つと Flex 1 つ
 - 本人の発言は、先にアルバイト・パートの `baito_turn`、次に `career_turn` に渡す。進めている相談は多くても 1 つ
-- `progress` は返さない。帯・プロフィールカード・完成(`progress_ui`)は、まだ付けない(ランタイムが `progress_ui.build` を呼ぶのはアルバイト・パートだけ)。正社員の進み具合は、ハーネスが返信の吹き出しに入れる
+- `progress` は返さない。形 B と C の進み具合は、ハーネスが返信の吹き出しに入れる。形 D は `ui` を返す(下の「形 D の UI」)
+
+形 D の UI(task 246。[設計メモ](../design/fulltime-hearing.md) §5.2、[hearing-progress-ui.md](../design/hearing-progress-ui.md)):
+
+| 決まり | 中身 | 実装 |
+|---|---|---|
+| どれを付けるか | 1 ターンに 0〜1 つ。完成 > まとめ > プロフィールカード > 職歴カード > 帯(hearing-progress-ui.md §3.4)。最初の返信は「始める」の 1 枚。アルバイトと違い、選ぶのは dip の側(本人の推定時間に Flex の字を数えるため)。LINE 側は描くだけ | `career.ui.update`、`start_payload` |
+| 数えるもの | 全体は今の segment の条件の HARD と MID と、職歴カードの欄 6 つ。埋まったのは、そのうち一度でも値が入ったもの(パス、「覚えていない」、「こだわりなし」も)。segment が変わったときだけ新しい表で数え直す。出し始めは hard_filter の最初のターンから | `career.ui.table`、`update` |
+| 職歴カード | 欄が埋まったターンだけ。見出し(「職歴1(直近)」)と「n/3」、バー、仕事・規模・結果(空きは灰色の「まだ」、パスと「覚えていない」も灰色)。勤め先と期間は、仕事の欄に本人の言葉のまま入る(問いが一緒に聞くので、分けない。頭に別に出すかは未定。設計メモ §8)。中の字は 60 字まで(長い値から切る)。3 つが本人の言葉で埋まったら「完成」の字と、スタンプの絵(`/static/career/stamp.png`。`AICA_PUBLIC_URL` が https のときだけ) | `career.ui.career_card`、`career_ui.career_card_bubble` |
+| プロフィールカード | hard_filter(か、それより前)から次に移った最初のターンと、career_cards から次に移った最初のターン(2 回まで)。review と result に直接移ったときは付けない。グループは条件、職歴(「1枚、欄4/6」。枚数は仕事が埋まったカード)、働き方、NG | `career.ui.groups`、`progress_ui.card_flex` |
+| 帯 | 条件(HARD と MID)か職歴カードの欄が埋まったターン(上の部品が無いとき)。前の相談で保存した欄と履歴書の欄は、始めたときから埋まっていたものとして数える(「いま埋まった」に出さない)。`CAREER_UI_BAND=off` なら付けない(相談を始めたときに覚える) | `career.ui.fresh_mem`、`progress_ui.band_flex` |
+| 「始める」の 1 枚 | 見出し「職務経歴書を3分で」、フェーズの番号の丸(条件、職歴、まとめ)、「目安 3〜5分」。ボタンは「始める」(発言)、「履歴書の写真から始める(いちばん早い)」(LIFF の履歴書の読み込み。LIFF の設定が無ければ出さない)、「あとで」。ハーネスは最初の問いを「始める」の後に出す(`mode=start`。数えない)。ボタンを押さずに打った文は、最初の問いへの答えとして読む | `harness.start`、`career_ui.start_flex` |
+| まとめ | 行は吹き出しでなく Flex に入れる(吹き出しは「まとめです。違うところを押すか、送ってください。」)。行ごとに「直す」(職歴カードの行は「仕事」「規模」「結果」)。押すと「勤務地を直す」のような文を本人の発言として送り、ハーネスはその欄の問いを出す(`mode=fix`。数えない)。答えは high で入れ(場面の二択しか無い欄も)、まとめに戻る(まとめの回数は増やさない)。パスと「覚えていない」は、前の値が high でも、問いのフェーズによらず空欄(条件の欄は「こだわりなし」)にする(推し量った前の値を残さない)。直す問いのボタンには「そのまま」(`FIX_KEEP`)を足し、押すと値を変えずにまとめに戻る(押し間違えた「直す」をやめる。review のターンに数える)。直している間に別の「直す」を押した、前のまとめに残ったボタンを押したときも、今の segment の欄ならその欄を直す(ボタンの文を値にしない)。直した答えは review のターンに数え、「これでOK」の 1 ターンを残して受ける(`can_fix`。尽きたら「ここからは、違うところを文で送ってください。」とまとめを出し直す)。直している間の雑談は数えない | `harness.fix_targets`、`can_fix`、`fix_question`、`_apply_fix`、`career_ui.review_flex` |
+| 全部の完成 | カルーセル。先頭は条件のプロフィールカードと空欄の数、続けて仕事が埋まった職歴カード。下書きを開くボタンは、職歴カードの下書きの画面(fulltime-hearing.md §9 の 4)ができてから(`draft_url` が今は無い) | `career.ui._complete`、`career_ui.complete_flex` |
+| 読む時間 | Flex の中の字(ボタンのラベルも)を、本人の推定時間に足す(§3.3)。職歴カード、まとめ、「始める」の字は Flex の中と同じ数。帯とプロフィールカードは `progress_ui` が切るので見積もり(切らないときの字で、上限まで) | `career.ui.read_chars`、`add_read` |
+| Web のトーク | Flex を描かず、文の形を最後の吹き出しに足す(`progress.text`)。まとめの「直す」は選択肢の後ろに足す(`progress.quick_replies`。合わせて 13 個まで) | `career_ui.build`、`talk-core.js` の `renderReply` |
+| 評価の本人役 | Flex の中の字(ボタンのラベルも)を文で読む | `career_ui.flex_lines`、`flex_text` |
+
+写真は `docs/images/career-ui/`(`python -m scripts.career_ui_preview` が作る。LINE の Flex をまねた HTML を撮ったもので、
+実機の LINE の写真ではない)。
 
 終わり方と保存(設計メモ §3 の「終わり」と「あとで」):
 
