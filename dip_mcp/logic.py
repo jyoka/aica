@@ -22,6 +22,7 @@ from statistics import median
 from urllib.parse import urlencode
 
 from dip_mcp import arcade, behavior, embedding, summarize
+from dip_mcp.career import store as career_store
 from dip_mcp.data import (
     EMPLOYMENT_TYPES,
     FIXTURES,
@@ -104,6 +105,19 @@ PROFILE_NOTE = ("stated_preferences には、希望の条件のほか、相談�
                 "consultation_summary は前の会話(チャットか音声)を締めたときの相談のまとめ(事実と、次に確かめること)。"
                 "続きから始める材料にする。")
 
+CAREER_NOTE = ("stated_preferences には、正社員のヒアリングが保存したなぜ今(why_now)・次にやりたいこと(direction)・"
+               "人と働く形(team_style)も入る。career_profile(あるときだけ)は、正社員のヒアリングで本人が話した職歴カード"
+               "(career_cards。直近の職歴の、何をしていたか role・どのくらい scale・どうなったか result。"
+               "「パス」「覚えていない」は空欄)と、今のあなたに近いの(segment)と、segment だけの問いの答え(answers)。"
+               "経歴を聞き直さず、求人の keywords に本人の言葉で使う。本人が言い直したら、職歴カードの欄と answers は "
+               "update_career_card(item の career<n> の n は各カードの n。もう出ている欄だけを直す)、why_now・direction・team_style は save_user_preferences で直す。")
+
+def _career_note(user: dict) -> str:
+    """CAREER_NOTE は、正社員のハーネスを使っている(機能フラグ)か、保存した職歴カードがあるときだけ足す
+    (フラグが無い本番の既定では、要約の説明を今までどおりにする)。"""
+    return CAREER_NOTE if career_harness_on() or user.get(career_store.KEY) else ""
+
+
 ENTRY_NOTE = ("used_entries は本人がやり終えた入口(voice_consult = 音声相談で下書きができた、resume_upload = 履歴書を"
               "読み込んだ、arcade = ゲームで下書きを保存した)。開いただけ・途中でやめたものは入らない。記録を消すと外れる。")
 
@@ -145,6 +159,8 @@ def _profile_summary(user: dict) -> dict:
     out = {"stated_preferences": stated_preferences(user), "consultation_summary": consultation_summary(user),
            "uploaded_resume": uploaded_resume(user), "arcade_draft": arcade.summary(user),
            "used_entries": used_entries(user)}
+    if career := career_store.summary(user):  # 正社員のヒアリングで保存したものがあるときだけ(task 255)
+        out["career_profile"] = career
     url = arcade.game_url(user.get("line_user_id", ""), arcade.DEFAULT_GAME.get(search_track(user)))
     return out | ({"arcade_url": url} if url else {})
 
@@ -218,7 +234,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
                 "condition_options": condition_options(user, search_track(user)),
                 "note": "dip ID と未連携のため行動履歴はない。理解ステップは飛ばし、最初の1問から始める。"
                         "stated_preferences があれば、前に本人が話した希望として確認形で1回だけ使う。"
-                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE}
+                        + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE + _career_note(user)}
     jobs, at, b = load_jobs(), now(line_user_id), behavior.view(state, line_user_id)
     apps = _recent(b["applications"], "applied_at", at)  # 要約は新しい順。読む人の今でもう一度絞る
     exits = [e for e in [b["form_exit"]] if e and _days_ago(e["exited_at"], at) <= 7]
@@ -264,7 +280,7 @@ def conversation_summary(state: State, line_user_id: str) -> dict:
         "condition_options": condition_options(user, search_track(user), b["tendency"], last_app),
         "note": "これは行動データからの仮説。本人に確認形で1回だけ触れ、断定しない。閲覧した求人名は挙げない。"
                 "stated_preferences は本人が前に話した希望(行動データより優先する)。"
-                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE,
+                + PROFILE_NOTE + TRACK_NOTE + RESUME_NOTE + ARCADE_NOTE + CONDITION_NOTE + ENTRY_NOTE + _career_note(user),
     }
 
 
@@ -1001,9 +1017,12 @@ PREFERENCE_KEYS = {"area": "エリア・駅", "time_band": "時間帯", "job_typ
                    "skills": "できること", "certifications": "資格・免許",
                    "purpose": "目的", "strengths": "強み", "wants": "やりたいこと", "avoids": "避けたいこと",
                    "concerns": "不安", "min_annual_salary": "希望年収の下限", "work_style": "働き方",
-                   "start_timing": "働き始める時期"}
+                   "start_timing": "働き始める時期", "why_now": "なぜ今", "direction": "次にやりたいこと",
+                   "team_style": "人と働く形"}
 # 正社員を探すときだけ聞く条件(アルバイト・パートの相談では聞かない。保存は区分に関係なく受け付ける)
 FULLTIME_PREFERENCE_KEYS = ("min_annual_salary", "work_style", "start_timing")
+# 正社員のチャットのヒアリング(dip_mcp/career。task 255)が聞いて保存する項目。音声の面談は聞かない(音声は playbook のまま)
+CAREER_PREFERENCE_KEYS = ("why_now", "direction", "team_style")
 PREFERENCE_VALUE_MAX = 100  # 本人の言葉のまま短い文で。長い値は要約・会話ログの貼り付けになりがちなので保存しない
 
 
@@ -1124,6 +1143,8 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 # アルバイト・パートのチャットの相談は、機能フラグ BAITO_HARNESS_VERSION=v4 のときだけ例外で、何を聞くかを dip の
 # ハーネスが決める(dip_mcp/baito、ADR-0009)。その playbook(parttime_chat_harness.md)は、ハーネスに渡すこと
 # (start_baito_consultation)と、保存先・提案の決まりだけを書く。フラグが無ければ今までどおり(本番は切り替えない)。
+# 正社員のチャットの相談も同じく、CAREER_HARNESS_VERSION=c1 のときだけハーネス(dip_mcp/career、ADR-0010)が決める
+# (fulltime_chat_harness.md、start_career_consultation)。
 
 PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
 CHANNELS = ("chat", "voice")
@@ -1145,10 +1166,17 @@ VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for 
 
 
 BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 のときだけハーネスで相談する
+# 正社員のチャットのヒアリング(dip_mcp/career、ADR-0010、task 255)の機能フラグ。c1 のときだけハーネスで相談する。
+# 無ければ今までどおり fulltime_chat.md の playbook で相談する(本番は切り替えない)
+CAREER_HARNESS_FLAG = "CAREER_HARNESS_VERSION"
 
 
 def baito_harness_on() -> bool:
     return os.environ.get(BAITO_HARNESS_FLAG, "").strip() == "v4"
+
+
+def career_harness_on() -> bool:
+    return os.environ.get(CAREER_HARNESS_FLAG, "").strip() == "c1"
 
 
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
@@ -1157,7 +1185,8 @@ def counseling_playbook(track: str, channel: str = "chat") -> dict:
         return {"error": f"track は {' / '.join(TRACKS)} のいずれか"}
     if channel not in CHANNELS:
         return {"error": f"channel は {' / '.join(CHANNELS)} のいずれか"}
-    harness = "_harness" if track == "アルバイト・パート" and channel == "chat" and baito_harness_on() else ""
+    harness = "_harness" if channel == "chat" and (track == "アルバイト・パート" and baito_harness_on()
+                                                   or track == "正社員" and career_harness_on()) else ""
     path = PLAYBOOKS / f"{PLAYBOOK_FILES[track]}_{channel}{harness}.md"
     if not path.is_file():
         return {"error": f"{channel} の playbook はまだありません"}

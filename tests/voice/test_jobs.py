@@ -61,8 +61,11 @@ def test_preference_labels_match_line_sim_preference_keys():
 def test_dip_pref_keys_cover_all_line_sim_preference_keys():
     """保存方向も dip 側と同期している: save_user_preferences に渡す項目(_DIP_PREF_KEYS)が
     dip の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。
-    正社員の条件(FULLTIME_PREFERENCE_KEYS)も、音声が正社員の面談をするので受け取る(aica v2 の G)。"""
-    assert ResumeAdvisor._DIP_PREF_KEYS == tuple(ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS")))
+    正社員の条件(FULLTIME_PREFERENCE_KEYS)も、音声が正社員の面談をするので受け取る(aica v2 の G)。
+    正社員のチャットのヒアリングだけが聞く項目(CAREER_PREFERENCE_KEYS。task 255)は、面談では保存しない。"""
+    career = ast.literal_eval(_line_sim_assign("CAREER_PREFERENCE_KEYS"))
+    assert ResumeAdvisor._DIP_PREF_KEYS == tuple(k for k in ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS"))
+                                                 if k not in career)
     assert FULLTIME_ONLY_KEYS == tuple(ast.literal_eval(_line_sim_assign("FULLTIME_PREFERENCE_KEYS")))
     # 面談で聞く項目は propose_jobs と save_user_preferences の引数としても受け取れる(受け取れないと保存に乗らない)
     import inspect

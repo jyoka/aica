@@ -19,6 +19,9 @@ from pydantic import Field
 
 from dip_mcp import logic
 from dip_mcp.baito import session
+from dip_mcp.career import harness as H
+from dip_mcp.career import session as career
+from dip_mcp.career import store as career_store
 from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, State
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
@@ -218,6 +221,9 @@ def save_user_preferences(
                     "avoids(避けたいこと)/ concerns(不安・気になっていること)。"
                     "正社員を探すとき: min_annual_salary(希望年収の下限。例: 年収500万円)/ "
                     "work_style(働き方。例: リモート中心、残業少なめ)/ start_timing(働き始める時期。例: 3か月以内)。"
+                    "why_now(なぜ今)/ direction(次にやりたいこと)/ team_style(人と働く形)は、正社員のヒアリングの"
+                    "ハーネスが保存する項目。相談の中では渡さない。保存した値を本人が言い直したとき"
+                    "(例: 「なぜ今は、年収を上げたいから、に直して」)だけ、言い直した言葉で渡して上書きする。"
                     "例: {\"time_band\": \"夜\", \"area\": \"新宿\"}、{\"purpose\": \"経験を活かしたい\"}。"
                     "experience はこれまで何をしてきたか(職歴・未経験など)、skills は本人が「できる」と言った作業、"
                     "certifications は持っている資格・免許、strengths は本人が強みとして話したこと。"
@@ -229,6 +235,26 @@ def save_user_preferences(
     stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
     保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
     return logic.save_preferences(state, line_user_id, preferences, room)
+
+
+@mcp.tool()
+def update_career_card(
+    line_user_id: UserId,
+    item: Annotated[str, Field(description=(
+        "直す欄。職歴カード: career<n>.<欄>。n は要約の career_profile の career_cards の各カードの n(並びの順ではない。"
+        "1 が直近)。欄は " + " / ".join(f"{f}({H.CARD_LABELS[f]})" for f in H.CARD_FIELDS)
+        + "(role は勤め先・期間・役割、scale は規模、result は成果)。今の状況の答え(career_profile の answers): "
+        + " / ".join(f"{s}({H.SLOTS[s]['label']})" for s in career_store.SEGMENT_SLOTS)))],
+    text: Annotated[str, Field(description=(
+        f"本人が言い直した言葉そのまま({career_store.VALUE_MAX}字以内)。言い換え・要約・推測をしない。"
+        "数字は本人が言ったものだけ(こちらで足したり、丸めたりしない)"))],
+) -> dict:
+    """保存した職歴カード(正社員のヒアリングで集めたもの。要約の career_profile)の欄を、本人がトークで言い直したときに
+    直す(上書き)。例: 「職歴1のどうなったかは、誤出荷がゼロになった、です」→ item=career1.result。
+    本人が言い直していない欄は直さない。直せるのは、要約の career_profile にもう出ている欄だけ(保存していない欄は作らない)。
+    正社員の相談の途中は呼ばない(相談はハーネスが受け持つ)。
+    消すときは、今のところ「データを消す」(すべて消す)だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は弾く。"""
+    return career_store.update(state, line_user_id, item, text)
 
 
 @mcp.tool()
@@ -293,6 +319,35 @@ def baito_turn(
 def end_baito_consultation(line_user_id: UserId) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を途中で閉じる(新しい会話を始めたときなど)。"""
     return session.end(state, line_user_id)
+
+
+@mcp.tool()
+def start_career_consultation(line_user_id: UserId) -> dict:
+    """正社員のトーク(chat)の相談を、ハーネス(職務経歴書の材料を集めるヒアリング)で始める。正社員の playbook
+    (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
+    この返信は、返った question の bubbles をそのまま送る(LINE 側が吹き出しと選択肢をハーネスのものに置き換える)。
+    2問目から、まとめ(review)と結果までは、ハーネスが本人とやりとりする。結果に着くか、本人が「あとで」を押すと、
+    確かめた条件は stated_preferences に、職歴カードは career_profile に保存される。前の相談で保存した項目は聞かない。
+    進めている相談があれば、今聞いている質問を返す。"""
+    return career.start(state, line_user_id)
+
+
+@mcp.tool()
+def career_turn(
+    line_user_id: UserId,
+    text: Annotated[str, Field(description="本人の発言")],
+    llm_outputs: Annotated[list[dict] | None, Field(description=(
+        "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を本人の発言 1 つで進める。
+    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。"""
+    return career.turn(state, line_user_id, text, llm_outputs)
+
+
+@mcp.tool()
+def end_career_consultation(line_user_id: UserId) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を途中で閉じる(そこまでを保存する)。"""
+    return career.end(state, line_user_id)
 
 
 @mcp.tool()
