@@ -116,7 +116,7 @@ flowchart TB
 | `line_channel.py` | LINE のチャネル(4.11)。署名、LINE のユーザーID、再送の見分け、返信を LINE のメッセージにする、Messaging API の呼び出し、アカウント連携の文とボタン(4.12)、データを見る、消すの文と確かめ(4.11)。FastAPI に依存しない | `verify_signature`、`line_user`、`id_key`、`check_id_key`、`IdKeyError`、`check_internal_key`、`InternalKeyError`、`LINE_ID`、`SeenEvents`、`to_messages`、`LineApi`(`link_token` を含む)、`configured`、`public_url`、`ACTION_NOTES`、`FAILED_TEXT`、`link_command`、`link_messages`、`account_link_url`、`LINK_TEXT`、`UNLINK_TEXT`、`data_command`、`forget_postback`、`forget_ask_messages`、`data_view_messages`、`VIEW_DATA_TEXT`、`FORGET_DATA_TEXT`、LIFF(4.11): `liff_configured`、`liff_url_of`、`liff_page_url`、`liff_features`、`LIFF_ACTIONS`、`LineLogin`、`liff_session`、`liff_session_user` |
 | `fake_line.py` | 偽物の LINE のアカウント連携のところ(4.12)。linkToken の発行、accountLink の画面、webhook のイベントと署名。テストと開発者画面で使う | `FakeLinePlatform`、`account_link_event`、`signed_webhook`、`LINK_TOKEN_TTL` |
 | `turn.py` | イベントの受け付けとターンの決まり。`event` と `event_stream` が共通に使う。FastAPI に依存しない | `accept`、`run`、`reply_of`、`BadTurn`、`TurnFailed`、`TurnDeps`、`Turn`、`stale_thread`、`profile_notice`、`record_open`、`track_status`、`upload_facts`、`LIMIT_REASON` |
-| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`LineRuntime`(`conversations_of`、`_read_summary`)、`render`、`history`、`track_switch`、`greeting_entries`、`usable_entries`、`is_arcade_entry`、`_cards_in`、`CARD_KEYS` |
+| `runtime.py` | LineRuntime。1 ターンを進め、会話を保存し、返信を描く。ハーネスの相談(アルバイト・パートと正社員)のターンは `_harness_turn` が受け持つ | `EVENTS`、`event_input`、`voice_event`、`dip_connection`、`HARNESSES`、`chat_tools`、`LineRuntime`(`conversations_of`、`_read_summary`、`_harness_turn`、`_harness_call`)、`render`、`history`、`track_switch`、`greeting_entries`、`usable_entries`、`is_arcade_entry`、`_cards_in`、`CARD_KEYS` |
 | `agent.py` | エージェント。LINE の共通ルール(`PLATFORM_PROMPT`)と返信の形、今の窓口の案内 | `LineReply`、`Button`、`LineState`、`channel_note`、`ScenarioMiddleware`、`TurnCallLimitMiddleware`、`PinUserMiddleware`、`build_model`、`build_agent` |
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
@@ -220,7 +220,7 @@ classDiagram
 |---|---|---|
 | `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
-| `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `delete_arcade_draft`、`edit_arcade_draft`、`link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`stored`、`pending_changes`、`take_changes`、`notice` |
+| `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `delete_arcade_draft`、`edit_arcade_draft`、`edit_career_item`、`delete_career_item`、`FULLTIME_ONLY`、`link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`stored`、`pending_changes`、`take_changes`、`notice` |
 | `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
@@ -229,22 +229,24 @@ classDiagram
 | `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
 | `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
-| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと) | - |
-| `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md` | - |
+| `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」) | `harness`、`session` |
+| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`) | `harness`、`session`、`store` |
+| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/` | - |
+| `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md`。ハーネス版は `parttime_chat_harness.md` と `fulltime_chat_harness.md` | - |
 
 `logic.py` は見出しのコメントで次のように分かれています(R14)。
 
 | 見出し | 主な関数と定数 |
 |---|---|
-| (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」) |
+| (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」)、`CAREER_NOTE`(要約の `career_profile` の説明) |
 | 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
 | 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
-| 本人が話した希望と、本人について | `PREFERENCE_KEYS`、`FULLTIME_PREFERENCE_KEYS`、`PREFERENCE_VALUE_MAX`、`save_preferences`。個人情報らしい値かは `resume_draft.pii.personal_value`(1.8) |
+| 本人が話した希望と、本人について | `PREFERENCE_KEYS`、`FULLTIME_PREFERENCE_KEYS`、`CAREER_PREFERENCE_KEYS`(正社員のヒアリングだけが聞く why_now・direction・team_style。音声の面談は保存しない)、`PREFERENCE_VALUE_MAX`、`save_preferences`。個人情報らしい値かは `resume_draft.pii.personal_value`(1.8) |
 | 雇用区分 | `TRACKS`、`search_track`、`track_history`、`set_search_track` |
-| 相談の playbook | `PLAYBOOK_FILES`、`CHANNELS`、`CONVERSATION_RULES`、`VOICE_CONVERSATION_RULES`、`counseling_playbook` |
+| 相談の playbook | `PLAYBOOK_FILES`、`CHANNELS`、`CONVERSATION_RULES`、`VOICE_CONVERSATION_RULES`、`counseling_playbook`、機能フラグの `BAITO_HARNESS_FLAG`、`baito_harness_on`、`CAREER_HARNESS_FLAG`、`career_harness_on` |
 | 音声相談の結果 | `record_voice_result`、`voice_results_since`、`voice_result`、`record_voice_room`、`voice_room_forgotten` |
 | アップロードした履歴書 | `save_resume_upload`、`resume_upload`、`uploaded_resume` |
 | 会話の段階の結果の記録 | `OUTCOMES`、`REFUSAL_WORDS`、`CONSULTATION_SUMMARY_MAX`、`record_outcome`、`consultation_summary` |
@@ -636,6 +638,7 @@ flowchart LR
 | `GET /api/profile` | `profile_get` | Cookie | - | - |
 | `GET /api/profile/export` | `profile_export` | Cookie | - | -(「データを書き出す」。本人の保存内容を JSON のファイルで返す。下の注) |
 | `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
+| `PUT`、`DELETE /api/profile/career/{key}` | `profile_career_edit`、`profile_career_delete` | Cookie + 書き込みの枠 | - | 職歴カードの欄(`career1.role` など)、segment だけの問いの答え、`segment`(消すだけ)。`career_profile`、知らせ。個人情報らしい値、200 字を超える値、空の値、知らない欄は 400 |
 | `PUT`、`DELETE /api/profile/track` | `profile_track`、`profile_track_delete` | Cookie + 書き込みの枠 | - | 雇用区分、知らせ |
 | `DELETE /api/profile/resume` | `profile_resume_delete` | Cookie + 書き込みの枠 | - | 会話を閉じてから読み取り結果を消す(4.6) |
 | `DELETE /api/profile/voice/{id}` | `profile_voice_delete` | Cookie + 書き込みの枠 | - | 下書きを空にし、`data/voice-resume/` に書き出したファイルがあれば消す。無ければ 404 |
@@ -717,6 +720,8 @@ flowchart LR
 | `save_user_preferences` | `logic.save_preferences` | `preferences` | 使う |
 | `set_search_track` | `logic.set_search_track` | `track_history` | 使う |
 | `get_counseling_playbook` | `logic.counseling_playbook` | - | 使う |
+| `start_baito_consultation`、`baito_turn`、`end_baito_consultation` | `baito.session.start`、`turn`、`end` | `baito`(進めている間)、`preferences`、`baito_block` | - |
+| `start_career_consultation`、`career_turn`、`end_career_consultation` | `career.session.start`、`turn`、`end` | `career`(進めている間)、`preferences`、`career_profile` | - |
 | `record_conversation_outcome` | `logic.record_outcome` | `outcomes` | 使う |
 
 - 本人の行動を読むツールは、`behavior.view`(要約に、会話の中で書いた分を重ねたもの)だけを読みます。行動の元データは読みません(5.8)。
@@ -1242,14 +1247,14 @@ sequenceDiagram
 
 | 判定 | 中身 |
 |---|---|
-| 形式 | 1 ターン 1 問。選択肢は最大 4 つで、問いの選択肢は逃げ道の「今はいい」を含む(入口 D は「やめた」でもよい)。逃げ道だけの選択肢(`escape_only`)、「今はいい」のほかの「それ以外」「特にない」「思いつかない」、「文字で話す」は違反。吹き出しの字数。求人は最大 3 件で理由つき。求人カードを出したターンの吹き出しで、カードの理由を繰り返さない(`reason_echo_violations`。条件が希望に合うという言い方か、8 字以上の理由をそのまま書いた)。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい。問いで終える返信もよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
+| 形式 | 1 ターン 1 問。選択肢は最大 4 つで、問いの選択肢は逃げ道の「今はいい」を含む(入口 D は「やめた」でもよい。正社員のハーネスのターンと、それを始めたターンは、選択肢をハーネスが出すので選択肢の決まりを当てない)。逃げ道だけの選択肢(`escape_only`)、「今はいい」のほかの「それ以外」「特にない」「思いつかない」、「文字で話す」は違反。吹き出しの字数。求人は最大 3 件で理由つき。求人カードを出したターンの吹き出しで、カードの理由を繰り返さない(`reason_echo_violations`。条件が希望に合うという言い方か、8 字以上の理由をそのまま書いた)。初回は質問で終える。最後の返信を選択肢なしで終えない(「もう送らないで」の直後は「承知しました」で終えてよい。問いで終える返信もよい)。値は雇用区分ごとの `FORMAT_RULES` で、そのターンの返信を書いたときの区分で判定する(`CONVERSATION_RULES` と同じ値: アルバイト・パートと未定は 1 問、80 字、3 ターン。正社員は 1 問、120 字、6 ターン) |
 | 会話の進め方 | ツールが返していない求人を出さない。個人情報をトーク経由でツールに渡さない。「今はいい」「送らないで」の後に質問や求人を続けない。「求人を見せて」のターンで求人を探す。この会話で保存した項目を聞き直さない。断られていないのに wait を記録しない。エリアが分からないまま `recommend_jobs` を呼ばない(`area_violations`。分かっていたエリアを `area` に入れなかったのも違反。本人がエリアを問わない(在宅を外す言い方の「リモートは無理」は数えない)・在宅で探す・前にエリアつきで探した後に `relax_conditions` の案内か本人の言葉で広げた、は除く) |
 | 再訪 | 希望ありは、1 通目で前の希望に触れ、以後その項目を聞き直さない。行動履歴のみは、1 通目で最近の行動に触れ、触れるのは会話を通して 1 回だけ。1 通目に求人カード、求人名、件数を並べず、職種も 1 つだけ |
 | 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`、`greeting_mentions`、`greeting_expected`) | 初回訪問・再訪とも、1 通目のボタンが、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)のうちシナリオの種(`seed_voice_draft`、`seed_resume`、`seed_arcade_draft`)でやり終えていないもの(`expected_entries`)とちょうど同じ(2026-10-26、jyoka/tasks#237。足りなければ、やり終えたものや使えないものを出したら違反)。本文で触れる入口(`greeting_mentions`)は 1 つまでで、ボタンの付かない入口には触れない。初回訪問は選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを文で勧める(期待の入口がその窓口で使えないか、やり終えていれば問わない)。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |
 | 挨拶の言い方と並び(`greeting_wording_violations`) | 初回訪問・再訪の 1 通目で、こちらから連絡した言い方(「ご連絡しました」「お声がけしました」。過去・完了の形と、連絡・声かけの進行の形「ご連絡しております」)をしない。問いがあれば最後の吹き出しを問いで終える。再訪は、行動履歴に言い切り(「見ていましたね」)で触れない。問いの文の中の「ご覧になっていたので、」「見ていらっしゃいましたね、」も言い切りに数える。前に話したこと(`seed_preferences`・`seed_track`)が無い人に「今回も」と言わない。入口を勧めたら、勧めの文を問いと同じ吹き出しに置かない。吹き出しの合計が `GREETING_TOTAL_MAX`(アルバイト・パートと未定は 90 字、正社員は 130 字)まで |
 | プッシュ | 本番と同じく `push_trigger` を通してから始める |
 | 事実性(`fact_violations`、指標 `fabrications`) | 返信の金額、日付、徒歩分数、件数、求人名が、この会話で dip から来た情報(ツールの結果、プッシュの根拠の事実、dip の Prompt)か本人の発言にあるか。数字は同じ単位の値とだけ照合する(徒歩の分数は `walk_min`、件数は `total` など。ID や日付の中の数字は根拠にしない)。dip の Prompt の例文の日付は根拠にしない。その場で作った架空の求人名は文字列では見分けにくいので、求人名で捕まえるのは実在の求人の出し間違い。保存した希望が本人の発言に無いのも違反(本人が決めていない条件を記録しない) |
-| 相談の長さ(`consult_length_violations`、どのシナリオでも。結果の `consult_questions`、指標 `consult_offer_at`) | 相談に入った(相談の合図の発言、playbook を読んだ、入口の 1 文)ターンから、求人を見るかを聞く(または探す)までの問いを数え、4 問目までに聞いたか。本人が切り上げたらやめる。「分からない」「特にない」(丁寧形の「分かりません」、くだけた形の「わかんない」も)が 2 回続いた後の返信が、条件の 1 問か求人を見るかの問いか |
+| 相談の長さ(`consult_length_violations`、どのシナリオでも。結果の `consult_questions`、指標 `consult_offer_at`) | 相談に入った(相談の合図の発言、playbook を読んだ、入口の 1 文)ターンから、求人を見るかを聞く(または探す)までの問いを数え、4 問目までに聞いたか。本人が切り上げたらやめる。「分からない」「特にない」(丁寧形の「分かりません」、くだけた形の「わかんない」も)が 2 回続いた後の返信が、条件の 1 問か求人を見るかの問いか。正社員のハーネスのターン(返信に `career` が付く)は、どちらにも数えない(問いの数はハーネスが決める) |
 | 相談(`consult_mode` のシナリオ) | 初回の選択肢に「まず相談する」がある。相談の入口で playbook を読み、求人を出さずに 1 問から始める。本人が切り上げる前に相談を締めない。相談で聞いた項目を保存する。目的を確かめる前に求人を出さない(本人が自分から「求人を見せて」と言ったときを除く)。「求人を見せて」の後は、エリアが分からなければエリアの 1 問だけを聞いて次のターンで探してよい(ほかの条件も聞いたら違反)。本人の発言にも履歴書にも無い職種を選択肢に 2 つ以上並べない |
 | 同じ問いと決まり文句(`echo_streak_violations`、`stock_phrase_violations`、`shared_sentences`、指標 `echo_acks`) | 受け止めの「〜ですね」の平叙文(`echo_acks`)を、続けて 2 つの返信で使わない(求人を見るかを聞く返信のまとめは数えない)。相談の入りと区分の切り替えを、決まり文句(「いくつか伺いながら一緒に整理します」、区分を切り替えたターンの、区分と「で考えますね」だけの文)のまま言わない。1 つの実行の中で、3 件以上の会話に出た同じ文は md の「複数の会話で同じ文」に出す(挨拶の T1、問い、短い文、Prompt が文言を決めている文は除く。違反には数えない)。やりたいこと(`REASK` の wants)は「どんな仕事をしてみたいですか」の語順と「取り組んでみたい」の言い換えも聞き直しに数え、本人のことは前の値に言い足して保存し直したターンでも、前に保存していれば白紙の問いを聞き直しに数える |
 | playbook(`playbook_violations`、`dont_know_violations`) | 区分が変わったターンで新しい区分の playbook を読み直したか。「分からない」の直後の返信で、選択肢か候補を示す文に職種を 2 つ以上並べていないか |
@@ -1326,6 +1331,7 @@ sequenceDiagram
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯・曜日・エリア)、興味・得意、経験、不安 |
 | `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION=v4` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION=c1` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
 | `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
@@ -1349,7 +1355,7 @@ sequenceDiagram
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
-| `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ |
+| `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ(`default_llm`。正社員も出力の形を渡して使う) |
 | `evals/baito_sim.py` | PRD の単体チェック 131 件と 20 ペルソナを移植版で回し(参照資料の写しの中で)、§11-5 の基準値に照らす。`--real` は P3 の実モデルの測定 |
 | `docs/prd/baito_harness/aica_port.py` | PRD の検査(`BAITO_HARNESS=aica_port`)から移植版を読むための入口 |
 
@@ -1367,6 +1373,48 @@ sequenceDiagram
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
    本人が答えた条件(high)とルールの NG を保存してトークの AI に戻る(避けたいことは前の値に足す)
 6. 結果に着いたら同じく保存して閉じる。中学生以下で止めた結果だけは閉じず、その後の発言もハーネスが受ける(年齢の訂正で続ける)
+
+#### 正社員の相談(ハーネス)
+
+機能フラグ `CAREER_HARNESS_VERSION=c1` のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
+dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
+[設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
+形 B と C の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。
+
+| 部品 | 中身 |
+|---|---|
+| `dip_mcp/career/harness.py`、`bank.json` | 3 段の `turn()`、職歴カード、時間の予算、フェーズ、まとめのカード(task 245)。前の相談で保存した欄を入れる `apply_saved`(task 255) |
+| `dip_mcp/prompts/career/` | 抽出(`prompt_extract_ja.txt`)と言い方(`prompt_say_ja.txt`)。まとめと結果はハーネスの決まった文で、モデルを呼ばない |
+| `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
+| `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`) |
+| `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
+| `evals/career_sim.py` | モックの本人役 6 人 × 形 B と C の回帰(`python -m evals.career_sim`) |
+
+1 ターンの流れは、アルバイト・パートの 1〜4 と同じです(`career_turn`、`end_career_consultation`。返信の行には `career` が付く)。違うところ:
+
+- 最初の返信の吹き出しも、ハーネスのもの(`render` が `start_career_consultation` の `question.bubbles` に置き換える)。読む字を時間の予算に数えているため
+- まとめのカードは 80 字までの吹き出しに分けて送るので、1 回の返信が吹き出し 2 つ以上になる(5 つまで。`line_channel.to_messages` が束ねる)
+- 本人の発言は、先にアルバイト・パートの `baito_turn`、次に `career_turn` に渡す。進めている相談は多くても 1 つ
+
+終わり方と保存(設計メモ §3 の「終わり」と「あとで」):
+
+| 終わり方 | 返信 | 保存 |
+|---|---|---|
+| result に着いた | 結果の文と、選択肢「求人を見る」「今はいい」(押した文はトークの AI が受ける) | 確かめた値(high)を保存して閉じる |
+| 「あとで」を押した、答えと一緒に「また今度」と打った | 「ここまでの分を残しました。続きはいつでもどうぞ。」と、結果と同じ選択肢「求人を見る」「今はいい」(最後の返信を選択肢なしで終えない) | そこまでの high を保存して閉じる。続きから再開はしない |
+| 「今はいい」「やめる」など、review の前の「バイトで探したい」、区分が正社員から外れた、新しい会話 | トークの AI が受ける | 同じ |
+
+- 条件(なぜ今、勤務地、年収の下限、時期、働き方、次にやりたいこと、人と働く形)は `stated_preferences` に、本人の言葉(ボタンならラベル)のまま。
+  パスは「こだわりなし」のときだけ入れる(なぜ今と次にやりたいことのパスは入れない)
+- segment、segment だけの欄(上げたいもの、変えたい理由など)、職歴カードの欄は `career_profile` に。職歴カードのパスと「覚えていない」も、空欄として残す
+  (下書きの空欄で後から埋める。設計メモ §4)。個人情報らしい値と 200 字を超える値は入れない
+- 推測のまま(low)の値は保存しない。まとめで確かめていないため。次の相談で聞き直す
+- 逆選択などの NG は、避けたいこと(`avoids`)に、前の値に足して入れる(アルバイト・パートと同じく 100 字に入るところまで、今回の NG を先に)
+- 次に `start_career_consultation` を呼ぶと、`stated_preferences` の条件と `career_profile` の欄を high(from は `saved`)として入れ、聞かない。
+  避けたいことがあれば、逆選択も聞かない。履歴書ではないので、目標時間(履歴書なし 300 秒)は変えない
+- 閉じるときに、from が `saved` の欄と、前の相談の segment は書き直さない。相談の途中にプロフィール画面で直した・消した値を、前の値に戻さないため
+- `career_profile` はプロフィール画面で欄ごとに見て、直して、消せる。LINE は「データを見る」に出る。書き出しと「すべて消す」は 1 人の行ごとなので、
+  これも入る(プライバシーポリシー 1.4 の §6・§7 の範囲。task 255 で確かめた)
 
 #### 条件の問いの選択肢
 
@@ -1458,6 +1506,9 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
   扱いの決まりは dip の Prompt にあります
 - 履歴書を消すときは、会話で保存した内容(経験など)は残ると確認の文言で伝えます。消すものが無ければ会話を閉じません
 - 雇用区分の「記録ごと消す」は、切り替えの記録をすべて消して未定に戻します(確認つき)。直前の切り替えを戻す「取り消し」とは別です
+- 職歴カード(正社員のヒアリングで保存した `career_profile`)は、保存したものがあるときだけ「職歴カード」の枠に出します。
+  今のあなたに近いの(segment)、segment だけの問いの答え、カードごとの 3 つの欄を、1 行ずつ直す・消すができます(segment は消すだけ)。
+  消した欄は、次の正社員の相談でまた聞きます。正社員の条件の項目(なぜ今、次にやりたいこと、人と働く形)は、区分が正社員か値があるときだけ出します
 
 切り替えの表示:
 

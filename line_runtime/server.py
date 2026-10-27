@@ -1340,6 +1340,22 @@ async def profile_delete(key: str, request: Request):
     return _profile_view(user_id)
 
 
+@app.put("/api/profile/career/{key}")
+async def profile_career_edit(key: str, body: ProfileEditIn, request: Request):
+    """職歴カード(正社員のヒアリングで話したこと)の欄を本人の言葉で直す。key はハーネスの欄(career1.role など)。"""
+    user_id = _profile_writer(request, adds=True)
+    _checked(profile.edit_career_item(state, user_id, key, body.value))
+    return _profile_view(user_id)
+
+
+@app.delete("/api/profile/career/{key}")
+async def profile_career_delete(key: str, request: Request):
+    """職歴カードの欄(か segment、segment だけの問いの答え)を 1 つ消す。"""
+    user_id = _profile_writer(request)
+    _checked(profile.delete_career_item(state, user_id, key))
+    return _profile_view(user_id)
+
+
 class TrackIn(BaseModel):
     track: str
 

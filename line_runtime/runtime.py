@@ -30,8 +30,16 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from dip_mcp.baito.session import MAX_LLM_CALLS as BAITO_LLM_CALLS
 from dip_mcp.baito.session import RUNTIME_TOOLS as BAITO_RUNTIME_TOOLS
-from dip_mcp.logic import ENTRIES, VOICE_ROOM_ARG, baito_harness_on, liff_url
-from line_runtime import baito_chat, config
+from dip_mcp.career.session import MAX_LLM_CALLS as CAREER_LLM_CALLS
+from dip_mcp.career.session import RUNTIME_TOOLS as CAREER_RUNTIME_TOOLS
+from dip_mcp.logic import (
+    ENTRIES,
+    VOICE_ROOM_ARG,
+    baito_harness_on,
+    career_harness_on,
+    liff_url,
+)
+from line_runtime import baito_chat, career_chat, config
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
@@ -65,6 +73,16 @@ SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを
 # start で始める。その後の本人の発言はランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない。始めた相談はフラグを
 # 戻しても最後まで進める)。新しい会話と会話の外のイベントで end する
 BAITO_START, BAITO_TURN, BAITO_END = "start_baito_consultation", "baito_turn", "end_baito_consultation"
+# 正社員の相談(職務経歴書の材料を集めるヒアリング。dip_mcp/career、task 255)。CAREER_HARNESS_VERSION=c1 のときだけ、
+# トークの AI が start で始める。あとはアルバイト・パートと同じ(ランタイムが career_turn に渡し、新しい会話で end する)
+CAREER_START, CAREER_TURN, CAREER_END = "start_career_consultation", "career_turn", "end_career_consultation"
+# ランタイムが受け持つハーネスの相談。キーは返信の印(画面と評価が読む。evals/checks.py)
+HARNESSES = {
+    "baito": {"turn": BAITO_TURN, "end": BAITO_END, "max_calls": BAITO_LLM_CALLS, "what": "バイトの相談",
+              "default_llm": baito_chat.default_llm},
+    "career": {"turn": CAREER_TURN, "end": CAREER_END, "max_calls": CAREER_LLM_CALLS, "what": "正社員の相談",
+               "default_llm": career_chat.default_llm},
+}
 # 会話の記録の表(AsyncSqliteSaver のスキーマ)。1人の会話を消すときは、これらから1つのトランザクションで消す
 CONVERSATION_TABLES = ("checkpoints", "writes")
 
@@ -167,21 +185,25 @@ def dip_connection() -> dict:
 def chat_tools(tools: list) -> list:
     """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。
     ランタイムだけが呼ぶバイトの相談のツール(baito_turn・end_baito_consultation)も外す。ハーネスの機能フラグが
-    v4 でなければ、相談を始めるツール(start_baito_consultation)も外す(本番は今までどおり playbook で相談する)。"""
+    v4 でなければ、相談を始めるツール(start_baito_consultation)も外す(本番は今までどおり playbook で相談する)。
+    正社員の相談のツールも同じ(career_turn・end_career_consultation は外し、CAREER_HARNESS_VERSION=c1 でなければ
+    start_career_consultation も外す)。"""
     for tool in tools:
         schema = tool.args_schema
         if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
             props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
             tool.args_schema = schema | {"properties": props}
-    hidden = set(BAITO_RUNTIME_TOOLS) | (set() if baito_harness_on() else {BAITO_START})
+    hidden = (set(BAITO_RUNTIME_TOOLS) | set(CAREER_RUNTIME_TOOLS) | (set() if baito_harness_on() else {BAITO_START})
+              | (set() if career_harness_on() else {CAREER_START}))
     return [t for t in tools if t.name not in hidden]
 
 
 class LineRuntime:
     def __init__(self, model=None, in_memory: bool = False, ledger: Ledger | None = None,
-                 baito_llm: baito_chat.BaitoLLM | None = None) -> None:
+                 baito_llm: baito_chat.BaitoLLM | None = None, career_llm: baito_chat.BaitoLLM | None = None) -> None:
         self._model = model
-        self._baito_llm = baito_llm  # バイトの相談のターンのモデル。None なら最初に使うときに既定を作る
+        # ハーネスの相談のターンのモデル(バイトと正社員)。None なら最初に使うときに既定を作る
+        self._harness_llm = {"baito": baito_llm, "career": career_llm}
         self._in_memory = in_memory
         self.ledger = ledger  # 費用台帳(LLM 呼び出し1回1行、user_id つき)。None なら __aenter__ で既定を作る
         self._stack = AsyncExitStack()
@@ -468,15 +490,18 @@ class LineRuntime:
                 if talk_thread is not None:
                     queue.put_nowait({"kind": "thread", "thread": n})
                 cfg = self._cfg(user_id, n)
-                baito_on = BAITO_TURN in self._dip_tools  # バイトの相談のツールが無い dip(前の版)なら、何もしない
-                if baito_on and EVENTS[event][1] == "user" and not starts:
-                    # バイトの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
-                    baito = await self._dip(BAITO_TURN, {"line_user_id": user_id, "text": content})
-                    if baito.get("active"):
-                        await self._baito_turn(queue, user_id, event, cfg, content, baito, notice)
-                        return
-                elif baito_on:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる
-                    await self._dip(BAITO_END, {"line_user_id": user_id})
+                # ハーネスの相談のツールが無い dip(前の版)なら、何もしない
+                harnesses = [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+                if harnesses and EVENTS[event][1] == "user" and not starts:
+                    # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
+                    for kind in harnesses:
+                        r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content})
+                        if r.get("active"):
+                            await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
+                            return
+                else:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる(そこまでを保存する)
+                    for kind in harnesses:
+                        await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
                 # アップロードは本人の1ターン。画面に描き直すため、ファイルの表示名と確認の吹き出しを添えて保存する
@@ -525,44 +550,46 @@ class LineRuntime:
         finally:
             queue.put_nowait(None)
 
-    async def _baito_turn(self, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str, baito: dict,
-                          notice: str | None) -> None:
-        """バイトの相談の1ターン。ハーネス(dip の baito_turn)がモデルの出力を求める間(status=llm)、そのシステムプロンプトで
-        モデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。PRD v4.1 §5-4)。呼び出しが失敗したら、
-        失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。返信の文と選択肢はハーネスのものをそのまま出す。
+    async def _harness_turn(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
+                            r: dict, notice: str | None) -> None:
+        """ハーネスの相談(kind = baito / career)の1ターン。ハーネス(dip の baito_turn / career_turn)がモデルの出力を求める間
+        (status=llm)、そのシステムプロンプトでモデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。
+        PRD v4.1 §5-4)。呼び出しが失敗したら、失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。
+        返信の文と選択肢はハーネスのものをそのまま出す(正社員はまとめのカードで吹き出しが 2 つ以上になる)。
         本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。"""
+        h = HARNESSES[kind]
         values = (await self.agent.aget_state(cfg)).values
         convo = baito_chat.history(values.get("messages", []))
         outputs: list[dict] = []
-        while baito.get("status") == "llm":
-            if len(outputs) >= BAITO_LLM_CALLS:
-                raise ValueError("バイトの相談のモデルの呼び出しが、1 ターンの上限を超えました")
-            call = baito["call"]
+        while r.get("status") == "llm":
+            if len(outputs) >= h["max_calls"]:
+                raise ValueError(f"{h['what']}のモデルの呼び出しが、1 ターンの上限を超えました")
+            call = r["call"]
             try:
-                out = await self._baito_call(queue, user_id, event, call["stage"], call["system"],
-                                             baito_chat.messages_for(call["stage"], content, convo))
+                out = await self._harness_call(kind, queue, user_id, event, call["stage"], call["system"],
+                                               baito_chat.messages_for(call["stage"], content, convo))
                 outputs.append({"stage": call["stage"], "output": out})
             except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
-                log.warning("バイトの相談のモデルを呼べなかった(%s): %s", call["stage"], type(e).__name__)
+                log.warning("%sのモデルを呼べなかった(%s): %s", h["what"], call["stage"], type(e).__name__)
                 outputs.append({"stage": call["stage"], "error": type(e).__name__})
-            baito = await self._dip(BAITO_TURN, {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
-            if not baito.get("active"):
-                raise ValueError("バイトの相談が途中で閉じられました")
-        reply = LineReply(bubbles=[baito["reply"]], quick_replies=baito["choices"])
-        mark = {"baito": {"phase": baito["phase"], "question": baito.get("question")}}
+            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
+            if not r.get("active"):
+                raise ValueError(f"{h['what']}が途中で閉じられました")
+        reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"])
+        mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
         msgs += [HumanMessage(content, additional_kwargs=mark), AIMessage(reply.model_dump_json(), additional_kwargs=mark)]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
         queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
 
-    async def _baito_call(self, queue: asyncio.Queue, user_id: str, event: str, stage: str, system: str,
-                          messages: list[dict]) -> dict:
-        """バイトの相談のモデルを1回呼ぶ(費用台帳に1行、画面に llm の行)。"""
-        self._baito_llm = self._baito_llm or baito_chat.default_llm()
+    async def _harness_call(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, stage: str, system: str,
+                            messages: list[dict]) -> dict:
+        """ハーネスの相談のモデルを1回呼ぶ(費用台帳に1行、画面に llm の行)。"""
+        call = self._harness_llm[kind] = self._harness_llm[kind] or HARNESSES[kind]["default_llm"]()
         t = time.perf_counter()
         try:
-            out, usage = await self._baito_llm(stage, system, messages)
+            out, usage = await call(stage, system, messages)
         except baito_chat.BaitoLLMError as e:  # 形の崩れた出力にも費用はかかっている
             self.ledger.record(user_id, event, config.MODEL, e.usage)
             raise
@@ -712,10 +739,14 @@ def render(state: dict) -> dict:
     buttons = [b.model_dump() for b in reply.buttons if b.url.startswith("/liff/")]
     actions = list(dict.fromkeys(reply.actions))
     quick_replies = reply.quick_replies
-    opened = next((t["result"]["question"] for t in turn_tools if t["name"] == BAITO_START
+    opened = next(((t["name"], t["result"]["question"]) for t in turn_tools if t["name"] in (BAITO_START, CAREER_START)
                    and isinstance(t["result"], dict) and isinstance(t["result"].get("question"), dict)), None)
-    if opened is not None:  # バイトの相談を始めたターン: 選択肢はハーネスの最初の質問のもの(バンクの原文。モデルに任せない)
-        quick_replies = opened["choices"]
+    bubbles = reply.bubbles
+    if opened is not None:  # ハーネスの相談を始めたターン: 選択肢はハーネスの最初の質問のもの(バンクの原文。モデルに任せない)
+        quick_replies = opened[1]["choices"]
+        if opened[0] == CAREER_START and opened[1].get("bubbles"):
+            # 正社員は吹き出しもハーネスのもの(読む字を時間の予算に数えているので。設計メモ §3.3)
+            bubbles = list(opened[1]["bubbles"])
     greeting = state.get("greeting_entries")
     gave_up = msgs[-1].type == "ai" and msgs[-1].additional_kwargs.get("turn_limit")  # 呼び出しの上限で返した謝り
     if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
@@ -727,7 +758,7 @@ def render(state: dict) -> dict:
     return {
         "entry": state.get("entry"),
         "track_switch": track_switch(turn_tools),
-        "bubbles": reply.bubbles,
+        "bubbles": bubbles,
         "quick_replies": quick_replies,
         "cards": [jobs[j] for j in reply.job_ids if j in jobs],
         "unknown_job_ids": [j for j in reply.job_ids if j not in jobs],

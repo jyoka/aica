@@ -591,6 +591,11 @@ def _view_sections(view: dict, talked: bool, linked: bool, cap: int) -> list[str
                                                      for i in sec["items"] if i["value"]], cap))
     summary = view["consultation_summary"]
     sections.append(_view_section("相談のまとめ", [f"{summary['text']}({summary['recorded']})"] if summary else [], cap))
+    career = view.get("career_profile") or {}  # 正社員のヒアリングの職歴カード(task 255)
+    rows = [career["segment"]] if career.get("segment") else []
+    rows += career.get("answers", []) + [dict(i, label=f"{c['title']} {i['label']}") for c in career.get("cards", [])
+                                         for i in c["items"] if i["value"]]
+    sections.append(_view_section("職歴カード", [f"・{i['label']}: {i['value']}({i['saved']})" for i in rows], cap))
     resume = view["resume"]
     sections.append(_view_section("履歴書の読み取り結果", [f"・{x}" for x in resume["highlights"]] if resume else [], cap,
                                   head=f"{resume['uploaded']}に読み取り" if resume else ""))

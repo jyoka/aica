@@ -140,11 +140,14 @@ class ReplayMismatch(BaseException):  # 同じく turn() の外へ出す(ハー�
 class ReplayLLM:
     """ハーネスの llm(extract / generate)。受け取った出力を順に返し、尽きたら NeedLLM で止める。
     出力の 1 つは {"stage", "output": モデルの JSON} か、呼び出しが失敗した印 {"stage", "error": 型の名前}
-    (ハーネスは失敗 1 回として数える)。stage が求めと違えば ReplayMismatch。"""
+    (ハーネスは失敗 1 回として数える)。stage が求めと違えば ReplayMismatch。
+    render_prompt と prompt_stage はハーネスのもの(既定はアルバイト・パート。正社員の dip_mcp.career.session も使う)。"""
 
-    def __init__(self, outputs: list | None):
+    def __init__(self, outputs: list | None, render_prompt=None, prompt_stage=None):
         self.outputs = list(outputs or [])
         self.used = 0
+        self.render_prompt = render_prompt or H.render_prompt
+        self.prompt_stage = prompt_stage or H.prompt_stage
 
     def _next(self, stage: str, system: str, user_text: str):
         if self.used >= len(self.outputs):
@@ -158,11 +161,11 @@ class ReplayLLM:
         return out["output"]
 
     def extract(self, payload: dict):
-        return self._next("extract", H.render_prompt("extract", payload), payload.get("user_text", ""))
+        return self._next("extract", self.render_prompt("extract", payload), payload.get("user_text", ""))
 
     def generate(self, view: dict):
-        stage = H.prompt_stage(view)
-        return self._next(stage, H.render_prompt(stage, view), view.get("user_text", ""))
+        stage = self.prompt_stage(view)
+        return self._next(stage, self.render_prompt(stage, view), view.get("user_text", ""))
 
 
 def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = None) -> dict:

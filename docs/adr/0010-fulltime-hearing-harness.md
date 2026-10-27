@@ -37,12 +37,12 @@ ADR-0009 では、アルバイト・パートのチャットの相談に限っ�
 
 ## Consequences
 
-- ADR-0001 の「次の質問をコードで決めない」は、正社員のチャットのヒアリングにも当てはまらなくなる。ただし、このタスクで作ったのは
-  ハーネスの中身だけで、トークにはまだつないでいない。dip のツール(`start_career_consultation` / `career_turn`)、LINE の
-  ランタイム、保存(条件を `stated_preferences` に、職歴カードをプロフィールに)、プライバシーの確認、HLD と LLD は 2b のタスクが行う。
-  それまで、本番の正社員のチャットは playbook のまま
+- ADR-0001 の「次の質問をコードで決めない」は、正社員のチャットのヒアリングにも当てはまらなくなる。トークへのつなぎは 2b のタスク
+  (task 255)で作った: dip のツール(`start_career_consultation` / `career_turn` / `end_career_consultation`)、LINE のランタイム
+  (`_harness_turn`)、保存(条件を `stated_preferences` に、職歴カードをプロフィールの `career_profile` に)。本番の切り替えは
+  機能フラグ `CAREER_HARNESS_VERSION=c1` で分け、無ければ(既定)正社員のチャットは playbook のまま
 - 正社員の相談には、区分に共通の「相談の問いは 4 問まで」(`consult_length_violations`)は当てはまらない。上限は時間と
-  `MAX_TURNS` で決める。チェッカーから外すのは、ハーネスのターンを返信で見分けられるようになる 2b のタスク
+  `MAX_TURNS` で決める。チェッカーは、ハーネスのターン(返信に `career` が付く)を数えない(task 255)
 - 回帰は `python -m evals.career_sim`(1/5 の事実表のペルソナ 6 人 × 形 B と C。モックの本人役とモックの読み取り。費用 0)と
   `tests/test_career_harness.py`。モックの読み取りは正解を返すので、確かめられるのはハーネスの動きだけ。正しく取れた事実、
   誘導、面接口調は、実 API の比べ(5/5 のタスク)で見る
