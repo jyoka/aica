@@ -190,7 +190,8 @@ def _finish(state: State, line_user_id: str, h: H.State) -> list[str]:
     saved_segment = (state.user(line_user_id).get(KEY) or {}).get(SAVED_SEGMENT)
     _drop(state, line_user_id)
     # summary() の欄は評価の形(value を持たない)なので、ハーネスの欄をそのまま渡す(「こだわりなし」を見分けるため)
-    s = {"segment": h.segment, "slots": h.slots, "pending": h.pending, "saved_segment": saved_segment}
+    s = {"segment": h.segment, "slots": h.slots, "pending": h.pending, "saved_segment": saved_segment,
+         "sources": career_draft.sources(h)}  # 職歴カードの数字は、下書きと同じ元で確かめてから保存する
     prefs = store.preferences_of(s["slots"])
     if h.user_ng:
         before = ((state.user(line_user_id).get("preferences") or {}).get("avoids") or {}).get("value") or ""

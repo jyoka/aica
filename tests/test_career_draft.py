@@ -14,7 +14,7 @@ import re
 from fastapi.testclient import TestClient
 
 from dip_mcp import arcade, logic, profile
-from dip_mcp.career import draft, session
+from dip_mcp.career import draft, session, store
 from dip_mcp.career import harness as H
 from dip_mcp.data import State
 from evals.checks import draft_number_violations
@@ -145,11 +145,35 @@ def test_numbers_not_in_what_the_person_said_go_back_to_blanks():
 
 
 def test_values_from_the_resume_or_an_earlier_consultation_count_as_the_persons_words():
-    """履歴書の読み取り結果と前の相談で保存した欄は、この相談の発言に無くても本人の言葉として数字を確かめる。"""
+    """履歴書の読み取り結果と、前の相談で保存のときに数字を確かめた欄(checked)は、この相談の発言に無くても本人の言葉として
+    数字を確かめる。"""
     h = H.new_state(prefill={"career1.role": {"text": "物流会社で現場リーダー、2018年から6年"}})
-    H.apply_saved(h, None, {"career1.scale": {"status": "filled", "text": "120社", "number": 120, "unit": "社"}})
+    H.apply_saved(h, None, {"career1.scale": {"status": "filled", "text": "120社", "number": 120, "unit": "社",
+                                              "checked": True}})
     md, replaced = draft.build(h)
     assert replaced == 0 and "### 物流会社で現場リーダー、2018年から6年" in md and "- 規模: 120社" in md
+
+
+def test_saved_values_without_the_checked_mark_are_checked_before_they_are_shown():
+    """確かめた印(checked)の無い保存した職歴カードの値(印より前の版で保存した値、トークの AI が直した値)は、相談に入れる前に
+    数字を、履歴書の欄と checked の欄の言葉と比べる(harness.apply_saved)。無い数字は数字の空欄にし、数と区切りも持たない。
+    まとめのカードと下書きのどちらにも出ず、ほかの欄の数字を確かめる元にもならない。"""
+    h = H.new_state(prefill={"career1.role": {"text": "営業を3年"}})
+    H.apply_saved(h, None, {"career1.scale": {"status": "filled", "text": "取引先200社", "number": 200, "unit": "社",
+                                              "range": [100, 300]},
+                            "career1.result": {"status": "filled", "text": "3年で売上を伸ばした"},
+                            "career2.role": {"status": "filled", "text": "倉庫で120人の現場", "checked": True},
+                            "career2.result": {"status": "filled", "text": "誤出荷を120件から減らした"}})
+    scale = h.slots["career1.scale"]
+    assert scale["text"] == "取引先[N件 ← 数字を入れる]" and (scale["number"], scale["range"]) == (None, None)
+    assert h.slots["career1.result"]["text"] == "3年で売上を伸ばした"  # 履歴書の言葉にある数字は残す
+    assert h.slots["career2.result"]["text"] == "誤出荷を120件から減らした"  # checked の欄の言葉にある数字も残す
+    assert draft.sources(h) == ["営業を3年", "倉庫で120人の現場"]
+    card = "\n".join(H.card_lines(h, 40))
+    md, replaced = draft.build(h)
+    assert "200" not in card and "200" not in md and "- 規模: 取引先[N件 ← 数字を入れる]" in md and replaced == 0
+    h.said = ["取引先200社"]  # 保存した欄は聞き直さないので、空欄にした値は、この相談の下書きでは空欄のまま
+    assert "- 規模: 取引先[N件 ← 数字を入れる]" in draft.build(h)[0]
 
 
 def test_passed_dont_know_unasked_and_unconfirmed_fields_are_blanks():
@@ -212,6 +236,90 @@ def test_result_counts_the_number_blanks_the_draft_put_back(tmp_path):
     assert r["draft"]["replaced"] >= 1 and "200" not in md  # 作った数字は空欄に戻した
     assert n == r["draft"]["blanks"] == len(r["blank_cards"]) + r["draft"]["replaced"]
     assert f"空欄は{n}つ" in r["reply"]
+
+
+def test_a_value_the_person_fixed_on_the_profile_page_keeps_its_numbers_in_the_next_draft(tmp_path):
+    """プロフィール画面で本人が直した欄は本人の言葉そのものなので、確かめた印(checked)が付き、次の相談の下書きに数字が出る。"""
+    st = State(tmp_path / "state.json")
+    assert profile.edit_career_item(st, UID, "career1.scale", "取引先1200社")["saved"] == "career1.scale"
+    assert st.user(UID)["career_profile"]["items"]["career1.scale"]["checked"]
+    segment, items = store.prefill(st.user(UID), {})
+    h = H.new_state()
+    H.apply_saved(h, segment, items)
+    md, replaced = draft.build(h)
+    assert replaced == 0 and "- 規模: 取引先1200社" in md
+
+
+def test_a_number_the_talk_ai_fixed_is_checked_in_the_next_consultation(tmp_path):
+    """トークの AI が直した欄(update_career_card → store.update)には、確かめた印(checked)を付けない。AI が渡す文の数字が
+    本人の発言にあるかを、コードで確かめられないため。次の相談では、その数字を確かめてから出す(無ければ数字の空欄)。
+    言葉は残り、ほかの欄の数字を確かめる元にもならない。"""
+    st = State(tmp_path / "state.json")
+    store.save(st, UID, {"segment": "same_path", "slots": {
+        "career1.role": {"status": "filled", "text": "営業", "confidence": "high"},
+        "career1.scale": {"status": "dont_know", "text": H.DONT_KNOW, "confidence": "high"},
+        "career1.result": {"status": "filled", "text": "新規を広げた", "confidence": "high"}}, "sources": []})
+    assert store.update(st, UID, "career1.scale", "取引先200社") == {"saved": "career1.scale", "value": "取引先200社"}
+    assert store.update(st, UID, "career1.result", "200社に広げた")["saved"] == "career1.result"
+    items = st.user(UID)["career_profile"]["items"]
+    assert "checked" not in items["career1.scale"] and items["career1.role"]["checked"]
+    segment, saved = store.prefill(st.user(UID), {})
+    h = H.new_state()
+    H.apply_saved(h, segment, saved)
+    md, _ = draft.build(h)
+    assert "200" not in md and "200" not in "\n".join(H.card_lines(h, 40))
+    assert "- 規模: 取引先[N件 ← 数字を入れる]" in md and "- 結果: [N件 ← 数字を入れる]に広げた" in md
+
+
+def test_a_card_value_longer_than_the_limit_after_blanking_is_not_saved(tmp_path):
+    """数字を空欄に置き換えて 200 字(VALUE_MAX)を超えた職歴カードの欄は、長すぎる値と同じく保存しない(次の相談でまた聞く)。
+    置き換えても収まる欄は、数字の空欄で保存する。"""
+    st = State(tmp_path / "state.json")
+    long_role = "あ" * 180 + "3年と5人と7社"
+    assert len(long_role) <= store.VALUE_MAX
+    saved = store.save(st, UID, {"segment": "same_path", "slots": {
+        "career1.role": {"status": "filled", "text": long_role, "confidence": "high"},
+        "career1.scale": {"status": "filled", "text": "取引先200社", "confidence": "high"}}, "sources": []})
+    items = st.user(UID)["career_profile"]["items"]
+    assert "career1.role" not in saved and "career1.role" not in items
+    assert items["career1.scale"]["text"] == "取引先[N件 ← 数字を入れる]"
+    assert all(len(e["text"]) <= store.VALUE_MAX for e in items.values())
+
+
+def _to_result(st, llm, fix=None):
+    """台本の本人役で result まで進める(fix はまとめで 1 回だけ送る直し)。最後の返しと、出た問いの id。"""
+    session.start(st, UID)
+    fixed, qids = False, []
+    for _ in range(40):
+        qid = current_qid(st, UID)
+        if qid is None:
+            break
+        qids.append(qid)
+        said = H.PASS if qid == "card_result1" else answer_for(qid, [])
+        if qid == "review" and fix and not fixed:
+            said, fixed = fix, True
+        r = _drive(st, UID, said, llm)
+    else:
+        raise AssertionError("result に着かない")
+    assert r["status"] == "result" and not r["closed"] and fixed is bool(fix)
+    return r, qids
+
+
+def test_a_sliced_number_is_not_saved_and_does_not_come_back_in_the_next_consultation(tmp_path):
+    """「規模は取引先1200社」から読み取りが「200社」だけを抜いても、職歴カードには数字の空欄で保存する(数と区切りも持たない)。
+    次の相談では、その欄を聞かず(保存した空欄)、下書きにも「200」は出ない。どちらの相談でも「空欄はNつ」と下書きがそろう。"""
+    st = State(tmp_path / "state.json")
+    first, _ = _to_result(st, PartNumberLLM(), "規模は取引先1200社")
+    assert first["draft"]["replaced"] >= 1
+    scale = st.user(UID)["career_profile"]["items"]["career1.scale"]
+    assert "200" not in scale["text"] and BLANK_RE.search(scale["text"]) and scale["checked"]
+    assert (scale["number"], scale["range"], scale["value"]) == (None, None, None)
+    second, qids = _to_result(st, FakeCareerLLM())
+    assert "card_scale1" not in qids  # 保存した空欄は聞き直さない(下書きの画面で埋める)
+    (rec,) = arcade.drafts(st, UID)
+    md, n = rec["markdown"], arcade.blanks(rec)
+    assert "200" not in md and "- 規模: [N件 ← 数字を入れる]" in md
+    assert n == second["draft"]["blanks"] and f"空欄は{n}つ" in second["reply"]
 
 
 def test_later_closes_without_a_draft(tmp_path):

@@ -9,7 +9,8 @@ LLM は呼ばない。書類の形はゲームの下書きと同じ Markdown(res
 - 空欄: パス、「覚えていない」、聞かなかった、推測のまま確かめていない欄(harness.blank_cards と同じ欄)。規模は数字の空欄、
   何をしていたかとどうなったかは言葉の空欄。2 枚目は何をしていたかが埋まったときだけ書く
 - 数字を作らない(§6.4 の関門「数字を作った: 0 件」): 欄の数字が、本人の発言か選んだ区切り(sources)に無ければ、数字の空欄に戻す
-  (resume_lines.check_numbers)。書類の決まった文(見出しなど)には数字を入れない。結果の「空欄はNつ」は、この空欄も数える
+  (resume_lines.check_numbers)。前の相談で保存した値も、確かめた印(checked)が無ければ同じく発言と比べる(trusted)。
+  書類の決まった文(見出しなど)には数字を入れない。結果の「空欄はNつ」は、この空欄も数える
   (harness._finish が build の空欄を数える)
 - 個人情報らしい値と長すぎる値は、職歴カードの保存(store)と同じく書かず、空欄にする(harness.card_filled。空欄の数もそろう)
 - 条件(勤務地、年収の下限、時期、働き方など)は書かない。応募先に出す書類なので(希望はプロフィールの希望にある)
@@ -31,12 +32,18 @@ CONTACT_LINE = "[メール] · [電話] · [居住地] · [リンク]"
 ROW_LABELS = {"scale": "規模", "result": "結果"}  # 書類の行の見出し(職歴カードの「どのくらい」「どうなったか」)
 BLANKS = {"role": words_blank(H.CARD_LABELS["role"]), "scale": number_blank(ROW_LABELS["scale"]),
           "result": words_blank(H.CARD_LABELS["result"])}
-TRUSTED_FROM = ("saved", "resume")  # 前の相談で保存した値と、履歴書の読み取り結果(この相談の発言には無い本人の言葉)
+
+
+def trusted(e: dict) -> bool:
+    """この相談の発言には無いが、本人の言葉として数字を確かめる元にする欄か。履歴書の読み取り結果と、前の相談で保存した
+    職歴カードの欄のうち、保存のときに数字を確かめた(か本人が直した)もの(checked。dip_mcp.career.store)。
+    確かめた印の無い保存した値(この印より前の版で保存した値)は元にしない。出すときは、ほかの欄と同じく発言と比べる。"""
+    return e.get("from") == "resume" or (e.get("from") == "saved" and bool(e.get("checked")))
 
 
 def sources(h: H.State) -> list[str]:
-    """数字を確かめる元: この相談の本人の発言(押したボタンのラベルも)と、前の相談・履歴書から入れた欄の言葉。"""
-    return [*h.said, *(e["text"] for e in h.slots.values() if e.get("from") in TRUSTED_FROM and e.get("text"))]
+    """数字を確かめる元: この相談の本人の発言(押したボタンのラベルも)と、履歴書・前の相談から入れた欄の言葉(trusted)。"""
+    return [*h.said, *(e["text"] for e in h.slots.values() if trusted(e) and e.get("text"))]
 
 
 def _value(h: H.State, n: int, f: str, src: list[str]) -> tuple[str, int]:

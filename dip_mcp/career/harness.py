@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from resume_draft.pii import personal_value
-from resume_lines import blank_count
+from resume_lines import blank_count, check_numbers
 
 HERE = Path(__file__).resolve().parent
 PROMPT_DIR = HERE.parent / "prompts" / "career"
@@ -236,17 +236,28 @@ def apply_saved(state, segment=None, items=None, ng_known=False, bank=None):
     """前の相談で保存した segment と欄を入れる(task 255。§3 の「あとで」: 次の相談で聞かない)。欄は high で、from は saved。
     items は {slot: {"status", "text", "value", "number", "range", "unit"}}。履歴書ではないので、目標時間は変えない(has_resume)。
     segment だけの欄は、segment が決まっていなければ pending に入る(set_slot)。ng_known(避けたいことを保存している)なら、
-    NG をねらう問い(逆選択)を出したことにして聞かない。"""
+    NG をねらう問い(逆選択)を出したことにして聞かない。保存のときに数字を確かめた欄は checked を持ち越す(下書きが本人の
+    言葉として扱う。dip_mcp.career.draft.trusted)。checked の無い職歴カードの欄(印より前の版で保存した値と、トークの AI が
+    直した値)は、入れる前に数字を、履歴書の欄と checked の欄の言葉と比べ、無い数字を数字の空欄にする(数と区切りも持たない)。
+    まとめのカードと下書きに、確かめていない数字を出さないため。"""
     if segment in SEGMENTS:
         state.segment = segment
     if ng_known:
         state.asked += [q["id"] for q in (bank or BANK) if q["targets"] == ["__ng__"] and q["id"] not in state.asked]
-    for s, v in (items or {}).items():
-        if s not in ALL_SLOTS:
-            continue
+    items = {s: v for s, v in (items or {}).items() if s in ALL_SLOTS}
+    src = [*(e["text"] for e in state.slots.values() if e.get("from") == "resume" and e.get("text")),
+           *(str(v.get("text") or "") for v in items.values() if v.get("checked"))]
+    for s, v in items.items():
         status = v.get("status") if v.get("status") in STATUSES else "filled"
-        set_slot(state, s, entry(status, str(v.get("text") or ""), v.get("value"), v.get("number"), v.get("range"),
-                                 v.get("unit"), "high", "saved"))
+        text, number, value, rng = str(v.get("text") or ""), v.get("number"), v.get("value"), v.get("range")
+        if s.startswith("career") and not v.get("checked"):
+            text, replaced = check_numbers(text, src)
+            if replaced:
+                number = value = rng = None
+        e = entry(status, text, value, number, rng, v.get("unit"), "high", "saved")
+        if v.get("checked"):
+            e["checked"] = True
+        set_slot(state, s, e)
 
 
 def ev(state, kind, **kw):
