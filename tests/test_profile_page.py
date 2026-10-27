@@ -124,8 +124,10 @@ def test_profile_shows_every_item_and_empty_ones_as_none(remembered):
         p = client.get("/api/profile").json()
         assert [s["title"] for s in p["sections"]] == ["目的", "希望", "経歴"]
         items = _items(p)
-        # 区分が未定なら正社員の条件(年収・働き方・時期)は出さない。ほかは空でも出す(画面が「まだありません」)
-        assert set(items) == set(logic.PREFERENCE_KEYS) - set(logic.FULLTIME_PREFERENCE_KEYS)
+        # 区分が未定なら正社員の条件(年収・働き方・時期)と、正社員のヒアリングの項目(なぜ今など)は出さない。
+        # ほかは空でも出す(画面が「まだありません」)
+        assert set(items) == set(logic.PREFERENCE_KEYS) - set(profile.FULLTIME_ONLY)
+        assert set(profile.FULLTIME_ONLY) == {*logic.FULLTIME_PREFERENCE_KEYS, *logic.CAREER_PREFERENCE_KEYS}
         assert all(v is None for v in items.values())
         assert p["track"]["current"] == "未定" and p["track"]["history"] == []
         assert p["consultation_summary"] is None and p["resume"] is None and p["voice_drafts"] == []

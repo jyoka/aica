@@ -15,7 +15,7 @@ pytest は tests/test_baito_harness.py がこれを回す。
 - 対象は 20 ペルソナのうち、LLM の誤りを模す malformed・spam_high を除く 18 人。本人の発言はペルソナの台本のまま。
   モデルは line_runtime/baito_chat.py(トークと同じ LLM 層)で呼ぶ
 - M-drop の「正しい更新」は、台本に付いた抽出(sim_v4 の extraction)とする。sim_v4 の dropped がそのまま照らす
-- 生成段には、トーク(runtime の _baito_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
+- 生成段には、トーク(runtime の _harness_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
 - 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
 """

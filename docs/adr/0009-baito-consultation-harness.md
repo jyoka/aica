@@ -56,8 +56,8 @@ PRD「バイト探しの相棒」v4.1([PRD](../prd/baito_harness/PRD_baito_agent
 ## Consequences
 
 - ADR-0001 の「次の質問をコードで決めない」は、フラグを入れたときのアルバイト・パートのチャットの相談には当てはまらない。正社員の
-  チャットのヒアリングも、同じ形のハーネス(`dip_mcp/career/`)に移す([ADR-0010](0010-fulltime-hearing-harness.md)。トークに
-  つなぐのは 2b のタスクで、それまでは playbook のまま)。未定のチャットと、音声の面談(`parttime_voice.md` も含む)は playbook のまま
+  チャットのヒアリングも、同じ形のハーネス(`dip_mcp/career/`)に移す([ADR-0010](0010-fulltime-hearing-harness.md)。機能フラグ
+  `CAREER_HARNESS_VERSION=c1` のときだけ。トークへのつなぎは task 255。フラグが無ければ playbook のまま)。未定のチャットと、音声の面談(`parttime_voice.md` も含む)は playbook のまま
 - 本番はまだ切り替えない(フラグの既定は無し)。切り替えは PRD §16-1 の法務の確認(注意文 15 種)と §12-2 の確認の後(PRD §13-1 P4)。
   始めた相談は、フラグを戻しても最後まで v4 で進める。`version` の無い保存状態(v3)は本番に出していないので、閉じて始め直す
 - アルバイト・パートの相談は最大 15 ターン(PRD の `MAX_TURNS`)で、区分に共通の「相談の問いは 4 問まで」は当てはまらない。
