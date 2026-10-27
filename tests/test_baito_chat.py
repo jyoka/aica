@@ -13,11 +13,13 @@ import asyncio
 import json
 import os
 import re
+from collections.abc import Iterator
 
 import pytest
 
 from dip_mcp import logic
 from dip_mcp.baito import harness as H
+from dip_mcp.baito import quick_start as Q
 from line_runtime.baito_chat import (
     SCHEMAS,
     BaitoLLMError,
@@ -105,10 +107,10 @@ START = [
     reply(["合いそうなバイトを、一緒に探しましょう。"], quick_replies=["趣味", "貯金"]),
 ]
 # 新しい相談は入口のカードから始まる(task 265)。[近くで探す] の後は「近くで探す」の 3 問と本物の求人(task 266)で、今の流れ
-# (icebreak から)には [もっと絞る] で入る(年齢と時間帯はもう入っている)。その 6 タップが NEAR(値を入れない「どれもピンと来ない」、
-# 18歳以上、東京、昼)。年齢の質問から見る今の流れのテストは、入口を通さずに始める(prd_start)
+# (icebreak から)には [もっと絞る] で入る(年齢と時間帯はもう入っている)。その 7 タップが NEAR(値を入れない「どれもピンと来ない」、
+# 18歳以上、東京、昼と [これで探す](task 287))。年齢の質問から見る今の流れのテストは、入口を通さずに始める(prd_start)
 ENTRY_CHOICES = [*H.QUICK_PICKS, H.QUICK_NONE]
-NEAR = [(UID, "message", s) for s in (H.QUICK_NONE, H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE)]
+NEAR = [(UID, "message", s) for s in (H.QUICK_NONE, H.QUICK_NEAR, "18歳以上", "東京", "昼", Q.DONE_BUTTON, H.NEAR_MORE)]
 
 
 @pytest.fixture
@@ -245,7 +247,8 @@ def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
     from dip_mcp.data import State
     from line_runtime.runtime import LineRuntime
 
-    picks = {H.QUICK_PICK: "座ってじっくり", H.NEAR_AGE: "15〜17歳", H.NEAR_AREA: "東京", H.NEAR_TIME: "夕方",
+    picks = {H.QUICK_PICK: "座ってじっくり", H.NEAR_AGE: "15〜17歳", H.NEAR_AREA: "東京",
+             H.NEAR_TIME: iter(["夕方", "昼", Q.DONE_BUTTON]),  # 時間帯は押して足し、[これで探す] で決める(task 287)
              H.NEAR_JOBS: H.NEAR_MORE, "q_segment": "学生"}
 
     async def go():
@@ -259,7 +262,9 @@ def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
                     return r, seen, cards
                 seen.append(r["quick_replies"])
                 cards += r["cards"]
-                text = H.REVIEW_OK if q == "review" else picks.get(q) or r["quick_replies"][0]
+                pick = picks.get(q)
+                text = H.REVIEW_OK if q == "review" else (next(pick) if isinstance(pick, Iterator) else pick) \
+                    or r["quick_replies"][0]
                 r = await rt.handle(UID, "message", text)
             raise AssertionError("結果に着かない")
 
@@ -271,8 +276,9 @@ def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
     for name in (H.CATALOG_BY_ID[j]["name"] for j in ("izakaya", "moving", "nursery_assist", "reception")):
         assert name not in r["bubbles"][0]
     assert _harness() is None
-    avoids = State().user(UID)["preferences"]["avoids"]["value"]
-    assert "深夜シフト" in avoids and "重量物・危険な作業" in avoids
+    prefs = State().user(UID)["preferences"]
+    assert "深夜シフト" in prefs["avoids"]["value"] and "重量物・危険な作業" in prefs["avoids"]["value"]
+    assert prefs["time_band"]["value"] == "昼・夕方〜夜"  # 時間帯は選んだ 2 つとも(ボタンの並び)
 
 
 def test_agent_sees_the_start_tool_only_with_the_flag(tmp_path, monkeypatch):
@@ -334,7 +340,7 @@ def test_model_output_schemas_are_the_prd_json_contracts():
 
 def _to_result(picks, mode=None):
     """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターンと、入口から [もっと絞る] までの
-    6 タップ, その後の相談のターン, 画面の描き直し)。入口は NEAR(値を入れない「どれもピンと来ない」、18歳以上、東京、昼)で通る。"""
+    7 タップ, その後の相談のターン, 画面の描き直し)。入口は NEAR(値を入れない「どれもピンと来ない」、18歳以上、東京、昼)で通る。"""
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -362,7 +368,7 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
 
     os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
     first, turns, conv = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
-    # トークの AI のターン(挨拶、相談を始めたターン)と、入口から求人までの 5 タップには付けない。[もっと絞る] で今の流れに
+    # トークの AI のターン(挨拶、相談を始めたターン)と、入口から求人までのタップには付けない。[もっと絞る] で今の流れに
     # 入ったターンから出す(設計メモ baito-quick-start.md §7。「近くで探す」で入った年齢・時間帯が、もう埋まっている)
     assert all("progress" not in r for r in first[:-1])
     assert first[-1]["baito"] == {"phase": "icebreak", "question": "q_money"}

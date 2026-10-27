@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 from dip_mcp.baito import harness as H
+from dip_mcp.baito import quick_start as QS
 from dip_mcp.baito import session
 from dip_mcp.data import State
 from line_runtime import baito_cards as C
@@ -62,8 +63,12 @@ def scenes() -> dict[str, dict]:
 NEAR_SCENES = {
     "near-questions": ("「近くで探す」の 3 問(15〜17歳。夜・深夜のボタンは出ない)",
                        ["座ってじっくり", H.QUICK_NEAR, "15〜17歳", "東京"], 3),
-    "near-jobs": ("本物の求人(昼・東京・座ってじっくり・18歳以上)", ["座ってじっくり", H.QUICK_NEAR, "18歳以上", "東京", "昼"], 1),
-    "near-zero": ("0 件のとき(朝・埼玉・しゃべるの好き・ひみつ)", ["しゃべるの好き", H.QUICK_NEAR, "ひみつ", "埼玉", "朝"], 1),
+    "near-times": ("時間帯をいくつでも選ぶ(昼 → 夕方 → [これで探す]。task 287)",
+                   ["座ってじっくり", H.QUICK_NEAR, "18歳以上", "東京", "昼", "夕方"], 2),
+    "near-jobs": ("本物の求人(昼・夕方・東京・座ってじっくり・18歳以上)",
+                  ["座ってじっくり", H.QUICK_NEAR, "18歳以上", "東京", "昼", "夕方", QS.DONE_BUTTON], 1),
+    "near-zero": ("0 件のとき(朝・埼玉・しゃべるの好き・ひみつ)",
+                  ["しゃべるの好き", H.QUICK_NEAR, "ひみつ", "埼玉", "朝", QS.DONE_BUTTON], 1),
 }
 NEAR_USER = "preview"
 

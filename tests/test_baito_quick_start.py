@@ -19,6 +19,7 @@ import pytest
 
 from dip_mcp import logic
 from dip_mcp.baito import harness as H
+from dip_mcp.baito import quick_start as Q
 from dip_mcp.baito import session
 from dip_mcp.data import State
 from line_runtime import baito_cards as C
@@ -71,9 +72,9 @@ def found(total=1, relax=None):
 
 
 def to_more(st: H.State, search=None) -> dict:
-    """入口の答えの後、[近くで探す] → 18歳以上 → 東京 → 昼 → [もっと絞る] で今の流れ(icebreak)に入る。"""
+    """入口の答えの後、[近くで探す] → 18歳以上 → 東京 → 昼 → [これで探す] → [もっと絞る] で今の流れ(icebreak)に入る。"""
     search = search or found()
-    for said in (H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE):
+    for said in (H.QUICK_NEAR, "18歳以上", "東京", "昼", Q.DONE_BUTTON, H.NEAR_MORE):
         r = H.turn(st, said, H.BANK, Quiet(), search=search)
     return r
 
@@ -370,7 +371,7 @@ def test_a_dropped_entry_answer_is_not_shown_as_undecided_in_the_profile():
     from dip_mcp.baito import progress as P
 
     st, mem = H.new_state(quick=True), None
-    said = ("しゃべるの好き", H.QUICK_OTHER, "動いてたい", H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE)
+    said = ("しゃべるの好き", H.QUICK_OTHER, "動いてたい", H.QUICK_NEAR, "18歳以上", "東京", "昼", Q.DONE_BUTTON, H.NEAR_MORE)
     for i, text in enumerate(said):
         prev = P.before(st)
         r = H.turn(st, text, H.BANK, Quiet(), search=found())
