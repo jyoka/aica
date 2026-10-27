@@ -160,7 +160,8 @@ PREFERENCE_LABELS = {
     "skills": "できること", "certifications": "資格・免許",
     "purpose": "目的", "strengths": "強み", "wants": "やりたいこと", "avoids": "避けたいこと",
     "concerns": "不安", "min_annual_salary": "希望年収の下限", "work_style": "働き方",
-    "start_timing": "働き始める時期",
+    "start_timing": "働き始める時期", "why_now": "なぜ今", "direction": "次にやりたいこと",
+    "team_style": "人と働く形",
 }
 # 相談で分かった本人のこと(希望の条件ではない)。挨拶で「前回の希望」として確かめる対象にはせず、指示で踏まえる
 PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")

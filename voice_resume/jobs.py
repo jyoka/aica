@@ -65,6 +65,9 @@ LEVELS = (1, 2, 3)
 FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
 REMOTE_CHOICES = ("可", "一部可")
 
+# dip_mcp/logic.py の MINOR_ARG と同じ(テストで同期を確認)。未成年の決まりで絞る引数。ゆるめる条件(RELAXABLE)には入れない
+MINOR_ARG = "minor"
+
 MAX_PROPOSALS = 3
 
 # 検索のためにゆるめられる(外せる)条件と、読み上げ用の呼び名。
@@ -95,13 +98,15 @@ def build_recommend_args(
     weekends_holidays: bool | None = None,
     max_overtime_hours: int | None = None,
     track: str | None = None,
+    minor: bool | None = None,
 ) -> dict:
     """会話で聞いた希望から recommend_jobs の引数を作る。
 
     job_type / time_band は決まった一覧との完全一致だけを許す(合わなければ ValueError)。職種の一覧は
     今の雇用区分(track)のもの(未定なら両方)。区分が決まっていれば employment_type に入れる(未定なら入れず、
     両方の区分から探す)。
-    人と話す量・体を使う量は 1〜3、remote は 可 / 一部可 だけを許す。weekends_holidays は true のときだけ入れる。
+    人と話す量・体を使う量は 1〜3、remote は 可 / 一部可 だけを許す。weekends_holidays と minor(未成年の決まり)は
+    true のときだけ入れる。
     area はここでは一覧チェックをしない(駅名も許され、駅名の一覧は dip 側だけが持つ。
     一覧に無い値は dip 側がエラーと一覧を返す)。
     指定の無い条件は引数に入れない(dip 側で絞り込みされない)。
@@ -136,7 +141,7 @@ def build_recommend_args(
     args = {"job_type": job_type, "area": area, "time_band": time_band, "min_wage": min_wage,
             "min_annual_salary": min_annual_salary, **levels,
             "remote": remote, "weekends_holidays": weekends_holidays or None, "max_overtime_hours": max_overtime_hours,
-            "employment_type": track if track in EMPLOYMENT_TYPES else None}
+            "employment_type": track if track in EMPLOYMENT_TYPES else None, MINOR_ARG: minor or None}
     return {k: v for k, v in args.items() if v is not None}
 
 

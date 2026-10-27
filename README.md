@@ -355,6 +355,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](docs/deploy/render.md)) | 使う |
 | `python -m scripts.check_image_certs [--no-build] [--probe]` | image の CA 証明書の確かめ。コンテナを作り、certifi が 2026.10.19 以上で、ca-certificates が Debian の今の版かを確かめる(eMudhra の漏洩。[docs/deploy/render.md](docs/deploy/render.md)) | 使わない |
 | `python -m scripts.progress_ui_preview [--segment homemaker]` | アルバイト・パートの相談の、プロフィールが育つ UI(帯、プロフィールカード、完成)の写真を `docs/images/progress-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
+| `python -m scripts.baito_icons [--sheet docs/images/baito-quick-start/icons.png]` | アルバイト・パートの相談の入口と結果のカードのアイコン(64×64 の PNG 5 枚)を、`docs/images/baito-quick-start/sprites.json` から `line_runtime/static/baito/` に作り直す。`/static/baito/{名前}.png` で出る。`--sheet` は 5 枚を並べた見本も作る | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
 | `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |

@@ -235,6 +235,10 @@ def turn_violations(i: int, r: dict, track: str = DEFAULT_TRACK) -> list[str]:
     v = []
     if _questions(r["bubbles"]) > rules["questions_max"]:
         v.append(f"質問が{_questions(r['bubbles'])}個(1ターン{rules['questions_max']}問まで)")
+    if r.get("career") or any(t["name"] == "start_career_consultation" for t in r.get("tools") or []):
+        # 正社員のヒアリングのハーネスのターン(始めたターンも): 選択肢はハーネスが質問バンクから出す(答えの候補 + パス + あとで。
+        # 13 個まで)ので、トークの AI の選択肢の決まり(4 個まで、逃げ道は「今はいい」)は当てない。字数と問いの数はここでも見る
+        r = dict(r, quick_replies=[])
     if len(r["quick_replies"]) > QUICK_MAX:
         v.append(f"選択肢が{len(r['quick_replies'])}個(最大4)")
     pay_escape = "pay" in condition_topics(r) and any(PAY_ESCAPE.fullmatch(q.strip()) for q in r["quick_replies"])
@@ -960,6 +964,8 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
     伝えたターン。求人を見るかを聞いた直後の「もう少し相談したい」は入口に数えない(本人が続けたいと言えば続けてよい)。
     数えるのは問いのある返信(1ターン1問)。本人が切り上げたら
     (今はいい・お礼・「求人を見せて」)、そこで数えるのをやめる。
+    正社員のヒアリングのハーネスのターン(返信に career が付く。dip_mcp/career)は数えない。問いの数はハーネスが
+    時間とターンの予算で決めるので、4問の上限は当てはまらない(設計メモ docs/design/fulltime-hearing.md §3)。
     返り値: start は入口のターン、asked は求人を見るかの問いより前の問いのターン、offer は求人を見るかを聞いた・探したターン
     (どれも1始まり)、offer_at はそれが相談の何問目か(聞いていなければ None)。相談に入っていなければ None。"""
     def said(k: int) -> str:
@@ -978,7 +984,7 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
         if offers_jobs(turns[k]):
             offer = k
             break
-        if _questions(turns[k]["bubbles"]):
+        if _questions(turns[k]["bubbles"]) and not turns[k].get("career"):
             asked.append(k)
     return {"start": start + 1, "asked": [k + 1 for k in asked], "offer": None if offer is None else offer + 1,
             "offer_at": None if offer is None else len(asked) + 1}
@@ -987,7 +993,8 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
 def consult_length_violations(turns: list[dict], user_msgs: list[str | None]) -> list[str]:
     """相談の長さ(playbook の区分に共通の決まり):
     (1) 4問目までに求人を見るかを聞く。求人を見るかを聞かずに4問を聞いたら違反(4問目のターン)。
-    (2) 「分からない」「特にない」が2回続いたら、掘り下げをやめて、条件の1問か求人を見るかの問いへ進む。"""
+    (2) 「分からない」「特にない」が2回続いたら、掘り下げをやめて、条件の1問か求人を見るかの問いへ進む。
+    正社員のヒアリングのハーネスのターン(返信に career が付く)は、どちらにも数えない(consult_questions)。"""
     q = consult_questions(turns, user_msgs)
     if q is None:
         return []
@@ -1001,6 +1008,8 @@ def consult_length_violations(turns: list[dict], user_msgs: list[str | None]) ->
         if i - 1 < q["start"] or not (prev and m and STUCK.search(prev.strip()) and STUCK.search(m.strip())):
             continue
         r = turns[i]
+        if r.get("career"):  # ハーネスのターン: 掘り下げるかはハーネスが決める(パスと「覚えていない」で、もう聞かない)
+            continue
         if _questions(r["bubbles"]) and not (offers_jobs(r) or asks_conditions(r)):
             out.append(f"T{i + 1}: 「分からない」「特にない」が2回続いたのに、掘り下げを続けた(条件の1問か、求人を見るかの問いへ進む)")
             break

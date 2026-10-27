@@ -14,7 +14,9 @@
     「続ける」で続きから。行列の質問の選択肢は「今すぐ抜けたい」
 (8) 区分の表に無い答え(task 257): 区分を言わない本人の「扶養内」を保留し、区分を確かめてから入れるか捨てる。
     捨てた・保留した答えを、返事が「覚えた」と言わない。P3 で dropped=1 になった台本をモックで回す
-(9) 区切りの境目(task 268): 打った数が区切りの境目(「4時間くらい」)なら、2 つの区切りをボタンで 1 回だけ聞き直す。
+(9) 途中で区分が違うと分かった本人(task 267): 文に今の区分と違う区分の言葉があれば、抽出が今の区分を返しても、
+    次のターンで区分をボタンで確かめる。区分はボタンで決める。確認は 1 回の相談で 1 回まで
+(10) 区切りの境目(task 268): 打った数が区切りの境目(「4時間くらい」)なら、2 つの区切りをボタンで 1 回だけ聞き直す。
     区切りに寄せて入れたら、返事の前に保存した区切りの文字を出し、返事は入れていない数を「覚えた」と言わない
 """
 
@@ -211,9 +213,14 @@ def test_the_baseline_files_are_not_overwritten(reference):
     base = (REF / "transcripts" / "v4_univ.txt").read_text(encoding="utf-8")
     assert r["transcripts"]["v4_univ.txt"] == base and r["baseline"] == json.loads((REF / "results_v4.json").read_text())
     # N-17 で結果の文の「未定」が 1 行減ったところ(spam_high)と、task 258 の年齢の読み取り(persona の台本の
-    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)だけが、基準の会話ログと違う
+    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)と、task 267 の区分の確認の印(seg_flip の flags に
+    # segment_asked。会話は同じ)だけが、基準の会話ログと違う
     diff = [x for x in r["transcripts"] if r["transcripts"][x] != (REF / "transcripts" / x).read_text(encoding="utf-8")]
-    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_sj17.txt", "v4_spam_high.txt"]
+    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_seg_flip.txt", "v4_sj17.txt",
+                    "v4_spam_high.txt"]
+    flip = r["transcripts"]["v4_seg_flip.txt"].replace("flags=['segment_asked']", "flags=[]")
+    assert flip.replace('"flags": ["segment_asked"]', '"flags": []') == \
+        (REF / "transcripts" / "v4_seg_flip.txt").read_text(encoding="utf-8")
 
 
 def test_log_writes_the_ci_evidence_and_keeps_the_exit_code(reference, tmp_path, monkeypatch, capsys):
@@ -1501,7 +1508,169 @@ def test_p3_late_seg_script_is_not_dropped_in_the_mock(sim_v4):
     assert any("fuyou=within" in x for x in log)
 
 
-# ----------------------------- (9) 区切りの境目(task 268) -----------------------------
+# ----------------------------- (9) 途中で区分が違うと分かった本人 -----------------------------
+SEG_FLIP_SAID = "ごめん、実は社会人で、夜間の大学に通ってるんだ"  # sim_v4 の seg_flip の 7 ターン目
+
+
+def _student_on_a_question() -> H.State:
+    """「学生」を押した 18 歳以上の本人を、年齢と区分の質問の後のふつうの質問まで進める。"""
+    st = fresh()
+    for _ in range(10):
+        cur = st.current
+        if st.segment == "student" and cur["mode"] == "ask" and cur["qid"] not in ("q_segment", "hf_age"):
+            return st
+        H.turn(st, {"q_segment": "学生", "hf_age": "18歳以上"}.get(cur["qid"], cur["choices"][0]), H.BANK, LLM())
+    raise AssertionError("ふつうの質問に着かない")
+
+
+@pytest.mark.parametrize("extracted", [{"segment": "student"}, {"slot_updates": []}, "読めない", "{'oops"])
+def test_another_segment_word_asks_the_segment_with_buttons_even_if_extraction_keeps_student(extracted):
+    """task 260 の P3: モデルが区分を student のまま返した(返さなかった・読めなかった)。文の「社会人」で確かめる。"""
+    st = _student_on_a_question()
+    turns = st.turns
+    r = H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([extracted] * 4))
+    if st.current["mode"] == "retry":  # 抽出が読めない: 今の質問を数えずに 1 回聞き直し、その答えの後に確かめる
+        assert st.turns == turns and st.pending_segment == "side_job"
+        r = H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    assert st.segment == "student"  # 文からは切り替えない
+    assert st.current["qid"] == "confirm_segment" and st.current["mode"] == "confirm"
+    assert st.current["choices"] == QM["q_segment"]["choices"] and r["view"]["choices"] == QM["q_segment"]["choices"]
+    assert r["reply"] == H.CONFIRM_TEXT and st.turns == turns + 1
+    assert [e for e in st.log if e["kind"] == "segment_word"][-1]["words"] == ["side_job"]
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    assert st.segment == "side_job" and st.current["mode"] != "confirm"
+    assert "side_job_allowed" in H.active_slots(st)  # 副業の質問の項目になる
+    finish(st)
+    assert st.segment == "side_job" and st.turns <= H.MAX_TURNS and sum(st.phase_turns.values()) == st.turns
+
+
+def test_choosing_the_same_segment_on_the_check_keeps_it():
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.segment == "student" and st.current["mode"] != "confirm"
+
+
+@pytest.mark.parametrize("segment, said", [
+    ("student", "大学生なので平日の夕方がいいな"),
+    ("student", "専門学生で、学校のあとに入りたい"),
+    ("homemaker", "主婦なので子どもが帰るまでの時間で"),
+    ("side_job", "会社員だから副業として週末だけ"),
+    ("other", "フリーターで、求職中なんだ"),
+    ("student", "その他は特にないかな"),  # 「その他」は区分の言葉として拾わない
+    ("student", "週3くらいでお願い"),
+])
+def test_only_words_of_the_current_segment_do_not_ask_the_segment(segment, said):
+    st = fresh(segment)
+    H.turn(st, H.REVIEW_OK if st.current["mode"] == "review" else st.current["choices"][0], H.BANK, LLM())
+    if st.current["qid"] == "hf_age":
+        H.turn(st, "18歳以上", H.BANK, LLM())
+    assert st.current["mode"] == "ask" and st.segment == segment
+    H.turn(st, said, H.BANK, LLM([{"segment": segment}]))
+    assert st.current["mode"] != "confirm" and st.pending_segment is None and st.segment == segment
+    assert not [e for e in st.log if e["kind"] == "segment_word"]
+
+
+def test_the_segment_is_checked_only_once_in_a_consultation():
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "confirm"
+    H.turn(st, "学生", H.BANK, LLM())
+    for said, extracted in [("やっぱり社会人なんだよね", {"segment": "student"}),
+                            ("会社員です", {"segment": "side_job"})]:  # 抽出が違う区分を返しても、2 回目は出さない
+        assert st.current["mode"] == "ask"
+        H.turn(st, said, H.BANK, LLM([extracted]))
+        assert st.current["mode"] != "confirm" and st.segment == "student" and st.pending_segment is None
+    assert [e["kind"] for e in st.log if e["kind"] == "confirm_skipped"] == ["confirm_skipped"]
+    r = finish(st)
+    modes = [e for e in st.log if e["kind"] in ("segment_word", "segment_change_pending")]
+    assert r["done"] and st.segment == "student" and len(modes) == 2  # 拾った 1 回目と、出さなかった 2 回目
+    assert st.turns <= H.MAX_TURNS
+
+
+def test_the_held_answer_check_counts_as_the_one_segment_check():
+    """区分の表に無い答えの確認(task 257)を出した後も、区分の言葉で 2 回目を出さない。"""
+    st = fresh()
+    H.turn(st, "生活費・家計の足し", H.BANK, LLM())
+    H.turn(st, "わかんない", H.BANK, LLM())
+    H.turn(st, "扶養内で。", H.BANK, LLM([_ups(("fuyou", "扶養内で", "扶養内"))]))
+    H.turn(st, "18歳以上", H.BANK, LLM())
+    assert st.current["mode"] == "confirm" and st.current["held"] == ["fuyou"]
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.segment == "student" and st.current["mode"] == "ask"
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] != "confirm" and st.segment == "student"
+
+
+def test_a_segment_word_with_no_room_before_review_does_not_use_the_review_turns():
+    """review に入るターンで言われたら、確認を出さない(review の 2 ターンと 15 ターンを守る)。"""
+    st = _student_on_a_question()
+    st.flags.append("show_result")  # 次の答えで review に入る
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "review" and st.pending_segment is None
+    finish(st)
+    assert st.turns <= H.MAX_TURNS and st.review_rounds <= H.MAX_REVIEW_ROUNDS
+
+
+@pytest.mark.parametrize("extraction", [{"segment": "student"}, {}])
+def test_seg_flip_switches_in_the_mock_even_if_the_model_keeps_student(sim_v4, extraction):
+    """task 260 の P3 で 3 回とも学生のまま終わった seg_flip。モデルが区分を返さなくても、確認して本業あり副業探しになる。"""
+    p = next(x for x in sim_v4.PERSONAS if x.name == "seg_flip")
+    p = dataclasses.replace(p, events={7: ("say", SEG_FLIP_SAID, extraction)})
+    log: list[str] = []
+    m = sim_v4.run(p, log)
+    assert m["reached"] and not m["crash"] and m["final_seg"] == "side_job", "\n".join(log)
+    assert any("/confirm_segment/confirm] 本業あり副業探し" in x for x in log)
+    assert m["turns"] <= H.MAX_TURNS and m["review_rounds"] <= H.MAX_REVIEW_ROUNDS
+    assert not m["phase_turns_mismatch"] and not m["phase_cap_violation"] and not m["wasted"] and not m["repeated"]
+
+
+@pytest.mark.parametrize("first", ["読めない", {"segment": "student", "intent": "clarify"}, {"intent": "aside"}])
+def test_a_segment_word_is_kept_until_the_next_answer_even_if_extraction_then_says_student(first):
+    """抽出が読めない(聞き直し)・言い換えを求めた・脱線と読まれた文の区分の言葉も、次の答えの後に確かめる。
+    次の答えの抽出が今の区分を返しても、確かめると決めた区分は消さない。"""
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([first] * 2))
+    assert st.current["mode"] != "confirm" and st.pending_segment == "side_job"
+    H.turn(st, "週3くらいかな", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["qid"] == "confirm_segment" and st.segment == "student"
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    assert st.segment == "side_job"
+
+
+def test_a_segment_word_said_in_the_age_reask_is_checked_after_the_age():
+    st = fresh()
+    H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.current["qid"] == "hf_age"
+    H.turn(st, "実は社会人なんだ", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "reask" and st.pending_segment == "side_job"
+    H.turn(st, "18歳以上です", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["qid"] == "confirm_segment" and st.slots["age_band"]["value"] == "18_plus"
+
+
+def test_a_segment_word_on_the_last_scenario_question_does_not_use_the_reverse_pick_turn():
+    st = _student_on_a_question()
+    for _ in range(20):
+        cur = st.current
+        if cur["qid"].startswith("sc_"):
+            trial = H.State.from_dict(st.to_dict())
+            H.turn(trial, cur["choices"][0], H.BANK, LLM())
+            if trial.phase == "reverse_pick":
+                break
+        H.turn(st, cur["choices"][0], H.BANK, LLM())
+    else:
+        raise AssertionError("最後のシナリオの質問に着かない")
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.phase == "reverse_pick" and st.current["qid"].startswith("rp_") and st.pending_segment == "side_job"
+    H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    assert st.current["qid"] == "confirm_segment" and st.phase == "fill_gaps" and st.phase_turns["reverse_pick"] == 1
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    finish(st)
+    assert st.segment == "side_job" and st.turns <= H.MAX_TURNS and sum(st.phase_turns.values()) == st.turns
+
+
+# ----------------------------- (10) 区切りの境目(task 268) -----------------------------
 
 SHIFT_SAID = "シフトは4時間くらいがいいな！あとはOK"  # task 260 の P3 の hs16(3 回目)の review の返事
 SHIFT_CLAIM = "4時間くらいね、りょーかい！"
