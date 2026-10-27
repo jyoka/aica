@@ -587,6 +587,7 @@ class ResumeAdvisor(Agent):
             await self._publish({"type": "status", "done": True, "label": label})
 
     # dip の save_user_preferences が受け付ける項目(dip_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)。
+    # 正社員のチャットのヒアリングだけが聞く項目(CAREER_PREFERENCE_KEYS: why_now・direction・team_style)は、面談では保存しない。
     # 面談では experience も聞く(flow.py の面談ステージ)。区分ごとの条件のうち、今の区分で使わないものは
     # _on_track_items が落とす。other_wishes は dip の項目に無いので保存しない
     _DIP_PREF_KEYS = ("area", "time_band", "job_type", "min_wage", "experience",

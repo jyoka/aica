@@ -227,6 +227,23 @@ def new_state(form=None, prefill=None):
     return st
 
 
+def apply_saved(state, segment=None, items=None, ng_known=False, bank=None):
+    """前の相談で保存した segment と欄を入れる(task 255。§3 の「あとで」: 次の相談で聞かない)。欄は high で、from は saved。
+    items は {slot: {"status", "text", "value", "number", "range", "unit"}}。履歴書ではないので、目標時間は変えない(has_resume)。
+    segment だけの欄は、segment が決まっていなければ pending に入る(set_slot)。ng_known(避けたいことを保存している)なら、
+    NG をねらう問い(逆選択)を出したことにして聞かない。"""
+    if segment in SEGMENTS:
+        state.segment = segment
+    if ng_known:
+        state.asked += [q["id"] for q in (bank or BANK) if q["targets"] == ["__ng__"] and q["id"] not in state.asked]
+    for s, v in (items or {}).items():
+        if s not in ALL_SLOTS:
+            continue
+        status = v.get("status") if v.get("status") in STATUSES else "filled"
+        set_slot(state, s, entry(status, str(v.get("text") or ""), v.get("value"), v.get("number"), v.get("range"),
+                                 v.get("unit"), "high", "saved"))
+
+
 def ev(state, kind, **kw):
     state.log.append({"t": state.turns, "kind": kind, **kw})
 

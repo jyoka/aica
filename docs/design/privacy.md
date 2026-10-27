@@ -94,7 +94,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 11 | 音声の文字起こし | Anthropic(既定。`VOICE_RESUME_PROVIDER=openai` なら OpenAI)。音声アドバイザーの会話で毎ターン、相談の終わりの下書き | `data/voice-resume/transcript-<時刻>.json` | 下書きを消す、「すべて消す」まで。トークに届かなかった相談(410 以外)のファイルは、dip の状態から指されず消えない | `voice_resume/agent.py:107`、`voice_resume/drafter.py:31-40`、`voice_resume/outputs.py:62-77`、`voice_resume/advisor.py:689-690` |
 | 12 | 音声アドバイザーが話す文(本人の話をくり返すことがある) | Cartesia(読み上げ) | しない | - | `voice_resume/agent.py:108-114` |
 | 13 | 会話中の調べものの問い(会社名、エリアなど) | Anthropic の web 検索(既定。検索エンジンにも届く)か OpenAI の web 検索 | しない | - | `voice_resume/advisor.py:423-472`、`:726-744` |
-| 14 | 本人が話した希望と本人について(16 項目。経験、不安、目的など) | 毎ターン、要約の `stated_preferences` として LLM へ | `data/state.json` の `preferences` | プロフィールの各項目、「すべて消す」まで | `dip_mcp/logic.py:822-857`、`dip_mcp/profile.py:106-131` |
+| 14 | 本人が話した希望と本人について(16 項目。経験、不安、目的など。task 255 で正社員のヒアリングのなぜ今、次にやりたいこと、人と働く形を足して 19 項目) | 毎ターン、要約の `stated_preferences` として LLM へ | `data/state.json` の `preferences` | プロフィールの各項目、「すべて消す」まで。直すのは Web はプロフィール画面、LINE はトークで言い直す(トークの AI が `save_user_preferences` で上書きする。足した 3 つも同じ) | `dip_mcp/logic.py:822-857`、`dip_mcp/profile.py:106-131` |
 | 15 | 雇用区分の根拠(本人の発言そのまま、200 字まで。電話とメールだけ伏せる。住所は伏せない) | 毎ターン、要約の `track_history`(直近 5 件)として LLM へ | `data/state.json` の `track_history` | 「すべて消す」まで | `dip_mcp/logic.py:876-913` |
 | 16 | 相談のまとめと会話の結果の理由(電話、メール、住所らしい所は伏せる) | 毎ターン、要約の `consultation_summary` として LLM へ | `data/state.json` の `outcomes` | 「すべて消す」まで | `dip_mcp/logic.py:1107-1138` |
 | 17 | 音声相談の結果(下書き、話した希望、求人、ファイルのパス、部屋) | - | `data/state.json` の `voice_results`、`data/voice-resume/` の 4 つのファイル | 下書きを消す、「すべて消す」まで | `dip_mcp/logic.py:960-1001`、`voice_resume/outputs.py:62-77` |
@@ -106,6 +106,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 23 | ログ | ホスティングのログ(公開後) | 標準出力 | ホスティングの決まり(不明) | 3.4 の表 |
 | 24 | 将来: LLM への全リクエスト | Cloudflare AI Gateway | - | 3.5 の決まりで、本文は残さない | - |
 | 25 | 応募フォームの続きの入力値(`/liff/apply`)。残りの項目名が「氏名」「電話番号」などのことがあり、その欄が必須の入力になる。task 207 から、欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れ、「本物の情報は入れないでください」と出す | - | しない。受け取って捨て、応募の確定だけを書く | - | `line_runtime/server.py` の `_apply_form_page`、`_apply_submit` |
+| 26 | 正社員のヒアリングの職歴カード(直近の職歴 2 件の、何をしていたか・どのくらい・どうなったか。勤め先の名前を含みうる)、今のあなたに近いの(segment)、segment だけの問いの答え(上げたいもの、変えたい理由など)。task 255 で足した。電話、メール、住所らしい値と 200 字を超える値は入れない | 毎ターン、要約の `career_profile` として LLM へ。相談の間は、本人の発言として Anthropic(既定)へ | `data/state.json` の `career_profile`。進めている相談の状態は `career`(閉じたら消す) | 最後の利用から 180 日(1 人の行ごと)。プロフィールの各欄、「すべて消す」、LINE の「データを消す」。ポリシー 1.4 の §2 の「相談で話した希望や、ご自身のこと」、§6 の「希望、相談のまとめ、読み取った経歴」と同じ扱いで、版を上げずに範囲に入る。§7 の見る・直す・消す・書き出すは、Web はプロフィール画面(欄ごと)と「データを書き出す」。LINE は「データを見る」(書き出すも兼ねる)、トークで言い直す(トークの AI が dip のツール `update_career_card` で、保存している欄を本人の言葉のまま上書きする。数と区切りは作らない。保存していない欄は作らない)、「データを消す」 | `dip_mcp/career/store.py` の `update`、`dip_mcp/profile.py` の `edit_career_item`、`delete_career_item` |
 
 `data/dip_summaries.db`(`dip_mcp/summarize.py:30`)は、#18 の元データ(`data/dip_events.db`)からバッチで作る会員ごとの要約です。#18 の元データと同じ扱いにします(連携した人の行動だけが入る)。
 LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付ける乱数で、ユーザーが分からないので個人情報に入れません(`line_runtime/line_channel.py:108-112`)。

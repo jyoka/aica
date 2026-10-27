@@ -19,6 +19,9 @@ from pydantic import Field
 
 from dip_mcp import logic
 from dip_mcp.baito import session
+from dip_mcp.career import harness as H
+from dip_mcp.career import session as career
+from dip_mcp.career import store as career_store
 from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, State
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
@@ -63,6 +66,10 @@ WeekendsHolidays = Annotated[bool | None, Field(description=(
 MaxOvertimeHours = Annotated[int | None, Field(description=(
     "月の残業時間の上限(正社員の求人の残業の目安と比べる)。本人が時間を言ったらその数、"
     "「残業少なめ」「残業はほとんど無い方がいい」だけなら 10。正社員の求人だけが対象"))]
+Minor = Annotated[bool, Field(description=(
+    "true なら未成年の決まりで絞る(18歳未満と、年齢が分からない人)。深夜の帯がある求人、勤務が 5 時より前に始まるか"
+    "22 時より後に終わる求人、勤務の時刻が読めない求人とフレックスの求人、重い作業(体を使う量 3)の求人を出さない。"
+    "relax_conditions はこの条件を外す候補にしない"))]
 Area = Annotated[str | None, Field(description=(
     f"エリアか駅名。地名は次の中から選ぶ: {' / '.join(logic.AREAS)}(駅名も可。例: 中野駅)。"
     f"「{'」「'.join(logic.AREA_GROUPS)}」のような広い言い方は、そのまま渡すとその範囲の地名に広げて検索される。"
@@ -115,6 +122,7 @@ def recommend_jobs(
         "(意味の近さで探すので、避けたい仕事の方が上に出てしまう)"))] = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(すでに見せたもの)")] = None,
     posted_within_days: Annotated[int | None, Field(description="この日数以内に掲載された新着だけにする")] = None,
+    minor: Minor = False,
 ) -> dict:
     """条件に合う求人を最大3件、事実に基づく理由つきで返す。応募済みの求人は出さない。total は条件に合う総数。
     アルバイト・パートと正社員の求人を同じ形で扱う。雇用区分は employment_type で絞る(summary の search_track を渡す)。
@@ -136,7 +144,7 @@ def recommend_jobs(
                            min_annual_salary=min_annual_salary, max_talk_level=max_talk_level,
                            min_talk_level=min_talk_level, max_physical_level=max_physical_level,
                            min_physical_level=min_physical_level, remote=remote,
-                           weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
+                           weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours, minor=minor)
 
 
 @mcp.tool()
@@ -149,16 +157,19 @@ def relax_conditions(
     max_physical_level: MaxPhysicalLevel = None, min_physical_level: MinPhysicalLevel = None,
     remote: Remote = None, weekends_holidays: WeekendsHolidays = None, max_overtime_hours: MaxOvertimeHours = None,
     exclude_ids: Annotated[list[str] | None, Field(description="出さない求人ID(recommend_jobs に渡したもの)")] = None,
+    minor: Minor = False,
 ) -> dict:
     """条件に合う求人が少ないとき、どの条件を外すと何件に増えるかを返す(提案の材料)。雇用区分は外す候補にしない。
-    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。"""
+    recommend_jobs に渡したのと同じ条件を渡す(options[].remove は外す引数の名前)。exclude_ids の求人はどの件数にも数えない。
+    minor(未成年の決まり)は外す候補にせず、どの件数にも効かせる。"""
     if blocked := session.job_block(state, line_user_id):
         return blocked
     return logic.relax(state, line_user_id, area, time_band, job_type, min_wage, keywords,
                        employment_type=employment_type, min_annual_salary=min_annual_salary, exclude_ids=exclude_ids,
                        max_talk_level=max_talk_level, min_talk_level=min_talk_level,
                        max_physical_level=max_physical_level, min_physical_level=min_physical_level,
-                       remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours)
+                       remote=remote, weekends_holidays=weekends_holidays, max_overtime_hours=max_overtime_hours,
+                       minor=minor)
 
 
 @mcp.tool()
@@ -210,6 +221,9 @@ def save_user_preferences(
                     "avoids(避けたいこと)/ concerns(不安・気になっていること)。"
                     "正社員を探すとき: min_annual_salary(希望年収の下限。例: 年収500万円)/ "
                     "work_style(働き方。例: リモート中心、残業少なめ)/ start_timing(働き始める時期。例: 3か月以内)。"
+                    "why_now(なぜ今)/ direction(次にやりたいこと)/ team_style(人と働く形)は、正社員のヒアリングの"
+                    "ハーネスが保存する項目。相談の中では渡さない。保存した値を本人が言い直したとき"
+                    "(例: 「なぜ今は、年収を上げたいから、に直して」)だけ、言い直した言葉で渡して上書きする。"
                     "例: {\"time_band\": \"夜\", \"area\": \"新宿\"}、{\"purpose\": \"経験を活かしたい\"}。"
                     "experience はこれまで何をしてきたか(職歴・未経験など)、skills は本人が「できる」と言った作業、"
                     "certifications は持っている資格・免許、strengths は本人が強みとして話したこと。"
@@ -221,6 +235,26 @@ def save_user_preferences(
     stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
     保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
     return logic.save_preferences(state, line_user_id, preferences, room)
+
+
+@mcp.tool()
+def update_career_card(
+    line_user_id: UserId,
+    item: Annotated[str, Field(description=(
+        "直す欄。職歴カード: career<n>.<欄>。n は要約の career_profile の career_cards の各カードの n(並びの順ではない。"
+        "1 が直近)。欄は " + " / ".join(f"{f}({H.CARD_LABELS[f]})" for f in H.CARD_FIELDS)
+        + "(role は勤め先・期間・役割、scale は規模、result は成果)。今の状況の答え(career_profile の answers): "
+        + " / ".join(f"{s}({H.SLOTS[s]['label']})" for s in career_store.SEGMENT_SLOTS)))],
+    text: Annotated[str, Field(description=(
+        f"本人が言い直した言葉そのまま({career_store.VALUE_MAX}字以内)。言い換え・要約・推測をしない。"
+        "数字は本人が言ったものだけ(こちらで足したり、丸めたりしない)"))],
+) -> dict:
+    """保存した職歴カード(正社員のヒアリングで集めたもの。要約の career_profile)の欄を、本人がトークで言い直したときに
+    直す(上書き)。例: 「職歴1のどうなったかは、誤出荷がゼロになった、です」→ item=career1.result。
+    本人が言い直していない欄は直さない。直せるのは、要約の career_profile にもう出ている欄だけ(保存していない欄は作らない)。
+    正社員の相談の途中は呼ばない(相談はハーネスが受け持つ)。
+    消すときは、今のところ「データを消す」(すべて消す)だけ。電話番号・メールアドレス・住所らしい値と、長すぎる値は弾く。"""
+    return career_store.update(state, line_user_id, item, text)
 
 
 @mcp.tool()
@@ -285,6 +319,35 @@ def baito_turn(
 def end_baito_consultation(line_user_id: UserId) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を途中で閉じる(新しい会話を始めたときなど)。"""
     return session.end(state, line_user_id)
+
+
+@mcp.tool()
+def start_career_consultation(line_user_id: UserId) -> dict:
+    """正社員のトーク(chat)の相談を、ハーネス(職務経歴書の材料を集めるヒアリング)で始める。正社員の playbook
+    (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
+    この返信は、返った question の bubbles をそのまま送る(LINE 側が吹き出しと選択肢をハーネスのものに置き換える)。
+    2問目から、まとめ(review)と結果までは、ハーネスが本人とやりとりする。結果に着くか、本人が「あとで」を押すと、
+    確かめた条件は stated_preferences に、職歴カードは career_profile に保存される。前の相談で保存した項目は聞かない。
+    進めている相談があれば、今聞いている質問を返す。"""
+    return career.start(state, line_user_id)
+
+
+@mcp.tool()
+def career_turn(
+    line_user_id: UserId,
+    text: Annotated[str, Field(description="本人の発言")],
+    llm_outputs: Annotated[list[dict] | None, Field(description=(
+        "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を本人の発言 1 つで進める。
+    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。"""
+    return career.turn(state, line_user_id, text, llm_outputs)
+
+
+@mcp.tool()
+def end_career_consultation(line_user_id: UserId) -> dict:
+    """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を途中で閉じる(そこまでを保存する)。"""
+    return career.end(state, line_user_id)
 
 
 @mcp.tool()

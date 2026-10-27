@@ -51,10 +51,11 @@ class Recommendation(BaseModel):
 
 
 class BaitoLLMError(ValueError):
-    """モデルが決まった JSON を返さなかった。使った量(usage)は持っておく(費用台帳に入れるため)。"""
+    """モデルが決まった JSON を返さなかった。使った量(usage)は持っておく(費用台帳に入れるため)。
+    正社員の相談(line_runtime.career_chat)も同じ例外を使う。"""
 
-    def __init__(self, usage: dict):
-        super().__init__("バイトの相談のモデルが決まった JSON を返しませんでした")
+    def __init__(self, usage: dict, what: str = "バイトの相談"):
+        super().__init__(f"{what}のモデルが決まった JSON を返しませんでした")
         self.usage = usage
 
 
@@ -71,17 +72,19 @@ SCHEMAS = {"extract": ExtractOut, "say": ReplyOut, "review": ReplyOut, "result":
 BaitoLLM = Callable[[str, str, list[dict]], Awaitable[tuple[dict, dict]]]
 
 
-def default_llm() -> BaitoLLM:
-    """LINE_SIM_PROVIDER のモデル(エージェントと同じ)を、思考を切って呼ぶ(1 ターンで最大 4 回呼ぶので速さを優先)。"""
+def default_llm(schemas: dict | None = None, what: str = "バイトの相談") -> BaitoLLM:
+    """LINE_SIM_PROVIDER のモデル(エージェントと同じ)を、思考を切って呼ぶ(1 ターンで最大 4 回呼ぶので速さを優先)。
+    schemas は段ごとの出力の形(既定はアルバイト・パートの SCHEMAS。正社員は line_runtime.career_chat.SCHEMAS)。"""
     client = None
+    schemas = schemas or SCHEMAS
 
     async def call(stage: str, system: str, messages: list[dict]) -> tuple[dict, dict]:
         nonlocal client
         client = client or llm.client()
-        out, usage = await llm.parse(client, model=config.MODEL, system=system, messages=messages, schema=SCHEMAS[stage],
+        out, usage = await llm.parse(client, model=config.MODEL, system=system, messages=messages, schema=schemas[stage],
                                      max_tokens=MAX_TOKENS, effort="none", with_usage=True)
         if out is None:
-            raise BaitoLLMError(usage)
+            raise BaitoLLMError(usage, what)
         return out.model_dump(), usage
 
     return call
@@ -104,7 +107,7 @@ def messages_for(stage: str, user_text: str, convo: list[dict] | None = None) ->
 class SyncLLM:
     """ハーネスの llm(extract / generate)を、同期で実モデルにつなぐ(PRD §13-1 P3 の測定。evals/baito_sim.py --real)。
     call は default_llm() と同じ形。used に段ごとの呼び出しと使った量を残す。
-    生成段には、トーク(runtime の _baito_turn)と同じく直前のやりとりを渡す。呼ぶ側が 1 ターンごとに said で覚えさせる
+    生成段には、トーク(runtime の _harness_turn)と同じく直前のやりとりを渡す。呼ぶ側が 1 ターンごとに said で覚えさせる
     (渡さないと、ボタンの答えが前の質問と切り離されて読まれる。task 242 の P3 で、お店の行列の質問の答えが希死念慮と読まれ、
     生成の代替の原因だった。その選択肢は task 256 で「今すぐ抜けたい」にした)。"""
 
