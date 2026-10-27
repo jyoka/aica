@@ -27,6 +27,7 @@ import dataclasses
 import importlib
 import importlib.util
 import json
+import re
 import sys
 
 import pytest
@@ -219,10 +220,16 @@ def test_the_baseline_files_are_not_overwritten(reference):
     assert r["transcripts"]["v4_univ.txt"] == base and r["baseline"] == json.loads((REF / "results_v4.json").read_text())
     # N-17 で結果の文の「未定」が 1 行減ったところ(spam_high)と、task 258 の年齢の読み取り(persona の台本の
     # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)と、task 267 の区分の確認の印(seg_flip の flags に
-    # segment_asked)と、task 265 の立ち仕事の加点(seg_flip の推薦)だけが、基準の会話ログと違う
+    # segment_asked)と、task 265 の立ち仕事の加点(seg_flip の推薦)と、task 266 で状態に足した near(dropout の状態の大きさ)
+    # だけが、基準の会話ログと違う
     diff = [x for x in r["transcripts"] if r["transcripts"][x] != (REF / "transcripts" / x).read_text(encoding="utf-8")]
-    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_seg_flip.txt", "v4_sj17.txt",
+    assert diff == ["v4_age_fix.txt", "v4_dropout.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_seg_flip.txt", "v4_sj17.txt",
                     "v4_spam_high.txt"]
+    # task 266: 状態に「近くで探す」の答え near を足した(PRD の流れでは空)。保存した状態が ', "near": {}' の分だけ長いほかは同じ
+    near = len(json.dumps({"near": {}})) - 2 + len(", ")
+    dropout = re.sub(r"state serialized \((\d+) bytes\)", lambda m: f"state serialized ({int(m[1]) - near} bytes)",
+                     r["transcripts"]["v4_dropout.txt"])
+    assert dropout == (REF / "transcripts" / "v4_dropout.txt").read_text(encoding="utf-8")
     flip = r["transcripts"]["v4_seg_flip.txt"].replace("flags=['segment_asked']", "flags=[]")
     flip = flip.replace('"flags": ["segment_asked"]', '"flags": []')
     for now, was in (("工場の軽作業", "倉庫の仕分け・ピッキング"), ("イベントスタッフ（案内・誘導）", "イベント設営"),

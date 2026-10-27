@@ -299,7 +299,8 @@ def start_baito_consultation(line_user_id: UserId) -> dict:
     (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
     返った note に従う: question に card(入口のカード)があれば、短い1文で声をかけるだけにする(問いと選択肢は LINE 側が
     カードとボタンで出す)。card が無ければ、question の text を言い換えずに1問として聞く(選択肢は LINE 側が question の choices にする)。
-    その後、入口の1タップの結果、条件のまとめ(review)と結果(条件カードとおすすめのバイトの種類3つ)までは、ハーネスが本人とやりとりする。
+    その後、入口の1タップの結果、「近くで探す」の3問と本物の求人、条件のまとめ(review)と結果(条件カードとおすすめのバイトの種類3つ)までは、
+    ハーネスが本人とやりとりする。
     結果に着くと、確かめた条件は stated_preferences に保存される。進めている相談があれば、今聞いている質問を返す。"""
     return session.start(state, line_user_id)
 

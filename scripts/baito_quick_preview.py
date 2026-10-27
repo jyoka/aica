@@ -1,9 +1,11 @@
-"""アルバイトの相談を 1 タップで始めるカード(line_runtime/baito_cards.py)の画面の写真を作る(task 265)。
+"""アルバイトの相談を 1 タップで始めるカード(line_runtime/baito_cards.py)の画面の写真を作る(task 265・266)。
 
 入口のカードから偽のモデルとボタンで進め、入口・職種の結果(ひとりで黙々)・「ちょっとだけ」(どれもピンと来ない)の 3 つの
 ターンの返信(吹き出しと Flex)を、LINE のトークに近い見た目の HTML に描いて PNG にする。Flex は LINE の Flex の決まり
 (bubble の size、box の layout・padding・border、image の size など)をまねて描くだけで、LINE の実機の描き方ではない
 (実機では確かめていない)。絵は line_runtime/static/baito/ の PNG を、そのままの大きさで出す。
+「近くで探す」(task 266)は、3 問(ボタンはクイックリプライ)・本物の求人(dip の求人データを recommend で探した結果を、
+今の求人のカルーセル line_channel._cards_message で)・0 件(relax の 1 つ)の 3 枚。状態は一時ファイルに置く。
 
     ./.venv/bin/python -m scripts.baito_quick_preview [--out docs/images/baito-quick-start]
 
@@ -15,11 +17,15 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import tempfile
 from pathlib import Path
 
 from dip_mcp.baito import harness as H
+from dip_mcp.baito import session
+from dip_mcp.data import State
 from line_runtime import baito_cards as C
 from line_runtime import config
+from line_runtime.line_channel import _cards_message
 from scripts.progress_ui_preview import BUBBLE_W, SPACE_PX, TEXT_PX
 
 ICONS = config.ROOT / "line_runtime" / "static" / "baito"
@@ -49,6 +55,32 @@ def scenes() -> dict[str, dict]:
         st = H.new_state(quick=True)
         r = H.turn(st, pick, H.BANK, MockLLM(reaction))
         out[name] = {"said": pick, "reply": r["reply"], "card": r["view"]["quick"]}
+    return out
+
+
+# 「近くで探す」の場面(task 266): 名前 → (見出し, 入口からのタップ, 写真に出すタップの数(後ろから))
+NEAR_SCENES = {
+    "near-questions": ("「近くで探す」の 3 問(15〜17歳。夜・深夜のボタンは出ない)",
+                       ["座ってじっくり", H.QUICK_NEAR, "15〜17歳", "東京"], 3),
+    "near-jobs": ("本物の求人(昼・東京・座ってじっくり・18歳以上)", ["座ってじっくり", H.QUICK_NEAR, "18歳以上", "東京", "昼"], 1),
+    "near-zero": ("0 件のとき(朝・埼玉・しゃべるの好き・ひみつ)", ["しゃべるの好き", H.QUICK_NEAR, "ひみつ", "埼玉", "朝"], 1),
+}
+NEAR_USER = "preview"
+
+
+def near_scenes() -> dict[str, list[dict]]:
+    """「近くで探す」の場面ごとの [{said, reply, choices, cards}]。求人は dip の求人データを session.near_search で探す。"""
+    out = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, (_, taps, shown) in NEAR_SCENES.items():
+            state, st = State(Path(tmp) / f"{name}.json"), H.new_state(quick=True)
+            steps = []
+            for said in taps:
+                r = H.turn(st, said, H.BANK, MockLLM("いいね！"),
+                           search=lambda cond, state=state: session.near_search(state, NEAR_USER, cond))
+                steps.append({"said": said, "reply": r["reply"], "choices": r["view"]["choices"],
+                              "cards": r["view"].get("jobs") or []})
+            out[name] = steps[-shown:]
     return out
 
 
@@ -99,13 +131,20 @@ def _node(n: dict, parent: str) -> str:
 
 
 def flex_html(message: dict) -> str:
-    b = message["contents"]
+    """Flex のメッセージ(bubble 1 つか、carousel。carousel は横に並べ、画面の幅で切る)。"""
+    if message["contents"]["type"] == "carousel":
+        return f'<div class="carousel">{"".join(_bubble_html(b) for b in message["contents"]["contents"])}</div>'
+    return _bubble_html(message["contents"])
+
+
+def _bubble_html(b: dict) -> str:
     styles = b.get("styles", {})
     parts = []
     for part in ("body", "footer"):
         if part in b:
             bg = styles.get(part, {}).get("backgroundColor", "#fff")
-            parts.append(f'<div style="background:{bg}">{_node(b[part], "vertical")}</div>')
+            pad = "" if b[part].get("paddingAll") else ";padding:16px"  # LINE は bubble の本文と下に余白を付ける(指定が無いとき)
+            parts.append(f'<div style="background:{bg}{pad}">{_node(b[part], "vertical")}</div>')
     return f'<div class="flex" style="width:{BUBBLE_W[b.get("size", "mega")]}px">{"".join(parts)}</div>'
 
 
@@ -120,7 +159,11 @@ body { margin: 0; background: #e9ecf2; font-family: -apple-system, "Hiragino San
 .bubble { background: #fff; padding: 8px 12px; border-radius: 16px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap;
   align-self: flex-start; }
 .me .bubble { background: #85e249; }
-.flex { border-radius: 16px; overflow: hidden; box-sizing: border-box; }
+.flex { border-radius: 16px; overflow: hidden; box-sizing: border-box; flex: none; background: #fff; }
+.carousel { display: flex; gap: 8px; width: 330px; overflow: hidden; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px 42px; }
+.chip { background: #fff; color: #06c755; border: 1px solid #06c755; border-radius: 16px; padding: 4px 12px; font-size: 13px; }
+.note { color: #fff; font-size: 11px; margin: -6px 0 8px 42px; opacity: .85; }
 """
 
 
@@ -129,6 +172,19 @@ def scene_html(title: str, s: dict) -> str:
             f'<div class="row me"><div class="bubble">{html.escape(s["said"])}</div></div>'
             f'<div class="row"><div class="avatar">B</div><div class="col"><div class="bubble">{html.escape(s["reply"])}</div>'
             f'{flex_html(C.flex(s["card"], BASE))}</div></div></div>')
+
+
+def near_html(title: str, steps: list[dict]) -> str:
+    """「近くで探す」の場面。クイックリプライは、LINE では最後のメッセージの下にだけ出る(ここでは各ターンの下に並べる)。"""
+    rows = []
+    for s in steps:
+        flex = flex_html(_cards_message(s["cards"])) if s["cards"] else ""
+        rows.append(f'<div class="row me"><div class="bubble">{html.escape(s["said"])}</div></div>'
+                    f'<div class="row"><div class="avatar">B</div><div class="col"><div class="bubble">'
+                    f'{html.escape(s["reply"])}</div>{flex}</div></div>'
+                    f'<div class="note">ボタン(クイックリプライ)</div>'
+                    f'<div class="chips">{"".join(f"<span class=chip>{html.escape(c)}</span>" for c in s["choices"])}</div>')
+    return f'<div class="phone" id="shot"><div class="cap">{html.escape(title)}</div>{"".join(rows)}</div>'
 
 
 def page(body: str) -> str:
@@ -147,6 +203,8 @@ def main() -> None:
         "card-result": page(scene_html("職種の結果(ひとりで黙々)", sc["result"])),
         "card-light": page(scene_html("ちょっとだけ(どれもピンと来ない)", sc["light"])),
     }
+    near = near_scenes()
+    pages |= {name: page(near_html(NEAR_SCENES[name][0], near[name])) for name in NEAR_SCENES}
     for name, text in pages.items():
         (out / f"{name}.html").write_text(text, encoding="utf-8")
     try:

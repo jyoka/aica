@@ -10,8 +10,9 @@ session.turn が turn() の前後の状態からここを呼ぶ。ターンを�
   「未定」にした、ルールで深夜を外した)埋まったままに数える。区分が変わったときだけ、新しい表で数え直す(新しい表に無い項目は
   数えないので、分子が減ることがある)
 - 出すのは hard_filter の最初のターン(返事が hard_filter 以降の質問のターン)から。icebreak の間は出さない。
-  入口のカードと職種の結果(quick_pick・quick_result。task 265、設計メモ baito-quick-start.md §7)の間も出さず、数えもしない
-  (入口の答えは選び直せる。選び直して外した項目を「未定」にしないため)
+  入口のカードと職種の結果(quick_pick・quick_result。task 265、設計メモ baito-quick-start.md §7)と、「近くで探す」の 3 問と
+  求人(near_*。task 266)の間も出さず、数えもしない(入口の答えは選び直せる。選び直して外した項目を「未定」にしないため)。
+  入口のカードから始めた相談(QUICK_FLAG)は、[もっと絞る] で icebreak に入ったターンから出す(§7。3 問の答えがもう埋まっている)
 - milestone: hard_filter(か、それより前)から scenario_game・reverse_pick・fill_gaps に移った最初のターン。1 回の相談で 1 回。
   review・result に直接移ったとき(「結果を見せて」、ターンの予算)は付けない(review が同じ役を持つ)
 - 中学生以下で止めたターンと、希死念慮の言葉に窓口を案内したターンには出さない
@@ -96,7 +97,7 @@ def update(h: H.State, mem: dict | None, prev: dict, reply: dict) -> tuple[dict 
     seen = old | {s for s in tbl if H.is_filled(h.slots.get(s))}
     mem = dict(mem, seen=[s for s in tbl if s in seen])
     crisis = bool((reply.get("view") or {}).get("crisis"))
-    if h.phase == "icebreak" or h.blocked or crisis:
+    if (h.phase == "icebreak" and H.QUICK_FLAG not in h.flags) or h.blocked or crisis:
         return None, mem
     milestone = not mem["card"] and prev["phase"] in ("icebreak", "hard_filter") and h.phase in AFTER_HF
     if milestone:

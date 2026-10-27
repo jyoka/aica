@@ -591,7 +591,10 @@ class LineRuntime:
         ui = progress_ui.build(r.get("progress")) if kind == "baito" else career_ui.build(r.get("ui"))
         # 入口のカードと職種の結果(ハーネスの card。設計メモ baito-quick-start.md §9)も、同じく additional_kwargs に置く
         card = r.get("card") if kind == "baito" else None
-        kept = ({"progress": ui} if ui else {}) | ({"baito_card": card} if card else {})
+        # 「近くで探す」の求人(dip の recommend が返した求人カード。task 266)も同じく。render が求人のカルーセル(cards)にする
+        found = r.get("jobs") if kind == "baito" else None
+        kept = ({"progress": ui} if ui else {}) | ({"baito_card": card} if card else {}) | (
+            {"baito_jobs": found} if found else {})
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
         msgs += [HumanMessage(content, additional_kwargs=mark),
                  AIMessage(reply.model_dump_json(), additional_kwargs=mark | kept)]
@@ -745,6 +748,8 @@ def render(state: dict) -> dict:
     # モデルが作った求人は出さない。
     sources = [_tool_payload(m) for m in msgs if m.type == "tool"]
     sources += [m.additional_kwargs["voice"]["cards"] for m in msgs if m.type == "human" and "voice" in m.additional_kwargs]
+    # アルバイトの相談の「近くで探す」で出した求人(dip の recommend の結果。_harness_turn が置く)も、後のターンで使える
+    sources += [m.additional_kwargs["baito_jobs"] for m in msgs if m.type == "ai" and "baito_jobs" in m.additional_kwargs]
     jobs: dict[str, dict] = {}
     for c in (c for src in sources for c in _cards_in(src)):
         jobs.setdefault(c["job_id"], c)  # 最初に返ったもの(たいてい recommend_jobs の、条件に沿った理由つき)を使う
@@ -775,6 +780,8 @@ def render(state: dict) -> dict:
     # 1 タップで始めるカード(入口・職種の結果。task 265)。相談を始めたターンは start の question の card、ハーネスのターンは
     # _harness_turn が置いたもの。どちらもハーネスが作ったもので、モデルの出力からは取らない
     card = msgs[-1].additional_kwargs.get("baito_card") if msgs[-1].type == "ai" else None
+    # 「近くで探す」の求人のターン(task 266): ハーネスが出した求人を、そのままの順でカルーセルにする(モデルは job_ids を書かない)
+    found = list(msgs[-1].additional_kwargs.get("baito_jobs") or []) if msgs[-1].type == "ai" else []
     if opened is not None and opened[0] == BAITO_START:
         card = opened[1].get("card")
     if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
@@ -788,7 +795,7 @@ def render(state: dict) -> dict:
         "track_switch": track_switch(turn_tools),
         "bubbles": bubbles,
         "quick_replies": quick_replies,
-        "cards": [jobs[j] for j in reply.job_ids if j in jobs],
+        "cards": found or [jobs[j] for j in reply.job_ids if j in jobs],
         "unknown_job_ids": [j for j in reply.job_ids if j not in jobs],
         "buttons": buttons,
         "actions": actions,  # 画面が「ファイルを選ぶ」「話して伝える」のボタンにする

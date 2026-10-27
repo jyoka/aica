@@ -60,6 +60,14 @@
   この 2 つのフェーズはモデルの抽出を呼ばず(ボタンだけ読む)、ターンに数えない(15 ターンは PRD の流れの分)。
   eligible_jobs に、physical が standing_ok のときの加点(phys が standing に +1、noise が lively に +0.5)を足した。
   new_state() の既定(quick=False)は今のまま icebreak から始める(PRD の検査と、途中の相談)
+- 近くで探す(task 266。設計メモ §6・§7。PRD に無い): [近くで探す] の後に、年齢・エリア・時間帯の 3 問(near_age・near_area・
+  near_time)を置き、本物の求人(near_jobs)を出す。ボタンで答え、確信度 high(年齢の打った答えは typed_age だけ読む)。
+  年齢の「中学生以下」はそこで止める(今の流れの結果と同じ)。未成年(15〜17 歳、ひみつ、年齢が分からない)には時間帯の
+  「夜」「深夜」を出さない(quick_start.time_buttons)。求人の条件はハーネス(near_search。未成年なら必ず minor=True)が決め、
+  探すのは呼ぶ側(turn の search。session が dip の recommend・relax を呼ぶ)。0 件なら relax の 1 つと、それを外すボタン。
+  [もっと絞る] で icebreak(今の流れ)に入る(入った年齢・時間帯は聞かない)。[ちがう] は入口のカードに戻す(3 問の答えは残す)。
+  エリア・時間帯の問いと求人の後に打った年齢(says_age)は、年齢の答えとして読み直す。検索が失敗したら謝りの文で先へ進める(時間帯の問いに戻し続けない)。
+  この 4 つのフェーズも、モデルの抽出を呼ばず、ターンに数えない
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -71,6 +79,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from dip_mcp.baito import quick_start as QS
 
 HERE = Path(__file__).resolve().parent
 PROMPT_DIR = HERE.parent / "prompts" / "baito"
@@ -101,7 +111,11 @@ REPLY_MAX = 600
 
 # ----------------------------- 1 タップで始める(設計メモ baito-quick-start.md §4・§5。task 265) -----------------------------
 QUICK_PICK, QUICK_RESULT = "quick_pick", "quick_result"  # PRD の ORDER の前のフェーズ(入口のカード、職種の結果)
-QUICK_PHASES = (QUICK_PICK, QUICK_RESULT)
+# 「近くで探す」の 3 問(年齢・エリア・時間帯)と本物の求人(設計メモ §6。task 266)。これも PRD の ORDER の前のフェーズ
+NEAR_AGE, NEAR_AREA, NEAR_TIME, NEAR_JOBS = "near_age", "near_area", "near_time", "near_jobs"
+NEAR_ASKS = (NEAR_AGE, NEAR_AREA, NEAR_TIME)
+NEAR_PHASES = (*NEAR_ASKS, NEAR_JOBS)
+QUICK_PHASES = (QUICK_PICK, QUICK_RESULT, *NEAR_PHASES)  # モデルの抽出を呼ばず(ボタンだけ読む)、ターンに数えない
 QUICK_FLAG = "quick_start"  # 入口のカードから始めた相談(「最初から」も入口のカードに戻す)
 QUICK_TEXT = "いちばん自分っぽいのは？"
 QUICK_LEAD = "押すだけで、合いそうな仕事が出るよ"
@@ -132,6 +146,26 @@ JOB_TAGS = [
     ("にぎやか", lambda j: j["noise"] == "lively"),
     ("朝もOK", lambda j: "morning" in j["times"]),
 ]
+# ----------------------------- 近くで探す(設計メモ baito-quick-start.md §6・§7。task 266) -----------------------------
+NEAR_TEXT = {NEAR_AGE: "3つだけ！年齢は？", NEAR_AREA: "どのあたりで？", NEAR_TIME: "いつ働けそう？"}
+# エリアのボタン → 求人の検索の area(dip_mcp.logic.AREA_GROUPS の広い言い方)。「どこでも」はエリアで絞らない
+NEAR_AREAS = {"東京": "東京", "神奈川": "神奈川", "埼玉": "埼玉", "どこでも": None}
+# 入口の絵 → 求人の検索に渡す値(§4 の表。求人の talk_level・physical_level の段階)と、件数の吹き出しでの呼び方
+QUICK_SEARCH = {
+    "しゃべるの好き": ({"min_talk_level": 3}, "人と話す仕事"),
+    "動いてたい": ({"min_physical_level": 2}, "体を動かす仕事"),
+    "ひとりで黙々": ({"max_talk_level": 2}, "黙々とできる仕事"),
+    "座ってじっくり": ({"max_physical_level": 1}, "座ってできる仕事"),
+}
+NEAR_ANY_KIND = "仕事"  # 「どれもピンと来ない」(絵の値を渡さない)と、絵の条件を外したとき
+NEAR_MORE, NEAR_WRONG = "もっと絞る", "ちがう"
+NEAR_FOUND_TEXT = "{where}{kind}は {n} 件！"  # 件数は検索の結果の数をそのまま(§6.4)
+NEAR_ZERO_TEXT = "{where}{kind}は見つからなかった…"
+NEAR_RELAX_TEXT = "{what}を外すと {n} 件あるよ！"  # 0 件のとき: relax の、いちばん件数の増える 1 つ
+NEAR_RELAX_BUTTON = "{what}を外して探す"
+NEAR_STUCK_TEXT = "条件を変えると見つかるかも。「ちがう」で選び直せるよ！"  # relax にも外す案が無いとき
+NEAR_FAILED_TEXT = "ごめん、いま求人をうまく探せなかった…「もっと絞る」で続けるか、少しあとでもう一回試してね。"  # 検索が失敗した
+RELAX_WHAT = {"area": "エリア", "time_band": "時間帯"}  # relax の remove → 吹き出しの呼び方(絵の条件は「絵の文字」)
 
 
 # ----------------------------- スロット(PRD §6) -----------------------------
@@ -592,6 +626,7 @@ class State:
     restarts: int = 0
     result: dict = None
     log: list = field(default_factory=list)
+    near: dict = field(default_factory=dict)          # 入口と「近くで探す」の答え(pick・age・area・time・drop。task 266)
 
     def to_dict(self):
         return copy.deepcopy({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
@@ -970,7 +1005,7 @@ def validate_reply(raw, view):
         if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
             return None, "card_altered"
     elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside", "pick",
-                                                   QUICK_RESULT):
+                                                   QUICK_RESULT, *NEAR_ASKS):
         if nfkc(view["text"]) not in nfkc(reply):
             return None, "question_missing"
         if len(reply) - len(view["text"]) > 120:
@@ -980,6 +1015,8 @@ def validate_reply(raw, view):
     if _says_unsaid(reply, view.get("unsaid"), view.get("card_text") if review else view.get("text")):
         return None, "unsaid_value"
     if view.get("mode") == QUICK_RESULT and _names_other_jobs(reply, view["quick"]):
+        return None, "job_not_on_card"
+    if view.get("mode") in NEAR_ASKS and _names_other_jobs(reply, {"jobs": []}):  # 3 問のリアクションも職種を口にしない
         return None, "job_not_on_card"
     return reply.strip(), None
 
@@ -1624,10 +1661,13 @@ def quick_jobs(state, catalog, light=False):
 
 
 def _clear_quick(state):
-    """入口の答え(choice:quick_pick)を外す(選び直したとき。low どうしの矛盾にしない)。"""
+    """入口の答え(choice:quick_pick)を外す(選び直したとき。low どうしの矛盾にしない)。「近くで探す」の 3 問の答えは残す
+    (選び直した後の [近くで探す] では聞き直さずに求人を出す。task 266)。外した条件(drop)は、絵と一緒に外す。"""
     for s in [s for s, e in state.slots.items() if e.get("from") == "choice:" + QUICK_PICK]:
         del state.slots[s]
         state.conflicts.pop(s, None)
+    state.near.pop("pick", None)
+    state.near.pop("drop", None)  # 0 件のときに外した条件(list)
 
 
 def _quick_entry(state):
@@ -1655,10 +1695,12 @@ def _quick_reply(state, bank, text):
     return {"reply": text, "view": view(state, bank), "done": False, "counted": False}
 
 
-def _quick_turn(state, text, bank, llm, catalog):
+def _quick_turn(state, text, bank, llm, catalog, search=None):
     """入口のカード(quick_pick)と職種の結果(quick_result)への答え。ボタンの文字だけを読み(抽出のモデルは呼ばない)、
-    ターンに数えない。入口の答えは確信度 low で入れる(DIRECT に入れない)。[近くで探す] で icebreak(今の流れ)に入る。"""
+    ターンに数えない。入口の答えは確信度 low で入れる(DIRECT に入れない)。[近くで探す] で 3 問(task 266)に入る。"""
     buttons = match_button(state, bank, text)
+    if state.phase in NEAR_PHASES:
+        return _near_turn(state, text, buttons, bank, llm, catalog, search)
     if buttons is None:
         ev(state, "quick_unmatched", phase=state.phase)
         return _quick_reply(state, bank, QUICK_TAP_TEXT)
@@ -1667,6 +1709,7 @@ def _quick_turn(state, text, bank, llm, catalog):
         _clear_quick(state)
         for slot, value in (QUICK_PICKS.get(pick) or (None, {}))[1].items():
             apply_update(state, slot, value, "low", "choice:" + QUICK_PICK)
+        state.near["pick"] = pick
         ev(state, "quick_pick", pick=pick)
         _quick_result(state, catalog or CATALOG, pick)
         return _say(state, bank, llm, catalog, counted=False)
@@ -1675,10 +1718,174 @@ def _quick_turn(state, text, bank, llm, catalog):
         ev(state, "quick_again")
         _quick_entry(state)
         return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
-    ev(state, "quick_near")  # task 266 で「近くで探す」の 3 問にする。今は今の流れ(icebreak)に入る
-    state.phase, state.current = "icebreak", None
-    advance(state, bank)
-    return _say(state, bank, llm, catalog, counted=False)
+    ev(state, "quick_near")
+    return _near_next(state, bank, llm, catalog, search)
+
+
+# ----------------------------- 近くで探す(task 266。設計メモ baito-quick-start.md §6・§7) -----------------------------
+NEAR_AGES = {c: e["age_band"] for c, e in qmap(BANK)["hf_age"]["choice_effects"].items()}  # 年齢のボタン(hf_age と同じ)
+
+
+def _near_next(state, bank, llm, catalog, search):
+    """[近くで探す] の後: まだ答えていない問いを、年齢・エリア・時間帯の順に 1 つ出す(モデルはリアクションの 1 文だけ)。
+    3 つとも答えていれば(入口から選び直したとき)、聞き直さずに求人を出す。"""
+    for phase, key in ((NEAR_AGE, "age"), (NEAR_AREA, "area"), (NEAR_TIME, "time")):
+        if key not in state.near:
+            state.phase = phase
+            state.current = {"qid": phase, "mode": phase, "choices": near_choices(state, phase), "text": NEAR_TEXT[phase]}
+            return _say(state, bank, llm, catalog, counted=False)
+    return _near_jobs(state, bank, search)
+
+
+def near_choices(state, phase):
+    """3 問のボタン。時間帯は、未成年(15〜17 歳、ひみつ、年齢が分からない)には「夜」「深夜」を出さない(§6.2)。"""
+    if phase == NEAR_AGE:
+        return list(NEAR_AGES)
+    if phase == NEAR_AREA:
+        return list(NEAR_AREAS)
+    return QS.time_buttons(minor=minor_mode(state))
+
+
+def _near_turn(state, text, buttons, bank, llm, catalog, search):
+    """3 問と求人への答え。ボタンだけを読む(年齢は、打った答えも今の決まり(typed_age。task 258)で読む)。確信度は high。
+    年齢で「中学生以下」なら、そこで止める(求人に進まない。今の流れの結果と同じ文)。「ひみつ」は未成年として進む。"""
+    phase = state.phase
+    if phase != NEAR_AGE and buttons is None and says_age(text):
+        # エリア・時間帯の問いや求人の後に打った年齢(「14歳です」「中2」)は、年齢の答えとして読み直す(条件と未成年かを
+        # 決め直す。読み直した後は、まだの問いに戻る)
+        phase = NEAR_AGE
+        ev(state, "near_age_again")
+    if phase == NEAR_AGE:
+        band = NEAR_AGES[buttons[0]] if buttons else typed_age(text)
+        if band is None:  # 読めない答えは、ボタンで聞き直す(進まないので、未成年のまま求人に進むことも無い。前の年齢の答えでも
+            # 進めない: 「18歳以上」の後の「実は16歳です」は、年齢を答え直すまで時間帯も求人も出さない)
+            if JHS_RE.search(nfkc(text)):  # 「中学」の語は印を付ける(途中でやめたら中学生以下として扱う。jhs_unresolved)
+                _flag(state, "age_jhs")
+                ev(state, "age_jhs", extract_failed=False)
+            ev(state, "quick_unmatched", phase=phase)
+            if state.near.pop("age", None) is not None:  # 前の答え(「18歳以上」)を外す(年齢不明 = 未成年として扱う)
+                state.slots.pop("age_band", None)
+                state.conflicts.pop("age_band", None)
+                recompute_derived(state)
+            state.phase = NEAR_AGE
+            state.current = {"qid": NEAR_AGE, "mode": NEAR_AGE, "choices": near_choices(state, NEAR_AGE),
+                             "text": NEAR_TEXT[NEAR_AGE]}
+            return _quick_reply(state, bank, QUICK_TAP_TEXT)
+        if band == "declined" and "age_jhs" in state.flags:
+            # 「中学」と打った後の「ひみつ」は、2 回目も読めない答えと同じく中学生以下として止める(task 258 の決まり)
+            ev(state, "age_jhs_declined")
+            band = "under_15"
+        apply_update(state, "age_band", band, "high", ("choice:" if buttons else "free:") + NEAR_AGE)
+        state.near["age"] = band
+        ev(state, "near_age", value=band)
+        if minor_mode(state) and QS.TIME_BUTTONS.get(state.near.get("time"), QS.TIME_BUTTONS["朝"]).adult_only:
+            del state.near["time"]  # 求人の後に未成年と分かった: 夜・深夜の答えは使わず、未成年のボタンで聞き直す
+        if state.blocked:
+            state.phase, state.current = "hard_filter", None
+            advance(state, bank)  # 止めた人は結果(中学生以下の案内)。モデルは呼ばない
+            return _say(state, bank, llm, catalog, counted=False)
+        return _near_next(state, bank, llm, catalog, search)
+    if buttons is None:
+        ev(state, "quick_unmatched", phase=phase)
+        return _quick_reply(state, bank, QUICK_TAP_TEXT)
+    b = buttons[0]
+    if phase == NEAR_AREA:
+        state.near["area"] = b
+        _undrop(state, "area")
+        return _near_next(state, bank, llm, catalog, search)
+    if phase == NEAR_TIME:
+        apply_update(state, "time_slots", [QS.time_slot(b)], "high", "choice:" + NEAR_TIME)
+        state.near["time"] = b
+        _undrop(state, "time_band")
+        return _near_next(state, bank, llm, catalog, search)
+    if b == NEAR_MORE:  # 今のハーネスの流れ(区分、残りの HARD、MID)へ。入った値(年齢・時間帯)は聞かない(gap_weight が 0)
+        ev(state, "near_more")
+        state.phase, state.current = "icebreak", None
+        advance(state, bank)
+        return _say(state, bank, llm, catalog, counted=False)
+    if b == NEAR_WRONG:  # 入口のカードを出し直して、好みを選び直す
+        _clear_quick(state)
+        ev(state, "near_wrong")
+        _quick_entry(state)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
+    state.near["drop"] = [*state.near.get("drop", []), state.current["drop"]]  # 0 件のときの「〜を外して探す」
+    return _near_jobs(state, bank, search)
+
+
+def _undrop(state, key):
+    """聞き直した条件を、0 件のときに外した条件(near の drop)から戻す(選び直した答えで絞る。黙って無視しない)。"""
+    drop = [k for k in state.near.get("drop", []) if k != key]
+    if drop:
+        state.near["drop"] = drop
+    else:
+        state.near.pop("drop", None)
+
+
+AGE_HINT_RE = re.compile(r"\d{1,2}\s*[歳才]|未成年|高校|高[1-3](?!\d)")  # 年齢に触れた語(読めなくても年齢を聞き直す)
+
+
+def says_age(text):
+    """エリア・時間帯の問いや求人の後の発言が、年齢に触れているか(「中学」の語、「16歳」「実は16歳です」「高2」「未成年」)。
+    触れていれば年齢の答えとして読み直す(typed_age で読めない言い方は、年齢をボタンで聞き直す。その間は未成年として扱う)。
+    カルーセルのボタンの文(「「求人名」について詳しく教えて」)の求人名(「小中学生」など)は見ない。"""
+    t = nfkc(re.sub(r"「[^」]*」", "", text or ""))
+    return bool(typed_age(text, buttons=False) or JHS_RE.search(t) or AGE_HINT_RE.search(t))
+
+
+def near_search(state):
+    """求人の検索(dip_mcp.logic.recommend)に渡す条件(§6.4): エリア(広い言い方)、時間帯(§6.2 の表で直した time_band)、
+    入口の絵の talk・physical の値(§4 の表)、未成年か。未成年か年齢が分からなければ、必ず minor=True(minor_mode)。
+    0 件のときに外した条件(near の drop)は渡さない。minor は外さない。"""
+    n = state.near
+    cond = {"area": NEAR_AREAS.get(n.get("area")), "time_band": QS.search_time_band(n["time"])}
+    cond |= QUICK_SEARCH.get(n.get("pick"), ({}, None))[0]
+    for k in n.get("drop", []):
+        cond.pop(k, None)
+    return {k: v for k, v in cond.items() if v is not None} | {"minor": minor_mode(state) or bool(state.blocked)}
+
+
+def near_text(state, cond, found):
+    """件数と効いた条件を言う吹き出しと、ボタン。0 件なら relax の 1 つ(いちばん件数の増える条件)と、それを外すボタン。"""
+    n = state.near
+    where = "・".join(x for x in (n["time"] if "time_band" in cond else None, n.get("area") if cond.get("area") else None)
+                      if x)
+    where = f"{where}で、" if where else ""
+    pick = n.get("pick")
+    attrs = QUICK_SEARCH.get(pick, ({}, None))[0]
+    kind = QUICK_SEARCH[pick][1] if attrs and set(attrs) <= set(cond) else NEAR_ANY_KIND
+    if found["total"]:
+        return NEAR_FOUND_TEXT.format(where=where, kind=kind, n=found["total"]), [NEAR_MORE, NEAR_WRONG], None
+    text = NEAR_ZERO_TEXT.format(where=where, kind=kind)
+    relax = found.get("relax")
+    if not relax:
+        return text + "\n" + NEAR_STUCK_TEXT, [NEAR_MORE, NEAR_WRONG], None
+    what = RELAX_WHAT.get(relax["remove"], f"「{pick}」")
+    text += "\n" + NEAR_RELAX_TEXT.format(what=what, n=relax["total_after"])
+    return text, [NEAR_RELAX_BUTTON.format(what=what), NEAR_MORE, NEAR_WRONG], relax["remove"]
+
+
+def _near_jobs(state, bank, search):
+    """本物の求人を出す(フェーズ near_jobs。モデルは呼ばない)。探すのはハーネスの外(search。session が dip の recommend と
+    relax を呼ぶ)で、条件はここ(near_search)が決める。返すのは件数の吹き出しと、求人(view の jobs。ランタイムがカルーセルにする)。
+    search は cond → {"total", "jobs": [求人カード], "relax": relax の options の先頭か None}。"""
+    state.phase = NEAR_JOBS
+    cond = near_search(state)
+    try:
+        if search is None:
+            raise RuntimeError("近くで探す: 求人の検索(search)を渡されていない")
+        found = search(cond)
+    except Exception as e:  # noqa: BLE001  検索の失敗で、時間帯の問いに戻し続けない(進めないまま止まる)
+        ev(state, "near_search_failed", error=type(e).__name__)
+        state.current = {"qid": NEAR_JOBS, "mode": NEAR_JOBS, "choices": [NEAR_MORE, NEAR_WRONG], "text": NEAR_FAILED_TEXT}
+        v = view(state, bank) | {"jobs": []}
+        return {"reply": "\n".join(v["notices"] + [NEAR_FAILED_TEXT]), "view": v, "done": False, "counted": False}
+    text, choices, drop = near_text(state, cond, found)
+    state.current = {"qid": NEAR_JOBS, "mode": NEAR_JOBS, "choices": choices, "text": text}
+    if drop:
+        state.current["drop"] = drop
+    ev(state, "near_jobs", total=found["total"], minor=cond["minor"], relax=drop)
+    v = view(state, bank) | {"jobs": list(found["jobs"])}
+    return {"reply": "\n".join(v["notices"] + [text]), "view": v, "done": False, "counted": False}
 
 
 # ----------------------------- プロンプトの変数(§8-5) -----------------------------
@@ -1712,9 +1919,10 @@ def view(state, bank, aside=False):
         v["text"] = _held_text(cur, bank)
     elif mode == "pick":
         v["text"] = _pick_text(cur)
-    elif mode in QUICK_PHASES:  # 入口のカードと職種の結果(task 265)。カードはランタイムが描く
+    elif mode in QUICK_PHASES:  # 入口のカードと職種の結果(task 265)、近くで探す(task 266)。カードはランタイムが描く
         v["text"] = cur["text"]
-        v["quick"] = copy.deepcopy(cur["card"])
+        if cur.get("card"):
+            v["quick"] = copy.deepcopy(cur["card"])
     elif mode == "review":
         v["card_json"] = state.last_card
         v["card_text"] = render_card(state.last_card)
@@ -1876,13 +2084,14 @@ def clarify_room(state):
     return state.turns < MAX_TURNS - REVIEW_RESERVE
 
 
-def turn(state, user_text, bank, llm, catalog=None):
+def turn(state, user_text, bank, llm, catalog=None, search=None):
     """本人の発言 1 通を処理して {reply, view, done, counted} を返す。例外は出さない: ハーネスの中の例外は、
-    ターンの始めの状態に戻して、今出しているものを出し直す(05-M15)。"""
+    ターンの始めの状態に戻して、今出しているものを出し直す(05-M15)。
+    search は「近くで探す」の求人の検索(task 266。_near_jobs。session が渡す。PRD の流れでは使わない)。"""
     _init_volatile(state)
     snap = state.to_dict()
     try:
-        return _turn(state, user_text, bank, llm, catalog)
+        return _turn(state, user_text, bank, llm, catalog, search)
     except Exception as e:  # noqa: BLE001
         restored = State.from_dict(snap)
         state.__dict__.clear()
@@ -2129,7 +2338,7 @@ def _pick_answer(state, bank, llm, catalog, cur, text, buttons, ext, intent, bef
 
 
 
-def _turn(state, user_text, bank, llm, catalog):
+def _turn(state, user_text, bank, llm, catalog, search=None):
     state._new_notices, state._discarded, state._snapped = [], [], []
     text = user_text if isinstance(user_text, str) else ""
     state._user_text = text
@@ -2160,7 +2369,7 @@ def _turn(state, user_text, bank, llm, catalog):
             return _quick_reply(state, bank, NOTICE["danger"])
         return _aside(state, bank, llm, catalog, kind="danger")
     if state.phase in QUICK_PHASES:
-        return _quick_turn(state, text, bank, llm, catalog)
+        return _quick_turn(state, text, bank, llm, catalog, search)
     # ---- Stage 1
     before = {s: copy.deepcopy(state.slots.get(s)) for s in BUCKETS}
     buttons = match_button(state, bank, text)

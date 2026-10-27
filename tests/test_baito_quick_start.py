@@ -58,6 +58,26 @@ def picked(pick: str) -> tuple[H.State, dict]:
     return st, H.turn(st, pick, H.BANK, Quiet())
 
 
+def found(total=1, relax=None):
+    """「近くで探す」の求人の検索の代わり(ハーネスだけを見るテスト)。受け取った条件を calls に残す。"""
+    calls = []
+
+    def search(cond):
+        calls.append(cond)
+        return {"total": total, "jobs": [], "relax": relax}
+
+    search.calls = calls
+    return search
+
+
+def to_more(st: H.State, search=None) -> dict:
+    """入口の答えの後、[近くで探す] → 18歳以上 → 東京 → 昼 → [もっと絞る] で今の流れ(icebreak)に入る。"""
+    search = search or found()
+    for said in (H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE):
+        r = H.turn(st, said, H.BANK, Quiet(), search=search)
+    return r
+
+
 def names(r: dict) -> list[str]:
     return [j["name"] for j in r["view"]["quick"]["jobs"]]
 
@@ -98,15 +118,15 @@ def test_a_new_consultation_starts_with_the_entry_card_and_one_tap_shows_jobs(tm
     assert [(j["name"], j["tag"]) for j in res["jobs"]] == [("スーパーの品出し", "接客少なめ"), ("飲食店のキッチン", "接客少なめ"),
                                                            ("データ入力", "在宅")]
     assert r2["quick_replies"] == [H.QUICK_NEAR, H.QUICK_OTHER] and "progress" not in r2 and r2["cards"] == []
-    # モデルは言い方だけ(黙々・動いてたいの結果と、近くで探すの最初の質問の 3 回。抽出と [ほかのタイプも見る] では呼ばない)
+    # モデルは言い方だけ(黙々・動いてたいの結果と、近くで探すの年齢の問いの 3 回。抽出と [ほかのタイプも見る] では呼ばない)
     assert [c[0] for c in baito.calls] == ["say"] * 3 and H.QUICK_RESULT_TEXT in baito.calls[0][1]
     # [ほかのタイプも見る]: 入口のカードに戻る(モデルを呼ばない)。入口の答えは外す
     assert r3["baito_card"]["kind"] == "entry" and r3["bubbles"] == [H.QUICK_AGAIN_TEXT]
     assert again.phase == H.QUICK_PICK and again.slots == {}
     assert r4["baito_card"]["title"] == "動いてたい" and len(r4["baito_card"]["jobs"]) == 3
-    # [近くで探す]: 今の流れ(icebreak)の最初の質問。カードは付かない
-    assert r5["baito"] == {"phase": "icebreak", "question": "q_money"} and r5["quick_replies"] == QM["q_money"]["choices"]
-    assert "baito_card" not in r5
+    # [近くで探す]: 「近くで探す」の 3 問の最初(年齢。ボタンはクイックリプライ)。カードは付かない(task 266)
+    assert r5["baito"] == {"phase": H.NEAR_AGE, "question": H.NEAR_AGE} and r5["quick_replies"] == QM["hf_age"]["choices"]
+    assert r5["bubbles"] == ["いいね！" + H.NEAR_TEXT[H.NEAR_AGE]] and "baito_card" not in r5
     h = _harness()
     assert h.slots == {"physical": {"value": "standing_ok", "confidence": "low", "from": "choice:quick_pick"}}
     assert h.turns == 0 and h.phase_turns == {}  # 入口の 4 タップは 15 ターンに数えない
@@ -263,11 +283,11 @@ def test_a_new_consultation_starts_at_the_entry_and_restart_goes_back_there():
             return json.dumps({"slot_updates": [], "intent": "restart"})
 
     st, _ = picked("しゃべるの好き")
-    H.turn(st, H.QUICK_NEAR, H.BANK, Quiet())
+    to_more(st)
     assert st.phase == "icebreak" and st.current["qid"] == "q_money"
     r = H.turn(st, "最初からやりなおしたい", H.BANK, Restart())
     assert st.phase == H.QUICK_PICK and r["view"]["quick"]["kind"] == "entry" and r["view"]["restarted"] is True
-    assert st.slots == {} and st.restarts == 1
+    assert st.slots == {} and st.near == {} and st.restarts == 1
     old = H.new_state()  # 前の始まり方の相談は、今までどおり icebreak に戻る
     H.start(old, H.BANK)
     H.turn(old, "最初からやりなおしたい", H.BANK, Restart())
@@ -345,16 +365,19 @@ def test_entry_tiles_send_the_label_as_the_users_words():
 
 
 def test_a_dropped_entry_answer_is_not_shown_as_undecided_in_the_profile():
-    """しゃべるの好き → ほかのタイプも見る → 動いてたい → 近くで探す: 外した「接客」を、プロフィールで「未定」にしない。"""
+    """しゃべるの好き → ほかのタイプも見る → 動いてたい → 近くで探すの 3 問 → もっと絞る: 外した「接客」を、プロフィールで
+    「未定」にしない。帯は [もっと絞る] で今の流れに入ったターンから出す(task 266)。"""
     from dip_mcp.baito import progress as P
 
     st, mem = H.new_state(quick=True), None
-    for said in ("しゃべるの好き", H.QUICK_OTHER, "動いてたい", H.QUICK_NEAR):
+    said = ("しゃべるの好き", H.QUICK_OTHER, "動いてたい", H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE)
+    for i, text in enumerate(said):
         prev = P.before(st)
-        r = H.turn(st, said, H.BANK, Quiet())
+        r = H.turn(st, text, H.BANK, Quiet(), search=found())
         p, mem = P.update(st, mem, prev, r)
-        assert p is None
-    assert mem["seen"] == ["physical"]
+        assert (p is None) == (text != H.NEAR_MORE), text
+    assert mem["seen"] == ["age_band", "time_slots", "physical"]
+    assert [a["label"] for a in p["added"]] == ["年齢", "時間帯", "体力面"]
     items = [it for g in P.groups(st, set(mem["seen"])) for it in g["items"] if it.get("label") == "接客"]
     assert items == [{"label": "接客", "value": None, "inferred": False, "undecided": False}]
 
@@ -367,9 +390,8 @@ def test_a_junior_high_block_skips_the_entry_card_on_restart_and_on_a_new_start(
 
     st, _ = picked(H.QUICK_NONE)
     H.turn(st, H.QUICK_NEAR, H.BANK, Quiet())
-    st.slots["age_band"] = {"value": "under_15", "confidence": "high", "from": "choice:hf_age"}
-    H.update_block(st)
-    assert st.blocked == "under_15"
+    H.turn(st, "中学生以下", H.BANK, Quiet())
+    assert st.blocked == "under_15" and st.phase == "result"
     H.turn(st, "最初からやりなおしたい", H.BANK, Restart())
     assert st.phase == "icebreak" and st.current["qid"] == "q_money" and H.QUICK_FLAG not in st.flags
     state.update(UID, lambda u: u.__setitem__(session.BLOCK_KEY, {"blocked": "under_15"}))
