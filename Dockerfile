@@ -5,7 +5,10 @@ FROM python:3.12-slim
 
 # tini: PID 1 で、終わった子プロセスを片付ける。止めるときの SIGTERM は Web プロセスにだけ渡す(Web プロセスは進行中のターンを
 # 終えてから dip の子プロセスを閉じる。-g でグループに渡すと、dip の子プロセスが先に止まり、進行中のターンが失敗する)
-RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+# ca-certificates: OS の CA の束(/etc/ssl/certs。aiohttp を使う LiveKit などが読む)を、Debian のパッチ済みの版に上げる。
+# ベースの image にもとから入っているが、ここで install し直さないと、ベースを作った時点の古い版のままになる
+# (eMudhra の中間証明書の漏洩。https://render.com/docs/advisory-emudhra 。確かめ方は scripts/check_image_certs.py)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*
 
 # AICA_SECURE_COOKIE: 公開は https だけなので、匿名ユーザーIDの Cookie に Secure を付ける(手元の http のブラウザで試すなら 0 で上書き)
 ENV PYTHONDONTWRITEBYTECODE=1 \

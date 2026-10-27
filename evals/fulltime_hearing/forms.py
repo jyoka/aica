@@ -6,7 +6,8 @@
 
 - A: 今の正社員の相談(LINE 側のランタイムをそのまま。状態を持たないので captured は None)
 - script-good / script-bad: 台本の良い AI と悪い AI(実 API を使わない。本人役とジャッジだけが LLM)
-- B、C は 2/5 のタスク(ハーネス)、D は 3/5 のタスク(UI)が FORMS に足す。まだ無い形を選ぶと、費用を使う前に止める。
+- B、C は、ハーネス(dip_mcp/career。2/5 のタスク)を実 LLM でつなぐ 2b のタスクが、D は 3/5 のタスク(UI)が FORMS に足す。
+  まだ無い形を選ぶと、費用を使う前に止める。B と C のモックでの回帰は evals/career_sim.py(費用 0)。
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import re
 from evals.fulltime_hearing.actor import AIReply, Clock, fact_text
 from evals.fulltime_hearing.personas import COMMON_HARD, SEGMENT_HARD, label
 
-PLANNED = {"B": "2/5 のタスク(ハーネス)", "C": "2/5 のタスク(ハーネス)", "D": "3/5 のタスク(UI)"}
+PLANNED = {"B": "2b のタスク(ハーネスのつなぎ)", "C": "2b のタスク(ハーネスのつなぎ)", "D": "3/5 のタスク(UI)"}
 TARGET_SECONDS = {True: 180.0, False: 300.0}  # 目標時間(履歴書あり / なし。設計メモ §3.3)
 REVIEW_RESERVE = 90.0  # 質問を止める時刻 = 目標時間 - これ(まとめ 2 回分の 70 秒とゆとり 20 秒)
 A_USER = "sim-new"  # 形 A の本人(未連携の新規。会話ごとに dip の状態を戻す)

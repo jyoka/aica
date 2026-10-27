@@ -31,6 +31,17 @@
   2 回目も読めなければ未成年のまま進む。ただし読めない答えに「中学」の語(JHS_RE)か抽出の中学生以下があれば、
   印(flags の age_jhs)を付けて聞き直し、2 回目も読めなければ中学生以下として止める(_age_answer)。本人の学年かどうかを
   語の表で見分けない(表は言い方が無限にあり、例外から中学生が推薦に進む穴が開くため)
+- 区分の表に無い項目の答え(task 257。P3 で区分を言わない主婦の「扶養内」を捨てた): 区分が未判明の間は抽出に全部の項目を
+  渡す。表に無い答えは pending に保留し、次のターンで区分を確かめる質問(バンクのデータ q_held_segment)を 1 回だけ出す
+  (_ask_held。review の 2 ターンと reverse_pick の 1 ターンは使わない)。区分が決まって表にあれば入れ、無ければ捨ててログ
+  held_discarded を残す(_settle_held)。保留中と、捨てて今も空の項目を、以後のどの返事が口にしても検証で落とす(view の unkept。
+  捨てたときは決まり文句 DISCARD_TEXT を返事の前に付ける)
+- 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
+  質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
+  (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
+  言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+- sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
+  choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -170,6 +181,7 @@ REVIEW_OK = "これでOK"
 CLARIFY_TEXT = "お、どのへんがちがう？ひとことで教えて！"
 RETRY_TEXT = "ごめん、うまく受け取れなかった！もう一回だけ教えて。"
 CONFIRM_TEXT = "確認させてね！今のあなたに近いのはどれ？"
+DISCARD_TEXT = "{labels}の話は、今回の条件には入れないでおくね。"  # 保留した答えを捨てたとき(「覚えた」と言わない)
 POST_RESULT_TEXT = "おすすめはここまでだよ。条件を変えてもう一回探すなら「最初から」と送ってね。"
 GUESS_TAIL = "（確認できていない推測の条件だよ。ちがっていたら「最初から」でやり直せるよ）"
 
@@ -195,13 +207,26 @@ def nfkc(s):
     return unicodedata.normalize("NFKC", str(s)).strip()
 
 
+KATA_TO_HIRA = {c: c - 0x60 for c in range(0x30A1, 0x30F7)}  # ァ..ヶ -> ぁ..ゖ(長音の「ー」はそのまま)
+
+
+def kana_fold(s):
+    """NFKC にそろえ、カタカナをひらがなにする(希死念慮の言葉と「続ける」を読む前)。
+    「シニタイ」「ｼﾆﾀｲ」「しにたい」が同じ形になるので、言葉の一覧はひらがなと漢字の形だけで持てる。"""
+    return nfkc(s).translate(KATA_TO_HIRA)
+
+
+def _words_re(words):
+    return re.compile("|".join(map(re.escape, map(kana_fold, words))))
+
+
 # ----------------------------- データ(付録A・付録B) -----------------------------
 def _load_json(name):
     return json.loads((HERE / name).read_text(encoding="utf-8"))
 
 
 def load_bank():
-    """質問バンク(付録A、49 問)。プロンプトには書かない。"""
+    """質問バンク(付録A、49 問)と、ハーネスが足した区分の確認の質問(q_held_segment、task 257)。プロンプトには書かない。"""
     return _load_json("bank_v4.json")
 
 
@@ -210,9 +235,21 @@ def load_catalog():
     return [dict(j, times=set(j["times"])) for j in _load_json("catalog_v4.json")]
 
 
+def load_crisis():
+    """希死念慮・自傷の言葉と、そのときに返す決まった文(crisis_v4.json。PRD に無い aica の決まり。task 256)。
+    窓口は厚生労働省「まもろうよ こころ」(source)で checked の日に確かめたもの。プロンプトには書かない。"""
+    return _load_json("crisis_v4.json")
+
+
 BANK = load_bank()
+HELD_QID = "q_held_segment"  # 区分の表に無い答えを保留したときの、区分の確認の質問(phase "confirm"。選び方では拾わない)
 CATALOG = load_catalog()
 CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
+CRISIS = load_crisis()
+CRISIS_TEXT = "\n".join(CRISIS["reply"])
+CRISIS_RE = _words_re(CRISIS["words"])
+RESUME_RE = _words_re(CRISIS["continue_words"])
+RESUME_NOT_RE = _words_re(CRISIS["continue_not"])
 
 
 # ----------------------------- 正規化(PRD §6-3) -----------------------------
@@ -406,7 +443,7 @@ class State:
     slots: dict = field(default_factory=dict)          # slot -> {"value","confidence","from"}
     user_ng: list = field(default_factory=list)
     derived_ng: list = field(default_factory=list)
-    pending: dict = field(default_factory=dict)        # まだ有効でないスロットの値
+    pending: dict = field(default_factory=dict)        # まだ有効でないスロットの値(区分の表に無い答えの保留)
     archived: dict = field(default_factory=dict)       # セグメント -> {slot: entry}
     conflicts: dict = field(default_factory=dict)      # slot -> [values]
     unresolved: dict = field(default_factory=dict)     # 結果の時点で解けなかった矛盾(§12-2)
@@ -522,6 +559,7 @@ def apply_update(state, slot, value, conf, frm, review=False):
         return "discarded"
     if slot not in active_slots(state):
         state.pending[slot] = {"value": value, "confidence": conf, "from": frm}
+        ev(state, "held", slot=slot, segment=state.segment)
         return "pending"
     spec = SLOTS[slot]
     if value == NOPREF and spec["kind"] == "fact":
@@ -613,6 +651,33 @@ def jhs_unresolved(state):
     return "age_jhs" in state.flags and not is_filled(state.slots.get("age_band"))
 
 
+def unkept_slots(state):
+    """受け取ったが入れていない答えの項目。返事が「覚えた」と言わないよう、生成の検証に渡す。保留中のものと、
+    会話の中で捨てて今も空のもの(捨てたターンだけでなく、その後のどのターンの返事も、結果の返事も)。"""
+    _init_volatile(state)
+    out = list(state.pending) + [s for s in state._discarded if s not in state.pending]
+    for e in state.log:
+        if e["kind"] == "held_discarded" and e["slot"] not in out and not is_filled(state.slots.get(e["slot"])):
+            out.append(e["slot"])
+    return out
+
+
+def _settle_held(state, force=False):
+    """区分が決まったら、保留した答えのうち今の区分の表に無いものを捨てる(表にあるものは _switch_segment が入れた)。
+    force=True は、区分を確かめても決まらなかったとき・結果の前(未判明のままでも捨てる)。"""
+    if state.segment == "unknown" and not force:
+        return
+    for s in list(state.pending):
+        e = state.pending.pop(s)
+        if s in active_slots(state):  # 念のため(ふつうは _switch_segment で入っている)
+            apply_update(state, s, e["value"], e["confidence"], e["from"])
+            continue
+        ev(state, "held_discarded", slot=s, segment=state.segment)
+        _init_volatile(state)
+        if s not in state._discarded:
+            state._discarded.append(s)
+
+
 def _flag_notice(state, key):
     if key and key not in state.flags:
         state.flags.append(key)
@@ -656,6 +721,7 @@ def _switch_segment(state, seg):
         if s in active_slots(state):
             e = state.pending.pop(s)
             apply_update(state, s, e["value"], e["confidence"], e["from"])
+    _settle_held(state)  # 区分が決まった: 表に無い保留は捨てる
 
 
 # ----------------------------- LLM の出力の検証(§8-4) -----------------------------
@@ -779,7 +845,19 @@ def validate_reply(raw, view):
             return None, "question_missing"
         if len(reply) - len(view["text"]) > 120:
             return None, "too_much_extra"
+    if _mentions_unkept(reply, view.get("unkept"), view.get("card_text") if review else view.get("text")):
+        return None, "unkept_mentioned"
     return reply.strip(), None
+
+
+def _mentions_unkept(text, labels, fixed=None):
+    """保留・捨てた項目(labels)を、決まった文(質問・カード)の外で口にしているか。入れていない答えに「覚えた」と言わせない。"""
+    if not labels or not isinstance(text, str):
+        return False
+    t = nfkc(text)
+    if fixed:
+        t = t.replace(nfkc(fixed), "")
+    return any(nfkc(x) in t for x in labels)
 
 
 # ----------------------------- 質問の選び方(§8-3) -----------------------------
@@ -893,7 +971,12 @@ def advance(state, bank):
             state.phase = np
             state.phase_turns.setdefault(np, 0)
             state.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(qmap(bank)["q_segment"]["choices"])}
+            if state.pending:  # 保留した答えも、この確認で決まる
+                _flag(state, "held_asked")
+                state.current.update(choices=list(_held_q(bank)["choices"]), held=sorted(state.pending))
             return
+    if _ask_held(state, bank):
+        return
     for _ in range(len(ORDER) + 2):
         np = next_phase(state, bank)
         state.phase = np
@@ -915,6 +998,48 @@ def advance(state, bank):
     else:
         finalize(state)
         state.current = {"qid": "result", "mode": "result", "choices": []}
+
+
+def _ask_held(state, bank):
+    """区分の表に無い答えを保留したら、次のターンで区分を確かめる(1 回だけ)。区分の質問(q_segment)をまだ出していなければ、
+    そちらで決まるので出さない。review の前は review の 2 ターンを使わない(review に入るなら、review の返事の後に聞く)。
+    review の中では review のターンに数え、15 ターンに達していれば聞かない(結果の前に捨てる)。"""
+    if not state.pending or "held_asked" in state.flags or state.blocked or state.phase == "result":
+        return False
+    if state.segment == "unknown" and "q_segment" not in state.asked:
+        return False
+    if state.turns >= MAX_TURNS or "show_result" in state.flags:
+        return False
+    need = False
+    if state.phase == "review":
+        need = getattr(state, "_need_more_review", False) and state.review_rounds < MAX_REVIEW_ROUNDS
+        if need and state.turns + 2 > MAX_TURNS:
+            return False  # 2 巡目の review を先にする(その後にターンが残れば聞く)
+    else:
+        np = next_phase(state, bank)
+        if np in ("review", "result", "reverse_pick"):
+            return False  # reverse_pick(1 ターン)は使わない。次のフェーズで聞く
+        state.phase = np  # 05-B4 と同じく、確認質問は次のフェーズに数える
+        state.phase_turns.setdefault(np, 0)
+    _flag(state, "held_asked")  # 1 回だけ(状態の欄は増やさない)
+    ev(state, "held_confirm", slots=sorted(state.pending))
+    state.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(_held_q(bank)["choices"]),
+                     "held": sorted(state.pending)}
+    if need:  # review の続きが要るかを、確認の答えのターンまで持ち越す(_need_more_review は保存しない)
+        state.current["need_review"] = True
+    return True
+
+
+def _held_q(bank):
+    """区分の確認の質問(バンクのデータ)。参照資料の写しのバンク(付録A の 49 問だけ。シミュレーター・単体チェック)を
+    渡されたときは、このモジュールのバンクから読む。"""
+    return qmap(bank).get(HELD_QID) or qmap(BANK)[HELD_QID]
+
+
+def _held_text(cur, bank):
+    if not cur.get("held"):
+        return CONFIRM_TEXT
+    return _held_q(bank)["text"].format(labels="・".join(SLOTS[s]["label"] for s in cur["held"]))
 
 
 def _present(state, q, mode):
@@ -1089,6 +1214,7 @@ def finalize(state):
         state.slots.pop(s, None)
         ev(state, "conflict_unresolved", slot=s)
     state.conflicts = {}
+    _settle_held(state, force=True)  # 確かめられなかった保留は捨てる(ログ held_discarded)
     recompute_derived(state)
     update_block(state, final=True)
 
@@ -1211,10 +1337,14 @@ def validate_result(raw, payload):
             return None, "not_in_allowlist"
         if not isinstance(r.get("reason"), str) or not r["reason"].strip() or MONEY_RE.search(r["reason"]):
             return None, "bad_reason"
+        if _mentions_unkept(r["reason"], payload.get("unkept")):
+            return None, "unkept_mentioned"
         seen.add(r["job_id"])
     reply = d.get("reply", "")
     if not isinstance(reply, str) or MONEY_RE.search(reply):
         return None, "bad_reply"
+    if _mentions_unkept(reply, payload.get("unkept")):
+        return None, "unkept_mentioned"
     return {"reply": reply, "recommendations": [{"job_id": r["job_id"], "reason": r["reason"].strip()} for r in recs]}, None
 
 
@@ -1294,9 +1424,12 @@ def view(state, bank, aside=False):
     v = {"phase": state.phase, "segment": f"{state.segment}（{SEGMENT_JA[state.segment]}）", "mode": mode,
          "qid": cur.get("qid"), "choices": list(cur.get("choices", [])), "notices": [NOTICE[k] for k in state._new_notices],
          "slots_json": slots_json(state), "user_text": state._user_text}
+    unkept = unkept_slots(state)
+    if unkept:  # 生成の検証だけが読む(プロンプトの変数ではない)
+        v["unkept"] = [SLOTS[s]["label"] for s in unkept]
     q = qmap(bank).get(cur.get("qid"))
     if mode == "confirm":
-        v["text"] = CONFIRM_TEXT
+        v["text"] = _held_text(cur, bank)
     elif mode == "review":
         v["card_json"] = state.last_card
         v["card_text"] = render_card(state.last_card)
@@ -1322,13 +1455,14 @@ def extract_payload(state, bank, user_text):
     """抽出段の入力(05-B8)。question / choices / targets は出しているものによる。"""
     cur = state.current or {}
     mode = cur.get("mode")
-    allowed = sorted(active_slots(state))
+    # 区分が未判明の間は全部の項目を渡す(区分の表に無い答えは保留する。task 257)
+    allowed = sorted(ALL_SLOTS) if state.segment == "unknown" else sorted(active_slots(state))
     if mode == "review":
         card = state.last_card or build_card(state)
         question, choices = render_card(card), [REVIEW_OK]
         targets = list(card["focus"]) or [i["slot"] for i in card["hard"] + card["prefs"]]
     elif mode == "confirm":
-        question, choices, targets = CONFIRM_TEXT, list(cur.get("choices", [])), ["segment"]
+        question, choices, targets = _held_text(cur, bank), list(cur.get("choices", [])), ["segment"]
     elif mode == "result":
         question, choices, targets = "（おすすめを表示したあと）", [], (["age_band"] if state.blocked else [])
     else:
@@ -1343,7 +1477,7 @@ def extract_payload(state, bank, user_text):
 # ----------------------------- ターン(§5) -----------------------------
 def _init_volatile(state, reset=False):
     """そのターン限りの値(先頭が _。保存しない)。"""
-    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", "")):
+    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", ""), ("_discarded", None)):
         if reset or not hasattr(state, k):
             setattr(state, k, [] if v is None else v)
 
@@ -1573,7 +1707,7 @@ def _age_asked_again(state):
 
 
 def _turn(state, user_text, bank, llm, catalog):
-    state._new_notices = []
+    state._new_notices, state._discarded = [], []
     text = user_text if isinstance(user_text, str) else ""
     state._user_text = text
     if state.current is None:
@@ -1582,10 +1716,20 @@ def _turn(state, user_text, bank, llm, catalog):
         return _post_result(state, text, bank, llm, catalog)
     cur = state.current
     qm = qmap(bank)
-    q = qm.get("q_segment") if cur["qid"] == "confirm_segment" else qm.get(cur["qid"])
+    if cur["qid"] == "confirm_segment":
+        q = _held_q(bank) if cur.get("held") else qm.get("q_segment")
+    else:
+        q = qm.get(cur["qid"])
     if not nfkc(text):
         ev(state, "empty_input")
         return _represent(state, bank, counted=False)
+    crisis_open = _take_crisis(state)
+    if match_button(state, bank, text) is None:  # 選択肢の文字そのものは答えとして読む
+        if crisis_hit(text):
+            return _crisis(state, bank)
+        if crisis_open and wants_resume(text):
+            ev(state, "crisis_resume")
+            return _represent(state, bank, counted=False, lead=[CRISIS["resume_lead"]])
     if DANGER_RE.search(nfkc(text)):
         return _aside(state, bank, llm, catalog, kind="danger")
     # ---- Stage 1
@@ -1633,6 +1777,7 @@ def _turn(state, user_text, bank, llm, catalog):
             _flag(state, "show_result")
         advance(state, bank)
         return _say(state, bank, llm, catalog)
+    held_confirm = mode == "confirm" and bool(cur.get("held"))
     if buttons is not None:
         _apply_effects(state, bank, q, buttons, "confirm" if mode == "confirm" else "choice")
         if mode == "confirm":
@@ -1675,6 +1820,11 @@ def _turn(state, user_text, bank, llm, catalog):
                 _apply_ext(state, bank, _jhs_stop(state, None, text), q=q, text=text, review=False)
             else:
                 ev(state, "age_unread_kept_minor", slot="age_band")
+    if held_confirm:  # 区分を確かめた: 表にあれば入った。無い・決まらなければ捨てる
+        _settle_held(state, force=True)
+        if state.phase == "review":  # review の中で聞いたときは、区分が変わって空いた条件をもう 1 巡で確かめる
+            state._need_more_review = bool(cur.get("need_review") or state.conflicts or state.pending_segment) or \
+                any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state))
     if intent == "show_result":
         _flag(state, "show_result")
     advance(state, bank)
@@ -1684,6 +1834,34 @@ def _turn(state, user_text, bank, llm, catalog):
 def _flag(state, key):
     if key not in state.flags:
         state.flags.append(key)
+
+
+def crisis_hit(text):
+    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。文は kana_fold にそろえてから照らす。"""
+    return bool(CRISIS_RE.search(kana_fold(text)))
+
+
+def wants_resume(text):
+    """窓口を案内した次の発言が「続ける」か(「続けたくない」「大丈夫じゃない」は当たらない)。"""
+    t = kana_fold(text)
+    return bool(RESUME_RE.search(t)) and not RESUME_NOT_RE.search(t)
+
+
+def _take_crisis(state):
+    """前のターンで窓口を案内したか。印は 1 ターンだけ残す(読んだら消す)。"""
+    shown = "crisis_shown" in state.flags
+    if shown:
+        state.flags.remove("crisis_shown")
+    return shown
+
+
+def _crisis(state, bank, done=False):
+    """希死念慮・自傷の言葉: 質問を進めず(数えず、抽出も生成もしない)、決まった文だけを返す。選択肢は出さない。
+    今の質問はそのまま残すので、次のターンで「続ける」と言えば、そこから相談を続ける。"""
+    _flag(state, "crisis_shown")
+    ev(state, "crisis_guidance")
+    v = dict(view(state, bank), choices=[], crisis=True)
+    return {"reply": CRISIS_TEXT, "view": v, "done": done, "counted": False}
 
 
 def _restart(state, bank, llm, catalog):
@@ -1705,6 +1883,12 @@ def _post_result(state, text, bank, llm, catalog):
     v = view(state, bank)
     stored = {"reply": POST_RESULT_TEXT + "\n" + state.result["text"], "view": v, "done": True, "counted": False}
     if not nfkc(text):
+        return stored
+    crisis_open = _take_crisis(state)
+    if crisis_hit(text):
+        return _crisis(state, bank, done=True)
+    if crisis_open and wants_resume(text):
+        ev(state, "crisis_resume")
         return stored
     if DANGER_RE.search(nfkc(text)):
         _flag(state, "danger_warned")
@@ -1793,8 +1977,16 @@ def _represent(state, bank, counted, prefix=None, aside=False, lead=None):
     v = view(state, bank, aside=aside)
     body = v["card_text"] + "\n\n" + CLOSING_JA if v["mode"] == "review" else v.get("text", "")
     lead = list(lead or [])
-    parts = lead + [n for n in v["notices"] if n not in lead] + ([prefix] if prefix else []) + [body]
+    parts = lead + [n for n in v["notices"] if n not in lead] + _discard_lead(state) + ([prefix] if prefix else []) + [body]
     return {"reply": "\n".join(parts), "view": v, "done": False, "counted": counted}
+
+
+def _discard_lead(state):
+    """このターンに捨てた保留の答えを、決まり文句で伝える(返事が「覚えた」と言わないように)。"""
+    _init_volatile(state)
+    if not state._discarded:
+        return []
+    return [DISCARD_TEXT.format(labels="・".join(SLOTS[s]["label"] for s in state._discarded))]
 
 
 def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
@@ -1802,11 +1994,12 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
     v = view(state, bank, aside=aside)
     if extra:
         v.update(extra)
-    notices = list(v["notices"])
+    notices = list(v["notices"]) + _discard_lead(state)
     if state.current["mode"] == "result":
         cat = catalog or CATALOG
         cby = {j["id"]: j for j in cat}
         payload = build_result_payload(state, cat)
+        payload["unkept"] = v.get("unkept")  # 生成の検証だけが読む(result_json には入れない)
         keys = ("card", "candidates", "need", "unknown_hard", "unresolved", "notices", "blocked", "conditional")
         v["result_json"] = json.dumps({k: payload[k] for k in keys}, ensure_ascii=False, default=str)
         out = None
@@ -1820,7 +2013,7 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
         out = post_check_result(state, payload, out, cby)
         txt = compose_result_text(payload, out, cby)
         lead = [NOTICE[k] for k in state._new_notices
-                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")]
+                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")] + _discard_lead(state)
         txt = "\n".join(lead + [txt])
         state.result = {"text": txt, "recommendations": out["recommendations"], "payload": payload}
         return {"reply": txt, "view": v, "done": True, "counted": counted}

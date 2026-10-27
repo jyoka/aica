@@ -43,7 +43,7 @@
 | `A` | 今の正社員の相談(`dip_mcp/playbooks/fulltime_chat.md`)。LINE のトークとして回し、LIFF の画面は使わない。本人役が読むのは LINE に送るメッセージ(`line_channel.to_messages`)の字 | 会話の記録と、先に送った履歴書から、ジャッジが事実を取り出す |
 | `script-good` | 台本の良い AI。1 回に 1 問、80 字まで、聞き直さない、ボタンとパス、§3.3 の時間の予算 | 台本が本人の言葉のまま持つ |
 | `script-bad` | 台本の悪い AI。長い、2 つ聞く、聞き直す、面接口調 | 同上 |
-| `B`、`C`、`D` | まだ無い。2/5(B、C)と 3/5(D)のタスクが `forms.py` の `FORMS` に足す | ハーネスの終わりの状態 |
+| `B`、`C`、`D` | 実 LLM ではまだ回せない。ハーネス(`dip_mcp/career/`)は 2/5 のタスクで作り、実 LLM につなぐ 2b(B、C)と 3/5(D)のタスクが `forms.py` の `FORMS` に足す。B と C のモックの回帰は `python -m evals.career_sim`(費用 0) | ハーネスの終わりの状態(`harness.captured`) |
 
 形は `start()`、`send(text, pressed)`、`captured()`、`saved_texts()`、`wasted()` を持ちます。`captured()` の形は `judge.py` の
 docstring にあります(`None` を返すと、会話の記録から取り出します)。形 A の完了と離脱は、次のように数えます。

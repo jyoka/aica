@@ -53,7 +53,7 @@ def make_bank(segment_q_targets=("segment",)):
     B += [
         Q("sc_line", S, ["all"], ["customer_facing", "pace"], "お店に長い行列ができた！そのとき思うのは？", {
             "よし、燃えてきた": {"customer_facing": "ok", "pace": "busy_ok"},
-            "今すぐ消えたい": {"customer_facing": "avoid", "pace": "calm"}}),
+            "今すぐ抜けたい": {"customer_facing": "avoid", "pace": "calm"}}),
         Q("sc_shift", S, ["all"], ["shift_length"], "理想の1回のシフトは？", {
             "3時間でサクッと": {"shift_length": "short"}, "6時間でガッツリ稼ぐ": {"shift_length": "long"}}),
         Q("sc_teach", S, ["all"], ["atmosphere"], "仕事の教わり方、どっちがいい？", {

@@ -33,7 +33,7 @@ BOT  (6) いいね！通うなら、どこまでOK？  ['家から徒歩・自�
 USER [hard_filter/hf_commute/ask] 1時間くらいまでOKかな
      slots: commute: ∅→train_60(high)
      event: {'t': 6, 'kind': 'extract_repaired', 'problems': ['confidence_missing']}
-BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ消えたい']
+BOT  (7) いいね！お店に長い行列ができた！そのとき思うのは？  ['よし、燃えてきた', '今すぐ抜けたい']
 USER [scenario_game/sc_line/ask] よし、燃えてきたかな
      slots: customer_facing: ∅→ok(low); pace: ∅→busy_ok(low)
      event: {'t': 7, 'kind': 'extract_repaired', 'problems': ['confidence_missing', 'confidence_missing']}

@@ -55,7 +55,7 @@ PERSONAS = [
             answers={"q_money": "生活費・家計の足し", "q_segment": "家のこと中心", "hf_days": "週3〜4日",
                      "hf_time": "昼", "hf_commute": "家から徒歩・自転車", "hf_hours": "9〜14時くらい",
                      "hf_leave": "けっこうある", "sc_hm_fever": "すぐ休める", "sc_hm_remote": "外に出たい",
-                     "sc_hm_money": "家計の足し", "sc_line": "今すぐ消えたい", "fg_fuyou": "はい、扶養内で",
+                     "sc_hm_money": "家計の足し", "sc_line": "今すぐ抜けたい", "fg_fuyou": "はい、扶養内で",
                      "fg_remote": "外がいい", "fg_physical": "少しなら"}),
     Persona("office", "会社員・副業探し", "side_job",
             review=[{"text": "時給は1,200円以上はほしい。あとはOK", "updates": [("hourly_wage_min", 1200)]}],

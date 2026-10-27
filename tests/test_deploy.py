@@ -63,3 +63,20 @@ def test_the_container_does_not_let_uvicorn_rewrite_the_client_ip():
     command_lines = [x for x in start.splitlines() if not x.lstrip().startswith("#")]
     assert not any("forwarded-allow-ips" in x.lower() or "FORWARDED_ALLOW_IPS" in x for x in command_lines)
     assert "exec python -m line_runtime.server" in start
+
+
+def test_the_image_does_not_trust_the_leaked_emudhra_certificates():
+    """eMudhra の中間証明書の漏洩(Render の通告、2026-10-27)。build した image の版は scripts/check_image_certs.py で確かめる。"""
+    import certifi
+
+    lines = [x.strip() for x in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()]
+    assert "certifi>=2026.10.19" in lines
+
+    def version(v: str) -> tuple[int, ...]:
+        return tuple(int(x) for x in v.split("."))
+
+    assert version(certifi.__version__) >= (2026, 10, 19)  # 今の環境(CI)にも直った版が入っている
+    # OS の CA の束(aiohttp を使う LiveKit などが読む)は、ベースの image のままにせず、build のたびに Debian の今の版を入れる
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    install = next(x for x in dockerfile.splitlines() if x.startswith("RUN apt-get update") and "apt-get install" in x)
+    assert "ca-certificates" in install.split("apt-get install", 1)[1].split("&&")[0].split()

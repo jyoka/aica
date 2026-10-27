@@ -143,11 +143,18 @@ function createTalk(o) {
     resume_upload: { label: "📄 ファイルを選ぶ", run: () => pickResume() },
     voice_consult: { label: "🎤 話して伝える(音声・約5分)", run: () => openVoice() },
   };
+  // progress: アルバイト・パートの相談(ハーネス)で、プロフィールが育つのを見せる部品(帯・プロフィールカード・完成)。
+  // Web のトークは Flex を描かず、文の形(progress.text)を最後の吹き出しの最後の行に足す(設計メモ hearing-progress-ui.md §5)
   function renderReply(r, col, time = now()) {
     col.querySelector(".typing")?.remove();
     if (r.track_switch) trackSwitch(r.track_switch, col.parentElement);
-    for (const b of r.bubbles) col.appendChild(el("div", "bubble", b));
-    if (r.bubbles.length && time) col.appendChild(el("span", "time", time));
+    const bubbles = [...r.bubbles];
+    if (r.progress?.text) {
+      const last = bubbles.pop();
+      bubbles.push(last ? `${last}\n${r.progress.text}` : r.progress.text);
+    }
+    for (const b of bubbles) col.appendChild(el("div", "bubble", b));
+    if (bubbles.length && time) col.appendChild(el("span", "time", time));
     if (r.cards.length) { const box = el("div", "cards"); r.cards.forEach(j => box.appendChild(jobCard(j))); log.appendChild(box); }
     for (const b of r.buttons) {
       const w = el("div", "liff"), a = el("a", null, b.label);
