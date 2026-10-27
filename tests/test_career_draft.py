@@ -1,7 +1,8 @@
 """正社員のヒアリングの職歴カードから作る、職務経歴書の下書き(dip_mcp/career/draft.py、task 247)。実 LLM・実 LINE は呼ばない。
 
 設計メモ docs/design/fulltime-hearing.md の §4(職歴カード)と §5.2(全部の完成の「下書きを開く」)、§6.4 の関門「数字を作った: 0 件」。
-- result に着くと、職歴カードから下書きを作り、ゲームの下書きと同じ場所に保存する。結果の返信に「下書きを開く」のボタン
+- result に着くと、職歴カードから下書きを作り、ゲームの下書きと同じ場所に保存する。「下書きを開く」のボタンは、形 D は完成の
+  カルーセル、ほかの形は結果の返信に付ける(入口は 1 つ)
 - 書くのは本人の言葉だけ。区切りのボタンは「くらい」をつけたまま。パスと「覚えていない」の欄は空欄
 - 下書きの数字は、本人の発言か選んだ区切りにある数字だけ(無い数字は数字の空欄に戻す)
 - 空欄は下書きの空欄として数え、下書きの画面(/liff/arcade/draft)で本人が埋める
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from dip_mcp import arcade, logic, profile
@@ -112,6 +114,80 @@ def test_line_result_makes_a_draft_from_the_career_cards_without_made_up_numbers
     # トークの AI の要約: 下書きがあり、空欄の数を読める(下書きの空欄の仕組みで後から聞ける)
     ad = logic.conversation_summary(st, uid)["arcade_draft"]
     assert ad["game"] == "正社員の相談" and ad["blanks"] == n and ad["view_url"] == f"/liff/arcade/draft?rid={rec['id']}"
+
+
+def _uris(body: dict) -> list[dict]:
+    """返信のすべてのメッセージの中の、URL を開くボタン(action)。"""
+    def walk(node):
+        if isinstance(node, dict):
+            own = [node] if node.get("type") == "uri" and "uri" in node else []
+            return own + [x for v in node.values() for x in walk(v)]
+        if isinstance(node, list):
+            return [x for v in node for x in walk(v)]
+        return []
+    return walk(body["messages"])
+
+
+@pytest.mark.parametrize("liff", [True, False])
+def test_line_form_d_opens_the_draft_from_the_complete_carousel_with_the_same_blank_count(tmp_path, monkeypatch, liff):
+    """形 D(CAREER_HARNESS_FORM=D)を LINE の Webhook で result まで進める。まとめで「取引先1200社」と直し、読み取りが「200社」を抜く。
+    - 完成のカルーセルの先頭の下に「下書きを開く」(下書きの画面の LIFF URL)。結果の吹き出しにはボタンを付けない(入口は 1 つ)
+    - 結果の文の「空欄はNつ」、カルーセルの「空欄Nつ」、下書きの空欄の数(下書きの画面とプロフィールが出す数)が同じ。
+      空欄に戻した数字(200社)も数える
+    - LIFF の設定が無ければ、ボタンはどこにも出ない(空欄の数は出る)"""
+    from functools import partial
+
+    from line_runtime import career_ui
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setenv(H.FORM_ENV, "D")
+    uid = line_user(RAW_USER)
+    llm = PartNumberLLM()
+    model = ConsultModel(script=start_script(uid))
+    server, fake = _server(tmp_path, monkeypatch, model, **(LIFF if liff else {}))
+    if not liff:
+        for k in LIFF:
+            monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, career_llm=llm))
+    st = server.state
+    fixed = False
+    with TestClient(server.app) as client:
+        assert _say(client, "正社員で転職したいので相談したい", 1).status_code == 200
+        for n in range(2, 45):
+            qid = current_qid(st, uid)
+            if qid is None:
+                break
+            last = fake.sent()[-1][1]["messages"][-1]
+            quick = [i["action"]["text"] for i in last.get("quickReply", {}).get("items", [])]
+            if qid == "start":
+                said = H.START_GO
+            elif qid == "review" and not fixed:
+                said, fixed = "規模は取引先1200社", True
+            else:
+                said = H.PASS if qid == "card_result1" else answer_for(qid, quick)
+            assert _say(client, said, n).status_code == 200
+        else:
+            raise AssertionError("result に着かない")
+        body = fake.sent()[-1][1]
+    assert fixed
+    (rec,) = arcade.drafts(st, uid)
+    n = arcade.blanks(rec)
+    assert "200" not in rec["markdown"] and n >= 2  # 抜いた数字は空欄に戻し、パスした欄と合わせて数える
+    text, carousel = body["messages"]
+    assert text["type"] == "text" and text["text"].startswith(H.RESULT_TEXT) and f"空欄は{n}つ" in text["text"]
+    assert carousel["type"] == "flex" and carousel["contents"]["type"] == "carousel"
+    first = carousel["contents"]["contents"][0]
+    assert f"空欄{n}つ。あとから埋められます" in career_ui.flex_lines(first)
+    draft_button = {"type": "uri", "label": session.DRAFT_LABEL,
+                    "uri": f"https://liff.line.me/{LIFF_ID}/arcade/draft?rid={rec['id']}"}
+    if liff:
+        assert draft_button in _uris({"messages": [first]})
+        assert _uris(body) == [draft_button]  # 結果の吹き出しにボタンを付けない(二重にしない)
+    else:
+        assert _uris(body) == []
+    assert uid not in str(body)
+    ad = logic.conversation_summary(st, uid)["arcade_draft"]
+    assert ad["blanks"] == n
 
 
 # ----------------------------- 数字を作らない(コードの確かめ) -----------------------------
@@ -235,6 +311,36 @@ def test_result_counts_the_number_blanks_the_draft_put_back(tmp_path):
     md, n = rec["markdown"], arcade.blanks(rec)
     assert r["draft"]["replaced"] >= 1 and "200" not in md  # 作った数字は空欄に戻した
     assert n == r["draft"]["blanks"] == len(r["blank_cards"]) + r["draft"]["replaced"]
+    assert f"空欄は{n}つ" in r["reply"]
+
+
+def test_web_form_d_keeps_the_draft_button_on_the_reply_because_the_web_talk_draws_the_carousel_as_text(tmp_path,
+                                                                                                    monkeypatch):
+    """Web のトーク(LINE でないユーザー)の形 D: カルーセルは文になり(talk-core.js は求人のカルーセルしか描かない)、ボタンを持てない。
+    そこで、完成の ui に下書きの URL を入れたうえで、返信の buttons にも「下書きを開く」を付ける(Web で見える入口はこれ 1 つ)。
+    空欄の数は、結果の文、完成の ui、下書きで同じ。"""
+    monkeypatch.setenv(H.FORM_ENV, "D")
+    st = State(tmp_path / "state.json")
+    llm = PartNumberLLM()
+    session.start(st, UID)
+    fixed = False
+    for _ in range(45):
+        qid = current_qid(st, UID)
+        if qid is None:
+            break
+        said = H.START_GO if qid == "start" else H.PASS if qid == "card_result1" else answer_for(qid, [])
+        if qid == "review" and not fixed:
+            said, fixed = "規模は取引先1200社", True
+        r = _drive(st, UID, said, llm)
+    else:
+        raise AssertionError("result に着かない")
+    assert fixed and r["status"] == "result" and r["ui"]["kind"] == "complete"
+    (rec,) = arcade.drafts(st, UID)
+    url = f"/liff/arcade/draft?rid={rec['id']}"
+    assert r["draft"]["view_url"] == r["ui"]["complete"]["draft_url"] == url
+    assert r["buttons"] == [{"label": session.DRAFT_LABEL, "url": url}]
+    n = arcade.blanks(rec)
+    assert r["draft"]["replaced"] >= 1 and r["ui"]["complete"]["blanks"] == r["draft"]["blanks"] == n
     assert f"空欄は{n}つ" in r["reply"]
 
 

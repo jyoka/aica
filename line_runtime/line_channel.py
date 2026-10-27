@@ -38,6 +38,8 @@ from urllib.parse import quote, urlencode
 
 import httpx
 
+from line_runtime import baito_cards
+
 log = logging.getLogger(__name__)
 
 SECRET_ENV = "LINE_CHANNEL_SECRET"
@@ -423,6 +425,8 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
       挨拶のターンかどうかの印には使わない
     - progress(プロフィールの進み具合の部品。line_runtime.progress_ui.build)→ flex があれば吹き出しの後ろに Flex を 1 つ。
       Flex を切った形(flex が None)なら、文(text)を最後の吹き出しの最後の行に足す
+    - baito_card(アルバイトの相談の入口のカードと職種の結果。line_runtime.baito_cards)→ 吹き出しの後ろに Flex を 1 つ。
+      絵の URL は公開 URL(base)から作る(https でなければ絵を出さない)。ボタンはカードの中にあるので、クイックリプライは付けない
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。
     features は LINE で使えるもの(既定は liff_features()。評価が LINE の通数を数えるときに、設定の代わりに渡す)。
@@ -436,6 +440,8 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
     flex = []
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
+    if card := reply.get("baito_card"):
+        flex.append(baito_cards.flex(card, base))
     if progress := reply.get("progress"):
         if progress.get("flex"):
             flex.append(dict(progress["flex"]))  # 写し(最後のメッセージならクイックリプライを足すので、返信の dict を変えない)
@@ -470,7 +476,7 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
     messages = flex + messages if lead else messages + flex
     if not messages:  # 送るものが無い(吹き出しが空): 入力中の表示のまま黙らない
         messages = [_text(FAILED_TEXT)]
-    if quick := _labeled(reply.get("quick_replies") or []):
+    if (quick := _labeled(reply.get("quick_replies") or [])) and not card:
         messages[-1]["quickReply"] = _quick_reply(quick)
     return messages
 

@@ -410,6 +410,20 @@ async def shared_static(name: str):
     return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
 
 
+# アルバイトの相談の入口と結果のカードのアイコン(docs/design/baito-quick-start.md の §8)。64×64 の PNG で、
+# scripts/baito_icons.py が docs/images/baito-quick-start/sprites.json から作る。LINE の Flex は AICA_PUBLIC_URL を前に付けて読む
+BAITO_ICONS = STATIC / "baito"
+BAITO_ICON_STATIC = {f"{n}.png" for n in ("talk", "move", "solo", "sit", "light")}
+
+
+@app.get("/static/baito/{name}")
+async def baito_icon_static(name: str):
+    """アルバイトの相談のアイコン。"""
+    if name not in BAITO_ICON_STATIC:
+        raise HTTPException(404)
+    return FileResponse(BAITO_ICONS / name, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/legal/{name}", response_class=HTMLResponse)
 async def legal_page(name: str):
     """利用規約(terms)とプライバシーポリシー(privacy)。原文は docs/legal/。だれでも開ける(Cookie を発行も要求もしない)。"""
@@ -435,6 +449,19 @@ async def arcade_static(name: str):
     if name not in ARCADE_STATIC:
         raise HTTPException(404)
     return FileResponse(ARCADE / name, headers={"Cache-Control": "no-cache"})
+
+
+# 正社員のヒアリングの職歴カードの「完成」のスタンプ(line_runtime/career_ui.py。アーケードと同じドット絵の色)。
+# scripts/career_stamp.py が作る。LINE の Flex は AICA_PUBLIC_URL を前に付けて読む
+CAREER_STATIC = {"stamp.png"}
+
+
+@app.get("/static/career/{name}")
+async def career_static(name: str):
+    """正社員のヒアリングの絵。"""
+    if name not in CAREER_STATIC:
+        raise HTTPException(404)
+    return FileResponse(STATIC / "career" / name, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/liff/arcade")

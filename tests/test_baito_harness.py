@@ -9,11 +9,16 @@
     中学生以下として止める(task 258)
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
-(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存
+(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存。
+    PRD の流れ(icebreak から)を見るので、入口のカード(task 265。tests/test_baito_quick_start.py)を通さずに始める(quick=False)
 (7) 希死念慮・自傷の言葉(task 256): 自由入力なら、どのフェーズでも質問を進めずに相談窓口の決まった文。ボタンには当てない。
     「続ける」で続きから。行列の質問の選択肢は「今すぐ抜けたい」
 (8) 区分の表に無い答え(task 257): 区分を言わない本人の「扶養内」を保留し、区分を確かめてから入れるか捨てる。
     捨てた・保留した答えを、返事が「覚えた」と言わない。P3 で dropped=1 になった台本をモックで回す
+(9) 途中で区分が違うと分かった本人(task 267): 文に今の区分と違う区分の言葉があれば、抽出が今の区分を返しても、
+    次のターンで区分をボタンで確かめる。区分はボタンで決める。確認は 1 回の相談で 1 回まで
+(10) 区切りの境目(task 268): 打った数が区切りの境目(「4時間くらい」)なら、2 つの区切りをボタンで 1 回だけ聞き直す。
+    区切りに寄せて入れたら、返事の前に保存した区切りの文字を出し、返事は入れていない数を「覚えた」と言わない
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import dataclasses
 import importlib
 import importlib.util
 import json
+import re
 import sys
 
 import pytest
@@ -182,20 +188,29 @@ def test_port_passes_the_prd_unit_checks_and_the_20_personas(reference):
 # 読めず、未成年のまま進む(ルールの NG が付く。ターンが 1 つ減った fill_gaps の項目が未定に残る)
 CHANGED_BY_TASK_258 = {"hs16": {"per_phase"}, "sj17": {"per_phase", "mid_empty_end"},
                        "spam_high": {"unresolved", "derived_ng"}, "malformed": {"per_phase", "mid_empty_end", "derived_ng"}}
+# task 268: hs16 の review の「シフトは4時間くらい」は区切りの境目なので、ボタンで聞き直す(review が 1 ターン増える)
+CHANGED_BY_TASK_268 = {"hs16": {"turns"}}
+# task 265(設計メモ baito-quick-start.md §5)で、体力面が「立ち仕事OK」のときに立ち仕事 +1・にぎやか +0.5 を足した。
+# seg_flip(立ち仕事OK、接客は避けたい)の推薦が、重い作業(倉庫・イベント設営)から立ち仕事(工場の軽作業・イベントスタッフ)になる
+CHANGED_BY_TASK_265 = {"seg_flip": {"recs"}}
 
 
 def test_port_matches_the_reference_baseline_persona_by_persona(reference):
-    """ターン数・フェーズの配分・review の回数・結果の推薦は、参照実装の基準値(results_v4.json)と同じ(task 258 の分を除く)。"""
+    """ターン数・フェーズの配分・review の回数・結果の推薦は、参照実装の基準値(results_v4.json)と同じ(task 258・265・268 の分を除く)。"""
     r, _ = reference
     keys = ("turns", "per_phase", "review_rounds", "recs", "blocked", "unresolved", "mid_empty_end", "derived_ng")
     port = {m["persona"]: {k: m[k] for k in keys} for m in r["results"]["v4"]}
     base = {m["persona"]: {k: m[k] for k in keys} for m in r["baseline"]["v4"]}
     diff = {p: {k for k in keys if port[p][k] != base[p][k]} for p in port}
-    assert {p: d for p, d in diff.items() if d} == CHANGED_BY_TASK_258
+    by_task = (CHANGED_BY_TASK_258, CHANGED_BY_TASK_265, CHANGED_BY_TASK_268)
+    changed = {p: set().union(*(c.get(p, set()) for c in by_task)) for p in set().union(*by_task)}
+    assert {p: d for p, d in diff.items() if d} == changed
+    assert port["seg_flip"]["recs"] == ["super_stock", "factory_light", "event_staff"]
     for p in ("spam_high", "malformed"):
         m = next(x for x in r["results"]["v4"] if x["persona"] == p)
         assert m["reasks"] == ["hf_age"] and m["minor_mode"] and port[p]["derived_ng"] == H.DERIVED_NG_MINOR
-    assert all(port[p]["turns"] == base[p]["turns"] and port[p]["recs"] == base[p]["recs"] for p in ("hs16", "sj17"))
+    assert port["sj17"]["turns"] == base["sj17"]["turns"] and port["hs16"]["turns"] == base["hs16"]["turns"] + 1
+    assert all(port[p]["recs"] == base[p]["recs"] for p in ("hs16", "sj17"))
 
 
 def test_the_baseline_files_are_not_overwritten(reference):
@@ -204,9 +219,23 @@ def test_the_baseline_files_are_not_overwritten(reference):
     base = (REF / "transcripts" / "v4_univ.txt").read_text(encoding="utf-8")
     assert r["transcripts"]["v4_univ.txt"] == base and r["baseline"] == json.loads((REF / "results_v4.json").read_text())
     # N-17 で結果の文の「未定」が 1 行減ったところ(spam_high)と、task 258 の年齢の読み取り(persona の台本の
-    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)だけが、基準の会話ログと違う
+    # hs16・sj17・age_fix と、聞き直しの spam_high・malformed)と、task 267 の区分の確認の印(seg_flip の flags に
+    # segment_asked)と、task 265 の立ち仕事の加点(seg_flip の推薦)と、task 266 で状態に足した near(dropout の状態の大きさ)
+    # だけが、基準の会話ログと違う
     diff = [x for x in r["transcripts"] if r["transcripts"][x] != (REF / "transcripts" / x).read_text(encoding="utf-8")]
-    assert diff == ["v4_age_fix.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_sj17.txt", "v4_spam_high.txt"]
+    assert diff == ["v4_age_fix.txt", "v4_dropout.txt", "v4_hs16.txt", "v4_malformed.txt", "v4_seg_flip.txt", "v4_sj17.txt",
+                    "v4_spam_high.txt"]
+    # task 266: 状態に「近くで探す」の答え near を足した(PRD の流れでは空)。保存した状態が ', "near": {}' の分だけ長いほかは同じ
+    near = len(json.dumps({"near": {}})) - 2 + len(", ")
+    dropout = re.sub(r"state serialized \((\d+) bytes\)", lambda m: f"state serialized ({int(m[1]) - near} bytes)",
+                     r["transcripts"]["v4_dropout.txt"])
+    assert dropout == (REF / "transcripts" / "v4_dropout.txt").read_text(encoding="utf-8")
+    flip = r["transcripts"]["v4_seg_flip.txt"].replace("flags=['segment_asked']", "flags=[]")
+    flip = flip.replace('"flags": ["segment_asked"]', '"flags": []')
+    for now, was in (("工場の軽作業", "倉庫の仕分け・ピッキング"), ("イベントスタッフ（案内・誘導）", "イベント設営"),
+                     ('"factory_light", "event_staff"', '"warehouse", "event_setup"')):
+        flip = flip.replace(now, was)
+    assert flip == (REF / "transcripts" / "v4_seg_flip.txt").read_text(encoding="utf-8")
 
 
 def test_log_writes_the_ci_evidence_and_keeps_the_exit_code(reference, tmp_path, monkeypatch, capsys):
@@ -226,7 +255,7 @@ def test_acceptance_catches_regressions(reference):
     r, _ = reference
     worse = json.loads(json.dumps(r["results"]))
     worse["v4_agg"]["minor_violation"] = 1
-    worse["v4"][0]["turns"] += 2
+    worse["v4"][0]["turns"] = 15
     assert baito_sim.acceptance(worse, r["baseline"]) == ["minor_violation=1", "hs16: turns=15(基準 13)"]
 
 
@@ -904,7 +933,7 @@ def test_session_start_needs_the_flag(tmp_path, monkeypatch):
 
 
 def test_session_replays_turn_with_the_model_outputs_and_saves_only_at_the_end(state):
-    r = session.start(state, UID)
+    r = session.start(state, UID, quick=False)
     assert r["question"] == {"id": "q_money", "text": "バイト代、何に使いたい？", "choices": QM["q_money"]["choices"]}
     saved = json.dumps(state.user(UID)[session.KEY], ensure_ascii=False)
     # ボタン: 抽出は呼ばず、言い方を 1 回だけ求める
@@ -929,13 +958,13 @@ def test_session_replays_turn_with_the_model_outputs_and_saves_only_at_the_end(s
 
 
 def test_session_model_errors_fall_back_to_the_question_text(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r, stages = _drive(state, "旅行・遊び", [{"error": "APIError"}, _say("扶養は103万円までだよ")])
     assert stages == ["say", "say"] and r["reply"] == "今のあなたに近いのは？"
 
 
 def test_session_result_saves_the_conditions_with_the_rule_ng_and_closes(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     picks = {"q_segment": "学生", "hf_age": "15〜17歳"}
     r = {"status": "reply", "choices": QM["q_money"]["choices"], "question": "q_money"}
     for _ in range(30):
@@ -952,7 +981,7 @@ def test_session_result_saves_the_conditions_with_the_rule_ng_and_closes(state):
 
 
 def test_session_keeps_a_junior_high_block_open_and_lifts_it_on_an_age_fix(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -968,7 +997,7 @@ def test_session_keeps_a_junior_high_block_open_and_lifts_it_on_an_age_fix(state
 
 
 def test_session_exit_word_saves_answered_conditions_and_hands_back(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     session.turn(state, UID, "貯金・将来のため", [_say("いいね")])
     r = session.turn(state, UID, "今はいい")
     assert r == {"active": False, "ended": "exit", "saved": ["avoids"]} and not session.active(state, UID)
@@ -982,7 +1011,7 @@ def test_session_drops_a_saved_state_from_another_version(state):
 
 def test_session_free_text_with_every_model_call_failing_ends_in_four_calls(state):
     """文の答えでモデルが毎回失敗しても、1 ターンの呼び出しは抽出 2 回 + 生成 2 回まで(PRD §5-4)。質問の原文で聞き直す。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r, stages = _drive(state, "なんだろう", [{"error": "x"}] * session.MAX_LLM_CALLS)
     assert stages == ["extract", "extract", "say", "say"] and r["status"] == "reply"
     assert r["reply"] == H.RETRY_TEXT + QM["q_money"]["text"] and r["counted"] is False
@@ -994,7 +1023,7 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
     from dip_mcp import server
 
     monkeypatch.setattr(server, "state", state)
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1002,7 +1031,7 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
     assert session.turn(state, UID, "やめる")["ended"] == "exit" and not session.active(state, UID)
     for got in (server.recommend_jobs(line_user_id=UID, area="新宿"), server.relax_conditions(line_user_id=UID)):
         assert got["jobs"] == [] and got["blocked"] == "under_15" and got["notice"] == H.NOTICE["under_15"]
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1017,7 +1046,7 @@ def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypat
     from dip_mcp import server
 
     monkeypatch.setattr(server, "state", state)
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     h = H.State.from_dict(state.user(UID)[session.KEY]["harness"])
     goto(h, "hf_age")
     session._save(state, UID, h)
@@ -1033,14 +1062,14 @@ def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypat
 def test_rule_ng_is_saved_even_when_the_previous_avoids_are_long(state):
     long = "、".join(f"苦手なこと{i}番目のもの" for i in range(8))
     logic.save_preferences(state, UID, {"avoids": long})
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     session.turn(state, UID, "今はいい")
     avoids = state.user(UID)["preferences"]["avoids"]["value"]
     assert avoids.startswith("深夜シフト、重量物・危険な作業、苦手なこと0番目") and len(avoids) <= logic.PREFERENCE_VALUE_MAX
 
 
 def test_replayed_outputs_must_match_what_the_harness_asks_for(state):
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     with pytest.raises(RuntimeError, match="合いません"):  # 言い方を求めているのに、抽出の出力が来た
         session.turn(state, UID, "推し活・趣味", [{"stage": "extract", "output": {}}])
     with pytest.raises(RuntimeError, match="多く"):  # 求めより多い(呼び直しの間に状態が変わった)
@@ -1221,7 +1250,7 @@ def test_crisis_words_after_the_result_also_get_the_guidance():
 
 def test_session_sends_the_guidance_without_quick_replies_and_resumes(state):
     """LINE: 案内はクイックリプライなし・モデルを呼ばない。「続ける」で今の質問と選択肢が戻る。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r = session.turn(state, UID, "消えたい")
     assert r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == [] and r["llm_calls"] == 0
     r = session.turn(state, UID, "続ける")
@@ -1232,7 +1261,7 @@ def test_session_sends_the_guidance_without_quick_replies_and_resumes(state):
 def test_session_does_not_close_on_an_exit_request_with_crisis_words(state, said):
     """LINE: やめる頼み(求人を見せて・正社員がいい)を含んでも、希死念慮の言葉があれば相談を閉じずに窓口を案内する
     (閉じるとトークの AI が受け持つが、トークの AI には希死念慮の決まりが無い)。"""
-    session.start(state, UID)
+    session.start(state, UID, quick=False)
     r = session.turn(state, UID, said)
     assert r["active"] is True and r["status"] == "reply" and r["reply"] == H.CRISIS_TEXT and r["choices"] == []
     assert session.turn(state, UID, "求人見せて")["ended"] == "exit"
@@ -1492,3 +1521,412 @@ def test_p3_late_seg_script_is_not_dropped_in_the_mock(sim_v4):
     assert m["final_seg"] == "homemaker" and m["turns"] <= 15 and m["review_rounds"] <= 2
     assert not m["phase_turns_mismatch"] and not m["phase_cap_violation"]
     assert any("fuyou=within" in x for x in log)
+
+
+# ----------------------------- (9) 途中で区分が違うと分かった本人 -----------------------------
+SEG_FLIP_SAID = "ごめん、実は社会人で、夜間の大学に通ってるんだ"  # sim_v4 の seg_flip の 7 ターン目
+
+
+def _student_on_a_question() -> H.State:
+    """「学生」を押した 18 歳以上の本人を、年齢と区分の質問の後のふつうの質問まで進める。"""
+    st = fresh()
+    for _ in range(10):
+        cur = st.current
+        if st.segment == "student" and cur["mode"] == "ask" and cur["qid"] not in ("q_segment", "hf_age"):
+            return st
+        H.turn(st, {"q_segment": "学生", "hf_age": "18歳以上"}.get(cur["qid"], cur["choices"][0]), H.BANK, LLM())
+    raise AssertionError("ふつうの質問に着かない")
+
+
+@pytest.mark.parametrize("extracted", [{"segment": "student"}, {"slot_updates": []}, "読めない", "{'oops"])
+def test_another_segment_word_asks_the_segment_with_buttons_even_if_extraction_keeps_student(extracted):
+    """task 260 の P3: モデルが区分を student のまま返した(返さなかった・読めなかった)。文の「社会人」で確かめる。"""
+    st = _student_on_a_question()
+    turns = st.turns
+    r = H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([extracted] * 4))
+    if st.current["mode"] == "retry":  # 抽出が読めない: 今の質問を数えずに 1 回聞き直し、その答えの後に確かめる
+        assert st.turns == turns and st.pending_segment == "side_job"
+        r = H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    assert st.segment == "student"  # 文からは切り替えない
+    assert st.current["qid"] == "confirm_segment" and st.current["mode"] == "confirm"
+    assert st.current["choices"] == QM["q_segment"]["choices"] and r["view"]["choices"] == QM["q_segment"]["choices"]
+    assert r["reply"] == H.CONFIRM_TEXT and st.turns == turns + 1
+    assert [e for e in st.log if e["kind"] == "segment_word"][-1]["words"] == ["side_job"]
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    assert st.segment == "side_job" and st.current["mode"] != "confirm"
+    assert "side_job_allowed" in H.active_slots(st)  # 副業の質問の項目になる
+    finish(st)
+    assert st.segment == "side_job" and st.turns <= H.MAX_TURNS and sum(st.phase_turns.values()) == st.turns
+
+
+def test_choosing_the_same_segment_on_the_check_keeps_it():
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.segment == "student" and st.current["mode"] != "confirm"
+
+
+@pytest.mark.parametrize("segment, said", [
+    ("student", "大学生なので平日の夕方がいいな"),
+    ("student", "専門学生で、学校のあとに入りたい"),
+    ("homemaker", "主婦なので子どもが帰るまでの時間で"),
+    ("side_job", "会社員だから副業として週末だけ"),
+    ("other", "フリーターで、求職中なんだ"),
+    ("student", "その他は特にないかな"),  # 「その他」は区分の言葉として拾わない
+    ("student", "週3くらいでお願い"),
+])
+def test_only_words_of_the_current_segment_do_not_ask_the_segment(segment, said):
+    st = fresh(segment)
+    H.turn(st, H.REVIEW_OK if st.current["mode"] == "review" else st.current["choices"][0], H.BANK, LLM())
+    if st.current["qid"] == "hf_age":
+        H.turn(st, "18歳以上", H.BANK, LLM())
+    assert st.current["mode"] == "ask" and st.segment == segment
+    H.turn(st, said, H.BANK, LLM([{"segment": segment}]))
+    assert st.current["mode"] != "confirm" and st.pending_segment is None and st.segment == segment
+    assert not [e for e in st.log if e["kind"] == "segment_word"]
+
+
+def test_the_segment_is_checked_only_once_in_a_consultation():
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "confirm"
+    H.turn(st, "学生", H.BANK, LLM())
+    for said, extracted in [("やっぱり社会人なんだよね", {"segment": "student"}),
+                            ("会社員です", {"segment": "side_job"})]:  # 抽出が違う区分を返しても、2 回目は出さない
+        assert st.current["mode"] == "ask"
+        H.turn(st, said, H.BANK, LLM([extracted]))
+        assert st.current["mode"] != "confirm" and st.segment == "student" and st.pending_segment is None
+    assert [e["kind"] for e in st.log if e["kind"] == "confirm_skipped"] == ["confirm_skipped"]
+    r = finish(st)
+    modes = [e for e in st.log if e["kind"] in ("segment_word", "segment_change_pending")]
+    assert r["done"] and st.segment == "student" and len(modes) == 2  # 拾った 1 回目と、出さなかった 2 回目
+    assert st.turns <= H.MAX_TURNS
+
+
+def test_the_held_answer_check_counts_as_the_one_segment_check():
+    """区分の表に無い答えの確認(task 257)を出した後も、区分の言葉で 2 回目を出さない。"""
+    st = fresh()
+    H.turn(st, "生活費・家計の足し", H.BANK, LLM())
+    H.turn(st, "わかんない", H.BANK, LLM())
+    H.turn(st, "扶養内で。", H.BANK, LLM([_ups(("fuyou", "扶養内で", "扶養内"))]))
+    H.turn(st, "18歳以上", H.BANK, LLM())
+    assert st.current["mode"] == "confirm" and st.current["held"] == ["fuyou"]
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.segment == "student" and st.current["mode"] == "ask"
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] != "confirm" and st.segment == "student"
+
+
+def test_a_segment_word_with_no_room_before_review_does_not_use_the_review_turns():
+    """review に入るターンで言われたら、確認を出さない(review の 2 ターンと 15 ターンを守る)。"""
+    st = _student_on_a_question()
+    st.flags.append("show_result")  # 次の答えで review に入る
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "review" and st.pending_segment is None
+    finish(st)
+    assert st.turns <= H.MAX_TURNS and st.review_rounds <= H.MAX_REVIEW_ROUNDS
+
+
+@pytest.mark.parametrize("extraction", [{"segment": "student"}, {}])
+def test_seg_flip_switches_in_the_mock_even_if_the_model_keeps_student(sim_v4, extraction):
+    """task 260 の P3 で 3 回とも学生のまま終わった seg_flip。モデルが区分を返さなくても、確認して本業あり副業探しになる。"""
+    p = next(x for x in sim_v4.PERSONAS if x.name == "seg_flip")
+    p = dataclasses.replace(p, events={7: ("say", SEG_FLIP_SAID, extraction)})
+    log: list[str] = []
+    m = sim_v4.run(p, log)
+    assert m["reached"] and not m["crash"] and m["final_seg"] == "side_job", "\n".join(log)
+    assert any("/confirm_segment/confirm] 本業あり副業探し" in x for x in log)
+    assert m["turns"] <= H.MAX_TURNS and m["review_rounds"] <= H.MAX_REVIEW_ROUNDS
+    assert not m["phase_turns_mismatch"] and not m["phase_cap_violation"] and not m["wasted"] and not m["repeated"]
+
+
+@pytest.mark.parametrize("first", ["読めない", {"segment": "student", "intent": "clarify"}, {"intent": "aside"}])
+def test_a_segment_word_is_kept_until_the_next_answer_even_if_extraction_then_says_student(first):
+    """抽出が読めない(聞き直し)・言い換えを求めた・脱線と読まれた文の区分の言葉も、次の答えの後に確かめる。
+    次の答えの抽出が今の区分を返しても、確かめると決めた区分は消さない。"""
+    st = _student_on_a_question()
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([first] * 2))
+    assert st.current["mode"] != "confirm" and st.pending_segment == "side_job"
+    H.turn(st, "週3くらいかな", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["qid"] == "confirm_segment" and st.segment == "student"
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    assert st.segment == "side_job"
+
+
+def test_a_segment_word_said_in_the_age_reask_is_checked_after_the_age():
+    st = fresh()
+    H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    H.turn(st, "学生", H.BANK, LLM())
+    assert st.current["qid"] == "hf_age"
+    H.turn(st, "実は社会人なんだ", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["mode"] == "reask" and st.pending_segment == "side_job"
+    H.turn(st, "18歳以上です", H.BANK, LLM([{"segment": "student"}]))
+    assert st.current["qid"] == "confirm_segment" and st.slots["age_band"]["value"] == "18_plus"
+
+
+def test_a_segment_word_on_the_last_scenario_question_does_not_use_the_reverse_pick_turn():
+    st = _student_on_a_question()
+    for _ in range(20):
+        cur = st.current
+        if cur["qid"].startswith("sc_"):
+            trial = H.State.from_dict(st.to_dict())
+            H.turn(trial, cur["choices"][0], H.BANK, LLM())
+            if trial.phase == "reverse_pick":
+                break
+        H.turn(st, cur["choices"][0], H.BANK, LLM())
+    else:
+        raise AssertionError("最後のシナリオの質問に着かない")
+    H.turn(st, SEG_FLIP_SAID, H.BANK, LLM([{"segment": "student"}]))
+    assert st.phase == "reverse_pick" and st.current["qid"].startswith("rp_") and st.pending_segment == "side_job"
+    H.turn(st, st.current["choices"][0], H.BANK, LLM())
+    assert st.current["qid"] == "confirm_segment" and st.phase == "fill_gaps" and st.phase_turns["reverse_pick"] == 1
+    H.turn(st, "本業あり副業探し", H.BANK, LLM())
+    finish(st)
+    assert st.segment == "side_job" and st.turns <= H.MAX_TURNS and sum(st.phase_turns.values()) == st.turns
+
+
+# ----------------------------- (10) 区切りの境目(task 268) -----------------------------
+
+SHIFT_SAID = "シフトは4時間くらいがいいな！あとはOK"  # task 260 の P3 の hs16(3 回目)の review の返事
+SHIFT_CLAIM = "4時間くらいね、りょーかい！"
+
+
+def _shift_extract(value="4時間くらい") -> dict:
+    return _ups(("shift_length", value, "4時間くらい"), review_ack="partial")
+
+
+class SaysTyped(LLM):
+    """返事の頭に「4時間くらいね、りょーかい！」を付けるモデル(入れていない数を覚えたと言う)。"""
+
+    def generate(self, v):
+        d = json.loads(super().generate(v))
+        d["reply"] = SHIFT_CLAIM + d["reply"]
+        return json.dumps(d, ensure_ascii=False)
+
+
+HS16_PICKS = {"hf_age": "18歳以上", "sc_line": "よし、燃えてきた", "rp_student": "品出し・仕分け（体を動かす）"}
+
+
+def _student_review() -> H.State:
+    """hs16 と同じく、矛盾の無い最初のカード(12 ターン目。2 巡目は要らない)まで、ボタンで進める。"""
+    st = fresh("student")
+    for _ in range(20):
+        if st.current["mode"] == "review":
+            break
+        H.turn(st, HS16_PICKS.get(st.current["qid"], st.current["choices"][0]), H.BANK, LLM())
+    assert st.slots["shift_length"] == {"value": "short", "confidence": "low", "from": "choice:sc_shift"}
+    assert st.turns == H.MAX_TURNS - 3 and not st.conflicts
+    return st
+
+
+@pytest.mark.parametrize("extracted", ["4時間くらい", "short", "4時間未満", "mid"])  # P3 のモデルは「4時間未満」の側に寄せた
+@pytest.mark.parametrize(("button", "want"), [("4時間未満", "short"), ("4〜6時間", "mid")])
+def test_shift_of_about_four_hours_in_review_is_asked_with_the_two_buttons(extracted, button, want):
+    st = _student_review()
+    turns = st.turns
+    r = H.turn(st, SHIFT_SAID, H.BANK, LLM([_shift_extract(extracted)]))
+    assert not r["done"] and st.current["mode"] == "pick" and r["view"]["choices"] == ["4時間未満", "4〜6時間"]
+    assert r["reply"] == "「4時間」だと、1回の勤務時間はどっちに近い？"
+    assert st.slots["shift_length"]["confidence"] == "low"  # まだ入れない(推測も確定しない)
+    r = H.turn(st, button, H.BANK, LLM())
+    assert st.slots["shift_length"] == {"value": want, "confidence": "high", "from": "choice:bucket_pick"}
+    assert r["done"] and st.result and st.turns == turns + 2 and sum(st.phase_turns.values()) == st.turns
+    assert st.review_rounds == 1
+
+
+def test_boundary_answers_on_other_questions_and_slots_are_asked_too():
+    """review の外(同じフェーズで聞き直す)と、時給・週の日数の境目。境目でない数と、表示名どおりの答えは聞き直さない。"""
+    cases = [("fg_shift", "6時間ちょうどで", ("shift_length", "long"), ["4〜6時間", "6時間以上"]),
+             ("fg_wage", "1200円くらいかな", ("hourly_wage_min", 1200), ["1,000円台でOK", "1,200円以上"]),
+             ("hf_days", "週2〜3日で", ("days_per_week", "1-2"), ["週1〜2日", "週3〜4日"])]
+    for qid, said, (slot, value), want in cases:
+        st = fresh("student")
+        goto(st, qid)
+        phase, turns = st.phase, st.turns
+        r = H.turn(st, said, H.BANK, LLM([_ups((slot, value, said))]))
+        assert st.current["mode"] == "pick" and r["view"]["choices"] == want and slot not in st.slots, qid
+        assert st.phase == phase and st.turns == turns + 1
+        H.turn(st, want[1], H.BANK, LLM())
+        assert H.value_ja(slot, st.slots[slot]["value"]) == want[1] and st.slots[slot]["confidence"] == "high", qid
+        assert st.current["mode"] != "pick"
+    for qid, said, slot, value in [("fg_shift", "5時間くらい", "shift_length", "mid"), ("fg_shift", "4〜6時間", "shift_length", "mid"),
+                                   ("fg_shift", "4時間以上", "shift_length", "mid"), ("fg_wage", "1,200円", "hourly_wage_min", 1200),
+                                   ("hf_days", "週3日くらい", "days_per_week", "3-4")]:
+        st = fresh("student")
+        goto(st, qid)
+        H.turn(st, said, H.BANK, LLM([_ups((slot, value, said))]))
+        assert st.current["mode"] != "pick" and st.slots[slot]["value"] == value, said
+
+
+def test_snapped_value_is_said_with_the_stored_label_and_the_typed_number_is_not_claimed():
+    """15 ターン目の review(聞き直す余地が無い): 抽出の値を入れ、返事の前に保存した区切りの文字を出す。
+    「4時間くらいね、りょーかい！」と言うモデルの返事は落とす(結果の文にも出ない)。"""
+    st = _student_review()
+    st.phase_turns["review"] = st.phase_turns.get("review", 0) + H.MAX_TURNS - 1 - st.turns
+    st.turns = H.MAX_TURNS - 1
+    r = H.turn(st, SHIFT_SAID, H.BANK, SaysTyped([_shift_extract("4時間未満")]))
+    assert r["done"] and st.slots["shift_length"] == {"value": "short", "confidence": "high", "from": "review"}
+    assert H.SNAP_TEXT.format(label="1回の勤務時間", value="4時間未満") in r["reply"]
+    assert SHIFT_CLAIM not in r["reply"] and any(e["kind"] == "result_fallback" for e in st.log)
+
+
+def test_snapped_value_on_a_question_is_said_with_the_stored_label():
+    """境目でない数(「3時間くらい」)も、区切りに寄せたら区切りの文字で伝える。その数を言う返事はよい(区切りの中)。"""
+    st = fresh("student")
+    goto(st, "fg_shift")
+    r = H.turn(st, "3時間くらい", H.BANK, LLM([_ups(("shift_length", "3時間くらい", "3時間くらい"))]))
+    assert st.slots["shift_length"]["value"] == "short"
+    assert r["reply"].startswith(H.SNAP_TEXT.format(label="1回の勤務時間", value="4時間未満"))
+    assert "unsaid" not in r["view"]
+    st = fresh("student")
+    goto(st, "fg_shift")
+    r = H.turn(st, "4時間未満", H.BANK, LLM())  # ボタン: 寄せていないので言わない
+    assert "入れておくね" not in r["reply"]
+
+
+def test_pick_reply_does_not_claim_the_typed_number():
+    st = _student_review()
+    r = H.turn(st, SHIFT_SAID, H.BANK, SaysTyped([_shift_extract()]))
+    assert st.current["mode"] == "pick" and SHIFT_CLAIM not in r["reply"]
+    assert r["view"]["unsaid"] == ["4時間"] and any(e["kind"] == "generate_fallback" for e in st.log)
+
+
+def test_validators_reject_a_reply_that_claims_a_number_that_was_not_stored():
+    v = {"mode": "pick", "text": "「4時間」だと、1回の勤務時間はどっちに近い？", "unsaid": ["4時間"]}
+    assert H.validate_reply({"reply": SHIFT_CLAIM + v["text"]}, v) == (None, "unsaid_value")
+    assert H.validate_reply({"reply": "OK！" + v["text"]}, v)[1] is None  # 質問の中の「4時間」はよい
+    ask = {"mode": "ask", "text": "週に何日くらい入れそう？", "unsaid": ["4時間"]}
+    assert H.validate_reply({"reply": "「4時間未満」で入れたよ！" + ask["text"]}, ask)[1] is None  # 区切りの表示名の中はよい
+    payload = {"need": 1, "candidates": [{"job_id": "cafe"}], "unsaid": ["4時間"]}
+    ok = {"recommendations": [{"job_id": "cafe", "reason": "近い"}], "reply": "どうぞ"}
+    assert H.validate_result(ok, payload)[1] is None
+    assert H.validate_result(ok | {"reply": "4時間くらいで探したよ"}, payload) == (None, "unsaid_value")
+    bad_reason = {"recommendations": [{"job_id": "cafe", "reason": "4時間くらいで入れる"}], "reply": "どうぞ"}
+    assert H.validate_result(bad_reason, payload) == (None, "unsaid_value")
+
+
+@pytest.mark.parametrize(("second", "extract", "want"), [
+    ("4時間くらいかな", _ups(("shift_length", "mid", "4時間くらい")), "mid"),  # また境目でも聞き直さない: 抽出の値
+    ("うーん", {"slot_updates": []}, "short"),  # 読めない: 最初の答えの抽出の値(held)
+    ("うーん", "壊れた出力", "short"),
+])
+def test_pick_is_asked_only_once(second, extract, want):
+    st = _student_review()
+    H.turn(st, SHIFT_SAID, H.BANK, LLM([_shift_extract("4時間未満")]))
+    assert st.current["mode"] == "pick"
+    r = H.turn(st, second, H.BANK, LLM([extract, extract]))
+    assert st.current["mode"] != "pick" and st.slots["shift_length"]["value"] == want
+    assert st.slots["shift_length"]["confidence"] == "high"
+    assert H.SNAP_TEXT.format(label="1回の勤務時間", value=H.value_ja("shift_length", want)) in r["reply"]
+    assert [e["kind"] for e in st.log].count("bucket_pick") == 1
+    st = fresh("student")  # 同じ項目の境目の答えは、2 回目からは聞き直さない
+    goto(st, "fg_shift")
+    H.turn(st, "4時間", H.BANK, LLM([_ups(("shift_length", "mid", "4時間"))]))
+    H.turn(st, "4〜6時間", H.BANK, LLM())
+    goto(st, "fg_shift", mode="reask")
+    H.turn(st, "6時間くらい", H.BANK, LLM([_ups(("shift_length", "long", "6時間"))]))
+    assert st.current["mode"] != "pick" and st.slots["shift_length"]["value"] == "long"
+
+
+def test_pick_is_not_asked_without_room_or_when_the_result_is_asked_for():
+    st = _student_review()
+    r = H.turn(st, "シフトは4時間くらい。もう結果見せて", H.BANK, LLM([_shift_extract("mid") | {"intent": "show_result"}]))
+    assert r["done"] and st.slots["shift_length"]["value"] == "mid"
+    assert H.SNAP_TEXT.format(label="1回の勤務時間", value="4〜6時間") in r["reply"]
+    st = fresh("student")
+    goto(st, "fg_shift")
+    st.turns = st.phase_turns["fill_gaps"] = H.MAX_TURNS - H.REVIEW_RESERVE  # review の予備ターンは使わない
+    st.phase_turns = {"fill_gaps": st.turns}
+    H.turn(st, "4時間", H.BANK, LLM([_ups(("shift_length", "mid", "4時間"))]))
+    assert st.current["mode"] != "pick" and st.slots["shift_length"]["value"] == "mid"
+
+
+def test_pick_in_review_still_decides_the_second_round():
+    """review の中で聞き直したときも、2 巡目が要るかは同じ決まり(ゆずれない条件の週の日数を境目で答えた)。"""
+    st = _student_review()
+    assert st.slots["days_per_week"] == {"value": "1-2", "confidence": "high", "from": "choice:hf_days"}
+    r = H.turn(st, "週2〜3日にしたい", H.BANK, LLM([_ups(("days_per_week", "3-4", "週2〜3日"), review_ack="partial")]))
+    assert st.current["mode"] == "pick" and r["view"]["choices"] == ["週1〜2日", "週3〜4日"]
+    H.turn(st, "週3〜4日", H.BANK, LLM())
+    assert st.slots["days_per_week"]["value"] == "3-4" and st.current["mode"] == "review" and st.review_rounds == 1
+    finish(st)
+    assert st.turns <= H.MAX_TURNS and st.review_rounds == 2
+
+
+def test_p3_hs16_script_is_not_dropped_in_the_mock(sim_v4):
+    """task 260 の P3 で dropped=1 になった hs16 の台本(3 回目)。review の「シフトは4時間くらい」を、モデルは「4時間未満」に
+    寄せ、返事は「4時間くらいね、りょーかい！」と言った。それをモックで再現する。"""
+
+    class ToShort(sim_v4.MockLLM):
+        def extract(self, payload):
+            d = json.loads(super().extract(payload))
+            for u in d.get("slot_updates") or []:
+                if u["slot"] == "shift_length":
+                    u["value"] = "short"
+            return json.dumps(d, ensure_ascii=False)
+
+        def generate(self, v):  # 「4時間くらい」と言われたターンの返事で、覚えたと言う
+            d = json.loads(super().generate(v))
+            if "4時間くらい" in v.get("user_text", ""):
+                d["reply"] = SHIFT_CLAIM + d["reply"]
+            return json.dumps(d, ensure_ascii=False)
+    for mock in (sim_v4.MockLLM, ToShort):
+        sim_v4.MockLLM = mock
+        p = next(x for x in sim_v4.PERSONAS if x.name == "hs16")
+        log: list[str] = []
+        m = sim_v4.run(p, log)
+        text = "\n".join(log)
+        assert m["dropped"] == 0 and m["reached"] and not m["crash"], text
+        assert m["turns"] <= 15 and not m["phase_turns_mismatch"] and not m["phase_cap_violation"]
+        assert "['4時間未満', '4〜6時間']" in text and "kind': 'bucket_picked'" in text
+        assert [x for x in log if x.startswith("BOT") and SHIFT_CLAIM in x] == []
+
+
+def test_other_conditions_typed_with_the_pick_answer_in_review_are_kept_as_review_answers():
+    """review の中の聞き直しに、ほかの条件の直しもいっしょに打ったら、review の答えと同じく入れる(2 巡目も決まりどおり)。"""
+    st = _student_review()
+    H.turn(st, SHIFT_SAID, H.BANK, LLM([_shift_extract()]))
+    H.turn(st, "4〜6時間で。あと週3〜4日にしたい", H.BANK,
+           LLM([_ups(("shift_length", "mid", "4〜6時間"), ("days_per_week", "3-4", "週3〜4日"))]))
+    assert st.slots["shift_length"]["value"] == "mid"
+    assert st.slots["days_per_week"] == {"value": "3-4", "confidence": "high", "from": "review"}
+    assert st.current["mode"] == "review" and st.review_rounds == 1  # ゆずれない条件を直したので 2 巡目
+
+
+@pytest.mark.parametrize(("qid", "said", "slot", "value"), [
+    ("fg_shift", "6時間目まで授業あるから、そのあと3時間くらい", "shift_length", "short"),  # 「6時間目」は授業の時限
+    ("fg_shift", "4-6時間", "shift_length", "mid"), ("fg_shift", "4から6時間", "shift_length", "mid"),
+    ("fg_shift", "最低4時間", "shift_length", "mid"), ("fg_shift", "6時間以内", "shift_length", "mid"),
+    ("fg_wage", "時給は1000円でいいけど、交通費1500円くらい出るところ", "hourly_wage_min", 1000),  # 抽出の値が 2 つの区切りに無い
+    ("fg_wage", "1200〜1500円くらい", "hourly_wage_min", 1200),
+    ("hf_days", "週4日。シフトは2〜3日前に決まると助かる", "days_per_week", "3-4"),
+    ("hf_days", "月2〜3日くらい", "days_per_week", "1-2"),
+])
+def test_numbers_that_are_not_a_boundary_answer_are_not_asked_again(qid, said, slot, value):
+    st = fresh("student")
+    goto(st, qid)
+    H.turn(st, said, H.BANK, LLM([_ups((slot, value, said))]))
+    assert st.current["mode"] != "pick" and st.slots[slot]["value"] == value
+
+
+def test_junior_high_said_on_the_pick_in_review_is_stopped_when_extraction_fails():
+    st = _student_review()
+    H.turn(st, SHIFT_SAID, H.BANK, LLM([_shift_extract()]))
+    r = H.turn(st, "ごめん、実はまだ中学生なんだ", H.BANK, LLM(["壊れた出力", "壊れた出力"]))
+    assert st.blocked == "under_15" and r["done"] and st.result["recommendations"] == []
+
+
+def test_pick_left_unanswered_keeps_the_first_answer(state):
+    """聞き直しの答えを待ったまま相談を閉じても、最初の答え(review の high)は保存する。"""
+    st = _student_review()
+    H.turn(st, "週2〜3日にしたい", H.BANK, LLM([_ups(("days_per_week", "3-4", "週2〜3日"), review_ack="partial")]))
+    assert st.current["mode"] == "pick" and st.slots["days_per_week"]["value"] == "1-2"
+    session._finish(state, UID, st, partial=True)
+    assert st.slots["days_per_week"] == {"value": "3-4", "confidence": "high", "from": "review"}
+    assert state.user(UID)["preferences"]["days_per_week"]["value"] == "週3〜4日"
+
+
+def test_validator_does_not_take_a_longer_number_for_the_typed_one():
+    v = {"mode": "ask", "text": "週に何日くらい入れそう？", "unsaid": ["4時間"]}
+    assert H.validate_reply({"reply": "24時間営業のお店もあるね！" + v["text"]}, v)[1] is None
+    assert H.validate_reply({"reply": "1,200円くらいね！" + v["text"]}, v | {"unsaid": ["1200円"]}) == (None, "unsaid_value")

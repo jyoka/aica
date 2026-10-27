@@ -36,12 +36,38 @@
   (_ask_held。review の 2 ターンと reverse_pick の 1 ターンは使わない)。区分が決まって表にあれば入れ、無ければ捨ててログ
   held_discarded を残す(_settle_held)。保留中と、捨てて今も空の項目を、以後のどの返事が口にしても検証で落とす(view の unkept。
   捨てたときは決まり文句 DISCARD_TEXT を返事の前に付ける)
+- 途中で区分が違うと分かった本人(task 267。P3 で「実は社会人で、夜間の大学に通ってる」を抽出が student のまま返した):
+  本人の文に今の区分と違う区分の言葉(SEG_WORDS。SEG_SYNONYM から「その他」を除いたもの)があれば、抽出が今の区分を返しても、
+  次のターンで区分をボタンで確かめる(_seg_words)。文からは切り替えず、区分は本人がボタンで選ぶ。聞き直し・言い換え・脱線の
+  ターンの言葉は、次の答えの後に確かめる(その答えの抽出が今の区分を返しても pending_segment を消さない。set_segment)。
+  reverse_pick の 1 ターンは使わない。区分の確認(区分の違いと保留の答えの両方)は 1 回の相談で 1 回まで(_confirm_used。
+  flags の segment_asked と held_asked)
 - 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
   質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
   (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
   言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+- 区切りの境目(task 268。P3 で review の「シフトは4時間くらい」を「4時間未満」で入れ、返事は「4時間くらいね」と言った):
+  区切りのある項目(BUCKETS: 1回の勤務時間・時給の下限・週の日数)に打った数が境目にあれば(bucket_reads)、入れずに 2 つの区切りを
+  ボタンで聞き直す(_bucket_hold・_ask_pick。項目ごとに 1 回まで。聞き直しへの打った答えは、抽出の値を入れる)。区切りに寄せて
+  入れたら、返事の前に決まり文句 SNAP_TEXT で保存した区切りの文字を出し、入れた区切りと 1 つに決まらない数を返事が口にすれば
+  検証で落とす(view の unsaid)
 - sc_line(お店の行列)の 2 つ目の選択肢を、希死念慮と読まれない「今すぐ抜けたい」にした(利用者の決定 2026-10-27。
   choice_effects は同じ。PRD の「選択肢はバンクの原文のまま」から外れる)
+- 1 タップで始める(task 265。設計メモ docs/design/baito-quick-start.md §3〜§5・§9。PRD に無い): 新しい相談(session.start)は
+  new_state(quick=True) で、PRD の icebreak の前のフェーズ quick_pick(入口のカード。絵 4 枚と「どれもピンと来ない」)から始める。
+  1 タップで quick_result(合いそうな職種 3 つとタグ。quick_jobs)を出し、[近くで探す] で icebreak(今の流れ)に入る。
+  [ほかのタイプも見る] は入口のカードに戻す。入口の答えは確信度 low で入れる(DIRECT に入れない。from は choice:quick_pick)。
+  この 2 つのフェーズはモデルの抽出を呼ばず(ボタンだけ読む)、ターンに数えない(15 ターンは PRD の流れの分)。
+  eligible_jobs に、physical が standing_ok のときの加点(phys が standing に +1、noise が lively に +0.5)を足した。
+  new_state() の既定(quick=False)は今のまま icebreak から始める(PRD の検査と、途中の相談)
+- 近くで探す(task 266。設計メモ §6・§7。PRD に無い): [近くで探す] の後に、年齢・エリア・時間帯の 3 問(near_age・near_area・
+  near_time)を置き、本物の求人(near_jobs)を出す。ボタンで答え、確信度 high(年齢の打った答えは typed_age だけ読む)。
+  年齢の「中学生以下」はそこで止める(今の流れの結果と同じ)。未成年(15〜17 歳、ひみつ、年齢が分からない)には時間帯の
+  「夜」「深夜」を出さない(quick_start.time_buttons)。求人の条件はハーネス(near_search。未成年なら必ず minor=True)が決め、
+  探すのは呼ぶ側(turn の search。session が dip の recommend・relax を呼ぶ)。0 件なら relax の 1 つと、それを外すボタン。
+  [もっと絞る] で icebreak(今の流れ)に入る(入った年齢・時間帯は聞かない)。[ちがう] は入口のカードに戻す(3 問の答えは残す)。
+  エリア・時間帯の問いと求人の後に打った年齢(says_age)は、年齢の答えとして読み直す。検索が失敗したら謝りの文で先へ進める(時間帯の問いに戻し続けない)。
+  この 4 つのフェーズも、モデルの抽出を呼ばず、ターンに数えない
 B-1(DIRECT は hard_filter・fill_gaps)は参照実装のまま(review の修正案)。
 """
 
@@ -53,6 +79,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from dip_mcp.baito import quick_start as QS
 
 HERE = Path(__file__).resolve().parent
 PROMPT_DIR = HERE.parent / "prompts" / "baito"
@@ -80,6 +108,64 @@ SEGMENT_JA = {"student": "学生", "homemaker": "家のこと中心（主婦・�
               "other": "フリーター・求職中・その他", "unknown": "未判明"}
 INTENTS = ("answer", "clarify", "show_result", "restart", "aside", "danger")
 REPLY_MAX = 600
+
+# ----------------------------- 1 タップで始める(設計メモ baito-quick-start.md §4・§5。task 265) -----------------------------
+QUICK_PICK, QUICK_RESULT = "quick_pick", "quick_result"  # PRD の ORDER の前のフェーズ(入口のカード、職種の結果)
+# 「近くで探す」の 3 問(年齢・エリア・時間帯)と本物の求人(設計メモ §6。task 266)。これも PRD の ORDER の前のフェーズ
+NEAR_AGE, NEAR_AREA, NEAR_TIME, NEAR_JOBS = "near_age", "near_area", "near_time", "near_jobs"
+NEAR_ASKS = (NEAR_AGE, NEAR_AREA, NEAR_TIME)
+NEAR_PHASES = (*NEAR_ASKS, NEAR_JOBS)
+QUICK_PHASES = (QUICK_PICK, QUICK_RESULT, *NEAR_PHASES)  # モデルの抽出を呼ばず(ボタンだけ読む)、ターンに数えない
+QUICK_FLAG = "quick_start"  # 入口のカードから始めた相談(「最初から」も入口のカードに戻す)
+QUICK_TEXT = "いちばん自分っぽいのは？"
+QUICK_LEAD = "押すだけで、合いそうな仕事が出るよ"
+# 入口の絵 4 枚: 文字 -> (絵。line_runtime/static/baito/{絵}.png、ハーネスに入れる値。確信度 low)
+QUICK_PICKS = {
+    "しゃべるの好き": ("talk", {"customer_facing": "like"}),
+    "動いてたい": ("move", {"physical": "standing_ok"}),
+    "ひとりで黙々": ("solo", {"customer_facing": "avoid"}),
+    "座ってじっくり": ("sit", {"physical": "seated"}),
+}
+QUICK_NONE = "どれもピンと来ない"  # 値は入れない。「ちょっとだけ」の 3 つを出す
+QUICK_NEAR, QUICK_OTHER = "近くで探す", "ほかのタイプも見る"
+QUICK_RESULT_TEXT = "合いそうなのは、このへん！"  # 職種の結果の吹き出し(モデルが前にひとことリアクションを付ける)
+QUICK_JOBS_LEAD = "合いそうな仕事"
+LIGHT_ICON, LIGHT_TITLE = "light", "ちょっとだけ"
+LIGHT_TEXT = "それなら、まずは『ちょっとだけ』から試すのもアリ！"
+LIGHT_LEAD = "1日だけ・在宅で試せる仕事"
+QUICK_AGAIN_TEXT = "OK、もう一回選んでみて！"  # [ほかのタイプも見る]
+QUICK_TAP_TEXT = "下のボタンから選んでね！"  # 入口と職種の結果で、ボタンでない文が来たとき(モデルは呼ばない)
+QUICK_JOBS = 3
+# 職種の横のタグ(§5): カタログの値だけから、上から最初に当たる 1 つ。カタログに無いこと(まかない、時給など)は書かない
+JOB_TAGS = [
+    ("在宅", lambda j: j["remote"]),
+    ("1日だけOK", lambda j: j["spot"]),
+    ("人と話さない", lambda j: j["cf"] == "none"),
+    ("接客少なめ", lambda j: j["cf"] == "low"),
+    ("静か", lambda j: j["noise"] == "quiet"),
+    ("にぎやか", lambda j: j["noise"] == "lively"),
+    ("朝もOK", lambda j: "morning" in j["times"]),
+]
+# ----------------------------- 近くで探す(設計メモ baito-quick-start.md §6・§7。task 266) -----------------------------
+NEAR_TEXT = {NEAR_AGE: "3つだけ！年齢は？", NEAR_AREA: "どのあたりで？", NEAR_TIME: "いつ働けそう？"}
+# エリアのボタン → 求人の検索の area(dip_mcp.logic.AREA_GROUPS の広い言い方)。「どこでも」はエリアで絞らない
+NEAR_AREAS = {"東京": "東京", "神奈川": "神奈川", "埼玉": "埼玉", "どこでも": None}
+# 入口の絵 → 求人の検索に渡す値(§4 の表。求人の talk_level・physical_level の段階)と、件数の吹き出しでの呼び方
+QUICK_SEARCH = {
+    "しゃべるの好き": ({"min_talk_level": 3}, "人と話す仕事"),
+    "動いてたい": ({"min_physical_level": 2}, "体を動かす仕事"),
+    "ひとりで黙々": ({"max_talk_level": 2}, "黙々とできる仕事"),
+    "座ってじっくり": ({"max_physical_level": 1}, "座ってできる仕事"),
+}
+NEAR_ANY_KIND = "仕事"  # 「どれもピンと来ない」(絵の値を渡さない)と、絵の条件を外したとき
+NEAR_MORE, NEAR_WRONG = "もっと絞る", "ちがう"
+NEAR_FOUND_TEXT = "{where}{kind}は {n} 件！"  # 件数は検索の結果の数をそのまま(§6.4)
+NEAR_ZERO_TEXT = "{where}{kind}は見つからなかった…"
+NEAR_RELAX_TEXT = "{what}を外すと {n} 件あるよ！"  # 0 件のとき: relax の、いちばん件数の増える 1 つ
+NEAR_RELAX_BUTTON = "{what}を外して探す"
+NEAR_STUCK_TEXT = "条件を変えると見つかるかも。「ちがう」で選び直せるよ！"  # relax にも外す案が無いとき
+NEAR_FAILED_TEXT = "ごめん、いま求人をうまく探せなかった…「もっと絞る」で続けるか、少しあとでもう一回試してね。"  # 検索が失敗した
+RELAX_WHAT = {"area": "エリア", "time_band": "時間帯"}  # relax の remove → 吹き出しの呼び方(絵の条件は「絵の文字」)
 
 
 # ----------------------------- スロット(PRD §6) -----------------------------
@@ -182,6 +268,8 @@ CLARIFY_TEXT = "お、どのへんがちがう？ひとことで教えて！"
 RETRY_TEXT = "ごめん、うまく受け取れなかった！もう一回だけ教えて。"
 CONFIRM_TEXT = "確認させてね！今のあなたに近いのはどれ？"
 DISCARD_TEXT = "{labels}の話は、今回の条件には入れないでおくね。"  # 保留した答えを捨てたとき(「覚えた」と言わない)
+PICK_TEXT = "「{typed}」だと、{label}はどっちに近い？"  # 打った数が区切りの境目にあるとき、2 つの区切りをボタンで聞く(task 268)
+SNAP_TEXT = "{label}は「{value}」で入れておくね。"  # 打った数を区切りに寄せて入れたとき(保存した区切りの文字をそのまま出す)
 POST_RESULT_TEXT = "おすすめはここまでだよ。条件を変えてもう一回探すなら「最初から」と送ってね。"
 GUESS_TAIL = "（確認できていない推測の条件だよ。ちがっていたら「最初から」でやり直せるよ）"
 
@@ -419,6 +507,76 @@ def _norm_single(slot, value):
     return None
 
 
+# 打った数を区切りに寄せる項目(task 268): 数と単位の形、数から区切りを決める関数、境目の数、境目ちょうど(「くらい」なし)でも
+# 聞くか、数の前にあれば読まない文字(「月2〜3日」は週の日数ではない)。通勤は区切りが手段(徒歩・電車)と時間の組なので入れない。
+BUCKETS = {
+    "shift_length": {"num": r"\d+(?:\.\d+)?", "unit": r"時間(?![半目])", "edges": (4, 6), "exact": True,
+                     "of": lambda h: "short" if h < 4 else "mid" if h < 6 else "long"},
+    "hourly_wage_min": {"num": r"\d+", "unit": r"円", "edges": (1200, 1500), "exact": False,
+                        "of": lambda w: 1000 if w < 1200 else 1200 if w < 1500 else 1500},
+    "days_per_week": {"num": r"\d{1,2}", "unit": r"[日回](?![前後目間])", "edges": (), "exact": False,  # 日は整数。境目は幅だけ
+                      "of": lambda d: "1-2" if d <= 2 else "3-4" if d <= 4 else "5+", "not_after": r"月に?\s*$"},
+}
+RANGE_SEP = r"[〜\-ー−、,]|から"
+APPROX_PRE = r"約|だいたい|大体|およそ"
+APPROX_POST = r"くらい|ぐらい|位|前後|程度|ほど"
+# 向きのある言い方は聞き直さない(読み方はモデルに任せる)
+DIRECTED_PRE = r"最低|最大|最長|最短|少なくとも|長くても|短くても|多くても|せめて"
+DIRECTED = r"以上|以下|以内|未満|まで|超|より|弱|強|ちょっと|ちょい|過ぎ|すぎ"
+
+
+def _fold(s):
+    """NFKC にそろえ、全角のチルダ(「4～6時間」)を表示名の「〜」に、桁の区切り(「1,200円」)を取った形にする。"""
+    return re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", nfkc(s).replace("~", "〜"))
+
+
+def _bucket_re(slot):
+    n, unit = BUCKETS[slot]["num"], BUCKETS[slot]["unit"]
+    return re.compile(rf"(?P<pre>(?:{APPROX_PRE}|{DIRECTED_PRE})\s*)?(?P<core>(?<![\d.])(?P<a>{n})"
+                      rf"(?:\s*(?:{RANGE_SEP})\s*(?P<b>{n}))?\s*(?:{unit}))\s*(?P<post>{APPROX_POST}|{DIRECTED}|ちょうど)?")
+
+
+BUCKET_RE = {s: _bucket_re(s) for s in BUCKETS}
+
+
+def _bucket_names(slot):
+    """値 -> 表示名と、その値を入れるバンクの選択肢の文字(「3時間でサクッと」)。"""
+    from_bank = [(e[slot], c) for q in BANK for c, e in q["choice_effects"].items() if slot in e]
+    return {k: [ja] + [c for v, c in from_bank if v == k] for k, ja in SLOTS[slot]["values"].items()}
+
+
+BUCKET_NAMES = {s: _bucket_names(s) for s in BUCKETS}
+
+
+def bucket_reads(slot, text):
+    """打った文の中の、この項目の数(task 268)。[{"core": "4時間", "cands": 区切りの候補(並びは表のとおり) | None, "edge": bool}]。
+    表示名か選択肢の文字があれば、はっきり答えているので読まない([])。cands が 2 つで edge なら境目の答え: 境目の数ちょうど
+    (exact の項目)か「くらい」付き、または区切りをまたぐ幅(幅の上の端が境目なら、その下の区切りまで。「4〜6時間」は 4〜6時間)。
+    向きのある言い方(「4時間以上」「最低4時間」)は None。区切りを決めるためだけに読むので、読み方を増やさない。"""
+    t = _fold(text) if isinstance(text, str) else ""
+    if any(_fold(n) in t for names in BUCKET_NAMES[slot].values() for n in names):
+        return []
+    spec, order = BUCKETS[slot], list(SLOTS[slot]["values"])
+    out = []
+    for m in BUCKET_RE[slot].finditer(t):
+        if spec.get("not_after") and re.search(spec["not_after"], t[:m.start()]):
+            continue
+        a, b = float(m["a"]), float(m["b"]) if m["b"] else None
+        pre, post = (m["pre"] or "").strip(), m["post"] or ""
+        if re.fullmatch(DIRECTED_PRE, pre) or re.fullmatch(DIRECTED, post):
+            cands, edge = None, False
+        elif b is not None and b > a:
+            lo = order.index(spec["of"](a))
+            hi = order.index(spec["of"](b - 1e-6 if b in spec["edges"] else b))
+            cands, edge = order[lo:hi + 1], hi - lo == 1
+        else:
+            n = b if b is not None else a
+            edge = n in spec["edges"] and (spec["exact"] or bool(pre) or bool(re.fullmatch(APPROX_POST, post)))
+            cands = [spec["of"](n - 1e-6), spec["of"](n)] if edge else [spec["of"](n)]
+        out.append({"core": m["core"], "cands": cands, "edge": edge and len(cands) == 2})
+    return out
+
+
 def value_ja(slot, v):
     if v is None:
         return "未定"
@@ -468,6 +626,7 @@ class State:
     restarts: int = 0
     result: dict = None
     log: list = field(default_factory=list)
+    near: dict = field(default_factory=dict)          # 入口と「近くで探す」の答え(pick・age・area・time・drop。task 266)
 
     def to_dict(self):
         return copy.deepcopy({k: v for k, v in self.__dict__.items() if not k.startswith("_")})
@@ -484,10 +643,14 @@ class State:
         return st
 
 
-def new_state():
-    """空の状態。年齢がまだ無いので、derived_ng は未成年のルールの NG で始まる(05-N4)。"""
+def new_state(quick=False):
+    """空の状態。年齢がまだ無いので、derived_ng は未成年のルールの NG で始まる(05-N4)。
+    quick=True は入口のカード(quick_pick)から始める(新しい相談。task 265)。既定は PRD の icebreak から。"""
     st = State()
     recompute_derived(st)
+    if quick:
+        st.flags.append(QUICK_FLAG)
+        _quick_entry(st)
     if hasattr(st, "_new_notices"):
         del st._new_notices
     return st
@@ -690,8 +853,7 @@ def set_segment(state, seg, source):
     if seg not in SEGMENTS:
         ev(state, "invalid_segment", value=seg)
         return "ignored"
-    if seg == state.segment:
-        state.pending_segment = None
+    if seg == state.segment:  # task 267: 前のターンに確かめると決めた区分(聞き直しの答えで抽出が今の区分を返した)は消さない
         return "noop"
     if state.segment == "unknown" or source in ("choice", "confirm"):
         _switch_segment(state, seg)
@@ -748,6 +910,8 @@ def parse_json(raw):
 SEG_SYNONYM = {"学生": "student", "大学生": "student", "高校生": "student", "専門学生": "student", "主婦": "homemaker",
                "主夫": "homemaker", "会社員": "side_job", "社会人": "side_job", "副業": "side_job",
                "フリーター": "other", "求職中": "other", "その他": "other"}
+# 本人の文から拾う区分の言葉(task 267)。「その他」は「その他は特にない」のように区分でなくても使うので拾わない
+SEG_WORDS = {w: s for w, s in SEG_SYNONYM.items() if w != "その他"}
 
 
 def _empty_extract():
@@ -840,14 +1004,32 @@ def validate_reply(raw, view):
     if review:
         if view["card_text"] not in reply or reply.count(CLOSING_JA) != 1:
             return None, "card_altered"
-    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside"):
+    elif view.get("text") and view.get("mode") in ("ask", "reask", "clarify", "retry", "confirm", "aside", "pick",
+                                                   QUICK_RESULT, *NEAR_ASKS):
         if nfkc(view["text"]) not in nfkc(reply):
             return None, "question_missing"
         if len(reply) - len(view["text"]) > 120:
             return None, "too_much_extra"
     if _mentions_unkept(reply, view.get("unkept"), view.get("card_text") if review else view.get("text")):
         return None, "unkept_mentioned"
+    if _says_unsaid(reply, view.get("unsaid"), view.get("card_text") if review else view.get("text")):
+        return None, "unsaid_value"
+    if view.get("mode") == QUICK_RESULT and _names_other_jobs(reply, view["quick"]):
+        return None, "job_not_on_card"
+    if view.get("mode") in NEAR_ASKS and _names_other_jobs(reply, {"jobs": []}):  # 3 問のリアクションも職種を口にしない
+        return None, "job_not_on_card"
     return reply.strip(), None
+
+
+def _names_other_jobs(text, card):
+    """職種の結果のリアクションが、カードに無い職種(名前か、keys の最初の語)を口にしているか。モデルは職種を知らないので、
+    年齢が分からない人のカードの上で 18 歳からの職種(居酒屋など)を勧めないように落とす(task 265)。"""
+    shown = {j["job_id"] for j in card["jobs"]}
+    t = nfkc(text)
+    for j in CATALOG:
+        if j["id"] in shown:
+            t = t.replace(nfkc(j["name"]), "")
+    return any(nfkc(w) in t for j in CATALOG if j["id"] not in shown for w in (j["name"], j["keys"][0]))
 
 
 def _mentions_unkept(text, labels, fixed=None):
@@ -858,6 +1040,20 @@ def _mentions_unkept(text, labels, fixed=None):
     if fixed:
         t = t.replace(nfkc(fixed), "")
     return any(nfkc(x) in t for x in labels)
+
+
+ALL_BUCKET_NAMES = sorted({_fold(n) for names in BUCKET_NAMES.values() for ns in names.values() for n in ns}, key=len, reverse=True)
+
+
+def _says_unsaid(text, phrases, fixed=None):
+    """入れていない数(phrases。「4時間」)を、決まった文(質問・カード)と区切りの表示名の外で口にしているか(task 268)。
+    「4時間未満」に寄せたのに「4時間くらいね、りょーかい！」と言わせない(「4時間未満」の中の「4時間」はよい)。"""
+    if not phrases or not isinstance(text, str):
+        return False
+    t = _fold(text)
+    for f in ([_fold(fixed)] if fixed else []) + ALL_BUCKET_NAMES:
+        t = t.replace(f, "")
+    return any(re.search(r"(?<![\d.])" + re.escape(_fold(x)), t) for x in phrases)  # 「24時間営業」は「4時間」ではない
 
 
 # ----------------------------- 質問の選び方(§8-3) -----------------------------
@@ -964,12 +1160,15 @@ def advance(state, bank):
     """次に出すものを決めて state.current に入れる。ORDER の長さで打ち切るので繰り返さない。"""
     if state.pending_segment and state.phase != "result":
         np = next_phase(state, bank)
-        if np in ("review", "result"):
+        if np in ("review", "result") or _confirm_used(state):  # task 267: 区分の確認は 1 回の相談で 1 回まで
             ev(state, "confirm_skipped", pending=state.pending_segment)
             state.pending_segment = None
+        elif np == "reverse_pick":  # reverse_pick(1 ターン)は使わない。次のフェーズで聞く(_ask_held と同じ)
+            pass
         else:  # 05-B4: 確認質問は次のフェーズに数える(フェーズの上限を超えない)
             state.phase = np
             state.phase_turns.setdefault(np, 0)
+            _flag(state, "segment_asked")
             state.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(qmap(bank)["q_segment"]["choices"])}
             if state.pending:  # 保留した答えも、この確認で決まる
                 _flag(state, "held_asked")
@@ -1004,7 +1203,7 @@ def _ask_held(state, bank):
     """区分の表に無い答えを保留したら、次のターンで区分を確かめる(1 回だけ)。区分の質問(q_segment)をまだ出していなければ、
     そちらで決まるので出さない。review の前は review の 2 ターンを使わない(review に入るなら、review の返事の後に聞く)。
     review の中では review のターンに数え、15 ターンに達していれば聞かない(結果の前に捨てる)。"""
-    if not state.pending or "held_asked" in state.flags or state.blocked or state.phase == "result":
+    if not state.pending or _confirm_used(state) or state.blocked or state.phase == "result":
         return False
     if state.segment == "unknown" and "q_segment" not in state.asked:
         return False
@@ -1028,6 +1227,23 @@ def _ask_held(state, bank):
     if need:  # review の続きが要るかを、確認の答えのターンまで持ち越す(_need_more_review は保存しない)
         state.current["need_review"] = True
     return True
+
+
+def _confirm_used(state):
+    """区分の確認(confirm_segment)を、この相談でもう出したか。区分の違いでも保留の答えでも、出すのは 1 回まで。"""
+    return "segment_asked" in state.flags or "held_asked" in state.flags
+
+
+def _seg_words(state, text):
+    """task 267: 本人の文に今の区分と違う区分の言葉(SEG_WORDS)があれば、抽出が今の区分を返しても次のターンで区分を
+    ボタンで確かめる。文から区分を決めて切り替えはしない(区分は本人がボタンで選ぶ)。"""
+    if state.segment == "unknown" or state.pending_segment or state.blocked or _confirm_used(state):
+        return
+    t = nfkc(text)
+    other = sorted({s for w, s in SEG_WORDS.items() if w in t} - {state.segment})
+    if other:
+        state.pending_segment = other[0]
+        ev(state, "segment_word", old=state.segment, words=other)
 
 
 def _held_q(bank):
@@ -1163,8 +1379,9 @@ def _age_first(updates):
     return [u for u in updates if u["slot"] == "age_band"] + [u for u in updates if u["slot"] != "age_band"]
 
 
-def apply_review(state, ext, button_ok, promote=True):
-    """review の返事を反映する。promote=False(返事が 2 回読めなかった)なら何も上げず、巡回だけ数える(05-B8)。"""
+def apply_review(state, ext, button_ok, promote=True, hold=()):
+    """review の返事を反映する。promote=False(返事が 2 回読めなかった)なら何も上げず、巡回だけ数える(05-B8)。
+    hold は、境目の答えをボタンで聞き直す項目(task 268。入れず、推測も確定しない)。"""
     card = state.last_card or build_card(state)
     items = card["hard"] + card["prefs"]
     shown = {i["slot"]: i for i in items if not card["focus"] or i["slot"] in card["focus"]}  # M-3: 出した項目だけ
@@ -1172,26 +1389,11 @@ def apply_review(state, ext, button_ok, promote=True):
     ack = "all" if button_ok else (ext or {}).get("review_ack")
     touched, hard_changed = set(), False
     if ext and not button_ok:
-        _ambiguous(state, ext)  # B-2: review は最後の値を high で入れ、ログだけ残す
-        for u in _age_first(ext["slot_updates"]):
-            s = u["slot"]
-            if u["value"] is None:
-                state.notes[s] = scrub_note(u.get("raw"))
-                ev(state, "note_unnormalizable", slot=s)
-                continue
-            old = state.slots.get(s)
-            st = apply_update(state, s, u["value"], "high", "review", review=True)
-            touched.add(s)
-            if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
-                    active_slots(state).get(s) == HARD and old.get("confidence") == "high":
-                hard_changed = True
-        _apply_ng(state, ext)
-        if ext.get("segment"):
-            set_segment(state, ext["segment"], "review_explicit")
+        touched, hard_changed = _apply_review_updates(state, ext)
     promoted = []
     for s, i in (shown.items() if promote else ()):
         e = state.slots.get(s)
-        if s in touched or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
+        if s in touched or s in hold or not is_filled(e) or e["confidence"] != "low" or s in state.conflicts:
             continue
         if i["tier"] == "hard" and ack != "all":
             continue  # HARD の推測は「これでOK」(all)のときだけ確定する
@@ -1201,10 +1403,36 @@ def apply_review(state, ext, button_ok, promote=True):
     update_block(state)
     state.review_log.append({"round": state.review_rounds, "ack": ack, "touched": sorted(touched),
                              "promoted": promoted, "hard_changed": hard_changed})
-    need = hard_changed or bool(state.conflicts) or bool(state.pending_segment)
-    if state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)):
-        need = True
-    state._need_more_review = need
+    state._need_more_review = _review_need(state, hard_changed)
+
+
+def _review_need(state, hard_changed):
+    """review をもう 1 巡するか: ゆずれない条件を直した・矛盾・区分の確認待ち、1 巡目でゆずれない条件に空き・推測がある。"""
+    return hard_changed or bool(state.conflicts) or bool(state.pending_segment) or \
+        (state.review_rounds == 1 and any(gap_weight(state.slots.get(s)) > 0 for s in hard_slots(state)))
+
+
+def _apply_review_updates(state, ext):
+    """review の自由入力の項目を high で入れる(B-2: 同じ項目に複数の値があれば最後の値を入れ、ログだけ残す)。
+    review の中の境目の聞き直しへの答え(task 268)でも使う。-> (入れた項目, ゆずれない条件の high の値を変えたか)"""
+    touched, hard_changed = set(), False
+    _ambiguous(state, ext)
+    for u in _age_first(ext["slot_updates"]):
+        s = u["slot"]
+        if u["value"] is None:
+            state.notes[s] = scrub_note(u.get("raw"))
+            ev(state, "note_unnormalizable", slot=s)
+            continue
+        old = state.slots.get(s)
+        st = apply_update(state, s, u["value"], "high", "review", review=True)
+        touched.add(s)
+        if st == "set" and is_filled(old) and old["value"] != state.slots.get(s, {}).get("value") and \
+                active_slots(state).get(s) == HARD and old.get("confidence") == "high":
+            hard_changed = True
+    _apply_ng(state, ext)
+    if ext.get("segment"):
+        set_segment(state, ext["segment"], "review_explicit")
+    return touched, hard_changed
 
 
 def finalize(state):
@@ -1214,6 +1442,7 @@ def finalize(state):
         state.slots.pop(s, None)
         ev(state, "conflict_unresolved", slot=s)
     state.conflicts = {}
+    settle_pick(state)  # 境目の聞き直しの答えを待ったまま結果になった(脱線で 15 ターン目): 最初の答えの値を入れる
     _settle_held(state, force=True)  # 確かめられなかった保留は捨てる(ログ held_discarded)
     recompute_derived(state)
     update_block(state, final=True)
@@ -1272,6 +1501,10 @@ def eligible_jobs(state, catalog):
             why.append("customer_facing")
         if v("physical") == "seated" and j["phys"] == "seated":
             score += 1
+            why.append("physical")
+        if v("physical") == "standing_ok" and (j["phys"] == "standing" or j["noise"] == "lively"):
+            # task 265(設計メモ §5): 立ち仕事に +1、にぎやかな職場に +0.5(「動いてたい」がカタログの順にならないように)
+            score += (1 if j["phys"] == "standing" else 0) + (0.5 if j["noise"] == "lively" else 0)
             why.append("physical")
         if v("environment_noise") and v("environment_noise") == j["noise"]:
             score += 0.5
@@ -1339,12 +1572,16 @@ def validate_result(raw, payload):
             return None, "bad_reason"
         if _mentions_unkept(r["reason"], payload.get("unkept")):
             return None, "unkept_mentioned"
+        if _says_unsaid(r["reason"], payload.get("unsaid")):
+            return None, "unsaid_value"
         seen.add(r["job_id"])
     reply = d.get("reply", "")
     if not isinstance(reply, str) or MONEY_RE.search(reply):
         return None, "bad_reply"
     if _mentions_unkept(reply, payload.get("unkept")):
         return None, "unkept_mentioned"
+    if _says_unsaid(reply, payload.get("unsaid")):
+        return None, "unsaid_value"
     return {"reply": reply, "recommendations": [{"job_id": r["job_id"], "reason": r["reason"].strip()} for r in recs]}, None
 
 
@@ -1404,6 +1641,253 @@ def post_check_result(state, payload, out, cby):
     return out
 
 
+# ----------------------------- 1 タップで始める(task 265。設計メモ baito-quick-start.md §3〜§5) -----------------------------
+def job_tag(job):
+    """職種の横のタグ(§5 の順で最初に当たる 1 つ。JOB_TAGS)。当たらなければ None。"""
+    return next((tag for tag, hit in JOB_TAGS if hit(job)), None)
+
+
+def quick_jobs(state, catalog, light=False):
+    """1 タップ目の結果の職種 3 つ [{job_id, name, tag}]。light(「どれもピンと来ない」)は、remote か spot の職種から、
+    未成年の決まり(18 歳から・重い作業・深夜だけ)と NG で外した残りをカタログの順に。ほかは eligible_jobs の上から。
+    年齢はまだ聞いていないので未成年として扱う(minor_mode)。どちらも job_safe を通ったものだけ。"""
+    cby = {j["id"]: j for j in catalog}
+    if light:
+        jobs = [j for j in catalog if j["remote"] or j["spot"]]
+    else:
+        jobs = [cby[c["job_id"]] for c in eligible_jobs(state, catalog)]
+    out = [{"job_id": j["id"], "name": j["name"], "tag": job_tag(j)} for j in jobs if job_safe(state, j)]
+    return out[:QUICK_JOBS]
+
+
+def _clear_quick(state):
+    """入口の答え(choice:quick_pick)を外す(選び直したとき。low どうしの矛盾にしない)。「近くで探す」の 3 問の答えは残す
+    (選び直した後の [近くで探す] では聞き直さずに求人を出す。task 266)。外した条件(drop)は、絵と一緒に外す。"""
+    for s in [s for s, e in state.slots.items() if e.get("from") == "choice:" + QUICK_PICK]:
+        del state.slots[s]
+        state.conflicts.pop(s, None)
+    state.near.pop("pick", None)
+    state.near.pop("drop", None)  # 0 件のときに外した条件(list)
+
+
+def _quick_entry(state):
+    """入口のカードを出す(フェーズ quick_pick)。カードの中身は state.current の card(view の quick。ランタイムが描く)。"""
+    state.phase = QUICK_PICK
+    card = {"kind": "entry", "title": QUICK_TEXT, "lead": QUICK_LEAD,
+            "picks": [{"label": label, "icon": icon} for label, (icon, _) in QUICK_PICKS.items()], "other": QUICK_NONE}
+    state.current = {"qid": QUICK_PICK, "mode": QUICK_PICK, "choices": [*QUICK_PICKS, QUICK_NONE], "text": QUICK_TEXT,
+                     "card": card}
+
+
+def _quick_result(state, catalog, pick):
+    """1 タップ目の結果を出す(フェーズ quick_result)。職種とタグはコードが決める(モデルはリアクションの 1 文だけ)。"""
+    light = pick not in QUICK_PICKS
+    state.phase = QUICK_RESULT
+    card = {"kind": "result", "pick": None if light else pick, "icon": LIGHT_ICON if light else QUICK_PICKS[pick][0],
+            "title": LIGHT_TITLE if light else pick, "lead": LIGHT_LEAD if light else QUICK_JOBS_LEAD,
+            "jobs": quick_jobs(state, catalog, light), "buttons": [QUICK_NEAR, QUICK_OTHER]}
+    state.current = {"qid": QUICK_RESULT, "mode": QUICK_RESULT, "choices": [QUICK_NEAR, QUICK_OTHER],
+                     "text": LIGHT_TEXT if light else QUICK_RESULT_TEXT, "card": card}
+
+
+def _quick_reply(state, bank, text):
+    """モデルを呼ばない入口のターンの返事(決まった文と、今のカード)。"""
+    return {"reply": text, "view": view(state, bank), "done": False, "counted": False}
+
+
+def _quick_turn(state, text, bank, llm, catalog, search=None):
+    """入口のカード(quick_pick)と職種の結果(quick_result)への答え。ボタンの文字だけを読み(抽出のモデルは呼ばない)、
+    ターンに数えない。入口の答えは確信度 low で入れる(DIRECT に入れない)。[近くで探す] で 3 問(task 266)に入る。"""
+    buttons = match_button(state, bank, text)
+    if state.phase in NEAR_PHASES:
+        return _near_turn(state, text, buttons, bank, llm, catalog, search)
+    if buttons is None:
+        ev(state, "quick_unmatched", phase=state.phase)
+        return _quick_reply(state, bank, QUICK_TAP_TEXT)
+    pick = buttons[0]
+    if state.phase == QUICK_PICK:
+        _clear_quick(state)
+        for slot, value in (QUICK_PICKS.get(pick) or (None, {}))[1].items():
+            apply_update(state, slot, value, "low", "choice:" + QUICK_PICK)
+        state.near["pick"] = pick
+        ev(state, "quick_pick", pick=pick)
+        _quick_result(state, catalog or CATALOG, pick)
+        return _say(state, bank, llm, catalog, counted=False)
+    if pick == QUICK_OTHER:
+        _clear_quick(state)
+        ev(state, "quick_again")
+        _quick_entry(state)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
+    ev(state, "quick_near")
+    return _near_next(state, bank, llm, catalog, search)
+
+
+# ----------------------------- 近くで探す(task 266。設計メモ baito-quick-start.md §6・§7) -----------------------------
+NEAR_AGES = {c: e["age_band"] for c, e in qmap(BANK)["hf_age"]["choice_effects"].items()}  # 年齢のボタン(hf_age と同じ)
+
+
+def _near_next(state, bank, llm, catalog, search):
+    """[近くで探す] の後: まだ答えていない問いを、年齢・エリア・時間帯の順に 1 つ出す(モデルはリアクションの 1 文だけ)。
+    3 つとも答えていれば(入口から選び直したとき)、聞き直さずに求人を出す。"""
+    for phase, key in ((NEAR_AGE, "age"), (NEAR_AREA, "area"), (NEAR_TIME, "time")):
+        if key not in state.near:
+            state.phase = phase
+            state.current = {"qid": phase, "mode": phase, "choices": near_choices(state, phase), "text": NEAR_TEXT[phase]}
+            return _say(state, bank, llm, catalog, counted=False)
+    return _near_jobs(state, bank, search)
+
+
+def near_choices(state, phase):
+    """3 問のボタン。時間帯は、未成年(15〜17 歳、ひみつ、年齢が分からない)には「夜」「深夜」を出さない(§6.2)。"""
+    if phase == NEAR_AGE:
+        return list(NEAR_AGES)
+    if phase == NEAR_AREA:
+        return list(NEAR_AREAS)
+    return QS.time_buttons(minor=minor_mode(state))
+
+
+def _near_turn(state, text, buttons, bank, llm, catalog, search):
+    """3 問と求人への答え。ボタンだけを読む(年齢は、打った答えも今の決まり(typed_age。task 258)で読む)。確信度は high。
+    年齢で「中学生以下」なら、そこで止める(求人に進まない。今の流れの結果と同じ文)。「ひみつ」は未成年として進む。"""
+    phase = state.phase
+    if phase != NEAR_AGE and buttons is None and says_age(text):
+        # エリア・時間帯の問いや求人の後に打った年齢(「14歳です」「中2」)は、年齢の答えとして読み直す(条件と未成年かを
+        # 決め直す。読み直した後は、まだの問いに戻る)
+        phase = NEAR_AGE
+        ev(state, "near_age_again")
+    if phase == NEAR_AGE:
+        band = NEAR_AGES[buttons[0]] if buttons else typed_age(text)
+        if band is None:  # 読めない答えは、ボタンで聞き直す(進まないので、未成年のまま求人に進むことも無い。前の年齢の答えでも
+            # 進めない: 「18歳以上」の後の「実は16歳です」は、年齢を答え直すまで時間帯も求人も出さない)
+            if JHS_RE.search(nfkc(text)):  # 「中学」の語は印を付ける(途中でやめたら中学生以下として扱う。jhs_unresolved)
+                _flag(state, "age_jhs")
+                ev(state, "age_jhs", extract_failed=False)
+            ev(state, "quick_unmatched", phase=phase)
+            if state.near.pop("age", None) is not None:  # 前の答え(「18歳以上」)を外す(年齢不明 = 未成年として扱う)
+                state.slots.pop("age_band", None)
+                state.conflicts.pop("age_band", None)
+                recompute_derived(state)
+            state.phase = NEAR_AGE
+            state.current = {"qid": NEAR_AGE, "mode": NEAR_AGE, "choices": near_choices(state, NEAR_AGE),
+                             "text": NEAR_TEXT[NEAR_AGE]}
+            return _quick_reply(state, bank, QUICK_TAP_TEXT)
+        if band == "declined" and "age_jhs" in state.flags:
+            # 「中学」と打った後の「ひみつ」は、2 回目も読めない答えと同じく中学生以下として止める(task 258 の決まり)
+            ev(state, "age_jhs_declined")
+            band = "under_15"
+        apply_update(state, "age_band", band, "high", ("choice:" if buttons else "free:") + NEAR_AGE)
+        state.near["age"] = band
+        ev(state, "near_age", value=band)
+        if minor_mode(state) and QS.TIME_BUTTONS.get(state.near.get("time"), QS.TIME_BUTTONS["朝"]).adult_only:
+            del state.near["time"]  # 求人の後に未成年と分かった: 夜・深夜の答えは使わず、未成年のボタンで聞き直す
+        if state.blocked:
+            state.phase, state.current = "hard_filter", None
+            advance(state, bank)  # 止めた人は結果(中学生以下の案内)。モデルは呼ばない
+            return _say(state, bank, llm, catalog, counted=False)
+        return _near_next(state, bank, llm, catalog, search)
+    if buttons is None:
+        ev(state, "quick_unmatched", phase=phase)
+        return _quick_reply(state, bank, QUICK_TAP_TEXT)
+    b = buttons[0]
+    if phase == NEAR_AREA:
+        state.near["area"] = b
+        _undrop(state, "area")
+        return _near_next(state, bank, llm, catalog, search)
+    if phase == NEAR_TIME:
+        apply_update(state, "time_slots", [QS.time_slot(b)], "high", "choice:" + NEAR_TIME)
+        state.near["time"] = b
+        _undrop(state, "time_band")
+        return _near_next(state, bank, llm, catalog, search)
+    if b == NEAR_MORE:  # 今のハーネスの流れ(区分、残りの HARD、MID)へ。入った値(年齢・時間帯)は聞かない(gap_weight が 0)
+        ev(state, "near_more")
+        state.phase, state.current = "icebreak", None
+        advance(state, bank)
+        return _say(state, bank, llm, catalog, counted=False)
+    if b == NEAR_WRONG:  # 入口のカードを出し直して、好みを選び直す
+        _clear_quick(state)
+        ev(state, "near_wrong")
+        _quick_entry(state)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT)
+    state.near["drop"] = [*state.near.get("drop", []), state.current["drop"]]  # 0 件のときの「〜を外して探す」
+    return _near_jobs(state, bank, search)
+
+
+def _undrop(state, key):
+    """聞き直した条件を、0 件のときに外した条件(near の drop)から戻す(選び直した答えで絞る。黙って無視しない)。"""
+    drop = [k for k in state.near.get("drop", []) if k != key]
+    if drop:
+        state.near["drop"] = drop
+    else:
+        state.near.pop("drop", None)
+
+
+AGE_HINT_RE = re.compile(r"\d{1,2}\s*[歳才]|未成年|高校|高[1-3](?!\d)")  # 年齢に触れた語(読めなくても年齢を聞き直す)
+
+
+def says_age(text):
+    """エリア・時間帯の問いや求人の後の発言が、年齢に触れているか(「中学」の語、「16歳」「実は16歳です」「高2」「未成年」)。
+    触れていれば年齢の答えとして読み直す(typed_age で読めない言い方は、年齢をボタンで聞き直す。その間は未成年として扱う)。
+    カルーセルのボタンの文(「「求人名」について詳しく教えて」)の求人名(「小中学生」など)は見ない。"""
+    t = nfkc(re.sub(r"「[^」]*」", "", text or ""))
+    return bool(typed_age(text, buttons=False) or JHS_RE.search(t) or AGE_HINT_RE.search(t))
+
+
+def near_search(state):
+    """求人の検索(dip_mcp.logic.recommend)に渡す条件(§6.4): エリア(広い言い方)、時間帯(§6.2 の表で直した time_band)、
+    入口の絵の talk・physical の値(§4 の表)、未成年か。未成年か年齢が分からなければ、必ず minor=True(minor_mode)。
+    0 件のときに外した条件(near の drop)は渡さない。minor は外さない。"""
+    n = state.near
+    cond = {"area": NEAR_AREAS.get(n.get("area")), "time_band": QS.search_time_band(n["time"])}
+    cond |= QUICK_SEARCH.get(n.get("pick"), ({}, None))[0]
+    for k in n.get("drop", []):
+        cond.pop(k, None)
+    return {k: v for k, v in cond.items() if v is not None} | {"minor": minor_mode(state) or bool(state.blocked)}
+
+
+def near_text(state, cond, found):
+    """件数と効いた条件を言う吹き出しと、ボタン。0 件なら relax の 1 つ(いちばん件数の増える条件)と、それを外すボタン。"""
+    n = state.near
+    where = "・".join(x for x in (n["time"] if "time_band" in cond else None, n.get("area") if cond.get("area") else None)
+                      if x)
+    where = f"{where}で、" if where else ""
+    pick = n.get("pick")
+    attrs = QUICK_SEARCH.get(pick, ({}, None))[0]
+    kind = QUICK_SEARCH[pick][1] if attrs and set(attrs) <= set(cond) else NEAR_ANY_KIND
+    if found["total"]:
+        return NEAR_FOUND_TEXT.format(where=where, kind=kind, n=found["total"]), [NEAR_MORE, NEAR_WRONG], None
+    text = NEAR_ZERO_TEXT.format(where=where, kind=kind)
+    relax = found.get("relax")
+    if not relax:
+        return text + "\n" + NEAR_STUCK_TEXT, [NEAR_MORE, NEAR_WRONG], None
+    what = RELAX_WHAT.get(relax["remove"], f"「{pick}」")
+    text += "\n" + NEAR_RELAX_TEXT.format(what=what, n=relax["total_after"])
+    return text, [NEAR_RELAX_BUTTON.format(what=what), NEAR_MORE, NEAR_WRONG], relax["remove"]
+
+
+def _near_jobs(state, bank, search):
+    """本物の求人を出す(フェーズ near_jobs。モデルは呼ばない)。探すのはハーネスの外(search。session が dip の recommend と
+    relax を呼ぶ)で、条件はここ(near_search)が決める。返すのは件数の吹き出しと、求人(view の jobs。ランタイムがカルーセルにする)。
+    search は cond → {"total", "jobs": [求人カード], "relax": relax の options の先頭か None}。"""
+    state.phase = NEAR_JOBS
+    cond = near_search(state)
+    try:
+        if search is None:
+            raise RuntimeError("近くで探す: 求人の検索(search)を渡されていない")
+        found = search(cond)
+    except Exception as e:  # noqa: BLE001  検索の失敗で、時間帯の問いに戻し続けない(進めないまま止まる)
+        ev(state, "near_search_failed", error=type(e).__name__)
+        state.current = {"qid": NEAR_JOBS, "mode": NEAR_JOBS, "choices": [NEAR_MORE, NEAR_WRONG], "text": NEAR_FAILED_TEXT}
+        v = view(state, bank) | {"jobs": []}
+        return {"reply": "\n".join(v["notices"] + [NEAR_FAILED_TEXT]), "view": v, "done": False, "counted": False}
+    text, choices, drop = near_text(state, cond, found)
+    state.current = {"qid": NEAR_JOBS, "mode": NEAR_JOBS, "choices": choices, "text": text}
+    if drop:
+        state.current["drop"] = drop
+    ev(state, "near_jobs", total=found["total"], minor=cond["minor"], relax=drop)
+    v = view(state, bank) | {"jobs": list(found["jobs"])}
+    return {"reply": "\n".join(v["notices"] + [text]), "view": v, "done": False, "counted": False}
+
+
 # ----------------------------- プロンプトの変数(§8-5) -----------------------------
 def slots_json(state):
     pri = active_slots(state)
@@ -1427,9 +1911,18 @@ def view(state, bank, aside=False):
     unkept = unkept_slots(state)
     if unkept:  # 生成の検証だけが読む(プロンプトの変数ではない)
         v["unkept"] = [SLOTS[s]["label"] for s in unkept]
+    unsaid = unsaid_phrases(state)
+    if unsaid:  # 同じく、生成の検証だけが読む
+        v["unsaid"] = unsaid
     q = qmap(bank).get(cur.get("qid"))
     if mode == "confirm":
         v["text"] = _held_text(cur, bank)
+    elif mode == "pick":
+        v["text"] = _pick_text(cur)
+    elif mode in QUICK_PHASES:  # 入口のカードと職種の結果(task 265)、近くで探す(task 266)。カードはランタイムが描く
+        v["text"] = cur["text"]
+        if cur.get("card"):
+            v["quick"] = copy.deepcopy(cur["card"])
     elif mode == "review":
         v["card_json"] = state.last_card
         v["card_text"] = render_card(state.last_card)
@@ -1463,6 +1956,8 @@ def extract_payload(state, bank, user_text):
         targets = list(card["focus"]) or [i["slot"] for i in card["hard"] + card["prefs"]]
     elif mode == "confirm":
         question, choices, targets = _held_text(cur, bank), list(cur.get("choices", [])), ["segment"]
+    elif mode == "pick":
+        question, choices, targets = _pick_text(cur), list(cur.get("choices", [])), [cur["slot"]]
     elif mode == "result":
         question, choices, targets = "（おすすめを表示したあと）", [], (["age_band"] if state.blocked else [])
     else:
@@ -1477,7 +1972,8 @@ def extract_payload(state, bank, user_text):
 # ----------------------------- ターン(§5) -----------------------------
 def _init_volatile(state, reset=False):
     """そのターン限りの値(先頭が _。保存しない)。"""
-    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", ""), ("_discarded", None)):
+    for k, v in (("_new_notices", None), ("_need_more_review", False), ("_user_text", ""), ("_discarded", None),
+                 ("_snapped", None)):
         if reset or not hasattr(state, k):
             setattr(state, k, [] if v is None else v)
 
@@ -1588,13 +2084,14 @@ def clarify_room(state):
     return state.turns < MAX_TURNS - REVIEW_RESERVE
 
 
-def turn(state, user_text, bank, llm, catalog=None):
+def turn(state, user_text, bank, llm, catalog=None, search=None):
     """本人の発言 1 通を処理して {reply, view, done, counted} を返す。例外は出さない: ハーネスの中の例外は、
-    ターンの始めの状態に戻して、今出しているものを出し直す(05-M15)。"""
+    ターンの始めの状態に戻して、今出しているものを出し直す(05-M15)。
+    search は「近くで探す」の求人の検索(task 266。_near_jobs。session が渡す。PRD の流れでは使わない)。"""
     _init_volatile(state)
     snap = state.to_dict()
     try:
-        return _turn(state, user_text, bank, llm, catalog)
+        return _turn(state, user_text, bank, llm, catalog, search)
     except Exception as e:  # noqa: BLE001
         restored = State.from_dict(snap)
         state.__dict__.clear()
@@ -1706,8 +2203,143 @@ def _age_asked_again(state):
     state.attempts["age_band"] = max(state.attempts.get("age_band", 0), MAX_ATTEMPTS)
 
 
-def _turn(state, user_text, bank, llm, catalog):
-    state._new_notices, state._discarded = [], []
+# ----------------------------- 区切りの境目(task 268) -----------------------------
+def unsaid_phrases(state):
+    """このターンの本人の文の数(「4時間」)のうち、入れた区切りと 1 つに決まらないもの。返事が「覚えた」と言わないよう、
+    生成の検証に渡す。区切りに寄せて入れた項目(_snapped)と、ボタンで聞き直している項目(pick)の分。"""
+    _init_volatile(state)
+    cur = state.current or {}
+    picking = cur.get("slot") if cur.get("mode") == "pick" else None
+    out = []
+    for s in state._snapped + ([picking] if picking else []):
+        stored = (state.slots.get(s) or {}).get("value")
+        for r in bucket_reads(s, state._user_text):
+            if r["cands"] is not None and (s == picking or r["cands"] != [stored]) and r["core"] not in out:
+                out.append(r["core"])
+    return out
+
+
+def _pick_text(cur):
+    return PICK_TEXT.format(typed=cur["typed"], label=SLOTS[cur["slot"]]["label"])
+
+
+def _bucket_hold(state, ext, text, q=None, review=False):
+    """境目の答え: 抽出が区切りのある項目を返し、打った数が区切りの境目にあり(bucket_reads の edge)、抽出の値がその 2 つの
+    区切りのどちらかなら(ほかの数の話ではない)、その項目を ext から外して、聞き直しの内容を返す(項目ごとに 1 回まで)。
+    最初の答えの抽出の値は held に取っておく(聞き直しへの答えが読めないとき・聞き直さずに終わるときに入れる)。"""
+    if not ext:
+        return None
+    for s in BUCKETS:
+        ups = [u for u in ext["slot_updates"] if u["slot"] == s]
+        if not ups or s not in active_slots(state) or f"pick:{s}" in state.retried:
+            continue
+        edge = [r for r in bucket_reads(s, text) if r["edge"]]
+        got = [u["value"] for u in ups if u["value"] is not None]
+        if len({tuple(r["cands"]) for r in edge}) != 1 or not got or got[-1] not in edge[0]["cands"]:
+            continue
+        if review:
+            conf, frm = "high", "review"
+        else:
+            current = q is not None and s in q["targets"]
+            conf = confidence_for("free_current" if current else "free_other", state.phase, s, False)
+            frm = f"free:{q['id']}" if current else (f"free_other:{q['id']}" if q else "free_other")
+        ext["slot_updates"] = [u for u in ext["slot_updates"] if u["slot"] != s]
+        values = list(edge[0]["cands"])
+        return {"qid": "bucket_pick", "mode": "pick", "slot": s, "values": values,
+                "choices": [SLOTS[s]["values"][v] for v in values], "typed": edge[0]["core"], "review": review,
+                "held": {"value": got[-1], "confidence": conf, "from": frm}}
+    return None
+
+
+def _ask_pick(state, pick):
+    state.retried.append(f"pick:{pick['slot']}")
+    ev(state, "bucket_pick", slot=pick["slot"], values=pick["values"])
+    state.current = pick
+
+
+def _release_pick(state, pick):
+    """聞き直す余地が無い・答えが読めない: 最初の答えの抽出の値をそのまま入れる(返事の前に区切りの文字を出す)。"""
+    _init_volatile(state)
+    h = pick.get("held")
+    if h:
+        apply_update(state, pick["slot"], h["value"], h["confidence"], h["from"])
+        if is_filled(state.slots.get(pick["slot"])) and pick["slot"] not in state._snapped:
+            state._snapped.append(pick["slot"])
+
+
+def _note_snaps(state, ext, text, before):
+    """打った数を区切りに寄せて入れた項目(このターンに値か確信度が変わり、文に表示名・選択肢の文字が無い)を覚える。"""
+    for s in BUCKETS:
+        if not any(u["slot"] == s and u["value"] is not None for u in (ext or {}).get("slot_updates", [])):
+            continue
+        e = state.slots.get(s)
+        if is_filled(e) and e != before.get(s) and bucket_reads(s, text) and s not in state._snapped:
+            state._snapped.append(s)
+
+
+def _snap_lead(state):
+    """このターンに区切りに寄せて入れた値を、保存した区切りの文字のまま伝える(返事が別の数を「覚えた」と言わないように)。
+    中学生以下で止めたときは言わない(推薦に進まないので)。"""
+    _init_volatile(state)
+    if state.blocked:
+        return []
+    return [SNAP_TEXT.format(label=SLOTS[s]["label"], value=value_ja(s, state.slots[s]["value"]))
+            for s in state._snapped if is_filled(state.slots.get(s))]
+
+
+def settle_pick(state):
+    """相談を閉じる前(session._finish)と結果の前(finalize): 聞き直しの答えを待っていれば、最初の答えの抽出の値を入れる。"""
+    cur = state.current or {}
+    if cur.get("mode") == "pick":
+        _release_pick(state, cur)
+
+
+def _pick_answer(state, bank, llm, catalog, cur, text, buttons, ext, intent, before):
+    """境目の聞き直しへの答え(数えるターン)。ボタンなら、その区切りを high で入れる。打った答えは聞き直さない(1 回まで):
+    抽出がこの項目を返せばそれを、無ければ最初の答えの抽出の値(held)を入れ、返事の前に区切りの文字を出す。
+    いっしょに打ったほかの項目は、review の中なら review の答えと同じく high で入れる。review の中では、読めない答えの
+    「中学」(_review_jhs)で止め、review をもう 1 巡するかをここで決め直す。"""
+    s = cur["slot"]
+    old = copy.deepcopy(state.slots.get(s))
+    hard_changed = False
+    if buttons is not None:
+        apply_update(state, s, cur["values"][cur["choices"].index(buttons[0])], "high", "choice:bucket_pick")
+        ev(state, "bucket_picked", slot=s, value=state.slots[s]["value"])
+    else:
+        if ext is None and cur.get("review") and _review_jhs(state, text):
+            ext = _jhs_stop(state, None, text)
+        ups = [u for u in (ext or {}).get("slot_updates", []) if u["slot"] == s and u["value"] is not None]
+        rest = dict(ext, slot_updates=[u for u in ext["slot_updates"] if u["slot"] != s]) if ext else None
+        if rest and cur.get("review"):
+            hard_changed = _apply_review_updates(state, rest)[1]
+        elif rest:
+            _apply_ext(state, bank, rest, q=None, text=text, review=False)
+        _note_snaps(state, rest, text, before)
+        ev(state, "bucket_pick_typed", slot=s, read=bool(ups) and intent in ("answer", "show_result"))
+        if ups and intent in ("answer", "show_result"):
+            apply_update(state, s, ups[-1]["value"], "high", "free:bucket_pick")
+        else:
+            _release_pick(state, cur)
+        if is_filled(state.slots.get(s)) and state.slots[s] != old and s not in state._snapped:
+            state._snapped.append(s)
+    if intent == "show_result":
+        _flag(state, "show_result")
+    if cur.get("review"):
+        e = state.slots.get(s)
+        changed = active_slots(state).get(s) == HARD and is_filled(old) and old["confidence"] == "high" and \
+            is_filled(e) and e["value"] != old["value"]
+        last = bool(state.review_log and state.review_log[-1]["hard_changed"])
+        update_block(state)
+        state._need_more_review = "show_result" not in state.flags and _review_need(state, last or changed or hard_changed)
+    state.current = None  # 答えた聞き直しは、結果の前(finalize の settle_pick)に入れ直さない
+    advance(state, bank)
+    return _say(state, bank, llm, catalog)
+
+
+
+
+def _turn(state, user_text, bank, llm, catalog, search=None):
+    state._new_notices, state._discarded, state._snapped = [], [], []
     text = user_text if isinstance(user_text, str) else ""
     state._user_text = text
     if state.current is None:
@@ -1731,8 +2363,15 @@ def _turn(state, user_text, bank, llm, catalog):
             ev(state, "crisis_resume")
             return _represent(state, bank, counted=False, lead=[CRISIS["resume_lead"]])
     if DANGER_RE.search(nfkc(text)):
+        if state.phase in QUICK_PHASES:  # 入口では数えない(15 ターンは PRD の流れの分)。注意文とカードを出し直す
+            _flag(state, "danger_warned")
+            ev(state, "danger_skip", where=state.phase)
+            return _quick_reply(state, bank, NOTICE["danger"])
         return _aside(state, bank, llm, catalog, kind="danger")
+    if state.phase in QUICK_PHASES:
+        return _quick_turn(state, text, bank, llm, catalog, search)
     # ---- Stage 1
+    before = {s: copy.deepcopy(state.slots.get(s)) for s in BUCKETS}
     buttons = match_button(state, bank, text)
     ext = None
     if buttons is None:
@@ -1747,10 +2386,14 @@ def _turn(state, user_text, bank, llm, catalog):
     if intent == "danger":
         return _aside(state, bank, llm, catalog, kind="danger")
     if intent == "aside":
+        if cur["mode"] not in ("review", "confirm"):
+            _seg_words(state, text)  # 区分の言葉は、脱線と読まれても次の答えの後に確かめる
         return _aside(state, bank, llm, catalog, kind="aside")
     # ---- 数えるターン
     _count(state)
     mode = cur["mode"]
+    if mode == "pick":
+        return _pick_answer(state, bank, llm, catalog, cur, text, buttons, ext, intent, before)
     if mode == "review":
         if buttons is None and ext is None:
             key = f"review{state.review_rounds + 1}"
@@ -1770,8 +2413,18 @@ def _turn(state, user_text, bank, llm, catalog):
         if buttons is None and ext is None:
             apply_review(state, None, button_ok=False, promote=False)  # 2 回目: 巡回は数え、何も上げない
         else:
+            # 境目の答え(task 268)は入れずにボタンで聞き直す。15 ターン目と「早く結果」では聞かない
+            pick = _bucket_hold(state, ext, text, review=True) if buttons is None and intent != "show_result" \
+                and state.turns < MAX_TURNS else None
             _apply_ext(state, bank, ext, q=None, text=text, review=True)
-            apply_review(state, ext, button_ok=bool(buttons))
+            apply_review(state, ext, button_ok=bool(buttons), hold=[pick["slot"]] if pick else ())
+            _note_snaps(state, ext, text, before)
+            if pick and (state.blocked or state._need_more_review and state.turns + 2 > MAX_TURNS):
+                _release_pick(state, pick)  # 2 巡目の review を先にする(カードに入れた区切りが出る)
+                pick = None
+            if pick:
+                _ask_pick(state, pick)
+                return _say(state, bank, llm, catalog)
         if intent == "show_result":
             state._need_more_review = False
             _flag(state, "show_result")
@@ -1789,27 +2442,40 @@ def _turn(state, user_text, bank, llm, catalog):
         elif cur["qid"] not in state.retried:  # 1 回目: 数えずに 1 回だけ聞き直す
             state.retried.append(cur["qid"])
             _uncount(state)
+            _seg_words(state, text)  # 区分の言葉があれば、聞き直しの答えの後に確かめる
             if "age_band" in q["targets"]:
                 _age_asked_again(state)
             state.current = dict(cur, mode="retry")
             return _say(state, bank, llm, catalog, counted=False)
         else:
             ev(state, "extract_gave_up", qid=cur["qid"])
+            _seg_words(state, text)
             if _asks_age(cur, q):
                 ev(state, "age_unread_kept_minor", slot="age_band")
     elif intent == "clarify" and mode != "confirm" and cur["qid"] not in state.clarified \
             and state.clarify_used < MAX_CLARIFY and clarify_room(state):
         state.clarified.append(cur["qid"])
         state.clarify_used += 1
+        _seg_words(state, text)  # 区分の言葉は、言い換えの答えの後に確かめる
         state.current = dict(cur, mode="clarify")
         return _say(state, bank, llm, catalog)
     else:
         if intent == "clarify":
             ev(state, "clarify_suppressed", qid=cur["qid"])
+        pick = _bucket_hold(state, ext, text, q=q) if mode != "confirm" and intent != "show_result" \
+            and not _asks_age(cur, q) and clarify_room(state) else None
         _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
+        _note_snaps(state, ext, text, before)
+        if pick and state.blocked:
+            _release_pick(state, pick)
+        elif pick:  # 境目の答え(task 268): 同じフェーズで、2 つの区切りをボタンで 1 回だけ聞き直す
+            _ask_pick(state, pick)
+            return _say(state, bank, llm, catalog)
         if mode == "confirm":
             state.pending_segment = None
-        elif _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
+        else:
+            _seg_words(state, text)  # task 267: 抽出が今の区分のままでも、違う区分の言葉があれば次のターンで確かめる
+        if mode != "confirm" and _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
             if cur["qid"] not in state.retried and clarify_room(state):
                 state.retried.append(cur["qid"])
                 _age_asked_again(state)
@@ -1861,19 +2527,25 @@ def _crisis(state, bank, done=False):
     _flag(state, "crisis_shown")
     ev(state, "crisis_guidance")
     v = dict(view(state, bank), choices=[], crisis=True)
+    v.pop("quick", None)  # 窓口の案内には、入口のカードも職種の結果も付けない
     return {"reply": CRISIS_TEXT, "view": v, "done": done, "counted": False}
 
 
 def _restart(state, bank, llm, catalog):
     restarts = state.restarts + 1
     user_text = state._user_text
-    fresh = new_state()
+    # 入口のカードから始めた相談は入口に戻す。中学生以下で止めた(か、年齢の質問に「中学」と答えた)人は、職種を出す前に
+    # 年齢を聞く今の流れから(中学生以下には、職種のおすすめも出さない)
+    quick = QUICK_FLAG in state.flags and not (state.blocked or jhs_unresolved(state))
+    fresh = new_state(quick=quick)
     fresh.restarts = restarts
     state.__dict__.clear()
     state.__dict__.update(fresh.__dict__)
     _init_volatile(state, reset=True)
     state._user_text = user_text
     ev(state, "restart", n=restarts)
+    if quick:  # 入口のカードから始めた相談は、入口のカードに戻す(モデルは呼ばない)
+        return _quick_reply(state, bank, QUICK_AGAIN_TEXT) | {"view": view(state, bank) | {"restarted": True}}
     advance(state, bank)
     return _say(state, bank, llm, catalog, counted=False, extra={"restarted": True})
 
@@ -1977,7 +2649,8 @@ def _represent(state, bank, counted, prefix=None, aside=False, lead=None):
     v = view(state, bank, aside=aside)
     body = v["card_text"] + "\n\n" + CLOSING_JA if v["mode"] == "review" else v.get("text", "")
     lead = list(lead or [])
-    parts = lead + [n for n in v["notices"] if n not in lead] + _discard_lead(state) + ([prefix] if prefix else []) + [body]
+    parts = lead + [n for n in v["notices"] if n not in lead] + _discard_lead(state) + _snap_lead(state) + \
+        ([prefix] if prefix else []) + [body]
     return {"reply": "\n".join(parts), "view": v, "done": False, "counted": counted}
 
 
@@ -1994,12 +2667,12 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
     v = view(state, bank, aside=aside)
     if extra:
         v.update(extra)
-    notices = list(v["notices"]) + _discard_lead(state)
+    notices = list(v["notices"]) + _discard_lead(state) + _snap_lead(state)
     if state.current["mode"] == "result":
         cat = catalog or CATALOG
         cby = {j["id"]: j for j in cat}
         payload = build_result_payload(state, cat)
-        payload["unkept"] = v.get("unkept")  # 生成の検証だけが読む(result_json には入れない)
+        payload["unkept"], payload["unsaid"] = v.get("unkept"), v.get("unsaid")  # 生成の検証だけが読む(result_json には入れない)
         keys = ("card", "candidates", "need", "unknown_hard", "unresolved", "notices", "blocked", "conditional")
         v["result_json"] = json.dumps({k: payload[k] for k in keys}, ensure_ascii=False, default=str)
         out = None
@@ -2013,7 +2686,8 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False):
         out = post_check_result(state, payload, out, cby)
         txt = compose_result_text(payload, out, cby)
         lead = [NOTICE[k] for k in state._new_notices
-                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")] + _discard_lead(state)
+                if NOTICE[k] not in payload["notices"] and not (payload["blocked"] and k == "minor_rules")] + \
+            _discard_lead(state) + _snap_lead(state)
         txt = "\n".join(lead + [txt])
         state.result = {"text": txt, "recommendations": out["recommendations"], "payload": payload}
         return {"reply": txt, "view": v, "done": True, "counted": counted}

@@ -100,12 +100,29 @@ GREET = reply(["お仕事探しの相談と、求人のご提案をします。"
 START = [
     call("get_counseling_playbook", {"track": "アルバイト・パート", "channel": "chat"}, "pb"),
     call("start_baito_consultation", {"line_user_id": UID}),
-    # モデルが付けた選択肢(言い換えたもの)は使われず、ハーネスの最初の質問の選択肢になる
-    reply(["アルバイトで何が向いているか、一緒に整理しましょう。", "バイト代、何に使いたい？"], quick_replies=["趣味", "貯金"]),
+    # モデルが付けた選択肢は使われず、ハーネスの入口のカードの選択肢になる。問いはカードにあるので、AI は 1 文だけ
+    # (dip_mcp.baito.session.QUICK_START_NOTE)
+    reply(["合いそうなバイトを、一緒に探しましょう。"], quick_replies=["趣味", "貯金"]),
 ]
+# 新しい相談は入口のカードから始まる(task 265)。[近くで探す] の後は「近くで探す」の 3 問と本物の求人(task 266)で、今の流れ
+# (icebreak から)には [もっと絞る] で入る(年齢と時間帯はもう入っている)。その 6 タップが NEAR(値を入れない「どれもピンと来ない」、
+# 18歳以上、東京、昼)。年齢の質問から見る今の流れのテストは、入口を通さずに始める(prd_start)
+ENTRY_CHOICES = [*H.QUICK_PICKS, H.QUICK_NONE]
+NEAR = [(UID, "message", s) for s in (H.QUICK_NONE, H.QUICK_NEAR, "18歳以上", "東京", "昼", H.NEAR_MORE)]
 
 
-def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
+@pytest.fixture
+def prd_start(tmp_path):
+    """入口のカードを通さずに、PRD の icebreak から始まる人にする: 前の相談で中学生以下で止めた印(session.BLOCK_KEY)が
+    残っている人は、職種を出す前に年齢を聞く今の流れから始まる(task 265)。dip は別のプロセスなので、状態のファイルに置く。"""
+    from dip_mcp.baito import session
+    from dip_mcp.data import State
+
+    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    State().update(UID, lambda u: u.__setitem__(session.BLOCK_KEY, {"blocked": "under_15"}))
+
+
+def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path, prd_start):
     baito = FakeBaitoLLM([
         {"reply": "推し活いいね！今のあなたに近いのは？"},                  # 選択肢を押した: 言い方の1回だけ
         EMPTY_EXTRACT | {"segment": "student",                         # 文で答えた: 抽出(年齢は根拠つき)
@@ -117,13 +134,14 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
         return await rt.conversation(UID)
 
     (_, r1, r2, r3), conv = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                         (UID, "message", "推し活・趣味"), (UID, "message", "高1です！")],
+                                                        (UID, "message", "推し活・趣味"), (UID, "message", "高1です！")],
                                  tmp_path, after)
-    # 1ターン目: トークの AI が playbook(ハーネス版)を読んで始め、最初の質問の選択肢はバンクの原文
+    # 1ターン目: トークの AI が playbook(ハーネス版)を読んで始め、今の流れの最初の質問(バンクの原文。選択肢はハーネスのもの)。
+    # 入口のカードから始まる相談は tests/test_baito_quick_start.py
     assert [t["name"] for t in r1["tools"]] == ["get_counseling_playbook", "start_baito_consultation"]
     assert "start_baito_consultation" in r1["tools"][0]["result"]["playbook"]
-    assert r1["tools"][1]["result"]["question"]["text"] == "バイト代、何に使いたい？"
-    assert r1["quick_replies"] == Q_MONEY and "baito" not in r1
+    assert r1["tools"][1]["result"]["question"]["text"] == QM["q_money"]["text"]
+    assert r1["quick_replies"] == Q_MONEY and "baito_card" not in r1 and "baito" not in r1
     # 2ターン目: タップ → ハーネスの次の質問(q_segment)。トークの AI は呼ばない(台本は使い切っている)。モデルは言い方を1回
     assert r2["bubbles"] == ["推し活いいね！今のあなたに近いのは？"]
     assert r2["quick_replies"] == QM["q_segment"]["choices"]
@@ -150,7 +168,7 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
     assert conv["turns"][2]["bot"]["quick_replies"] == QM["q_segment"]["choices"]
 
 
-def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_context(tmp_path):
+def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_context(tmp_path, prd_start):
     agent = [GREET, *START, reply(["わかりました。また相談したくなったら声をかけてください。"], quick_replies=["求人を探す"])]
     baito = FakeBaitoLLM()
     seen_messages = []
@@ -165,7 +183,7 @@ def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_conte
     assert r2["baito"]["question"] == "q_segment" and r3["baito"]["question"] == "hf_age"
     assert r3["quick_replies"] == ["中学生以下", "15〜17歳", "18歳以上", "ひみつ"]
     assert "baito" not in r4 and r4["bubbles"] == ["わかりました。また相談したくなったら声をかけてください。"]
-    assert len(baito.calls) == 2  # 「今はいい」ではハーネスのモデルを呼ばない
+    assert len(baito.calls) == 2  # 「今はいい」ではハーネスのモデルを呼ばない(2 つの答えの言い方だけ)
     assert _harness() is None
     assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", "旅行・遊び", "学生", "今はいい"]
     # トークの AI は、ハーネスのターンも会話の文脈として受け取る(「今はいい」の前に、ハーネスの質問と答えがある)
@@ -173,20 +191,20 @@ def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_conte
     assert [m.content for m in agent_saw if m.type == "human"][-3:] == ["旅行・遊び", "学生", "今はいい"]
 
 
-def test_failed_or_unsafe_reply_falls_back_to_the_question_text(tmp_path):
+def test_failed_or_unsafe_reply_falls_back_to_the_question_text(tmp_path, prd_start):
     """モデルが返事を作れなかったら(API のエラー)、扶養の金額を書いたら(PRD §10-3)、1 回だけやり直し、だめなら
     ハーネスが進めた次の質問の原文を出す(本人が見ていない質問に答える形にずらさない)。"""
     baito = FakeBaitoLLM([RuntimeError("overloaded"), RuntimeError("overloaded"),
                           {"reply": "扶養なら103万円までだよ！年齢は？"}, {"reply": "扶養は130万の壁があるよ"}])
-    (_, _, r2, r3), _ = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                     (UID, "message", "貯金・将来のため"), (UID, "message", "学生")],
-                             tmp_path)
+    (*_, r2, r3), _ = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
+                                                   (UID, "message", "貯金・将来のため"), (UID, "message", "学生")],
+                           tmp_path)
     assert r2["bubbles"] == ["今のあなたに近いのは？"] and r2["quick_replies"] == QM["q_segment"]["choices"]
     assert r3["bubbles"] == [QM["hf_age"]["text"]] and r3["quick_replies"] == QM["hf_age"]["choices"]
     assert [c[0] for c in baito.calls] == ["say"] * 4
 
 
-def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path):
+def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path, prd_start):
     """モデルが形の崩れた出力を返しても(構造化出力の失敗)、使った量は費用台帳に入る。返事は質問の原文。"""
     bad = {"input_tokens": 70, "output_tokens": 30, "cache_read": 0, "cache_write": 0}
     baito = FakeBaitoLLM([BaitoLLMError(bad), BaitoLLMError(bad)])
@@ -194,12 +212,12 @@ def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path):
     async def after(rt):
         return [r for r in rt.ledger.rows if r["input_tokens"] == 70]
 
-    (_, _, r2), rows = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                    (UID, "message", "貯金・将来のため")], tmp_path, after)
+    (*_, r2), rows = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
+                                                  (UID, "message", "貯金・将来のため")], tmp_path, after)
     assert r2["bubbles"] == ["今のあなたに近いのは？"] and len(rows) == 2
 
 
-def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path):
+def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path, prd_start):
     """レビュー M-4 を本人から見た形で: 年齢の質問に「中2です」と文で答え、抽出のモデルが 2 回とも失敗しても、
     おすすめを出さない。task 258: 1 回目は年齢のボタンで聞き直し、2 回目もはっきりしなければ止める。
     相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
@@ -220,30 +238,35 @@ def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path):
 
 
 def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
-    """15〜17歳を選んで最後まで進むと、おすすめ 3 つ(深夜専用・18歳以上・重労働なし)が出て、相談を閉じ、
-    避けたいことに「深夜シフト」「重量物・危険な作業」が保存される。深夜の選択肢は一度も出ない。"""
+    """入口のカードから「近くで探す」で 15〜17歳を選ぶと、本物の求人(未成年に出せる求人だけ)が出る。[もっと絞る] から
+    最後まで進むと、おすすめ 3 つ(深夜専用・18歳以上・重労働なし)が出て、相談を閉じ、避けたいことに「深夜シフト」
+    「重量物・危険な作業」が保存される。深夜・夜の選択肢は一度も出ない。年齢は「近くで探す」の 1 回だけ聞く。"""
     os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
     from dip_mcp.data import State
     from line_runtime.runtime import LineRuntime
 
-    picks = {"q_segment": "学生", "hf_age": "15〜17歳"}
+    picks = {H.QUICK_PICK: "座ってじっくり", H.NEAR_AGE: "15〜17歳", H.NEAR_AREA: "東京", H.NEAR_TIME: "夕方",
+             H.NEAR_JOBS: H.NEAR_MORE, "q_segment": "学生"}
 
     async def go():
         async with LineRuntime(model=ConsultModel(script=[GREET, *START]), in_memory=True, baito_llm=FakeBaitoLLM()) as rt:
             await rt.handle(UID, "visit", None)
             r = await rt.handle(UID, "message", "まず相談する")
-            seen = []
-            for _ in range(20):
-                q = (r.get("baito") or {}).get("question") or "q_money"
+            seen, cards = [], []
+            for _ in range(25):
+                q = (r.get("baito") or {}).get("question") or H.QUICK_PICK
                 if q == "result":
-                    return r, seen
+                    return r, seen, cards
                 seen.append(r["quick_replies"])
+                cards += r["cards"]
                 text = H.REVIEW_OK if q == "review" else picks.get(q) or r["quick_replies"][0]
                 r = await rt.handle(UID, "message", text)
             raise AssertionError("結果に着かない")
 
-    r, seen = asyncio.run(go())
-    assert not any("深夜もOK" in qs for qs in seen)
+    r, seen, cards = asyncio.run(go())
+    assert not any({"深夜もOK", "夜", "深夜"} & set(qs) for qs in seen)
+    assert sum(qs == QM["hf_age"]["choices"] for qs in seen) == 1  # 年齢は「近くで探す」の 1 回だけ聞く
+    assert cards and all(logic.minor_ok(logic.load_jobs()[c["job_id"]]) for c in cards)
     assert r["quick_replies"] == ["求人を見る", "今はいい"] and "1. " in r["bubbles"][0] and "3. " in r["bubbles"][0]
     for name in (H.CATALOG_BY_ID[j]["name"] for j in ("izakaya", "moving", "nursery_assist", "reception")):
         assert name not in r["bubbles"][0]
@@ -310,15 +333,17 @@ def test_model_output_schemas_are_the_prd_json_contracts():
 
 
 def _to_result(picks, mode=None):
-    """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターン, 相談のターン, 画面の描き直し)。"""
+    """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターンと、入口から [もっと絞る] までの
+    6 タップ, その後の相談のターン, 画面の描き直し)。入口は NEAR(値を入れない「どれもピンと来ない」、18歳以上、東京、昼)で通る。"""
     from line_runtime.runtime import LineRuntime
 
     async def go():
         async with LineRuntime(model=ConsultModel(script=[GREET, *START]), in_memory=True, baito_llm=FakeBaitoLLM()) as rt:
             first = [await rt.handle(UID, "visit", None), await rt.handle(UID, "message", "まず相談する")]
+            first += [await rt.handle(*s) for s in NEAR]
             r, out = first[-1], []
             for _ in range(25):
-                q = (r.get("baito") or {}).get("question") or "q_money"
+                q = r["baito"]["question"]
                 if q == "result":
                     return first, out, await rt.conversation(UID)
                 r = await rt.handle(UID, "message", H.REVIEW_OK if q == "review" else picks.get(q) or r["quick_replies"][0])
@@ -337,9 +362,13 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
 
     os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
     first, turns, conv = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
-    assert all("progress" not in r for r in first)  # トークの AI のターン(挨拶、相談を始めたターン)
+    # トークの AI のターン(挨拶、相談を始めたターン)と、入口から求人までの 5 タップには付けない。[もっと絞る] で今の流れに
+    # 入ったターンから出す(設計メモ baito-quick-start.md §7。「近くで探す」で入った年齢・時間帯が、もう埋まっている)
+    assert all("progress" not in r for r in first[:-1])
+    assert first[-1]["baito"] == {"phase": "icebreak", "question": "q_money"}
+    assert first[-1]["progress"]["kind"] == U.BAND and "＋年齢" in first[-1]["progress"]["text"]
     kinds = [(r["baito"]["phase"], (r.get("progress") or {}).get("kind")) for r in turns]
-    assert kinds[0] == ("icebreak", None) and kinds[-1] == ("result", U.COMPLETE)
+    assert kinds[0][0] == "icebreak" and kinds[-1] == ("result", U.COMPLETE)
     assert [k for _, k in kinds].count(U.CARD) == 1 and (U.BAND in [k for _, k in kinds])
     assert all(k is None for phase, k in kinds if phase == "review")
     for r in turns:
@@ -357,7 +386,7 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
     shown = U.flex_text(done["progress"]["flex"])
     assert all(j in shown for j in jobs) and "おすすめの仕事" in shown
     # 画面の描き直し(Web のトークは progress の文を吹き出しの最後の行に足す)にも、同じ部品が残る
-    redrawn = [t["bot"].get("progress") for t in conv["turns"][2:]]
+    redrawn = [t["bot"].get("progress") for t in conv["turns"][2 + len(NEAR):]]
     assert redrawn == [r.get("progress") for r in turns]
 
 

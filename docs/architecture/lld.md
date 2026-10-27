@@ -122,7 +122,9 @@ flowchart TB
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
+| `baito_cards.py` | アルバイトの相談を 1 タップで始めるカード(入口、職種の結果)。ハーネスのターンの結果の `card` を、LINE の Flex(暗い色、static の PNG)と Web の文の形にする(下の「アルバイト・パートの相談(ハーネス)」) | `flex`、`text`、`view`、`entry_flex`、`result_flex`、`icon_url`、`CARD_BG` |
 | `progress_ui.py` | プロフィールが育つのを見せる部品(帯、プロフィールカード、完成)。ハーネスがターンの結果に足した `progress` から 0〜1 つ選び、LINE の Flex と文の形を作る。アルバイトと正社員で使う(下の「アルバイト・パートの相談(ハーネス)」) | `build`、`choose`、`mode`、`band_flex`、`card_flex`、`complete_flex`、`band_text`、`card_text`、`complete_text`、`profile_rows`、`flex_text`、`flex_chars`、`MODE_ENV`、`BAND_SIZE`、`BAR_COLOR` |
+| `career_ui.py` | 正社員のヒアリングの形 D の部品(「始める」の 1 枚、職歴カード、まとめ、全部の完成のカルーセル)を Flex と文の形にする。帯とプロフィールカードは `progress_ui` を使う。どれを付けるかは dip の `career/ui.py` が決める(下の「正社員の相談(ハーネス)」) | `build`、`start_flex`、`career_card_bubble`、`review_flex`、`complete_flex`、`flex_lines`、`flex_text`、`STAMP_PATH` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
@@ -203,8 +205,9 @@ classDiagram
   本番のトーク画面(`/api/event`、`/api/event/stream`)は `line_channel.web_features()` を渡し、LiveKit の設定が無ければ
   窓口を `WEB_NO_VOICE_NOTE`(音声相談を勧めない)にします。Web の features が空(評価、テスト)なら 3 つとも使える扱いです
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
-- 返信は `ProviderStrategy(LineReply)` の構造化出力です。プロフィールの進み具合の部品(`progress`)は `LineReply` に入れません。
-  バイトの相談のターン(`_baito_turn`)がコードで、保存する AI メッセージの `additional_kwargs` に置き、`render` はそこからだけ読みます
+- 返信は `ProviderStrategy(LineReply)` の構造化出力です。プロフィールの進み具合の部品(`progress`)と、1 タップで始めるカード
+  (`baito_card`)は `LineReply` に入れません。
+  バイトの相談のターン(`_harness_turn`)がコードで、保存する AI メッセージの `additional_kwargs` に置き、`render` はそこからだけ読みます
   (モデルの出力からは取らない。返信の本文の JSON にも入れないので、相談の後にトークの AI が読む会話が Flex の JSON で長くならない)
 - `build_model` は `config.PROVIDER` で `ChatAnthropic`(既定)か `ChatOpenAI`(Responses API、`reasoning.effort`)を作ります。
   `ChatAnthropic` は `claude-sonnet-5-5` に次を送ります(Claude Sonnet 5.5 で 400 になる組み合わせを避ける。`tests/test_anthropic_request.py`)
@@ -244,7 +247,7 @@ classDiagram
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」)、`CAREER_NOTE`(要約の `career_profile` の説明) |
 | 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
-| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
+| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`MINOR_ARG`、`minor_ok`、`shift_ranges`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
@@ -311,7 +314,7 @@ OpenAI Realtime の構成から作り直しました)。
 | `advisor.py` | 音声アドバイザー(LiveKit の `Agent`)。ツール(3.4)と、トークへの結果の返送 | `ResumeAdvisor`、`TalkForgotten`、`_post_json`、`post_failure`、`_remove_files` |
 | `dip.py` | dip のクライアント。音声で使う 7 つのツールだけを公開する | `DipMCP`、`ANON_USER_ID` |
 | `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
-| `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
+| `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`MINOR_ARG`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
 | `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
 | `outputs.py` | 相談の終わりに下書きと求人の提案を作る。4 つのファイルを書くのは `WRITE_FILES` のときだけ(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
@@ -1151,11 +1154,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    args["引数(区分、職種、エリア、時間帯、時給、年収、属性、働き方、keywords、exclude_ids)"]
+    args["引数(区分、職種、エリア、時間帯、時給、年収、属性、働き方、keywords、exclude_ids、minor)"]
     err{"一覧に無い値?"}
     errout["error と使える値の一覧"]
     pool["全求人(posted_within_days なら新着だけ)"]
-    match["_match: 区分、エリア(駅名も)、時間帯、職種(完全一致)、時給、年収の中央値、属性と働き方(_match_filters)。応募済みと exclude_ids を除く"]
+    match["_match: 区分、エリア(駅名も)、時間帯、職種(完全一致)、時給、年収の中央値、属性と働き方(_match_filters)。応募済みと exclude_ids を除く。minor なら minor_ok を通る求人だけ"]
     kw{"keywords あり?"}
     sem{"embedding が使え、最高値 - 中央値 ≥ SIM_PEAK?"}
     near["部分一致 または 意味が近い(SIM_FLOOR、SIM_RELATIVE、SIM_TOP)"]
@@ -1183,6 +1186,16 @@ flowchart TB
   語の全体は、前後が漢字・カタカナ・英字でないことです(「飲食未経験」の「飲食」は数えない)。避けたいこと・不安は求人ごとに見ます。その求人の職種の語彙の語が 1 つでも語の頭から出てくれば、その求人には付けません(避けたいこと「アパレルはもう嫌」なら、アパレル販売の求人に「販売」でも付けない。「飲食店はもう嫌」の「飲食」も数える)。経験の項目のどこかに「未経験」や否定・初めての印(`NO_EXPERIENCE`)があれば、経験の項目は丸ごと使いません。
   意味が近いだけで選ばれた求人にも付けません。理由は [line-sim-scenarios.md の 20 章](../design/line-sim-scenarios.md) です
 - `relax` は条件を 1 つずつ外した件数を数え、増えるものを多い順に 3 つ返します。雇用区分と `exclude_ids` は外す候補にしません
+- `minor`(`MINOR_ARG`)が true なら、未成年(18 歳未満と、年齢が分からない人)に出せない求人を外します(`minor_ok`。
+  [設計メモ baito-quick-start.md の 6.3](../design/baito-quick-start.md))。外すのは次の求人です。どれも求人の項目だけから決めます
+  - `time_bands` に「深夜」がある
+  - `shift` の時刻の幅(`shift_ranges`。「翌」か、終わりが始まりより前なら翌日)のどれかが、5 時より前に始まるか、22 時より後に終わる
+    (「18:00〜翌1:00」「17:00〜23:00」「4:00〜9:00」は外し、「17:00〜22:00」は出す)
+  - `shift` から時刻が読めない、またはフレックス(18 歳未満には使えない働き方。労働基準法 60 条)。安全側に倒す
+  - `physical_level` が 3(重い作業)
+- `relax` は `minor` を外す候補にせず、どの件数にも効かせます(「未成年を外すと N 件」を出さない)。
+  MCP の `recommend_jobs`・`relax_conditions` と音声の `build_recommend_args` も同じ名前 `minor` を受け取ります(`tests/test_minor_search.py`)。
+  付けないとき(false)は今までと同じ結果です。中学生以下は検索の前に止めます(`baito.session.job_block`)
 
 keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
 
@@ -1358,12 +1371,14 @@ sequenceDiagram
 
 | 部品 | 中身 |
 |---|---|
-| `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。移したときに直したところはファイルの先頭に書いてある |
+| `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。PRD の前に置いた入口のカードと職種の結果(`quick_pick`・`quick_result`、task 265)と、「近くで探す」の 3 問と求人(`near_*`、task 266)。移したときに直したところはファイルの先頭に書いてある |
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
-| `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
+| `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。「近くで探す」の求人を dip の `recommend`・`relax` で探す(`near_search`)。結果で `stated_preferences` に保存する |
+| `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンをハーネスの `time_slots` の値にする(`time_slot`)。ボタンの言葉は `search_time_band` で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件) |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
 | `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
+| `line_runtime/baito_cards.py` | 入口のカードと職種の結果(ハーネスの `card`)を、Flex と文の形にする。職種もタグも選ばない |
 | `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ(`default_llm`。正社員も出力の形を渡して使う) |
 | `evals/baito_sim.py` | PRD の単体チェック 131 件と 20 ペルソナを移植版で回し(参照資料の写しの中で)、§11-5 の基準値に照らす。`--real` は P3 の実モデルの測定 |
 | `docs/prd/baito_harness/aica_port.py` | PRD の検査(`BAITO_HARNESS=aica_port`)から移植版を読むための入口 |
@@ -1383,6 +1398,40 @@ sequenceDiagram
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
    本人が答えた条件(high)とルールの NG を保存してトークの AI に戻る(避けたいことは前の値に足す)
 6. 結果に着いたら同じく保存して閉じる。中学生以下で止めた結果だけは閉じず、その後の発言もハーネスが受ける(年齢の訂正で続ける)
+
+1 タップで始める([設計メモ baito-quick-start.md](../design/baito-quick-start.md) §3〜§5・§9。task 265。「近くで探す」の 3 問と求人は下の表):
+
+| 決まり | 中身 | どこで |
+|---|---|---|
+| 始まり | 新しい相談(`session.start`)は `new_state(quick=True)` で、フェーズ `quick_pick`(入口のカード)から始める。印 `quick_start` を `flags` に置き、「最初から」も入口に戻す。入口の前に始めた相談(今の State)は、今の質問から今の流れのまま続ける。`new_state()` の既定は今のまま icebreak から(PRD の検査) | `harness.new_state`、`session.start` |
+| 入口 | 「いちばん自分っぽいのは？」と絵 4 枚(しゃべるの好き・動いてたい・ひとりで黙々・座ってじっくり)と「どれもピンと来ない」。答えは確信度 low・`from` は `choice:quick_pick`(`DIRECT` に入れない)。値はメモ §4 の表(`QUICK_PICKS`)。選び直したら前の答えを外す | `harness._quick_entry`、`_quick_turn` |
+| 職種の結果 | `eligible_jobs` の上から 3 つ(年齢はまだ無いので未成年として扱い、`job_safe` を通ったものだけ)。「どれもピンと来ない」は、`remote` か `spot` の職種から未成年の決まりと NG で外した残りをカタログの順に 3 つ(見出し「ちょっとだけ」)。`physical` が `standing_ok` なら、立ち仕事 +1・にぎやか +0.5 | `harness.quick_jobs`、`eligible_jobs` |
+| タグ | カタログの値から 1 つ。在宅 > 1日だけOK > 人と話さない > 接客少なめ > 静か > にぎやか > 朝もOK の順で最初に当たるもの。無ければ付けない | `harness.job_tag`、`JOB_TAGS` |
+| モデル | 入口と職種の結果では抽出を呼ばない(ボタンの文字だけを読む。ほかの文には「下のボタンから選んでね！」とカードを出し直す)。職種の結果の吹き出しだけ、言い方のモデルがひとことリアクションを前に付ける(main のプロンプト。`QUICK_RESULT_TEXT` か `LIGHT_TEXT` が入っていなければ原文) | `harness._quick_turn`、`validate_reply` |
+| ターン | 入口と職種の結果のターンは数えない(15 ターンは PRD の流れの分)。`progress` は出さない | `harness._quick_turn`、`progress.update` |
+| ボタン | 職種の結果に [近くで探す](「近くで探す」の 3 問に入る。下の表)と [ほかのタイプも見る](入口のカードに戻す。モデルを呼ばない) | `harness._quick_turn` |
+| ランタイム | ハーネスの `view` の `quick` を、`baito_turn` が `card` で返し(始めたターンは `start` の `question.card`)、`_harness_turn` が返信の行の `additional_kwargs` の `baito_card` に置く。`render` が返信の `baito_card`(カードと文の形 `text`)にする | `session.turn`、`runtime._harness_turn`、`render` |
+| LINE | 吹き出しの後ろに Flex を 1 つ(bubble は `mega`、暗い色 `#1c1430`、字はふつう)。入口は絵のマス 4 つと下のボタン、職種の結果は絵と見出し、職種とタグ、2 つのボタン。押すと、その文字を本人の発言として送る(message アクション)。絵は `{公開 URL}/static/baito/{名前}.png`(64×64 をそのまま)。公開 URL が https でなければ絵を出さない。ボタンはカードの中にあるので、クイックリプライは付けない | `baito_cards.flex`、`line_channel.to_messages` |
+| Web のトーク | Flex を描かず、文の形を吹き出し 1 つにする(入口は問いと一言、職種の結果は「【見出し】」と「・職種：タグ」の行)。ボタンはクイックリプライのまま | `baito_cards.text`、`talk-core.js` の `renderReply` |
+
+「近くで探す」と本物の求人(設計メモ §6・§7。task 266):
+
+| 決まり | 中身 | どこで |
+|---|---|---|
+| 3 問 | [近くで探す] の後に、年齢(`near_age`。「3つだけ！年齢は？」中学生以下 / 15〜17歳 / 18歳以上 / ひみつ)、エリア(`near_area`。東京 / 神奈川 / 埼玉 / どこでも)、時間帯(`near_time`。§6.2 のボタン)を 1 つずつ聞く。言い方のモデルは、問いの前のひとことリアクションだけ(問いの原文が入っていなければ原文。職種の名前を口にしたら原文) | `harness._near_next`、`near_choices`、`validate_reply` |
+| 答え | ボタンだけを読み(抽出のモデルは呼ばない)、確信度 high で入れる(`from` は `choice:near_*`)。年齢は、打った答えも task 258 の `typed_age` で読む。読めない答えは「下のボタンから選んでね！」で聞き直す(「中学」の語には印 `age_jhs` を付け、その後の「ひみつ」は中学生以下として止める)。エリア・時間帯の問いと求人の後でも、年齢に触れた発言(はっきりした年齢、「中学」、「実は16歳です」「高2」「未成年」。`says_age`)は年齢の答えとして読み直す(「14歳です」は止める。読めない言い方は前の答えを外して年齢を聞き直し、その間は未成年として扱う。読み直した後は、まだの問いに戻る)。答えは `state.near`(pick・age・area・time・drop)にも置く | `harness._near_turn` |
+| 未成年 | 年齢の「中学生以下」はそこで止める(今の流れの結果と同じ文。モデルは呼ばない)。「ひみつ」は未成年として進む。未成年と年齢が分からない人には「夜」「深夜」のボタンを出さない(`quick_start.time_buttons`)。打っても選択肢に無いので読まない | `harness._near_turn`、`near_choices` |
+| 検索の条件 | エリア(`AREA_GROUPS` の広い言い方。どこでもは絞らない)、時間帯(§6.2 の表で直した `time_band`)、入口の絵の talk・physical の値(§4 の表。`QUICK_SEARCH`)、`minor`(`minor_mode`。年齢が分からなければ true。必ず付ける)。区分はアルバイト・パート | `harness.near_search`、`session.near_search` |
+| 検索 | ハーネスは探さない。`turn()` の `search`(session が渡す)が dip の `recommend` を呼び、0 件なら `relax` の options の先頭(いちばん件数が増える条件。`minor` は外す候補にならない)も返す。中学生以下で止めた印(`baito_block`)があれば探さない | `harness._near_jobs`、`session.near_search` |
+| 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」のように、効いた条件と件数(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す。外した条件は `drop` に残し、その問いを聞き直して答え直したら `drop` から戻す。`harness._undrop`)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
+| ボタン | [もっと絞る] は icebreak(今の流れ)に入る。年齢・時間帯は high で入っているので聞かない(エリアはハーネスの項目に無い)。[ちがう] は入口のカードに戻す(絵の答えは外し、3 問の答えは残す。選び直した後の [近くで探す] は、聞き直さずに求人を出す) | `harness._near_turn`、`_clear_quick` |
+| ターンと帯 | 3 問と求人のターンは数えない。`progress` は出さない。入口から始めた相談(`quick_start`)は、[もっと絞る] で icebreak に入ったターンから帯とプロフィールカードを出す | `progress.update` |
+| ランタイム | `baito_turn` が求人を `jobs`(dip の求人カード)で返し、`_harness_turn` が返信の行の `additional_kwargs` の `baito_jobs` に置く。`render` がそれを返信の `cards`(LINE は `_cards_message` のカルーセル、Web のトークは求人カード)にする。後のターンでトークの AI が同じ求人を指せるよう、`render` の求人の出どころにも入れる | `session.turn`、`runtime._harness_turn`、`render` |
+| 求人の後の発言 | ボタンでない発言(カルーセルの「詳しく見る」「保存」も)は、相談を閉じて(答えた条件とエリアを保存して)トークの AI に渡す。ただし、年齢に触れた発言(はっきりした年齢、「中学」、「16歳」を含む文、「高2」「未成年」。カルーセルの文の「」の中の求人名は見ない。`says_age`)はハーネスが読み直し(未成年なら夜・深夜の答えを聞き直して探し直す。中学生以下は止める)、闇バイトの言葉と、窓口の案内の後の「続ける」もハーネスが受ける | `session._exits`、`harness._near_turn`、`result_preferences` |
+| 検索の失敗 | 検索が例外を出したら、時間帯の問いに戻し続けず、謝りの文(`NEAR_FAILED_TEXT`)と [もっと絞る] [ちがう] を出す(ログ `near_search_failed`) | `harness._near_jobs` |
+
+画面の写真は `docs/images/baito-quick-start/card-*.png` と `near-*.png`(`python -m scripts.baito_quick_preview` が作る。LINE の Flex を
+まねた HTML を撮ったもので、実機の LINE の写真ではない)にあります。
 
 プロフィールが育つのを見せる UI([設計メモ hearing-progress-ui.md](../design/hearing-progress-ui.md)。task 259):
 
@@ -1407,7 +1456,7 @@ sequenceDiagram
 機能フラグ `CAREER_HARNESS_VERSION=c1` のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
 dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
 [設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
-形 B と C の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。
+形 B、C、D の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。D は C に LINE の Flex を足した形です(task 246。下の「形 D の UI」)。
 
 | 部品 | 中身 |
 |---|---|
@@ -1417,20 +1466,42 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/career/draft.py` | result に着いたときに、職歴カードから職務経歴書の下書きを作る(`build`、`create`。LLM を呼ばない。task 247)。下の「下書き」 |
 | `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
 | `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
-| `evals/career_sim.py` | モックの本人役 6 人 × 形 B と C の回帰(`python -m evals.career_sim`) |
+| `dip_mcp/career/ui.py` | 形 D で、そのターンに付ける部品(`ui`)と、その字を読む時間(task 246)。`session` が `turn()` の前後から呼ぶ |
+| `line_runtime/career_ui.py` | `ui` を LINE の Flex と文の形にする(task 246) |
+| `evals/career_sim.py` | モックの本人役 6 人 × 形 B、C、D の回帰(`python -m evals.career_sim`) |
 
 1 ターンの流れは、アルバイト・パートの 1〜4 と同じです(`career_turn`、`end_career_consultation`。返信の行には `career` が付く)。違うところ:
 
 - 最初の返信の吹き出しも、ハーネスのもの(`render` が `start_career_consultation` の `question.bubbles` に置き換える)。読む字を時間の予算に数えているため
-- まとめのカードは 80 字までの吹き出しに分けて送るので、1 回の返信が吹き出し 2 つ以上になる(5 つまで。`line_channel.to_messages` が束ねる)
+- まとめのカードは、形 B と C では 80 字までの吹き出しに分けて送るので、1 回の返信が吹き出し 2 つ以上になる(5 つまで。`line_channel.to_messages` が束ねる)。
+  形 D は吹き出し 1 つと Flex 1 つ
 - 本人の発言は、先にアルバイト・パートの `baito_turn`、次に `career_turn` に渡す。進めている相談は多くても 1 つ
-- `progress` は返さない。帯・プロフィールカード・完成(`progress_ui`)は、まだ付けない(ランタイムが `progress_ui.build` を呼ぶのはアルバイト・パートだけ)。正社員の進み具合は、ハーネスが返信の吹き出しに入れる
+- `progress` は返さない。形 B と C の進み具合は、ハーネスが返信の吹き出しに入れる。形 D は `ui` を返す(下の「形 D の UI」)
+
+形 D の UI(task 246。[設計メモ](../design/fulltime-hearing.md) §5.2、[hearing-progress-ui.md](../design/hearing-progress-ui.md)):
+
+| 決まり | 中身 | 実装 |
+|---|---|---|
+| どれを付けるか | 1 ターンに 0〜1 つ。完成 > まとめ > プロフィールカード > 職歴カード > 帯(hearing-progress-ui.md §3.4)。最初の返信は「始める」の 1 枚。アルバイトと違い、選ぶのは dip の側(本人の推定時間に Flex の字を数えるため)。LINE 側は描くだけ | `career.ui.update`、`start_payload` |
+| 数えるもの | 全体は今の segment の条件の HARD と MID と、職歴カードの欄 6 つ。埋まったのは、そのうち一度でも値が入ったもの(パス、「覚えていない」、「こだわりなし」も)。segment が変わったときだけ新しい表で数え直す。出し始めは hard_filter の最初のターンから | `career.ui.table`、`update` |
+| 職歴カード | 欄が埋まったターンだけ。見出し(「職歴1(直近)」)と「n/3」、バー、仕事・規模・結果(空きは灰色の「まだ」、パスと「覚えていない」も灰色)。勤め先と期間は、仕事の欄に本人の言葉のまま入る(問いが一緒に聞くので、分けない。頭に別に出すかは未定。設計メモ §8)。中の字は 60 字まで(長い値から切る)。3 つが本人の言葉で埋まったら「完成」の字と、スタンプの絵(`/static/career/stamp.png`。`AICA_PUBLIC_URL` が https のときだけ) | `career.ui.career_card`、`career_ui.career_card_bubble` |
+| プロフィールカード | hard_filter(か、それより前)から次に移った最初のターンと、career_cards から次に移った最初のターン(2 回まで)。review と result に直接移ったときは付けない。グループは条件、職歴(「1枚、欄4/6」。枚数は仕事が埋まったカード)、働き方、NG | `career.ui.groups`、`progress_ui.card_flex` |
+| 帯 | 条件(HARD と MID)か職歴カードの欄が埋まったターン(上の部品が無いとき)。前の相談で保存した欄と履歴書の欄は、始めたときから埋まっていたものとして数える(「いま埋まった」に出さない)。`CAREER_UI_BAND=off` なら付けない(相談を始めたときに覚える) | `career.ui.fresh_mem`、`progress_ui.band_flex` |
+| 「始める」の 1 枚 | 見出し「職務経歴書を3分で」、フェーズの番号の丸(条件、職歴、まとめ)、「目安 3〜5分」。ボタンは「始める」(発言)、「履歴書の写真から始める(いちばん早い)」(LIFF の履歴書の読み込み。LIFF の設定が無ければ出さない)、「あとで」。ハーネスは最初の問いを「始める」の後に出す(`mode=start`。数えない)。ボタンを押さずに打った文は、最初の問いへの答えとして読む | `harness.start`、`career_ui.start_flex` |
+| まとめ | 行は吹き出しでなく Flex に入れる(吹き出しは「まとめです。違うところを押すか、送ってください。」)。行ごとに「直す」(職歴カードの行は「仕事」「規模」「結果」)。押すと「勤務地を直す」のような文を本人の発言として送り、ハーネスはその欄の問いを出す(`mode=fix`。数えない)。答えは high で入れ(場面の二択しか無い欄も)、まとめに戻る(まとめの回数は増やさない)。パスと「覚えていない」は、前の値が high でも、問いのフェーズによらず空欄(条件の欄は「こだわりなし」)にする(推し量った前の値を残さない)。直す問いのボタンには「そのまま」(`FIX_KEEP`)を足し、押すと値を変えずにまとめに戻る(押し間違えた「直す」をやめる。review のターンに数える)。直している間に別の「直す」を押した、前のまとめに残ったボタンを押したときも、今の segment の欄ならその欄を直す(ボタンの文を値にしない)。直した答えは review のターンに数え、「これでOK」の 1 ターンを残して受ける(`can_fix`。尽きたら「ここからは、違うところを文で送ってください。」とまとめを出し直す)。直している間の雑談は数えない | `harness.fix_targets`、`can_fix`、`fix_question`、`_apply_fix`、`career_ui.review_flex` |
+| 全部の完成 | カルーセル。先頭は条件のプロフィールカードと空欄の数(結果の文の「空欄はNつ」と同じ `h.result["blanks"]`)、続けて仕事が埋まった職歴カード。先頭の下に「下書きを開く」(`draft_url`。`session.turn` が下書きを作った後に `draft.view_url` を入れる。None ならボタンを出さない。task 247) | `career.ui._complete`、`career_ui.complete_flex` |
+| 読む時間 | Flex の中の字(ボタンのラベルも)を、本人の推定時間に足す(§3.3)。職歴カード、まとめ、「始める」の字は Flex の中と同じ数。帯とプロフィールカードは `progress_ui` が切るので見積もり(切らないときの字で、上限まで) | `career.ui.read_chars`、`add_read` |
+| Web のトーク | Flex を描かず、文の形を最後の吹き出しに足す(`progress.text`)。まとめの「直す」は選択肢の後ろに足す(`progress.quick_replies`。合わせて 13 個まで) | `career_ui.build`、`talk-core.js` の `renderReply` |
+| 評価の本人役 | Flex の中の字(ボタンのラベルも)を文で読む | `career_ui.flex_lines`、`flex_text` |
+
+写真は `docs/images/career-ui/`(`python -m scripts.career_ui_preview` が作る。LINE の Flex をまねた HTML を撮ったもので、
+実機の LINE の写真ではない)。
 
 終わり方と保存(設計メモ §3 の「終わり」と「あとで」):
 
 | 終わり方 | 返信 | 保存 |
 |---|---|---|
-| result に着いた | 結果の文と、選択肢「求人を見る」「今はいい」(押した文はトークの AI が受ける)。下書きの画面を開くボタン「下書きを開く」(`buttons`。下書きの画面の URL があるときだけ。LINE は LIFF の設定があるとき) | 確かめた値(high)を保存して閉じる。職歴カードから下書きを作る |
+| result に着いた | 結果の文と、選択肢「求人を見る」「今はいい」(押した文はトークの AI が受ける)。下書きの画面を開くボタン「下書きを開く」(下書きの画面の URL があるときだけ。LINE は LIFF の設定があるとき)。入口は 1 つで、LINE の形 D は完成のカルーセル(`ui.complete.draft_url`)、形 B と C と Web のトーク(カルーセルを文にする)は返信の `buttons` | 確かめた値(high)を保存して閉じる。職歴カードから下書きを作る |
 | 「あとで」を押した、答えと一緒に「また今度」と打った | 「ここまでの分を残しました。続きはいつでもどうぞ。」と、結果と同じ選択肢「求人を見る」「今はいい」(最後の返信を選択肢なしで終えない) | そこまでの high を保存して閉じる。続きから再開はしない |
 | 「今はいい」「やめる」など、review の前の「バイトで探したい」、区分が正社員から外れた、新しい会話 | トークの AI が受ける | 同じ |
 
@@ -1461,7 +1532,8 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
   2 枚目は何をしていたかが確かめた値のときだけ。書くのは本人の言葉(ボタンならラベル。区切りは「くらい」つき)だけ。条件は書かない(応募先に出す書類のため)
 - 空欄: `harness.blank_cards` の欄(パス、「覚えていない」、聞かなかった、推測のまま)。規模は `[規模 ← 数字を入れる]`、ほかは言葉の空欄。
   個人情報らしい値と 200 字を超える値も空欄にする。結果の文の「空欄はNつ」は、`harness._finish` が `draft.build` の空欄を数えたもの
-  (`blank_cards` の欄と、下の `replaced` の数字の空欄の和)なので、下書きの空欄の数(`arcade.blanks`)とそろう
+  (`blank_cards` の欄と、下の `replaced` の数字の空欄の和)なので、下書きの空欄の数(`arcade.blanks`)とそろう。形 D の完成のカルーセルの
+  「空欄Nつ」も同じ数(`h.result["blanks"]`)
 - 数字を作らない(設計メモ §6.4 の関門): 欄の数字を `resume_lines.check_numbers` で、本人の発言(`harness.State.said`。押したボタンのラベルも)と、
   履歴書の欄と、前の相談で保存した欄のうち `checked` を持つものの言葉に照らし、無ければ数字の空欄に戻す(`replaced`)。`checked` の無い保存した値
   (印より前の版で保存した値)は元にせず、ほかの欄と同じく発言と比べる(`draft.trusted`)。`evals/career_sim.py` が `made_up_number` として数える
