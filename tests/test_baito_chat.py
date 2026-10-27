@@ -110,7 +110,7 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
         {"reply": "推し活いいね！今のあなたに近いのは？"},                  # 選択肢を押した: 言い方の1回だけ
         EMPTY_EXTRACT | {"segment": "student",                         # 文で答えた: 抽出(年齢は根拠つき)
                          "slot_updates": [{"slot": "age_band", "value": "高1", "evidence": "高1"}]},
-        {"reply": "高1なんだ！学校のバイトのルールは？"},                  # 言い方
+        {"reply": "高1なんだ！" + QM["hf_age"]["text"]},                  # 言い方
     ])
 
     async def after(rt):
@@ -128,21 +128,22 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
     assert r2["bubbles"] == ["推し活いいね！今のあなたに近いのは？"]
     assert r2["quick_replies"] == QM["q_segment"]["choices"]
     assert r2["baito"] == {"phase": "icebreak", "question": "q_segment"} and r2["tools"] == [] and r2["cards"] == []
-    # 3ターン目: 文 → 抽出(本人の今の発言だけを渡す)→ 言い方(次の質問 hf_school)
+    # 3ターン目: 文 → 抽出(本人の今の発言だけを渡す)→ 言い方(次の質問 hf_age)
     assert [c[0] for c in baito.calls] == ["say", "extract", "say"]
     _, extract_system, extract_msgs = baito.calls[1]
     assert "ユーザーの発言: 高1です！" in extract_system and '"q_segment"' not in extract_system
     assert extract_msgs == [{"role": "user", "content": "高1です！"}]
-    assert '"id": "hf_school"' in baito.calls[2][1] and "- segment: student（学生）" in baito.calls[2][1]
+    assert '"id": "hf_age"' in baito.calls[2][1] and "- segment: student（学生）" in baito.calls[2][1]
     # 言い方には直前のやりとりと本人の発言が渡る(リアクションのため)
     assert baito.calls[2][2][-1] == {"role": "user", "content": "高1です！"}
     assert baito.calls[2][2][-2]["role"] == "assistant" and "今のあなたに近いのは？" in baito.calls[2][2][-2]["content"]
-    # 未成年の注意文はハーネスが返事の前に付ける。年齢は文から(high)、深夜 NG はコードが付ける
-    assert r3["bubbles"] == [H.NOTICE["minor_rules"] + "\n高1なんだ！学校のバイトのルールは？"]
-    assert r3["baito"] == {"phase": "hard_filter", "question": "hf_school"}
-    assert r3["quick_replies"] == QM["hf_school"]["choices"]
+    # task 258: 「高1」からは年齢を決めない(抽出の年齢も使わない)。未成年として扱ったまま(深夜 NG はコードが付ける)、
+    # 年齢をボタンで聞く
+    assert r3["bubbles"] == ["高1なんだ！" + QM["hf_age"]["text"]]
+    assert r3["baito"] == {"phase": "hard_filter", "question": "hf_age"}
+    assert r3["quick_replies"] == QM["hf_age"]["choices"]
     h = _harness()
-    assert h.slots["age_band"]["value"] == "15_17" and "深夜シフト" in h.derived_ng
+    assert "age_band" not in h.slots and H.minor_mode(h) and "深夜シフト" in h.derived_ng
     # 画面の描き直し: ハーネスのターンも、本人の発言と返信(選択肢つき)で残る
     assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", "推し活・趣味", "高1です！"]
     assert conv["turns"][1]["bot"]["quick_replies"] == Q_MONEY
@@ -200,19 +201,22 @@ def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path):
 
 def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path):
     """レビュー M-4 を本人から見た形で: 年齢の質問に「中2です」と文で答え、抽出のモデルが 2 回とも失敗しても、
-    おすすめを出さずに止める。相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
-    baito = FakeBaitoLLM(by_stage={"extract": [RuntimeError("timeout"), RuntimeError("timeout")]})
+    おすすめを出さない。task 258: 1 回目は年齢のボタンで聞き直し、2 回目もはっきりしなければ止める。
+    相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
+    baito = FakeBaitoLLM(by_stage={"extract": [RuntimeError("timeout")] * 4})
     steps = [(UID, "visit", None), (UID, "message", "まず相談する"), (UID, "message", "旅行・遊び"),
-             (UID, "message", "学生"), (UID, "message", "中2です"), (UID, "message", "じゃあ求人を見せて")]
-    (*_, r5, r6), _ = _run([GREET, *START], baito, steps, tmp_path)
-    assert [c[0] for c in baito.calls][-2:] == ["extract", "extract"]  # 「中2です」の抽出が 2 回とも失敗した
-    assert r5["bubbles"] == [H.NOTICE["under_15"] + "\n" + H.NOTICE["rules_only"]]
-    assert r5["quick_replies"] == [] and r5["cards"] == []
-    assert r5["baito"] == {"phase": "result", "question": "result"}
+             (UID, "message", "学生"), (UID, "message", "中2です"), (UID, "message", "中2だってば"),
+             (UID, "message", "じゃあ求人を見せて")]
+    (*_, r5, r6, r7), _ = _run([GREET, *START], baito, steps, tmp_path)
+    assert [c[0] for c in baito.calls].count("extract") >= 4  # 「中2です」「中2だってば」の抽出が 2 回ずつ失敗した
+    assert r5["quick_replies"] == QM["hf_age"]["choices"] and r5["baito"] == {"phase": "hard_filter", "question": "hf_age"}
+    assert r6["bubbles"] == [H.NOTICE["under_15"] + "\n" + H.NOTICE["rules_only"]]
+    assert r6["quick_replies"] == [] and r6["cards"] == []
+    assert r6["baito"] == {"phase": "result", "question": "result"}
     h = _harness()
     assert h.blocked == "under_15" and h.result["recommendations"] == []
     # 止めた後の発言もハーネスが受ける(「求人を見せて」でもトークの AI に戻さない。年齢の訂正でなければ結果の文を繰り返す)
-    assert r6["bubbles"][0].startswith(H.POST_RESULT_TEXT) and r6["tools"] == []
+    assert r7["bubbles"][0].startswith(H.POST_RESULT_TEXT) and r7["tools"] == []
 
 
 def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):

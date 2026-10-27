@@ -216,11 +216,12 @@ def _finish(state: State, line_user_id: str, h: H.State, partial: bool = False) 
     """相談を閉じ、条件を本人の希望として保存する。保存した項目。避けたいこと(avoids)は、前に本人が話したものに足す
     (save_preferences は項目ごとに上書きするので、前の「接客は苦手」を NG で消さない)。字数の上限を超えるときは、
     ルールの NG と今回の NG を残し、前の値は入るところまで(ルールの NG を落とさない)。
-    中学生以下で止めていたら、閉じた後も印(BLOCK_KEY)を残す。15 歳以上と確かめていたら印を消す。"""
+    中学生以下で止めていたら、閉じた後も印(BLOCK_KEY)を残す。年齢の質問に「中学」と答えて聞き直している途中でやめたとき
+    (H.jhs_unresolved。task 258)も同じ。15 歳以上と確かめていたら印を消す。"""
     _drop(state, line_user_id)
     age = h.slots.get("age_band") or {}
-    if h.blocked:
-        state.update(line_user_id, lambda u: u.__setitem__(BLOCK_KEY, {"blocked": h.blocked}))
+    if h.blocked or H.jhs_unresolved(h):
+        state.update(line_user_id, lambda u: u.__setitem__(BLOCK_KEY, {"blocked": h.blocked or "under_15"}))
     elif age.get("confidence") == "high" and age.get("value") not in (None, "under_15", "declined"):
         state.update(line_user_id, lambda u: u.pop(BLOCK_KEY, None))
     prefs = result_preferences(h, partial)
