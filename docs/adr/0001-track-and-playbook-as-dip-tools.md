@@ -14,4 +14,5 @@
 
 ## その後
 
-- アルバイト・パートのチャットの相談は、機能フラグ `BAITO_HARNESS_VERSION=v4` のとき「次に何を聞くか」を dip のハーネスが決める([ADR-0009](0009-baito-consultation-harness.md))。フラグが無いとき(本番の既定)と、ほかの区分・音声は、この ADR のまま
+- アルバイト・パートのチャットの相談は、機能フラグ `BAITO_HARNESS_VERSION=v4` のとき「次に何を聞くか」を dip のハーネスが決める([ADR-0009](0009-baito-consultation-harness.md))。フラグが無いとき(本番の既定)は、この ADR のまま
+- 正社員のチャットのヒアリングも、「次に何を聞くか」を dip のハーネス(`dip_mcp/career/`)が決める([ADR-0010](0010-fulltime-hearing-harness.md))。トークにつなぐ(2b のタスク)までは、本番の正社員のチャットはこの ADR のまま。音声の面談は、どの区分もこの ADR のまま
