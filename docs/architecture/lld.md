@@ -121,6 +121,7 @@ flowchart TB
 | `quota.py` | ターン数の上限と、ターンとは別の 1 日の回数(`take_daily`。AI つきのゲームの遊び) | `DailyQuota`、`ip_key`、`person`、`today`、`limit_reply` |
 | `ledger.py` | 費用台帳と料金表。`python -m line_runtime.ledger` で集計する。90 日を過ぎた行を日ごとの合計にし、「すべて消す」でその人の行のユーザーIDを外す(5.3) | `PRICES`、`cost_usd`、`Ledger`(`fold_old`、`forget`、`rows_of`)、`fold`、`summarize`、`ID_TTL`、`FOLDED`、`DAILY_TOTAL` |
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
+| `progress_ui.py` | プロフィールが育つのを見せる部品(帯、プロフィールカード、完成)。ハーネスがターンの結果に足した `progress` から 0〜1 つ選び、LINE の Flex と文の形を作る。アルバイトと正社員で使う(下の「アルバイト・パートの相談(ハーネス)」) | `build`、`choose`、`mode`、`band_flex`、`card_flex`、`complete_flex`、`band_text`、`card_text`、`complete_text`、`profile_rows`、`flex_text`、`flex_chars`、`MODE_ENV`、`BAND_SIZE`、`BAR_COLOR` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
@@ -201,7 +202,9 @@ classDiagram
   本番のトーク画面(`/api/event`、`/api/event/stream`)は `line_channel.web_features()` を渡し、LiveKit の設定が無ければ
   窓口を `WEB_NO_VOICE_NOTE`(音声相談を勧めない)にします。Web の features が空(評価、テスト)なら 3 つとも使える扱いです
   窓口はシナリオの後に置くので、どの窓口でもシナリオまでの指示は同じです
-- 返信は `ProviderStrategy(LineReply)` の構造化出力です
+- 返信は `ProviderStrategy(LineReply)` の構造化出力です。プロフィールの進み具合の部品(`progress`)は `LineReply` に入れません。
+  バイトの相談のターン(`_baito_turn`)がコードで、保存する AI メッセージの `additional_kwargs` に置き、`render` はそこからだけ読みます
+  (モデルの出力からは取らない。返信の本文の JSON にも入れないので、相談の後にトークの AI が読む会話が Flex の JSON で長くならない)
 - `build_model` は `config.PROVIDER` で `ChatAnthropic`(既定)か `ChatOpenAI`(Responses API、`reasoning.effort`)を作ります。
   `ChatAnthropic` は `claude-sonnet-5-5` に次を送ります(Claude Sonnet 5.5 で 400 になる組み合わせを避ける。`tests/test_anthropic_request.py`)
   - 思考は `{"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}` と、ベータのヘッダー
@@ -1349,6 +1352,8 @@ sequenceDiagram
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
+| `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
+| `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
 | `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ |
 | `evals/baito_sim.py` | PRD の単体チェック 131 件と 20 ペルソナを移植版で回し(参照資料の写しの中で)、§11-5 の基準値に照らす。`--real` は P3 の実モデルの測定 |
 | `docs/prd/baito_harness/aica_port.py` | PRD の検査(`BAITO_HARNESS=aica_port`)から移植版を読むための入口 |
@@ -1362,12 +1367,30 @@ sequenceDiagram
 3. ランタイムがモデルを呼び(抽出は本人の今の発言だけ、言い方は直前のやりとりも渡す)、それまでの出力を全部 `llm_outputs` に入れて
    `baito_turn` を呼び直す。呼び出しが失敗したら失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文)。
    1 ターンにモデルは最大 4 回(抽出 2 回 + 生成 2 回)
-4. 最後まで進むと、dip が状態を保存し、返事の文(注意文はハーネスが前に付ける)と選択肢(未成年に深夜を出さない、バンクの原文)を返す。
-   本人の発言と返信を、トークの AI の会話に続けて保存する(返信の行には `baito` が付く)
+4. 最後まで進むと、dip が状態を保存し、返事の文(注意文はハーネスが前に付ける)と選択肢(未成年に深夜を出さない、バンクの原文)と
+   `progress` を返す。ランタイムは `progress_ui.build` で部品を 0〜1 つ選び、本人の発言と返信を、トークの AI の会話に続けて保存する
+   (返信の行には `baito` が付き、部品は返信の行の `additional_kwargs` の `progress` に置く。`render` が返信の `progress` にする)
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
    本人が答えた条件(high)とルールの NG を保存してトークの AI に戻る(避けたいことは前の値に足す)
 6. 結果に着いたら同じく保存して閉じる。中学生以下で止めた結果だけは閉じず、その後の発言もハーネスが受ける(年齢の訂正で続ける)
 
+プロフィールが育つのを見せる UI([設計メモ hearing-progress-ui.md](../design/hearing-progress-ui.md)。task 259):
+
+| 決まり | 中身 | どこで |
+|---|---|---|
+| 数えるもの | 全体は今の区分の表(区分が `unknown` なら `COMMON`)の HARD と MID。埋まったのは、そのうち一度でも値が入ったもの(「こだわりなし」も)。後で値が消えても(結果の前に矛盾を「未定」にした、ルールで深夜を外した)埋まったまま。区分が変わったときだけ新しい表で数え直す(新しい表に無い項目は数えない)。覚えることは `baito.progress`(`seen`、`card`、`restarts`) | `progress.update` |
+| 出し始め | 返事が hard_filter 以降の質問のターンから。icebreak の間、中学生以下で止めたターン、希死念慮の言葉に窓口を案内したターンは `progress=None` | `progress.update` |
+| 部品(1 ターンに 0〜1 つ) | 完成(結果のターン)> プロフィールカード(`milestone`: icebreak か hard_filter から scenario_game・reverse_pick・fill_gaps に移った最初のターン。1 回の相談で 1 回。「結果を見せて」で review に直接移ったときは付けない)> 帯(このターンに埋まった項目があるとき)。review のターンには付けない | `progress.update`、`progress_ui.choose` |
+| 値 | 表示名だけで分からない項目(接客、学校の許可など)と「こだわりなし」は項目名を前に付ける。確信度が low の値(場面の二択、逆選択、別の質問への文の答え)に「?」。最初の質問のボタンは本人の答えなので付けない。一度埋まって消えた項目は「未定」。NG は本人の NG と、ルールの NG に「（ルール）」 | `progress.short_value`、`progress.groups`、`progress_ui._value` |
+| 字数 | 帯は「＋ 表示名: 値」20 字(超えたら値を切って「…」)と「ほか N」で 24 字まで。プロフィールカードは Flex の中の字が 80 字、完成は 160 字まで(おすすめの仕事は 1 つ 24 字)。収まらなければ「まだ」の項目を減らして「ほか N」、それでも超えるなら長い行の値から切る。altText は 400 字まで | `progress_ui.band_line`、`profile_rows` |
+| 完成 | 1 つの bubble に、プロフィールとおすすめの仕事(`catalog_v4.json` の職種名と理由)。結果の吹き出し(`compose_result_text`)は今のまま出す | `progress_ui.complete_flex` |
+| 設定 | `AICA_PROGRESS_UI`: `flex`(既定)/ `text`(Flex を切って文で出す)/ `no_band`(帯だけ切る)。知らない値は `flex` | `progress_ui.mode` |
+| 文の形 | 帯は吹き出しの最後の 1 行「（6/11 ＋年齢）」、プロフィールカードと完成は「【あなたのプロフィール 6/11】」と行ごとのグループ。Web のトーク(`talk-core.js` の `renderReply`)は Flex を描かず、いつもこの文を最後の吹き出しに足す。LINE は Flex を切った形のときだけ | `progress_ui.band_text`、`card_text` |
+| 評価の本人役 | Flex の中の字を文にする(`flex_text`)。字数は `flex_chars` | `progress_ui` |
+
+帯の `size`(`BAND_SIZE`。今は `micro`)とバーの色(`BAR_COLOR`)は、実機の LINE で見て利用者が決めます(設計メモ §7)。
+見比べる写真は `docs/images/progress-ui/`(`python -m scripts.progress_ui_preview` が作る。LINE の Flex をまねた HTML を撮ったもので、
+実機の LINE の写真ではない)にあります。
 #### 条件の問いの選択肢
 
 探す条件(エリア、職種、時給か年収、時間帯と曜日、週の日数、正社員なら働き方と時期)の問いは、1 問に 1 つだけ聞き、必ず選択肢を付けます
@@ -1604,6 +1627,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 | `bubbles` | 1 つずつテキスト |
 | `actions` | LINE で使えるもの(`liff_features`)なら、LIFF 画面への URI のボタン(`LIFF_ACTIONS`: `resume_upload` →「履歴書を読み込む」`https://liff.line.me/<LIFF ID>/resume/upload`、`voice_consult` →「音声で相談する」`…/voice`。絵文字は付けない)を、`buttons` のボタンの前に置く(挨拶の入口がリッチメニューと同じ「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」の順になる。2026-10-26 までは後ろだった)。使えなければ `ACTION_NOTES` の文をテキストで足す(LIFF の設定が無いときの守り) |
 | `cards` | Flex Message の carousel(1 枚 1 求人)。中身は Web の求人カードと同じ項目で、ボタンは Web と同じ文を本人の発言として送る(「詳しく見る」「保存」) |
+| `progress` | アルバイト・パートの相談(ハーネス)の、プロフィールが育つのを見せる部品(`progress_ui.build`)。`flex` があれば、吹き出しの後ろに Flex を 1 つ(写しを送る)。Flex を切った形(`flex` が None)なら、`text` を最後の吹き出しの最後の行に足す |
 | `buttons` | `/liff/` で始まるものだけ、URI のボタン。LIFF の設定があり、`LIFF_PAGES`(`/liff/line` の下にもある画面)かレジュメ・アーケード(`/liff/arcade…`)なら LIFF URL(`liff_url_of`。`https://liff.line.me/<LIFF ID>/` + `/liff/` より後)、ほかは `AICA_PUBLIC_URL` + パス。どちらにもできなければ出さない(警告のログ)。レジュメ・アーケードは LIFF URL にできなければ出さない(公開 URL では本人にならない) |
 | `quick_replies` | 最後のメッセージのクイックリプライ(ラベルは 20 字で切る) |
 
@@ -1877,7 +1901,7 @@ sequenceDiagram
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
-| `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態, track}`(PRD v4.1 付録D。`version="v4"`、条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す。中学生以下で止めたときは残す) | `baito.session.start`、`turn`、`end` |
+| `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態, track, progress}`(PRD v4.1 付録D。`version="v4"`、条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`。`progress` はプロフィールの進み具合を数えるために覚えること `{seen: 埋まったと数えた項目, card: プロフィールカードを出したか, restarts}`。`dip_mcp.baito.progress`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す。中学生以下で止めたときは残す) | `baito.session.start`、`turn`、`end` |
 | `baito_block` | バイトの相談で中学生以下として止めた印 `{blocked: "under_15"}`。相談を閉じても残し、あるあいだ `recommend_jobs`・`relax_conditions` は求人を返さない。後の相談で 15 歳以上と確かめたら消す | `baito.session._finish`、`job_block` |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
 | `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |

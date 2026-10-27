@@ -22,6 +22,7 @@ import re
 
 from dip_mcp import logic
 from dip_mcp.baito import harness as H
+from dip_mcp.baito import progress as P
 from dip_mcp.data import State
 
 KEY = "baito"
@@ -68,10 +69,13 @@ def _load(state: State, line_user_id: str) -> H.State | None:
     return H.State.from_dict(d)
 
 
-def _save(state: State, line_user_id: str, h: H.State, track: str | None = None) -> None:
-    """ハーネスの状態を書く。track は始めたときの雇用区分(始めるときだけ渡す。後は持ち越す)。"""
+def _save(state: State, line_user_id: str, h: H.State, track: str | None = None, progress: dict | None = None) -> None:
+    """ハーネスの状態を書く。track は始めたときの雇用区分(始めるときだけ渡す。後は持ち越す)。
+    progress は進み具合を数えるために覚えること(dip_mcp.baito.progress の mem。渡さなければ持ち越す)。"""
     def apply(u):
-        u[KEY] = {"harness": h.to_dict(), "track": track if track is not None else (u.get(KEY) or {}).get("track")}
+        old = u.get(KEY) or {}
+        u[KEY] = {"harness": h.to_dict(), "track": track if track is not None else old.get("track"),
+                  "progress": progress if progress is not None else old.get("progress")}
     state.update(line_user_id, apply)
 
 
@@ -101,7 +105,8 @@ def start(state: State, line_user_id: str) -> dict:
     if started:
         h = H.new_state()
     v = H.resume(h, H.BANK) if not started else H.start(h, H.BANK)
-    _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None)
+    _save(state, line_user_id, h, logic.search_track(state.user(line_user_id)) if started else None,
+          P.fresh_mem(h) if started else None)
     # 結果の後と途中でやめた後はトークの AI が続けるので、保存先と提案の決まり(playbook)もここで渡す
     pb = logic.counseling_playbook(BAITO_TRACK, "chat")
     return {"started": started, "active": True, "question": _question(v), "note": START_NOTE,
@@ -171,7 +176,9 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
     - status=reply: reply をそのまま送り、choices をクイックリプライにする
-    - status=result: 結果(reply)。中学生以下で止めた結果でなければ相談は閉じた(saved は保存した項目)"""
+    - status=result: 結果(reply)。中学生以下で止めた結果でなければ相談は閉じた(saved は保存した項目)
+    reply と result には progress(プロフィールの進み具合。dip_mcp.baito.progress.update。出さないターンは None)が付く。
+    LINE 側は、これから帯・プロフィールカード・完成の Flex を 0〜1 つ選ぶ(line_runtime.progress_ui)"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
@@ -180,6 +187,7 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     left = first and _track_left(state, line_user_id)
     if left or (first and _exits(h, said)):
         return {"active": False, "ended": "track" if left else "exit", "saved": _finish(state, line_user_id, h, partial=True)}
+    prev = P.before(h)
     llm = ReplayLLM(llm_outputs)
     try:
         r = H.turn(h, said, H.BANK, llm)
@@ -191,15 +199,16 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         raise RuntimeError(f"バイトの相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
     if llm.used != len(llm.outputs):
         raise RuntimeError("バイトの相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
+    progress, mem = P.update(h, (state.user(line_user_id).get(KEY) or {}).get("progress"), prev, r)
     out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase,
            "question": (h.current or {}).get("qid"), "reply": r["reply"], "counted": r["counted"],
-           "choices": list(r["view"].get("choices", [])), "llm_calls": llm.used}
+           "choices": list(r["view"].get("choices", [])), "llm_calls": llm.used, "progress": progress}
     if r["done"] and h.blocked:  # 中学生以下: 閉じずに、その後の発言もハーネスが受ける(年齢の訂正・やり直し)
-        _save(state, line_user_id, h)
+        _save(state, line_user_id, h, progress=mem)
         return out | {"blocked": h.blocked, "choices": []}
     if r["done"]:
         return out | {"choices": list(RESULT_CHOICES), "saved": _finish(state, line_user_id, h)}
-    _save(state, line_user_id, h)
+    _save(state, line_user_id, h, progress=mem)
     return out
 
 
