@@ -243,7 +243,7 @@ classDiagram
 |---|---|
 | (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」)、`CAREER_NOTE`(要約の `career_profile` の説明) |
 | 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
-| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
+| 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`MINOR_ARG`、`minor_ok`、`shift_ranges`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
 | 手続き(フォームの続き) | `resume_form`、`submit_application`、`save_job`、`saved_jobs` |
 | トークを開いた | `talk_entry`、`record_talk_open` |
@@ -310,7 +310,7 @@ OpenAI Realtime の構成から作り直しました)。
 | `advisor.py` | 音声アドバイザー(LiveKit の `Agent`)。ツール(3.4)と、トークへの結果の返送 | `ResumeAdvisor`、`TalkForgotten`、`_post_json`、`post_failure`、`_remove_files` |
 | `dip.py` | dip のクライアント。音声で使う 7 つのツールだけを公開する | `DipMCP`、`ANON_USER_ID` |
 | `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
-| `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
+| `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`MINOR_ARG`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
 | `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
 | `outputs.py` | 相談の終わりに下書きと求人の提案を作る。4 つのファイルを書くのは `WRITE_FILES` のときだけ(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
@@ -1148,11 +1148,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    args["引数(区分、職種、エリア、時間帯、時給、年収、属性、働き方、keywords、exclude_ids)"]
+    args["引数(区分、職種、エリア、時間帯、時給、年収、属性、働き方、keywords、exclude_ids、minor)"]
     err{"一覧に無い値?"}
     errout["error と使える値の一覧"]
     pool["全求人(posted_within_days なら新着だけ)"]
-    match["_match: 区分、エリア(駅名も)、時間帯、職種(完全一致)、時給、年収の中央値、属性と働き方(_match_filters)。応募済みと exclude_ids を除く"]
+    match["_match: 区分、エリア(駅名も)、時間帯、職種(完全一致)、時給、年収の中央値、属性と働き方(_match_filters)。応募済みと exclude_ids を除く。minor なら minor_ok を通る求人だけ"]
     kw{"keywords あり?"}
     sem{"embedding が使え、最高値 - 中央値 ≥ SIM_PEAK?"}
     near["部分一致 または 意味が近い(SIM_FLOOR、SIM_RELATIVE、SIM_TOP)"]
@@ -1180,6 +1180,16 @@ flowchart TB
   語の全体は、前後が漢字・カタカナ・英字でないことです(「飲食未経験」の「飲食」は数えない)。避けたいこと・不安は求人ごとに見ます。その求人の職種の語彙の語が 1 つでも語の頭から出てくれば、その求人には付けません(避けたいこと「アパレルはもう嫌」なら、アパレル販売の求人に「販売」でも付けない。「飲食店はもう嫌」の「飲食」も数える)。経験の項目のどこかに「未経験」や否定・初めての印(`NO_EXPERIENCE`)があれば、経験の項目は丸ごと使いません。
   意味が近いだけで選ばれた求人にも付けません。理由は [line-sim-scenarios.md の 20 章](../design/line-sim-scenarios.md) です
 - `relax` は条件を 1 つずつ外した件数を数え、増えるものを多い順に 3 つ返します。雇用区分と `exclude_ids` は外す候補にしません
+- `minor`(`MINOR_ARG`)が true なら、未成年(18 歳未満と、年齢が分からない人)に出せない求人を外します(`minor_ok`。
+  [設計メモ baito-quick-start.md の 6.3](../design/baito-quick-start.md))。外すのは次の求人です。どれも求人の項目だけから決めます
+  - `time_bands` に「深夜」がある
+  - `shift` の時刻の幅(`shift_ranges`。「翌」か、終わりが始まりより前なら翌日)のどれかが、5 時より前に始まるか、22 時より後に終わる
+    (「18:00〜翌1:00」「17:00〜23:00」「4:00〜9:00」は外し、「17:00〜22:00」は出す)
+  - `shift` から時刻が読めない、またはフレックス(18 歳未満には使えない働き方。労働基準法 60 条)。安全側に倒す
+  - `physical_level` が 3(重い作業)
+- `relax` は `minor` を外す候補にせず、どの件数にも効かせます(「未成年を外すと N 件」を出さない)。
+  MCP の `recommend_jobs`・`relax_conditions` と音声の `build_recommend_args` も同じ名前 `minor` を受け取ります(`tests/test_minor_search.py`)。
+  付けないとき(false)は今までと同じ結果です。中学生以下は検索の前に止めます(`baito.session.job_block`)
 
 keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
 
@@ -1359,6 +1369,7 @@ sequenceDiagram
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
 | `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。結果で `stated_preferences` に保存する |
+| `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンの言葉は `search_time_band` で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件) |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
 | `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
 | `line_runtime/baito_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、生成 `ReplyOut`、結果 `ResultOut`)と、モデルを呼ぶところ(`default_llm`。正社員も出力の形を渡して使う) |
