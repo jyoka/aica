@@ -39,7 +39,14 @@ from dip_mcp.logic import (
     career_harness_on,
     liff_url,
 )
-from line_runtime import baito_chat, career_chat, career_ui, config, progress_ui
+from line_runtime import (
+    baito_cards,
+    baito_chat,
+    career_chat,
+    career_ui,
+    config,
+    progress_ui,
+)
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
@@ -582,9 +589,12 @@ class LineRuntime:
         # 正社員は形 D のときだけ、ハーネスが選んだ部品(ui。職歴カード、まとめ、完成なども)を Flex にする(task 246)。
         # 形 B と C の進み具合は、ハーネスが返信の吹き出しに入れる
         ui = progress_ui.build(r.get("progress")) if kind == "baito" else career_ui.build(r.get("ui"))
+        # 入口のカードと職種の結果(ハーネスの card。設計メモ baito-quick-start.md §9)も、同じく additional_kwargs に置く
+        card = r.get("card") if kind == "baito" else None
+        kept = ({"progress": ui} if ui else {}) | ({"baito_card": card} if card else {})
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
         msgs += [HumanMessage(content, additional_kwargs=mark),
-                 AIMessage(reply.model_dump_json(), additional_kwargs=mark | ({"progress": ui} if ui else {}))]
+                 AIMessage(reply.model_dump_json(), additional_kwargs=mark | kept)]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
         queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
@@ -762,6 +772,11 @@ def render(state: dict) -> dict:
     # プロフィールの進み具合の部品(ハーネスの相談のターンだけ。_harness_turn がコードで付ける。モデルの出力からは取らない)
     progress = msgs[-1].additional_kwargs.get("progress") if msgs[-1].type == "ai" else None
     progress = progress or started_ui
+    # 1 タップで始めるカード(入口・職種の結果。task 265)。相談を始めたターンは start の question の card、ハーネスのターンは
+    # _harness_turn が置いたもの。どちらもハーネスが作ったもので、モデルの出力からは取らない
+    card = msgs[-1].additional_kwargs.get("baito_card") if msgs[-1].type == "ai" else None
+    if opened is not None and opened[0] == BAITO_START:
+        card = opened[1].get("card")
     if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
         # 挨拶のターン(挨拶で始まった会話の最初の返信。task 237): 入口のボタンはコードが決めたものにする。モデルが付けた
         # 入口(音声相談・履歴書・ゲーム)は使わない(やり終えた入口や、モデルが落とした入口を、そのまま出さない)。
@@ -780,4 +795,6 @@ def render(state: dict) -> dict:
         "tools": turn_tools,
         # プロフィールの進み具合の部品(ハーネスの相談のターンだけ)。LINE は Flex(切った形なら text)、Web のトークは text
         **({"progress": progress} if progress else {}),
+        # 1 タップで始めるカード(ハーネスの card と文の形 text)。LINE は Flex(line_channel.to_messages)、Web のトークは text
+        **({"baito_card": baito_cards.view(card)} if card else {}),
     }

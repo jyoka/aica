@@ -100,13 +100,20 @@ GREET = reply(["お仕事探しの相談と、求人のご提案をします。"
 START = [
     call("get_counseling_playbook", {"track": "アルバイト・パート", "channel": "chat"}, "pb"),
     call("start_baito_consultation", {"line_user_id": UID}),
-    # モデルが付けた選択肢(言い換えたもの)は使われず、ハーネスの最初の質問の選択肢になる
-    reply(["アルバイトで何が向いているか、一緒に整理しましょう。", "バイト代、何に使いたい？"], quick_replies=["趣味", "貯金"]),
+    # モデルが付けた選択肢は使われず、ハーネスの入口のカードの選択肢になる。問いはカードにあるので、AI は 1 文だけ
+    # (dip_mcp.baito.session.QUICK_START_NOTE)
+    reply(["合いそうなバイトを、一緒に探しましょう。"], quick_replies=["趣味", "貯金"]),
 ]
+# 新しい相談は入口のカードから始まる(task 265)。今の流れ(icebreak から)を見るテストは、値を入れない「どれもピンと来ない」と
+# [近くで探す] の 2 タップで入る。そのときの言い方(偽のモデル)が ENTER_SAYS
+ENTRY_CHOICES = [*H.QUICK_PICKS, H.QUICK_NONE]
+ENTER = [(UID, "message", H.QUICK_NONE), (UID, "message", H.QUICK_NEAR)]
+ENTER_SAYS = [{"reply": H.LIGHT_TEXT}, {"reply": QM["q_money"]["text"]}]
 
 
 def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
     baito = FakeBaitoLLM([
+        *ENTER_SAYS,                                                   # 入口のカード → 「ちょっとだけ」→ 近くで探す
         {"reply": "推し活いいね！今のあなたに近いのは？"},                  # 選択肢を押した: 言い方の1回だけ
         EMPTY_EXTRACT | {"segment": "student",                         # 文で答えた: 抽出(年齢は根拠つき)
                          "slot_updates": [{"slot": "age_band", "value": "高1", "evidence": "高1"}]},
@@ -116,27 +123,30 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
     async def after(rt):
         return await rt.conversation(UID)
 
-    (_, r1, r2, r3), conv = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                         (UID, "message", "推し活・趣味"), (UID, "message", "高1です！")],
-                                 tmp_path, after)
-    # 1ターン目: トークの AI が playbook(ハーネス版)を読んで始め、最初の質問の選択肢はバンクの原文
+    (_, r1, _, r0, r2, r3), conv = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
+                                                               *ENTER, (UID, "message", "推し活・趣味"),
+                                                               (UID, "message", "高1です！")], tmp_path, after)
+    # 1ターン目: トークの AI が playbook(ハーネス版)を読んで始め、入口のカード(選択肢はハーネスのもの)が出る
     assert [t["name"] for t in r1["tools"]] == ["get_counseling_playbook", "start_baito_consultation"]
     assert "start_baito_consultation" in r1["tools"][0]["result"]["playbook"]
-    assert r1["tools"][1]["result"]["question"]["text"] == "バイト代、何に使いたい？"
-    assert r1["quick_replies"] == Q_MONEY and "baito" not in r1
+    assert r1["tools"][1]["result"]["question"]["text"] == H.QUICK_TEXT
+    assert r1["quick_replies"] == ENTRY_CHOICES and r1["baito_card"]["kind"] == "entry" and "baito" not in r1
+    # [近くで探す] で今の流れに入る: 最初の質問はバンクの原文と選択肢
+    assert r0["bubbles"] == [QM["q_money"]["text"]] and r0["quick_replies"] == Q_MONEY
+    assert r0["baito"] == {"phase": "icebreak", "question": "q_money"} and "baito_card" not in r0
     # 2ターン目: タップ → ハーネスの次の質問(q_segment)。トークの AI は呼ばない(台本は使い切っている)。モデルは言い方を1回
     assert r2["bubbles"] == ["推し活いいね！今のあなたに近いのは？"]
     assert r2["quick_replies"] == QM["q_segment"]["choices"]
     assert r2["baito"] == {"phase": "icebreak", "question": "q_segment"} and r2["tools"] == [] and r2["cards"] == []
     # 3ターン目: 文 → 抽出(本人の今の発言だけを渡す)→ 言い方(次の質問 hf_age)
-    assert [c[0] for c in baito.calls] == ["say", "extract", "say"]
-    _, extract_system, extract_msgs = baito.calls[1]
+    assert [c[0] for c in baito.calls] == ["say", "say", "say", "extract", "say"]
+    _, extract_system, extract_msgs = baito.calls[3]
     assert "ユーザーの発言: 高1です！" in extract_system and '"q_segment"' not in extract_system
     assert extract_msgs == [{"role": "user", "content": "高1です！"}]
-    assert '"id": "hf_age"' in baito.calls[2][1] and "- segment: student（学生）" in baito.calls[2][1]
+    assert '"id": "hf_age"' in baito.calls[4][1] and "- segment: student（学生）" in baito.calls[4][1]
     # 言い方には直前のやりとりと本人の発言が渡る(リアクションのため)
-    assert baito.calls[2][2][-1] == {"role": "user", "content": "高1です！"}
-    assert baito.calls[2][2][-2]["role"] == "assistant" and "今のあなたに近いのは？" in baito.calls[2][2][-2]["content"]
+    assert baito.calls[4][2][-1] == {"role": "user", "content": "高1です！"}
+    assert baito.calls[4][2][-2]["role"] == "assistant" and "今のあなたに近いのは？" in baito.calls[4][2][-2]["content"]
     # task 258: 「高1」からは年齢を決めない(抽出の年齢も使わない)。未成年として扱ったまま(深夜 NG はコードが付ける)、
     # 年齢をボタンで聞く
     assert r3["bubbles"] == ["高1なんだ！" + QM["hf_age"]["text"]]
@@ -145,9 +155,11 @@ def test_consultation_is_run_by_the_harness_after_the_agent_starts_it(tmp_path):
     h = _harness()
     assert "age_band" not in h.slots and H.minor_mode(h) and "深夜シフト" in h.derived_ng
     # 画面の描き直し: ハーネスのターンも、本人の発言と返信(選択肢つき)で残る
-    assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", "推し活・趣味", "高1です！"]
-    assert conv["turns"][1]["bot"]["quick_replies"] == Q_MONEY
-    assert conv["turns"][2]["bot"]["quick_replies"] == QM["q_segment"]["choices"]
+    assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", H.QUICK_NONE, H.QUICK_NEAR, "推し活・趣味", "高1です！"]
+    assert conv["turns"][1]["bot"]["quick_replies"] == ENTRY_CHOICES and conv["turns"][1]["bot"]["baito_card"] == r1["baito_card"]
+    assert conv["turns"][2]["bot"]["baito_card"]["title"] == H.LIGHT_TITLE
+    assert conv["turns"][3]["bot"]["quick_replies"] == Q_MONEY
+    assert conv["turns"][4]["bot"]["quick_replies"] == QM["q_segment"]["choices"]
 
 
 def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_context(tmp_path):
@@ -159,15 +171,15 @@ def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_conte
         seen_messages.extend((await rt.agent.aget_state(rt._cfg(UID, await rt.current_thread(UID)))).values["messages"])
         return await rt.conversation(UID)
 
-    (_, _, r2, r3, r4), conv = _run(agent, baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                   (UID, "message", "旅行・遊び"), (UID, "message", "学生"),
-                                                   (UID, "message", "今はいい")], tmp_path, after)
+    (_, _, _, _, r2, r3, r4), conv = _run(agent, baito, [(UID, "visit", None), (UID, "message", "まず相談する"), *ENTER,
+                                                         (UID, "message", "旅行・遊び"), (UID, "message", "学生"),
+                                                         (UID, "message", "今はいい")], tmp_path, after)
     assert r2["baito"]["question"] == "q_segment" and r3["baito"]["question"] == "hf_age"
     assert r3["quick_replies"] == ["中学生以下", "15〜17歳", "18歳以上", "ひみつ"]
     assert "baito" not in r4 and r4["bubbles"] == ["わかりました。また相談したくなったら声をかけてください。"]
-    assert len(baito.calls) == 2  # 「今はいい」ではハーネスのモデルを呼ばない
+    assert len(baito.calls) == 4  # 「今はいい」ではハーネスのモデルを呼ばない(入口の 2 タップと、2 つの答えの言い方だけ)
     assert _harness() is None
-    assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", "旅行・遊び", "学生", "今はいい"]
+    assert [t["user"] for t in conv["turns"]] == [None, "まず相談する", *(s[2] for s in ENTER), "旅行・遊び", "学生", "今はいい"]
     # トークの AI は、ハーネスのターンも会話の文脈として受け取る(「今はいい」の前に、ハーネスの質問と答えがある)
     agent_saw = [m for m in seen_messages if m.type in ("human", "ai")]
     assert [m.content for m in agent_saw if m.type == "human"][-3:] == ["旅行・遊び", "学生", "今はいい"]
@@ -176,26 +188,26 @@ def test_exit_word_returns_the_turn_to_the_agent_with_the_harness_turns_in_conte
 def test_failed_or_unsafe_reply_falls_back_to_the_question_text(tmp_path):
     """モデルが返事を作れなかったら(API のエラー)、扶養の金額を書いたら(PRD §10-3)、1 回だけやり直し、だめなら
     ハーネスが進めた次の質問の原文を出す(本人が見ていない質問に答える形にずらさない)。"""
-    baito = FakeBaitoLLM([RuntimeError("overloaded"), RuntimeError("overloaded"),
+    baito = FakeBaitoLLM([*ENTER_SAYS, RuntimeError("overloaded"), RuntimeError("overloaded"),
                           {"reply": "扶養なら103万円までだよ！年齢は？"}, {"reply": "扶養は130万の壁があるよ"}])
-    (_, _, r2, r3), _ = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                     (UID, "message", "貯金・将来のため"), (UID, "message", "学生")],
-                             tmp_path)
+    (*_, r2, r3), _ = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"), *ENTER,
+                                                   (UID, "message", "貯金・将来のため"), (UID, "message", "学生")],
+                           tmp_path)
     assert r2["bubbles"] == ["今のあなたに近いのは？"] and r2["quick_replies"] == QM["q_segment"]["choices"]
     assert r3["bubbles"] == [QM["hf_age"]["text"]] and r3["quick_replies"] == QM["hf_age"]["choices"]
-    assert [c[0] for c in baito.calls] == ["say"] * 4
+    assert [c[0] for c in baito.calls] == ["say"] * 6
 
 
 def test_malformed_model_output_is_still_charged_to_the_ledger(tmp_path):
     """モデルが形の崩れた出力を返しても(構造化出力の失敗)、使った量は費用台帳に入る。返事は質問の原文。"""
     bad = {"input_tokens": 70, "output_tokens": 30, "cache_read": 0, "cache_write": 0}
-    baito = FakeBaitoLLM([BaitoLLMError(bad), BaitoLLMError(bad)])
+    baito = FakeBaitoLLM([*ENTER_SAYS, BaitoLLMError(bad), BaitoLLMError(bad)])
 
     async def after(rt):
         return [r for r in rt.ledger.rows if r["input_tokens"] == 70]
 
-    (_, _, r2), rows = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"),
-                                                    (UID, "message", "貯金・将来のため")], tmp_path, after)
+    (*_, r2), rows = _run([GREET, *START], baito, [(UID, "visit", None), (UID, "message", "まず相談する"), *ENTER,
+                                                  (UID, "message", "貯金・将来のため")], tmp_path, after)
     assert r2["bubbles"] == ["今のあなたに近いのは？"] and len(rows) == 2
 
 
@@ -204,7 +216,7 @@ def test_junior_high_free_text_is_stopped_even_when_the_model_fails(tmp_path):
     おすすめを出さない。task 258: 1 回目は年齢のボタンで聞き直し、2 回目もはっきりしなければ止める。
     相談は閉じず、トークの AI にも戻らない(求人を出さない)。"""
     baito = FakeBaitoLLM(by_stage={"extract": [RuntimeError("timeout")] * 4})
-    steps = [(UID, "visit", None), (UID, "message", "まず相談する"), (UID, "message", "旅行・遊び"),
+    steps = [(UID, "visit", None), (UID, "message", "まず相談する"), *ENTER, (UID, "message", "旅行・遊び"),
              (UID, "message", "学生"), (UID, "message", "中2です"), (UID, "message", "中2だってば"),
              (UID, "message", "じゃあ求人を見せて")]
     (*_, r5, r6, r7), _ = _run([GREET, *START], baito, steps, tmp_path)
@@ -310,15 +322,17 @@ def test_model_output_schemas_are_the_prd_json_contracts():
 
 
 def _to_result(picks, mode=None):
-    """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターン, 相談のターン, 画面の描き直し)。"""
+    """ボタンだけで結果まで進める(トークのターンとして)。返すのは (挨拶と相談を始めたターンと入口の 2 タップ, 相談のターン,
+    画面の描き直し)。入口のカードは「どれもピンと来ない」(値を入れない)と [近くで探す] で通る。"""
     from line_runtime.runtime import LineRuntime
 
     async def go():
         async with LineRuntime(model=ConsultModel(script=[GREET, *START]), in_memory=True, baito_llm=FakeBaitoLLM()) as rt:
             first = [await rt.handle(UID, "visit", None), await rt.handle(UID, "message", "まず相談する")]
+            first += [await rt.handle(*s) for s in ENTER]
             r, out = first[-1], []
             for _ in range(25):
-                q = (r.get("baito") or {}).get("question") or "q_money"
+                q = r["baito"]["question"]
                 if q == "result":
                     return first, out, await rt.conversation(UID)
                 r = await rt.handle(UID, "message", H.REVIEW_OK if q == "review" else picks.get(q) or r["quick_replies"][0])
@@ -337,7 +351,8 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
 
     os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
     first, turns, conv = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
-    assert all("progress" not in r for r in first)  # トークの AI のターン(挨拶、相談を始めたターン)
+    assert all("progress" not in r for r in first)  # トークの AI のターン(挨拶、相談を始めたターン)と、入口のカードの 2 タップ
+    assert first[-1]["baito"] == {"phase": "icebreak", "question": "q_money"}
     kinds = [(r["baito"]["phase"], (r.get("progress") or {}).get("kind")) for r in turns]
     assert kinds[0] == ("icebreak", None) and kinds[-1] == ("result", U.COMPLETE)
     assert [k for _, k in kinds].count(U.CARD) == 1 and (U.BAND in [k for _, k in kinds])
@@ -357,7 +372,7 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
     shown = U.flex_text(done["progress"]["flex"])
     assert all(j in shown for j in jobs) and "おすすめの仕事" in shown
     # 画面の描き直し(Web のトークは progress の文を吹き出しの最後の行に足す)にも、同じ部品が残る
-    redrawn = [t["bot"].get("progress") for t in conv["turns"][2:]]
+    redrawn = [t["bot"].get("progress") for t in conv["turns"][4:]]
     assert redrawn == [r.get("progress") for r in turns]
 
 

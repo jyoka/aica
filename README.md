@@ -357,6 +357,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m scripts.career_ui_preview` | 正社員のヒアリングの形 D の UI(「始める」の 1 枚、帯、プロフィールカード、職歴カード、まとめ、全部の完成)の写真を `docs/images/career-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
 | `python -m scripts.career_stamp` | 職歴カードの「完成」のスタンプ(16×16 のドット絵を 4 倍にした PNG。アーケードと同じ色)を `line_runtime/static/career/stamp.png` に作り直す。`/static/career/stamp.png` で出る | 使わない |
 | `python -m scripts.progress_ui_preview [--segment homemaker]` | アルバイト・パートの相談の、プロフィールが育つ UI(帯、プロフィールカード、完成)の写真を `docs/images/progress-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
+| `python -m scripts.baito_icons [--sheet docs/images/baito-quick-start/icons.png]` | アルバイト・パートの相談の入口と結果のカードのアイコン(64×64 の PNG 5 枚)を、`docs/images/baito-quick-start/sprites.json` から `line_runtime/static/baito/` に作り直す。`/static/baito/{名前}.png` で出る。`--sheet` は 5 枚を並べた見本も作る | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
 | `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
