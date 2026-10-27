@@ -36,6 +36,12 @@
   (_ask_held。review の 2 ターンと reverse_pick の 1 ターンは使わない)。区分が決まって表にあれば入れ、無ければ捨ててログ
   held_discarded を残す(_settle_held)。保留中と、捨てて今も空の項目を、以後のどの返事が口にしても検証で落とす(view の unkept。
   捨てたときは決まり文句 DISCARD_TEXT を返事の前に付ける)
+- 途中で区分が違うと分かった本人(task 267。P3 で「実は社会人で、夜間の大学に通ってる」を抽出が student のまま返した):
+  本人の文に今の区分と違う区分の言葉(SEG_WORDS。SEG_SYNONYM から「その他」を除いたもの)があれば、抽出が今の区分を返しても、
+  次のターンで区分をボタンで確かめる(_seg_words)。文からは切り替えず、区分は本人がボタンで選ぶ。聞き直し・言い換え・脱線の
+  ターンの言葉は、次の答えの後に確かめる(その答えの抽出が今の区分を返しても pending_segment を消さない。set_segment)。
+  reverse_pick の 1 ターンは使わない。区分の確認(区分の違いと保留の答えの両方)は 1 回の相談で 1 回まで(_confirm_used。
+  flags の segment_asked と held_asked)
 - 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
   質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
   (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
@@ -690,8 +696,7 @@ def set_segment(state, seg, source):
     if seg not in SEGMENTS:
         ev(state, "invalid_segment", value=seg)
         return "ignored"
-    if seg == state.segment:
-        state.pending_segment = None
+    if seg == state.segment:  # task 267: 前のターンに確かめると決めた区分(聞き直しの答えで抽出が今の区分を返した)は消さない
         return "noop"
     if state.segment == "unknown" or source in ("choice", "confirm"):
         _switch_segment(state, seg)
@@ -748,6 +753,8 @@ def parse_json(raw):
 SEG_SYNONYM = {"学生": "student", "大学生": "student", "高校生": "student", "専門学生": "student", "主婦": "homemaker",
                "主夫": "homemaker", "会社員": "side_job", "社会人": "side_job", "副業": "side_job",
                "フリーター": "other", "求職中": "other", "その他": "other"}
+# 本人の文から拾う区分の言葉(task 267)。「その他」は「その他は特にない」のように区分でなくても使うので拾わない
+SEG_WORDS = {w: s for w, s in SEG_SYNONYM.items() if w != "その他"}
 
 
 def _empty_extract():
@@ -964,12 +971,15 @@ def advance(state, bank):
     """次に出すものを決めて state.current に入れる。ORDER の長さで打ち切るので繰り返さない。"""
     if state.pending_segment and state.phase != "result":
         np = next_phase(state, bank)
-        if np in ("review", "result"):
+        if np in ("review", "result") or _confirm_used(state):  # task 267: 区分の確認は 1 回の相談で 1 回まで
             ev(state, "confirm_skipped", pending=state.pending_segment)
             state.pending_segment = None
+        elif np == "reverse_pick":  # reverse_pick(1 ターン)は使わない。次のフェーズで聞く(_ask_held と同じ)
+            pass
         else:  # 05-B4: 確認質問は次のフェーズに数える(フェーズの上限を超えない)
             state.phase = np
             state.phase_turns.setdefault(np, 0)
+            _flag(state, "segment_asked")
             state.current = {"qid": "confirm_segment", "mode": "confirm", "choices": list(qmap(bank)["q_segment"]["choices"])}
             if state.pending:  # 保留した答えも、この確認で決まる
                 _flag(state, "held_asked")
@@ -1004,7 +1014,7 @@ def _ask_held(state, bank):
     """区分の表に無い答えを保留したら、次のターンで区分を確かめる(1 回だけ)。区分の質問(q_segment)をまだ出していなければ、
     そちらで決まるので出さない。review の前は review の 2 ターンを使わない(review に入るなら、review の返事の後に聞く)。
     review の中では review のターンに数え、15 ターンに達していれば聞かない(結果の前に捨てる)。"""
-    if not state.pending or "held_asked" in state.flags or state.blocked or state.phase == "result":
+    if not state.pending or _confirm_used(state) or state.blocked or state.phase == "result":
         return False
     if state.segment == "unknown" and "q_segment" not in state.asked:
         return False
@@ -1028,6 +1038,23 @@ def _ask_held(state, bank):
     if need:  # review の続きが要るかを、確認の答えのターンまで持ち越す(_need_more_review は保存しない)
         state.current["need_review"] = True
     return True
+
+
+def _confirm_used(state):
+    """区分の確認(confirm_segment)を、この相談でもう出したか。区分の違いでも保留の答えでも、出すのは 1 回まで。"""
+    return "segment_asked" in state.flags or "held_asked" in state.flags
+
+
+def _seg_words(state, text):
+    """task 267: 本人の文に今の区分と違う区分の言葉(SEG_WORDS)があれば、抽出が今の区分を返しても次のターンで区分を
+    ボタンで確かめる。文から区分を決めて切り替えはしない(区分は本人がボタンで選ぶ)。"""
+    if state.segment == "unknown" or state.pending_segment or state.blocked or _confirm_used(state):
+        return
+    t = nfkc(text)
+    other = sorted({s for w, s in SEG_WORDS.items() if w in t} - {state.segment})
+    if other:
+        state.pending_segment = other[0]
+        ev(state, "segment_word", old=state.segment, words=other)
 
 
 def _held_q(bank):
@@ -1747,6 +1774,8 @@ def _turn(state, user_text, bank, llm, catalog):
     if intent == "danger":
         return _aside(state, bank, llm, catalog, kind="danger")
     if intent == "aside":
+        if cur["mode"] not in ("review", "confirm"):
+            _seg_words(state, text)  # 区分の言葉は、脱線と読まれても次の答えの後に確かめる
         return _aside(state, bank, llm, catalog, kind="aside")
     # ---- 数えるターン
     _count(state)
@@ -1789,18 +1818,21 @@ def _turn(state, user_text, bank, llm, catalog):
         elif cur["qid"] not in state.retried:  # 1 回目: 数えずに 1 回だけ聞き直す
             state.retried.append(cur["qid"])
             _uncount(state)
+            _seg_words(state, text)  # 区分の言葉があれば、聞き直しの答えの後に確かめる
             if "age_band" in q["targets"]:
                 _age_asked_again(state)
             state.current = dict(cur, mode="retry")
             return _say(state, bank, llm, catalog, counted=False)
         else:
             ev(state, "extract_gave_up", qid=cur["qid"])
+            _seg_words(state, text)
             if _asks_age(cur, q):
                 ev(state, "age_unread_kept_minor", slot="age_band")
     elif intent == "clarify" and mode != "confirm" and cur["qid"] not in state.clarified \
             and state.clarify_used < MAX_CLARIFY and clarify_room(state):
         state.clarified.append(cur["qid"])
         state.clarify_used += 1
+        _seg_words(state, text)  # 区分の言葉は、言い換えの答えの後に確かめる
         state.current = dict(cur, mode="clarify")
         return _say(state, bank, llm, catalog)
     else:
@@ -1809,7 +1841,9 @@ def _turn(state, user_text, bank, llm, catalog):
         _apply_ext(state, bank, ext, q=q, text=text, review=False, confirm=(mode == "confirm"))
         if mode == "confirm":
             state.pending_segment = None
-        elif _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
+        else:
+            _seg_words(state, text)  # task 267: 抽出が今の区分のままでも、違う区分の言葉があれば次のターンで確かめる
+        if mode != "confirm" and _age_unread(state, cur, q, ext):  # task 258: 未成年として扱ったまま、ボタンで 1 回だけ聞き直す
             if cur["qid"] not in state.retried and clarify_room(state):
                 state.retried.append(cur["qid"])
                 _age_asked_again(state)
