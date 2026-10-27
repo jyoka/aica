@@ -162,6 +162,100 @@ def test_line_webhook_reaches_result_and_saves_conditions_and_career_cards_then_
     assert store.KEY not in user and not user.get("preferences") and session.KEY not in user
 
 
+# ----------------------------- LINE のトークで言い直す(ポリシー 1.4 §7 の LINE の「直す」) -----------------------------
+
+
+def test_line_talk_correction_fixes_career_conditions_and_card_fields(tmp_path, monkeypatch):
+    """「データを見る」の後に本人がトークで言い直すと、トークの AI(偽のモデル)が save_user_preferences で why_now・direction・
+    team_style を、update_career_card で職歴カードの欄を、本人の言葉のまま直す。もう一度「データを見る」と、直した値が出る。
+    区切りのボタンで取れていた規模を言い直すと、文だけを持ち、区切りと単位は残さない(数を作らない)。"""
+    from tests.test_consult import calls
+
+    uid = line_user(RAW_USER)
+    fixed = {"why_now": "年収を上げたいから", "direction": "物流の業務改善", "team_style": "一人で任される"}
+    model = ConsultModel(script=[
+        calls(("save_user_preferences", {"line_user_id": uid, "preferences": fixed}),
+              ("update_career_card", {"line_user_id": uid, "item": "career1.result", "text": "誤出荷がゼロになった"}),
+              ("update_career_card", {"line_user_id": uid, "item": "career1.scale", "text": "30人くらい"}),
+              ("update_career_card", {"line_user_id": uid, "item": "career1.place", "text": "大阪"})),
+        reply(["直しました。なぜ今は「年収を上げたいから」です。"], quick_replies=["求人を見る", "今はいい"])])
+    server, fake = _server(tmp_path, monkeypatch, model)
+    st = server.state
+    with TestClient(server.app) as client:
+        logic.set_search_track(st, uid, "正社員", "正社員で転職したい")
+        logic.save_preferences(st, uid, {"why_now": "評価の仕組みが合わないから", "direction": "現場の改善",
+                                         "team_style": "チームで分担"})
+        store.save(st, uid, {"segment": "same_path", "slots": {
+            "career1.role": {"status": "filled", "text": "物流会社で現場リーダー、6年", "confidence": "high"},
+            "career1.scale": {"status": "filled", "text": "5人くらい", "range": [1, 7], "unit": "人", "confidence": "high"},
+            "career1.result": {"status": "filled", "text": "誤出荷が半分になった", "confidence": "high"}}})
+        _say(client, "データを見る", 2)
+        assert len(model.script) == 2  # 見るのはモデルを呼ばない
+        _say(client, "なぜ今は年収を上げたいから、次は物流の業務改善、一人で任されたい。職歴1は30人くらいで、誤出荷がゼロになった", 3)
+        assert model.script == []
+        assert "update_career_card" in model.systems[-1]  # 直し方は Prompt にある
+        user = st.user(uid)
+        assert {k: user["preferences"][k]["value"] for k in fixed} == fixed
+        items = user[store.KEY]["items"]
+        assert items["career1.result"]["text"] == "誤出荷がゼロになった"
+        scale = items["career1.scale"]
+        assert (scale["text"], scale["range"], scale["unit"], scale["number"]) == ("30人くらい", None, None, None)
+        assert items["career1.role"]["text"] == "物流会社で現場リーダー、6年"  # 言い直していない欄はそのまま
+        assert "career1.place" not in items  # 知らない欄は直さない
+        assert not user.get("profile_changes")  # トークの AI が直したので、画面で直したときの知らせは残さない
+        _say(client, "データを見る", 4)
+        shown = "\n".join(m["text"] for m in fake.sent()[-1][1]["messages"])
+        for v in [*fixed.values(), "誤出荷がゼロになった", "30人くらい"]:
+            assert v in shown, v
+        assert "評価の仕組みが合わないから" not in shown and "誤出荷が半分になった" not in shown
+
+
+def test_update_career_card_rejects_unknown_personal_long_and_empty_values(tmp_path):
+    st = State(tmp_path / "state.json")
+    _saved_profile(st)
+    assert store.update(st, UID, "career1.role", " 倉庫の作業スタッフ ") == {"saved": "career1.role", "value": "倉庫の作業スタッフ"}
+    assert store.update(st, UID, "career1.scale", "30人くらい") == {"saved": "career1.scale", "value": "30人くらい"}  # 空欄も直せる
+    assert store.update(st, UID, "raise_target", "役職") == {"saved": "raise_target", "value": "役職"}
+    for key, text, err in [("segment", "仕事を変えたい", "unknown_key"), ("area", "大阪", "unknown_key"),
+                           ("career2.role", "倉庫の作業スタッフ", "not_saved"), ("career1.result", "売上が倍", "not_saved"),
+                           ("career1.role", "090-1234-5678", "personal_info"),
+                           ("career1.role", "あ" * (store.VALUE_MAX + 1), "too_long"), ("career1.role", " ", "empty")]:
+        r = store.update(st, UID, key, text)
+        assert r["error"] == err and r["note"], (key, err)
+    items = st.user(UID)[store.KEY]["items"]
+    assert items["career1.role"]["text"] == "倉庫の作業スタッフ" and items["raise_target"]["text"] == "役職"
+    assert "career2.role" not in items and "career1.result" not in items  # 保存していない欄は作らない
+
+
+def test_update_career_card_does_not_create_a_profile_for_someone_with_nothing_saved(tmp_path):
+    """フラグが無い本番の既定でも update_career_card はトークの AI に見える。何も保存していない人に呼んでも、
+    career_profile を作らない(ヒアリングを通らずに職歴を足す道にしない)。要約にも職歴カードの説明が足されない。"""
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"area": "大阪"})
+    r = store.update(st, UID, "career2.result", "売上が倍")
+    assert r["error"] == "not_saved" and r["note"]
+    assert store.KEY not in st.user(UID)
+    assert "career_profile" not in logic.conversation_summary(st, UID)
+
+
+def test_career_cards_in_the_summary_carry_their_number_after_card_1_is_deleted(tmp_path):
+    """職歴1の欄をプロフィール画面で全部消して職歴2だけが残っても、要約のカードは n=2 を持つ。トークの AI が
+    その n で update_career_card を呼ぶと、職歴2の欄が直り、職歴1の欄は作られない(職歴が 2 つに割れない)。"""
+    st = State(tmp_path / "state.json")
+    store.save(st, UID, {"segment": "same_path", "slots": {
+        "career1.role": {"status": "filled", "text": "物流会社で現場リーダー、6年", "confidence": "high"},
+        "career2.role": {"status": "filled", "text": "倉庫スタッフ", "confidence": "high"},
+        "career2.result": {"status": "filled", "text": "手順書を作った", "confidence": "high"}}})
+    assert profile.delete_career_item(st, UID, "career1.role") == {"deleted": "career1.role"}
+    cards = logic.conversation_summary(st, UID)["career_profile"]["career_cards"]
+    assert cards == [{"n": 2, "role": "倉庫スタッフ", "result": "手順書を作った"}]
+    assert store.update(st, UID, f"career{cards[0]['n']}.result", "手順書を全拠点に広げた")["saved"] == "career2.result"
+    assert store.update(st, UID, "career1.result", "手順書を全拠点に広げた")["error"] == "not_saved"
+    items = st.user(UID)[store.KEY]["items"]
+    assert set(items) == {"career2.role", "career2.result"}
+    assert items["career2.result"]["text"] == "手順書を全拠点に広げた"
+
+
 # ----------------------------- 機能フラグ -----------------------------
 
 
@@ -414,7 +508,7 @@ def test_profile_shows_edits_and_deletes_career_cards(tmp_path):
     # トークの AI への知らせと要約にも出る
     assert [c["what"] for c in profile.pending_changes(st, UID)] == ["職歴1(直近)のどのくらい"]
     assert logic.conversation_summary(st, UID)["career_profile"]["career_cards"] == [
-        {"role": "物流会社で現場リーダー、6年", "scale": "30人くらい"}]
+        {"n": 1, "role": "物流会社で現場リーダー、6年", "scale": "30人くらい"}]
     for key in ("career1.role", "career1.scale", "raise_target", "segment"):
         assert profile.delete_career_item(st, UID, key) == {"deleted": key}
     assert store.KEY not in st.user(UID) and profile.view(st, UID)["career_profile"] is None

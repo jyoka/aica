@@ -722,6 +722,7 @@ flowchart LR
 | `get_counseling_playbook` | `logic.counseling_playbook` | - | 使う |
 | `start_baito_consultation`、`baito_turn`、`end_baito_consultation` | `baito.session.start`、`turn`、`end` | `baito`(進めている間)、`preferences`、`baito_block` | - |
 | `start_career_consultation`、`career_turn`、`end_career_consultation` | `career.session.start`、`turn`、`end` | `career`(進めている間)、`preferences`、`career_profile` | - |
+| `update_career_card` | `career.store.update` | `career_profile` | - |
 | `record_conversation_outcome` | `logic.record_outcome` | `outcomes` | 使う |
 
 - 本人の行動を読むツールは、`behavior.view`(要約に、会話の中で書いた分を重ねたもの)だけを読みます。行動の元データは読みません(5.8)。
@@ -1386,7 +1387,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/career/harness.py`、`bank.json` | 3 段の `turn()`、職歴カード、時間の予算、フェーズ、まとめのカード(task 245)。前の相談で保存した欄を入れる `apply_saved`(task 255) |
 | `dip_mcp/prompts/career/` | 抽出(`prompt_extract_ja.txt`)と言い方(`prompt_say_ja.txt`)。まとめと結果はハーネスの決まった文で、モデルを呼ばない |
 | `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
-| `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`) |
+| `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
 | `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
 | `evals/career_sim.py` | モックの本人役 6 人 × 形 B と C の回帰(`python -m evals.career_sim`) |
 
@@ -1415,6 +1416,12 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 - 閉じるときに、from が `saved` の欄と、前の相談の segment は書き直さない。相談の途中にプロフィール画面で直した・消した値を、前の値に戻さないため
 - `career_profile` はプロフィール画面で欄ごとに見て、直して、消せる。LINE は「データを見る」に出る。書き出しと「すべて消す」は 1 人の行ごとなので、
   これも入る(プライバシーポリシー 1.4 の §6・§7 の範囲。task 255 で確かめた)
+- LINE の「直す」(ポリシー 1.4 §7 の「トークで言い直す」): 本人が言い直したら、トークの AI が直す。職歴カードの欄と segment だけの欄は
+  dip のツール `update_career_card`(`store.update`。中身はプロフィール画面と同じ `store.edit` で、文だけを持ち、数と区切りは作らない。
+  AI 自身が直すので、画面で直したときの知らせ `profile_changes` は残さない。直すのは、もう保存している欄だけで、保存していない欄は
+  作らない(`not_saved`。ヒアリングを通らずに職歴を足す道にしない)。item の `career<n>` の n は、要約の `career_cards` の各カードが持つ `n`。
+  要約は欄のあるカードだけを並べるので、職歴1を消すと職歴2が先頭になる。並びの順で決めると別のカードを直してしまう)。why_now・direction・team_style は `save_user_preferences` で上書きする。
+  直し方は Prompt(`baitoru_assistant.md`)と `fulltime_chat_harness.md` に書く。segment は直さない(次の相談で選び直す)
 
 #### 条件の問いの選択肢
 

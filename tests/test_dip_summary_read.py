@@ -156,6 +156,7 @@ TOOL_ARGS = {
     "start_career_consultation": {},
     "career_turn": {"text": "同じ仕事で上へ"},
     "end_career_consultation": {},
+    "update_career_card": {"item": "career1.result", "text": "誤出荷がゼロになった"},
     "record_conversation_outcome": {"outcome": "consult", "reason": "相談した", "confidence": 0.8},
 }
 

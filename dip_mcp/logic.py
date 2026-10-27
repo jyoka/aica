@@ -109,7 +109,8 @@ CAREER_NOTE = ("stated_preferences には、正社員のヒアリングが保存
                "人と働く形(team_style)も入る。career_profile(あるときだけ)は、正社員のヒアリングで本人が話した職歴カード"
                "(career_cards。直近の職歴の、何をしていたか role・どのくらい scale・どうなったか result。"
                "「パス」「覚えていない」は空欄)と、今のあなたに近いの(segment)と、segment だけの問いの答え(answers)。"
-               "経歴を聞き直さず、求人の keywords に本人の言葉で使う。")
+               "経歴を聞き直さず、求人の keywords に本人の言葉で使う。本人が言い直したら、職歴カードの欄と answers は "
+               "update_career_card(item の career<n> の n は各カードの n。もう出ている欄だけを直す)、why_now・direction・team_style は save_user_preferences で直す。")
 
 def _career_note(user: dict) -> str:
     """CAREER_NOTE は、正社員のハーネスを使っている(機能フラグ)か、保存した職歴カードがあるときだけ足す

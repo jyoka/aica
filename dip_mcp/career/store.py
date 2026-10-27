@@ -13,8 +13,9 @@
 
 プライバシーポリシー 1.4 の扱い(task 255 で確かめた): 「相談で話した希望や、ご自身のこと(経験など)」(§2)として、
 dip の状態の 1 人の行に入る。期間はその行と同じ最後の利用から 180 日(§6。dip_mcp.retention が行ごと外す)。
-見る・直す・消すはプロフィール画面(dip_mcp.profile)、LINE は「データを見る」、書き出すは「データを書き出す」の行の写し、
-「すべて消す」は行ごと消すので、これも消える(§7)。
+見る・直す・消すはプロフィール画面(dip_mcp.profile)。LINE は「データを見る」で見て、直すときはトークで言い直す
+(トークの AI が、条件は save_user_preferences、職歴カードと segment だけの欄は update_career_card で直す。update)。
+書き出すは「データを書き出す」の行の写し、「すべて消す」(LINE は「データを消す」)は行ごと消すので、これも消える(§7)。
 """
 
 from __future__ import annotations
@@ -148,7 +149,9 @@ def view(user: dict, md) -> dict | None:
 
 
 def summary(user: dict) -> dict | None:
-    """トークの AI が読む形(要約の career_profile)。本人の言葉のまま。空欄は「パス」「覚えていない」。"""
+    """トークの AI が読む形(要約の career_profile)。本人の言葉のまま。空欄は「パス」「覚えていない」。
+    職歴カードは欄のあるものだけを並べ、各カードに番号 n(career<n> の n)を持たせる(職歴1を消して職歴2だけが残っても、
+    update_career_card が並びの順ではなく n で直す欄を決めるため)。"""
     rec = user.get(KEY) or {}
     items = rec.get("items") or {}
     seg = (rec.get("segment") or {}).get("value")
@@ -158,7 +161,7 @@ def summary(user: dict) -> dict | None:
     for n in range(1, H.CARD_COUNT + 1):
         card = {f: _shown(items[k]) for f in H.CARD_FIELDS if (k := H.card_key(n, f)) in items}
         if card:
-            cards.append(card)
+            cards.append({"n": n, **card})
     return {"segment": H.SEGMENT_JA.get(seg) if seg else None,
             "answers": {H.SLOTS[s]["label"]: _shown(items[s]) for s in SEGMENT_SLOTS if s in items},
             "career_cards": cards}
@@ -188,6 +191,35 @@ def edit(u: dict, key: str, value: str, at: str) -> str | None:
     u.setdefault(KEY, {}).setdefault("items", {})[key] = {"status": "filled", "text": value, "value": None, "number": None,
                                                           "range": None, "unit": None, "at": at}
     return None
+
+
+TALK_ERRORS = {"unknown_key": "直せるのは item の説明にある欄だけ。",
+               "not_saved": "直せるのは、要約の career_profile にもう出ている欄だけ。保存していない欄はトークで作らない"
+                            "(職歴を足すのは正社員の相談で聞く)。",
+               "empty": "本人が言い直した言葉を入れる。消すときは「データを消す」(すべて消す)を案内する。",
+               "personal_info": "電話番号・メールアドレス・住所など個人情報を含む値は保存しない。",
+               "too_long": f"値は{VALUE_MAX}字以内。本人の言葉のまま短くして呼び直す。"}
+
+
+def update(state: State, line_user_id: str, key: str, text: str) -> dict:
+    """トークで本人が言い直した欄を直す(dip のツール update_career_card。プライバシーポリシー 1.4 §7 の LINE の「直す」)。
+    中身はプロフィール画面で直すのと同じ(edit。本人の言葉のまま上書きし、数と区切りは作らない)。トークの AI 自身が
+    直すので、画面で直したときの知らせ(profile_changes)は残さない。直すのは、もう保存している欄(パスと「覚えていない」の
+    空欄も含む)だけ。保存していない欄は作らない(ヒアリングを通らずに職歴を足す道にしないため。not_saved)。"""
+    text = str(text or "").strip()
+    err = None
+
+    def apply(u):
+        nonlocal err
+        if key in PROFILE_SLOTS and key not in ((u.get(KEY) or {}).get("items") or {}):
+            err = "not_saved"
+            return
+        err = edit(u, key, text, now(line_user_id).isoformat())
+
+    state.update(line_user_id, apply)
+    if err:
+        return {"error": err, "note": TALK_ERRORS[err]}
+    return {"saved": key, "value": text}
 
 
 def delete(u: dict, key: str) -> bool | None:
