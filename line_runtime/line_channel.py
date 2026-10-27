@@ -421,6 +421,8 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
       ほかの返信は見出しにしない: 同じ会話の後のターンの経験の1問の答えは、ボタンではなく文字の選択肢なので、問いがボタンの
       見出しになると答えではないボタンの上に問いが載る。返信の entry は会話の入口で、その会話のどのターンでも同じなので、
       挨拶のターンかどうかの印には使わない
+    - progress(プロフィールの進み具合の部品。line_runtime.progress_ui.build)→ flex があれば吹き出しの後ろに Flex を 1 つ。
+      Flex を切った形(flex が None)なら、文(text)を最後の吹き出しの最後の行に足す
     - quick_replies → 最後のメッセージのクイックリプライ
     5 つを超えるときは、テキストを後ろから 1 つにまとめる(求人とリンクは残す)。
     features は LINE で使えるもの(既定は liff_features()。評価が LINE の通数を数えるときに、設定の代わりに渡す)。
@@ -434,6 +436,11 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
     flex = []
     if reply.get("cards"):
         flex.append(_cards_message(reply["cards"]))
+    if progress := reply.get("progress"):
+        if progress.get("flex"):
+            flex.append(dict(progress["flex"]))  # 写し(最後のメッセージならクイックリプライを足すので、返信の dict を変えない)
+        elif progress.get("text"):
+            bubbles = [*bubbles[:-1], f"{bubbles[-1]}\n{progress['text']}"] if bubbles else [progress["text"]]
     buttons = [{"label": b["label"].strip(), "url": b["url"]} for b in reply.get("buttons") or []
                if str(b.get("url", "")).startswith("/liff/") and _labeled([b.get("label")])]
     if arcade := [b for b in buttons if _is_arcade(b["url"]) and "arcade" not in features]:

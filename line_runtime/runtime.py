@@ -39,7 +39,7 @@ from dip_mcp.logic import (
     career_harness_on,
     liff_url,
 )
-from line_runtime import baito_chat, career_chat, config
+from line_runtime import baito_chat, career_chat, config, progress_ui
 from line_runtime.agent import LineReply, build_agent
 from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
@@ -577,8 +577,13 @@ class LineRuntime:
                 raise ValueError(f"{h['what']}が途中で閉じられました")
         reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"])
         mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
+        # プロフィールの進み具合(ハーネスが数えた progress)から、帯・プロフィールカード・完成を 0〜1 つ付ける(設計メモ §3.4)。
+        # 返信の本文(LineReply の JSON。相談の後にトークの AI が読む)には入れず、コードだけが書く additional_kwargs に置く。
+        # 帯とカードはアルバイト・パートの相談だけ(正社員の進み具合は、ハーネスが返信の吹き出しに入れる)
+        ui = progress_ui.build(r.get("progress")) if kind == "baito" else None
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
-        msgs += [HumanMessage(content, additional_kwargs=mark), AIMessage(reply.model_dump_json(), additional_kwargs=mark)]
+        msgs += [HumanMessage(content, additional_kwargs=mark),
+                 AIMessage(reply.model_dump_json(), additional_kwargs=mark | ({"progress": ui} if ui else {}))]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
         queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
@@ -749,6 +754,8 @@ def render(state: dict) -> dict:
             bubbles = list(opened[1]["bubbles"])
     greeting = state.get("greeting_entries")
     gave_up = msgs[-1].type == "ai" and msgs[-1].additional_kwargs.get("turn_limit")  # 呼び出しの上限で返した謝り
+    # プロフィールの進み具合の部品(バイトの相談のターンだけ。_baito_turn がコードで付ける。モデルの出力からは取らない)
+    progress = msgs[-1].additional_kwargs.get("progress") if msgs[-1].type == "ai" else None
     if greeting is not None and not gave_up and last_human == min(i for i, m in enumerate(msgs) if m.type == "human"):
         # 挨拶のターン(挨拶で始まった会話の最初の返信。task 237): 入口のボタンはコードが決めたものにする。モデルが付けた
         # 入口(音声相談・履歴書・ゲーム)は使わない(やり終えた入口や、モデルが落とした入口を、そのまま出さない)。
@@ -765,4 +772,6 @@ def render(state: dict) -> dict:
         "buttons": buttons,
         "actions": actions,  # 画面が「ファイルを選ぶ」「話して伝える」のボタンにする
         "tools": turn_tools,
+        # プロフィールの進み具合の部品(ハーネスの相談のターンだけ)。LINE は Flex(切った形なら text)、Web のトークは text
+        **({"progress": progress} if progress else {}),
     }

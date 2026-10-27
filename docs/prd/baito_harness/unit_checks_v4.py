@@ -74,9 +74,10 @@ check("reply_money_rejected", H.validate_reply('{"reply":"扶養は103万円ま�
 v = {"mode": "review", "card_text": "CARD"}
 check("review_reply_must_keep_card", H.validate_reply('{"reply":"まとめ"}', v)[0] is None and H.validate_reply(json.dumps({"reply": "CARD\n" + H.CLOSING_JA}), v)[0])
 
-# ---- 4. age parsing
-for raw, exp in [("16", "15_17"), ("16歳", "15_17"), ("１７歳", "15_17"), ("高1", "15_17"), ("中3", "under_15"), ("中学生", "under_15"),
-                 ("19歳", "18_plus"), ("大学2年", "18_plus"), ("ひみつ", "declined"), ("14歳", "under_15"), (True, "under_18")]:
+# ---- 4. age parsing (aica task 258: typed ages are read only in a clear form -- the age buttons or digits + 歳/才.
+#      A bare number ("16") and school words ("高1", "大学2年") are not read: the user stays a minor and is asked again)
+for raw, exp in [("16", None), ("16歳", "15_17"), ("１７歳", "15_17"), ("高1", None), ("中3", "under_15"), ("中学生", "under_15"),
+                 ("19歳", "18_plus"), ("大学2年", None), ("ひみつ", "declined"), ("14歳", "under_15"), (True, "under_18")]:
     got = H.normalize_value("age_band", raw)
     check(f"age_parse[{raw}]", got == exp, got)
 check("age_nopref_is_declined_not_nopref", H.normalize_value("age_band", "こだわりなし") in (None, "declined"))
@@ -117,9 +118,12 @@ check("jhs_extracted_with_evidence_blocks", st.blocked == "under_15")
 st = fresh(); st.segment = "homemaker"; goto(st, "sc_line"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})]
 H.turn(st, "子どもが中学生で、夕方は家にいたい", BANK, llm)
 check("jhs_raw_text_not_applied_off_age_question", st.blocked is None and "age_band" not in st.slots)
-st = fresh(); st.segment = "student"; goto(st, "hf_age"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})]
-H.turn(st, "まだ中学生です", BANK, llm)
-check("jhs_raw_text_fallback_on_hf_age", st.blocked == "under_15")
+# aica task 258: on the age question a 中学 answer without a clear age is asked again once with the buttons (not stopped);
+# if the second answer is not clear either, the user is stopped as under_15
+st = fresh(); st.segment = "student"; goto(st, "hf_age"); llm = LLM(); llm.q = [json.dumps({"slot_updates": []})] * 2
+H.turn(st, "まだ中学生です", BANK, llm); first = (st.blocked, st.current["qid"], st.current["mode"])
+H.turn(st, "だから中学生だって", BANK, llm)
+check("jhs_raw_text_fallback_on_hf_age", first == (None, "hf_age", "reask") and st.blocked == "under_15", first)
 st = fresh(); st.segment = "student"; goto(st, "sc_line"); llm = LLM()
 llm.q = [json.dumps({"slot_updates": [{"slot": "age_band", "value": "中2", "evidence": "中学2年"}]}, ensure_ascii=False)]
 H.turn(st, "弟が中2なんだけど", BANK, llm)
@@ -387,7 +391,7 @@ st = fresh(); st.segment = "student"; goto(st, "hf_age"); H.turn(st, "中学生�
 r = H.turn(st, "ありがとう", BANK, LLM())
 check("post_result_fixed_reply", r["done"] and not r["counted"] and r["reply"].startswith(H.POST_RESULT_TEXT) and any(e["kind"] == "post_result_message" for e in st.log))
 llm = LLM(); llm.q = [json.dumps({"slot_updates": [{"slot": "age_band", "value": "16歳", "evidence": "16歳"}]}, ensure_ascii=False)]
-r = H.turn(st, "ごめん、本当は16歳", BANK, llm)
+r = H.turn(st, "16歳", BANK, llm)  # aica task 258: the correction is read only in a clear form ("ごめん、本当は16歳" is not)
 check("post_result_unblock_by_age_fix", st.blocked is None and st.result is None and not r["done"] and st.slots["age_band"]["value"] == "15_17"
       and st.phase not in ("result",), (st.phase, st.blocked))
 st = fresh(); st.segment = "student"; goto(st, "hf_age"); H.turn(st, "中学生以下", BANK, LLM())
