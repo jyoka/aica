@@ -307,7 +307,7 @@ ANTHROPIC_MAX_IMAGE_B64_BYTES = 10_000_000
 ANTHROPIC_MAX_IMAGE_SIDE = 8000
 SHRUNK_IMAGE_SIDE = 2576
 # 縮めるために展開してよい画素の上限。圧縮の効く PNG は小さなファイルでも展開すると大きい(13000×13000 の白黒の PNG は
-# 47KB で 169MB)。Render の Starter は 512MB で Web と音声ワーカーが同じコンテナなので、縮める間に増えるメモリを
+# 47KB で 169MB)。Render の Web サービスは Starter(512MB)にしうる(音声ワーカーは別サービス)ので、縮める間に増えるメモリを
 # 160MB ほどまでにする(上限ちょうどの RGBA の PNG で最大 RSS が約 160MB 増える。2026-10-26 に手元で測った)。
 # JPEG は draft で 1/2〜1/8 に縮めて読むので、48MP の写真(8064×6048)も 4032×3024 で済む。A4 を 300dpi で読んだ画像は 870 万画素
 MAX_DECODED_IMAGE_PIXELS = 12_500_000
