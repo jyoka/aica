@@ -128,9 +128,9 @@ def test_scenarios_and_reverse_pick_never_write_hard():
 
 # ----------------------------- (2) モックの本人役での回帰 -----------------------------
 def test_mock_regression_all_pass():
-    """6 人 × 形 B と C で、result に着き、離脱せず、HARD が空 0、wasted 0、予算で止まる(§6.2 の「モック ○」の行)。"""
+    """6 人 × 形 B、C、D で、result に着き、離脱せず、HARD が空 0、wasted 0、予算で止まる(§6.2 の「モック ○」の行)。"""
     rows = career_sim.run_all()
-    assert len(rows) == 12
+    assert len(rows) == 18
     for r in rows:
         m = r["metrics"]
         assert career_sim.failures(m) == [], (r["form"], r["persona"], career_sim.failures(m))
