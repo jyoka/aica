@@ -242,6 +242,21 @@ def test_questions_on_a_card_known_from_the_resume_name_the_job():
     assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「物流会社で現場リーダ…」の規模は?")  # 10 字で切る
     st.slots["career1.role"]["text"] = "営業\n係長"  # 履歴書の改行は空白に(問いの文は 1 行)
     assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「営業 係長」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "物流センター長で1200人を統括"  # 数の途中で切らない(「12…」は本人が言っていない数)
+    q = H.qmap(st, H.BANK)["card_result1"]
+    assert q["text"] == "「物流センター長で…」で、何が変わりましたか?" and not H.digits_in(q["text"])
+    st.slots["career1.role"]["text"] = "物流センター長で千二百人を統括"  # 漢数字も
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "物流センター長で1,200人"  # 区切りの「,」も並びの中
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "営業部長で年商3億5千万円"  # 算用数字と漢数字が混ざった数も 1 つの並び(「3億5…」にしない)
+    assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「営業部長で年商…」の規模は?")
+    st.slots["career1.role"]["text"] = "物流センター長で1万2000人"  # 「1万…」は 1万2000 と違う数
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    st.slots["career1.role"]["text"] = "物流センター長で千2百人"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    assert H._clip("一般職の事務と経理の担当", 10) == "一般職の事務と経理の…"  # 漢数字 1 字の語は、並びの途中で切れないので変わらない
+    assert H._clip("1200人の物流", 3) == "1200…" and H._clip("1200", 3) == "1200"  # 頭が数なら、数の後ろで切る
 
 
 def test_no_reverse_pick_after_the_person_named_what_to_stop():

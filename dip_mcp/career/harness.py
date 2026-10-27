@@ -102,6 +102,7 @@ ASIDE_FALLBACK = "あとでお答えします。"
 
 PRAISE_RE = re.compile(r"すごい|凄い|素晴らし|すばらし|さすが|立派|優秀|見事|えらい|偉い|素敵|すてき|いいですね|頼もし|感心")
 KANJI_NUM_RE = re.compile(r"[〇一二三四五六七八九十百千万億]+")
+NUM_RUN_RE = re.compile(r"(?:\d+(?:[.,]\d+)*|[〇一二三四五六七八九十百千万億])+")  # 切らない数の並び(_clip。3億5千万のような混ざった数も 1 つ)
 QMARK_RE = re.compile(r"[?？]")
 
 
@@ -312,6 +313,19 @@ def type_seconds(text):
 
 
 # ----------------------------- 質問 -----------------------------
+def _clip(text, n):
+    """text を n 字で切って「…」を付ける。切る所が数の並び(1,200、千二百、3億5千万など)の中なら、その並びの前で切る(task 248。
+    「12…」のように、本人が言っていない数を見せない)。並びが頭にあって前に何も残らないときは、並びの後ろで切る。"""
+    if len(text) <= n:
+        return text
+    cut = n
+    for m in NUM_RUN_RE.finditer(text):
+        if m.start() < cut < m.end():
+            cut = m.start() if text[:m.start()].strip() else m.end()
+            break
+    return text if cut >= len(text) else text[:cut].rstrip() + "…"
+
+
 def _expand(q, n, segment, state=None):
     """職歴カードのひな形を n 枚目の問いにする。何をしていたかが履歴書か前の相談から入っている(本人がこの会話で言っていない)
     カードの残りの問いは、どの職歴の話か分かるように、仕事の言葉を頭に付ける(text_known。「それで」だけでは何の話か分からないため)。"""
@@ -322,7 +336,7 @@ def _expand(q, n, segment, state=None):
     role = (state.slots.get(card_key(n, "role")) if state else None) or {}
     if q.get("text_known") and role.get("from") in ("resume", "saved") and role.get("status") == "filled" and role.get("text"):
         r = " ".join(nfkc(role["text"]).split())  # 改行や続く空白を 1 つの空白に(問いの文は 1 行。validate_reply が文のまま探す)
-        text = q["text_known"].replace("{role}", r if len(r) <= KNOWN_ROLE_CHARS else r[:KNOWN_ROLE_CHARS] + "…")
+        text = q["text_known"].replace("{role}", _clip(r, KNOWN_ROLE_CHARS))
     return dict(q, id=f"{q['id']}{n}", card=n, text=text, targets=[sub(t) for t in q["targets"]],
                 choice_effects={c: {sub(k): v for k, v in eff.items()} for c, eff in q["choice_effects"].items()})
 
