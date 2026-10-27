@@ -1,4 +1,4 @@
-"""書類の行の決まり(docs/prd/resume-arcade.md): 数字の検出、数字の空欄、事実を作っていないかの確かめ。
+"""書類の行の決まり(docs/prd/resume-arcade.md): 数字の検出、数字の空欄(正社員の下書きでは言葉の空欄も)、事実を作っていないかの確かめ。
 
 ほかのパッケージに依存しない(dip_mcp と resume_arcade の両方が使い、dip_mcp が resume_arcade や line_runtime を
 import する形を作らないため)。LLM は使わない。
@@ -22,6 +22,20 @@ PLACEHOLDER_YEN = "[X円 ← 数字を入れる]"
 PLACEHOLDER_COUNT = "[N件 ← 数字を入れる]"
 PLACEHOLDER_WHEN = "[時期 ← 数字を入れる]"
 PLACEHOLDER_RE = re.compile(r"\[[^\]]*(?:数字を入れる|add your number)[^\]]*\]")
+# 言葉の空欄(正社員のヒアリングの下書き。職歴カードでパスした「何をしていたか」「どうなったか」。dip_mcp/career/draft.py)。
+# 数字の空欄と合わせて、下書きの空欄に数える(BLANK_RE)。ゲームの書類には出ない
+WORDS_MARK = "言葉を入れる"
+BLANK_RE = re.compile(rf"\[[^\]]*(?:数字を入れる|{WORDS_MARK}|add your number)[^\]]*\]")
+
+
+def number_blank(label: str) -> str:
+    """見出しつきの数字の空欄(例「[規模 ← 数字を入れる]」)。"""
+    return f"[{label} ← 数字を入れる]"
+
+
+def words_blank(label: str) -> str:
+    """見出しつきの言葉の空欄(例「[どうなったか ← 言葉を入れる]」)。"""
+    return f"[{label} ← {WORDS_MARK}]"
 
 
 def has_placeholder(text: str) -> bool:
@@ -30,6 +44,11 @@ def has_placeholder(text: str) -> bool:
 
 def placeholder_count(text: str) -> int:
     return len(PLACEHOLDER_RE.findall(str(text or "")))
+
+
+def blank_count(text: str) -> int:
+    """下書きの空欄(数字と言葉)の数。"""
+    return len(BLANK_RE.findall(str(text or "")))
 
 
 # ----------------------------- 文字をそろえる -----------------------------
@@ -163,7 +182,7 @@ def check_numbers(text, sources: list[str] | str) -> tuple[str, int]:
         return s, 0
     folded = _fold_sources(sources)
     out, replaced, last = [], 0, 0
-    keep = [m.span() for m in PLACEHOLDER_RE.finditer(s)]
+    keep = [m.span() for m in BLANK_RE.finditer(s)]
 
     def inside(i: int) -> bool:
         return any(a <= i < b for a, b in keep)

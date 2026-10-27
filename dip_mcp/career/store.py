@@ -7,6 +7,13 @@
   形は {"segment": {"value", "at"}, "items": {ハーネスの欄の key: {"status", "text", "value", "number", "range", "unit", "at"}}}
 - 保存するのは確かめた値(high)だけ。パスと「覚えていない」の職歴カードの欄も、空欄として残す(下書きの空欄の仕組みで
   後から埋めるので、次の相談では聞かない。§4)。条件のパスは「こだわりなし」のときだけ希望に入れる
+- 職歴カードの欄の数字は、保存の前に本人の発言(summary の sources。dip_mcp.career.draft.sources)と比べる。無い数字
+  (「1200社」から抜いた「200社」など)は保存せず、数字の空欄にして保存する(resume_lines.check_numbers。下書きと同じ空欄。
+  次の相談では聞かず、下書きの画面で埋める)。空欄に置き換えて VALUE_MAX を超えた欄は、長すぎる値と同じく入れない
+  (次の相談でまた聞く)。確かめた欄には checked を付ける(本人がプロフィール画面で直した欄も。次の相談の下書きで、
+  確かめた本人の言葉として扱う。dip_mcp.career.draft.trusted)。トークの AI が直した欄(update)には付けない。
+  AI が渡す文が本人の言葉そのものかを、コードで確かめられないため。次の相談で、履歴書と checked の欄の言葉と比べ、
+  無い数字は数字の空欄にしてから出す(harness.apply_saved)
 - 次の相談を始めるときは、保存した segment と欄を high としてハーネスに入れ、聞かない(prefill。from は saved)。
   閉じるときに from=saved の欄は書き直さない(相談の途中にプロフィール画面で直した・消した値を、前の値に戻さないため)
 - 逆選択などの NG は、避けたいこと(avoids)に入れる(session が前の値に足す)。避けたいことがあれば、次の相談で逆選択を聞かない
@@ -23,6 +30,7 @@ from __future__ import annotations
 from dip_mcp.career import harness as H
 from dip_mcp.data import State, now
 from resume_draft.pii import personal_value
+from resume_lines import check_numbers
 
 KEY = "career_profile"
 # 条件の欄 → 希望の項目(dip_mcp.logic.PREFERENCE_KEYS)
@@ -33,7 +41,7 @@ PREFERENCE_SLOTS = {"why_now": "why_now", "area": "area", "min_annual_salary": "
 SEGMENT_SLOTS = tuple(s for seg in H.SEGMENTS for s in H.SEGMENT_HARD[seg])
 CARD_SLOTS = tuple(H.card_key(n, f) for n in range(1, H.CARD_COUNT + 1) for f in H.CARD_FIELDS)
 PROFILE_SLOTS = SEGMENT_SLOTS + CARD_SLOTS
-VALUE_MAX = 200  # 1 つの欄の字数の上限(本人の言葉のまま。相談のまとめと同じ長さ)
+VALUE_MAX = H.SAVED_TEXT_MAX  # 1 つの欄の字数の上限(本人の言葉のまま。相談のまとめと同じ長さ)
 SEGMENT_LABEL = "今のあなたに近いの"
 CARD_TITLES = {1: "職歴1(直近)", 2: "職歴2(その前)"}
 SHOWN = {"passed": H.PASS, "dont_know": H.DONT_KNOW}  # 空欄として残した欄の見せ方
@@ -70,9 +78,12 @@ def preferences_of(slots: dict) -> dict[str, str]:
 
 def save(state: State, line_user_id: str, summary: dict) -> list[str]:
     """segment と、職歴カード・segment だけの欄のうち high のものを career_profile に入れる(欄ごとに上書き)。
-    summary は {"segment", "slots", "pending", "saved_segment"}(ハーネスの状態の欄と、前の相談で保存して入れた segment)。
-    segment が決まらないまま来た segment だけの欄(pending)も、high なら入れる。前の相談の値は書き直さない。保存した key。"""
+    summary は {"segment", "slots", "pending", "saved_segment", "sources"}(ハーネスの状態の欄、前の相談で保存して入れた
+    segment、数字を確かめる元)。segment が決まらないまま来た segment だけの欄(pending)も、high なら入れる。
+    職歴カードの欄の数字のうち sources に無いものは、数字の空欄にして入れる(数と区切りも持たない)。前の相談の値は
+    書き直さない。保存した key。"""
     at = now(line_user_id).isoformat()
+    src = list(summary.get("sources") or [])
     slots = {**{s: e for s, e in (summary.get("pending") or {}).items()}, **(summary.get("slots") or {})}
     items = {}
     for s in PROFILE_SLOTS:
@@ -82,8 +93,16 @@ def save(state: State, line_user_id: str, summary: dict) -> list[str]:
         text = str(e.get("text") or "")
         if e["status"] == "filled" and (not text.strip() or _error(text)):
             continue
-        items[s] = {"status": e["status"], "text": text.strip(), "value": e.get("value"), "number": e.get("number"),
-                    "range": e.get("range"), "unit": e.get("unit"), "at": at}
+        item = {"status": e["status"], "text": text.strip(), "value": e.get("value"), "number": e.get("number"),
+                "range": e.get("range"), "unit": e.get("unit"), "at": at}
+        if s in CARD_SLOTS:
+            item["text"], replaced = check_numbers(item["text"], src)
+            if replaced:  # 本人の言葉に無い数字: 数と区切りも持たない(下書きの画面で埋める)
+                item |= {"value": None, "number": None, "range": None}
+                if _error(item["text"]):  # 空欄に置き換えて長くなった(VALUE_MAX を超えた)。長すぎる値と同じく入れない
+                    continue
+            item["checked"] = True
+        items[s] = item
     seg = summary.get("segment")
     seg = seg if seg in H.SEGMENTS and seg != summary.get("saved_segment") else None
     if not items and seg is None:
@@ -179,17 +198,21 @@ def label(key: str) -> str | None:
     return None
 
 
-def edit(u: dict, key: str, value: str, at: str) -> str | None:
-    """本人がプロフィール画面で欄を本人の言葉で直す(u は 1 人の dict。上書き)。直せないなら理由。segment は直さない
-    (選び直しは次の相談で。消すことはできる)。数と区切りは、本人が直した文からは作らない(文だけを持つ)。"""
+def edit(u: dict, key: str, value: str, at: str, checked: bool = False) -> str | None:
+    """欄を本人の言葉で直す(u は 1 人の dict。上書き)。直せないなら理由。segment は直さない
+    (選び直しは次の相談で。消すことはできる)。数と区切りは、本人が直した文からは作らない(文だけを持つ)。
+    checked は、本人がプロフィール画面で打った文のとき(dip_mcp.profile.edit_career_item)だけ True にする。
+    トークの AI が直すとき(update)は付けない(次の相談で数字を確かめてから出す。harness.apply_saved)。"""
     if key not in PROFILE_SLOTS:
         return "unknown_key"
     if not value:
         return "empty"
     if err := _error(value):
         return err
-    u.setdefault(KEY, {}).setdefault("items", {})[key] = {"status": "filled", "text": value, "value": None, "number": None,
-                                                          "range": None, "unit": None, "at": at}
+    item = {"status": "filled", "text": value, "value": None, "number": None, "range": None, "unit": None, "at": at}
+    if checked:  # 本人が打った文そのものなので、数字は確かめたことにする
+        item["checked"] = True
+    u.setdefault(KEY, {}).setdefault("items", {})[key] = item
     return None
 
 
@@ -203,7 +226,8 @@ TALK_ERRORS = {"unknown_key": "直せるのは item の説明にある欄だけ�
 
 def update(state: State, line_user_id: str, key: str, text: str) -> dict:
     """トークで本人が言い直した欄を直す(dip のツール update_career_card。プライバシーポリシー 1.4 §7 の LINE の「直す」)。
-    中身はプロフィール画面で直すのと同じ(edit。本人の言葉のまま上書きし、数と区切りは作らない)。トークの AI 自身が
+    中身はプロフィール画面で直すのと同じ(edit。本人の言葉のまま上書きし、数と区切りは作らない)。ただし確かめた印
+    (checked)は付けない(AI が渡す文の数字が本人の発言にあるかを、コードで確かめられないため)。トークの AI 自身が
     直すので、画面で直したときの知らせ(profile_changes)は残さない。直すのは、もう保存している欄(パスと「覚えていない」の
     空欄も含む)だけ。保存していない欄は作らない(ヒアリングを通らずに職歴を足す道にしないため。not_saved)。"""
     text = str(text or "").strip()

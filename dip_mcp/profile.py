@@ -183,7 +183,7 @@ def edit_career_item(state: State, line_user_id: str, key: str, value: str) -> d
 
     def apply(u):
         nonlocal err
-        if err := career_store.edit(u, key, value, now(line_user_id).isoformat()):
+        if err := career_store.edit(u, key, value, now(line_user_id).isoformat(), checked=True):
             return
         _note(u, "直した", career_store.label(key), value)
 

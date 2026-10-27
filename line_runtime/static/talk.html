@@ -419,7 +419,7 @@
     for (const d of p.arcade_drafts) {
       const r = el("div", "prow"); r.dataset.key = `arcade-${d.id}`;
       r.appendChild(el("div", "pv", `${d.at} に「${d.game}」で作った${d.document_kind}の下書き`));
-      if (d.blanks) r.appendChild(el("span", "pl", `数字の空欄が${d.blanks}か所あります`));
+      if (d.blanks) r.appendChild(el("span", "pl", `空欄が${d.blanks}か所あります`));
       const b = el("div", "pbtns"), a = el("a", null, "見る・直す");
       a.href = d.view_url; a.target = "_blank"; a.rel = "noopener";
       b.append(a, btn("消す", "del", () => confirmIn(r, "この下書きを丸ごと消します。チャットでも使われなくなります。", "消す", () => change("DELETE", `/arcade/${d.id}`))));

@@ -1816,7 +1816,9 @@ def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | N
       その数字を示して確かめる(本人がその数字を言うより前に、空欄の問いの返信にその数字がある。選択肢だけでは数えない)
     空欄の問いは、本人が「空欄を埋める」を選んでも、エージェントが自分から聞いても(playbook の場面)同じに見る。"""
     out = []
-    shown = [i for i, r in enumerate(turns) if draft_buttons(r)]
+    # 正社員のヒアリングの結果の「下書きを開く」(ハーネスの返信。返信に career が付く)は数えない。下書きの保存の知らせと同じく
+    # コードが作る返信で、空欄の数字を聞いた後の案内ではない
+    shown = [i for i, r in enumerate(turns) if draft_buttons(r) and not r.get("career")]
     if len(shown) > 1:
         out.append(f"T{shown[1] + 1}: 「{DRAFT_LABEL}」を1つの会話で{len(shown)}回出した(1回だけ)")
     asked = [i for i, r in enumerate(turns)

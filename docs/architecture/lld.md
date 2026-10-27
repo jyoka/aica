@@ -42,7 +42,7 @@ flowchart TB
     end
     subgraph ra["resume_arcade"]
         stages["stages.py、prompts.py、schemas.py<br/>段ごとの指示、呼び出し、事実の確かめ"]
-        adraft["draft.py<br/>Markdown を Resume Draft に"]
+        adraft["draft.py<br/>resume_draft.markdown の呼び名"]
     end
     subgraph rl["resume_lines"]
         lines["__init__.py<br/>数字の検出、空欄、事実の確かめ"]
@@ -51,7 +51,7 @@ flowchart TB
         extract["extract.py"]
     end
     subgraph rd["resume_draft"]
-        rdraft["schema.py、pii.py<br/>Resume Draft の形、個人情報の決まり"]
+        rdraft["schema.py、pii.py、markdown.py<br/>Resume Draft の形、個人情報の決まり、書類の Markdown"]
     end
     subgraph vr["voice_resume(音声ワーカー)"]
         vagent["agent.py<br/>entrypoint"]
@@ -100,6 +100,7 @@ flowchart TB
     stages --> lines
     darc --> lines
     darc --> rdraft
+    rdraft --> lines
     logic --> darc
     profile --> darc
     vdip -. "子プロセスとして起動" .-> mcp
@@ -232,11 +233,11 @@ classDiagram
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
 | `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`for_agent`、`head`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`AGENT_APPLICATIONS`、`AGENT_SAVES`、`SUMMARIES_PATH` |
 | `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
-| `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
+| `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。正社員のヒアリングの下書きも同じ場所に `CAREER_DRAFT`(`career`)の 1 件として入れる(`save_career_draft`。ゲームの指標には数えない)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`save_career_draft`、`CAREER_DRAFT`、`blanks`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
 | `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」) | `harness`、`session` |
-| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`) | `harness`、`session`、`store` |
+| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247) | `harness`、`session`、`store`、`draft` |
 | `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/` | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md`。ハーネス版は `parttime_chat_harness.md` と `fulltime_chat_harness.md` | - |
 
@@ -408,6 +409,7 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
 | `schema.py` | Resume Draft の形と envelope(5.5) | `ResumeDraft`(と 5 つの部品の型)、`envelope`、`document_kind_of`、`FORMAT_VERSION`(`1.0`)、`FORMAT_VERSION_WITH_KIND`(`1.1`)、`PERSONAL_KEYS`、`DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`JST` |
+| `markdown.py` | 書類の Markdown(`arcade-ja.js` の `resumeMarkdown` の形)を Resume Draft に写す。空欄(数字の空欄と言葉の空欄。`resume_lines.BLANK_RE`)のある行と勤務先ごとに `unconfirmed` を 1 つ。ゲームの下書きと正社員のヒアリングの下書き(`dip_mcp/career/draft.py`)が使う。`resume_lines` だけに依存する(`dip_mcp` が `resume_arcade` を import しないため、task 247 で `resume_arcade/draft.py` から移した) | `parse_markdown`、`to_envelope`、`unconfirmed`、`SOURCE`、`MARKDOWN_MAX`、`EMPTY_JOB` |
 | `pii.py` | 電話、メール、住所、郵便番号の決まり。どれも照合の前に `fold_pii` で全角をそろえる | `PII_VALUE`、`fold_pii`、`has_pii`、`redact_pii`(探す)、`ADDRESS_LIKE`、`address_spans`(住所)、`looks_like_address`(調べものの問いの住所の形)、`personal_value`、`redact_personal`(電話、メール、住所)、`SCRUB_PATTERNS`、`scrub_pii`(消す) |
 
 - `has_pii` と `redact_pii` は電話とメールを探します。希望、相談の記録の照合に使います。伏せた所には `REDACTED`(`[個人情報を削除]`)を入れます。
@@ -511,7 +513,7 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | `stages.py` | 段の一覧(`STAGES`)。段ごとに入力の形、出力の形、指示の文、事実の確かめ、反応かまとめか(`kind`)、モデル(`tier`)を持つ。`prepare` で形を確かめて電話とメールを伏せ、`run` で 1 回呼ぶ | `STAGES`、`stage`、`prepare`、`run`、`summary_chars`、`model_for`、`QUICK_MODEL`、`Outcome` |
 | `prompts.py` | 指示の文。元はゲームの画面の中の prompt の関数。本人のデータは `<<<` と `>>>` の中に JSON で入れる | `case_opening`、`case_reaction`、`case_lab`、`case_verdict`、`harvest_turn`、`harvest_final` |
 | `schemas.py` | 段ごとの入力と出力の pydantic。長すぎる文字列は切る(答え 600 字、行 120 字、引用 40 字)。リストの数が多すぎれば形の違いとして扱う | `ANSWER_MAX`、`LINE_MAX`、`QUOTE_MAX`、`LINES_PER_JOB`、`JOBS_MAX`、`SUMMARY_MAX` |
-| `draft.py` | 書類の Markdown(`arcade-ja.js` の `resumeMarkdown` の形)を Resume Draft に写す。空欄のある行ごとに `unconfirmed` を 1 つ | `parse_markdown`、`to_envelope`、`unconfirmed`、`SOURCE`、`MARKDOWN_MAX` |
+| `draft.py` | 書類の Markdown を Resume Draft に写す。中身は `resume_draft.markdown`(1.8)で、ここはゲームの側の呼び名を残す | `parse_markdown`、`to_envelope`、`unconfirmed`、`SOURCE`、`MARKDOWN_MAX` |
 
 段の一覧です。反応は 1 回の遊びで 50 回まで、まとめは 2 回(数えるのは `dip_mcp.arcade.use_ai`)。
 
@@ -540,6 +542,7 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
 | `find_metric`、`has_metric`、`is_dateish` | `arcade-ja.js` の `findMetric` の写し。範囲、単位つきの数、漢数字(三割、半分)、順位の順に探す。4 桁の年と暦の日付は数えない |
 | `is_vague` | あいまいさ(日本語の字数と、数字が要るか) |
 | `PLACEHOLDER`、`PLACEHOLDER_YEN`、`PLACEHOLDER_COUNT`、`PLACEHOLDER_WHEN`、`PLACEHOLDER_RE`、`placeholder_count` | 数字の空欄 |
+| `number_blank`、`words_blank`、`WORDS_MARK`、`BLANK_RE`、`blank_count` | 見出しつきの空欄(`[規模 ← 数字を入れる]`、`[どうなったか ← 言葉を入れる]`)。言葉の空欄は正社員のヒアリングの下書きだけに出る。下書きの空欄の数(`dip_mcp.arcade.blanks`)は、数字と言葉の空欄を合わせて数える。要約の `blank_lines`(数字を聞いてよい行)は数字の空欄だけ |
 | `check_numbers(text, sources)` | text の数字のうち sources に無いものを空欄にする。(置き換えた文, 数)。比べる前に NFKC、空白を除く(数字と数字の間の空白は 1 つ残す)、桁の区切りを外す。sources は 1 欄ずつそろえて区切りをはさんでつなぐ(隣の欄の数字がくっついて、年数「5」+「10人」が「510人」にならないように)。漢数字は書いたままの形で比べる(三割を 30% と言い換えたら空欄)。空欄の種類は単位で選ぶ(%・割・倍は `[+X% …]`、円は `[X円 …]`、年と日付は `[時期 …]`、ほかは `[N件 …]`) |
 | `quote_in(quote, sources)` | 引用が sources のどれか 1 欄にそのままあるか(同じそろえ方。2 つの欄にまたがる引用は認めない) |
 
@@ -1460,6 +1463,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/career/harness.py`、`bank.json` | 3 段の `turn()`、職歴カード、時間の予算、フェーズ、まとめのカード(task 245)。前の相談で保存した欄を入れる `apply_saved`(task 255) |
 | `dip_mcp/prompts/career/` | 抽出(`prompt_extract_ja.txt`)と言い方(`prompt_say_ja.txt`)。まとめと結果はハーネスの決まった文で、モデルを呼ばない |
 | `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
+| `dip_mcp/career/draft.py` | result に着いたときに、職歴カードから職務経歴書の下書きを作る(`build`、`create`。LLM を呼ばない。task 247)。下の「下書き」 |
 | `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
 | `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
 | `dip_mcp/career/ui.py` | 形 D で、そのターンに付ける部品(`ui`)と、その字を読む時間(task 246)。`session` が `turn()` の前後から呼ぶ |
@@ -1485,7 +1489,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | 帯 | 条件(HARD と MID)か職歴カードの欄が埋まったターン(上の部品が無いとき)。前の相談で保存した欄と履歴書の欄は、始めたときから埋まっていたものとして数える(「いま埋まった」に出さない)。`CAREER_UI_BAND=off` なら付けない(相談を始めたときに覚える) | `career.ui.fresh_mem`、`progress_ui.band_flex` |
 | 「始める」の 1 枚 | 見出し「職務経歴書を3分で」、フェーズの番号の丸(条件、職歴、まとめ)、「目安 3〜5分」。ボタンは「始める」(発言)、「履歴書の写真から始める(いちばん早い)」(LIFF の履歴書の読み込み。LIFF の設定が無ければ出さない)、「あとで」。ハーネスは最初の問いを「始める」の後に出す(`mode=start`。数えない)。ボタンを押さずに打った文は、最初の問いへの答えとして読む | `harness.start`、`career_ui.start_flex` |
 | まとめ | 行は吹き出しでなく Flex に入れる(吹き出しは「まとめです。違うところを押すか、送ってください。」)。行ごとに「直す」(職歴カードの行は「仕事」「規模」「結果」)。押すと「勤務地を直す」のような文を本人の発言として送り、ハーネスはその欄の問いを出す(`mode=fix`。数えない)。答えは high で入れ(場面の二択しか無い欄も)、まとめに戻る(まとめの回数は増やさない)。パスと「覚えていない」は、前の値が high でも、問いのフェーズによらず空欄(条件の欄は「こだわりなし」)にする(推し量った前の値を残さない)。直す問いのボタンには「そのまま」(`FIX_KEEP`)を足し、押すと値を変えずにまとめに戻る(押し間違えた「直す」をやめる。review のターンに数える)。直している間に別の「直す」を押した、前のまとめに残ったボタンを押したときも、今の segment の欄ならその欄を直す(ボタンの文を値にしない)。直した答えは review のターンに数え、「これでOK」の 1 ターンを残して受ける(`can_fix`。尽きたら「ここからは、違うところを文で送ってください。」とまとめを出し直す)。直している間の雑談は数えない | `harness.fix_targets`、`can_fix`、`fix_question`、`_apply_fix`、`career_ui.review_flex` |
-| 全部の完成 | カルーセル。先頭は条件のプロフィールカードと空欄の数、続けて仕事が埋まった職歴カード。下書きを開くボタンは、職歴カードの下書きの画面(fulltime-hearing.md §9 の 4)ができてから(`draft_url` が今は無い) | `career.ui._complete`、`career_ui.complete_flex` |
+| 全部の完成 | カルーセル。先頭は条件のプロフィールカードと空欄の数(結果の文の「空欄はNつ」と同じ `h.result["blanks"]`)、続けて仕事が埋まった職歴カード。先頭の下に「下書きを開く」(`draft_url`。`session.turn` が下書きを作った後に `draft.view_url` を入れる。None ならボタンを出さない。task 247) | `career.ui._complete`、`career_ui.complete_flex` |
 | 読む時間 | Flex の中の字(ボタンのラベルも)を、本人の推定時間に足す(§3.3)。職歴カード、まとめ、「始める」の字は Flex の中と同じ数。帯とプロフィールカードは `progress_ui` が切るので見積もり(切らないときの字で、上限まで) | `career.ui.read_chars`、`add_read` |
 | Web のトーク | Flex を描かず、文の形を最後の吹き出しに足す(`progress.text`)。まとめの「直す」は選択肢の後ろに足す(`progress.quick_replies`。合わせて 13 個まで) | `career_ui.build`、`talk-core.js` の `renderReply` |
 | 評価の本人役 | Flex の中の字(ボタンのラベルも)を文で読む | `career_ui.flex_lines`、`flex_text` |
@@ -1497,7 +1501,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 
 | 終わり方 | 返信 | 保存 |
 |---|---|---|
-| result に着いた | 結果の文と、選択肢「求人を見る」「今はいい」(押した文はトークの AI が受ける) | 確かめた値(high)を保存して閉じる |
+| result に着いた | 結果の文と、選択肢「求人を見る」「今はいい」(押した文はトークの AI が受ける)。下書きの画面を開くボタン「下書きを開く」(下書きの画面の URL があるときだけ。LINE は LIFF の設定があるとき)。入口は 1 つで、LINE の形 D は完成のカルーセル(`ui.complete.draft_url`)、形 B と C と Web のトーク(カルーセルを文にする)は返信の `buttons` | 確かめた値(high)を保存して閉じる。職歴カードから下書きを作る |
 | 「あとで」を押した、答えと一緒に「また今度」と打った | 「ここまでの分を残しました。続きはいつでもどうぞ。」と、結果と同じ選択肢「求人を見る」「今はいい」(最後の返信を選択肢なしで終えない) | そこまでの high を保存して閉じる。続きから再開はしない |
 | 「今はいい」「やめる」など、review の前の「バイトで探したい」、区分が正社員から外れた、新しい会話 | トークの AI が受ける | 同じ |
 
@@ -1505,6 +1509,12 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
   パスは「こだわりなし」のときだけ入れる(なぜ今と次にやりたいことのパスは入れない)
 - segment、segment だけの欄(上げたいもの、変えたい理由など)、職歴カードの欄は `career_profile` に。職歴カードのパスと「覚えていない」も、空欄として残す
   (下書きの空欄で後から埋める。設計メモ §4)。個人情報らしい値と 200 字を超える値は入れない
+- 職歴カードの欄の数字は、保存の前に下書きと同じ元(`draft.sources`)と `resume_lines.check_numbers` で比べる。無い数字は保存せず、
+  数字の空欄にして保存する(数と区切りも持たない。次の相談では聞かない)。空欄に置き換えて 200 字を超えた欄は、長すぎる値と同じく入れない。
+  保存した職歴カードの欄と、本人がプロフィール画面で直した欄(`profile.edit_career_item`)は `checked` を持つ。トークの AI が直した欄
+  (`store.update`)には付けない。AI が渡す文の数字が本人の発言にあるかを、コードで確かめられないため
+- 次の相談で入れるとき(`harness.apply_saved`)、`checked` の無い職歴カードの欄は、数字を履歴書の欄と `checked` の欄の言葉と比べ、
+  無い数字を数字の空欄にしてから入れる(数と区切りも持たない)。まとめのカードと下書きの数字がそろう
 - 推測のまま(low)の値は保存しない。まとめで確かめていないため。次の相談で聞き直す
 - 逆選択などの NG は、避けたいこと(`avoids`)に、前の値に足して入れる(アルバイト・パートと同じく 100 字に入るところまで、今回の NG を先に)
 - 次に `start_career_consultation` を呼ぶと、`stated_preferences` の条件と `career_profile` の欄を high(from は `saved`)として入れ、聞かない。
@@ -1512,6 +1522,25 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 - 閉じるときに、from が `saved` の欄と、前の相談の segment は書き直さない。相談の途中にプロフィール画面で直した・消した値を、前の値に戻さないため
 - `career_profile` はプロフィール画面で欄ごとに見て、直して、消せる。LINE は「データを見る」に出る。書き出しと「すべて消す」は 1 人の行ごとなので、
   これも入る(プライバシーポリシー 1.4 の §6・§7 の範囲。task 255 で確かめた)
+
+下書き(`dip_mcp/career/draft.py`。task 247、設計メモ §4):
+
+- 作り方は、`voice_resume.prompts.CAREER_DRAFTER_SYSTEM`(LLM)ではなく、ゲームの下書きの形(Markdown を `resume_draft.markdown.to_envelope`)に
+  コードで写す。下書きの画面(`/liff/arcade/draft`)と空欄の仕組み(`line-sim-scenarios.md` §14)が、どちらも書類の Markdown と `[… ← 数字を入れる]` の
+  空欄を前提にしているため。LLM を呼ばないので、数字を作る道が無く、結果のターンに待ち時間と費用が増えず、モックの回帰で確かめられる
+- 形: `# [氏名]`、連絡先の空欄、空の `## 職務要約`、`## 職務経歴`。職歴カード 1 枚が `### 何をしていたか` と `- 規模: …`、`- 結果: …` の 1 件(直近が先)。
+  2 枚目は何をしていたかが確かめた値のときだけ。書くのは本人の言葉(ボタンならラベル。区切りは「くらい」つき)だけ。条件は書かない(応募先に出す書類のため)
+- 空欄: `harness.blank_cards` の欄(パス、「覚えていない」、聞かなかった、推測のまま)。規模は `[規模 ← 数字を入れる]`、ほかは言葉の空欄。
+  個人情報らしい値と 200 字を超える値も空欄にする。結果の文の「空欄はNつ」は、`harness._finish` が `draft.build` の空欄を数えたもの
+  (`blank_cards` の欄と、下の `replaced` の数字の空欄の和)なので、下書きの空欄の数(`arcade.blanks`)とそろう。形 D の完成のカルーセルの
+  「空欄Nつ」も同じ数(`h.result["blanks"]`)
+- 数字を作らない(設計メモ §6.4 の関門): 欄の数字を `resume_lines.check_numbers` で、本人の発言(`harness.State.said`。押したボタンのラベルも)と、
+  履歴書の欄と、前の相談で保存した欄のうち `checked` を持つものの言葉に照らし、無ければ数字の空欄に戻す(`replaced`)。`checked` の無い保存した値
+  (印より前の版で保存した値)は元にせず、ほかの欄と同じく発言と比べる(`draft.trusted`)。`evals/career_sim.py` が `made_up_number` として数える
+- 置き場所はゲームの下書きと同じ `arcade_drafts`(key は `career`。1 人に 1 つで、次の相談で置き換わる)。下書きの画面、プロフィールの
+  「ゲームで作った下書き」、要約の `arcade_draft`(`game` は「正社員の相談」)、`used_entries` の `arcade`、「すべて消す」もゲームの下書きと同じ
+- 「あとで」で閉じたときは作らない
+- 評価の `draft_number_violations` は、結果の「下書きを開く」(返信に `career` が付く)を「下書きを見る」の 1 回に数えない
 - LINE の「直す」(ポリシー 1.4 §7 の「トークで言い直す」): 本人が言い直したら、トークの AI が直す。職歴カードの欄と segment だけの欄は
   dip のツール `update_career_card`(`store.update`。中身はプロフィール画面と同じ `store.edit` で、文だけを持ち、数と区切りは作らない。
   AI 自身が直すので、画面で直したときの知らせ `profile_changes` は残さない。直すのは、もう保存している欄だけで、保存していない欄は

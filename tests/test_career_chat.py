@@ -188,7 +188,8 @@ def test_line_talk_correction_fixes_career_conditions_and_card_fields(tmp_path, 
         store.save(st, uid, {"segment": "same_path", "slots": {
             "career1.role": {"status": "filled", "text": "物流会社で現場リーダー、6年", "confidence": "high"},
             "career1.scale": {"status": "filled", "text": "5人くらい", "range": [1, 7], "unit": "人", "confidence": "high"},
-            "career1.result": {"status": "filled", "text": "誤出荷が半分になった", "confidence": "high"}}})
+            "career1.result": {"status": "filled", "text": "誤出荷が半分になった", "confidence": "high"}},
+            "sources": ["物流会社で現場リーダー、6年", "5人くらい"]})  # 職歴カードの数字は本人の発言と比べて保存する
         _say(client, "データを見る", 2)
         assert len(model.script) == 2  # 見るのはモデルを呼ばない
         _say(client, "なぜ今は年収を上げたいから、次は物流の業務改善、一人で任されたい。職歴1は30人くらいで、誤出荷がゼロになった", 3)
@@ -245,7 +246,8 @@ def test_career_cards_in_the_summary_carry_their_number_after_card_1_is_deleted(
     store.save(st, UID, {"segment": "same_path", "slots": {
         "career1.role": {"status": "filled", "text": "物流会社で現場リーダー、6年", "confidence": "high"},
         "career2.role": {"status": "filled", "text": "倉庫スタッフ", "confidence": "high"},
-        "career2.result": {"status": "filled", "text": "手順書を作った", "confidence": "high"}}})
+        "career2.result": {"status": "filled", "text": "手順書を作った", "confidence": "high"}},
+        "sources": ["物流会社で現場リーダー、6年"]})
     assert profile.delete_career_item(st, UID, "career1.role") == {"deleted": "career1.role"}
     cards = logic.conversation_summary(st, UID)["career_profile"]["career_cards"]
     assert cards == [{"n": 2, "role": "倉庫スタッフ", "result": "手順書を作った"}]
@@ -487,7 +489,8 @@ def _saved_profile(st: State) -> None:
     store.save(st, UID, {"segment": "same_path", "slots": {
         "raise_target": {"status": "filled", "text": "年収", "confidence": "high"},
         "career1.role": {"status": "filled", "text": "物流会社で現場リーダー、6年", "confidence": "high"},
-        "career1.scale": {"status": "dont_know", "text": H.DONT_KNOW, "confidence": "high"}}})
+        "career1.scale": {"status": "dont_know", "text": H.DONT_KNOW, "confidence": "high"}},
+        "sources": ["物流会社で現場リーダー、6年"]})
 
 
 def test_profile_shows_edits_and_deletes_career_cards(tmp_path):

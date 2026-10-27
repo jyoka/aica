@@ -11,6 +11,8 @@ dip_mcp/baito/session.py と同じ。
   モデルの出力が要るときは status=llm でプロンプトを返し、ランタイムがモデルを呼んで、出力を全部 llm_outputs に入れて呼び直す。
   最後まで進んだ回だけ状態を保存する(途中の回は保存しない)
 - 終える: result に着いたら、確かめた条件を stated_preferences に、職歴カードと segment を career_profile に保存して閉じる。
+  職歴カードから職務経歴書の下書きも作り(dip_mcp/career/draft.py。task 247)、「下書きを開く」のボタンを付ける
+  (LINE の形 D は完成のカルーセル、ほかの形と Web のトークは結果の返信)。
   「あとで」・本人がやめると言った・区分が正社員から外れた・新しい会話を始めたときも、そこまでの分(high)を保存して閉じる。
   続きから再開はしない(次の相談は、保存した分を聞かずに始め直す)
 
@@ -24,7 +26,7 @@ from __future__ import annotations
 
 import re
 
-from dip_mcp import logic
+from dip_mcp import arcade, logic
 from dip_mcp.baito.session import (
     EXIT_HOLD,
     EXIT_WORDS,
@@ -32,6 +34,7 @@ from dip_mcp.baito.session import (
     ReplayLLM,
     ReplayMismatch,
 )
+from dip_mcp.career import draft as career_draft
 from dip_mcp.career import harness as H
 from dip_mcp.career import store
 from dip_mcp.career import ui as UI
@@ -46,6 +49,7 @@ CAREER_TRACK = "正社員"
 # 結果の後の選択肢(アルバイト・パートの相談と同じ。押した文はトークの AI が受ける)。「あとで」で閉じたときも同じものを付ける
 # (返信を選択肢なしで終えない決まり。急いでいる本人が次に文字を打たずに済むように)
 RESULT_CHOICES = ["求人を見る", "今はいい"]
+DRAFT_LABEL = "下書きを開く"  # 下書きの画面を開くボタン(設計メモ §5.2 の「全部の完成」。カルーセルの字 line_runtime/career_ui.py と同じ)
 START_NOTE = ("相談を始めた。この返信は、question の bubbles をそのまま送る(言い換えない。LINE 側が返信の吹き出しを"
               "bubbles に、選択肢を question の choices に置き換える)。次の質問からはハーネスが進める。")
 MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(文の答えで抽出 2 回 + 生成 2 回)
@@ -154,7 +158,10 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
     - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある
-    - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目"""
+    - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目。
+      result に着いたときだけ、職歴カードから作った下書き(draft: id、blanks、replaced、view_url)が付く。下書きの画面を開く
+      入口は 1 つ: LINE の形 D は完成のカルーセルの「下書きを開く」(ui.complete.draft_url)、ほかの形と Web のトーク
+      (カルーセルを文にする)は返信の buttons。どちらも view_url があるときだけ(LINE は LIFF の設定があるとき)"""
     h = _load(state, line_user_id)
     if h is None:
         return {"active": False}
@@ -181,8 +188,17 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
            "llm_calls": llm.used} | ({"ui": ui} if ui else {})
     if r["done"]:
         saved = _finish(state, line_user_id, h)
-        return out | {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved,
-                      "blank_cards": H.blank_cards(h)}
+        out |= {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved, "blank_cards": H.blank_cards(h)}
+        if h.closed:  # 「あとで」: 下書きは作らない(続きは次の相談で聞く)
+            return out
+        d = career_draft.create(state, line_user_id, h)
+        out["draft"] = d
+        if ui and ui["kind"] == UI.COMPLETE:  # 形 D: 完成のカルーセルが入口(設計メモ §5.2)
+            ui["complete"]["draft_url"] = d["view_url"]
+            if arcade.is_line_user(line_user_id):  # LINE はカルーセルを Flex で描くので、返信のボタンと二重にしない
+                return out
+        # 形 B と C(カルーセルが無い)と、Web のトーク(カルーセルを描かず文にする。talk-core.js)は、返信のボタンが入口
+        return out | {"buttons": [{"label": DRAFT_LABEL, "url": d["view_url"]}] if d["view_url"] else []}
     _save(state, line_user_id, h, ui=mem)
     return out
 
@@ -195,7 +211,8 @@ def _finish(state: State, line_user_id: str, h: H.State) -> list[str]:
     saved_segment = (state.user(line_user_id).get(KEY) or {}).get(SAVED_SEGMENT)
     _drop(state, line_user_id)
     # summary() の欄は評価の形(value を持たない)なので、ハーネスの欄をそのまま渡す(「こだわりなし」を見分けるため)
-    s = {"segment": h.segment, "slots": h.slots, "pending": h.pending, "saved_segment": saved_segment}
+    s = {"segment": h.segment, "slots": h.slots, "pending": h.pending, "saved_segment": saved_segment,
+         "sources": career_draft.sources(h)}  # 職歴カードの数字は、下書きと同じ元で確かめてから保存する
     prefs = store.preferences_of(s["slots"])
     if h.user_ng:
         before = ((state.user(line_user_id).get("preferences") or {}).get("avoids") or {}).get("value") or ""

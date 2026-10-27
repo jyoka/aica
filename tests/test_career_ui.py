@@ -547,8 +547,10 @@ def test_complete_is_a_carousel_led_by_the_profile_card_with_the_blank_count():
     assert flex["type"] == "carousel" and len(flex["contents"]) == 1 + len(ui["complete"]["cards"])
     first = C.flex_lines(flex["contents"][0])
     assert first[0] == P.HEAD
-    blanks = len(H.blank_cards(h))
+    blanks = h.result["blanks"]  # 結果の文の「空欄はNつ」と同じ数(職歴カードの下書きの空欄)
+    assert ui["complete"]["blanks"] == blanks and (f"空欄は{blanks}つ" in turns[-1][1]["reply"]) is bool(blanks)
     assert (f"空欄{blanks}つ。あとから埋められます" in first) is bool(blanks)
+    assert ui["complete"]["draft_url"] is None  # 下書きの画面の URL は session.turn が下書きを作った後に入れる
     assert C.flex_lines(flex["contents"][1])[0] == "職歴1(直近)"
 
 

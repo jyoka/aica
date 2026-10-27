@@ -268,8 +268,9 @@ def _review(h: H.State) -> dict:
 def _complete(h: H.State) -> dict:
     cards = [career_card(h, n) for n in range(1, H.CARD_COUNT + 1)
              if (h.slots.get(H.card_key(n, "role")) or {}).get("status") == "filled"]
-    # 下書きの画面は 4/5 のタスク(職歴カードから職務経歴書の下書きを作る)が足す。それまでは開くボタンを出さない
-    return {"cards": cards, "blanks": len(H.blank_cards(h)), "draft_url": None}
+    # 空欄の数は結果の「空欄はNつ」と同じ(harness._finish が職歴カードの下書きの空欄を数えた数。空欄に戻した数字も入る)。
+    # draft_url は、session.turn が下書きを作った後に入れる(下書きの画面の URL。開けない窓口では None のままで、ボタンを出さない)
+    return {"cards": cards, "blanks": h.result["blanks"], "draft_url": None}
 
 
 def update(h: H.State, mem: dict | None, prev: dict, reply: dict) -> tuple[dict | None, dict]:

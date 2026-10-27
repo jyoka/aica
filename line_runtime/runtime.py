@@ -563,6 +563,7 @@ class LineRuntime:
         (status=llm)、そのシステムプロンプトでモデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。
         PRD v4.1 §5-4)。呼び出しが失敗したら、失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。
         返信の文と選択肢はハーネスのものをそのまま出す(正社員はまとめのカードで吹き出しが 2 つ以上になる)。
+        画面を開くボタン(正社員の結果の「下書きを開く」)も、ハーネスが返したものだけを付ける。
         本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。"""
         h = HARNESSES[kind]
         values = (await self.agent.aget_state(cfg)).values
@@ -582,7 +583,7 @@ class LineRuntime:
             r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
             if not r.get("active"):
                 raise ValueError(f"{h['what']}が途中で閉じられました")
-        reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"])
+        reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"], buttons=r.get("buttons") or [])
         mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
         # プロフィールの進み具合(ハーネスが数えた progress)から、帯・プロフィールカード・完成を 0〜1 つ付ける(設計メモ §3.4)。
         # 返信の本文(LineReply の JSON。相談の後にトークの AI が読む)には入れず、コードだけが書く additional_kwargs に置く。

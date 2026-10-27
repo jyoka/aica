@@ -511,8 +511,11 @@ def _arcade_draft_edit(user: str, rid: int, markdown: str, scenario_user: str = 
 def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcade.DRAFT_PATH) -> str:
     """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
     todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
-    return (f"<p>ゲーム({escape(arcade.GAME_NAMES.get(rec['game'], rec['game']))})で、あなたの答えから作った"
-            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない数字です。"
+    # 正社員のヒアリングの下書き(dip_mcp/career/draft.py)は、職歴カードの言葉の空欄もある
+    where, blanks = (("正社員の相談", "数字や言葉") if rec["game"] == arcade.CAREER_DRAFT
+                     else (f"ゲーム({arcade.GAME_NAMES.get(rec['game'], rec['game'])})", "数字"))
+    return (f"<p>{escape(where)}で、あなたの答えから作った"
+            f"{escape(rec['document_kind'])}の下書きです。[ ] の部分は、あなたにしか書けない{blanks}です。"
             "氏名と連絡先は保存していません。内容は必ずご自身で確認・修正してください。</p>"
             + (f"<h3 style='font-size:14px;margin:14px 0 4px'>確かめたい点</h3><ul style='font-size:13px'>{todo}</ul>"
                if todo else "")
@@ -521,7 +524,7 @@ def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcad
             f"<form method='post' action='{escape(action)}'>"
             f"<input type='hidden' name='rid' value='{rec['id']}'>"
             f"<input type='hidden' name='scenario_user' value='{escape(scenario_user or '')}'>"
-            "<label for='draft-edit'>書類を直す(数字の空欄を埋める、行を書き換える)</label>"
+            "<label for='draft-edit'>書類を直す(空欄を埋める、行を書き換える)</label>"
             "<textarea id='draft-edit' name='markdown' rows='16' style='width:100%;box-sizing:border-box;font-size:14px;"
             f"padding:8px;border:1px solid #ccd;border-radius:8px'>{escape(rec['markdown'])}</textarea>"
             "<button>直した内容を保存する</button></form>")
