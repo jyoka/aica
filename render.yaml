@@ -5,8 +5,8 @@ services:
   - type: web
     name: aica
     runtime: docker
-    # 音声ワーカーを別サービス(下の aica-voice)に移す間は、このコンテナでも動かすので Standard(2GB)。
-    # 移し終えたら Web だけなので Starter(512MB)で足りる見込み
+    # 音声ワーカーは別サービス(下の aica-voice)に移したので、Web だけなら Starter(512MB)で足りる見込み。
+    # 待機と山のメモリを測ってから決める(docs/deploy/render.md の「移し終えた後の aica のメモリ」)。それまでは Standard(2GB)
     plan: standard
     region: singapore
     dockerfilePath: ./Dockerfile
@@ -35,14 +35,14 @@ services:
       # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
       - key: VOICE_RESUME_STT_PROVIDER
         value: deepgram
-      # 音声ワーカーを aica-voice に移す間は、このコンテナでも動かす。aica-voice が動くのを確かめてから、別の PR で 0 にする
-      # (docs/deploy/render.md の「1 つのコンテナで動かしていたサービスを分ける」)。Blueprint から消しても
-      # サービスの環境変数は残る(Render の文書 Blueprint YAML Reference)ので、消さずに 0 にする
+      # 音声ワーカーは aica-voice だけで動かし、このコンテナでは動かさない(docs/deploy/render.md の
+      # 「1 つのコンテナで動かしていたサービスを分ける」)。Blueprint から消してもサービスの環境変数は残る
+      # (Render の文書 Blueprint YAML Reference)ので、消さずに 0 にする。戻すときは 1 にする PR を入れる
       - key: AICA_VOICE_WORKER
-        value: "1"
+        value: "0"
+      # AICA_VOICE_WORKER を 1 に戻したときに、このコンテナの音声ワーカーが使う(0 の間は読まない)。
       # 同時に受ける相談と、温めておくプロセスの数(理由は下の aica-voice)。前の既定の 4 から減らし、待機のメモリを約 250MB 減らす。
-      # 相談 1 件の上限(VOICE_RESUME_JOB_MEMORY_LIMIT_MB)は既定の 2000 のまま。400 に収まるかを aica-voice で測る前に、
-      # 今動いている相談を止めないため
+      # 相談 1 件の上限(VOICE_RESUME_JOB_MEMORY_LIMIT_MB)は既定の 2000 のまま
       - key: VOICE_RESUME_MAX_JOBS
         value: "2"
       # 音声ワーカーが private network でつなぐ dip の MCP サーバーのポート(scripts/container_start.sh)

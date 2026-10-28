@@ -1,6 +1,6 @@
 #!/bin/sh
 # コンテナの起動(Dockerfile の CMD)。Web プロセスを 0.0.0.0:$PORT で動かす。
-# AICA_VOICE_WORKER=1 なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間)。Render の音声ワーカーは別サービスで
+# AICA_VOICE_WORKER=1 なら音声ワーカーも同じコンテナで動かす(手元の docker 向け。Render の aica は 0)。Render の音声ワーカーは別サービスで
 # (render.yaml の aica-voice、scripts/voice_worker_start.sh)、AICA_DIP_PORT の dip の MCP サーバーに private network でつなぐ。
 set -eu
 
