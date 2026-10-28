@@ -14,6 +14,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
 | `GET /healthz` | ヘルスチェック。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない |
 | `scripts/deploy_smoke.py` | デプロイの smoke。ヘルスチェックと初回の挨拶の 1 往復を確かめる(実 API を 1 回使う) |
+| `.github/workflows/healthz.yml`、`scripts/healthz_watch.py` | 外形監視。GitHub Actions が 15 分ごとに公開 URL の `/healthz` を呼び、落ちていたら Issue で知らせる(下の「8. 外形監視を有効にして確かめる」) |
 
 - 状態と出力は、すべてコンテナの `/app/data` に書きます(会話、dip の状態、プロフィール、費用台帳、ターン数、音声の下書き)。
   ここに永続ディスクをつなぎます。ほかの場所は、デプロイと再起動のたびに消えます
@@ -284,6 +285,60 @@ Render の文書に書いておらず、未確認のことです。下の「届�
   理由に `oomKilled` が付く、と読んでいます(Render の API の型から。本番の出来事では確かめていない)。
   初めて動かしたときに、「Events」と数が合うかを見て、Brief の関門 6 に書きます
 
+### 8. 外形監視を有効にして確かめる **【運営者】**
+
+外から `/healthz` を定期的に呼び、落ちたら GitHub の Issue とメールで知らせます。
+6 の Render の通知は Render の中から見た状態なので、外から届くかはこちらで見ます。決めた理由、費用、知らせが届くまでの目安は
+[Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+| 項目 | 中身 |
+|---|---|
+| 場所 | GitHub Actions のワークフロー `healthz`(`.github/workflows/healthz.yml`)。GitHub の runner から呼ぶ。判定は `scripts/healthz_watch.py` |
+| 呼ぶ URL | リポジトリの変数 `AICA_HEALTHZ_URL`(`https://<名前>.onrender.com/healthz`)。秘密情報ではないので Secrets ではなく Variables に置く。無ければジョブを飛ばし、監視しない |
+| 間隔 | 15 分ごと(毎時 7、22、37、52 分)。GitHub が混むと遅れ、その回が落とされることもある。main にあるワークフローだけが動く |
+| 判定 | 1 回の実行の中で、60 秒おきに 3 回まで呼ぶ(1 回の待ちは 10 秒)。1 回でも 200 なら動いている。3 回続けて 200 以外か時間切れなら落ちている。デプロイで数秒止まるくらいでは知らせない |
+| 落ちたとき | Issue「外形監視: /healthz に届かない」を開き、リポジトリの持ち主に割り当てる。その回のジョブは失敗にする。GitHub から、Issue の割り当てとワークフローの失敗のメールが届く |
+| 落ちている間 | 開いた Issue があれば、新しく開かない。ジョブは成功のまま、警告と Summary に「知らせ済み」と出す(同じ障害で何度もメールを送らない) |
+| 回復したとき | Issue に「回復した」とコメントして閉じる。閉じた知らせのメールが届く |
+| 閉じて 24 時間のうちにまた落ちたとき | 新しく開かず、閉じた Issue を開き直してコメントする。その回のジョブは失敗にする(メモリ不足で落ちては戻るを繰り返しても、Issue が増えない) |
+| Issue を読めない、開けない | その回のジョブを失敗にし、ワークフローの失敗のメールだけが届く。直るまで毎回届く |
+| `AICA_HEALTHZ_URL` が `https://` で始まらない | 落ちているとして Issue を開く(本文に「URL が正しくない」と出る) |
+
+メールは GitHub のアカウントのアドレスに届きます。6 の Render の通知と同じく運営者に届きますが、同じアドレスかは未確認です。
+GitHub の文書では、schedule で動いたワークフローの失敗の知らせは、ワークフローの cron を最後に変えた人に届きます。
+Issue の割り当ての知らせは、割り当てた人(リポジトリの持ち主)に届きます。
+
+監視そのものが止まっても、知らせは届きません。Actions の分数が尽きた、GitHub が `schedule` の回を落とした、ワークフローが止められた、
+などのときです。ときどき「Actions」→「healthz」で、最後の実行が 15 分ほど前にあることを見ます。
+
+**有効にする**
+
+1. GitHub の jyoka/aica の「Settings」→「Secrets and variables」→「Actions」→「Variables」で「New repository variable」を押し、
+   名前 `AICA_HEALTHZ_URL`、値 `https://<名前>.onrender.com/healthz` を入れる。
+   手元からなら `gh variable set AICA_HEALTHZ_URL -R jyoka/aica --body https://<名前>.onrender.com/healthz`
+2. 「Actions」→「healthz」→「Run workflow」で動かし、ジョブが成功し、Summary に「外形監視: 200」と出ることを見る
+3. GitHub の「Settings」→「Notifications」で、「Participating, @mentions and custom」のメールと、
+   「System」→「Actions」のメール(「Only notify for failed workflows」)が有効になっていることを見る
+
+**届くことを確かめる**
+
+本番の `aica` には触れず、変数を 200 を返さない URL に変えて、落ちたときの動きを出します。
+
+1. `AICA_HEALTHZ_URL` を `https://<名前>.onrender.com/healthz-check-404`(無いパスなので 404)に変え、「Run workflow」で動かす
+2. 約 2 分後にジョブが失敗し、Issue が開き、自分に割り当てられ、メールが届くことを見る。宛先と送り元のアドレスを控える
+3. もう一度「Run workflow」で動かす。Issue が増えず、ジョブが成功(警告つき)になることを見る
+4. `AICA_HEALTHZ_URL` を元の URL に戻し、「Run workflow」で動かす。Issue が閉じることを見る
+5. 有効にした日と、届いた宛先を、Brief の関門 6 に書く(「設定待ち」を外す)
+
+**止め方**
+
+- 一時的に止める(長く止める作業の前など): 「Actions」→「healthz」→「…」→「Disable workflow」
+  (`gh workflow disable healthz.yml -R jyoka/aica`)。戻すときは「Enable workflow」。
+  止めている間に開いていた Issue は、戻した後の最初の回で、動いていれば閉じる
+- やめる: 変数 `AICA_HEALTHZ_URL` を消す(ジョブが飛ばされる)。ワークフローを消すときは PR で
+- 開いた Issue を手で閉じたときは、まだ落ちていれば次の回でまた開く
+- 「Manual Deploy」は数秒止まるだけなので、ふつうは止めなくてよい。起動に 2 分以上かかったときは Issue が開き、次の回で閉じる
+
 ## 環境変数
 
 Render の「Environment」に置きます。`.env` はコンテナに入れません。表に無いものは README の「設定」の既定のままです。
@@ -464,3 +519,5 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 [Health Checks](https://render.com/docs/health-checks) を確認して書きました。
 メモリ不足の点検は、2026-10-28 に [Webhooks](https://render.com/docs/webhooks)、[The Render API](https://render.com/docs/api)、
 [List events](https://api-docs.render.com/reference/list-events) を確認して書きました。
+外形監視の手順は、2026-10-28 に GitHub の [Events that trigger workflows の schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) と
+[GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) を確認して書きました。
