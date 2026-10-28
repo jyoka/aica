@@ -8,7 +8,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | もの | 中身 |
 |---|---|
 | `Dockerfile` | Python 3.12 の image。Web プロセス(`line_runtime.server`)と、その子プロセスの dip の MCP サーバーが入る。2 つのサービスで同じものを使う。`AICA_VOICE_MODELS=1` で build すると、音声のモデルも入る |
-| `scripts/container_start.sh` | Web サービスの起動。`0.0.0.0:$PORT` で Web プロセスを動かす。`AICA_DIP_PORT` があれば、音声ワーカー向けの dip の MCP サーバーも動かす。`AICA_VOICE_WORKER=1` なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間) |
+| `scripts/container_start.sh` | Web サービスの起動。`0.0.0.0:$PORT` で Web プロセスを動かす。`AICA_DIP_PORT` があれば、音声ワーカー向けの dip の MCP サーバーも動かす。`AICA_VOICE_WORKER=1` なら音声ワーカーも同じコンテナで動かす(手元の docker 向け。Render の `aica` は `0`) |
 | `scripts/voice_worker_start.sh` | 音声ワーカーのサービスの起動(`render.yaml` の `dockerCommand`)。Web サービスの private network の名前から、結果を返す先と dip の URL を作る |
 | `scripts/check_image_certs.py` | image の CA 証明書の確かめ。certifi と ca-certificates の版(実 API は使わない。下の「CA 証明書の版を確かめる」) |
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
@@ -82,7 +82,7 @@ certifi は 2026.10.19 以上が要ります。image の版は次で確かめま
 - Blueprint の Auto Sync は有効のままにします。`render.yaml` を変えて `main` に入れると、Render がサービスをその内容に合わせ、
   変わったサービスをデプロイし直します(Render の文書 [Render Blueprints](https://render.com/docs/infrastructure-as-code))。
   つまり、`render.yaml` を変える PR のマージはデプロイです。入れた時点で本番が動き続ける形にし、相談の少ない時間に入れます
-  (`aica` はディスクつきなので数秒止まり、`aica` の音声ワーカーの相談は切れる。例: 下の「1 つのコンテナで動かしていたサービスを分ける」)
+  (`aica` はディスクつきなので数秒止まる。`aica` で音声ワーカーを動かしていれば、その相談は切れる。例: 下の「1 つのコンテナで動かしていたサービスを分ける」)
 - Blueprint を更新するときは、`sync: false` の値を聞かれません。新しいサービスの鍵は、`fromService` で `aica` から写します
 - `AICA_TRUST_PROXY=1` と `AICA_INTERNAL_KEY`(乱数)は Blueprint が入れます。`AICA_INTERNAL_KEY` は Blueprint が `aica` から
   `aica-voice` に写すので、そろえる手間はありません。音声相談の設定(`LIVEKIT_*`)があるのに `AICA_INTERNAL_KEY` が無い、
@@ -166,13 +166,13 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 
 | 環境変数 | サービス | 値 | 入れる者 |
 |---|---|---|---|
-| `AICA_VOICE_WORKER` | `aica` | 移す間は `1`(Web のコンテナでも音声ワーカーを動かす)。移し終えたら `0` | Blueprint |
+| `AICA_VOICE_WORKER` | `aica` | `0`(Web のコンテナでは音声ワーカーを動かさない)。`1` は移す間と、戻すとき(下の「戻し方」) | Blueprint |
 | `AICA_DIP_PORT` | `aica` | `8020`(音声ワーカー向けの dip の口) | Blueprint |
 | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | `aica` | LiveKit Cloud のプロジェクト | **【運営者】** Blueprint を作るとき |
 | `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | `aica` | 文字起こしと読み上げ | **【運営者】** Blueprint を作るとき |
 | `ANTHROPIC_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | `aica-voice` | `aica` から写す。`aica` の値を変えたら、Blueprint の「Manual sync」で写し直し、`aica-voice` を「Manual Deploy」する | Blueprint(`fromService`) |
 | `VOICE_RESUME_STT_PROVIDER` | 両方 | `deepgram`。変えない(`openai` にすると声そのものが OpenAI に届く。[privacy.md](../design/privacy.md) の 3.2) | Blueprint |
-| `VOICE_RESUME_MAX_JOBS` | 両方 | `2`(同時に受ける相談と、温めておくプロセスの数) | Blueprint |
+| `VOICE_RESUME_MAX_JOBS` | 両方 | `2`(同時に受ける相談と、温めておくプロセスの数。`aica` では `AICA_VOICE_WORKER=1` のときだけ読む) | Blueprint |
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | `aica-voice` | `400`(相談 1 件のプロセスの上限。`aica` は既定の 2000) | Blueprint |
 | `AICA_VOICE_MODELS` | `aica-voice` | `1`(build のときにモデルを image に入れる) | Blueprint |
 | `AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
@@ -239,48 +239,118 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 前の形(`aica` のコンテナだけで音声ワーカーを動かす)から移すときの手順です。Auto Sync は有効のままにし、
 2 つの PR に分けて `main` に入れます。どちらも、入れた時点で音声相談が動き続ける形です。
 
+| PR | 中身 | 入れる前に |
+|---|---|---|
+| 1 つ目 | `aica-voice` を足す。`aica` の音声ワーカーも残す | - |
+| 2 つ目 | `aica` の `AICA_VOICE_WORKER` を `"0"` にする | 下の 1〜5 を上から順に確かめる |
+
 **1 つ目の PR(`aica-voice` を足す)**
 
 `main` に入れると、Render が `aica-voice` を作り、`aica` に `AICA_DIP_PORT=8020` と `VOICE_RESUME_MAX_JOBS=2` を入れて
 デプロイし直します。`aica` の音声ワーカーは残るので、2 つのワーカーが LiveKit に登録され、相談はどちらかが受けます。
 
-`aica-voice` は、登録した時点で本番の相談を受けます。なので、相談の少ない時間にマージし、すぐに 1〜5 をします。
-3〜5 のどれかがうまくいかなければ、`aica-voice` の「Settings」で「Suspend」にします。相談はすべて `aica` の音声ワーカーが受けます。
+`aica-voice` は、登録した時点で本番の相談を受けます。下の 3〜5 のどれかがうまくいかなければ、`aica-voice` の「Settings」で
+「Suspend」にします。相談はすべて `aica` の音声ワーカーが受けます。
 
-1. Blueprint の「Syncs」で、同期が成功したことを見る(失敗していれば何も変わっていない。`fromService` の写し方を Render に断られたときも、ここで分かる)
-2. `aica` の「Events」で、入れたコミットのデプロイが `Deploy live` になったことを見る。なっていなければ「Manual Deploy」→
-   「Deploy latest commit」でする(dip の口は新しいコードで開く)。「Logs」に `WARNING: dip MCP server` が繰り返し出ないことも見る
-3. `aica-voice` の「Environment」に、`aica` から写した値(`ANTHROPIC_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY`、
-   `AICA_INTERNAL_KEY`、`AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`)が入っていることを見る。空のものがあれば、Blueprint の「Manual sync」を
-   押してから `aica-voice` を「Manual Deploy」する(`AICA_DIP_PORT` は同じ同期で `aica` に入るので、写す順番によっては空になりうる)
-4. `aica-voice` の「Logs」で、ワーカーが LiveKit に登録されたことを見る。build のログにモデルの取得(`download-files`)が
-   出ていることも見る(Render は環境変数を build の引数として渡す。出ていなければ image にモデルが無いので、`AICA_VOICE_MODELS=1` を確かめる)
-5. トークの音声相談のボタンから相談し、`aica-voice` の「Logs」に相談が出て、結果がトークに届くことを確かめる。
-   `aica` の音声ワーカーが受けたときは、もう一度相談する
+**2 つ目の PR の前に確かめること(1〜5)**
+
+上から順に、Render のダッシュボードで確かめます。どれかが OK にならなければ、そこで止め、2 つ目の PR を入れません。
+「Logs」の行は、ログの検索に下の文字を入れて探します。
+
+1. Blueprint の同期: Blueprint の「Syncs」を見る
+   - OK: 1 つ目の PR を入れた後の同期が、成功になっている
+   - OK でないとき: 失敗した同期では何も変わっていません。失敗の理由を読みます(`fromService` の写し方を Render に断られたときも、ここで分かる)
+2. `aica` のデプロイと dip の口: `aica` の「Events」と「Logs」を見る
+   - OK: 1 つ目の PR より後のコミットのデプロイが `Deploy live` になっている。「Logs」に
+     `WARNING: dip MCP server for the voice worker exited` が繰り返し出ていない
+   - OK でないとき: `Deploy live` でなければ「Manual Deploy」→「Deploy latest commit」でします(dip の口は新しいコードで開く)。
+     警告が繰り返し出るなら、`aica` の「Environment」に `AICA_INTERNAL_KEY` があるかを見ます(無ければ dip の口は開かない)
+3. `aica-voice` に写した値: `aica-voice` の「Environment」を見る
+   - OK: 次の値が、どれも空でない。`ANTHROPIC_API_KEY`、`LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET`、
+     `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY`、`AICA_INTERNAL_KEY`、`AICA_DIP_PORT`(`8020`)、`AICA_WEB_HOSTPORT`(`<内部の名前>:<ポート>` の形)
+   - OK でないとき: Blueprint の「Manual sync」を押してから、`aica-voice` を「Manual Deploy」します
+     (`AICA_DIP_PORT` は同じ同期で `aica` に入るので、写す順番によっては空になりうる)。それでも空なら、`aica` と同じ値を手で入れます
+4. `aica-voice` の起動とモデル: `aica-voice` の「Events」と「Logs」を見る
+   - OK: 最新のデプロイが `Deploy live` で、その後に起動し直しが続いていない
+   - OK: build のログに `Finished downloading files for livekit.plugins.turn_detector` がある(モデルが image に入った)
+   - OK: 「Logs」に `音声ワーカーを起動しません`(鍵が無い、短い)も `failed to connect to livekit`(LiveKit の URL か鍵が違う)も出ていない
+   - OK でないとき: モデルの行が無ければ、`aica-voice` の `AICA_VOICE_MODELS` が `1` かを見て、「Manual Deploy」で build し直します
+     (Render は環境変数を build の引数として渡す)。`音声ワーカーを起動しません` なら 3 に戻ります。
+     `failed to connect to livekit` が続くなら、`LIVEKIT_URL`(`wss://<project>.livekit.cloud`)と鍵を `aica` と見比べます
+   - 本番の「Logs」には、LiveKit に登録したことを示す行(livekit-agents の `registered worker`)は出ません。本番(`start`)では
+     SDK の INFO のログを出さないためです(`line_runtime/log_policy.py`)。登録できたことは、5 の相談で確かめます
+5. 相談 1 件: トークの音声相談のボタンから相談し、2〜3 回話してから「面談を終える」で終える
+   - OK: `aica-voice` の「Logs」に `dip MCP サーバーに接続: http://<内部の名前>:8020/mcp` と、
+     `面談を開始: user_id=w-…`(終わりが `playbook=あり`)が出る
+   - OK: 終えた後、トークに相談のまとめが届く
+   - OK: `aica-voice` の「Logs」に `dip MCP サーバーに接続できません`、`トークへ部屋の始まりを知らせられません`、
+     `LINE のトークへの結果送信に失敗` が出ていない
+   - `面談を開始` が `aica` の「Logs」に出て、`aica-voice` に出なかったときは、`aica` の音声ワーカーが受けています。もう一度相談します
+   - OK でないとき: dip につながらないなら、2 の dip の口と、3 の `AICA_DIP_PORT`、`AICA_INTERNAL_KEY` を見ます。
+     まとめが届かないなら、3 の `AICA_WEB_HOSTPORT` と `AICA_INTERNAL_KEY` を見ます(鍵が違うと、結果は 401 で断られる)
 
 **2 つ目の PR(`aica` の音声ワーカーを止める)**
 
-1 つ目の 5 まで確かめてから出します。`render.yaml` の `aica` の `AICA_VOICE_WORKER` を `"0"` にします
-(合わせて、`tests/test_deploy.py` と、この文書、README、HLD の「移す間は 1」の書き方を直す)。
-`main` に入れると、`aica` がデプロイし直され、音声ワーカーが止まります。相談は `aica-voice` だけが受けます。1 つ目と同じく、相談の少ない時間に入れます。
+`render.yaml` の `aica` の `AICA_VOICE_WORKER` を `"0"` にします。ほかの値は変えません(`VOICE_RESUME_MAX_JOBS` は戻すときのために残す)。
+Auto Sync なので、マージはそのまま本番のデプロイです。`aica-voice` が相談を受けられないうちに入ると、音声相談が止まります。
+なので PR は draft で出し、運営者が 1〜5 を確かめてから draft を外してマージします。
 
-6. もう一度相談し、結果がトークに届くことを確かめる
-7. 後片付け(しなくても動く): `aica` のディスクの `/app/data/cache/huggingface`(約 460MB、前のモデル)を消す。
-   `aica` の `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` は消さない(`aica-voice` がここから写す)
+`main` に入れると、`aica` がデプロイし直され(ディスクつきなので数秒止まる)、`aica` の音声ワーカーが止まります。
+相談は `aica-voice` だけが受けます。1 つ目と同じく、相談の少ない時間に入れます。マージの後に確かめることです。
 
-確かめていないこと、気をつけることです。
+6. `aica` の「Events」で、そのコミットのデプロイが `Deploy live` になる。`https://<名前>.onrender.com/healthz` が 200
+   (`{"status": "ok"}`)を返す。`aica` の「Environment」で `AICA_VOICE_WORKER` が `0` になっている
+7. 音声相談を 1 件する。5 と同じく `aica-voice` の「Logs」に `面談を開始` が出て、まとめがトークに届く。
+   `aica` の「Logs」には `面談を開始` が出ない。うまくいかなければ、下の「戻し方」をする
+8. 後片付け(しなくても動く): 数日動かして戻さないと決めたら、`aica` のディスクの `/app/data/cache/huggingface`
+   (約 460MB、前のモデル)を消す。消した後に戻すと、`aica` の起動のときにモデルを取り直すので、`Deploy live` まで数分長くかかる。
+   `aica` の `LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` は消さない(`aica-voice` がここから写す。`LIVEKIT_*` は
+   Web プロセスが部屋の接続トークンを出すのにも使う)
 
-- Render の上で `aica-voice` が `aica` の dip と結果の口につながるところは、まだ確かめていません。手元では、docker のネットワークで
-  別のコンテナから dip の口につながること、鍵が無いと断られることを確かめました
+**戻し方**
+
+7 で相談を受けられないとき、`aica-voice` が落ち続けるときは、`aica` の音声ワーカーを戻します。
+
+1. `render.yaml` の `aica` の `AICA_VOICE_WORKER` を `"1"` にする PR を出し、`main` に入れる。
+   `tests/test_deploy.py` の `AICA_VOICE_WORKER` の確かめも `"1"` に直す(2 つ目の PR を丸ごと revert すると、この手順の文書も戻る)
+2. Auto Sync で `aica` がデプロイし直され、`aica` のコンテナでも音声ワーカーが動く。`aica` の「Logs」に
+   `WARNING: could not download the voice models` が出ていないことを見る
+3. 音声相談を 1 件し、`aica` か `aica-voice` の「Logs」に `面談を開始` が出て、まとめがトークに届くことを確かめる
+4. 原因が `aica-voice` にあるなら、`aica-voice` の「Settings」で「Suspend」にする。相談はすべて `aica` の音声ワーカーが受ける
+
+- 急ぐときは、PR の前に `aica` の「Environment」で `AICA_VOICE_WORKER` を `1` にして「Save Changes」してもかまいません(再起動される)。
+  そのときも 1 の PR を入れます。`render.yaml` と値が違うままだと、次の同期で `0` に戻りうるためです(Render の上では確かめていない)
+- `aica` を Starter(512MB)に下げた後は、`1` に戻しません。音声ワーカーは 2GB の中で動かす見積もりで、512MB には入りません。
+  先に `plan` を `standard` に戻します
+
+**移し終えた後の `aica` のメモリ**
+
+`aica` には、Web プロセスと dip の子プロセス、音声ワーカー向けの dip の MCP サーバーだけが残ります。
+上の「メモリの見積もり」の表からの見込みで、Render の上では測っていません。
+
+| いつ | 見込み | 中身 |
+|---|---|---|
+| 待機 | 約 270MB | Web プロセスと dip の子プロセス(約 210MB)+ 音声ワーカー向けの dip の MCP サーバー(手元で import しただけで約 61MB RSS) |
+| 山 | 約 430MB | 待機 + 履歴書の写真を縮める間(最大で約 160MB 増える。`resume_intake/extract.py` の `MAX_DECODED_IMAGE_PIXELS`) |
+
+- 1 つ目の PR の間は、待機だけで約 1.6〜1.7GB の見込みでした。Standard(2GB)のままなら、余りは十分です
+- Starter(512MB)では、山の余りは約 80MB です。相談中の dip の MCP サーバーの呼び出しと、長く動かしたときの増え方は入れていません
+- Starter に下げるかは、Architecture Brief(`docs/architecture.md`)の「次にやること」の 15 で、測ってから決めます。
+  案は、2 つ目の PR を入れてから数日、`aica` の「Metrics」でメモリの最大を見ることです。音声相談と履歴書の読み込みがあった日でも
+  400MB ほどに収まれば下げる、という目安です(400MB は推測。512MB との間に余りを残すため)
+- プランの変更も `render.yaml` の `plan` を変える PR で、マージがデプロイになります。下げた後は、上の「戻し方」で `1` に戻せません
+
+**確かめていないこと、気をつけること**
+
+- Render の上で `aica-voice` が `aica` の dip と結果の口につながるところは、まだ確かめていません(5 で分かる)。手元では、
+  docker のネットワークで別のコンテナから dip の口につながること、鍵が無いと断られることを確かめました
 - `fromService` の `envVarKey` で、ダッシュボードで入れた値(`sync: false`)を写せるかは、まだ確かめていません。
   Render の文書には、ほかのサービスの環境変数を写せるとだけあります。写せなければ `aica-voice` は LiveKit に登録できず、
-  相談は `aica` の音声ワーカーが受け続けます(手順 3 で分かる。そのときは `aica-voice` の「Environment」に手で入れる)
-- 1 つ目の PR の間、`aica` は待機だけで約 1.6〜1.7GB(Web + 推論 + 本体 + 待機 2 つ + 音声ワーカー向けの dip の口。上の表からの見積もり)
-  になる見込みです。前の形(待機 4 つ。待機だけで 1.83GB)よりは少ないですが、`aica` の音声ワーカーが 2 件を同時に受けると
-  2GB を超えうるので、2 つ目の PR までの間は短くします
-- 相談中のプロセスが 400MB に収まるかは、まだ測っていません。手順 5 の相談の間に、`aica-voice` の SSH で
+  相談は `aica` の音声ワーカーが受け続けます(3 で分かる。そのときは `aica-voice` の「Environment」に手で入れる)
+- 本番のログには LiveKit への登録の行が出ないので、`aica-voice` の登録が切れても、ログだけでは気づけません
+  (Architecture Brief の「次にやること」の 10)
+- 相談中のプロセスが 400MB に収まるかは、まだ測っていません。5 の相談の間に、`aica-voice` の SSH で
   `/sys/fs/cgroup/memory.current` と各プロセスの `/proc/<pid>/smaps_rollup` を見て決め直します
-- `aica` は、音声ワーカーが抜けたので Starter(512MB)で足りる見込みです。確かめるまで Standard のままにしています
 - 音声相談の費用は、まだ費用台帳に載りません([review-2026-10.md の R6](../architecture/review-2026-10.md#r6-音声相談の費用が台帳に載らず上限も効かない))
 
 ## 置くデータ(プライバシーの説明に入れること)
