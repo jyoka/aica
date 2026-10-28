@@ -142,6 +142,7 @@ class FakeClient:
         if output_format is ActorTurn:
             out = self.actor(messages, system)
         elif output_format is J.TurnLabels:
+            self.label_inputs = [*getattr(self, "label_inputs", []), content]
             out = scripted_labels(content)
         elif output_format is J.Sameness:
             out = self.same(content)
@@ -731,6 +732,29 @@ def test_harness_forms_reach_the_result_and_report_the_end_state(form):
     assert all(len(m) == 1 for s, m in calls if s == "extract")
     first_say = next(m for s, m in calls if s == "say")
     assert first_say[0]["role"] == "user" and first_say[1]["role"] == "assistant"  # 最初の問いも履歴に入る
+
+
+@pytest.mark.parametrize("pid", ["p1-sales", "p3-return", "p4-short"])
+@pytest.mark.parametrize("form", ["B", "C", "D"])
+def test_harness_forms_pass_the_bank_candidates_to_the_judge(form, pid):
+    """形 B〜D は、質問バンクの決まった候補をジャッジに渡す(誘導に数えない。task 315、設計メモ §6.4)。
+    ハーネスが出したボタンはどれも一覧にある(一覧に無い候補を作っていたら、ジャッジが誘導か判定できるように落とす)。"""
+    persona = PERSONAS[pid]
+    form_ = FormHarness(persona, form, call=harness_model())
+    r, client = converse(form_, persona)
+    fixed = set(form_.fixed_buttons())
+    shown = {b for row in r["turns"] for b in row["reply"]["buttons"]}
+    assert shown and shown <= fixed
+    assert {"売上が伸びた", "人をまとめた経験", "スキップ", "他の候補"} <= fixed
+    assert all("## 決まった候補" in c for c in client.label_inputs)
+
+
+def test_scripted_forms_give_the_judge_no_bank_candidates():
+    """台本の形(と形 A)はボタンを自分で作るので、決まった候補を渡さない(候補はこれまでどおり誘導か判定する)。"""
+    persona = PERSONAS["p1-sales"]
+    _, client = converse(ScriptGood(persona), persona)
+    assert client.label_inputs and not any("決まった候補" in c for c in client.label_inputs)
+    assert J.label_user([{"who": "agent", "text": "?"}], ["スキップ"]).endswith("決まった候補(誰にでも同じ問いで同じに出す答えの候補。誘導に数えない)\nスキップ")
 
 
 def test_harness_form_resume_persona_starts_with_the_resume_fields():

@@ -50,11 +50,12 @@ async def run_conversation(form, persona: dict, client, sim_model: str, judge_mo
     turns: list[dict] = []
     user_msgs: list[dict] = []
     completed = False
+    fixed = form.fixed_buttons() if hasattr(form, "fixed_buttons") else None  # 質問バンクの決まった候補(形 B〜D)
     reply = await form.start()
     for n in range(1, max_turns + 1):
         transcript.append({"who": "agent", "text": render(reply)})
         read_s = clock.read(reply)
-        labels = await judge.label_turn(client, judge_model, transcript)
+        labels = await judge.label_turn(client, judge_model, transcript, fixed)
         new = clock.irritate(n, reply, labels)
         row = {"turn": n, "reply": asdict(reply), "read_seconds": round(read_s, 1), "labels": labels,
                "irritations": new, "seconds": round(clock.seconds, 1)}

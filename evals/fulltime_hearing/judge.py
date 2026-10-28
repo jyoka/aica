@@ -1,7 +1,8 @@
 """正社員のヒアリングの評価のジャッジ(設計メモ §6.1、§6.4)。
 
 - label_turn: AI の 1 回の返信に、いらいらのできごと(聞き直し、2 つ聞く、面接口調)と、関門の「誘導」のラベルを付ける。
-  数えて離脱を決めるのはコード(actor.Clock)。会話の途中で毎ターン 1 回呼ぶ。
+  数えて離脱を決めるのはコード(actor.Clock)。会話の途中で毎ターン 1 回呼ぶ。形 B〜D は、質問バンクの決まった候補(fixed)を
+  渡す。誰にでも同じに出す答えの候補は誘導に数えない(task 315。設計メモ §6.4)。
 - extract_facts: 形 A(状態を持たない今のヒアリング)の会話の記録から、事実表の項目ごとに取れたことを取り出す。
   事実表の値は見せない(答えに寄せないため)。
 - score_facts: 「正しく取れた事実」を決める。数字は同じ単位で同じ値か、同じ単位の区切りに入っていれば正しい。「覚えていない」は事実表も
@@ -42,7 +43,7 @@ LABEL_SYSTEM = """あなたは、正社員の仕事探しのチャットで、AI
 - reask: 本人がこの会話でもう答えたこと(ボタンで選んだことを含む)を、また聞いた。答えが「特にない」「パス」「覚えていない」だったことを、もう一度聞くのも含む。最後のまとめで、聞いた内容を並べて「直すところはありますか」と一度に確かめるのは含めない。
 - two_questions: 1 回の返信で、答えを求める問いを 2 つ以上した。「A と B を教えてください」も 2 つ。答えの候補のボタンは問いに数えない。
 - interview_tone: 面接のような口調。「あなたの強みは何ですか」「志望動機をお聞かせください」「具体的に説明してください」のような、本人を試す・詰める聞き方。
-- leading: 本人が言っていない強みや作業を、答えの候補として挙げた(例:「リーダーシップを発揮した、などはありますか」「売上を伸ばした、などのボタン」)。勤務地・年収・時期・規模の区切り・「パス」「覚えていない」のボタンは誘導ではない。
+- leading: 本人が言っていない強みや作業を、答えの候補として挙げた(例:「リーダーシップを発揮した、などはありますか」「売上を伸ばした、などのボタン」)。勤務地・年収・時期・規模の区切り・「パス」「スキップ」「覚えていない」のボタンは誘導ではない。「決まった候補」の一覧が付いているときは、一覧にある候補(ボタンでも、吹き出しの文で挙げたのでも)は誘導ではない。誰にでも同じ問いで同じに出す候補で、本人について決めつけていないため。一覧に無い候補と、本人がそうしたと決めつける言い方(「売上を伸ばしたんですね」)は、これまでどおり判定する。
 evidence には、当てはまった項目の根拠の文を、最後の AI の返信から一字一句そのまま 1 つ引用します。当てはまらなければ空文字。"""
 
 
@@ -50,10 +51,18 @@ def _log(transcript: list[dict]) -> str:
     return "\n".join(f"{'AI' if t['who'] == 'agent' else '本人'}: {t['text']}" for t in transcript)
 
 
-async def label_turn(client, model: str, transcript: list[dict]) -> dict:
+def label_user(transcript: list[dict], fixed: list[str] | None = None) -> str:
+    """label_turn に渡す文。fixed は質問バンクの決まった候補(形 B〜D)。形 A と台本の形は None(候補をモデルが作るため)。"""
+    user = f"## 会話ログ\n{_log(transcript)}"
+    if fixed:
+        user += "\n\n## 決まった候補(誰にでも同じ問いで同じに出す答えの候補。誘導に数えない)\n" + " / ".join(fixed)
+    return user
+
+
+async def label_turn(client, model: str, transcript: list[dict], fixed: list[str] | None = None) -> dict:
     """最後の AI の返信のラベル({reask, two_questions, interview_tone, leading, evidence})。"""
     j = await llm.parse(client, model=model, max_tokens=4000, effort="low", schema=TurnLabels, system=LABEL_SYSTEM,
-                        messages=[{"role": "user", "content": f"## 会話ログ\n{_log(transcript)}"}])
+                        messages=[{"role": "user", "content": label_user(transcript, fixed)}])
     if j is None:
         raise RuntimeError("ジャッジがラベルを返さなかった")
     return j.model_dump()

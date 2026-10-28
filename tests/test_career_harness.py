@@ -775,3 +775,18 @@ def test_a_pass_button_left_in_a_saved_state_still_skips():
     st.current["choices"] = ["パス", "あとで"]  # 前の版の状態
     out = H.turn(st, "パス", H.BANK, LLM())
     assert st.slots["why_now"]["status"] == "passed" and out["qid"] == "hf_area"
+
+
+def test_renamed_candidates_left_in_a_saved_state_keep_their_effect():
+    """task 315 で名前を変えた候補(規模の区切り、上げたいものの「規模」)の古いボタンも、今の候補として受ける(答えを消さない)。"""
+    st = H.new_state(form="C")
+    _to(st, "card_scale1")
+    st.current["choices"] = ["5人くらい", "10人くらい", "20人以上", "覚えていない", "パス"]  # 前の版の状態
+    out = H.turn(st, "10人くらい", H.BANK, LLM())
+    e = st.slots["career1.scale"]
+    assert e["status"] == "filled" and e["range"] == [8, 14] and e["unit"] == "人" and out["qid"] == "card_result1"
+    st = H.new_state(form="C")
+    _to(st, "hf_raise", LLM([{"slot_updates": [], "segment": "same_path"}]))
+    st.current["choices"] = ["年収", "役職", "規模", "パス", "あとで"]
+    H.turn(st, "規模", H.BANK, LLM())
+    assert st.slots["raise_target"]["status"] == "filled" and st.slots["raise_target"]["text"] == "任される仕事の大きさ"
