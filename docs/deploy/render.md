@@ -149,6 +149,72 @@ certifi は 2026.10.19 以上が要ります。image の版は次で確かめま
 
 全体の上限(`AICA_DAILY_TURN_LIMIT_TOTAL`、既定で 1 日 1000 ターン)は残るので、1 日の費用の天井は変わりません。
 
+### 6. 通知を設定して確かめる **【運営者】**
+
+デプロイの失敗、`aica` の unhealthy、ディスクの 80% 超えなどの失敗の通知を、メールで受けます。
+設定はワークスペースに 1 つ置き、`aica` と `aica-voice` はそれに従わせます。決めた理由と現状は [Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+| 項目 | 決めたこと | 理由 |
+|---|---|---|
+| 送り先(Notification Destination) | メールだけ。宛先は、運営者が Render にログインしているアカウント | 失敗の通知は、すべてメールで届く。Slack でしか届かないのは、デプロイの成功、unhealthy からの回復、one-off job の失敗で、気づくためには要らない。通知のために Slack を用意しなくて済む |
+| 段階(Default Service Notifications) | ワークスペースの既定を「Only failure notifications」 | 「All notifications」にしても、メールで増えるのは「ディスクの使用が 80% を下回った」だけ |
+| サービスごとの上書き | しない。`aica` と `aica-voice` は「Use workspace default」 | 既定を 1 か所で変えれば両方に効く。上書きがあると、既定を変えてもそのサービスには効かない |
+| Preview Notifications | 変えない | aica はプレビューを使わない(`render.yaml` に `previews` がない)。Pro 以上のワークスペースだけの設定 |
+
+「Only failure notifications」で、メールで届く通知です(Render の文書 [Email and Slack Notifications](https://render.com/docs/notifications) の表から)。
+
+| 通知 | `aica` | `aica-voice` | 確かめ方 |
+|---|---|---|---|
+| build かデプロイが失敗した | 届く | 届く | 試せる(下の「届くことを確かめる」) |
+| 動いているサービスが unhealthy になった | 届く(`/healthz`) | 未確認。Render のヘルスチェックは Web サービスと private service だけで、バックグラウンドワーカーにはない | 試せない |
+| ディスクの使用が 80% を超えた | 届く(`aica-data` 2GB) | 対象外(ディスクがない) | 試せない |
+| Blueprint の同期が失敗した(`render.yaml` を変えた PR のマージなど) | 届く(Blueprint ごと) | 同じ | 試せない |
+| 24 時間、起動して healthy になることに失敗し続け、Render がサービスを Suspend した | 届く | 届く | 試せない |
+| Docker の image の取得が失敗した | 対象外(登録済みの image ではなく、Render が build する) | 対象外 | - |
+
+届かないものです。
+
+- メモリ不足(`Out of memory`)、`Instance Failed`、インスタンスの起動し直し。Render の通知の一覧にありません。「Events」には出ます
+  (拾う仕組みは Brief の「次にやること」の 3)
+- デプロイの成功と、unhealthy からの回復(Slack だけ)。回復したかは「Events」で見ます
+- `aica-voice` が固まったこと(ヘルスチェックがない。Brief の「次にやること」の 10)
+
+Render の文書に書いておらず、未確認のことです。下の「届くことを確かめる」で分かるものは、そこで控えます。
+
+- メールがワークスペースの誰に届くか(メンバー全員か、持ち主だけか)
+- 送り元のアドレス
+- `aica-voice` で unhealthy の通知が出るか
+
+**設定する**
+
+1. [Render のダッシュボード](https://dashboard.render.com/) のワークスペースのホームで、左の「Integrations」→「Notifications」を開く
+2. 「Notification Destination」を「Email」にする。Slack はつながない
+3. 「Default Service Notifications」を「Only failure notifications」にする(「None」だと何も届かない)
+4. 同じ画面の「Notification Overrides」に `aica` と `aica-voice` が無いことを見る。あれば、そのサービスの「Settings」→「Notifications」で、
+   すべての項目を「Use workspace default」に戻す
+5. `aica` と `aica-voice` の「Settings」→「Notifications」が「Use workspace default」になっていることを見る
+
+**届くことを確かめる**
+
+本番の `aica` と `aica-voice` には触れず、build が必ず失敗する試しのサービスを作って、デプロイの失敗の通知を出します。
+新しいサービスもワークスペースの既定に従うので、送り先と段階の設定を確かめられます。
+
+1. 「New」→「Web Service」→「Public Git Repository」で、`https://github.com/render-examples/flask-hello-world`(Render の例)を入れる
+2. 名前は `notify-test`、Language は「Python 3」、Build Command は `exit 1`、Instance Type は「Free」にして作る
+   (Free が選べなければ、いちばん安いものにし、確かめたらすぐ消す)
+3. build が失敗し、デプロイの失敗のメールが届くことを見る。宛先と送り元のアドレスを控える。
+   迷惑メールに入っていたら、送り元を受信箱に残すフィルタを作る。携帯でメールの通知が出ることも見る
+4. `notify-test` の「Settings」で「Delete Web Service」を押して消す
+5. 設定した日、届いた宛先、送り元を、Brief の関門 6 に書く(「設定待ち」を外す)
+
+届かないときは、迷惑メール、手順 2 と 3 の設定、`notify-test` の「Settings」→「Notifications」の順に見ます。
+
+ほかの通知は、本番を止めるかディスクを埋めないと出ないので、試しません。実際に起きたときに、「Events」と照らして届いたかを見ます。
+
+- unhealthy: `aica` の `/healthz` が失敗し続けたとき
+- ディスクの 80% 超え: 今の使用量は、`aica` の「Shell」で `df -h /app/data` を実行して見る
+- Blueprint の同期の失敗、Suspend: 起きたときに見る
+
 ## 環境変数
 
 Render の「Environment」に置きます。`.env` はコンテナに入れません。表に無いものは README の「設定」の既定のままです。
@@ -325,3 +391,5 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 参考にした Render の文書(2026-10-25 に確認): [Blueprint YAML Reference](https://render.com/docs/blueprint-spec)、
 [Persistent Disks](https://render.com/docs/disks)、[Web Services](https://render.com/docs/web-services)、
 [Health Checks](https://render.com/docs/health-checks)。
+通知の手順は、2026-10-28 に [Email and Slack Notifications](https://render.com/docs/notifications) と
+[Health Checks](https://render.com/docs/health-checks) を確認して書きました。
