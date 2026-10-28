@@ -314,6 +314,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](deploy/render.md)) | 使う |
+| `python -m scripts.healthz_watch --url https://…/healthz` | 外形監視の判定。`/healthz` を 3 回まで 60 秒おきに呼び、1 回でも 200 なら終了コード 0、全部失敗なら 1。`--repo` を付けると Issue を開く、閉じる(ワークフロー `healthz` が 15 分ごとに動かす。[docs/deploy/render.md の 7](deploy/render.md#7-外形監視を有効にして確かめる-運営者)) | 使わない |
 | `python -m scripts.check_image_certs [--no-build] [--probe]` | image の CA 証明書の確かめ。コンテナを作り、certifi が 2026.10.19 以上で、ca-certificates が Debian の今の版かを確かめる(eMudhra の漏洩。[docs/deploy/render.md](deploy/render.md)) | 使わない |
 | `python -m scripts.career_ui_preview` | 正社員のヒアリングの形 D の UI(「始める」の 1 枚、帯、プロフィールカード、職歴カード、まとめ、全部の完成)の写真を `docs/images/career-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
 | `python -m scripts.career_stamp` | 職歴カードの「完成」のスタンプ(16×16 のドット絵を 4 倍にした PNG。アーケードと同じ色)を `line_runtime/static/career/stamp.png` に作り直す。`/static/career/stamp.png` で出る | 使わない |
