@@ -130,6 +130,64 @@ def test_questions_are_not_vague():
         assert all(w in q["text"] for w in ("チームの人数", "顧客の数", "売上")), q["text"]
 
 
+def test_more_lead_says_which_candidates_from_the_bank_topic():
+    """「他の候補」の吹き出しは、何の候補かが分かる短い文(task 326 の A)。押した文をそのまま返さず、問いの文も繰り返さない。
+    どの問いも、質問バンクの短い名前(topic)から同じ作りで作る(数の問いは「区切り」)。"""
+    leads = set()
+    for _, _, qs in _all_questions():
+        for q in qs:
+            lead = H.more_lead(q)
+            assert q["topic"] and "{" not in q["topic"] and lead.startswith(q["topic"]), q["id"]
+            assert lead not in (H.MORE, H.MORE + "です。") and q["text"] not in lead, q["id"]
+            assert H.chars(lead) <= H.REACTION_MAX and "規模" not in lead, (q["id"], lead)
+            leads.add(lead)
+    st = H.new_state(form="C")
+    assert H.more_lead(H.qmap(st, H.BANK)["hf_salary"]) == "年収のほかの区切りです。"
+    assert H.more_lead(H.qmap(st, H.BANK)["ib_why_now"]) == "きっかけのほかの候補です。"
+    assert len(leads) > 10  # 問いごとに違う
+
+
+def _yen(q, label):
+    lo, hi = q["choice_effects"][label]["min_annual_salary"]["range"]
+    return lo, 10**6 if hi is None else hi
+
+
+def test_salary_candidates_are_in_amount_order_and_all_are_values():
+    """年収の候補(task 326 の B、C): どのページも金額の順。1 ページ目で金額の幅の全部(0〜上限なし)を選べる。「他の候補」で出すのは、
+    1 ページ目のどれかの区切りの中の、細かい区切りか高い区切り。どの候補も年収の下限の値(range)になる(「こだわらない」は nopref)。
+    「今と同じくらい」「今より上げたい」のような、値にならず、前の答え(なぜ今)を聞き直す候補は出さない。"""
+    q = H.qmap(H.new_state(form="C"), H.BANK)["hf_salary"]
+    first = [c for c in q["pages"][0] if c != "こだわらない"]
+    assert q["choice_effects"]["こだわらない"]["min_annual_salary"] == {"nopref": True}
+    for page in q["pages"]:
+        amounts = [c for c in page if c != "こだわらない"]
+        assert all("range" in q["choice_effects"][c]["min_annual_salary"] for c in amounts), page
+        assert [_yen(q, c) for c in amounts] == sorted(_yen(q, c) for c in amounts), page
+    assert _yen(q, first[0])[0] == 0 and _yen(q, first[-1])[1] == 10**6
+    for c in (c for page in q["pages"][1:] for c in page):
+        assert any(_yen(q, p)[0] <= _yen(q, c)[0] and _yen(q, c)[1] <= _yen(q, p)[1] for p in first), c
+    assert "1000万円以上" in q["pages"][1]  # 高い区切りは 2 ページ目に(前は 3 ページ目まで出なかった)
+    assert not {"今と同じくらい", "今より上げたい", "相談して決める"} & set(q["choices"])
+
+
+def test_phase_line_comes_after_the_reaction_and_before_the_question():
+    """フェーズの区切り(PHASE_LINES)は、前の答えへの受け止めの後、次の問いの前(task 326 の D)。吹き出しは 1 つのまま。
+    受け止めが無いとき(言い方が問いの文だけ)は、区切り → 問い。形 C の「✓職歴」の 1 行は、前の答えの行なので先頭のまま。"""
+    st = H.new_state(form="C")
+    _to(st, "ib_why_now")
+    q = H.qmap(st, H.BANK)
+    reply = {"reply": "年収を上げたいのですね。" + q["hf_area"]["text"]}
+    out = H.turn(st, "年収を上げたい", H.BANK, LLM(generates=[reply]))
+    assert out["bubbles"] == ["\n".join(["年収を上げたいのですね。", H.PHASE_LINES["hard_filter"], q["hf_area"]["text"]])]
+    st = H.new_state(form="C")
+    _to(st, "ib_why_now")
+    out = H.turn(st, "年収を上げたい", H.BANK, LLM())
+    assert out["bubbles"] == [H.PHASE_LINES["hard_filter"] + "\n" + q["hf_area"]["text"]]
+    v = {"text": "それで?", "progress": ["✓職歴1「営業」3/3", H.PHASE_LINES["scenario_game"]]}
+    assert H.bubble(v, "営業ですね。それで?") == "✓職歴1「営業」3/3\n営業ですね。\n次は二択の質問です\nそれで?"
+    assert H.bubble({"text": "それで?", "progress": ["✓職歴1「営業」1/3"]}, "営業ですね。それで?") == "✓職歴1「営業」1/3\n営業ですね。それで?"
+
+
 @pytest.mark.parametrize("form", H.FORMS)
 def test_bank_fits_the_budgets(form):
     """ボタンは 13 個まで、ラベルは 20 字まで、合わせて 40 字まで(どのページも、聞き返しの候補も)。問いの文は、前置き(最初、
@@ -418,7 +476,7 @@ def test_more_shows_new_candidates_then_guides_to_type():
     for page in q["pages"][1:]:
         out = H.turn(st, H.MORE, H.BANK, llm)
         got = [c for c in out["choices"] if c in q["choices"]]
-        assert got == page and not set(got) & set(seen) and out["bubbles"] == [H.MORE_LEAD]
+        assert got == page and not set(got) & set(seen) and out["bubbles"] == ["きっかけのほかの候補です。"]
         assert H.MORE in out["choices"] and H.PASS in out["choices"] and not out["counted"]
         seen += got
     out = H.turn(st, H.MORE, H.BANK, llm)
