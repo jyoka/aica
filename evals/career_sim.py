@@ -126,11 +126,12 @@ class MockActor:
         if cur["mode"] == "review":
             return H.REVIEW_OK, True, {"review_ack": "all"}
         q = H.qmap(state, bank)[cur["qid"]]
+        shown = [c for c in q["choices"] if c in buttons]  # 画面に出ている答えの候補(「他の候補」は押さない)
         if q["id"] == "q_segment":
             want = self.other.get("今のあなたに近いもの")
             return (want, True, {}) if want in buttons else (H.PASS, True, {})
         if q["phase"] in ("scenario_game", "reverse_pick"):
-            return q["choices"][_crc(self.p["id"], q["id"]) % len(q["choices"])], True, {}
+            return shown[_crc(self.p["id"], q["id"]) % len(shown)], True, {}
         t = q["targets"][0]
         self.answered.add(t)
         f = self.facts.get(t)
@@ -138,8 +139,8 @@ class MockActor:
             o = {"direction": "次にやりたいこと"}.get(t)
             if o and self.other.get(o) and self.other[o] != NOTHING:
                 return self._type(t, self.other[o], tired)
-            if q["choices"]:
-                return q["choices"][_crc(self.p["id"], q["id"]) % len(q["choices"])], True, {}
+            if shown and q["kind"] != "text":  # 文の問いの候補(無い職歴の職種など)は押さずにスキップ
+                return shown[_crc(self.p["id"], q["id"]) % len(shown)], True, {}
             return H.PASS, True, {}
         if self.nothing_left and q["kind"] == "text" and not t.startswith("career"):
             self.nothing_left -= 1
@@ -147,7 +148,7 @@ class MockActor:
         if f["kind"] == "dont_know":
             return (H.DONT_KNOW, True, {}) if H.DONT_KNOW in buttons else (H.DONT_KNOW, False, {"intent": "dont_know"})
         if f["kind"] == "number":
-            for b in q["choices"]:
+            for b in shown:
                 eff = q["choice_effects"].get(b, {}).get(t) or {}
                 lo, hi = (eff.get("range") or (None, None))
                 if lo is not None and J.same_unit(eff.get("unit"), f["unit"]) and f["value"] >= lo and (hi is None or f["value"] <= hi):

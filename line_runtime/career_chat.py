@@ -31,7 +31,7 @@ class ExtractOut(BaseModel):
     slot_updates: list[SlotUpdate]
     ng_updates: list[str]
     segment: Literal["same_path", "change", "return", "early"] | None
-    intent: Literal["answer", "pass", "dont_know", "later", "clarify", "aside", "show_result"]
+    intent: Literal["answer", "pass", "dont_know", "later", "clarify", "aside", "show_result", "more"]
     review_ack: Literal["all", "partial", "none"] | None
 
 

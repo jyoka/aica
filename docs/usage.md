@@ -305,6 +305,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
 | `python -m evals.career_sim [--log DIR]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_choices` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。最後に「すべて合格」 | 使わない |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
 | `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |

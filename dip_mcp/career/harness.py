@@ -12,7 +12,9 @@
   発言の部分文字列のときだけ入れる(確信度は low。まとめで確かめる)。数は、発言に数字で書いてあるときだけ入れる
 - 自由に打った文を正規表現で読まない: 文の中身は抽出(LLM)が読む。読めなかった答えは、ボタンで聞き直す(1 回だけ。数えない)。
   2 回目も読めなければ、本人の文を low のまま入れ、まとめで確かめる(聞き直さない)
-- 「あとで」: そこまでの状態(summary)を返して終える。保存は呼ぶ側(2b のタスク)
+- 「中断」(と形 D の「始める」の「あとで」): そこまでの状態(summary)を返して終える。保存は呼ぶ側(2b のタスク)
+- 答えの候補(task 315、設計メモ §5.3): どの問いも候補をページで持ち、「他の候補」で次のページを出す(数えない)。問いのボタンは
+  「スキップ」(この問いだけ)で、終える操作はボタンにしない。聞き返しには問いの説明(explain)と、それに合う候補を出す
 - 形 B、C、D(§6.5): B は場面の二択と逆選択をせず、MID を直接聞き、進み具合と 1 行を見せない。C は全部。new_state(form=)、
   無ければ環境変数 CAREER_HARNESS_FORM、既定は C
 - 形 D(task 246)は、C の問いに LINE の Flex を足した形。問いと予算は C と同じで、違うのは 3 つだけ: 最初に「始める」の 1 枚を
@@ -78,17 +80,28 @@ KNOWN_ROLE_MIN = 4  # 数の手前で切った仕事の言葉がこれより短�
 KNOWN_ROLE_FALLBACK = "そのお仕事"  # 引用をやめたときの決まった言い方(「{role}」の代わり)
 SAVED_TEXT_MAX = 200  # 保存する 1 つの欄の字数の上限(dip_mcp.career.store.VALUE_MAX。超える値は保存しない)
 
-PASS, DONT_KNOW, LATER, REVIEW_OK = "パス", "覚えていない", "あとで", "これでOK"
+# 「スキップ」はこの問いだけを飛ばす。ヒアリングを終える操作は問いのボタンに入れない(task 315。「パス」と「あとで」が並び、
+# どちらが全体を終えるのかラベルから分からない、と利用者の指摘)。終えるときは「中断」と送る(END_WORDS)。
+# 「あとで」のボタンは、形 D の「始める」の 1 枚にだけ残す(まだ問いに入っていないので、答えと紛れない)
+PASS, DONT_KNOW, LATER, REVIEW_OK = "スキップ", "覚えていない", "あとで", "これでOK"
+END_WORDS = ("中断", "中断する", "ヒアリングを中断", "あとで")  # 打った文がこれだけなら、そこまでを残して閉じる(LATER と同じ)
+LEGACY_BUTTONS = {"パス": PASS}  # task 315 より前に出したボタン(進めている相談の状態に残る)を、今の名前で受ける
+MORE = "他の候補"  # 答えの候補の次のページを出すボタン(task 315)。数えない
+MORE_LEAD = "他の候補です。"
+MORE_DONE = "候補は以上です。最初の候補に戻しました。合わなければ、ひとことで送ってください。"
 NOPREF = "こだわりなし"
 SEGMENTS = ("same_path", "change", "return", "early")
 SEGMENT_JA = {"same_path": "同じ仕事で上へ", "change": "仕事を変えたい", "return": "ブランクから戻る", "early": "経験が浅い",
               "unknown": "未回答"}
-INTENTS = ("answer", "pass", "dont_know", "later", "clarify", "aside", "show_result")
+INTENTS = ("answer", "pass", "dont_know", "later", "clarify", "aside", "show_result", "more")
 STATUSES = ("filled", "passed", "dont_know")
 
 # 入口では残りの問いの数とかかる時間を出さない(task 288。「あと12問」で、せっかちな人はほぼ離れる、と利用者の指摘)。
 # 何のためか(職務経歴書の材料)と、1 問ずつなことだけを言う
-START_LEAD = "職務経歴書の材料を、1問ずつ集めます。"
+# やめ方(「中断」と送る)も入口で言う(task 315。問いのボタンに終える操作を入れないため)。形 D は「始める」の 1 枚の
+# 一言(dip_mcp.career.ui.START_NOTE)が言うので、吹き出しは START_LEAD_UI
+START_LEAD_UI = "職務経歴書の材料を、1問ずつ集めます。"
+START_LEAD = START_LEAD_UI + "「中断」でいつでもやめられます。"
 # フェーズが変わったときの 1 行(形 C と D。task 288)。残りの問いの数は出さず、次に何を聞くかだけを言う
 PHASE_LINES = {"hard_filter": "次は希望の条件です", "career_cards": "次は職歴です", "scenario_game": "次は二択の質問です",
                "reverse_pick": "次は選ぶだけの質問です", "fill_gaps": "あと少しで完成です"}
@@ -98,8 +111,11 @@ FIX_LEAD = "直します。"
 FIX_KEEP = "そのまま"  # 直す問いのボタン。前の値を変えずにまとめに戻る(押し間違えた「直す」をやめる)
 FIX_LIMIT_LEAD = "ここからは、違うところを文で送ってください。"
 CARD_UI_LABELS = {"role": "仕事", "scale": "規模", "result": "結果"}  # 形 D のカードとボタンの短い名前
-RETRY_TEXT = "うまく受け取れませんでした。ボタンか、ひとことでお願いします。"
-CLARIFY_TEXT = "答えにくければ、ひとことかボタンで大丈夫です。"
+RETRY_TEXT = "読み取れなかったので、近いものを押すか、ひとことで送ってください。"
+# 聞き返し(「規模って何?」)には、まず問いの意味を説明する(質問バンクの explain)。同じ問いを繰り返さない(task 315)。
+# 同じ問いへの 2 回目は、別の候補を出してこの文。3 回目は、その問いを飛ばして次へ進む(CLARIFY_SKIP)
+CLARIFY_AGAIN = "迷ったら、近いものを押すか、思いついた言葉をそのまま送ってください。"
+CLARIFY_SKIP = "この質問は飛ばします。"
 REVIEW_LEAD = "まとめです。違うところだけ送ってください。"
 REVIEW_FOCUS_LEAD = "ここだけ教えてください。"
 RESULT_TEXT = "おつかれさまでした。職務経歴書の材料をまとめました。"
@@ -179,9 +195,16 @@ def _load_json(name):
     return json.loads((HERE / name).read_text(encoding="utf-8"))
 
 
+def _with_choices(q):
+    """答えの候補のページ(pages)から、候補の全部(choices。ページの順)を作る。"""
+    return dict(q, choices=[c for page in q["pages"] for c in page])
+
+
 def load_bank():
-    """質問バンク(データ)。プロンプトには書かない。職歴カードの問いは card_role などのひな形で、questions() が 1 枚ごとに広げる。"""
-    return _load_json("bank.json")
+    """質問バンク(データ)。プロンプトには書かない。職歴カードの問いは card_role などのひな形で、questions() が 1 枚ごとに広げる。
+    どの問いも答えの候補を pages(1 ページ = 1 回に見せるボタン)で持つ(task 315)。最初のページを出し、「ほかの候補」で次の
+    ページを出す。explain は聞き返されたときの説明、explain_choices はその説明に合わせて出す候補(無ければ今のページ)。"""
+    return [_with_choices(q) for q in _load_json("bank.json")]
 
 
 BANK = load_bank()
@@ -337,15 +360,17 @@ def _expand(q, n, segment, state=None):
     カードの残りの問いは、どの職歴の話か分かるように、仕事の言葉を頭に付ける(text_known。「それで」だけでは何の話か分からないため)。"""
     def sub(s):
         return s.replace("{n}", str(n))
-    text = ((q.get("text_by_segment") or {}).get(segment) or {}).get(str(n)) or \
-        q["text"].replace("{which}", "直近の" if n == 1 else "その前の")
+    which = "直近の" if n == 1 else "その前の"
+    text = ((q.get("text_by_segment") or {}).get(segment) or {}).get(str(n)) or q["text"].replace("{which}", which)
+    pages = ((q.get("pages_by_segment") or {}).get(segment) or {}).get(str(n)) or q["pages"]
     role = (state.slots.get(card_key(n, "role")) if state else None) or {}
     if q.get("text_known") and role.get("from") in ("resume", "saved") and role.get("status") == "filled" and role.get("text"):
         r = " ".join(nfkc(role["text"]).split())  # 改行や続く空白を 1 つの空白に(問いの文は 1 行。validate_reply が文のまま探す)
         quote = _clip(r, KNOWN_ROLE_CHARS)
         text = q["text_known"].replace("「{role}」", KNOWN_ROLE_FALLBACK) if quote is None else q["text_known"].replace("{role}", quote)
-    return dict(q, id=f"{q['id']}{n}", card=n, text=text, targets=[sub(t) for t in q["targets"]],
-                choice_effects={c: {sub(k): v for k, v in eff.items()} for c, eff in q["choice_effects"].items()})
+    return _with_choices(dict(q, id=f"{q['id']}{n}", card=n, text=text, targets=[sub(t) for t in q["targets"]], pages=pages,
+                              explain=q.get("explain", "").replace("{which}", which),
+                              choice_effects={c: {sub(k): v for k, v in eff.items()} for c, eff in q["choice_effects"].items()}))
 
 
 def questions(state, bank):
@@ -466,7 +491,7 @@ def advance(state, bank):
             state.stop_reason = _why_stop(state, bank)
             ev(state, "stop", reason=state.stop_reason, seconds=round(state.seconds, 1))
         state.last_card = build_card(state)
-        state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK, LATER]}
+        state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK]}
     else:
         state.current = {"qid": "result", "mode": "result", "choices": []}
 
@@ -484,13 +509,44 @@ def _why_stop(state, bank):
     return "done"  # フェーズの上限で出せなかった
 
 
-def choices_of(q):
-    return list(q["choices"]) + list(q.get("escape", [])) + [LATER]
+def page_choices(q, cands, mode="ask", more=True):
+    """ボタン: 答えの候補 → 「他の候補」→ スキップ(と「覚えていない」)。直す問い(mode=fix)は最後に「そのまま」。
+    ヒアリングを終えるボタンは入れない(END_WORDS)。質問バンクのページは、ラベルの合計が LABELS_MAX に入る
+    (tests/test_career_harness.py)。直す問い(形 D のまとめの「直す」だけ)は「そのまま」の 4 字だけ超えてよい。
+    候補を削ると、押したいラベルが消えるため。"""
+    tail = ([MORE] if more else []) + list(q.get("escape", [])) + ([FIX_KEEP] if mode == "fix" else [])
+    return list(cands) + tail
+
+
+def choices_of(q, mode="ask"):
+    """問いを最初に出すときのボタン(候補の最初のページ)。"""
+    return page_choices(q, q["pages"][0] if q.get("pages") else q["choices"], mode)
 
 
 def fix_choices(q):
     """直す問いのボタン。「そのまま」で、前の値を変えずにまとめに戻れる。"""
-    return list(q["choices"]) + list(q.get("escape", [])) + [FIX_KEEP, LATER]
+    return choices_of(q, "fix")
+
+
+def _shown_now(q, choices):
+    return [c for c in choices if c in q["choices"]]
+
+
+def ask_current(q, mode="ask", **kw):
+    """問いを出すときの state.current。page は今のページ、shown はこの問いで見せた候補(「ほかの候補」で重ねないため)。"""
+    ch = choices_of(q, mode)
+    return {"qid": q["id"], "mode": mode, "choices": ch, "page": 0, "shown": _shown_now(q, ch), **kw}
+
+
+def next_page(q, cur):
+    """「ほかの候補」で出す (ページの番号, 候補)。見せた候補を除き、残りが無ければ (None, [])。"""
+    shown = set(cur.get("shown") or [])
+    pages = q.get("pages") or []
+    for i in range(cur.get("page", 0) + 1, len(pages)):
+        cands = [c for c in pages[i] if c not in shown]
+        if cands:
+            return i, cands
+    return None, []
 
 
 def _present(state, q, mode="ask"):
@@ -501,7 +557,7 @@ def _present(state, q, mode="ask"):
        open=[t for t in q["targets"] if t in pri and is_open(state.slots.get(t))],
        hard=[t for t in q["targets"] if pri.get(t) == HARD or t == "segment"],
        segments=list(q["segments"]), segment=state.segment, turns=state.turns, seconds=round(state.seconds, 1))
-    state.current = {"qid": q["id"], "mode": mode, "choices": choices_of(q)}
+    state.current = ask_current(q, mode)
 
 
 # ----------------------------- マージ -----------------------------
@@ -555,7 +611,10 @@ def confidence_for(phase, src):
 def _apply_choice(state, q, label, text=None, src="button"):
     """選択肢の効き目を当てる。text は本人の言葉(打った文が選択肢と同じ意味だったとき)。"""
     conf = confidence_for(q["phase"], "current")
-    for k, eff in q["choice_effects"].get(label, {}).items():
+    effects = q["choice_effects"].get(label)
+    if effects is None:  # 効き目を書いていない候補は、ラベルをそのまま問いの欄の値にする(本人が選んだ言葉)
+        effects = {t: {} for t in q["targets"] if t in ALL_SLOTS} if label in q["choices"] else {}
+    for k, eff in effects.items():
         if k == "__segment__":
             set_segment(state, eff, "choice")
         elif k == "__ng__":
@@ -905,7 +964,8 @@ def start(state, bank=BANK):
         state.current = {"qid": "start", "mode": "start", "choices": [START_GO, LATER]}
     elif first:
         advance(state, bank)
-    out = _represent(state, bank, counted=False, lead=START_LEAD if state.turns == 0 else None, read=False)
+    lead = (START_LEAD_UI if state.form in UI_FORMS else START_LEAD) if state.turns == 0 else None
+    out = _represent(state, bank, counted=False, lead=lead, read=False)
     if not first:
         return out
     state.seconds += read_seconds(out["bubbles"] + out["choices"])
@@ -913,8 +973,10 @@ def start(state, bank=BANK):
 
 
 def match_button(state, text):
+    """今のボタンか、この問いで前に見せた候補(「他の候補」で隠れた前のページ。LINE は前のボタンを消すので、打ち直した)と同じ文。"""
     t = nfkc(text)
-    for c in (state.current or {}).get("choices", []):
+    cur = state.current or {}
+    for c in [*cur.get("choices", []), *cur.get("shown", [])]:
         if nfkc(c) == t:
             return c
     return None
@@ -988,7 +1050,8 @@ def extract_payload(state, bank, user_text):
         question, targets, kind = q.get("text", ""), list(q.get("targets", [])), q.get("kind")
         phase = q.get("phase", phase)  # 後のフェーズで聞く hard_filter の問いは hard_filter として
     return {"phase": phase, "segment": state.segment, "mode": cur.get("mode"), "kind": kind, "question": question,
-            "choices": list(cur.get("choices", [])), "targets": targets, "user_text": user_text,
+            "choices": list(dict.fromkeys([*cur.get("choices", []), *cur.get("shown", [])])), "targets": targets,
+            "user_text": user_text,
             "allowed_slots": {s: SLOTS[s]["label"] for s in pri}}
 
 
@@ -1007,9 +1070,10 @@ def _turn(state, user_text, bank, llm):
     cur = state.current
     q = qmap(state, bank).get(cur["qid"])
     button = match_button(state, text)
+    button = LEGACY_BUTTONS.get(button, button)
     fix = fix_targets(state).get(nfkc(text))
     state.seconds += BUTTON_SECONDS if button or fix else type_seconds(text)
-    if button == LATER:
+    if button == LATER or (button is None and fix is None and nfkc(text) in END_WORDS):
         return _close(state, "later")
     if cur["mode"] == "start":  # 形 D の「始める」: 最初の問いを出す。打った文は、最初の問いへの答えとして読む
         advance(state, bank)
@@ -1019,10 +1083,12 @@ def _turn(state, user_text, bank, llm):
         cur = state.current
         q = qmap(state, bank).get(cur["qid"])
         button = match_button(state, text)
+    if button == MORE and q is not None:
+        return _more(state, q)
     if fix is not None:  # 形 D のまとめの「直す」: その欄の問いを出す(数えない)
         fq = fix_question(state, bank, fix)
         if fq is not None and can_fix(state):
-            state.current = {"qid": fq["id"], "mode": "fix", "slot": fix, "choices": fix_choices(fq)}
+            state.current = ask_current(fq, "fix", slot=fix)
             ev(state, "fix", slot=fix, qid=fq["id"])
             return _represent(state, bank, counted=False, lead=FIX_LEAD)
         ev(state, "fix_refused", slot=fix)  # ターンの予算が尽きた: まとめを出し直す(文で直すのは受ける)
@@ -1038,6 +1104,8 @@ def _turn(state, user_text, bank, llm):
         return _close(state, "later")
     if intent == "aside":
         return _aside(state, bank, llm)
+    if intent == "more" and q is not None and cur["mode"] not in ("review", "start"):  # 「ほかには?」と打った
+        return _more(state, q)
     if cur["mode"] == "fix":
         _count(state, "review")
         if button == FIX_KEEP:  # 直すのをやめる: 値も確かさも変えずにまとめに戻る
@@ -1063,6 +1131,7 @@ def _turn(state, user_text, bank, llm):
         advance(state, bank)
         return _say(state, bank, llm)
     before = {k: copy.deepcopy(v) for k, v in state.slots.items()}
+    skipped = None
     if button is not None:
         if button in q.get("escape", []):
             _apply_escape(state, q, button)
@@ -1070,40 +1139,76 @@ def _turn(state, user_text, bank, llm):
             _apply_choice(state, q, button)
     elif intent in ("pass", "dont_know"):
         _apply_escape(state, q, DONT_KNOW if intent == "dont_know" and DONT_KNOW in q.get("escape", []) else PASS)
-    elif intent == "clarify" and cur["qid"] not in state.clarified and state.clarify_used < MAX_CLARIFY \
-            and state.phase_turns.get(state.phase, 0) < PHASE_CAP.get(state.phase, 99) \
-            and state.turns < MAX_TURNS - REVIEW_RESERVE:
-        state.clarified.append(cur["qid"])
-        state.clarify_used += 1
-        state.current = dict(cur, mode="clarify")
-        return _say(state, bank, llm)
+    elif intent == "clarify" and state.clarified.count(cur["qid"]) < MAX_CLARIFY:
+        _uncount(state)  # 説明は数えない(答えていないので。聞き返しで HARD が職歴カードの後ろに押し出されない)
+        _clarify(state, q)
+        return _say(state, bank, llm, counted=False)
+    elif intent == "clarify":  # 同じ問いの 3 回目の聞き返し: 空のまま次へ(HARD ならまとめの「ここだけ」で聞く)
+        ev(state, "clarify_unanswered", qid=q["id"])
+        skipped = CLARIFY_SKIP
     else:
         answered = ext is not None and _apply_text(state, q, ext, text)
-        if ext is not None and intent == "clarify":
-            ev(state, "clarify_suppressed", qid=cur["qid"])
-        if not answered and intent in ("answer", "clarify"):
+        if not answered and intent == "answer":
             if q["id"] not in state.retried:  # 1 回目: 数えずに、ボタンで聞き直す
                 state.retried += [q["id"], f"num:{q['id']}"]
                 _uncount(state)
                 state.current = dict(cur, mode="retry")
                 return _say(state, bank, llm, counted=False)
-            if intent == "answer":
-                _give_up(state, q, text)
-            else:  # 聞き返しの文は答えにしない。空のままにして、HARD ならまとめの「ここだけ」で聞く
-                ev(state, "clarify_unanswered", qid=q["id"])
+            _give_up(state, q, text)
     if intent == "show_result":
         _flag(state, "show_result")
     phase_before = state.phase
     advance(state, bank)
     if state.form != "B":
         _progress(state, before, phase_before)
+    if skipped:
+        state._progress = [skipped, *state._progress][-2:]
     return _say(state, bank, llm)
+
+
+def _more(state, q):
+    """「ほかの候補」: 見せていない候補の次のページを出す(数えない。問いの文は上の吹き出しにあるので、短い前置きだけ)。
+    出し尽くしたら、最初のページに戻し、文で送るよう案内する(「ほかの候補」はもう出さない)。"""
+    cur = state.current
+    i, cands = next_page(q, cur)
+    if i is None:
+        cur.update(page=len(q["pages"]), choices=page_choices(q, q["pages"][0], cur["mode"], more=False))
+        lead = MORE_DONE
+    else:
+        cur.update(page=i, choices=page_choices(q, cands, cur["mode"]))
+        cur["shown"] = list(dict.fromkeys([*cur.get("shown", []), *_shown_now(q, cur["choices"])]))
+        lead = MORE_LEAD
+    ev(state, "more", qid=q["id"], page=cur["page"], done=i is None)
+    return _out(state, [lead], cur["choices"], counted=False)
+
+
+def _clarify(state, q):
+    """聞き返し: 1 回目は問いの意味の説明(explain)と、その説明に合う候補(explain_choices、無ければ今の候補)。
+    2 回目は、見せていない候補(無ければ今の候補)と CLARIFY_AGAIN。どちらも問いの文を繰り返さない。"""
+    cur = state.current
+    n = state.clarified.count(q["id"])
+    state.clarified.append(q["id"])
+    state.clarify_used += 1
+    new = dict(cur, mode="clarify")
+    if n == 0:
+        cands = q.get("explain_choices") or _shown_now(q, cur["choices"])
+        new["text"] = q.get("explain") or q["text"]
+    else:
+        i, cands = next_page(q, cur)
+        if i is not None:
+            new["page"] = i
+        cands = cands or _shown_now(q, cur["choices"])
+        new["text"] = CLARIFY_AGAIN
+    new["choices"] = page_choices(q, cands, more=new.get("page", 0) < len(q["pages"]))
+    new["shown"] = list(dict.fromkeys([*cur.get("shown", []), *_shown_now(q, new["choices"])]))
+    state.current = new
+    ev(state, "clarify", qid=q["id"], n=n + 1)
 
 
 def _back_to_review(state):
     state.phase = "review"
     state.last_card = build_card(state)
-    state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK, LATER]}
+    state.current = {"qid": "review", "mode": "review", "choices": [REVIEW_OK]}
 
 
 def _apply_fix(state, q, slot, button, ext, intent, text):
@@ -1187,7 +1292,7 @@ def view(state, bank, aside=False):
     if mode == "retry":
         text = RETRY_TEXT + text
     elif mode == "clarify":
-        text = CLARIFY_TEXT + text
+        text = cur.get("text") or text
     v = {"phase": q["phase"] if q else state.phase, "segment": state.segment, "mode": "aside" if aside else mode, "qid": cur.get("qid"),
          "text": text, "choices": list(cur.get("choices", [])), "user_text": getattr(state, "_user_text", ""),
          "progress": list(getattr(state, "_progress", None) or [])}
@@ -1204,7 +1309,7 @@ def _represent(state, bank, counted, lead=None, read=True):
         bubbles[0] = (lead + "\n" if lead else "") + bubbles[0]
         return _out(state, bubbles, cur["choices"], counted=counted, card=card["lines"], read=read)
     if cur.get("mode") == "start":
-        return _out(state, [lead or START_LEAD], cur["choices"], counted=counted, read=read)
+        return _out(state, [lead or START_LEAD_UI], cur["choices"], counted=counted, read=read)
     if cur.get("mode") in ("result", "closed"):
         return _stored(state)
     v = view(state, bank)
