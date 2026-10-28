@@ -1,0 +1,54 @@
+[
+ {
+  "id": "baito-flow-later",
+  "entry": "baito",
+  "category": "flow",
+  "title": "日数の問いに「また今度にする」と打つ",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}},
+  "history": [
+   {"who": "agent", "text": "週に何日くらい入れそう？"}
+  ],
+  "asking": "hf_days",
+  "says": [{"text": "また今度にする", "button": false}],
+  "expect": [
+   {"check": "closed", "why": "later"},
+   {"check": "reply_contains", "any": ["続き"]}
+  ],
+  "note": "v4 に「あとで」の決まりは無い(career の LATER_TEXT にあたるもの)。会話の層で共通にする(設計メモ §4.6)"
+ },
+ {
+  "id": "baito-flow-stop",
+  "entry": "baito",
+  "category": "flow",
+  "title": "時間帯の問いに「やめる」と打つ",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "やめる", "button": false}],
+  "expect": [
+   {"check": "closed", "why": "exit"},
+   {"check": "llm_calls_max", "n": 0}
+  ]
+ },
+ {
+  "id": "baito-flow-show-result",
+  "entry": "baito",
+  "category": "flow",
+  "title": "接客の問いに「もう結果見せて」と打つ",
+  "segment": "student",
+  "known": {"age_band": {"value": "18_plus"}, "days_per_week": {"value": "3-4"}, "time_slots": {"value": ["evening"]}, "commute": {"value": "train_30"}},
+  "history": [
+   {"who": "agent", "text": "接客ってどう？"}
+  ],
+  "asking": "fg_customer",
+  "says": [{"text": "もう結果見せて", "button": false}],
+  "expect": [
+   {"check": "phase", "phase": "review"},
+   {"check": "not_closed"}
+  ]
+ }
+]

@@ -1,0 +1,161 @@
+[
+ {
+  "id": "correct-area-midway",
+  "entry": "career",
+  "category": "correct",
+  "title": "年収を聞かれている途中で、前に答えた勤務地を直す",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区", "from": "button:hf_area"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "あ、やっぱり勤務地は横浜がいい", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "area", "contains": "横浜", "confidence": "high"},
+   {"check": "keeps_question"},
+   {"check": "slot_open", "slot": "min_annual_salary"},
+   {"check": "responds_first"}
+  ],
+  "note": "今の作りは、今の問いのほかの欄にもう値があると、直した値を捨てる(harness._apply_text の kept_existing)"
+ },
+ {
+  "id": "correct-salary-later",
+  "entry": "career",
+  "category": "correct",
+  "title": "時期を答えながら、前の年収の答えを上げる",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "500万円台", "range": [500, 599], "unit": "万円"}},
+  "history": [
+   {"who": "user", "text": "500万円台"},
+   {"who": "agent", "text": "500万円台ですね。新しい仕事は、いつから始められそうですか?"}
+  ],
+  "asking": "hf_timing",
+  "says": [{"text": "すぐ。あとさっきの年収、やっぱり600万以上で", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "start_timing", "contains": "すぐ"},
+   {"check": "slot", "slot": "min_annual_salary", "number": 600},
+   {"check": "not_asks", "slots": ["min_annual_salary", "start_timing"]},
+   {"check": "no_made_up_number"}
+  ]
+ },
+ {
+  "id": "correct-retract",
+  "entry": "career",
+  "category": "correct",
+  "title": "前の答えを取り消す",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "大阪市内"}, "min_annual_salary": {"text": "400万円台", "range": [400, 499], "unit": "万円"}, "start_timing": {"text": "すぐ"}},
+  "history": [
+   {"who": "user", "text": "すぐ"},
+   {"who": "agent", "text": "今の仕事の、どこを変えたいですか?"}
+  ],
+  "asking": "hf_change_reason",
+  "says": [{"text": "ごめん、時期の「すぐ」は取り消し。まだ分からない", "button": false}],
+  "expect": [
+   {"check": "slot_not_high", "slot": "start_timing"},
+   {"check": "keeps_question"},
+   {"check": "responds_first"}
+  ],
+  "note": "取り消した値を確かめた値のまま残さない。「まだ分からない」を推測(low)で入れるか空にし、まとめで確かめる"
+ },
+ {
+  "id": "correct-unsure",
+  "entry": "career",
+  "category": "correct",
+  "title": "年収で迷っている",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "うーん、450か500かで迷う", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "min_annual_salary", "confidence": "low"},
+   {"check": "asks", "slot": "start_timing"},
+   {"check": "no_made_up_number"},
+   {"check": "no_pressure"}
+  ],
+  "note": "迷っている値は推測で入れ、まとめで確かめる。今ここで決めさせない"
+ },
+ {
+  "id": "correct-dont-know-scale",
+  "entry": "career",
+  "category": "correct",
+  "title": "規模の問いに「わからない」と打つ",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "大阪市内"}, "min_annual_salary": {"text": "400万円台", "range": [400, 499], "unit": "万円"}, "start_timing": {"text": "半年以内"}, "change_reason": {"text": "仕事の中身"}, "use_experience": {"text": "事務・経理"}, "career1.role": {"text": "経理"}},
+  "history": [
+   {"who": "user", "text": "経理"},
+   {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
+  ],
+  "asking": "card_scale1",
+  "says": [{"text": "わからない", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "career1.scale", "status": "dont_know"},
+   {"check": "asks", "qid": "card_result1"},
+   {"check": "reply_not_contains", "texts": ["読み取れなかった"]}
+  ]
+ },
+ {
+  "id": "correct-nothing-particular",
+  "entry": "career",
+  "category": "correct",
+  "title": "働き方の問いに「特にない」と打つ",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}},
+  "history": [
+   {"who": "agent", "text": "あと少しで完成です\n働き方で、いちばん大事なのは?"}
+  ],
+  "asking": "fg_work_style",
+  "says": [{"text": "特にないかな", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "work_style", "status": "passed"},
+   {"check": "not_asks", "slots": ["work_style"]},
+   {"check": "counted"}
+  ]
+ },
+ {
+  "id": "correct-vague-why",
+  "entry": "career",
+  "category": "correct",
+  "title": "きっかけの問いに「なんとなく」と答える",
+  "segment": "early",
+  "history": [
+   {"who": "user", "text": "経験が浅い"},
+   {"who": "agent", "text": "これからの方向を一緒に整理しましょう。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [{"text": "なんとなく…", "button": false}],
+  "expect": [
+   {"check": "reply_not_contains", "texts": ["読み取れなかった"]},
+   {"check": "no_pressure"},
+   {"check": "natural"},
+   {"check": "bubble_max", "chars": 80}
+  ],
+  "note": "「なんとなく」をそのまま答えとして入れて進むか、候補を見せて 1 回だけ手伝う。どちらでも、読めなかったとは言わない"
+ },
+ {
+  "id": "correct-go-back",
+  "entry": "career",
+  "category": "correct",
+  "title": "「前の質問に戻って」と言う",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "ごめん前の質問に戻りたい", "button": false}],
+  "expect": [
+   {"check": "asks", "qid": "hf_area"},
+   {"check": "not_counted"},
+   {"check": "choices_include", "labels": ["東京23区"]}
+  ],
+  "note": "直前に答えた問い(勤務地)を、直す問いとして出し直す。直したら年収の問いに戻る"
+ }
+]

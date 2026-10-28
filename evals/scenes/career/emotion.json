@@ -1,0 +1,130 @@
+[
+ {
+  "id": "emotion-long-story",
+  "entry": "career",
+  "category": "emotion",
+  "title": "きっかけの問いに、長い身の上話で答える",
+  "segment": "change",
+  "history": [
+   {"who": "user", "text": "仕事を変えたい"},
+   {"who": "agent", "text": "仕事を変えたいのですね。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [{"text": "新卒からみほん商事で経理を6年やってきて、数字を締めるのは得意なんだけど、毎月同じ作業の繰り返しで、このまま30代を終えるのかと思ったら怖くなって。去年から独学でデータ分析の勉強をしてて、それを仕事にできたらいいなと思ってる。親には反対されてるけど", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "why_now", "status": "filled", "confidence": "high"},
+   {"check": "slot", "slot": "career1.role", "contains": "経理"},
+   {"check": "bubble_max", "chars": 80},
+   {"check": "one_question"},
+   {"check": "no_made_up_number"},
+   {"check": "personal_touch"},
+   {"check": "empathy"}
+  ],
+  "note": "相づちは長い話の要点 1 つに触れる 1 文。話を要約し直して返さない。相づちで家族の話に踏み込まない"
+ },
+ {
+  "id": "emotion-anxious",
+  "entry": "career",
+  "category": "emotion",
+  "title": "職歴を聞かれて「転職できるか不安」と言う",
+  "segment": "return",
+  "known": {"why_now": {"text": "子育てが落ち着いた"}, "area": {"text": "家から30分以内"}, "min_annual_salary": {"text": "300万円台", "range": [300, 399], "unit": "万円"}, "start_timing": {"text": "半年以内"}, "work_hours": {"text": "時短がいい"}, "blank_period": {"text": "3〜5年", "range": [3, 5], "unit": "年"}},
+  "history": [
+   {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
+  ],
+  "asking": "card_role1",
+  "says": [{"text": "ブランク長いし、正直転職できるか不安で…", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "reply_not_contains", "texts": ["必ず", "絶対", "大丈夫です!"]},
+   {"check": "empathy"},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "「必ず見つかります」のような根拠のない約束をしない"
+ },
+ {
+  "id": "emotion-angry-reask",
+  "entry": "career",
+  "category": "emotion",
+  "title": "聞き直しに見えて「同じこと何回聞くの?」と怒る",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}},
+  "history": [
+   {"who": "user", "text": "すぐ"},
+   {"who": "agent", "text": "次の仕事で、いちばん上げたいのはどれですか?"}
+  ],
+  "asking": "hf_raise",
+  "says": [{"text": "だから年収だって。同じこと何回聞くの?", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "raise_target", "contains": "年収", "confidence": "high"},
+   {"check": "not_asks", "slots": ["raise_target", "why_now", "min_annual_salary"]},
+   {"check": "reply_not_contains", "texts": ["申し訳ございません", "失礼いたしました"]},
+   {"check": "responds_first"},
+   {"check": "natural"}
+  ],
+  "note": "短く詫びて、答えを受け取り、先へ進む。かしこまった謝罪の決まり文句にしない"
+ },
+ {
+  "id": "emotion-tired",
+  "entry": "career",
+  "category": "emotion",
+  "title": "途中で「疲れた…」と言う",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}, "career1.role": {"text": "法人営業"}, "career1.scale": {"text": "顧客100社以上", "range": [100, null], "unit": "社"}},
+  "history": [
+   {"who": "user", "text": "顧客100社以上"},
+   {"who": "agent", "text": "「法人営業」で、あなたが良くしたことは?"}
+  ],
+  "asking": "card_result1",
+  "says": [{"text": "疲れた…", "button": false}],
+  "expect": [
+   {"check": "not_closed"},
+   {"check": "reply_contains", "any": ["中断"]},
+   {"check": "not_asks", "slots": ["work_style", "direction", "team_style"]},
+   {"check": "empathy"}
+  ],
+  "note": "やめ方(「中断」と送れば残る)を 1 回だけ伝え、残りを短くする(HARD のほかを聞かずにまとめへ近づける)"
+ },
+ {
+  "id": "emotion-negative-reason",
+  "entry": "career",
+  "category": "emotion",
+  "title": "きっかけの問いに、ネガティブな理由を強い言葉で答える",
+  "segment": "same_path",
+  "history": [
+   {"who": "user", "text": "同じ仕事で上へ"},
+   {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [{"text": "上司が無能すぎてもう無理。会社も傾いてるし", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "why_now", "contains": "上司", "confidence": "high"},
+   {"check": "reply_not_contains", "texts": ["無能"]},
+   {"check": "one_question"},
+   {"check": "empathy"},
+   {"check": "no_advice_beyond"}
+  ],
+  "note": "本人の言葉のまま入れる(言い換えない)。返事で強い言葉をなぞらない。上司や会社を評価しない"
+ },
+ {
+  "id": "emotion-laid-off",
+  "entry": "career",
+  "category": "emotion",
+  "title": "「リストラされた」と打ち明ける",
+  "segment": "unknown",
+  "history": [
+   {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n今の状況に近いのは?"}
+  ],
+  "asking": "q_segment",
+  "says": [{"text": "先月リストラされて、とりあえず早く次を決めたい", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "why_now", "contains": "リストラ"},
+   {"check": "slot", "slot": "start_timing", "status": "filled"},
+   {"check": "bubble_max", "chars": 80},
+   {"check": "empathy"},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "segment の問いへの答えでなくても、なぜ今と時期は拾う。segment はボタンでもう一度聞いてよい"
+ }
+]

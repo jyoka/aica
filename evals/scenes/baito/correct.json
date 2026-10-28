@@ -1,0 +1,61 @@
+[
+ {
+  "id": "baito-correct-days",
+  "entry": "baito",
+  "category": "correct",
+  "title": "時間帯の問いの途中で、日数を直す",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}, "days_per_week": {"value": "1-2"}},
+  "history": [
+   {"who": "user", "text": "週1〜2日"},
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "あ、やっぱ週3は入れるかも", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "days_per_week", "value": "3-4"},
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "reply_not_contains", "texts": ["受け取れなかった"]}
+  ],
+  "note": "今(v4)は、まとめ(review)の外で今の問いでない欄を言い直すと推測(low)になり、確かめた値(high)を上書きしない(apply_update の low_over_high)"
+ },
+ {
+  "id": "baito-correct-dunno",
+  "entry": "baito",
+  "category": "correct",
+  "title": "通勤の問いに「わかんない」と答える",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "通うなら、どこまでOK？"}
+  ],
+  "asking": "hf_commute",
+  "says": [{"text": "わかんない", "button": false}],
+  "expect": [
+   {"check": "slot_not_high", "slot": "commute"},
+   {"check": "not_asks", "slots": ["commute"]},
+   {"check": "reply_not_contains", "texts": ["受け取れなかった"]},
+   {"check": "no_pressure"}
+  ]
+ },
+ {
+  "id": "baito-correct-unsure-wage",
+  "entry": "baito",
+  "category": "correct",
+  "title": "時給の問いに、2 つの区切りで迷う",
+  "segment": "side_job",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "時給はいくら以上がいい？"}
+  ],
+  "asking": "fg_wage",
+  "says": [{"text": "1200か1500で迷う…", "button": false}],
+  "expect": [
+   {"check": "slot_not_high", "slot": "hourly_wage_min"},
+   {"check": "reply_not_contains", "texts": ["受け取れなかった"]},
+   {"check": "no_made_up_number"}
+  ],
+  "note": "迷いは推測(low)で入れ、まとめで確かめる(設計メモ §4.4)。今の PICK_TEXT の二択で聞く形も合格"
+ }
+]

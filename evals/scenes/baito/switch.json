@@ -1,0 +1,67 @@
+[
+ {
+  "id": "baito-switch-also-fulltime",
+  "entry": "baito",
+  "category": "switch",
+  "title": "バイトの相談の途中で「正社員も考えてる」と言う",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "週に何日くらい入れそう？"}
+  ],
+  "asking": "hf_days",
+  "says": [{"text": "正社員も考えてるんだよね", "button": false}],
+  "expect": [
+   {"check": "stays"},
+   {"check": "not_closed"},
+   {"check": "offers_entries", "entries": ["career"]},
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "responds_first"}
+  ],
+  "note": "今は EXIT_REQUEST にも当たらず、aside で読まれて同じ問いに戻るだけ。迷っている本人に、移るかを選ばせる(設計メモ §4.5)"
+ },
+ {
+  "id": "baito-switch-to-fulltime",
+  "entry": "baito",
+  "category": "switch",
+  "title": "近くで探すで東京を選んだ後、「やっぱり正社員で探したい」と言う",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}, "near.area": {"text": "東京", "value": "東京"}, "days_per_week": {"value": "5+"}},
+  "profile": {"track": "アルバイト・パート", "area": "東京"},
+  "history": [
+   {"who": "user", "text": "週5日以上"},
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "やっぱり正社員で探したい", "button": false}],
+  "expect": [
+   {"check": "switches_to", "entry": "career"},
+   {"check": "profile", "key": "track", "contains": "正社員"},
+   {"check": "profile", "key": "area", "contains": "東京"},
+   {"check": "slot", "entry": "career", "slot": "area", "contains": "東京"},
+   {"check": "not_asks", "entry": "career", "slots": ["area"]},
+   {"check": "asks", "entry": "career", "qid": "q_segment"},
+   {"check": "acknowledges_prior"}
+  ],
+  "note": "入り口を変えても、もう分かっている値(勤務地)を聞き直さない。引き継いだ値はまとめで確かめる(設計メモ §4.5)"
+ },
+ {
+  "id": "baito-switch-hold",
+  "entry": "baito",
+  "category": "switch",
+  "title": "「正社員じゃなくてバイトで」と言う(移らない)",
+  "segment": "unknown",
+  "history": [
+   {"who": "agent", "text": "今のあなたに近いのは？"}
+  ],
+  "asking": "q_segment",
+  "says": [{"text": "正社員じゃなくてバイトで探したい", "button": false}],
+  "expect": [
+   {"check": "stays"},
+   {"check": "not_closed"},
+   {"check": "keeps_question"}
+  ],
+  "note": "打ち消し(今の EXIT_HOLD)は移る頼みにしない。今の決まりを残す"
+ }
+]

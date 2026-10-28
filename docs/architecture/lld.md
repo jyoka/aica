@@ -376,6 +376,7 @@ classDiagram
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
 | `personas/` | ペルソナの架空の履歴書(読み取り結果の形)。`personas/fulltime_hearing/` は正社員のヒアリングの評価のペルソナ 6 人と事実表 |
 | `fulltime_hearing/` | 正社員のヒアリングの評価(設計メモ [fulltime-hearing.md](../design/fulltime-hearing.md) §6)。短気な本人役、いらいらと事実のジャッジ、形ごと・ペルソナごとの報告。予算台帳は `budget-fulltime-hearing.jsonl`。使い方は [README](../../evals/fulltime_hearing/README.md) |
+| `scenes/` | 会話の層の場面の一覧(設計メモ [conversation-layer.md](../design/conversation-layer.md) §3)。入り口ごと(`career/`、`baito/`、`talk/`)と入り口をまたぐ場面。読み込みと形の確かめ(`__init__.py`)だけで、まだ回す仕組みは無い。使い方は [README](../../evals/scenes/README.md) |
 | `search_eval.py`、`search_eval_set.json` | 意味検索の評価セットと、上位 3 件の再現率 |
 | `jobtype_repro.py`、`semantic_repro.py`、`wait_repro.py` | 個別の問題を実 API で再現するスクリプト |
 | `probe.py` | 「電話はしたくない」と音声でコールセンターを外す流れを、チャットと音声で数ターンずつ実 API で確かめる小さな計測。予算台帳と $4 の停止は `run.py` と同じ |
