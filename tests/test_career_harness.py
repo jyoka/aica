@@ -1,6 +1,7 @@
 """正社員のヒアリングのハーネス(dip_mcp/career、設計メモ docs/design/fulltime-hearing.md、ADR-0010)。LLM は偽物。
 
-(1) 質問バンク: role と result の問いに答えの候補のボタンが無い。ボタンと吹き出しの字数の予算。HARD の欄が評価の事実表と同じ
+(1) 質問バンク: どの問いも答えの候補を 3 ページ以上持つ。スキップと中断の区別。あいまいな問いが無い。ボタンと吹き出しの字数の予算。
+    HARD の欄が評価の事実表と同じ
 (2) モックの本人役 6 人 × 形 B と C(evals/career_sim.py): 全員 result に着き、合否の指標がすべて 0
 (3) 時間と MAX_TURNS の予算で止まる。HARD は時刻を過ぎても聞き、review は必ず 1 回出す
 (4) 履歴書の読み取り結果で埋まった欄を聞かない
@@ -18,6 +19,7 @@ import pytest
 
 from dip_mcp.career import harness as H
 from evals import career_sim
+from evals.fulltime_hearing import actor
 from evals.fulltime_hearing import personas as P
 
 PERSONAS = {p["id"]: p for p in P.load_personas()}
@@ -70,37 +72,78 @@ def _to(state, qid, llm=None, limit=30):
 
 
 # ----------------------------- (1) 質問バンク -----------------------------
-def test_role_and_result_have_no_answer_candidates():
-    """role と result の問いは、答えの候補を出さず「覚えていない」「パス」(と「あとで」)だけ(§5.1。誘導しない)。"""
+def _all_questions():
+    for form in H.FORMS:
+        for seg in (*H.SEGMENTS, "unknown"):
+            st = H.new_state(form=form)
+            st.segment = seg
+            yield form, seg, H.questions(st, H.BANK)
+
+
+def test_every_question_offers_answer_candidates():
+    """どの問いも、最初のボタンに答えの候補を出す。スキップ(と「覚えていない」)だけの問いは無い(task 315 の 1)。
+    「なぜ今」は理由の候補、職歴カードの何をしていたか・どうなったかも候補を出す。"""
+    for _, _, qs in _all_questions():
+        for q in qs:
+            ch = H.choices_of(q)
+            cands = [c for c in ch if c in q["choices"]]
+            assert len(cands) >= 2, (q["id"], ch)
+            assert not set(cands) & {H.PASS, H.DONT_KNOW, H.LATER, H.MORE}, q["id"]
     st = H.new_state(form="C")
-    qs = [q for q in H.questions(st, H.BANK) if q["id"].startswith(("card_role", "card_result"))]
-    assert len(qs) == 2 * H.CARD_COUNT
-    for q in qs:
-        assert q["choices"] == [] and q["choice_effects"] == {}
-        assert H.choices_of(q) == [H.DONT_KNOW, H.PASS, H.LATER]
+    why = H.qmap(st, H.BANK)["ib_why_now"]
+    assert {"年収を上げたい", "キャリアアップ", "人間関係", "働き方"} <= set(H.choices_of(why))
 
 
-def test_role_and_result_buttons_in_a_conversation():
-    """会話の中で role と result を聞いたターンのボタンも、その 3 つだけ。"""
-    rows = career_sim.run_all([PERSONAS["p1-sales"]], forms=("B", "C"))
-    for r in rows:
-        lines = [x for x in r["transcript"] if "/card_role" in x or "/card_result" in x]
-        assert lines
-        for x in lines:
-            assert x.endswith("[ボタン] 覚えていない / パス / あとで"), x
+def test_skip_and_end_are_told_apart_and_end_is_not_a_button():
+    """問いのボタンは「スキップ」(この問いだけ)で、ヒアリングを終えるボタンは入れない(task 315 の 2)。終えるのは「中断」と送る。"""
+    assert H.PASS == "スキップ" and "中断" in H.END_WORDS and "中断" in H.START_LEAD
+    for _, _, qs in _all_questions():
+        for q in qs:
+            ch = H.choices_of(q)
+            assert H.PASS in ch and ch.index(H.MORE) < ch.index(H.PASS), q["id"]
+            assert not set(ch) & set(H.END_WORDS), (q["id"], ch)
+            assert not set(H.fix_choices(q)) & set(H.END_WORDS), q["id"]
+
+
+def test_every_question_has_three_pages_without_overlap():
+    """どの問いも候補を 3 ページ以上持つ(「他の候補」を 2 回以上押せる)。ページの間で候補が重ならない(task 315 の 3)。"""
+    for _, _, qs in _all_questions():
+        for q in qs:
+            assert len(q["pages"]) >= 3, q["id"]
+            flat = [c for page in q["pages"] for c in page]
+            assert len(flat) == len(set(flat)), q["id"]
+            assert set(q.get("explain_choices", [])) <= set(flat), q["id"]
+
+
+def test_questions_are_not_vague():
+    """何の規模か分からない問いを出さない(task 315 の 4)。職歴の大きさの問いは、何を数えるかを問いの文で言う。
+    どの問いも、聞き返されたときの説明(explain)を持つ。"""
+    for _, _, qs in _all_questions():
+        for q in qs:
+            assert "規模" not in q["text"], q["id"]
+            assert "規模" not in "".join(q["choices"]), q["id"]
+            assert q.get("explain") and "{" not in q["explain"], q["id"]
+            assert H.chars(q["explain"]) <= H.BUBBLE_MAX - H.REACTION_MAX, q["id"]
+    st = H.new_state(form="C")
+    for qid in ("card_scale1", "card_scale2"):
+        q = H.qmap(st, H.BANK)[qid]
+        assert all(w in q["text"] for w in ("チームの人数", "顧客の数", "売上")), q["text"]
 
 
 @pytest.mark.parametrize("form", H.FORMS)
 def test_bank_fits_the_budgets(form):
-    """ボタンは 13 個まで、ラベルは 20 字まで、合わせて 40 字まで。問いの文は、前置き(最初、聞き直し)を付けても 80 字まで。"""
+    """ボタンは 13 個まで、ラベルは 20 字まで、合わせて 40 字まで(どのページも、聞き返しの候補も)。問いの文は、前置き(最初、
+    聞き直し)を付けても 80 字まで。"""
     for seg in (*H.SEGMENTS, "unknown"):
         st = H.new_state(form=form)
         st.segment = seg
         for q in H.questions(st, H.BANK):
-            ch = H.choices_of(q)
-            assert len(ch) <= H.QUICK_MAX and all(len(c) <= H.LABEL_MAX for c in ch), q["id"]
-            assert sum(H.chars(c) for c in ch) <= H.LABELS_MAX, (q["id"], sum(H.chars(c) for c in ch))
-            for lead in ("", H.START_LEAD, H.RETRY_TEXT, H.CLARIFY_TEXT):
+            for page in [*q["pages"], q.get("explain_choices") or q["pages"][0]]:
+                ch = H.page_choices(q, page)
+                assert [c for c in ch if c in q["choices"]] == list(page), (q["id"], page)  # 候補を削らずに入る
+                assert len(ch) <= H.QUICK_MAX and all(len(c) <= H.LABEL_MAX for c in ch), q["id"]
+                assert sum(H.chars(c) for c in ch) <= H.LABELS_MAX, (q["id"], sum(H.chars(c) for c in ch))
+            for lead in ("", H.START_LEAD, H.RETRY_TEXT):
                 assert H.chars(lead + q["text"]) <= H.BUBBLE_MAX, (q["id"], lead)
             assert set(q["choice_effects"]) <= set(q["choices"]), q["id"]
             for eff in q["choice_effects"].values():
@@ -189,6 +232,7 @@ def test_turn_budget_reserves_review():
 def test_stops_at_max_turns(monkeypatch):
     """時間が十分にあっても、MAX_TURNS の予算で止まる。review は 1 回出て、16 ターンを超えない。"""
     monkeypatch.setattr(H, "TARGET_SECONDS", {True: 9999.0, False: 9999.0})
+    monkeypatch.setattr(actor, "TIME_LIMIT_SECONDS", 9999.0)  # 本人役も時間では離れない(ターンの予算だけを見る)
     r = career_sim.run_one(PERSONAS["p1-sales"], "C")
     m = career_sim.metrics(r, PERSONAS["p1-sales"])
     st = r["state"]
@@ -233,38 +277,38 @@ def test_questions_on_a_card_known_from_the_resume_name_the_job():
     r = career_sim.run_one(p5, "C")
     asked = {e["qid"]: e for e in r["state"].log if e["kind"] == "ask"}
     q = H.qmap(r["state"], H.BANK)["card_result1"]
-    assert "card_result1" in asked and q["text"] == "「みほんホテルでフロン…」で、何が変わりましたか?"
+    assert "card_result1" in asked and q["text"] == "「みほんホテルでフロン…」で、あなたが良くしたことは?"
     assert H.chars(q["text"]) <= H.BUBBLE_MAX - H.REACTION_MAX
     st = H.new_state(form="C")
     H.start(st, H.BANK)
     st.slots["career1.role"] = H.entry("filled", "物流会社で現場リーダー", frm="free_current:card_role1")
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "それで、何が変わりましたか?"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "そのお仕事で、あなたが良くしたことは?"
     st.slots["career1.role"]["from"] = "saved"  # 前の相談で保存した職歴も、この会話では言っていない
-    assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「物流会社で現場リーダ…」の規模は?")  # 10 字で切る
+    assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("「物流会社で現場リーダ…」のチームの人数")  # 10 字で切る
     st.slots["career1.role"]["text"] = "営業\n係長"  # 履歴書の改行は空白に(問いの文は 1 行)
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「営業 係長」で、何が変わりましたか?"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「営業 係長」で、あなたが良くしたことは?"
     st.slots["career1.role"]["text"] = "物流センター長で1200人を統括"  # 切るなら最初の数の手前(「12…」は本人が言っていない数)
     q = H.qmap(st, H.BANK)["card_result1"]
-    assert q["text"] == "「物流センター長で…」で、何が変わりましたか?" and not H.digits_in(q["text"])
+    assert q["text"] == "「物流センター長で…」で、あなたが良くしたことは?" and not H.digits_in(q["text"])
     st.slots["career1.role"]["text"] = "物流センター長で千二百人を統括"  # 漢数字も
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、あなたが良くしたことは?"
     st.slots["career1.role"]["text"] = "物流センター長で1,200人"
-    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+    assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、あなたが良くしたことは?"
     # 切った引用には数を 1 つも残さない(字の集まりの抜けで「1兆…」「3億5…」「1万…」を見せない)
     for role in ("営業部長で年商1兆2000億円", "営業部長で年商3億5千万円"):
         st.slots["career1.role"]["text"] = role
         q = H.qmap(st, H.BANK)["card_scale1"]
-        assert q["text"].startswith("「営業部長で年商…」の規模は?") and not H.digits_in(q["text"])
+        assert q["text"].startswith("「営業部長で年商…」のチームの人数") and not H.digits_in(q["text"])
     for role in ("物流センター長で1万2000人", "物流センター長で千2百人"):
         st.slots["career1.role"]["text"] = role
-        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、何が変わりましたか?"
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "「物流センター長で…」で、あなたが良くしたことは?"
     assert H._clip("営業部長で年商1兆円", 10) == "営業部長で年商1兆円"  # 切らずに済むなら、数があっても本人の言葉のまま
     # 数の手前で切ると 4 字未満になるなら、引用をやめて決まった言い方にする
     for role in ("1200人の物流センター長", "第一営業部の課長として", "一般職の事務と経理の担当", "ホテル1棟の総支配人として"):
         assert H._clip(role, 10) is None, role
         st.slots["career1.role"]["text"] = role
-        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "そのお仕事で、何が変わりましたか?"
-        assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("そのお仕事の規模は?")
+        assert H.qmap(st, H.BANK)["card_result1"]["text"] == "そのお仕事で、あなたが良くしたことは?"
+        assert H.qmap(st, H.BANK)["card_scale1"]["text"].startswith("そのお仕事のチームの人数")
     assert H._clip("みほんホテルで接客2年", 10) == "みほんホテルで接客…"  # 数が上限の後ろなら、上限で切る
 
 def test_no_reverse_pick_after_the_person_named_what_to_stop():
@@ -286,8 +330,11 @@ def test_prefill_skips_why_now():
 
 
 # ----------------------------- (5) 形 B と C -----------------------------
-def test_form_b_has_no_scenarios_reverse_pick_or_progress():
-    """B は場面の二択と逆選択を出さず、MID を直接聞き、進み具合と 1 行を見せない。C は出す。"""
+def test_form_b_has_no_scenarios_reverse_pick_or_progress(monkeypatch):
+    """B は場面の二択と逆選択を出さず、MID を直接聞き、進み具合と 1 行を見せない。C は出す。
+    答えの候補を読む字が増え(task 315)、モックの p4 は時間の予算の中で場面の二択に届かないので、時間を延ばして比べる。"""
+    monkeypatch.setattr(H, "TARGET_SECONDS", {True: 9999.0, False: 9999.0})
+    monkeypatch.setattr(actor, "TIME_LIMIT_SECONDS", 9999.0)
     b = career_sim.run_all([PERSONAS["p4-short"]], forms=("B",))[0]
     c = career_sim.run_all([PERSONAS["p4-short"]], forms=("C",))[0]
     b_text, c_text = "\n".join(b["transcript"]), "\n".join(c["transcript"])
@@ -332,12 +379,74 @@ def test_later_button_returns_state_so_far():
 
 @pytest.mark.parametrize("where", ["review", "card_scale1"])
 def test_later_typed_or_in_review(where):
-    """「あとで」は、どの問いにもボタンがあり、文で言っても(抽出の intent=later)終える。"""
+    """ヒアリングを終えるボタンは問いにもまとめにも無い(task 315)。文で言えば(抽出の intent=later)終える。"""
     st = H.new_state(form="B")
     out = _to(st, where)
-    assert H.LATER in out["choices"]
+    assert not set(out["choices"]) & set(H.END_WORDS)
     out = H.turn(st, "また今度にします", H.BANK, LLM([{"slot_updates": [], "intent": "later"}]))
     assert out["done"] and st.closed == "later" and st.result is None
+
+
+@pytest.mark.parametrize("said", ["中断", "中断する", "あとで"])
+def test_end_word_closes_without_the_model(said):
+    """「中断」と送ると、モデルを呼ばずに、そこまでを残して閉じる(入口の文が言うやめ方)。"""
+    st = H.new_state(form="C")
+    _to(st, "hf_area")
+    llm = LLM()
+    out = H.turn(st, said, H.BANK, llm)
+    assert out["done"] and st.closed == "later" and llm.calls == [] and out["reply"] == H.LATER_TEXT
+    assert "why_now" in out["summary"]["slots"]
+
+
+def test_skip_goes_to_the_next_question_and_keeps_the_hearing():
+    """「スキップ」はこの問いだけを飛ばし、ヒアリングは続く(task 315 の 2)。"""
+    st = H.new_state(form="C")
+    _to(st, "ib_why_now")
+    out = H.turn(st, H.PASS, H.BANK, LLM())
+    assert not out["done"] and st.closed is None and out["qid"] == "hf_area"
+    assert st.slots["why_now"]["status"] == "passed"
+
+
+def test_more_shows_new_candidates_then_guides_to_type():
+    """「他の候補」は、見せていない候補を出す(数えない)。2 回押しても重ならず、出し尽くしたら最初の候補に戻して
+    文で送るよう案内し、もう「他の候補」を出さない(task 315 の 3)。押した後の候補でも答えられる。"""
+    st = H.new_state(form="C")
+    out = _to(st, "ib_why_now")
+    q = H.qmap(st, H.BANK)["ib_why_now"]
+    seen = [c for c in out["choices"] if c in q["choices"]]
+    turns, llm = st.turns, LLM()
+    for page in q["pages"][1:]:
+        out = H.turn(st, H.MORE, H.BANK, llm)
+        got = [c for c in out["choices"] if c in q["choices"]]
+        assert got == page and not set(got) & set(seen) and out["bubbles"] == [H.MORE_LEAD]
+        assert H.MORE in out["choices"] and H.PASS in out["choices"] and not out["counted"]
+        seen += got
+    out = H.turn(st, H.MORE, H.BANK, llm)
+    assert out["bubbles"] == [H.MORE_DONE] and H.MORE not in out["choices"] and H.PASS in out["choices"]
+    assert [c for c in out["choices"] if c in q["choices"]] == q["pages"][0]
+    assert st.turns == turns and llm.calls == [] and out["qid"] == "ib_why_now"
+    out = H.turn(st, "家庭の事情", H.BANK, LLM())  # 2 ページ目より後の候補を打っても答えになる
+    assert st.slots["why_now"]["text"] == "家庭の事情" and out["qid"] == "hf_area"
+
+
+def test_more_then_press_a_later_candidate():
+    """2 ページ目の候補のボタンを押すと、その候補で埋まる(ボタンなのでモデルを呼ばない)。"""
+    st = H.new_state(form="C")
+    _to(st, "card_scale1")
+    H.turn(st, H.MORE, H.BANK, LLM())
+    llm = LLM()
+    H.turn(st, "顧客100社以上", H.BANK, llm)
+    e = st.slots["career1.scale"]
+    assert e["text"] == "顧客100社以上" and e["range"] == [80, None] and e["unit"] == "社" and "extract" not in llm.calls
+
+
+def test_typed_more_request_shows_the_next_page():
+    """「ほかには?」と打ったとき(抽出の intent=more)も、次のページを出す。"""
+    st = H.new_state(form="C")
+    _to(st, "hf_area")
+    out = H.turn(st, "ほかには?", H.BANK, LLM([{"slot_updates": [], "intent": "more"}]))
+    q = H.qmap(st, H.BANK)["hf_area"]
+    assert [c for c in out["choices"] if c in q["choices"]] == q["pages"][1] and not out["counted"]
 
 
 def test_answer_typed_with_later_is_kept():
@@ -501,7 +610,7 @@ def test_counted_asides_never_skip_review():
 
 
 def test_clarify_does_not_push_hard_behind_cards():
-    """聞き返しを 2 回使っても、segment だけの HARD は職歴カードより先に聞く。"""
+    """聞き返しがあっても、segment だけの HARD は職歴カードより先に聞く(説明は数えない)。"""
     st = H.new_state(form="B")
     H.start(st)
     H.turn(st, "仕事を変えたい", H.BANK, LLM())
@@ -588,7 +697,7 @@ def test_review_correction_and_second_round_in_a_conversation():
     st = H.new_state(form="C")
     _to(st, "hf_timing")
     H.turn(st, "そのうち", H.BANK, LLM(["x", "x"]))  # 読めない → ボタンで聞き直し(数えない)
-    for _ in range(2):  # 1 回目の聞き返しは受ける。2 回目は答えにせず、空のまま先へ
+    for _ in range(H.MAX_CLARIFY + 1):  # 2 回までは説明する。3 回目は答えにせず、空のまま先へ
         H.turn(st, "どういうこと?", H.BANK, LLM([{"slot_updates": [], "intent": "clarify"}]))
     assert "start_timing" not in st.slots and st.current["qid"] != "hf_timing"
     _to(st, "review")
@@ -599,7 +708,7 @@ def test_review_correction_and_second_round_in_a_conversation():
 
 
 def test_aside_and_clarify_turns():
-    """雑談は 3 回まで数えずに同じ問いへ戻る。聞き返し(clarify)は 1 問に 1 回、数えて同じ問いを出し直す。"""
+    """雑談は 3 回まで数えずに同じ問いへ戻る。聞き返し(clarify)は、問いの意味を説明して候補を出し直す(task 315 の 5)。"""
     st = H.new_state(form="C")
     _to(st, "hf_area")
     turns = st.turns
@@ -608,12 +717,76 @@ def test_aside_and_clarify_turns():
                                                         [{"reply": "晴れです。" + "働きたい場所はどこですか?(駅や市の名前で)"}]))
         assert out["qid"] == "hf_area" and not out["counted"]
     assert st.turns == turns
+    q = H.qmap(st, H.BANK)["hf_area"]
     out = H.turn(st, "どういうこと?", H.BANK, LLM([{"slot_updates": [], "intent": "clarify"}]))
-    assert out["qid"] == "hf_area" and H.CLARIFY_TEXT in out["reply"] and st.turns == turns + 1
+    # 1 回目: 問いの意味を説明する(数えない)。同じ問いの文を繰り返さず、「読み取れなかった」とも言わない
+    assert out["qid"] == "hf_area" and out["reply"] == q["explain"] and st.turns == turns and not out["counted"]
+    assert q["text"] not in out["reply"] and H.RETRY_TEXT not in out["reply"] and H.MORE in out["choices"]
     out = H.turn(st, "どういうこと?", H.BANK, LLM([{"slot_updates": [], "intent": "clarify"}]))
-    assert out["qid"] == "hf_area" and H.RETRY_TEXT in out["reply"] and st.turns == turns + 1  # 2 回目: ボタンで聞き直す
+    # 2 回目: 見せていない候補と、迷ったときの言い方(数えない)
+    assert out["qid"] == "hf_area" and out["reply"] == H.CLARIFY_AGAIN and st.turns == turns
+    assert [c for c in out["choices"] if c in q["choices"]] == q["pages"][1]
     out = H.turn(st, "どういうこと?", H.BANK, LLM([{"slot_updates": [], "intent": "clarify"}]))
-    assert out["qid"] != "hf_area" and "area" not in st.slots  # 3 回目: 先へ。空の HARD はまとめで「ここだけ」
+    # 3 回目: 飛ばして先へ。空の HARD はまとめで「ここだけ」
+    assert out["qid"] != "hf_area" and "area" not in st.slots and out["reply"].startswith(H.CLARIFY_SKIP)
+    assert H.RETRY_TEXT not in out["reply"]
     _to(st, "review")
     H.turn(st, H.REVIEW_OK, H.BANK, LLM())
     assert st.current["qid"] == "review" and st.last_card["focus"] and any(x.startswith("勤務地: 未定") for x in st.last_card["lines"])
+
+
+def _pdm_to_scale(form="C"):
+    """利用者の LINE で見た流れ(2026-10-28): 同じ仕事で上へ → … → 直近の仕事は PdM → 規模(大きさ)の問い。"""
+    st = H.new_state(form=form)
+    out = _to(st, "card_role1")
+    out = H.turn(st, "PdM", H.BANK, LLM([_ext("career1.role", "PdM")]))
+    assert st.slots["career1.role"]["text"] == "PdM" and out["qid"] == "card_scale1"
+    return st, out
+
+
+@pytest.mark.parametrize("form", H.FORMS)
+def test_pdm_asks_what_scale_means_and_gets_an_answer(form):
+    """回帰(task 315): PdM の職歴の規模を聞かれ、「規模って何? サービスの規模? チームの規模?」と聞き返す。
+    問いの文は何を数えるかを言い、聞き返しには意味を説明して、その説明に合う候補(チーム、利用者、売上)を出し直す。
+    もう一度聞き返しても、同じ問いの文や「読み取れなかった」を返さず、別の候補を出す。候補を押せば、単位つきの区切りで埋まる。"""
+    st, out = _pdm_to_scale(form)
+    q = H.qmap(st, H.BANK)["card_scale1"]
+    assert "チームの人数" in out["reply"] and "規模" not in q["text"]
+    clarify = {"slot_updates": [], "intent": "clarify"}
+    out = H.turn(st, "規模って何? サービスの規模? チームの規模?", H.BANK, LLM([clarify]))
+    assert out["qid"] == "card_scale1" and not out["counted"]
+    assert out["reply"].startswith("規模は、") and all(w in out["reply"] for w in ("チームの人数", "利用者の数", "売上"))
+    assert q["text"] not in out["reply"] and H.RETRY_TEXT not in out["reply"]
+    cands = [c for c in out["choices"] if c in q["choices"]]
+    assert cands == q["explain_choices"] and any(c.startswith("チーム") for c in cands) and any(c.startswith("利用者") for c in cands)
+    out = H.turn(st, "サービスのほう? チームのほう?", H.BANK, LLM([clarify]))
+    assert out["reply"] == H.CLARIFY_AGAIN and H.RETRY_TEXT not in out["reply"] and q["text"] not in out["reply"]
+    again = [c for c in out["choices"] if c in q["choices"]]
+    assert again and not set(again) & set(cands)
+    out = H.turn(st, "利用者1万人くらい", H.BANK, LLM())
+    e = st.slots["career1.scale"]
+    assert e["text"] == "利用者1万人くらい" and e["unit"] == "万人" and e["range"] == [0.5, 4.9] and out["qid"] == "card_result1"
+
+
+def test_a_pass_button_left_in_a_saved_state_still_skips():
+    """task 315 より前に出した「パス」のボタン(進めている相談の状態に残る)を押しても、スキップとして受ける。"""
+    st = H.new_state(form="C")
+    _to(st, "ib_why_now")
+    st.current["choices"] = ["パス", "あとで"]  # 前の版の状態
+    out = H.turn(st, "パス", H.BANK, LLM())
+    assert st.slots["why_now"]["status"] == "passed" and out["qid"] == "hf_area"
+
+
+def test_renamed_candidates_left_in_a_saved_state_keep_their_effect():
+    """task 315 で名前を変えた候補(規模の区切り、上げたいものの「規模」)の古いボタンも、今の候補として受ける(答えを消さない)。"""
+    st = H.new_state(form="C")
+    _to(st, "card_scale1")
+    st.current["choices"] = ["5人くらい", "10人くらい", "20人以上", "覚えていない", "パス"]  # 前の版の状態
+    out = H.turn(st, "10人くらい", H.BANK, LLM())
+    e = st.slots["career1.scale"]
+    assert e["status"] == "filled" and e["range"] == [8, 14] and e["unit"] == "人" and out["qid"] == "card_result1"
+    st = H.new_state(form="C")
+    _to(st, "hf_raise", LLM([{"slot_updates": [], "segment": "same_path"}]))
+    st.current["choices"] = ["年収", "役職", "規模", "パス", "あとで"]
+    H.turn(st, "規模", H.BANK, LLM())
+    assert st.slots["raise_target"]["status"] == "filled" and st.slots["raise_target"]["text"] == "任される仕事の大きさ"

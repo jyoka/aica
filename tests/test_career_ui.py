@@ -219,12 +219,12 @@ def test_career_card_only_on_turns_where_a_card_field_was_filled():
     ui, mem, _ = step(h, mem, "物流会社で現場リーダー、6年")
     assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["status"] is None  # 1 つ目はバーだけ
     assert ui["career_card"]["rows"][1]["value"] is None and not ui["career_card"]["complete"]
-    ui, mem, _ = step(h, mem, "5人くらい")
+    ui, mem, _ = step(h, mem, "チーム5人くらい")
     assert ui["kind"] == UI.CAREER_CARD and ui["career_card"]["status"] == "あと1つ"
     ui, mem, _ = step(h, mem, "誤出荷が半分になった")
     c = ui["career_card"]
     assert c["status"] is None and c["complete"]  # 3 つが本人の言葉で埋まった → 一言は無く、完成のスタンプ
-    # 2 枚目の何をしていたかをパス: 空欄として埋まり(灰色の「パス」)、残りの 2 つは聞かないので career_cards が終わる。
+    # 2 枚目の何をしていたかをスキップ: 空欄として埋まり(灰色の「スキップ」)、残りの 2 つは聞かないので career_cards が終わる。
     # 職歴カードより上のプロフィールカードを付ける(職歴の行は、何をしていたかの本人の言葉。数は出さない)
     ui, mem, _ = step(h, mem, H.PASS)
     assert h.phase != "career_cards" and ui["kind"] == UI.CARD
@@ -251,10 +251,10 @@ def test_counts_follow_section_4_and_start_from_hard_filter():
     assert h.phase == "hard_filter" and ui["kind"] == UI.BAND
     p = ui["progress"]
     assert (p["filled"], p["total"]) == (1, 5 + 2 + 6)  # same_path: HARD 5、MID 2、職歴カード 6
-    assert p["added"] == [{"label": "なぜ今", "value": "なぜ今 パス", "inferred": False}]
+    assert p["added"] == [{"label": "なぜ今", "value": "なぜ今 スキップ", "inferred": False}]
     assert [g["name"] for g in p["groups"]] == ["条件", "職歴", "働き方", "NG"]
     # 帯は数字を出さない: 最初に埋まったターンは芽が出る。パスは札の後ろに値だけ
-    assert ui["band"] == {"icon": "🌱", "chip": "＋なぜ今", "value": "パス", "more": None, "up": "プロフィールの芽が出ました",
+    assert ui["band"] == {"icon": "🌱", "chip": "＋なぜ今", "value": "スキップ", "more": None, "up": "プロフィールの芽が出ました",
                               "filled": 1, "total": 13}
 
 
@@ -282,8 +282,8 @@ def test_review_has_fix_buttons_and_fixing_a_field_goes_back_to_the_review():
     assert any(r["text"] == "勤務地: 京都市内" for r in ui["review"]["rows"])
     ui, mem, out = step(h, mem, "職歴1の規模を直す")
     assert h.current["qid"] == "card_scale1"
-    ui, mem, out = step(h, mem, "20人以上")
-    assert h.slots["career1.scale"]["text"] == "20人以上" and h.slots["career1.scale"]["range"]
+    ui, mem, out = step(h, mem, "チーム20人以上")
+    assert h.slots["career1.scale"]["text"] == "チーム20人以上" and h.slots["career1.scale"]["range"]
     while not out["done"]:
         ui, mem, out = step(h, mem, H.REVIEW_OK)
     assert ui["kind"] == UI.COMPLETE and h.turns <= H.MAX_TURNS
@@ -304,8 +304,8 @@ def test_pressing_another_fix_button_while_fixing_switches_the_fix_and_keeps_the
     before = dict(h.slots["career1.result"])
     step(h, mem, "職歴1の結果を直す")
     ui, mem, _out = step(h, mem, "職歴1の仕事を直す")
-    assert h.current == {"qid": "card_role1", "mode": "fix", "slot": "career1.role", "choices": H.fix_choices(
-        H.qmap(h, H.BANK)["card_role1"])}
+    assert {k: h.current[k] for k in ("qid", "mode", "slot", "choices")} == {
+        "qid": "card_role1", "mode": "fix", "slot": "career1.role", "choices": H.fix_choices(H.qmap(h, H.BANK)["card_role1"])}
     assert h.slots["career1.result"] == before and ui is None
     step(h, mem, "物流会社で倉庫のリーダー、6年")
     assert h.slots["career1.role"]["text"] == "物流会社で倉庫のリーダー、6年" and h.current["mode"] == "review"
@@ -358,7 +358,7 @@ def test_keep_on_a_fix_goes_back_to_the_review_without_touching_the_value(slot, 
     before = dict(h.slots[slot])
     _ui, mem, out = step(h, mem, fix)
     assert h.current["mode"] == "fix" and H.FIX_KEEP in out["choices"]
-    assert out["choices"][-2:] == [H.FIX_KEEP, H.LATER] and len(out["choices"]) <= H.QUICK_MAX
+    assert out["choices"][-1] == H.FIX_KEEP and H.LATER not in out["choices"] and len(out["choices"]) <= H.QUICK_MAX
     turns = h.turns
     ui, mem, out = step(h, mem, H.FIX_KEEP)
     assert h.slots[slot] == before
@@ -410,7 +410,8 @@ def test_start_card_and_typing_an_answer_instead_of_pressing_start():
     """「始める」の 1 枚: 押せば最初の問い(数えない)、ボタンを押さずに打った文は最初の問いへの答えとして読む。"""
     h = H.new_state(form="D")
     out = H.start(h, H.BANK)
-    assert out["bubbles"] == [H.START_LEAD] and out["choices"] == [H.START_GO, H.LATER]
+    assert out["bubbles"] == [H.START_LEAD_UI] and out["choices"] == [H.START_GO, H.LATER]
+    assert "中断" in UI.START_NOTE and H.PASS in UI.START_NOTE  # やめ方は 1 枚の一言が言う(吹き出しと二重にしない)
     s = UI.start_payload(h)["start"]
     assert s["title"] == "まずは1問から" and s["buttons"] == [H.START_GO, UI.RESUME_START, H.LATER]
     assert [x["icon"] for x in s["steps"]] == ["🌱", "🌿", "🌸"] and s["note"] == UI.START_NOTE
@@ -558,7 +559,7 @@ def test_sprout_shows_on_the_first_band_even_with_saved_values():
 
 
 def test_passing_both_jobs_does_not_say_the_career_was_added():
-    """職歴カードの欄をどれもパスしたら、プロフィールの職歴の行は「パス」、見出しは「職歴が入りました」にしない。"""
+    """職歴カードの欄をどれもスキップしたら、プロフィールの職歴の行は「スキップ」、見出しは「職歴が入りました」にしない。"""
     h = H.new_state(form="D")
     mem = UI.fresh_mem(h)
     H.start(h, H.BANK)
@@ -570,7 +571,7 @@ def test_passing_both_jobs_does_not_say_the_career_was_added():
     p = ui["progress"]
     assert p["groups"][1]["items"][0]["value"] == H.PASS
     assert p["growth"]["head"] != UI.MILESTONE_WORDS["cards"] and p["growth"]["icon"] == "🌷"
-    assert "職歴：パス" in C.build(ui)["text"]
+    assert "職歴：スキップ" in C.build(ui)["text"]
 
 
 def test_complete_carousel_never_says_one_more_left():
@@ -598,7 +599,7 @@ def test_no_question_counts_or_bare_fractions_are_shown():
             assert not re.search(r"\d+/\d+", shown), shown
     _, turns = run("D")
     replies = [out["reply"] for _, out, *_ in turns]
-    assert replies[0] == H.START_LEAD and any(H.PHASE_LINES["hard_filter"] in r for r in replies)
+    assert replies[0] == H.START_LEAD_UI and any(H.PHASE_LINES["hard_filter"] in r for r in replies)
 
 
 def test_no_score_rank_or_praise_in_the_parts():
@@ -767,3 +768,16 @@ def test_web_talk_draws_the_career_card_as_text_and_the_fix_buttons_as_choices(p
     got = page.evaluate("(r) => { window.talk.renderReply(r, window.talk.botCol());"
                         " return [...document.querySelectorAll('.bubble')].map(b => b.textContent); }", reply)
     assert got[-1].splitlines()[1].startswith("【職歴1(直近)")  # 職歴カードは文にして最後の吹き出しに
+
+
+def test_more_and_clarify_turns_add_no_flex():
+    """形 D で「他の候補」と聞き返しのターンは、欄が埋まらないので Flex を付けない(数えない)。"""
+    h = H.new_state(form="D")
+    mem = UI.fresh_mem(h)
+    H.start(h, H.BANK)
+    for said in (H.START_GO, "同じ仕事で上へ", TEXT["ib_why_now"]):
+        ui, mem, _ = step(h, mem, said)
+    assert h.current["qid"] == "hf_area"
+    turns = h.turns
+    ui, mem, out = step(h, mem, H.MORE)
+    assert ui is None and out["bubbles"] == [H.MORE_LEAD] and h.turns == turns

@@ -37,7 +37,7 @@ USAGE = {"input_tokens": 10, "output_tokens": 5, "cache_read": 0, "cache_write":
 TEXT = {"ib_why_now": "評価の仕組みが合わないから", "hf_area": "大阪市内", "card_role1": "物流会社で現場リーダー、6年",
         "card_result1": "誤出荷が半分になった", "card_role2": "倉庫の作業スタッフ", "card_result2": "手順書を作った",
         "fg_direction": "現場の改善"}
-ESCAPES = {H.PASS, H.DONT_KNOW, H.LATER}
+ESCAPES = {H.PASS, H.DONT_KNOW, H.LATER, H.MORE}
 
 
 @pytest.fixture(autouse=True)

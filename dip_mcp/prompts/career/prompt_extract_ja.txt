@@ -14,7 +14,7 @@
 {"slot_updates":[{"slot":"<使ってよい欄のキー>","text":"<発言からそのまま抜き出した部分>","number":null,"unit":null,"choice":null}],
  "ng_updates":["<やりたくないこと。発言からそのまま>"],
  "segment":"same_path|change|return|early|null",
- "intent":"answer|pass|dont_know|later|clarify|aside|show_result",
+ "intent":"answer|pass|dont_know|later|clarify|aside|show_result|more",
  "review_ack":"all|partial|none|null"}
 
 ## 決まり
@@ -23,8 +23,10 @@
    ほかの欄のことも言っていれば、その欄にも入れる。
 3. number は、発言に数字で書いてある数だけ。漢数字や「数十」「たくさん」は数にしない(null)。数を作らない。unit は発言のままの単位(人、件、社、年、か月、万円 など)。
 4. choice は、発言がボタンのどれかと同じ意味のときだけ、そのラベルをそのまま入れる。合うものが無ければ null。
-5. 「パス」「言いたくない」「特にない」は intent=pass。「覚えていない」「忘れた」は dont_know。「あとで」「また今度」は later。
-   質問の意味が分からない(「どういうこと?」)は clarify。質問と関係ない雑談・逆質問は aside。「もう終わりにして」「まとめて」は show_result。ほかは answer。
+5. 「スキップ」「パス」「言いたくない」「特にない」は intent=pass。「覚えていない」「忘れた」は dont_know。
+   「中断」「あとで」「また今度」は later。ボタンの候補のほかを見たい(「ほかには?」「他の候補を見せて」)は more。
+   質問の意味や言葉を聞き返している(「どういうこと?」「規模って何?」「サービスの規模? チームの規模?」)は clarify。答えは入れない。
+   質問と関係ない雑談・逆質問は aside。「もう終わりにして」「まとめて」は show_result。ほかは answer。
 6. segment は、本人が今の状況(同じ仕事で上へ / 仕事を変えたい / ブランクから戻る / 経験が浅い)をはっきり言ったときだけ入れる。言っていなければ null。
 7. まとめ(phase=review)では、本人が直した欄だけを slot_updates に入れる。「これでOK」「合ってる」は review_ack=all、一部だけ直したら partial、まとめについて何も言っていなければ none。
 8. 強み、評価、感想は書かない。

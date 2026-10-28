@@ -288,6 +288,17 @@ class ScriptBad:
 # ----------------------------- 形 B、C、D: ハーネス + 実 LLM -----------------------------
 
 
+def fixed_labels(H) -> list[str]:
+    """ハーネス(H = dip_mcp.career.harness)が誰にでも同じに出す答えの候補とボタンのラベル(重なりを除いて出る順)。
+    質問バンクの pages、pages_by_segment、explain_choices、escape と、決まったボタン(スキップ、他の候補など)。"""
+    out = [H.START_GO, H.LATER, H.PASS, H.DONT_KNOW, H.MORE, H.REVIEW_OK, H.NOPREF]
+    for q in H.BANK:
+        pages = [*q.get("pages", []), *(p for by_n in (q.get("pages_by_segment") or {}).values()
+                                         for ps in by_n.values() for p in ps)]
+        out += [c for p in pages for c in p] + list(q.get("explain_choices", [])) + list(q.get("escape", []))
+    return list(dict.fromkeys(out))
+
+
 class FormHarness:
     """ハーネス(dip_mcp/career)を、トークと同じモデルの呼び方でつないだ形(B、C、D)。
     1 ターンは dip_mcp.career.session.turn と同じく、ハーネスがモデルの出力を求めたら(NeedLLM)ターンの始めの状態に戻し、
@@ -361,6 +372,10 @@ class FormHarness:
 
     def captured(self) -> dict:
         return self.H.captured(self.st)
+
+    def fixed_buttons(self) -> list[str]:
+        """質問バンクの決まった候補(ジャッジが誘導に数えないもの。設計メモ §6.4)。"""
+        return fixed_labels(self.H)
 
     def saved_texts(self) -> list[str]:
         from dip_mcp.career import draft

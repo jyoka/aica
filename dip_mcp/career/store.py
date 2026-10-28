@@ -168,7 +168,7 @@ def view(user: dict, md) -> dict | None:
 
 
 def summary(user: dict) -> dict | None:
-    """トークの AI が読む形(要約の career_profile)。本人の言葉のまま。空欄は「パス」「覚えていない」。
+    """トークの AI が読む形(要約の career_profile)。本人の言葉のまま。空欄は「スキップ」「覚えていない」(H.PASS、H.DONT_KNOW)。
     職歴カードは欄のあるものだけを並べ、各カードに番号 n(career<n> の n)を持たせる(職歴1を消して職歴2だけが残っても、
     update_career_card が並びの順ではなく n で直す欄を決めるため)。"""
     rec = user.get(KEY) or {}
