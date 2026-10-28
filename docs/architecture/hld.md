@@ -1248,6 +1248,8 @@ flowchart TB
   移す間は、`aica` のコンテナでも音声ワーカーを動かします(`AICA_VOICE_WORKER=1`。docs/deploy/render.md)。
   Web サーバーは `0.0.0.0:$PORT` で待ち受け、`AICA_TRUST_PROXY=1` と `AICA_SECURE_COOKIE=1` で動きます。
   `.env` は image に入れず、API キーは Render の環境変数に置きます。手順は [docs/deploy/render.md](../deploy/render.md)
+- メモリ不足とインスタンスの失敗は、Render の通知では届きません。運営者が毎日、手元で `scripts.render_events` を動かし、
+  Render の API の出来事から数えます(Render の外。Render の API キーは運営者の手元にだけ置く。docs/deploy/render.md の 7)
 
 ## 8. 品質の目標
 

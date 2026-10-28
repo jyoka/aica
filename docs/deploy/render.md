@@ -14,7 +14,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
 | `GET /healthz` | ヘルスチェック。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない |
 | `scripts/deploy_smoke.py` | デプロイの smoke。ヘルスチェックと初回の挨拶の 1 往復を確かめる(実 API を 1 回使う) |
-| `.github/workflows/healthz.yml`、`scripts/healthz_watch.py` | 外形監視。GitHub Actions が 15 分ごとに公開 URL の `/healthz` を呼び、落ちていたら Issue で知らせる(下の「7. 外形監視を有効にして確かめる」) |
+| `.github/workflows/healthz.yml`、`scripts/healthz_watch.py` | 外形監視。GitHub Actions が 15 分ごとに公開 URL の `/healthz` を呼び、落ちていたら Issue で知らせる(下の「8. 外形監視を有効にして確かめる」) |
 
 - 状態と出力は、すべてコンテナの `/app/data` に書きます(会話、dip の状態、プロフィール、費用台帳、ターン数、音声の下書き)。
   ここに永続ディスクをつなぎます。ほかの場所は、デプロイと再起動のたびに消えます
@@ -176,7 +176,7 @@ certifi は 2026.10.19 以上が要ります。image の版は次で確かめま
 届かないものです。
 
 - メモリ不足(`Out of memory`)、`Instance Failed`、インスタンスの起動し直し。Render の通知の一覧にありません。「Events」には出ます
-  (拾う仕組みは Brief の「次にやること」の 3)
+  (毎日見ます。下の「7. メモリ不足とインスタンスの失敗を毎日見る」)
 - デプロイの成功と、unhealthy からの回復(Slack だけ)。回復したかは「Events」で見ます
 - `aica-voice` が固まったこと(ヘルスチェックがない。Brief の「次にやること」の 10)
 
@@ -216,7 +216,76 @@ Render の文書に書いておらず、未確認のことです。下の「届�
 - ディスクの 80% 超え: 今の使用量は、`aica` の「Shell」で `df -h /app/data` を実行して見る
 - Blueprint の同期の失敗、Suspend: 起きたときに見る
 
-### 7. 外形監視を有効にして確かめる **【運営者】**
+### 7. メモリ不足とインスタンスの失敗を毎日見る **【運営者】**
+
+メモリ不足(`Out of memory`)とインスタンスの失敗(`Instance Failed`)は、Render の通知では届きません。Render が起動し直すので、
+回数が増えていても気づけません。毎日 1 回、`aica` と `aica-voice` の回数を数えます。
+届く通知にしなかった理由は [Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+**準備(1 回だけ)**
+
+1. [Render のダッシュボード](https://dashboard.render.com/) の右上のアカウントから「Account Settings」→「API Keys」で、鍵を作る。
+   名前は `aica-events` など。鍵は作ったときに 1 回だけ表示される
+2. 鍵を手元の Mac のキーチェーンに入れる。最後の `-w` で、鍵を聞かれるので貼る(シェルの履歴に残さないため)
+
+   ```bash
+   security add-generic-password -a "$USER" -s render-api-key -w
+   ```
+
+- 鍵は、運営者が属するすべてのワークスペースを読み書きでき、環境変数(API キー)も読めます。`.env`、CI、Render の環境変数には入れません
+- Mac をなくしたとき、鍵が漏れたかもしれないときは、「API Keys」でその鍵を消し、作り直します
+
+**毎日見る**
+
+1. リポジトリ直下で動かす。Render の API を読むだけで、何も変えない
+
+   ```bash
+   RENDER_API_KEY=$(security find-generic-password -s render-api-key -w) ./.venv/bin/python -m scripts.render_events
+   ```
+
+   次のように出ます。回数は「直近 24 時間 / 7 日」で、`*` は直近 24 時間のものです。
+
+   ```text
+   2026-10-28 09:00 時点(日本時間)。直近 24 時間 / 7 日
+     aica: メモリ不足(Out of memory) 1 / 1、インスタンスの失敗(Instance Failed) 0 / 0
+     aica-voice: メモリ不足(Out of memory) 0 / 0、インスタンスの失敗(Instance Failed) 0 / 0
+     * 10-28 06:00 aica メモリ不足(Out of memory) 上限 2Gi evt-…
+   判定: look(* の日時を記録し、その時刻の Metrics と Logs を見る)
+   ```
+
+2. 最後の行の判定のとおりにする
+
+| 判定 | 回数(サービスごと) | すること |
+|---|---|---|
+| ok | 直近 24 時間に 0 回 | 何もしない |
+| look | 直近 24 時間に 1 回以上で、act に当たらない | `*` の日時、サービス、種類を控える。そのサービスの「Metrics」で、その時刻の前後のメモリを見る。「Logs」で、落ちる直前のログを見る。メモリ不足でない失敗は、終了コードと直前のエラーを控える |
+| act | 直近 24 時間にメモリ不足が 2 回以上、7 日で 3 回以上、またはメモリ不足でない失敗が直近 24 時間に 2 回以上 | 増えています。その日のうちに、下の「act のとき」をする |
+
+- 週末などで空けたときは、`--hours 72` のように、空けた時間を渡します。7 日より前の分は数えません(API が出来事を何日残すかは未確認)
+- 公開 URL の `/healthz` が答えない、サービスが「Live」でない(落ちたまま戻っていない)ときは、判定によらず、すぐ対応します
+  (runbook は Brief の「次にやること」の 4 で書く。まだない)
+- 急にメモリが増えて落ちたときは、「Metrics」に山が出ないことがあります(Render の文書 [Troubleshooting Your Deploy](https://render.com/docs/troubleshooting-deploys))
+
+**act のとき**
+
+1. 「Metrics」で、メモリの増え方を見る。待機だけで上限近くにいる、相談のたびに山になる、時間とともに増え続ける(漏れ)のどれかを控える
+2. `aica` で、音声ワーカーを移している間(`AICA_VOICE_WORKER=1`)なら、上の「1 つのコンテナで動かしていたサービスを分ける」の 2 つ目の PR を先にする
+3. 移し終えた後の `aica`、または `aica-voice` なら、Brief の関門 3 の見直しのきっかけです。日時、回数、1 の増え方を書いて、カードにする
+4. メモリ不足でない失敗が続くときは、「Logs」の終了コードと直前のエラーを書いて、カードにする
+
+**鍵がないとき、API が答えないとき**
+
+コマンドの終了コードが 2(`NG: …`)のときは、ダッシュボードで同じことを見ます。
+
+1. `aica` と `aica-voice` の「Events」を開き、直近 7 日の `Out of memory` と `Instance Failed` を数える
+2. 上の表の回数の決まりで判定する
+
+- 終了コードは、ok が 0、look と act が 1、鍵がない・API が答えないが 2 です。毎日の実行を launchd などで自動にするときに使います
+- ダッシュボードの `Out of memory` と `Instance Failed` は、API ではどちらも `server_failed` の出来事で、メモリ不足のときだけ
+  理由に `oomKilled` が付く、と読んでいます(Render の API の型から。本番の出来事では確かめていない)。
+  初めて動かしたときに、「Events」と数が合うかを見て、Brief の関門 6 に書きます
+
+### 8. 外形監視を有効にして確かめる **【運営者】**
 
 外から `/healthz` を定期的に呼び、落ちたら GitHub の Issue とメールで知らせます。
 6 の Render の通知は Render の中から見た状態なので、外から届くかはこちらで見ます。決めた理由、費用、知らせが届くまでの目安は
@@ -448,5 +517,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 [Health Checks](https://render.com/docs/health-checks)。
 通知の手順は、2026-10-28 に [Email and Slack Notifications](https://render.com/docs/notifications) と
 [Health Checks](https://render.com/docs/health-checks) を確認して書きました。
+メモリ不足の点検は、2026-10-28 に [Webhooks](https://render.com/docs/webhooks)、[The Render API](https://render.com/docs/api)、
+[List events](https://api-docs.render.com/reference/list-events) を確認して書きました。
 外形監視の手順は、2026-10-28 に GitHub の [Events that trigger workflows の schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) と
 [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) を確認して書きました。

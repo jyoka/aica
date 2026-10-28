@@ -1,5 +1,5 @@
 # 外形監視: 公開 URL の /healthz を外から 15 分ごとに呼び、続けて落ちていたら Issue を開いて運営者に知らせる。
-# 決めた理由は docs/architecture.md の関門 6、止め方と確かめ方は docs/deploy/render.md の 7。
+# 決めた理由は docs/architecture.md の関門 6、止め方と確かめ方は docs/deploy/render.md の 8。
 # 秘密情報は使わない(AGENTS.md)。URL はリポジトリの変数 AICA_HEALTHZ_URL に置き、無ければジョブを飛ばす。
 # Issue を開く、閉じるのは、Actions が実行ごとに作る github.token(下の permissions の issues: write)だけで足りる。
 # 判定と Issue の扱いは scripts/healthz_watch.py(tests/test_healthz_watch.py)。

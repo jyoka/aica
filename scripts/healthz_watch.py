@@ -3,7 +3,7 @@
     ./.venv/bin/python -m scripts.healthz_watch --url https://<名前>.onrender.com/healthz   # 呼ぶだけ(Issue は触らない)
 
 .github/workflows/healthz.yml が 15 分ごとに、--repo と --assignee を付けて動かす。決めた理由は docs/architecture.md の関門 6、
-止め方と確かめ方は docs/deploy/render.md の 7。GitHub の Actions の runner でそのまま動くよう、標準ライブラリだけを使う。
+止め方と確かめ方は docs/deploy/render.md の 8。GitHub の Actions の runner でそのまま動くよう、標準ライブラリだけを使う。
 
 判定(1 回の実行の中):
 - ATTEMPTS 回まで、WAIT 秒おきに GET する。1 回でも 200 なら動いている。全部が 200 以外か時間切れなら落ちている
@@ -154,7 +154,7 @@ def issue_body(url: str, reasons: list[str], again: bool = False) -> str:
     head = "また落ちました。\n\n" if again else f"{MARKER}\n"
     return (f"{head}`{url}` が、{len(reasons)} 回続けて 200 を返しませんでした({_now()})。\n\n{lines}\n\n"
             f"- 実行: {_run_url()}\n"
-            "- 見るもの: Render の `aica` の「Events」「Logs」「Metrics」(docs/deploy/render.md の 7)\n"
+            "- 見るもの: Render の `aica` の「Events」「Logs」「Metrics」(docs/deploy/render.md の 8)\n"
             "- 回復すると、次の外形監視がこの Issue を閉じます。落ちている間は、新しい Issue を開きません。"
             f"閉じてから {REOPEN_HOURS} 時間のうちにまた落ちたら、この Issue を開き直します\n")
 
