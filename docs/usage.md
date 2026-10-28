@@ -348,3 +348,4 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 | 利用規約とプライバシーポリシー(版 1.0。画面は `/legal/terms`、`/legal/privacy`。法律の確認は利用者がする) | [docs/legal/terms.md](legal/terms.md)、[docs/legal/privacy-policy.md](legal/privacy-policy.md)、[docs/legal/README.md](legal/README.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](../evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](deploy/render.md) |
+| 運用の決定(段階、7 つの関門、落ちたときの対応、次にやること) | [docs/architecture.md](architecture.md)(Architecture Brief) |

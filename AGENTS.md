@@ -10,6 +10,7 @@
 | 業務の語 | [CONTEXT.md](CONTEXT.md) |
 | 何を作るか | [docs/prd/](docs/prd/) |
 | 全体の部品とデータの流れ | [docs/architecture/hld.md](docs/architecture/hld.md) |
+| 運用の決定(段階、7 つの関門)。サービス、データストア、秘密情報、プラン、常駐プロセスを変えるとき | [docs/architecture.md](docs/architecture.md) |
 | なぜこの作りなのか | [docs/adr/](docs/adr/)、[docs/design/](docs/design/) |
 | 動かし方とコマンドの全部、設定 | [docs/usage.md](docs/usage.md)、[docs/configuration.md](docs/configuration.md) |
 

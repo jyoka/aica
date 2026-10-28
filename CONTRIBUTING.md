@@ -47,6 +47,7 @@ docs/ の分け方は変えません。新しい文書は、下の表の場所�
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/](docs/deploy/) |
 | 何を作るか(要件と予算) | [docs/prd/](docs/prd/) |
 | 部品とデータの流れ(HLD)、モジュールと関数(LLD)、設計の見直し | [docs/architecture/](docs/architecture/) |
+| 運用の決定(段階と 7 つの関門。task-hub の `task check` が読むので、この名前で置く) | [docs/architecture.md](docs/architecture.md)(Architecture Brief) |
 | 1 つの決定とその理由 | [docs/adr/](docs/adr/) |
 | 機能ごとの設計メモ | [docs/design/](docs/design/) |
 | 利用規約とプライバシーポリシー(画面に出す原文) | [docs/legal/](docs/legal/) |
