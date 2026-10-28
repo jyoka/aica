@@ -1,0 +1,40 @@
+[
+ {
+  "id": "baito-emotion-tired",
+  "entry": "baito",
+  "category": "emotion",
+  "title": "働ける時間の問いに、家事と育児で疲れていると話す",
+  "segment": "homemaker",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "働ける時間はどれが近い？"}
+  ],
+  "asking": "hf_hours",
+  "says": [{"text": "家事と育児でもうクタクタ…", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "order", "parts": ["ack", "ask"]},
+   {"check": "empathy"}
+  ]
+ },
+ {
+  "id": "baito-emotion-yelled",
+  "entry": "baito",
+  "category": "emotion",
+  "title": "接客の問いに、前のバイトで怒鳴られた話をする",
+  "segment": "student",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "接客ってどう？"}
+  ],
+  "asking": "fg_customer",
+  "says": [{"text": "前のバイトで店長に怒鳴られてすぐ辞めた。接客はもういいかな", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "customer_facing", "value": "avoid"},
+   {"check": "empathy"},
+   {"check": "no_advice_beyond"},
+   {"check": "no_slot_contains", "texts": ["店長"]}
+  ]
+ }
+]

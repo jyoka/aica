@@ -1,0 +1,62 @@
+[
+ {
+  "id": "baito-chat-weather",
+  "entry": "baito",
+  "category": "chat",
+  "title": "日数の問いに、天気の話をする",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}},
+  "history": [
+   {"who": "user", "text": "15〜17歳"},
+   {"who": "agent", "text": "高校生なんだね！週に何日くらい入れそう？"}
+  ],
+  "asking": "hf_days",
+  "says": [{"text": "てか今日暑すぎない？", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "order", "parts": ["ack", "ask"]},
+   {"check": "responds_first"},
+   {"check": "tone_matches"}
+  ]
+ },
+ {
+  "id": "baito-chat-sticker",
+  "entry": "baito",
+  "category": "chat",
+  "title": "時間帯の問いに、スタンプだけを送る",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "[スタンプ]", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "reply_not_contains", "texts": ["受け取れなかった", "読み取れなかった"]},
+   {"check": "light_tone"}
+  ],
+  "note": "今は LINE のスタンプに返事をしない(line_runtime/server.py の _line_kind)。ランタイムが「[スタンプ]」の文にして渡す前提(設計メモ §4.12)"
+ },
+ {
+  "id": "baito-chat-oshi",
+  "entry": "baito",
+  "category": "chat",
+  "title": "使い道の問いに、推しの話で答える",
+  "segment": "unknown",
+  "history": [
+   {"who": "agent", "text": "バイト代、何に使いたい？"}
+  ],
+  "asking": "q_money",
+  "says": [{"text": "推しのライブ遠征したいんだよね〜", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "purpose", "value": "hobby"},
+   {"check": "counted"},
+   {"check": "personal_touch"},
+   {"check": "tone_matches"}
+  ],
+  "note": "雑談に見えても答え。値は捨てない(設計メモ §4.4)"
+ }
+]

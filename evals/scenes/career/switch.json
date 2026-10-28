@@ -1,0 +1,69 @@
+[
+ {
+  "id": "switch-career-to-baito",
+  "entry": "career",
+  "category": "switch",
+  "title": "正社員ヒアリングの途中で「とりあえずバイトでいい。週3くらいで」と言う",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "横浜", "from": "typed"}, "start_timing": {"text": "すぐ"}},
+  "profile": {"track": "正社員", "area": "横浜"},
+  "history": [
+   {"who": "user", "text": "すぐ"},
+   {"who": "agent", "text": "年収はいくら以上を希望しますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "とりあえずバイトでいい。週3くらいで", "button": false}],
+  "expect": [
+   {"check": "switches_to", "entry": "baito"},
+   {"check": "profile", "key": "track", "contains": "アルバイト"},
+   {"check": "profile", "key": "area", "contains": "横浜"},
+   {"check": "profile", "key": "start_timing", "contains": "すぐ"},
+   {"check": "slot", "entry": "baito", "slot": "days_per_week", "value": "3-4"},
+   {"check": "not_asks", "entry": "baito", "slots": ["days_per_week"]},
+   {"check": "no_made_up_number"},
+   {"check": "acknowledges_prior"}
+  ],
+  "note": "年収は時給に換算しない(数を作らない)。正社員の値は共通の値に残し、戻ったときにも使う(設計メモ §4.5)"
+ },
+ {
+  "id": "switch-career-also-baito",
+  "entry": "career",
+  "category": "switch",
+  "title": "正社員ヒアリングの途中で「バイトも並行して探そうかな」と言う",
+  "segment": "return",
+  "known": {"why_now": {"text": "働き方"}},
+  "history": [
+   {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "バイトも並行して探そうかな", "button": false}],
+  "expect": [
+   {"check": "stays"},
+   {"check": "offers_entries", "entries": ["baito"]},
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "responds_first"}
+  ]
+ },
+ {
+  "id": "switch-career-carried-area",
+  "entry": "career",
+  "category": "switch",
+  "title": "バイトの相談から移ってきた人に、引き継いだ勤務地を聞き直さない",
+  "segment": "same_path",
+  "known": {"area": {"text": "東京", "confidence": "low", "from": "baito"}},
+  "profile": {"track": "正社員", "area": "東京"},
+  "history": [
+   {"who": "user", "text": "やっぱり正社員で探したい"},
+   {"who": "agent", "text": "正社員で探しましょう。エリアは東京で聞いていますね。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [{"text": "年収を上げたい", "button": true}],
+  "expect": [
+   {"check": "not_asks", "slots": ["area"]},
+   {"check": "asks", "slot": "min_annual_salary"},
+   {"check": "slot", "slot": "area", "contains": "東京", "confidence": "low"}
+  ],
+  "note": "引き継いだ値は推測(low)のまま、まとめで確かめる。HARD でも直接は聞き直さない(spam_hard_high の決まりの例外。設計メモ §4.5)"
+ }
+]

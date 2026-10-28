@@ -1,0 +1,63 @@
+[
+ {
+  "id": "baito-ask-wage-norm",
+  "entry": "baito",
+  "category": "ask",
+  "title": "時給の問いに「時給っていくらが普通?」と聞き返す",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}, "days_per_week": {"value": "3-4"}},
+  "history": [
+   {"who": "agent", "text": "時給はいくら以上がいい？"}
+  ],
+  "asking": "fg_wage",
+  "says": [{"text": "時給っていくらが普通？", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "answers_from_facts", "facts": ["時給は地域と職種で変わる", "相談のあとに、条件に合う求人の時給を見せられる"]},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "相場の数は言わない(確かめた出典が無い。ADR-0003)。ボタンの「1,200円以上」などの数は言ってよい"
+ },
+ {
+  "id": "baito-ask-who",
+  "entry": "baito",
+  "category": "ask",
+  "title": "通勤の問いに「てかあなた誰?」と聞く",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "通うなら、どこまでOK？"}
+  ],
+  "asking": "hf_commute",
+  "says": [{"text": "てかあなた誰？", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "order", "parts": ["answer", "ask"]},
+   {"check": "answers_from_facts", "facts": ["aica はお仕事探しを手伝う AI", "人ではない"]},
+   {"check": "tone_matches"}
+  ]
+ },
+ {
+  "id": "baito-ask-recommend",
+  "entry": "baito",
+  "category": "ask",
+  "title": "時間帯の問いに「おすすめのバイトある?」と聞く",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}},
+  "history": [
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "おすすめのバイトある？", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "answers_from_facts", "facts": ["いくつか答えてもらうと、合いそうな職種を出せる"]},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "職種や求人の名前を、カードの前に言わない(今の validate_reply の、カードに無い職種の確かめを残す)"
+ }
+]

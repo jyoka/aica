@@ -1,0 +1,60 @@
+[
+ {
+  "id": "baito-multi-weekend-near",
+  "entry": "baito",
+  "category": "multi",
+  "title": "日数の問いに「土日だけ、駅近で」と答える",
+  "segment": "side_job",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "週に何日くらい入れそう？"}
+  ],
+  "asking": "hf_days",
+  "says": [{"text": "土日だけ、駅近で", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "days_per_week", "value": "1-2"},
+   {"check": "slot", "slot": "weekday_or_weekend", "value": "weekend"},
+   {"check": "not_asks", "slots": ["days_per_week", "weekday_or_weekend"]},
+   {"check": "no_made_up_number"},
+   {"check": "responds_first"}
+  ],
+  "note": "「駅近」に当たる欄は無い。どこに残すか(今の notes か、共通の値の area か)は 2 枚目のカードで決める"
+ },
+ {
+  "id": "baito-multi-age-days",
+  "entry": "baito",
+  "category": "multi",
+  "title": "年齢の問いに、年齢と日数を一緒に答える",
+  "segment": "student",
+  "history": [
+   {"who": "agent", "text": "年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）"}
+  ],
+  "asking": "hf_age",
+  "says": [{"text": "17の高校生で、週3くらい入りたい", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "age_band", "value": "15_17"},
+   {"check": "slot", "slot": "days_per_week", "value": "3-4"},
+   {"check": "not_asks", "slots": ["age_band", "days_per_week"]},
+   {"check": "reply_contains", "any": ["22時"]}
+  ],
+  "note": "未成年の決まりの注意(NOTICE の minor_rules)は今のまま出す"
+ },
+ {
+  "id": "baito-multi-remote-hours",
+  "entry": "baito",
+  "category": "multi",
+  "title": "働ける時間の問いに、時間と在宅の希望を一緒に答える",
+  "segment": "homemaker",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "働ける時間はどれが近い？"}
+  ],
+  "asking": "hf_hours",
+  "says": [{"text": "10時から3時くらいかな。家でできるならそれがいい", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "available_hours", "value": "10-16"},
+   {"check": "slot", "slot": "remote", "value": "yes", "confidence": "low"},
+   {"check": "not_asks", "slots": ["available_hours", "remote"]}
+  ]
+ }
+]

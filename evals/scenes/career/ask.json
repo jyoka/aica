@@ -1,0 +1,172 @@
+[
+ {
+  "id": "ask-who",
+  "entry": "career",
+  "category": "ask",
+  "title": "「あなたは誰?」と聞く",
+  "segment": "unknown",
+  "history": [
+   {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n今の状況に近いのは?"}
+  ],
+  "asking": "q_segment",
+  "says": [{"text": "あなたは誰?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "answers_from_facts", "facts": ["aica は、仕事探しを手伝う AI です", "いまは職務経歴書の材料を、1問ずつ集めています"]},
+   {"check": "no_invented_facts"}
+  ]
+ },
+ {
+  "id": "ask-what-for",
+  "entry": "career",
+  "category": "ask",
+  "title": "「これ何に使うの?」と聞く",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}},
+  "history": [
+   {"who": "user", "text": "年収を上げたい"},
+   {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "これ何に使うの?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "answers_from_facts", "facts": ["集めた内容は、職務経歴書の下書きと、条件に合う求人を探すのに使います", "求人はヒアリングの後に出せます"]},
+   {"check": "no_invented_facts"},
+   {"check": "one_question"}
+  ]
+ },
+ {
+  "id": "ask-recommend-company",
+  "entry": "career",
+  "category": "ask",
+  "title": "「おすすめの会社は?」と聞く",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "名古屋市内"}},
+  "history": [
+   {"who": "user", "text": "名古屋市内"},
+   {"who": "agent", "text": "名古屋市内ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "てかおすすめの会社ある?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "answers_from_facts", "facts": ["求人はヒアリングの後に、条件に合うものを出せます", "求人は架空のデモで、実際の応募にはなりません"]},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "会社の名前、評判、数を言わない(ADR-0003。求人は dip のツールで得る事実)"
+ },
+ {
+  "id": "ask-market-salary",
+  "entry": "career",
+  "category": "ask",
+  "title": "年収の問いに「年収っていくらが普通?」と聞き返す",
+  "segment": "early",
+  "known": {"why_now": {"text": "評価に不満"}, "area": {"text": "福岡市内"}},
+  "history": [
+   {"who": "user", "text": "福岡市内"},
+   {"who": "agent", "text": "福岡市内ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "年収っていくらが普通なの?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "slot_open", "slot": "min_annual_salary"},
+   {"check": "no_made_up_number"},
+   {"check": "reply_not_contains", "texts": ["平均", "相場は"]},
+   {"check": "not_counted"},
+   {"check": "no_invented_facts"},
+   {"check": "responds_first"}
+  ],
+  "note": "相場の数を言わない(外の情報で、確かめた事実を持っていない)。ボタンの区切りから選べばよいこと、迷うなら「こだわらない」でよいことは言ってよい"
+ },
+ {
+  "id": "ask-ai-or-human",
+  "entry": "career",
+  "category": "ask",
+  "title": "「人間?AI?」と聞く",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}},
+  "history": [
+   {"who": "user", "text": "600万円以上"},
+   {"who": "agent", "text": "600万円以上ですね。新しい仕事は、いつから始められそうですか?"}
+  ],
+  "asking": "hf_timing",
+  "says": [{"text": "これって人間がやってるの?AI?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "answers_from_facts", "facts": ["aica は AI です。人が読んで返事をしているのではありません"]},
+   {"check": "no_invented_facts"}
+  ]
+ },
+ {
+  "id": "ask-where-stored",
+  "entry": "career",
+  "category": "ask",
+  "title": "「この情報ってどこに残るの?」と聞く",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "500万円台", "range": [500, 599], "unit": "万円"}, "start_timing": {"text": "3か月以内"}, "raise_target": {"text": "年収"}},
+  "history": [
+   {"who": "user", "text": "年収"},
+   {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
+  ],
+  "asking": "card_role1",
+  "says": [{"text": "この情報ってどこに残るの?会社にバレない?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "answers_from_facts", "facts": ["保存した内容は、最後に使った日から180日で消えます", "LINE では「データを消す」でいつでも消せます", "相談の内容を、本人の同意なく第三者に渡しません"]},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "180 は渡した事実にある数なので言ってよい。no_made_up_number は facts の数も本人の側に数える"
+ },
+ {
+  "id": "ask-how-many-left",
+  "entry": "career",
+  "category": "ask",
+  "title": "「あと何問?」と聞く",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "500万円台", "range": [500, 599], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}, "career1.role": {"text": "法人営業"}},
+  "history": [
+   {"who": "user", "text": "法人営業"},
+   {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
+  ],
+  "asking": "card_scale1",
+  "says": [{"text": "あと何問くらい?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "answers_from_facts", "facts": ["いまは職歴を聞いています", "このあと、選ぶだけの問いをいくつか聞いて、最後にまとめで確かめます"]}
+  ],
+  "note": "残りの問いの数は出さない(task 288)。今どこで、次に何があるかを言う"
+ },
+ {
+  "id": "ask-what-is-remote",
+  "entry": "career",
+  "category": "ask",
+  "title": "働き方の問いの言葉を聞き返す",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}},
+  "history": [
+   {"who": "agent", "text": "あと少しで完成です\n働き方で、いちばん大事なのは?"}
+  ],
+  "asking": "fg_work_style",
+  "says": [{"text": "リモート多めってフルリモートってこと?", "button": false}],
+  "expect": [
+   {"check": "slot_open", "slot": "work_style"},
+   {"check": "reply_not_contains", "texts": ["読み取れなかった", "働き方で、いちばん大事なのは?"]},
+   {"check": "not_counted"},
+   {"check": "choices_include", "labels": ["リモート多め"]},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "聞き返しには問いの意味を説明し、問いの文を繰り返さない(task 315 の決まりを残す)"
+ }
+]

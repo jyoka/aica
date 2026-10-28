@@ -1,0 +1,56 @@
+[
+ {
+  "id": "baito-short-un",
+  "entry": "baito",
+  "category": "short",
+  "title": "日数の問いに「うん」とだけ返す",
+  "segment": "student",
+  "known": {"age_band": {"value": "15_17"}},
+  "history": [
+   {"who": "agent", "text": "週に何日くらい入れそう？"}
+  ],
+  "asking": "hf_days",
+  "says": [{"text": "うん", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "reply_not_contains", "texts": ["受け取れなかった"]},
+   {"check": "slot_open", "slot": "days_per_week"}
+  ]
+ },
+ {
+  "id": "baito-short-colloquial",
+  "entry": "baito",
+  "category": "short",
+  "title": "時間帯の問いに、ボタンと違う話し言葉で答える",
+  "segment": "student",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
+  ],
+  "asking": "hf_time",
+  "says": [{"text": "学校終わってからならいける", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "time_slots", "value": "evening"},
+   {"check": "counted"},
+   {"check": "not_asks", "slots": ["time_slots"]}
+  ]
+ },
+ {
+  "id": "baito-short-typo",
+  "entry": "baito",
+  "category": "short",
+  "title": "通勤の問いに、ひらがなと打ち間違いで答える",
+  "segment": "other",
+  "known": {"age_band": {"value": "18_plus"}},
+  "history": [
+   {"who": "agent", "text": "通うなら、どこまでOK？"}
+  ],
+  "asking": "hf_commute",
+  "says": [{"text": "でんしゃで30ぷんまで", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "commute", "value": "train_30"},
+   {"check": "not_asks", "slots": ["commute"]}
+  ]
+ }
+]

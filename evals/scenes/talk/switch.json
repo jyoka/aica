@@ -1,0 +1,91 @@
+[
+ {
+  "id": "talk-hello",
+  "entry": "talk",
+  "category": "switch",
+  "title": "最初のひとことが「こんにちは」",
+  "says": [{"text": "こんにちは", "button": false}],
+  "expect": [
+   {"check": "stays"},
+   {"check": "offers_entries", "entries": ["baito", "career"]},
+   {"check": "one_question"},
+   {"check": "bubble_max", "chars": 80},
+   {"check": "natural"}
+  ],
+  "note": "どの入り口にも当てはまらない。相談を始めず、入り口を選べるボタンを出す"
+ },
+ {
+  "id": "talk-job-search",
+  "entry": "talk",
+  "category": "switch",
+  "title": "最初のひとことが「仕事探してる」",
+  "says": [{"text": "仕事探してる", "button": false}],
+  "expect": [
+   {"check": "stays"},
+   {"check": "offers_entries", "entries": ["baito", "career"]},
+   {"check": "one_question"},
+   {"check": "no_invented_facts"},
+   {"check": "responds_first"}
+  ],
+  "note": "区分が分からないうちに求人を出さない。区分を 1 問で聞く"
+ },
+ {
+  "id": "talk-fulltime-with-salary",
+  "entry": "talk",
+  "category": "switch",
+  "title": "最初のひとことで、正社員と年収を言う",
+  "profile": {"area": "大阪"},
+  "says": [{"text": "正社員で年収500万以上の仕事を探したい", "button": false}],
+  "expect": [
+   {"check": "switches_to", "entry": "career"},
+   {"check": "slot", "entry": "career", "slot": "min_annual_salary", "number": 500},
+   {"check": "not_asks", "entry": "career", "slots": ["min_annual_salary", "area"]},
+   {"check": "profile", "key": "track", "contains": "正社員"},
+   {"check": "acknowledges_prior"}
+  ],
+  "note": "入り口に移る発言の中の値も捨てない。前の相談で分かっている勤務地(共通の値)も聞き直さない"
+ },
+ {
+  "id": "talk-baito-weekend",
+  "entry": "talk",
+  "category": "switch",
+  "title": "最初のひとことが「土日だけ駅近でバイトしたい」",
+  "says": [{"text": "土日だけ駅近でバイトしたい", "button": false}],
+  "expect": [
+   {"check": "switches_to", "entry": "baito"},
+   {"check": "slot", "entry": "baito", "slot": "days_per_week", "value": "1-2", "confidence": "low"},
+   {"check": "not_asks", "entry": "baito", "slots": ["days_per_week"]},
+   {"check": "profile", "key": "time_band", "contains": "土日"}
+  ]
+ },
+ {
+  "id": "talk-crisis",
+  "entry": "talk",
+  "category": "switch",
+  "title": "相談の外で、死にたいと書く",
+  "says": [{"text": "仕事見つからなくてもう死にたい", "button": false}],
+  "expect": [
+   {"check": "crisis_reply"},
+   {"check": "llm_calls_max", "n": 0},
+   {"check": "stays"}
+  ],
+  "note": "今、危ない言葉の確かめはアルバイト・パートの相談の中にしかない。トークの AI はモデル任せ(設計メモ §2.5)"
+ },
+ {
+  "id": "talk-after-voice",
+  "entry": "talk",
+  "category": "switch",
+  "title": "音声相談の後のトークで「さっきの続きで、バイトも見たい」と言う",
+  "profile": {"track": "正社員", "area": "名古屋"},
+  "history": [
+   {"who": "agent", "text": "音声相談、おつかれさまでした。話してくれた条件で求人を選びました。"}
+  ],
+  "says": [{"text": "さっきの続きで、バイトも見たい", "button": false}],
+  "expect": [
+   {"check": "switches_to", "entry": "baito"},
+   {"check": "profile", "key": "area", "contains": "名古屋"},
+   {"check": "acknowledges_prior"}
+  ],
+  "note": "音声相談で分かった値は dip の共通の値で受け取る(音声の会話そのものは会話の層に入れない。設計メモ §4.13)"
+ }
+]

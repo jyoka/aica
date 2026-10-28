@@ -1,0 +1,181 @@
+[
+ {
+  "id": "chat-weather",
+  "entry": "career",
+  "category": "chat",
+  "title": "勤務地を聞かれている途中で、天気の話をする",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}},
+  "history": [
+   {"who": "user", "text": "年収を上げたい"},
+   {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "今日めっちゃ雨だね", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "choices_include", "labels": ["東京23区", "大阪市内"]},
+   {"check": "not_counted"},
+   {"check": "no_made_up_number"},
+   {"check": "one_question"},
+   {"check": "responds_first"},
+   {"check": "no_invented_facts"}
+  ]
+ },
+ {
+  "id": "chat-food",
+  "entry": "career",
+  "category": "chat",
+  "title": "職歴を聞かれている途中で、食べ物の話をする",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "大阪市内"}, "min_annual_salary": {"text": "400万円台", "range": [400, 499], "unit": "万円"}, "start_timing": {"text": "半年以内"}, "change_reason": {"text": "仕事の中身"}, "use_experience": {"text": "事務・経理"}},
+  "history": [
+   {"who": "user", "text": "事務・経理"},
+   {"who": "agent", "text": "次は職歴です\n事務・経理の経験ですね。直近のお仕事を一言で教えてください"}
+  ],
+  "asking": "card_role1",
+  "says": [{"text": "お腹すいた〜ラーメン食べたい", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "bubble_max", "chars": 80},
+   {"check": "responds_first"},
+   {"check": "natural"}
+  ]
+ },
+ {
+  "id": "chat-grumble",
+  "entry": "career",
+  "category": "chat",
+  "title": "時期を聞かれて、今日の愚痴を言う(答えではない)",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "評価に不満"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "500万円台", "range": [500, 599], "unit": "万円"}},
+  "history": [
+   {"who": "user", "text": "500万円台"},
+   {"who": "agent", "text": "500万円台ですね。新しい仕事は、いつから始められそうですか?"}
+  ],
+  "asking": "hf_timing",
+  "says": [{"text": "てか今日も上司に詰められて最悪だった", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "slot_unchanged", "slot": "why_now"},
+   {"check": "not_counted"},
+   {"check": "responds_first"},
+   {"check": "empathy"},
+   {"check": "no_advice_beyond"}
+  ]
+ },
+ {
+  "id": "chat-joke-salary",
+  "entry": "career",
+  "category": "chat",
+  "title": "年収の問いに冗談で答える",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "1億で!笑", "button": false}],
+  "expect": [
+   {"check": "slot_not_high", "slot": "min_annual_salary"},
+   {"check": "choices_include", "labels": ["500万円台", "600万円以上"]},
+   {"check": "no_made_up_number"},
+   {"check": "light_tone"},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "冗談の値を確かめた値(high)にしない。空のまま聞き直すか、推測(low)にしてまとめで確かめる"
+ },
+ {
+  "id": "chat-emoji-only",
+  "entry": "career",
+  "category": "chat",
+  "title": "良くしたことの問いに、絵文字だけを返す",
+  "segment": "same_path",
+  "known": {"career1.role": {"text": "法人営業"}, "career1.scale": {"text": "顧客100社以上", "range": [100, null], "unit": "社"}},
+  "history": [
+   {"who": "user", "text": "顧客100社以上"},
+   {"who": "agent", "text": "そのお仕事で、あなたが良くしたことは?"}
+  ],
+  "asking": "card_result1",
+  "says": [{"text": "👍", "button": false}],
+  "expect": [
+   {"check": "slot_open", "slot": "career1.result"},
+   {"check": "keeps_question"},
+   {"check": "reply_not_contains", "texts": ["読み取れなかった", "うまく受け取れません"]},
+   {"check": "not_counted"},
+   {"check": "natural"}
+  ]
+ },
+ {
+  "id": "chat-sticker",
+  "entry": "career",
+  "category": "chat",
+  "title": "LINE のスタンプだけを送る(ランタイムが「[スタンプ]」の文にして渡す)",
+  "form": "D",
+  "segment": "early",
+  "known": {"why_now": {"text": "仕事が合わない"}},
+  "history": [
+   {"who": "user", "text": "仕事が合わない"},
+   {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "[スタンプ]", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "slot_open", "slot": "area"},
+   {"check": "not_counted"},
+   {"check": "bubble_max", "chars": 80}
+  ],
+  "note": "今の LINE の入口(line_runtime/server.py の _line_kind)はテキストの発言だけを受け、スタンプには何も返さない"
+ },
+ {
+  "id": "chat-greeting",
+  "entry": "career",
+  "category": "chat",
+  "title": "途中で「おはよう」とだけ送る(前の発言から時間が空いた)",
+  "segment": "return",
+  "known": {"why_now": {"text": "子育てが落ち着いた"}, "area": {"text": "家から30分以内"}},
+  "history": [
+   {"who": "user", "text": "家から30分以内"},
+   {"who": "agent", "text": "家から30分以内ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "おはよう", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_counted"},
+   {"check": "slot_open", "slot": "min_annual_salary"},
+   {"check": "responds_first"}
+  ]
+ },
+ {
+  "id": "chat-three-in-a-row",
+  "entry": "career",
+  "category": "chat",
+  "title": "関係ない話を 3 回続ける",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "キャリアアップ"}},
+  "history": [
+   {"who": "user", "text": "キャリアアップ"},
+   {"who": "agent", "text": "キャリアアップですね。働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [
+   {"text": "最近ジム通い始めたんだよね", "button": false},
+   {"text": "週3で行ってる", "button": false},
+   {"text": "筋肉痛やばい", "button": false}
+  ],
+  "expect": [
+   {"check": "keeps_question", "at": "all"},
+   {"check": "choices_include", "labels": ["東京23区"], "at": "all"},
+   {"check": "no_repeat", "turns": 3},
+   {"check": "ack_varies", "turns": 3},
+   {"check": "not_counted", "at": "all"},
+   {"check": "reply_contains", "any": ["中断"], "at": 2},
+   {"check": "no_made_up_number", "at": "all"}
+  ],
+  "note": "3 回目は「中断」と送れば残ることを 1 回だけ添える(ボタンにはしない。task 315)。「週3」の数は本人の発言なので言ってよい"
+ }
+]

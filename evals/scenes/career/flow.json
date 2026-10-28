@@ -1,0 +1,176 @@
+[
+ {
+  "id": "flow-more-typed",
+  "entry": "career",
+  "category": "flow",
+  "title": "職歴の問いに「ほかには?」と打つ",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}},
+  "history": [
+   {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
+  ],
+  "asking": "card_role1",
+  "says": [{"text": "ほかには?", "button": false}],
+  "expect": [
+   {"check": "choices_include", "labels": ["企画・マーケ"]},
+   {"check": "choices_exclude", "labels": ["営業", "事務"]},
+   {"check": "reply_contains", "any": ["仕事", "職種"]},
+   {"check": "reply_not_contains", "texts": ["読み取れなかった"]},
+   {"check": "not_counted"}
+  ],
+  "note": "何の候補かが分かる一言を付ける(jyoka/tasks#326 の A と同じ。問いの短い名前から作る)"
+ },
+ {
+  "id": "flow-skip-button",
+  "entry": "career",
+  "category": "flow",
+  "title": "勤務地の問いで「スキップ」を押す",
+  "segment": "early",
+  "known": {"why_now": {"text": "仕事が合わない"}},
+  "history": [
+   {"who": "user", "text": "仕事が合わない"},
+   {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "スキップ", "button": true}],
+  "expect": [
+   {"check": "slot", "slot": "area", "status": "passed"},
+   {"check": "asks", "slot": "min_annual_salary"},
+   {"check": "counted"},
+   {"check": "llm_calls_max", "n": 1}
+  ]
+ },
+ {
+  "id": "flow-skip-typed",
+  "entry": "career",
+  "category": "flow",
+  "title": "規模の問いに「飛ばして」と打つ",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}, "career1.role": {"text": "法人営業"}},
+  "history": [
+   {"who": "user", "text": "法人営業"},
+   {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
+  ],
+  "asking": "card_scale1",
+  "says": [{"text": "これ飛ばして", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "career1.scale", "status": "passed"},
+   {"check": "asks", "qid": "card_result1"}
+  ]
+ },
+ {
+  "id": "flow-pause-word",
+  "entry": "career",
+  "category": "flow",
+  "title": "「中断」と送る",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "中断", "button": false}],
+  "expect": [
+   {"check": "closed", "why": "later"},
+   {"check": "llm_calls_max", "n": 0},
+   {"check": "slot_unchanged", "slot": "area"}
+  ]
+ },
+ {
+  "id": "flow-later-with-answer",
+  "entry": "career",
+  "category": "flow",
+  "title": "答えと一緒に「続きはまた今度」と送る",
+  "segment": "return",
+  "known": {"why_now": {"text": "子育てが落ち着いた"}},
+  "history": [
+   {"who": "user", "text": "子育てが落ち着いた"},
+   {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "大阪市内です。続きはまた今度", "button": false}],
+  "expect": [
+   {"check": "slot", "slot": "area", "contains": "大阪"},
+   {"check": "closed", "why": "later"}
+  ]
+ },
+ {
+  "id": "flow-later-typed",
+  "entry": "career",
+  "category": "flow",
+  "title": "問いの途中で「あとで」とだけ打つ",
+  "segment": "early",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "札幌市内"}},
+  "history": [
+   {"who": "user", "text": "札幌市内"},
+   {"who": "agent", "text": "札幌市内ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "あとで", "button": false}],
+  "expect": [
+   {"check": "closed", "why": "later"},
+   {"check": "llm_calls_max", "n": 0},
+   {"check": "slot_unchanged", "slot": "area"}
+  ],
+  "note": "問いのボタンに「あとで」は無い(task 315)が、打った「あとで」は「中断」と同じに閉じる(END_WORDS)"
+ },
+ {
+  "id": "flow-stop-midway",
+  "entry": "career",
+  "category": "flow",
+  "title": "「もういいや、やめとく」と打つ(ボタンの文ではない)",
+  "segment": "change",
+  "known": {"why_now": {"text": "仕事が合わない"}, "area": {"text": "名古屋市内"}},
+  "history": [
+   {"who": "user", "text": "名古屋市内"},
+   {"who": "agent", "text": "名古屋市内ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "もういいや、やめとく", "button": false}],
+  "expect": [
+   {"check": "closed"},
+   {"check": "slot_unchanged", "slot": "area"}
+  ],
+  "note": "やめる言い方は無数にあるので、言葉の表でなく読み取りで受ける。閉じる前に、そこまでを残したことを伝える"
+ },
+ {
+  "id": "flow-resume-next-time",
+  "entry": "career",
+  "category": "flow",
+  "title": "前の相談を途中でやめた人が、次の相談で「続きから」と言う",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい", "from": "saved"}, "area": {"text": "東京23区", "from": "saved"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円", "from": "saved"}},
+  "history": [
+   {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n新しい仕事は、いつから始められそうですか?"}
+  ],
+  "asking": "hf_timing",
+  "says": [{"text": "前の続きからでいい?", "button": false}],
+  "expect": [
+   {"check": "keeps_question"},
+   {"check": "not_asks", "slots": ["why_now", "area", "min_annual_salary"]},
+   {"check": "not_counted"},
+   {"check": "acknowledges_prior"},
+   {"check": "no_invented_facts"}
+  ],
+  "note": "前に保存した欄は聞かない(task 255)。「前の続きから聞いています」と、分かっていることを踏まえて返す"
+ },
+ {
+  "id": "flow-show-result",
+  "entry": "career",
+  "category": "flow",
+  "title": "途中で「もうまとめて」と言う",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい"}, "area": {"text": "東京23区"}, "min_annual_salary": {"text": "600万円以上", "range": [600, null], "unit": "万円"}, "start_timing": {"text": "すぐ"}, "raise_target": {"text": "年収"}, "career1.role": {"text": "法人営業"}},
+  "history": [
+   {"who": "user", "text": "法人営業"},
+   {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
+  ],
+  "asking": "card_scale1",
+  "says": [{"text": "もうまとめて", "button": false}],
+  "expect": [
+   {"check": "phase", "phase": "review"},
+   {"check": "not_closed"}
+  ]
+ }
+]
