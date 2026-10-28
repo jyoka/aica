@@ -9,7 +9,8 @@
 
 - candidates(受け入れ条件 1): どの問いも、最初のボタンに答えの候補が 2 つ以上。スキップと「覚えていない」だけの問いは無い
 - skip_end(2): 問いのボタンは「スキップ」で、終える操作(END_WORDS)はボタンに無い。スキップは次の問いへ、「中断」は閉じる
-- more(3): 「他の候補」を 2 回押すまで、見せていない候補が出る(重ならない)。出し尽くしたら文で送るよう案内し、もう出さない
+- more(3): 「他の候補」を 2 回押すまで、見せていない候補が出る(重ならない)。吹き出しは何の候補かを言う(task 326)。
+  出し尽くしたら文で送るよう案内し、もう出さない
 - vague(4): 問いの文に「規模」が無い。規模の問いは何を数えるかを言う。どの問いも説明(explain)を持つ
 - clarify(5): 聞き返しに、問いの文を繰り返さず、「読み取れなかった」と言わず、説明と候補を出す。2 回目は別の候補、3 回目は次へ
 - pdm(6 の回帰): 利用者の流れ(PdM の職歴 → 規模を聞き返す → もう一度聞き返す → 候補を押す)
@@ -115,6 +116,8 @@ def case_more() -> list[str]:
             if not got or set(got) & set(seen) or H.MORE not in out["choices"]:
                 bad.append(f"{form}/{seg}/{q['id']}: {n} 回目の「他の候補」が {got}")
                 break
+            if out["bubbles"] != [H.more_lead(q)] or q["topic"] not in out["bubbles"][0]:
+                bad.append(f"{form}/{seg}/{q['id']}: 「他の候補」の吹き出しが何の候補か言わない {out['bubbles']}")
             seen += got
         else:
             while H.MORE in out["choices"]:

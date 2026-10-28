@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import partial
 from pathlib import Path
 
@@ -727,6 +728,86 @@ def test_line_webhook_form_d_sends_the_start_card_career_cards_review_and_comple
         assert client.get("/static/career/other.png").status_code == 404
 
 
+# 本番のトーク(2026-10-28)で LLM が付けた受け止め(本人の直前の発言 → 受け止め)
+REACTIONS = {"同じ仕事で上へ": "同じ仕事で上を目指すのですね。", "年収を上げたい": "年収を上げたいのですね。",
+             "東京23区": "東京23区ですね。"}
+
+
+class ReactingCareerLLM(FakeCareerLLM):
+    """言い方に、本番の LLM のような受け止めを 1 文付ける(REACTIONS)。読み取りは FakeCareerLLM のまま。"""
+
+    async def __call__(self, stage, system, messages):
+        out, usage = await super().__call__(stage, system, messages)
+        if stage == "say":
+            said = re.search(r"本人の直前の発言: (.*)", system).group(1).strip()
+            out = {"reply": REACTIONS.get(said, "") + out["reply"]}
+        return out, usage
+
+
+def _talk(fake):
+    """最後の返信の (吹き出しの文, Flex の行, ボタン)。"""
+    msgs = fake.sent()[-1][1]["messages"]
+    texts = [m["text"] for m in msgs if m["type"] == "text"]
+    flex = [C.flex_lines(m["contents"]) for m in msgs if m["type"] == "flex"]
+    return texts, flex, [i["action"].get("text", i["action"].get("label")) for i in msgs[-1].get("quickReply", {}).get("items", [])]
+
+
+def _man(label):
+    """「400万円台」→ (400, 499) のような、候補の金額の幅(万円)。上限なしは 10**6。"""
+    return tuple(10**6 if x is None else x for x in H.qmap(H.new_state(), H.BANK)["hf_salary"]["choice_effects"][label]
+                 ["min_annual_salary"]["range"])
+
+
+def test_line_webhook_form_d_production_talk_more_salary_and_phase_line(tmp_path, monkeypatch):
+    """2026-10-28 に本番(形 D、BAITO v4、CAREER c1)の LINE で運営者が「アホすぎ」と言ったトークの 1〜7 を、偽の LINE と
+    受け止めを付ける偽の LLM で通す(task 326)。
+    A: 「他の候補」の後の吹き出しが、何の候補かの短い文(問いの文を繰り返さない)。
+    B: 年収の候補は金額の順で、1 ページ目で幅の全部を選べる。「他の候補」で出すのは細かい区切りか高い区切り。
+    C: 年収の値にならない候補(「今と同じくらい」「今より上げたい」)を出さない(「年収を上げたい」と言った人に聞き直さない)。
+    D: フェーズの区切りの 1 行は、前の答えへの受け止めの後、次の問いの前。吹き出しは 1 つのまま。"""
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+    monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, "c1")
+    monkeypatch.setenv(H.FORM_ENV, "D")
+    from line_runtime.runtime import LineRuntime
+
+    uid = line_user(RAW_USER)
+    model = ConsultModel(script=start_script(uid))
+    server, fake = _server(tmp_path, monkeypatch, model)
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, career_llm=ReactingCareerLLM()))
+    q = H.qmap(H.new_state(form="D"), H.BANK)
+    with TestClient(server.app) as client:
+        for n, said in enumerate(["正社員で転職したいので相談したい", H.START_GO, "同じ仕事で上へ"], 1):
+            assert _say(client, said, n).status_code == 200
+        texts, _, _ = _talk(fake)
+        assert texts == ["同じ仕事で上を目指すのですね。" + q["ib_why_now"]["text"]]  # 1
+
+        assert _say(client, "年収を上げたい", 4).status_code == 200  # 2 → 3
+        texts, flex, _ = _talk(fake)
+        assert texts == ["\n".join(["年収を上げたいのですね。", H.PHASE_LINES["hard_filter"], q["hf_area"]["text"]])]  # D
+        assert len(flex) == 1 and any("＋なぜ今" in x for x in flex[0])  # 芽のカード
+
+        assert _say(client, "東京23区", 5).status_code == 200  # 4 → 5
+        texts, flex, page1 = _talk(fake)
+        assert texts == ["東京23区ですね。" + q["hf_salary"]["text"]]
+        assert len(flex) == 1 and any("＋勤務地" in x for x in flex[0])
+        amounts = [c for c in page1 if c in q["hf_salary"]["choice_effects"] and c != "こだわらない"]
+        assert [_man(c) for c in amounts] == sorted(_man(c) for c in amounts)  # B: 金額の順
+        assert _man(amounts[0])[0] == 0 and _man(amounts[-1])[1] == 10**6  # B: 1 ページ目で幅の全部
+        assert page1[-2:] == [H.MORE, H.PASS]
+
+        assert _say(client, H.MORE, 6).status_code == 200  # 6 → 7
+        texts, flex, page2 = _talk(fake)
+        assert texts == ["年収のほかの区切りです。"] and not flex  # A
+        more = page2[:page2.index(H.MORE)]
+        assert more and not set(more) & set(page1)
+        assert all(c in q["hf_salary"]["choice_effects"] for c in more)  # C: どれも年収の値になる
+        assert [_man(c) for c in more] == sorted(_man(c) for c in more)  # B: 金額の順
+        # B: どれも 1 ページ目の区切りより細かいか、高い(1 ページ目のどれかの幅の中にある)
+        assert all(any(_man(p)[0] <= _man(c)[0] and _man(c)[1] <= _man(p)[1] for p in amounts) for c in more), more
+        assert max(_man(c)[0] for c in more) > max(_man(c)[0] for c in amounts)  # 高い区切りも 2 ページ目に出る
+        assert not {"今と同じくらい", "今より上げたい"} & set(page2)
+
+
 # ----------------------------- Web のトーク(talk-core.js) -----------------------------
 
 
@@ -780,4 +861,4 @@ def test_more_and_clarify_turns_add_no_flex():
     assert h.current["qid"] == "hf_area"
     turns = h.turns
     ui, mem, out = step(h, mem, H.MORE)
-    assert ui is None and out["bubbles"] == [H.MORE_LEAD] and h.turns == turns
+    assert ui is None and out["bubbles"] == ["働く場所のほかの候補です。"] and h.turns == turns
