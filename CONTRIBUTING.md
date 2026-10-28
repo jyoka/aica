@@ -44,7 +44,7 @@ docs/ の分け方は変えません。新しい文書は、下の表の場所�
 | 何ができるか、始め方 | [README.md](README.md) |
 | 動かし方、LINE、LIFF、リッチメニュー、マイクの確認、アカウント連携、画面、コマンドの全部 | [docs/usage.md](docs/usage.md) |
 | 設定、環境変数、保存する期間、ターン数の上限 | [docs/configuration.md](docs/configuration.md) |
-| Render での公開の手順、環境変数、置くデータ | [docs/deploy/](docs/deploy/) |
+| Render での公開の手順、環境変数、置くデータ、落ちたときの手順(runbook) | [docs/deploy/](docs/deploy/) |
 | 何を作るか(要件と予算) | [docs/prd/](docs/prd/) |
 | 部品とデータの流れ(HLD)、モジュールと関数(LLD)、設計の見直し | [docs/architecture/](docs/architecture/) |
 | 運用の決定(段階と 7 つの関門。task-hub の `task check` が読むので、この名前で置く) | [docs/architecture.md](docs/architecture.md)(Architecture Brief) |
