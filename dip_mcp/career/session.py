@@ -303,8 +303,8 @@ def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | No
         if SW.unread(rec):  # トークの AI が始めた相談(t1): 始めた発言を読む段で読み、その値を当ててから最初の問いを選ぶ
             acts, opening, stop = C2.read_opening(h, H.BANK, llm, said)
             rec = dict(rec, acts=acts, read=False)
-        C2.take_handoff(h, rec)
-        r = C2.opening_guard(h, H.BANK, stop) if stop else C2.enter(h, H.BANK, llm, opening)
+        got = C2.take_handoff(h, rec)
+        r = C2.opening_guard(h, H.BANK, stop) if stop else C2.enter(h, H.BANK, llm, opening, C2.carried_words(h, rec, prefs, got))
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None

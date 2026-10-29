@@ -64,7 +64,7 @@ from dip_mcp.convo.turn import render_prompt as _render
 VERSION = "c2"
 ENTRIES = ("career", "baito")  # 入り口の名前(移る先の確かめ)
 TEXTS = ("crisis_lead", "crisis_tail", "crisis_resume", "retry", "retry_number", "retry_review", "no_answer", "more_lead",
-         "more_lead_number", "more_done", "switched_in", *(f"note_{n}" for n in P.NOTES))
+         "more_lead_number", "more_done", "switched_in", "switched_in_with", *(f"note_{n}" for n in P.NOTES))
 # 言う段のプロンプトに渡す、相づちの種類の説明(応じ方の計画の ack。dip_mcp.convo.plan.ACKS)
 ACK_JA = {"short": "本人の答えを受け取る、短い相づち", "done": "何をしたか(計画の about)を、1 文で短く言う",
           "light": "雑談に軽く 1 文で乗る",
@@ -750,15 +750,25 @@ def opening_guard(state, bank, stop):
     return _crisis(state)
 
 
-def enter(state, bank=H.BANK, llm=None, said=""):
+def carried_words(state, rec, prefs, applied):
+    """移った先の最初の返事で触れる、引き継いだ値の言葉(dip_mcp.convo.switch.mentions)。applied は take_handoff が入れた欄。
+    触れるのは条件の欄(CONDITION_SLOTS)だけ。勤務地は、今の勤務地の欄(記録か前の相談の値)か、無ければ希望の項目の勤務地。"""
+    e = state.slots.get("area") or state.pending.get("area")
+    area = e["text"] if (e or {}).get("status") == "filled" else ((prefs or {}).get("area") or {}).get("value")
+    return SW.mentions(rec, ENTRY.entry, ENTRY.carry, applied, H.CONDITION_SLOTS, area=area or "", area_slot="area")
+
+
+def enter(state, bank=H.BANK, llm=None, said="", known=()):
     """ほかの入り口から同じターンで移ってきた相談の、最初の返事。引き継いだ値で埋まった問いを飛ばして最初の問いを選び、
     移ったことの相づち(入り口の定義の switched_in を計画の about に)と問いを 1 つの吹き出しにする(言う段 1 回。数えない)。
-    形 D でも「始める」の 1 枚は出さない(本人はもう話している)。said は移る発言(伏せたもの)。言う段に渡し、直前のやりとりに覚える。"""
+    形 D でも「始める」の 1 枚は出さない(本人はもう話している)。said は移る発言(伏せたもの)。言う段に渡し、直前のやりとりに覚える。
+    known は引き継いだ値の言葉(carried_words)。あれば相づちに入れる(switched_in_with。task 379)。"""
     H._init_volatile(state)
     _init_turn(state)
     state._user_text = said
     advance(state, bank)
-    out = _say(state, bank, llm, counted=False, plan=P.Plan(ack="done", about=[ENTRY.texts["switched_in"]], count="free"))
+    about, words = RP.switched_in(ENTRY.texts, known)
+    out = _say(state, bank, llm, counted=False, plan=P.Plan(ack="done", about=[about], mention=words, count="free"))
     if H.nfkc(said):
         CS.heard(state.convo, said)
     CS.replied(state.convo, out["reply"], state._ack)
@@ -968,9 +978,10 @@ def view(state, bank, p, aside=False, quiet=False, lead=None):
     if quiet:  # モデルを呼ばない出し直し(危ない言葉の後の「続ける」など): 前置きの文と問いだけ
         kind, answer = None, None
         notes = [lead] if lead else []
-    rp = RP.new_plan(ask, kind, hook, answer, notes, lines, v["choices"], v["user_text"], hidden, p.about)
+    rp = RP.new_plan(ask, kind, hook, answer, notes, lines, v["choices"], v["user_text"], hidden, p.about, p.mention)
     convo = state.convo
-    ack = ACK_JA[rp["ack"]] + (f"({'。'.join(p.about)})" if rp["ack"] == "done" and p.about else "")
+    ack = ACK_JA[rp["ack"]] + (f"({'。'.join(p.about)})" if rp["ack"] == "done" and p.about else "") + (
+        f"。{'、'.join(f'「{m}」' for m in rp['mention'])}を、言葉のまま入れる" if rp["ack"] and rp["mention"] else "")
     v |= {"text": ask["text"], "model_text": v["user_text"], "model_history": CS.messages(convo), "entry": ENTRY.title,
           "tone": ENTRY.tone["style"], "examples": " / ".join(ENTRY.tone.get("examples") or []) or "(なし)",
           "hook": rp["hook"] or "(なし)", "ack": ack, "ack_max": rp["ack_max"],

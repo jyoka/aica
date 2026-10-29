@@ -27,6 +27,7 @@
 
     ./.venv/bin/python -m evals.scenes.real rejudge --ledger evals/budget-conversation-layer.jsonl --limit-usd 21 \
         --out evals/results/scenes-real-facts.jsonl evals/results/scenes-real-*-r?.jsonl
+  アルバイト・パートには、PRD の決まった文(注意文 NOTICE)も知っている事実として渡す(task 379)。--scene で場面を絞れる
 - touch: ペルソナの会話(正社員の evals.fulltime_hearing.run と、アルバイト・パートの evals.baito_sim --real の結果)の、
   相づちのあるターンのうち personal_touch(本人の今の言葉に合わせた一言)の割合(設計メモ §4.10 の面白さの線は 50% 以上)。
   1 会話 1 回のジャッジで、AI の返信ごとに「相づちがあるか」「本人の言葉に合わせたか」を判定する
@@ -264,16 +265,25 @@ def run(entries: list[str] | None, versions: dict | None, ids: list[str] | None,
 
 
 def known_facts(entry: str) -> list[str]:
-    """入り口の事実のデータ(言う段が逆質問に答えるときに選ぶ事実の全部)。talk は aica 全体の事実だけ。"""
+    """入り口の事実のデータ(言う段が逆質問に答えるときに選ぶ事実の全部)。talk は aica 全体の事実だけ。アルバイト・パートは、
+    PRD の決まった文(v4 と v5 のハーネスがそのまま出す注意文 NOTICE。年齢の決まり、闇バイト、扶養など)も足す(task 379。
+    中学生以下で止める文を、ジャッジが作った事実と判定していた)。"""
     from dip_mcp.convo import facts as F
 
     path = {"career": "dip_mcp/career/facts.json", "baito": "dip_mcp/baito/facts.json"}.get(entry)
     d = F.load(HERE.parent / path if path else None)
-    return list(dict.fromkeys([*d["ask_service"], *d["ask_advice"], *d["where"].values(), *([d["known"]] if d["known"] else [])]))
+    fixed: list[str] = []
+    if entry == "baito":
+        from dip_mcp.baito import harness as B
+
+        fixed = list(B.NOTICE.values())
+    return list(dict.fromkeys([*d["ask_service"], *d["ask_advice"], *d["where"].values(), *([d["known"]] if d["known"] else []),
+                               *fixed]))
 
 
-def rejudge(paths: list[Path], out: Path, ledger: Path, limit: float, log=print) -> Path:
-    """事実の条件だけを、入り口の事実のデータを渡したジャッジで判定し直し、行を out に書く(ほかの条件と返信はそのまま)。"""
+def rejudge(paths: list[Path], out: Path, ledger: Path, limit: float, log=print, only=None) -> Path:
+    """事実の条件だけを、入り口の事実のデータを渡したジャッジで判定し直し、行を out に書く(ほかの条件と返信はそのまま)。
+    only(場面の id の並び)を渡すと、その場面の行だけを判定し直して書く。"""
     from evals.meter import Meter
     from evals.run import JUDGE_MODEL
     from line_runtime import config
@@ -287,6 +297,8 @@ def rejudge(paths: list[Path], out: Path, ledger: Path, limit: float, log=print)
     out.write_text("", encoding="utf-8")
     try:
         for row in rows:
+            if only and row["scene"] not in only:
+                continue
             scene = by_id[row["scene"]]
             idx = [i for i, c in enumerate(scene["expect"]) if c["check"] in FACT_CHECKS and not handed(scene, row["replies"], c)]
             if idx and not row["error"]:
@@ -526,6 +538,7 @@ def main(argv=None) -> int:
     j.add_argument("--out", type=Path, required=True, help="判定し直した行を書く JSONL")
     j.add_argument("--ledger", type=Path, required=True)
     j.add_argument("--limit-usd", type=float, required=True)
+    j.add_argument("--scene", action="append", help="判定し直す場面の id(何回でも。渡さなければ全部の行)")
     t = sub.add_parser("touch", help="ペルソナの会話の personal_touch の割合(費用がかかる)")
     t.add_argument("paths", nargs="+", type=Path)
     t.add_argument("--ledger", type=Path, required=True)
@@ -542,7 +555,7 @@ def main(argv=None) -> int:
 
         load_env()
         try:
-            rejudge(a.paths, a.out, a.ledger, a.limit_usd, log=lambda m: print(m, flush=True))
+            rejudge(a.paths, a.out, a.ledger, a.limit_usd, log=lambda m: print(m, flush=True), only=a.scene)
         except budget.BudgetExceeded as e:
             print(f"!! {e}", file=sys.stderr)
             return 2

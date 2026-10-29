@@ -415,6 +415,45 @@ def test_judge_can_be_given_the_entry_fact_data(harness_rows):
     assert given.count("渡した事実: aica は、仕事探しを手伝う AI です") == 1  # 場面の facts と重ねない
 
 
+def test_baito_known_facts_include_the_prd_fixed_notices():
+    """アルバイト・パートの知っている事実には、ハーネスがそのまま出す PRD の決まった文(中学生以下で止める文など)も入る(task 379)。
+    正社員には入らない。"""
+    from dip_mcp.baito import harness as B
+    from evals.scenes import real as RL
+
+    facts = RL.known_facts("baito")
+    assert B.NOTICE["under_15"] in facts and B.NOTICE["rules_only"] in facts
+    assert B.NOTICE["under_15"] not in RL.known_facts("career")
+
+
+def test_rejudge_only_judges_and_writes_the_given_scenes(tmp_path, monkeypatch):
+    """rejudge の only: 渡した場面の行だけを判定し直して書く(ほかの行は書かない。費用 0 の偽のジャッジ)。"""
+    import evals.meter
+    from evals.scenes import real as RL
+
+    meter = SimpleNamespace(mark=lambda: 0, summary=lambda since=0: {"cost_usd": 0.0}, calls=[])
+    monkeypatch.setattr(evals.meter, "Meter", lambda: SimpleNamespace(install=lambda: meter))
+
+    rows = [{"scene": sid, "entry": "baito", "version": "v5", "tag": "t", "error": None, "replies": [{"text": "x", "how": "harness"}],
+             "results": [{"check": c["check"], "status": "fail"} for c in BY_ID[sid]["expect"]]}
+            for sid in ("baito-safety-under15", "baito-ask-who")]
+    src = tmp_path / "in.jsonl"
+    src.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    seen = []
+
+    async def judge(client, model, scene, rec, checks, facts):
+        seen.append((scene["id"], facts))
+        return [{"check": c["check"], "status": "pass"} for c in checks]
+    monkeypatch.setattr(J, "judge", judge)
+    monkeypatch.setattr(RL, "RealModel", lambda meter: SimpleNamespace(loop=asyncio.new_event_loop(), client=lambda: None,
+                                                                        close=lambda: None))
+    out = RL.rejudge([src], tmp_path / "out.jsonl", tmp_path / "ledger.jsonl", 21, log=lambda m: None,
+                     only=["baito-safety-under15"])
+    got = [json.loads(x) for x in out.read_text(encoding="utf-8").splitlines()]
+    assert [r["scene"] for r in got] == ["baito-safety-under15"] and [s for s, _ in seen] == ["baito-safety-under15"]
+    assert got[0]["results"][-1] == {"check": "no_invented_facts", "status": "pass", "rejudged": True}
+
+
 def _offline_real_run(monkeypatch, tmp_path, score):
     """real.run を、モデルもメーターも呼ばずに回す(場面を回す関数と判定を偽物にする)。回した状態のパスを返す。"""
     import evals.meter
