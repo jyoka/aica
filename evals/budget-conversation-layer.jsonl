@@ -735,3 +735,82 @@
 {"at": "2026-10-29T07:38:47+00:00", "run": "persona-touch", "cost_usd": 0.0079, "conversation": "baito v5/danger#0"}
 {"at": "2026-10-29T07:38:49+00:00", "run": "persona-touch", "cost_usd": 0.0043, "conversation": "baito v5/early_exit#0"}
 {"at": "2026-10-29T07:38:52+00:00", "run": "persona-touch", "cost_usd": 0.0076, "conversation": "baito v5/age_fix#0"}
+{"at": "2026-10-29T08:30:09+00:00", "run": "probe-376", "cost_usd": 0.005514, "case": "praise"}
+{"at": "2026-10-29T08:30:13+00:00", "run": "probe-376", "cost_usd": 0.001512, "case": "praise"}
+{"at": "2026-10-29T08:30:18+00:00", "run": "probe-376", "cost_usd": 0.001572, "case": "praise"}
+{"at": "2026-10-29T08:30:20+00:00", "run": "probe-376", "cost_usd": 0.000771, "case": "praise"}
+{"at": "2026-10-29T08:30:26+00:00", "run": "probe-376", "cost_usd": 0.004493, "case": "repeat"}
+{"at": "2026-10-29T08:30:27+00:00", "run": "probe-376", "cost_usd": 0.000671, "case": "repeat"}
+{"at": "2026-10-29T08:30:29+00:00", "run": "probe-376", "cost_usd": 0.000661, "case": "repeat"}
+{"at": "2026-10-29T08:30:30+00:00", "run": "probe-376", "cost_usd": 0.000671, "case": "repeat"}
+{"at": "2026-10-29T08:30:40+00:00", "run": "probe-376", "cost_usd": 0.005188, "case": "repeat"}
+{"at": "2026-10-29T08:30:43+00:00", "run": "probe-376", "cost_usd": 0.00131, "case": "repeat"}
+{"at": "2026-10-29T08:30:46+00:00", "run": "probe-376", "cost_usd": 0.00137, "case": "repeat"}
+{"at": "2026-10-29T08:31:37+00:00", "run": "probe-376", "cost_usd": 0.019106, "case": "read:hf_days"}
+{"at": "2026-10-29T08:31:39+00:00", "run": "probe-376", "cost_usd": 0.00317, "case": "read:hf_days"}
+{"at": "2026-10-29T08:31:41+00:00", "run": "probe-376", "cost_usd": 0.018248, "case": "read:hf_time"}
+{"at": "2026-10-29T08:31:42+00:00", "run": "probe-376", "cost_usd": 0.003147, "case": "read:hf_time"}
+{"at": "2026-10-29T08:31:44+00:00", "run": "probe-376", "cost_usd": 0.01808, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:31:45+00:00", "run": "probe-376", "cost_usd": 0.002401, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:35:28+00:00", "run": "probe-376", "cost_usd": 0.005508, "case": "praise"}
+{"at": "2026-10-29T08:35:29+00:00", "run": "probe-376", "cost_usd": 0.000781, "case": "praise"}
+{"at": "2026-10-29T08:35:30+00:00", "run": "probe-376", "cost_usd": 0.000781, "case": "praise"}
+{"at": "2026-10-29T08:35:32+00:00", "run": "probe-376", "cost_usd": 0.005403, "case": "repeat"}
+{"at": "2026-10-29T08:35:35+00:00", "run": "probe-376", "cost_usd": 0.006495, "case": "repeat"}
+{"at": "2026-10-29T08:35:36+00:00", "run": "probe-376", "cost_usd": 0.000774, "case": "repeat"}
+{"at": "2026-10-29T08:35:39+00:00", "run": "probe-376", "cost_usd": 0.020378, "case": "read:hf_days"}
+{"at": "2026-10-29T08:35:41+00:00", "run": "probe-376", "cost_usd": 0.00403, "case": "read:hf_days"}
+{"at": "2026-10-29T08:35:43+00:00", "run": "probe-376", "cost_usd": 0.02021, "case": "read:hf_time"}
+{"at": "2026-10-29T08:35:45+00:00", "run": "probe-376", "cost_usd": 0.004007, "case": "read:hf_time"}
+{"at": "2026-10-29T08:35:47+00:00", "run": "probe-376", "cost_usd": 0.018613, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:35:48+00:00", "run": "probe-376", "cost_usd": 0.002472, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:36:10+00:00", "run": "scenes", "cost_usd": 0.0288, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:16+00:00", "run": "scenes", "cost_usd": 0.0291, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:21+00:00", "run": "scenes", "cost_usd": 0.0285, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:26+00:00", "run": "scenes", "cost_usd": 0.0269, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:28+00:00", "run": "scenes", "cost_usd": 0.0073, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:30+00:00", "run": "baito-p3", "cost_usd": 0.13741, "case": "hs16", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:36:33+00:00", "run": "scenes", "cost_usd": 0.0289, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-chat-oshi", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:39+00:00", "run": "scenes", "cost_usd": 0.0301, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-correct-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:43+00:00", "run": "scenes", "cost_usd": 0.0251, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-correct-dunno", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:44+00:00", "run": "scenes", "cost_usd": 0.019, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:48+00:00", "run": "baito-p3", "cost_usd": 0.086141, "case": "univ", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:36:49+00:00", "run": "scenes", "cost_usd": 0.0271, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:56+00:00", "run": "scenes", "cost_usd": 0.0331, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-emotion-yelled", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:57+00:00", "run": "scenes", "cost_usd": 0.0185, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-flow-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:36:57+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-flow-stop", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:02+00:00", "run": "scenes", "cost_usd": 0.0294, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:06+00:00", "run": "scenes", "cost_usd": 0.0115, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:09+00:00", "run": "scenes", "cost_usd": 0.0202, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-multi-age-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:12+00:00", "run": "scenes", "cost_usd": 0.0251, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:12+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-danger", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:12+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:13+00:00", "run": "baito-p3", "cost_usd": 0.121413, "case": "homemaker", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:37:17+00:00", "run": "scenes", "cost_usd": 0.0225, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-under15", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:20+00:00", "run": "scenes", "cost_usd": 0.0235, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-phone", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:21+00:00", "run": "scenes", "cost_usd": 0.0178, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-short-un", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:25+00:00", "run": "scenes", "cost_usd": 0.0091, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-short-colloquial", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:28+00:00", "run": "scenes", "cost_usd": 0.0235, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-short-typo", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:33+00:00", "run": "scenes", "cost_usd": 0.0261, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:36+00:00", "run": "scenes", "cost_usd": 0.0068, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:37+00:00", "run": "scenes", "cost_usd": 0.0197, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-switch-hold", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:37:39+00:00", "run": "baito-p3", "cost_usd": 0.128211, "case": "office", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:38:10+00:00", "run": "baito-p3", "cost_usd": 0.219527, "case": "nopref", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:38:48+00:00", "run": "baito-p3", "cost_usd": 0.257215, "case": "unclear", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:39:17+00:00", "run": "baito-p3", "cost_usd": 0.182859, "case": "late_seg", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:39:44+00:00", "run": "baito-p3", "cost_usd": 0.175745, "case": "no_seg", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:40:02+00:00", "run": "scenes-rejudge", "cost_usd": 0.0072, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T08:40:03+00:00", "run": "baito-p3", "cost_usd": 0.088878, "case": "age_skip", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:40:03+00:00", "run": "scenes-rejudge", "cost_usd": 0.0057, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-who"}
+{"at": "2026-10-29T08:40:06+00:00", "run": "scenes-rejudge", "cost_usd": 0.0072, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T08:40:08+00:00", "run": "scenes-rejudge", "cost_usd": 0.0047, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T08:40:26+00:00", "run": "baito-p3", "cost_usd": 0.110651, "case": "hm17", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:40:56+00:00", "run": "baito-p3", "cost_usd": 0.180509, "case": "sj17", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:40:59+00:00", "run": "baito-p3", "cost_usd": 0.006217, "case": "jhs", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:41:18+00:00", "run": "baito-p3", "cost_usd": 0.088126, "case": "freeter", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:41:41+00:00", "run": "baito-p3", "cost_usd": 0.113654, "case": "seg_flip", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:42:13+00:00", "run": "baito-p3", "cost_usd": 0.142546, "case": "dropout", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:42:35+00:00", "run": "baito-p3", "cost_usd": 0.1033, "case": "danger", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:45:02+00:00", "run": "baito-p3", "cost_usd": 0.060478, "case": "early_exit", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T08:54:43+00:00", "run": "probe-376", "cost_usd": 0.018666, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:54:45+00:00", "run": "probe-376", "cost_usd": 0.019093, "case": "read:fg_fuyou"}

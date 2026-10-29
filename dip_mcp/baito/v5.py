@@ -18,7 +18,9 @@
 - 言う段(§4.8。dip_mcp.convo.reply): 問いのターンは、計画を返事の部品(相づち → 答え → 注意 → 区切り → 問い)に組む。問いの文は、質問バンクの
   原文と言い方(入り口の定義の variants。言い換えのある問いは PRD の alt_text)から選ぶ。v4 の注意文(NOTICE)と決まり文句(保留を捨てた、
   区切りに寄せた)は注意の場所に入れる。返事の確かめに、v4 の決まり(金額を言わない、入れていない答えと数を言わない、カードに無い職種を
-  言わない)を足す。まとめと結果、入口のカード、近くで探すの返事は v4 のまま(プロンプトも PRD の原文)
+  言わない。本人が押した逆選択のボタンの職種はなぞってよい)を足す。プロンプトは層の骨組みにアルバイト・パートの決まり prompt_say_v5_ja.txt
+  (相づちの終わりを変える、ほめない、職種)をつなぐ。確かめで落ちたら、1 回目の返事と落ちた理由と、使える決まった相づちを添えてやり直す
+  (retry_note。task 376)。まとめと結果、入口のカード、近くで探すの返事は v4 のまま(プロンプトも PRD の原文)
 - 問いの選び方(§4.7): フェーズの順と上限は v4 のまま(PRD の流れ)。同じフェーズの中で、今の話題の問いにおまけ(入り口の定義の topics)。
   ほかの入り口から引き継いだ値は、推測でも聞き直さない(まとめで確かめる)
 - 入り口を移す(§4.5。dip_mcp.convo.switch): 「やっぱり正社員で探したい」(移る強い頼み EXIT_REQUEST か、読む段の switch の want)は、
@@ -64,7 +66,7 @@ VARIANTS = {q["id"]: q.get("variants") or [] for q in ENTRY.bank}
 TARGETS = tuple(s["to"] for s in ENTRY.switch)  # 移れる入り口
 CRISIS_TEXT = H.CRISIS_TEXT  # 危ない言葉の文は v4 のまま(利用者の確認待ち。ADR-0009)
 READ_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "read_ja.txt", H.PROMPT_DIR / "prompt_read_v5_ja.txt"]
-SAY_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "say_ja.txt"]
+SAY_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "say_ja.txt", H.PROMPT_DIR / "prompt_say_v5_ja.txt"]
 ASKING = ("ask", "reask", "retry", "clarify")  # 質問バンクの問いを出している mode(言い方を選び、移るボタンを足せる)
 LAYER_MODES = (*ASKING, "confirm", "pick")  # 層の組み立てで返事を組む mode(ほかは v4 の返事)
 PAUSE_FLAG = "pause_noted"  # 「中断」の注意を添えた印(相談で 1 回だけ)
@@ -1122,9 +1124,17 @@ def _represent(state, bank, counted, lead=None, aside=False):
     return _say(state, bank, None, None, counted=counted, quiet=True, lead=lead, aside=aside)
 
 
-def _baito_check(parts, v):
+def _jobs_in(text):
+    """文の中に名前(か keys の最初の語)が出てくる職種の id。"""
+    t = H.nfkc(text)
+    return [j["id"] for j in H.CATALOG if H.nfkc(j["name"]) in t or H.nfkc(j["keys"][0]) in t]
+
+
+def _baito_check(parts, v, tapped=None):
     """v4 の返事の決まりを、モデルが書いた文(相づちと答え)に当てる: 金額を言わない、入れていない答えと数を言わない、
-    カードに無い職種を言わない。-> 問題か None。"""
+    カードに無い職種を言わない。-> 問題か None。職種は、カードにあるもののほか、本人が押したボタン tapped にある職種
+    (逆選択で押した「工場の軽作業」をなぞる)も言ってよい(task 376)。逆選択のボタンは区分ごとに決まった職種なので、年齢の決まり
+    (task 265)を崩さない。打った文の職種の語(「塾があるから」)は、なぞりと勧めの区別がつかないので、今までどおり落とす。"""
     free = "".join(x for kind, x in parts if kind in ("ack", "answer"))
     if not free:
         return None
@@ -1134,9 +1144,42 @@ def _baito_check(parts, v):
         return "unkept_mentioned"
     if H._says_unsaid(free, v.get("unsaid")):
         return "unsaid_value"
-    if H._names_other_jobs(free, {"jobs": (v.get("quick") or {}).get("jobs") or []}):
+    seen = _jobs_in(tapped) if tapped else []
+    if H._names_other_jobs(free, {"jobs": [*((v.get("quick") or {}).get("jobs") or []), *({"job_id": j} for j in seen)]}):
         return "job_not_on_card"
     return None
+
+
+# やり直しに添える、1 回目が落ちた理由(言う段のプロンプトの retry。同じ入力では同じ返事になるので、何がだめだったかを渡す)
+# 文は str.format に通すので、そのまま書く波かっこは {{ }} にする(tests/test_baito_v5.py が全部の理由を通して確かめる)
+RETRY_JA = {"ack_repeats": "相づちの終わりが、直前の 2 つと同じ「{tail}」になった。違う終わり方にする",
+            "repeats_last": "直前の返信と同じ文がある。別の言い方にする",
+            "praise": "ほめ言葉「{word}」がある。ほめずに、本人の言葉をなぞって受け止める",
+            "job_not_on_card": "本人が言っていない職種の名前がある。職種の名前を書かない",
+            "question_missing": "問いの文が next_question.phrasings のどれとも一字一句同じでない。そのまま写す",
+            "text_after_question": "問いの文の後ろに文がある。問いの文で終える",
+            "too_much_extra": "相づちが長いか 2 文ある。1 文、{ack_max} 字まで",
+            "too_long": "吹き出しが長すぎる。相づちを短くする",
+            "two_questions": "相づちか答えに「?」がある。問いは最後の 1 つだけ",
+            "made_up_number": "出どころの無い数がある。数を書かない", "money_amount": "金額がある。金額を書かない",
+            "unsaid_value": "本人が言っていない値がある", "unkept_mentioned": "入れていない答えに触れている",
+            "answer_missing": "逆質問に答えていない", "no_reply": "返事が空か、JSON {{\"reply\": \"...\"}} の形でない",
+            "blame": "本人を責めて聞こえる言い方がある", "personal_echo": "伏せた部分(名前など)をなぞっている",
+            "text_between_parts": "システムが入れる行の間か前に文がある。相づちは問いの前に 1 文だけ",
+            "extra_text": "相づちを書かない計画なのに文がある。問いの文だけにする"}
+
+
+def retry_note(raw, why, rp, recent, acks):
+    """やり直しの指示(1 回目の返事、落ちた理由、相づちに困ったときの決まった相づち)。"""
+    d = parse_json(raw)
+    reply = d.get("reply") if d else raw if isinstance(raw, str) else None
+    tails = [RP.tail(a) for a in (recent.get("acks") or [])[-1:] if a]
+    word = RP.praised(H.nfkc(reply or ""), rp["said"]) or ""
+    reason = RETRY_JA.get(why, f"確かめで使えなかった({why})").format(tail=tails[0] if tails else "", word=word,
+                                                                     ack_max=rp["ack_max"])
+    note = (f"前の返事「{str(reply)[:120]}」は使えない。" if reply else "前の返事は使えない。") + reason + "。"
+    spare = RP.fixed_ack(rp, recent, acks, turn=False) if rp["ack"] else None
+    return note + (f"相づちが思いつかなければ「{spare}」をそのまま使ってよい。" if spare else "")
 
 
 def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False, plan=None, quiet=False, lead=None):
@@ -1153,15 +1196,24 @@ def _say(state, bank, llm, catalog, counted=True, extra=None, aside=False, plan=
         v.update(extra)
     H.ev(state, "plan", **{k: x for k, x in p.to_dict().items() if k != "facts" and x})
 
+    tried = {}
+
     def _check(raw):
         parts, why = RP.validate(raw, rp, state.convo)
         if parts is not None:
-            why = _baito_check(parts, v)
+            why = _baito_check(parts, v, getattr(state, "_button", None))
             parts = None if why else parts
+        if why:
+            tried.update(raw=raw, why=why)
         return parts, ([why] if why else [])
+
+    def _generate(payload):  # やり直しには、1 回目の返事と落ちた理由を渡す
+        if not tried:
+            return llm.generate(payload)
+        return llm.generate(payload | {"retry": retry_note(tried["raw"], tried["why"], rp, state.convo, ENTRY.tone["acks"])})
     parts = None
     if llm is not None and RP.needs_model(rp):
-        parts = call_llm(llm.generate, v, _check, _log(state), "generate")
+        parts = call_llm(_generate, v, _check, _log(state), "generate")
     if parts is None:
         parts = RP.fallback(rp, state.convo, ENTRY.tone["acks"])
     if mode in ASKING:
@@ -1216,6 +1268,7 @@ def view(state, bank, p, aside=False, quiet=False, lead=None):
           "answer": (f"答える。使ってよい事実(これだけ。無いことは「答えられない」と言う): {rp['facts']}" if rp["answer"]
                      else f"書かない(システムが「{rp['fixed_answer']}」と答える)" if rp["fixed_answer"] else "しない"),
           "recent_acks": " / ".join(a for a in convo.get("acks", []) if a) or "(なし)",
+          "recent_endings": "".join(dict.fromkeys(f"「{RP.tail(a)}」" for a in convo.get("acks", []) if RP.tail(a))) or "(なし)", "retry": "(なし)",
           "last_reply": ((convo.get("replies") or [""])[-1] or "(なし)").replace("\n", " / "),
           "lines": " / ".join(notes) or "(なし)",
           "next_question": json.dumps({"id": ask["qid"], "mode": v["mode"], "text": ask["text"], "phrasings": ask["phrasings"]},
