@@ -3,6 +3,7 @@
     ./.venv/bin/python -m evals.scenes                                  # 全部の入り口を今の版で(career c1、baito v4、talk t0)
     ./.venv/bin/python -m evals.scenes --entry career --version c1      # 1 つの入り口と版
     ./.venv/bin/python -m evals.scenes --scene t326-order -v            # 1 場面の返信と判定を詳しく
+    ./.venv/bin/python -m evals.scenes --entry talk --version t1        # トークの AI の t1(移る先は c2 と v5)
     ./.venv/bin/python -m evals.scenes --log evidence/scenes            # 結果の JSON と会話ログも書く
 
 回し方(どの版も、本番と同じ入口から):
@@ -22,6 +23,9 @@
   今の版の「[スタンプ]」は返事なしにする。新しい版(c2)の相談の間は、ランタイムが「[スタンプ]」の文にして渡す
 - talk は、本物のランタイム(line_runtime.runtime.LineRuntime。dip の MCP も本物)を、モックのトークの AI(TalkMock。決まった文を
   返し、ツールを呼ばない)で回す。判定するのは守りの前処理(crisis_reply、llm_calls_max)と stays だけ。ほかは 9 枚目で実モデルで見る
+- talk の t1(TALK_LAYER_VERSION=t1。task 361)は、同じランタイムを台本のトークの AI(TalkScript)で回し、コードの条件をすべて判定する。
+  台本のトークの AI は、発言の talk(トークの AI の正解)のツールを呼び、区分を聞く 1 問のボタンはプロンプトから読む。移る先(c2、v5)の
+  読む段と言う段は台本の LLM(HarnessScript。発言の reading)。トークの AI がプロンプトの決まりのとおりに動くとしたときの点
 
 採点の条件(JUDGE_CHECKS)は skip で返す。judge を渡せば採点する(evals/scenes/judge.py。実モデルの回は 9 枚目のカード)。
 """
@@ -619,11 +623,12 @@ class TalkT0:
     """トークの AI の今の動き(TALK_LAYER_VERSION が無い)。本物のランタイムを、モックのトークの AI で回す。
     ハーネスの機能フラグは本番の既定(v4、c1)にする。"""
     entry, version = "talk", "t0"
+    scripted = False  # モックのトークの AI(決まった文。ツールを呼ばない)。判定するのは TALK_MOCK_CHECKS だけ
 
     def env(self, scene=None):
         from dip_mcp import logic
 
-        return {logic.BAITO_HARNESS_FLAG: "v4", logic.CAREER_HARNESS_FLAG: "c1",
+        return {logic.BAITO_HARNESS_FLAG: "v4", logic.CAREER_HARNESS_FLAG: "c1", logic.TALK_LAYER_FLAG: None,
                 "FASTMCP_LOG_LEVEL": "WARNING"}  # dip の MCP の子プロセスの、リクエストごとのログを出さない
 
     def texts(self) -> Texts:
@@ -631,8 +636,35 @@ class TalkT0:
 
         return Texts(crisis=list(B.CRISIS["reply"]))
 
+    def harness_drivers(self) -> dict:
+        """移る先の相談の回し方(台本の LLM。t1 でトークの AI が相談を始めたとき)。t0 は使わない。"""
+        return {}
 
-VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4, "v5": BaitoV5}, "talk": {"t0": TalkT0}}
+
+class TalkT1(TalkT0):
+    """トークの AI の t1(TALK_LAYER_VERSION=t1。dip_mcp/convo/talk.py)。本物のランタイムを、台本のトークの AI(TalkScript)で回す。
+    台本のトークの AI は、プロンプトの決まりのとおりに動くとしたときの動き: 発言の talk(正解)のツールを呼び、entry_question なら
+    プロンプトにある入り口を選ぶボタンで区分を 1 問聞く。相談の移る先は会話の層の版(c2、v5)で、移る先の読む段と言う段は台本の LLM
+    (発言の reading)。守りの前処理はランタイムのコード。どのコードの条件も判定する(返事の文は台本なので、採点の条件は 9 枚目)。"""
+    version = "t1"
+    scripted = True
+
+    def env(self, scene=None):
+        from dip_mcp import logic
+
+        return super().env(scene) | {logic.CAREER_HARNESS_FLAG: "c2", logic.BAITO_HARNESS_FLAG: "v5", logic.TALK_LAYER_FLAG: "t1"}
+
+    def texts(self) -> Texts:
+        from dip_mcp.convo import talk
+
+        return Texts(crisis=talk.CRISIS_TEXT.split("\n"))
+
+    def harness_drivers(self) -> dict:
+        return {"career": CareerC2(), "baito": BaitoV5()}
+
+
+VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4, "v5": BaitoV5},
+            "talk": {"t0": TalkT0, "t1": TalkT1}}
 CURRENT = {"career": "c1", "baito": "v4", "talk": "t0"}  # 今の本番の版(既定。BAITO_HARNESS_VERSION=v4 など)
 
 
@@ -705,33 +737,94 @@ def _talk_model():
     return TalkMock()
 
 
+ENTRY_BUTTONS_RE = re.compile(r"付ける: ((?:「[^」]+」)+)")  # t1 のプロンプトの、入り口を選ぶボタン(dip_mcp.convo.talk.prompt_section)
+TALK_SCRIPT_ASK = "どちらで探しますか?"  # 台本のトークの AI が区分を聞く 1 問
+
+
+def _talk_script():
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class TalkScript(BaseChatModel):
+        """台本のトークの AI(t1): プロンプトの決まりのとおりに動くとしたときの動き。say(今の発言)の talk(正解)のツールを
+        1 回の呼び出しでまとめて呼び、ツールの結果の後に返信を返す。entry_question なら、プロンプトにある入り口を選ぶボタンを
+        quick_replies にして区分を 1 問聞く(ボタンはプロンプトから読む。プロンプトに無ければボタンなし)。呼ばれた数を数える。"""
+        calls: int = 0
+        say: dict = {}  # noqa: RUF012  pydantic の項目
+
+        @property
+        def _llm_type(self) -> str:
+            return "scene-talk-script"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            self.calls += 1
+            talk = self.say.get("talk") or {}
+            last = max(i for i, m in enumerate(messages) if m.type == "human")
+            called = any(m.type == "tool" for m in messages[last + 1:])
+            if talk.get("tools") and not called:
+                calls = [{"name": c["name"], "args": {"line_user_id": "me", **c["args"]}, "id": f"scene-{self.calls}-{i}",
+                          "type": "tool_call"} for i, c in enumerate(talk["tools"])]
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="", tool_calls=calls))])
+            body = {"bubbles": [TALK_MOCK_TEXT], "quick_replies": [], "job_ids": [], "buttons": [], "actions": []}
+            if talk.get("entry_question"):
+                m = ENTRY_BUTTONS_RE.search(messages[0].content if messages[0].type == "system" else "")
+                body |= {"bubbles": [TALK_SCRIPT_ASK], "quick_replies": re.findall(r"「([^」]+)」", m.group(1)) if m else []}
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps(body, ensure_ascii=False)))])
+
+    return TalkScript()
+
+
+class HarnessScript:
+    """ランタイムのハーネスのモデル(baito_llm、career_llm)の代わり: 今の発言(say)の台本の LLM(ScriptLLM)。呼ばれた数を数える。"""
+
+    def __init__(self, driver):
+        self.driver, self.say, self.calls = driver, {}, 0
+
+    async def __call__(self, stage, system, messages):
+        self.calls += 1
+        return ScriptLLM(self.driver, self.say, [])({"stage": stage, "system": system}), {}
+
+
 def run_talk_scenes(scenes: list[dict], d, state_path: Path) -> list[dict]:
-    """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。"""
+    """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
+    移る先の台本の LLM で回す。"""
     from dip_mcp.data import State
 
-    model = _talk_model()
+    model = _talk_script() if d.scripted else _talk_model()
+    harness = {k: HarnessScript(v) for k, v in d.harness_drivers().items()}
     records = []
 
     async def go():
         from line_runtime.runtime import LineRuntime
 
-        async with LineRuntime(model=model, in_memory=True) as rt:
+        async with LineRuntime(model=model, in_memory=True, baito_llm=harness.get("baito"),
+                               career_llm=harness.get("career")) as rt:
             for scene in scenes:
                 st, uid = State(state_path), _uid(scene)
                 replies, error = [], None
                 try:
                     _seed_profile(st, uid, scene)
                     for say in scene["says"]:
-                        n = model.calls
+                        if d.scripted:
+                            model.say = say
+                        for h in harness.values():
+                            h.say = say
+                        n = model.calls + sum(h.calls for h in harness.values())
                         out = await rt.handle(uid, "message", say["text"])
                         text = "\n".join(out["bubbles"])
+                        used = model.calls + sum(h.calls for h in harness.values()) - n
+                        how = "guard" if out.get("guard") else "harness" if any(k in out for k in ("career", "baito")) else "talk"
                         replies.append({"text": text, "bubbles": list(out["bubbles"]), "choices": list(out["quick_replies"]),
-                                        "counted": False, "llm_calls": model.calls - n, "how": "talk", "closed": None,
+                                        "counted": False, "llm_calls": used, "how": how, "closed": None,
                                         "states": snaps(st, uid, {}), "profile": profile(st, uid), "say": say})
                 except Exception as e:  # noqa: BLE001
                     error = f"{type(e).__name__}: {e}"
                 records.append({"scene": scene["id"], "entry": "talk", "version": d.version, "replies": replies,
-                                "error": error, "texts": d.texts(), "talk_mock": True})
+                                "error": error, "texts": d.texts(), "talk_mock": not d.scripted})
 
     with environ(d.env() | {"DIP_STATE_PATH": str(state_path)}):
         asyncio.run(go())

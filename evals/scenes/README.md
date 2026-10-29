@@ -33,6 +33,7 @@
 ./.venv/bin/python -m evals.scenes --entry career --version c2    # 正社員の会話の層の版(task 355)
 ./.venv/bin/python -m evals.scenes --entry baito --version v5     # アルバイト・パートの会話の層の版(task 360。移る先の正社員は c2)
 ./.venv/bin/python -m evals.scenes --version career=c2 --version baito=v5   # 層の版どうし(入り口を移す先の版にもなる)
+./.venv/bin/python -m evals.scenes --entry talk --version t1       # トークの AI の t1(task 361。移る先は c2 と v5)
 ./.venv/bin/python -m evals.scenes --scene t326-order -v          # 1 場面の返信とすべての条件
 ./.venv/bin/python -m evals.scenes --log evidence/scenes          # 結果の JSON(results.json)と点(score.md)も書く
 ```
@@ -56,6 +57,9 @@
   スタンプを文の発言として渡します。v5 を回すときは、渡さなければ移る先の正社員を c2 にします
 - talk は、本物のランタイムをモックのトークの AI で回します。判定するのは守りの前処理(`crisis_reply`、`llm_calls_max`)と `stays` だけです。
   ほかの条件は、実モデルで比べるとき(設計メモ §5 の 9 枚目)に見ます
+- talk の t1 は、台本のトークの AI で回し、コードの条件をすべて判定します。台本のトークの AI は、発言に置いたトークの AI の正解(`talk`:
+  呼ぶツールと、区分を聞く 1 問)のとおりに動き、区分を聞くボタンはプロンプトから読みます。トークの AI が相談を始めたら、移る先(c2、v5)の
+  読む段と言う段は台本の LLM(発言の `reading`)です。つまり、トークの AI がプロンプトの決まりのとおりに動くとしたときの点です(task 361)
 - 採点の条件は判定しません(skip)。`runner.run(judge=judge.judge_with(client, model))` で採点しますが、実モデルを呼ぶので 9 枚目のカードで使います
 - 終了コードは、場面を回せなかったときだけ 1 です(条件の不合格では 0。点を出す道具なので)
 

@@ -4,7 +4,7 @@
   "entry": "talk",
   "category": "switch",
   "title": "最初のひとことが「こんにちは」",
-  "says": [{"text": "こんにちは", "button": false}],
+  "says": [{"text": "こんにちは", "button": false, "talk": {"entry_question": true}}],
   "expect": [
    {"check": "stays"},
    {"check": "offers_entries", "entries": ["baito", "career"]},
@@ -19,7 +19,7 @@
   "entry": "talk",
   "category": "switch",
   "title": "最初のひとことが「仕事探してる」",
-  "says": [{"text": "仕事探してる", "button": false}],
+  "says": [{"text": "仕事探してる", "button": false, "talk": {"entry_question": true}}],
   "expect": [
    {"check": "stays"},
    {"check": "offers_entries", "entries": ["baito", "career"]},
@@ -35,7 +35,12 @@
   "category": "switch",
   "title": "最初のひとことで、正社員と年収を言う",
   "profile": {"area": "大阪"},
-  "says": [{"text": "正社員で年収500万以上の仕事を探したい", "button": false}],
+  "says": [{"text": "正社員で年収500万以上の仕事を探したい", "button": false,
+            "reading": {"acts": [{"act": "add", "slot": "min_annual_salary", "text": "年収500万以上", "number": 500, "unit": "万"}],
+                        "hook": "年収500万以上"},
+            "talk": {"tools": [{"name": "set_search_track", "args": {"track": "正社員", "evidence": "正社員で年収500万以上の仕事を探したい"}},
+                               {"name": "get_counseling_playbook", "args": {"track": "正社員", "channel": "chat"}},
+                               {"name": "start_career_consultation", "args": {"text": "正社員で年収500万以上の仕事を探したい"}}]}}],
   "expect": [
    {"check": "switches_to", "entry": "career"},
    {"check": "slot", "entry": "career", "slot": "min_annual_salary", "number": 500},
@@ -50,7 +55,14 @@
   "entry": "talk",
   "category": "switch",
   "title": "最初のひとことが「土日だけ駅近でバイトしたい」",
-  "says": [{"text": "土日だけ駅近でバイトしたい", "button": false}],
+  "says": [{"text": "土日だけ駅近でバイトしたい", "button": false,
+            "reading": {"acts": [{"act": "add", "slot": "days_per_week", "text": "土日だけ", "value": "1-2"},
+                                 {"act": "add", "slot": "weekday_or_weekend", "text": "土日だけ", "value": "weekend"}],
+                        "hook": "土日だけ"},
+            "talk": {"tools": [{"name": "set_search_track", "args": {"track": "アルバイト・パート", "evidence": "土日だけ駅近でバイトしたい"}},
+                               {"name": "get_counseling_playbook", "args": {"track": "アルバイト・パート", "channel": "chat"}},
+                               {"name": "save_user_preferences", "args": {"preferences": {"time_band": "土日"}}},
+                               {"name": "start_baito_consultation", "args": {"text": "土日だけ駅近でバイトしたい"}}]}}],
   "expect": [
    {"check": "switches_to", "entry": "baito"},
    {"check": "slot", "entry": "baito", "slot": "days_per_week", "value": "1-2", "confidence": "low"},
@@ -80,7 +92,10 @@
   "history": [
    {"who": "agent", "text": "音声相談、おつかれさまでした。話してくれた条件で求人を選びました。"}
   ],
-  "says": [{"text": "さっきの続きで、バイトも見たい", "button": false}],
+  "says": [{"text": "さっきの続きで、バイトも見たい", "button": false, "reading": {"acts": []},
+            "talk": {"tools": [{"name": "set_search_track", "args": {"track": "アルバイト・パート", "evidence": "さっきの続きで、バイトも見たい"}},
+                               {"name": "get_counseling_playbook", "args": {"track": "アルバイト・パート", "channel": "chat"}},
+                               {"name": "start_baito_consultation", "args": {"text": "さっきの続きで、バイトも見たい"}}]}}],
   "expect": [
    {"check": "switches_to", "entry": "baito"},
    {"check": "profile", "key": "area", "contains": "名古屋"},

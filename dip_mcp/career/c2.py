@@ -724,6 +724,32 @@ def take_handoff(state, rec):
     return got
 
 
+def read_opening(state, bank, llm, said):
+    """トークの AI が始めた相談(t1。§4.5)の、始めた発言を読む段で読む -> (値の act(引き継ぎの記録の形), 言う段に渡す発言, 守り)。
+    まだ問いを出していないので、どの欄の値も、ほかの欄の値として読む。氏名と要配慮の部分は値から除き、言う段に渡す発言では伏せる。
+    読めなければ値は無し(最初の問いから聞く)。守りは、危ない言葉の表に当たるか(読む段を呼ばない)、読む段が crisis と読んだら "crisis"
+    (ふつうのターンと同じく、最初の問いの代わりに窓口の文を返す。opening_guard)。"""
+    H._init_volatile(state)
+    _init_turn(state)
+    if not H.nfkc(said):
+        return [], said, None
+    if guard.crisis_hit(said):
+        return [], said, "crisis"
+    reading = call_llm(llm.read, read_payload(state, bank, said), validator(said), _log(state), "read")
+    spans = A.spans(reading)
+    acts = SW.value_acts(reading, lambda t: guard.scrub(t, spans))
+    return acts, guard.mask(said, spans), "crisis" if A.has(reading, "crisis") else None
+
+
+def opening_guard(state, bank, stop):
+    """始めた発言が危ない言葉だったときの最初の返事: 最初の問いを選んでおき(「続ける」でそこから)、窓口の文だけを返す(数えない)。"""
+    H._init_volatile(state)
+    _init_turn(state)
+    if state.current is None:
+        advance(state, bank)
+    return _crisis(state)
+
+
 def enter(state, bank=H.BANK, llm=None, said=""):
     """ほかの入り口から同じターンで移ってきた相談の、最初の返事。引き継いだ値で埋まった問いを飛ばして最初の問いを選び、
     移ったことの相づち(入り口の定義の switched_in を計画の about に)と問いを 1 つの吹き出しにする(言う段 1 回。数えない)。

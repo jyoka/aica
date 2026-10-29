@@ -63,6 +63,10 @@ RESULT_CHOICES = ["求人を見る", "今はいい"]
 DRAFT_LABEL = "下書きを開く"  # 下書きの画面を開くボタン(設計メモ §5.2 の「全部の完成」。カルーセルの字 line_runtime/career_ui.py と同じ)
 START_NOTE = ("相談を始めた。この返信は、question の bubbles をそのまま送る(言い換えない。LINE 側が返信の吹き出しを"
               "bubbles に、選択肢を question の choices に置き換える)。次の質問からはハーネスが進める。")
+# トークの AI が start に本人の発言(text)を渡し、c2 で始めるとき(t1。設計メモ §4.5、§4.13): ここでは始めず、ランタイムが同じターンで
+# switch_in で始める(読む段でその発言を読むため。dip はモデルを呼ばない)
+READ_NOTE = ("相談はまだ始まっていない。LINE 側が同じターンで、渡した発言を読んで相談を始め、この返信をその最初の返信に置き換える。"
+             "返信は短い1文だけにする(問いと選択肢は書かない)。")
 MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(文の答えで抽出 2 回 + 生成 2 回)
 # 相談の外へ出る頼み(review の前だけ): アルバイト・パートで探したい(区分の切り替えはトークの AI がする)。
 # アルバイト・パートの EXIT_REQUEST の「正社員で探したい」と同じ形。後回しや打ち消し(EXIT_HOLD)なら相談を続ける。
@@ -135,13 +139,19 @@ def _question(out: dict) -> dict:
             "choices": list(out["choices"])}
 
 
-def start(state: State, line_user_id: str) -> dict:
-    """相談を始める(進めている相談があれば、今出しているものを返して続ける)。"""
+def start(state: State, line_user_id: str, text: str | None = None) -> dict:
+    """相談を始める(進めている相談があれば、今出しているものを返して続ける)。text はトークの AI が渡す本人の発言(t1)。
+    TALK_LAYER_VERSION=t1 で、新しく c2 で始めるときに text があれば、始めずに、トークの AI からの引き継ぎの記録を書いて switch_to を返す
+    (ランタイムが同じターンで switch_in で始め、c2 がその発言を読む段で読む。§4.5)。c1 は text を使わない(今のまま)。"""
     h = _load(state, line_user_id)
     started = h is None
     if started and not enabled():
         return {"started": False, "active": False, "error": f"正社員の相談のハーネスは使っていません({FLAG})。"
                 "get_counseling_playbook の playbook で相談する"}
+    said = (text or "").strip()
+    if started and said and logic.talk_layer_on() and logic.career_harness_version() in LAYER_VERSIONS:
+        SW.write(state, line_user_id, SW.talk_record(C2.ENTRY.entry, said, now(line_user_id)))
+        return {"started": False, "active": False, "switch_to": C2.ENTRY.entry, "direct": True, "note": READ_NOTE}
     prefilled: list[str] = []
     segment = None
     if started:
@@ -285,12 +295,16 @@ def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | No
     segment, items = store.prefill(user, prefs)
     H.apply_saved(h, segment, items, ng_known=store.ng_known(prefs))
     rec = SW.peek(state, line_user_id, C2.ENTRY.entry, now(line_user_id))
-    C2.take_handoff(h, rec)
     said = (text or "").strip()
     llm = ReplayLLM(llm_outputs, C2.render_prompt, lambda view: "say")
     prev = UI.before(h)
     try:
-        r = C2.enter(h, H.BANK, llm, (rec or {}).get("said") or said)
+        opening, stop = (rec or {}).get("said") or said, None
+        if SW.unread(rec):  # トークの AI が始めた相談(t1): 始めた発言を読む段で読み、その値を当ててから最初の問いを選ぶ
+            acts, opening, stop = C2.read_opening(h, H.BANK, llm, said)
+            rec = dict(rec, acts=acts, read=False)
+        C2.take_handoff(h, rec)
+        r = C2.opening_guard(h, H.BANK, stop) if stop else C2.enter(h, H.BANK, llm, opening)
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
@@ -301,7 +315,7 @@ def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | No
         raise RuntimeError("正社員の相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
     SW.clear(state, line_user_id)
     moved = logic.set_search_track(state, line_user_id, CAREER_TRACK, evidence=said)
-    ui, mem = UI.update(h, None, prev, r)
+    ui, mem = (None, None) if r.get("crisis") else UI.update(h, None, prev, r)  # 窓口の文には形 D の部品を付けない(turn と同じ)
     _save(state, line_user_id, h, CAREER_TRACK, segment, mem)
     out = _reply(h, r, llm.used, ui) | {"switched": {"from": (rec or {}).get("from")}}
     if moved.get("changed"):
