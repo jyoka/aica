@@ -995,11 +995,13 @@ def refresh_saved(state, prefs, kept):
     """「あとで」の続きから始めるとき(と、続きをもう一度「あとで」で閉じる前。session._pause): 閉じた後にプロフィール画面で直した・
     消した項目(kept は閉じたとき、または続きを始めたときの保存の文)は、その項目を作った前の値(from が saved か derived の欄)を外し、
     今の値を読み直す(prefill。読めなければ後で聞く)。避けたいことを直した・消したら、保存した本人の NG(saved_ng)のうち今の保存の文に
-    無いものを外す(まとめと結果に出さない。ルールの NG は年齢から作り直す)。読み直した文を state.kept に覚える。"""
+    無いものを外す(まとめと結果に出さない。ルールの NG は年齢から作り直す)。読み直した文を state.kept に覚える。
+    外した欄(エリアは NEAR_AREA)と NG を返す(forget が、その値の跡も消す)。"""
+    gone, ng = [], []
     if (prefs.get("avoids") or {}).get("value") != kept.get("avoids"):
         now = ng_items((prefs.get("avoids") or {}).get("value"))
-        gone = [n for n in state.saved_ng if n not in now]
-        state.user_ng = [n for n in state.user_ng if n not in gone]
+        ng = [n for n in state.saved_ng if n not in now]
+        state.user_ng = [n for n in state.user_ng if n not in ng]
         state.saved_ng = [n for n in state.saved_ng if n in now]
     for key, slots in FEEDS.items():
         if (prefs.get(key) or {}).get("value") == kept.get(key):
@@ -1007,12 +1009,44 @@ def refresh_saved(state, prefs, kept):
         for s in slots:
             if str((state.slots.get(s) or {}).get("from", "")).startswith((SAVED, "derived")):
                 del state.slots[s]
+                gone.append(s)
     if (prefs.get("area") or {}).get("value") != kept.get("area") and state.saved_area \
             and state.near.get("area") == state.saved_area:
         state.near.pop("area", None)
         state.saved_area = None
+        gone.append(NEAR_AREA)
     prefill(state, prefs)
     state.kept = kept_texts(prefs)
+    return gone, ng
+
+
+# 欄の値を書く記録(log)の種類 -> その値の欄(slot を持たない記録。slot を持つ記録は、その slot の欄)
+_LOGGED = {"near_time": "time_slots", "near_time_pick": "time_slots", "near_area_said": NEAR_AREA}
+
+
+def forget(state, prefs, kept):
+    """「あとで」で取っておいた相談から、閉じた後に本人がプロフィール画面やトークで消した・直した項目の前の値を、その時点で消す
+    (session.forget_paused。jyoka/tasks#375)。refresh_saved で欄と NG を外して今の値を読み直し、外した値の跡も消す: その欄の
+    原文と矛盾の候補(notes、conflicts、unresolved)と、段を変えてよけた値(archived)、値を書いた記録(log。計画の about の文も)、
+    近くで探すの時間帯、まとめのカード(作り直す)。直前のやりとり(本人の発言と返信。消した値を言った発言を含みうる)は、何か外したら空にする。
+    ほかの入り口から引き継いだ記録(came_from。すぐ戻るときに前の値を戻すもの)は、どの項目の値でもありうるので、いつも空にする。
+    外したものがあったか。"""
+    gone, ng = refresh_saved(state, prefs, kept)
+    state.came_from = None
+    if not gone and not ng:
+        return False
+    for s in gone:
+        for d in (state.notes, state.conflicts, state.unresolved, *state.archived.values()):
+            d.pop(s, None)
+    if "time_slots" in gone:
+        state.near.pop("time", None)
+        state.near.pop("time_pick", None)
+    state.log = [{k: v for k, v in e.items() if not (e["kind"] == "plan" and k == "about")} for e in state.log
+                 if not (({"value", "values"} & set(e)) and (e.get("slot") or _LOGGED.get(e.get("kind"))) in gone)]
+    if state.last_card is not None:
+        state.last_card = H.build_card(state)
+    state.convo = CS.new() | ({"rotation": state.convo["rotation"]} if "rotation" in state.convo else {})
+    return True
 
 
 def read_opening(state, bank, llm, said):

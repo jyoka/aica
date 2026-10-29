@@ -505,3 +505,20 @@ def test_c2_passes_every_code_check_of_the_card_3_scenes():
     c1 = {(r["scene"], x["check"]) for r in R.run(["career"], {"career": "c1"}, ids) for x in r["results"]
           if not x.get("judge") and x["status"] != K.PASS}
     assert {("chat-sticker", "keeps_question"), ("correct-go-back", "asks"), ("emotion-tired", "reply_contains")} <= c1
+
+
+def test_suspended_c2_keeps_no_consultation_so_a_deleted_item_is_gone_at_once(tmp_path):
+    """c2 の「中断」は相談を取っておかない(続きから再開しない)。勤務地を答えて「中断」し、プロフィール画面で勤務地を消すと、
+    その時点で保存のどこにも残らない(バイトの v5 の「あとで」と同じ目で見る。jyoka/tasks#375)。"""
+    from dip_mcp import profile
+    from dip_mcp.baito import session as baito_session
+    from dip_mcp.convo import switch as SW
+
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    r, _ = run(st, "中断", say_question)
+    assert r["closed"] == "later" and logic.stated_preferences(st.user(UID))["area"]["value"] == "東京23区"
+    u = st.user(UID)
+    assert session.KEY not in u and baito_session.PAUSED_KEY not in u and SW.KEY not in u
+    profile.delete_item(st, UID, "area")
+    assert "東京23区" not in json.dumps(st.user(UID), ensure_ascii=False)
