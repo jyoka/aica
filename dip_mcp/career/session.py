@@ -85,6 +85,15 @@ def _load(state: State, line_user_id: str) -> H.State | None:
     return mod.State.from_dict(d)
 
 
+LAYER_VERSIONS = (C2.VERSION,)  # 会話の層の版(LINE のスタンプを「[スタンプ]」の文にして受ける。設計メモ §4.12)
+
+
+def on_layer(state: State, line_user_id: str) -> bool:
+    """進めている相談が、会話の層の版(c2)か。LINE のランタイムは、このときだけスタンプを文にして渡す(line_runtime.server._line_kind)。"""
+    d = (state.user(line_user_id).get(KEY) or {}).get("harness") or {}
+    return d.get("version") in LAYER_VERSIONS
+
+
 def harness_of(h: H.State):
     """状態の版のハーネス(dip_mcp.career.harness か dip_mcp.career.c2)。"""
     return HARNESSES[h.version]

@@ -96,7 +96,7 @@ def test_line_webhook_c2_varies_acks_keeps_the_phase_line_order_and_reasks_in_ot
     # 区切りの行は、相づちの後、問いの前(#326 の D)
     assert r2.split("\n") == ["年収を上げたいですね。", H.PHASE_LINES["hard_filter"], "働きたい場所はどこですか?(駅や市の名前で)"]
     # 3 回目の「〜ですね。」は 2 回とも捨て、入り口の定義の決まった相づちで組む(#326 の ack_varies)
-    assert stages3 == ["say", "say"] and r3 == C2.ENTRY.tone["acks"]["answer"][0] + salary[0]
+    assert stages3 == ["say", "say"] and r3 == C2.ENTRY.tone["acks"]["short"][0] + salary[0]
     # 「はい」: モデルの言う段を呼ばず(読む段だけ)、責めない注意と、違う言い方の問い
     assert stages4 == ["read"] and r4 == C2.ENTRY.texts["retry_number"] + "\n" + salary[1]
     # 雑談から戻る: また違う言い方(前の言い方を避ける)
@@ -145,7 +145,7 @@ def test_say_prompt_carries_tone_phrasings_recent_acks_and_lines(tmp_path):
     assert q["id"] == "hf_area" and q["text"] == q["phrasings"][0] == "働きたい場所はどこですか?(駅や市の名前で)"
     assert len(q["phrasings"]) == 3  # 新しい問いは、どの言い方でもよい(勧めるのは問いの文)
     assert C2.ENTRY.tone["style"] in system and "- 相づちの後に、システムが入れる行: 次は希望の条件です" in system
-    assert "- 相づち: " + C2.ACK_JA["answer"] in system and "{{" not in system
+    assert "- 相づち: " + C2.ACK_JA["short"] in system and "{{" not in system
     _, calls = run(st, "大阪かな、雨の日は通勤つらいけど", lambda call: {
         "acts": [act("chitchat")], "hook": "雨の日は通勤つらい", "mentions": [], "ng": []} if call["stage"] == "read"
         else {"reply": "雨の日の通勤は大変ですよね。" + next_question(call["system"])["text"]})
@@ -153,26 +153,32 @@ def test_say_prompt_carries_tone_phrasings_recent_acks_and_lines(tmp_path):
     q = next_question(system)
     assert q["text"] != "働きたい場所はどこですか?(駅や市の名前で)" and "働きたい場所はどこですか?(駅や市の名前で)" not in q["phrasings"]
     assert "- 直前の相づち(終わり方を変える): 年収ですね。" in system and "- 相づちに使ってよい本人の言葉: 雨の日は通勤つらい" in system
-    assert "- 相づち: " + C2.ACK_JA["chitchat"] in system
+    assert "- 相づち: " + C2.ACK_JA["light"] in system
 
 
-def test_reverse_question_without_facts_gets_the_fixed_answer_without_the_model(tmp_path):
-    """逆質問だけのターン: 相づちを付けず、答えの部品を置く。渡す事実は 3 枚目のカードで足す。事実が無いうちは、モデルに書かせずに
-    決まった文(「お答えできません」)で答える(事実の無い答えをモデルに作らせない)。答えのある吹き出しは 120 字まで。"""
+def test_reverse_question_is_answered_only_from_the_facts_or_with_the_fixed_text(tmp_path):
+    """逆質問だけのターン: 相づちを付けず、渡した事実(facts.json。3 枚目のカード)だけで答えの部品を書かせる。答えを書かない返事は
+    2 回とも落とし、決まった文(「お答えできません」)で答える(黙って流さない)。答えのある吹き出しは 120 字まで。"""
     st = State(tmp_path / "state.json")
     to_area(st)
     run(st, "年収を上げたい", lambda call: {"reply": next_question(call["system"])["text"]})
     reading = {"acts": [act("ask_advice")], "hook": None, "mentions": [], "ng": []}
-    r, calls = run(st, "営業職って今どれくらい求人ありますか", lambda call: reading if call["stage"] == "read"
-                   else pytest.fail("言う段を呼ばない"))
-    assert [c["stage"] for c in calls] == ["read"] and r["counted"] is False
+    fact = "求人はヒアリングの後に、条件に合うものを出せます。"
+    r, calls = run(st, "営業職って今どれくらい求人ありますか", lambda call: reading if call["stage"] == "read" else {
+        "reply": fact + next_question(call["system"])["text"]})
+    assert [c["stage"] for c in calls] == ["read", "say"] and r["counted"] is False
+    assert "- 逆質問への答え: 答える。" in calls[1]["system"] and fact[:-1] in calls[1]["system"]
+    assert r["parts"][0] == ["answer", fact] and [k for k, _ in r["parts"]] == ["answer", "ask"]
+    r, calls = run(st, "営業職って今どれくらい求人ありますか", lambda call: reading if call["stage"] == "read" else {
+        "reply": next_question(call["system"])["text"]})
+    assert [c["stage"] for c in calls] == ["read", "say", "say"]  # 答えの無い返事: やり直して、決まった文
     assert r["parts"][0] == ["answer", C2.ENTRY.texts["no_answer"]] and [k for k, _ in r["parts"]] == ["answer", "ask"]
-    # 感情と一緒の逆質問: 相づちはモデルが書き、答えは決まった文。モデルが答えを書いたら落とす
+    # 感情と一緒の逆質問: 相づちと答えをモデルが書く(1 文目が相づち)
     reading = {"acts": [act("ask_advice"), act("emotion", feeling="anxious")], "hook": None, "mentions": [], "ng": []}
     r, calls = run(st, "不安で。求人ってあります?", lambda call: reading if call["stage"] == "read" else {
-        "reply": "不安なお気持ち、受け止めました。" + next_question(call["system"])["text"]})
-    assert "- 逆質問への答え: 書かない(システムが「" in calls[1]["system"]
-    assert [k for k, _ in r["parts"]] == ["ack", "answer", "ask"] and r["parts"][1][1] == C2.ENTRY.texts["no_answer"]
+        "reply": "不安なお気持ち、受け止めました。" + fact + next_question(call["system"])["text"]})
+    assert [k for k, _ in r["parts"]] == ["ack", "answer", "note", "ask"] and r["parts"][1][1] == fact
+    assert r["parts"][2][1] == C2.ENTRY.texts["note_pause"]  # 3 回続いた脱線: 「中断」の注意(3 枚目)は答えの後、問いの前
     assert RP.chars(r["reply"]) <= RP.ANSWER_BUBBLE_MAX
 
 
@@ -229,9 +235,8 @@ def test_fallback_acks_of_the_entry_are_polite_and_end_differently():
 
 
 # ----------------------------- 場面の一覧(evals/scenes/) -----------------------------
-# 4 枚目の場面のうち、ほかのカードの仕事の条件(設計メモ §5): 3 回目の脱線に「中断」を添える(3 枚目。§4.6)と、
-# 二択の「どっちでも」をこだわりなしにする(5 枚目。§4.4、§4.7)
-OTHER_CARDS = {("chat-three-in-a-row", "reply_contains"), ("short-ok-ambiguous", "slot"), ("short-ok-ambiguous", "not_asks")}
+# 4 枚目の場面のうち、ほかのカードの仕事だった条件(3 回目の脱線に「中断」を添える 3 枚目、二択の「どっちでも」をこだわりなしにする
+# 5 枚目)は、3 枚目と 5 枚目(task 356、358)を取り込んで合格するようになった
 
 
 def card4_scene(s: dict) -> bool:
@@ -249,7 +254,7 @@ def test_c2_passes_the_code_checks_of_the_card_4_scenes():
     assert len(ids) == 16
     rows = {r["scene"]: r for r in R.run(["career"], {"career": "c2"}, ids)}
     bad = {(sid, x["check"]) for sid, r in rows.items() for x in r["results"] if not x.get("judge") and x["status"] != K.PASS}
-    assert bad == OTHER_CARDS
+    assert not bad, bad
     # 1 枚目の点で c1 が落ちた条件(相づちの終わりが 3 回続く、「はい」への「読み取れなかった」)は、c2 では通る
     c1 = {r["scene"]: r for r in R.run(["career"], {"career": "c1"}, ["t326-salary-reask", "short-hai"])}
     assert {(sid, x["check"]) for sid, r in c1.items() for x in r["results"] if x["status"] == K.FAIL} == {

@@ -1,7 +1,8 @@
 """言う段: 返事の部品を 1 つの吹き出しに組み、モデルの返事を確かめる(設計メモ docs/design/conversation-layer.md §4.8)。
 
 返事は、決まった順の部品の並び(PARTS): 相づち(ack)→ 逆質問の答え(answer)→ 注意(note)→ 区切り(phase_line)→ 問い(ask)。
-何を並べるか(計画)は入り口のハーネスが決め(new_plan)、モデルが書くのは相づちと答えの言い方だけ。
+何を並べるか(相づちの種類、答える事実、注意)は応じ方の計画(dip_mcp.convo.plan)で決まり、入り口のハーネスがそれを言う段の計画
+(new_plan)にする。モデルが書くのは相づちと答えの言い方だけ。
 
 - 問いの文は、質問バンクの言い方(phrasings。1 つ目は問いの text、続けて variants)から選ぶ。モデルはそのどれかを一字一句そのまま使う。
   同じ問いを出し直すときは、前に使った言い方を避ける(pick)
@@ -10,7 +11,7 @@
   出どころの無い数、氏名などをなぞっていないか、相づちの終わり 4 字が直前の 2 つと同じでないか(「〜ですね。」が 3 回続かない)、
   直前の返信と同じ文が無いか、吹き出しの字数
 - だめならモデルを 1 回呼び直し、それでもだめなら決まった組み立て(fallback): 入り口のデータの相づち(種類ごとに 3 つ、順に回す)+
-  注意 + 区切り + 問い。相づちも答えも無い計画は、モデルを呼ばずに決まった組み立てにする(needs_model)
+  注意 + 区切り + 問い。直した・戻ったターン(計画の about)は、その文を先に試す。相づちも答えも無い計画は、モデルを呼ばずに決まった組み立てにする(needs_model)
 """
 
 from __future__ import annotations
@@ -18,12 +19,13 @@ from __future__ import annotations
 import re
 
 from dip_mcp.convo import guard
+from dip_mcp.convo import plan as P
 from dip_mcp.convo.text import digits_in, nfkc
 from dip_mcp.convo.turn import parse_json
 
-PARTS = ("ack", "answer", "note", "phase_line", "ask")
+PARTS = P.PARTS
 LINE_PARTS = ("note", "phase_line")  # 1 行ずつ置く部品(ほかは同じ行につなぐ)
-ACK_KINDS = ("answer", "correct", "chitchat", "emotion", "complaint")  # 相づちの種類(入り口のデータの相づちの組)
+ACK_KINDS = P.ACKS  # 相づちの種類(応じ方の計画の ack。入り口のデータの相づちの組も同じ種類で置く)
 BUBBLE_MAX = 80
 ANSWER_BUBBLE_MAX = 120  # 逆質問の答えがあるときだけ(§6 の 20)
 ACK_MAX = 40  # 相づちは 1 文、40 字まで
@@ -67,11 +69,11 @@ def pick(phrasings: list[str], avoid: str | None) -> tuple[str, list[str]]:
 
 
 def new_plan(ask: dict, ack: str | None = None, hook: str | None = None, answer: dict | None = None,
-             note=(), phase_line=(), choices=(), said: str = "", hidden=()) -> dict:
+             note=(), phase_line=(), choices=(), said: str = "", hidden=(), about=()) -> dict:
     """言う段の計画。ask は {"qid", "mode", "text": 勧める言い方, "phrasings": 使ってよい言い方}。ack は相づちの種類(ACK_KINDS か None)、
     answer は逆質問の答え({"facts": [渡す事実], "fallback": 決まった文})。渡す事実が無ければ、モデルに書かせずに決まった文で答える
     (fixed_answer)。note と phase_line は決まった文の行。choices はボタン(数の出どころ)、said は本人の発言(伏せたもの)、
-    hidden は返事に出さない部分(氏名と要配慮)。相づちの字数は、吹き出しの字数から決まった部品の字数を引いた残り(ACK_MAX まで)。"""
+    hidden は返事に出さない部分(氏名と要配慮)。about は相づちで触れること(計画の about。「勤務地を直しました」)。相づちの字数は、吹き出しの字数から決まった部品の字数を引いた残り(ACK_MAX まで)。"""
     fixed_answer = answer.get("fallback") if answer and not answer.get("facts") else None
     answer = answer if answer and answer.get("facts") else None
     limit = ANSWER_BUBBLE_MAX if answer or fixed_answer else BUBBLE_MAX
@@ -81,7 +83,8 @@ def new_plan(ask: dict, ack: str | None = None, hook: str | None = None, answer:
         ack = None
     return {"ack": ack if ack in ACK_KINDS else None, "hook": hook, "answer": answer, "fixed_answer": fixed_answer,
             "note": list(note), "phase_line": list(phase_line), "ask": ask, "limit": limit, "ack_max": max(ack_max, 0),
-            "choices": list(choices), "said": said, "hidden": list(hidden), "facts": list((answer or {}).get("facts", []))}
+            "choices": list(choices), "said": said, "hidden": list(hidden), "facts": list((answer or {}).get("facts", [])),
+            "about": list(about)}
 
 
 def needs_model(plan: dict) -> bool:
@@ -115,11 +118,16 @@ def _fixed_parts(plan: dict, ask_text: str) -> list[list[str]]:
 
 def fallback(plan: dict, recent: dict, acks: dict) -> list[list[str]]:
     """決まった組み立て。acks は入り口のデータの相づち({種類: [文, ...]})。recent は層の覚え(dip_mcp.convo.state)で、
-    種類ごとの回し方の位置もここに覚える。直前の相づちと終わりが重なるもの、直前の返信と同じ文、字数を超えるものは飛ばす。"""
+    種類ごとの回し方の位置もここに覚える。直前の相づちと終わりが重なるもの、直前の返信と同じ文、字数を超えるものは飛ばす。
+    計画に触れること(about)が 1 つあれば、その文を先に試す(「勤務地を直しました。」)。"""
     parts = []
     kind = plan["ack"]
     pool = list(acks.get(kind) or []) if kind else []
-    if pool:
+    about = plan.get("about") or []
+    said = f"{about[0]}。" if kind and len(about) == 1 else None
+    if said and chars(said) <= plan["ack_max"] and not repeats(said, recent):
+        parts.append(["ack", said])
+    elif pool:
         rot = recent.setdefault("rotation", {})
         start = rot.get(kind, 0)
         for k in range(len(pool)):

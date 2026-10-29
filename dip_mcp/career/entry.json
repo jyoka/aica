@@ -3,6 +3,7 @@
  "title": "正社員ヒアリング",
  "note": "正社員ヒアリングの入り口の定義(設計メモ docs/design/conversation-layer.md §4.1)。読むのは c2(CAREER_HARNESS_VERSION=c2)だけ。形は dip_mcp/convo/entry.py",
  "bank": "bank.json",
+ "facts": "facts.json",
  "slots": {
   "why_now": "今回、仕事を探そうと思ったきっかけ",
   "area": "働きたい場所(駅、市、「家から30分以内」など)",
@@ -29,6 +30,20 @@
  "infer": {
   "ib_why_now": {"年収を上げたい": {"raise_target": "年収"}}
  },
+ "groups": [
+  {"name": "はじめ", "phases": ["icebreak"], "line": null},
+  {"name": "条件", "phases": ["hard_filter"], "line": "次は希望の条件です"},
+  {"name": "職歴", "phases": ["career_cards"], "line": "次は職歴です"},
+  {"name": "好み", "phases": ["scenario_game", "reverse_pick", "fill_gaps"], "line": "あと少しで完成です"}
+ ],
+ "topics": {
+  "働き方": ["work_style", "work_hours", "team_style"],
+  "時期": ["start_timing", "blank_period"],
+  "職歴1": ["career1.role", "career1.scale", "career1.result"],
+  "職歴2": ["career2.role", "career2.scale", "career2.result"],
+  "次の仕事": ["direction", "change_reason", "use_experience", "keep_doing", "stop_doing"]
+ },
+ "mention_questions": ["card_role", "hf_use_experience", "hf_keep"],
  "texts": {
   "crisis_lead": [
    "話してくださって、ありがとうございます。そう思うほど、つらい気持ちなのですね。ひとりで抱えこまなくて大丈夫です。",
@@ -45,17 +60,19 @@
   "no_answer": "そのご質問には、ここではお答えできません。",
   "more_lead": "{topic}のほかの候補です。",
   "more_lead_number": "{topic}のほかの区切りです。",
-  "more_done": "候補は以上です。最初の候補に戻しました。合わなければ、ひとことで送ってください。"
+  "more_done": "候補は以上です。最初の候補に戻しました。合わなければ、ひとことで送ってください。",
+  "note_pause": "「中断」と送れば、ここまでの分が残ります。",
+  "note_falsify": "事実と違うことは書けません。小さなことでも、そのままの言葉で大丈夫です。"
  },
  "tone": {
   "style": "丁寧語(です・ます)で、短く落ち着いた言い方。絵文字と「!」は使わない。面接のような言い方(「具体的に説明してください」)にしない。くだけすぎない",
   "examples": ["東京23区ですね。", "年収を上げたい、ということですね。", "雨の日は通勤もしんどいですよね。", "120社を見てきたのですね。"],
   "acks": {
-   "answer": ["わかりました。", "ありがとうございます。", "なるほど、了解です。"],
-   "correct": ["直しておきました。", "はい、そちらに直します。", "変更、ありがとうございます。"],
-   "chitchat": ["お話、ありがとうございます。", "そうでしたか。", "なるほど、そうなんですね。"],
-   "emotion": ["話してくださって、ありがとうございます。", "お気持ち、受け止めました。", "そう感じていらしたのですね。"],
-   "complaint": ["すみません、受け取りました。", "くり返しになって、すみません。", "ごめんなさい、確かに受け取っています。"]
+   "short": ["わかりました。", "ありがとうございます。", "なるほど、了解です。"],
+   "done": ["直しておきました。", "はい、そちらに直します。", "変更、ありがとうございます。"],
+   "light": ["お話、ありがとうございます。", "そうでしたか。", "なるほど、そうなんですね。"],
+   "empathy": ["話してくださって、ありがとうございます。", "お気持ち、受け止めました。", "そう感じていらしたのですね。"],
+   "apology": ["すみません、受け取りました。", "くり返しになって、すみません。", "ごめんなさい、確かに受け取っています。"]
   }
  }
 }

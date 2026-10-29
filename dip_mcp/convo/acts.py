@@ -40,6 +40,8 @@ HOOK_MAX = 15  # 相づちに使う本人の言葉の字数(§4.3)
 MENTION_MAX = 10  # 候補に使う本人の言葉の字数(§4.7)
 MAX_ACTS = 12  # 1 つの発言から受け取る act の数の上限
 TYPES = {"str": str, "num": (int, float), "any": (str, int, float, list)}
+# LINE のスタンプ。ランタイムがこの文にしてハーネスに渡す(新しい版の相談の間だけ。設計メモ §4.12)。読む段を呼ばずに雑談として読む
+STICKER = "[スタンプ]"
 
 
 def _typed(v, t: str) -> bool:
@@ -133,6 +135,11 @@ def validate_reading(raw, user_text, slots, entries=(), values=None, segments=()
         probs.append("mentions_bad")
     extra = {k: v for k, v in d.items() if k not in ("acts", "hook", "mentions")}
     return {"acts": out, "hook": nfkc(hook) if hook else None, "mentions": list(dict.fromkeys(kept)), "extra": extra}, probs
+
+
+def sticker_reading() -> dict:
+    """スタンプだけの発言の読み(雑談。モデルを呼ばない)。"""
+    return {"acts": [{"act": "chitchat"}], "hook": None, "mentions": [], "extra": {}}
 
 
 def has(reading: dict | None, *names) -> bool:

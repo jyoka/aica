@@ -4,6 +4,7 @@
   値は今の発言からだけ抜き出す(前の発言から推し量って埋めない)
 - replies: 直前の返信。acks: その相づち(無ければ None)。言う段の重複の確かめに使う(§4.8。dip_mcp.convo.reply)
 - rotation: 決まった組み立ての相づちを、種類ごとに順に回す位置(dip_mcp.convo.reply.fallback)
+- mentions: 本人がこの会話で言った、候補に使える言葉(読む段の mentions。§4.7 の本人の言葉の候補)。新しいものを後ろに
 
 覚える本人の発言は、氏名と要配慮の部分を伏せたもの(guard.mask)。保存するのは相談の間だけ(相談を閉じれば消える)。
 """
@@ -12,12 +13,13 @@ from __future__ import annotations
 
 RECENT_MAX = 4  # 読む段に渡す、直前のやりとりの数(本人の発言と返信を合わせて)
 REPLIES_MAX = 2  # 覚えておく直前の返信の数
+MENTIONS_MAX = 5  # 覚えておく本人の言葉の数(古いものから忘れる)
 TEXT_MAX = 200  # 1 つの発言・返信を覚える字数(危ない言葉の決まった文のような長い返信を、読む段の入力に丸ごと載せない)
 WHO = {"user": "本人", "agent": "aica"}
 
 
 def new() -> dict:
-    return {"recent": [], "replies": []}
+    return {"recent": [], "replies": [], "mentions": []}
 
 
 def _clip(text: str) -> str:
@@ -42,6 +44,12 @@ def messages(c: dict) -> list[dict]:
     """言う段のモデルに渡す直前のやりとり(user / assistant の列)。ランタイムの会話の記録には、伏せる前の発言が残っているので、
     層の版はこちらを渡す(dip_mcp.baito.session.ReplayLLM の model_history)。"""
     return [{"role": "user" if m["who"] == "user" else "assistant", "content": m["text"]} for m in c.get("recent", [])]
+
+
+def mentioned(c: dict, words) -> None:
+    """読む段が返した本人の言葉を覚える(同じ言葉は新しい方に寄せる)。前の版の状態に mentions が無くてもよい。"""
+    old = [w for w in c.get("mentions", []) if w not in words]
+    c["mentions"] = [*old, *dict.fromkeys(w for w in words if isinstance(w, str) and w)][-MENTIONS_MAX:]
 
 
 def recent_lines(c: dict) -> str:

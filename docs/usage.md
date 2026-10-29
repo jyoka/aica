@@ -304,8 +304,8 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
 | `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
-| `python -m evals.career_sim [--log DIR]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。最後に「すべて合格」 | 使わない |
-| `python -m evals.career_choices` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_sim [--log DIR] [--version c2]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_choices [--version c2]` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
 | `python -m evals.scenes [--entry career --version c1] [--scene ID] [-v] [--log DIR]` | 会話の層の場面の一覧(`evals/scenes/`)を回して、コードの条件を判定し、入り口と版ごとの点を出す。版は career が `c1`(既定)と `c2`。台本の LLM で回す(トークの AI はモック。判定は守りの前処理と、相談を始めないことだけ)。採点の条件は判定しない([evals/scenes/README.md](../evals/scenes/README.md)) | 使わない |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |

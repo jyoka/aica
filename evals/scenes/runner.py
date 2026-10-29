@@ -15,7 +15,8 @@
   モデルの運に頼らない点にする(jyoka/tasks#326 のトーク 1、3、5 の「〜ですね。」)
 - 本人が「やめる」などで相談を閉じたターンは、ランタイムがトークの AI に渡す。返事の文と、移るか・区分と値を引き継ぐかは
   トークの AI しだいなので判定しない(skip。checks._undecided)。モデルの呼び出しは少なくとも 1 回と数える
-- 今の LINE の入口(line_runtime/server.py の _line_kind)はスタンプを捨てるので、今の版の「[スタンプ]」は返事なしにする
+- 今の LINE の入口(line_runtime/server.py の _line_kind)は、今の版(c1、v4)の相談の間とトークではスタンプを捨てるので、
+  今の版の「[スタンプ]」は返事なしにする。新しい版(c2)の相談の間は、ランタイムが「[スタンプ]」の文にして渡す
 - talk は、本物のランタイム(line_runtime.runtime.LineRuntime。dip の MCP も本物)を、モックのトークの AI(TalkMock。決まった文を
   返し、ツールを呼ばない)で回す。判定するのは守りの前処理(crisis_reply、llm_calls_max)と stays だけ。ほかは 9 枚目で実モデルで見る
 
@@ -40,6 +41,7 @@ STICKER = "[スタンプ]"  # ランタイムがスタンプを文にした形(�
 TALK_MOCK_TEXT = "(トークの AI の返事。モックでは書かない)"
 TALK_MOCK_CHECKS = {"crisis_reply", "llm_calls_max", "stays"}  # talk の場面で、モックで判定する条件
 CAREER_SAY = re.compile(r"次に聞くこと\(JSON\): (\{.*\})")
+CAREER_PLAN = re.compile(r"計画\(JSON\): (\{.*\})")  # c2 の応じ方の計画(dip_mcp/prompts/convo/say_ja.txt)
 BAITO_SAY = re.compile(r"次に聞くこと（JSON）: (\{.*\})")
 BAITO_RESULT = re.compile(r"結果材料（JSON）: (\{.*\})")
 HOOK_FROM_BUTTON = 15  # 押したボタンのラベルを相づちに使う字数の上限(HOOK_MAX と同じ)
@@ -398,8 +400,10 @@ class CareerC1(_HarnessDriver):
 class CareerC2(CareerC1):
     """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
     台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとりと返信、その相づち)に入れる。
-    言う段の台本は c1 と同じ「相づち + 問いの文」(問いの文は、ハーネスが勧める言い方)。返信には部品の並び(parts)が付く。"""
+    言う段の台本は c1 と同じ「相づち + 問いの文」(問いの文は、ハーネスが勧める言い方)。返信には部品の並び(parts)が付く。
+    スタンプは、新しい版の相談の間はランタイムが「[スタンプ]」の文にして渡す(line_runtime/server.py の _line_kind。task 356)。"""
     version = "c2"
+    stickers = True
     _texts: Texts | None = None
 
     def harness(self):
@@ -420,6 +424,13 @@ class CareerC2(CareerC1):
         return {"acts": list(reading.get("acts", [])), "hook": reading.get("hook"), "mentions": list(reading.get("mentions") or []),
                 "ng": []}
 
+    def write(self, call, ack):
+        """計画が相づちなし(逆質問、事実と違う頼み)なら、相づちを付けない。ほかは c1 と同じ単調な相づち。"""
+        m = CAREER_PLAN.search(call["system"])
+        if m and json.loads(m.group(1)).get("ack") is None:
+            ack = ""
+        return super().write(call, ack)
+
     def texts(self) -> Texts:
         from dip_mcp.career import c2
         from dip_mcp.career import harness as H
@@ -431,6 +442,7 @@ class CareerC2(CareerC1):
         t.questions = sorted({*t.questions, *variants})
         t.notes = [*t.notes, *(c2.ENTRY.texts[k] for k in ("retry", "retry_number", "no_answer"))]
         t.crisis = c2.CRISIS_TEXT.split("\n")
+        t.notes = [*t.notes, *(c2.ENTRY.texts[f"note_{n}"] for n in c2.P.NOTES)]  # 注意の 1 行(応じ方の計画。task 356)
         t.fixed = [*t.fixed, *(c2.ENTRY.texts[k] for k in ("crisis_resume", "retry_review", "more_done"))]
         CareerC2._texts = t
         return t

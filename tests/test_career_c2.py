@@ -5,6 +5,7 @@
   年収の問いを聞かない。まとめの「これでOK」で確かめた値として保存する
 - 危ない言葉: モデルを呼ばずに相談窓口の文(丁寧語)。「続ける」で同じ問いに戻る
 - 読む段には、今の発言だけをメッセージで渡し、直前のやりとりはシステムプロンプトに入れる
+- LINE のスタンプ: c2 の相談の間は「[スタンプ]」の文として受け、読む段を呼ばずに同じ問いを出し直す(c1 の相談の間は今までどおり答えない)
 ほかに、始めた相談は始めた版のまま進むこと、c1 は変わらないこと、返事に氏名が出たらやり直すことを、相談のツールで確かめる。
 """
 
@@ -30,7 +31,7 @@ from line_runtime.line_channel import line_user
 from tests.test_career_chat import USAGE, answer_for, current_qid, start_script
 from tests.test_consult import ConsultModel
 from tests.test_line_data import _say
-from tests.test_line_webhook import RAW_USER, _server, line_id_key  # noqa: F401  line_id_key はフィクスチャ
+from tests.test_line_webhook import RAW_USER, _event, _post, _server, line_id_key  # noqa: F401  line_id_key はフィクスチャ
 
 MULTI = "東京で500万以上、リモートがいい"
 CRISIS = "仕事つらすぎてもう死にたい"
@@ -326,3 +327,181 @@ def test_crisis_turn_in_form_d_gets_no_flex(tmp_path, monkeypatch):
     run(st, "同じ仕事で上へ", say_question)
     r, calls = run(st, "もう死にたい", say_question)
     assert r["reply"] == C2.CRISIS_TEXT and "ui" not in r and calls == []
+
+
+# ----------------------------- 3 枚目: 応じ方の計画(§4.6) -----------------------------
+def sticker(n: int) -> dict:
+    e = _event("message", event_id=f"01S{n}", token=f"reply-token-s{n}")
+    e["message"] = {"type": "sticker", "id": f"9{n}", "packageId": "446", "stickerId": "1988"}
+    return e
+
+
+@pytest.mark.parametrize("version", ["c2", "c1"])
+def test_line_sticker_is_a_message_only_during_a_c2_consultation(tmp_path, monkeypatch, version):
+    """c2 の相談の間のスタンプは「[スタンプ]」の文: 読む段を呼ばず、数えずに同じ問いとボタンを返す。c1 の相談の間は返事をしない。"""
+    monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, version)
+    uid = line_user(RAW_USER)
+    llm = FakeReadLLM()
+    model = ConsultModel(script=start_script(uid))
+    server, fake = _server(tmp_path, monkeypatch, model)
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, career_llm=llm))
+    st = server.state
+    with TestClient(server.app) as client:
+        assert _post(client, [sticker(0)]).status_code == 200
+        assert fake.sent() == []  # 相談の外(トーク)のスタンプには、今までどおり返事をしない
+        _say(client, "正社員で転職したいので相談したい", 1)
+        h = session._load(st, uid)
+        assert h.version == version
+        before, sent, turns = len(llm.calls), len(fake.sent()), h.turns
+        assert _post(client, [sticker(2)]).status_code == 200
+        if version == "c1":
+            assert len(fake.sent()) == sent and len(llm.calls) == before
+            return
+        last = fake.sent()[-1][1]["messages"][-1]
+        quick = [i["action"]["text"] for i in last.get("quickReply", {}).get("items", [])]
+    h = session._load(State(tmp_path / "state.json"), uid)
+    q = H.qmap(h, H.BANK)[h.current["qid"]]
+    assert any(x in last["text"] for x in C2.phrasings(q, H.BANK)) and quick == h.current["choices"] and h.turns == turns
+    assert [stage for stage, _, _ in llm.calls[before:]] == ["say"]  # 読む段を呼ばない
+    assert h.convo["recent"][-2] == {"who": "user", "text": "[スタンプ]"}
+
+
+def say_with(text):
+    """言う段の偽のモデル: 決まった前置き(text)+ 問いの文。"""
+    return lambda call: {"reply": text + say_question(call)["reply"]}
+
+
+def scripted(acts_by_text, say=say_question):
+    def script(call):
+        if call["stage"] == "read":
+            said = re.search(r"本人の今の発言: (.*)", call["system"]).group(1).strip()
+            return {"acts": acts_by_text[said], "hook": None, "mentions": [], "ng": []}
+        return say(call)
+    return script
+
+
+def plan_of(call):
+    return json.loads(re.search(r"計画\(JSON\): (\{.*\})", call["system"]).group(1))
+
+
+def test_service_question_gets_only_the_facts_and_a_longer_bubble(tmp_path):
+    """「これ何に使うの?」: 言う段に事実(aica 全体と入り口)だけを渡し、相づちなしで答えさせる。吹き出しは 120 字まで。
+    事実に無い数は落とし、事実の数(180日)は言ってよい。数えない。"""
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    long_answer = "集めた内容は、職務経歴書の下書きと、条件に合う求人を探すのに使います。保存した内容は、最後に使った日から180日で消えます。LINE では「データを消す」で消せます。"
+    r, calls = run(st, "これ何に使うの?", scripted({"これ何に使うの?": [act("ask_service")]}, say_with(long_answer)))
+    plan = plan_of(calls[1])
+    assert plan["ack"] is None and plan["answer"] is True
+    assert plan["facts"][0] == "いまは希望の条件を聞いています" and "求人は架空のデモで、実際の応募にはなりません" in plan["facts"]
+    assert all(f in C2.ENTRY.facts["ask_service"] or f in C2.ENTRY.facts["where"].values() for f in plan["facts"])
+    assert r["reply"].startswith(long_answer) and 80 < H.chars(r["reply"]) <= C2.ANSWER_BUBBLE_MAX
+    assert r["counted"] is False and current_qid(st, UID) == "hf_salary"
+    r, calls = run(st, "これ何に使うの?", scripted({"これ何に使うの?": [act("ask_service")]}, say_with("相場は450万です。")))
+    assert [c["stage"] for c in calls] == ["read", "say", "say"] and "450" not in r["reply"]  # 事実に無い数: 問いの文だけ
+    h = session._load(st, UID)
+    assert any(e["kind"] == "generate_fallback" and "made_up_number" in e["problems"] for e in h.log)
+
+
+def test_three_offtrack_turns_add_the_pause_note_once(tmp_path):
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    chat = scripted({"雨だね": [act("chitchat")], "500万以上": [act("answer", slot="min_annual_salary", text="500万以上",
+                                                                    number=500)]})
+    note = C2.ENTRY.texts["note_pause"]
+    replies = [run(st, "雨だね", chat)[0]["reply"] for _ in range(4)]
+    assert [note in x for x in replies] == [False, False, True, False]  # 3 回目に 1 回だけ
+    lines = replies[2].split("\n")
+    assert lines.index(note) == len(lines) - 2  # 注意は問いの前(相づちの後、区切りの前)
+    h = session._load(st, UID)
+    assert h.offtrack == 4 and h.turns == 3 + 1  # to_salary の 3 ターンと、4 回目の脱線(MAX_ASIDES = 3 を超えた分は数える)
+    run(st, "500万以上", chat)
+    assert session._load(st, UID).offtrack == 0  # 答えて進んだら続きは 0 から
+
+
+def test_tired_adds_the_pause_note_and_asks_no_more_than_hard(tmp_path):
+    """「疲れた…」: 同じ問いに「中断」の注意を添え(数えない)、この後は HARD のほかの問いを聞かずにまとめへ進む。"""
+    st = State(tmp_path / "state.json")
+    session.start(st, UID)
+    for said in ("同じ仕事で上へ", "年収を上げたい", "東京23区", "600万円以上", "すぐ"):  # HARD を全部ボタンで答える
+        run(st, said, say_question)
+    assert current_qid(st, UID) == "card_role1"
+    r, calls = run(st, "疲れた…", scripted({"疲れた…": [act("emotion", feeling="tired")]}))
+    assert C2.ENTRY.texts["note_pause"] in r["reply"] and r["counted"] is False and current_qid(st, UID) == "card_role1"
+    assert plan_of(calls[1])["ack"] == "empathy" and H.HURRY in session._load(st, UID).flags
+    run(st, "営業", say_question)  # 今の問いには答える。次は HARD のほかを聞かない
+    h = session._load(st, UID)
+    assert h.current["qid"] == "review" and h.stop_reason == "hurry"
+
+
+def test_go_back_asks_the_previous_question_to_fix_then_returns(tmp_path):
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    back = scripted({"前の質問に戻りたい": [act("go_back")], "やっぱり横浜": [act("answer", slot="area", text="横浜")]})
+    r, calls = run(st, "前の質問に戻りたい", back)
+    h = session._load(st, UID)
+    assert (h.current["qid"], h.current["mode"], h.current["resume"]) == ("hf_area", "back", "hf_salary")
+    assert r["counted"] is False and H.FIX_KEEP in r["choices"] and "東京23区" in r["choices"]
+    assert plan_of(calls[1])["about"] == ["勤務地の質問に戻ります"]
+    r, calls = run(st, "やっぱり横浜", back)
+    h = session._load(st, UID)
+    assert (h.slots["area"]["text"], h.slots["area"]["confidence"]) == ("横浜", "high")
+    assert h.current["qid"] == "hf_salary" and r["counted"] is False and h.turns == 3
+    assert plan_of(calls[1])["about"] == ["勤務地を直しました"]
+    run(st, "前の質問に戻りたい", back)
+    r, _ = run(st, H.FIX_KEEP, say_question)  # 「そのまま」: 変えずに戻る
+    h = session._load(st, UID)
+    assert h.slots["area"]["text"] == "横浜" and h.current["qid"] == "hf_salary"
+
+
+def test_complaint_alone_closes_the_slot_and_moves_on(tmp_path):
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    r, calls = run(st, "同じこと何回聞くの?", scripted({"同じこと何回聞くの?": [act("complaint")]}))
+    h = session._load(st, UID)
+    assert r["counted"] is True and "min_annual_salary" not in h.slots and h.current["qid"] != "hf_salary"
+    assert plan_of(calls[1])["ack"] == "apology"
+
+
+def test_falsify_is_refused_with_the_fixed_note_and_not_counted(tmp_path):
+    st = State(tmp_path / "state.json")
+    to_salary(st)
+    r, calls = run(st, "盛って書いといて", scripted({"盛って書いといて": [act("falsify")]}))
+    h = session._load(st, UID)
+    assert C2.ENTRY.texts["note_falsify"] in r["reply"] and r["counted"] is False and h.aside_count == 0
+    assert [c["stage"] for c in calls] == ["read"] and current_qid(st, UID) == "hf_salary"  # 相づちなし: 言う段を呼ばない(4 枚目)
+
+
+def test_c1_say_prompt_has_no_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, "c1")
+    st = State(tmp_path / "state.json")
+    session.start(st, UID)
+    _, calls = run(st, "同じ仕事で上へ", say_question)
+    assert "計画(JSON)" not in calls[0]["system"]
+
+
+CARD3_ONE = {"safety-falsify", "safety-harassment", "safety-refuse-salary", "correct-go-back"}
+
+
+def card3_scene(s: dict) -> bool:
+    """3 枚目のカードで確かめる場面(設計メモ §5): career の chat-*、ask-*、emotion-*、flow-* と、守りの 3 つ、前の問いに戻る。"""
+    sid = s["id"]
+    return s["entry"] == "career" and (sid.split("-")[0] in ("chat", "ask", "emotion", "flow") or sid in CARD3_ONE)
+
+
+def test_c2_passes_every_code_check_of_the_card_3_scenes():
+    from evals import scenes as S
+    from evals.scenes import checks as K
+    from evals.scenes import runner as R
+
+    ids = [s["id"] for s in S.load_scenes() if card3_scene(s)]
+    assert len(ids) == 35
+    rows = R.run(["career"], {"career": "c2"}, ids)
+    bad = {(r["scene"], x["check"]): x["detail"] for r in rows for x in r["results"]
+           if not x.get("judge") and x["status"] != K.PASS}
+    assert not bad, bad  # chat-three-in-a-row の ack_varies(相づちの言い回し)は 4 枚目(task 357)を取り込んで合格する
+    c1 = {(r["scene"], x["check"]) for r in R.run(["career"], {"career": "c1"}, ids) for x in r["results"]
+          if not x.get("judge") and x["status"] != K.PASS}
+    assert {("chat-sticker", "keeps_question"), ("correct-go-back", "asks"), ("emotion-tired", "reply_contains")} <= c1
