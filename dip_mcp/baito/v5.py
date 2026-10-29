@@ -1015,6 +1015,44 @@ def refresh_saved(state, prefs, kept):
     state.kept = kept_texts(prefs)
 
 
+def read_opening(state, bank, llm, said):
+    """トークの AI が始めた相談(t1。§4.5)の、始めた発言を読む段で読む -> (値の act(引き継ぎの記録の形), 言う段に渡す発言, 守り)。
+    まだ問いを出していないので、どの欄の値も、ほかの欄の値として読む。年齢は入れない(年齢は v4 の決まりで問いで聞く。_switch と同じ)。
+    氏名と要配慮の部分は値から除き、言う段に渡す発言では伏せる。読めなければ値は無し(入口のカードから)。守りは、ふつうのターンと同じく、
+    危ない言葉の表か闇バイトの言葉(DANGER_RE)に当たれば読む段を呼ばずに、読む段が crisis か danger と読んでも、"crisis" か "danger"
+    (最初の問いの代わりに、窓口の文か注意文。opening_guard)。"""
+    H._init_volatile(state)
+    _init_turn(state)
+    if not H.nfkc(said):
+        return [], said, None
+    if crisis_hit(said):
+        return [], said, "crisis"
+    if H.DANGER_RE.search(H.nfkc(said)):
+        return [], said, "danger"
+    reading = call_llm(llm.read, read_payload(state, bank, said), validator(said), _log(state), "read")
+    spans = A.spans(reading)
+    acts = [a for a in SW.value_acts(reading, lambda t: guard.scrub(t, spans)) if a.get("slot") != "age_band"]
+    stop = "crisis" if A.has(reading, "crisis") else "danger" if A.has(reading, "danger") else None
+    return ([] if stop == "danger" else acts), guard.mask(said, spans), stop
+
+
+def opening_guard(state, bank, llm, stop):
+    """始めた発言が危ない言葉か闇バイトの話だったときの最初の返事(ふつうのターンの守りと同じ)。最初の問い(入口のカードか年齢)を
+    選んでおき、危ない言葉には窓口の文だけ(「続ける」でそこから)、闇バイトの話には注意文と最初の問いを返す。どちらも数えない。"""
+    H._init_volatile(state)
+    _init_turn(state)
+    state._new_notices, state._discarded, state._snapped = [], [], []
+    if state.current is None:
+        advance(state, bank)
+    if stop == "crisis":
+        return H._crisis(state, bank)
+    if state.phase in H.QUICK_PHASES:  # 入口では数えない(v4 と同じ)
+        H._flag(state, "danger_warned")
+        H.ev(state, "danger_skip", where=state.phase)
+        return H._quick_reply(state, bank, H.NOTICE["danger"])
+    return _danger(state, bank, llm, None)
+
+
 def enter(state, bank=H.BANK, llm=None, said=""):
     """ほかの入り口から同じターンで移ってきた相談の、最初の返事。最初の問い(入口のカード。止めた印のある人は年齢)を、移ったことの
     相づち(入り口の定義の switched_in を計画の about に)と一緒に 1 つの吹き出しにする(言う段 1 回。数えない)。
