@@ -50,6 +50,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と、同意してから初回の挨拶の
 1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
 Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](deploy/render.md) にあります。
+相談の版(正社員の `c1` → `c2` など)を本番で切り替える手順と戻し方も、そこの「相談の版を入り口ごとに切り替える」にあります。
 
 ## LINE で試す
 
