@@ -291,7 +291,7 @@ def test_salary_without_a_number_is_asked_again_with_buttons_once_then_kept_as_a
     r, _ = run(st, "高めがいいです", reading_of(act("answer", slot="min_annual_salary", text="高め")))
     h = session._load(st, UID)
     assert h.current["mode"] == "retry" and r["counted"] is False and "min_annual_salary" not in h.slots
-    assert r["reply"].startswith(H.RETRY_TEXT)
+    assert r["reply"].startswith(C2.ENTRY.texts["retry_number"]) and "読み取れなかった" not in r["reply"]  # 責めずに聞き直す
     r, _ = run(st, "高めがいいです", reading_of(act("answer", slot="min_annual_salary", text="高め")))
     h = session._load(st, UID)
     assert (h.slots["min_annual_salary"]["text"], h.slots["min_annual_salary"]["confidence"]) == ("高め", "low")
@@ -363,7 +363,7 @@ def test_line_sticker_is_a_message_only_during_a_c2_consultation(tmp_path, monke
         quick = [i["action"]["text"] for i in last.get("quickReply", {}).get("items", [])]
     h = session._load(State(tmp_path / "state.json"), uid)
     q = H.qmap(h, H.BANK)[h.current["qid"]]
-    assert q["text"] in last["text"] and quick == h.current["choices"] and h.turns == turns
+    assert any(x in last["text"] for x in C2.phrasings(q, H.BANK)) and quick == h.current["choices"] and h.turns == turns
     assert [stage for stage, _, _ in llm.calls[before:]] == ["say"]  # 読む段を呼ばない
     assert h.convo["recent"][-2] == {"who": "user", "text": "[スタンプ]"}
 
@@ -471,7 +471,7 @@ def test_falsify_is_refused_with_the_fixed_note_and_not_counted(tmp_path):
     r, calls = run(st, "盛って書いといて", scripted({"盛って書いといて": [act("falsify")]}))
     h = session._load(st, UID)
     assert C2.ENTRY.texts["note_falsify"] in r["reply"] and r["counted"] is False and h.aside_count == 0
-    assert plan_of(calls[1])["ack"] is None and current_qid(st, UID) == "hf_salary"
+    assert [c["stage"] for c in calls] == ["read"] and current_qid(st, UID) == "hf_salary"  # 相づちなし: 言う段を呼ばない(4 枚目)
 
 
 def test_c1_say_prompt_has_no_plan(tmp_path, monkeypatch):
@@ -483,7 +483,6 @@ def test_c1_say_prompt_has_no_plan(tmp_path, monkeypatch):
 
 
 CARD3_ONE = {"safety-falsify", "safety-harassment", "safety-refuse-salary", "correct-go-back"}
-CARD4 = {("chat-three-in-a-row", "ack_varies")}  # 相づちの言い回しの重複は 4 枚目のカード(返事の検証。設計メモ §4.8、§5)
 
 
 def card3_scene(s: dict) -> bool:
@@ -502,7 +501,7 @@ def test_c2_passes_every_code_check_of_the_card_3_scenes():
     rows = R.run(["career"], {"career": "c2"}, ids)
     bad = {(r["scene"], x["check"]): x["detail"] for r in rows for x in r["results"]
            if not x.get("judge") and x["status"] != K.PASS}
-    assert set(bad) == CARD4, bad
+    assert not bad, bad  # chat-three-in-a-row の ack_varies(相づちの言い回し)は 4 枚目(task 357)を取り込んで合格する
     c1 = {(r["scene"], x["check"]) for r in R.run(["career"], {"career": "c1"}, ids) for x in r["results"]
           if not x.get("judge") and x["status"] != K.PASS}
     assert {("chat-sticker", "keeps_question"), ("correct-go-back", "asks"), ("emotion-tired", "reply_contains")} <= c1

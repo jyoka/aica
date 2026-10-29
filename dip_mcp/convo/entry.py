@@ -1,12 +1,13 @@
 """入り口の定義の読み込み(設計メモ docs/design/conversation-layer.md §4.1)。
 
 入り口ごとに違うもの(欄の説明、質問バンク、移る先、決まった文など)は、データ(dip_mcp/<入り口>/entry.json)にする。
-形はここで確かめる(知らない欄、文の無い問い、ボタンに無い候補の効き目、足りない決まった文)。壊れていれば ValueError で、
+形はここで確かめる(知らない欄、文の無い問い、言い方の足りない問い、ボタンに無い候補の効き目、足りない決まった文、調子)。壊れていれば ValueError で、
 読み込むとき(dip の起動)に止まる。今の版で読むのは、正社員の c2 だけ。
 
 entry.json の形:
 - entry: 入り口の名前(career / baito)。title: 読む段に渡す入り口の名前(「正社員ヒアリング」)
-- bank: 質問バンクのファイル(entry.json と同じフォルダ。問いの形は入り口のまま。層は targets と text と候補だけを見る)
+- bank: 質問バンクのファイル(entry.json と同じフォルダ。問いの形は入り口のまま。層は targets と text と variants と候補だけを見る)。
+  どの問いにも、text のほかの言い方を variants に 1〜2 通り置く(言い方は合わせて 2〜3 通り。§4.8。同じ問いを出し直すときに回す)
 - slots: {欄: 読む段に渡す説明}。入り口の欄のすべてに置く
 - switch: 移れる入り口 [{"to", "label"}]。label は移るボタンの文(§4.5。使うのは 6 枚目のカード)
 - infer: ボタンから推せるほかの欄 {問いの id: {ボタン: {欄: 値の文}}}(§4.7 の 1。推測(low)で入れ、まとめで確かめる)。
@@ -16,19 +17,26 @@ entry.json の形:
 - topics: 話題 {名前: [欄]}(§4.7 の話題のおまけ)。1 つの欄がいくつの話題に入ってもよい
 - mention_questions: 本人の言葉の候補を足す問いの id(§4.7。職歴カードはひな形の id)
 - texts: 決まった文 {名前: 文か、行のリスト}。入り口が求める名前は required_texts で渡す
+- tone: 言い回しの調子(§4.8)。style は言う段のプロンプトに入れる調子の説明、examples は相づちの例、
+  acks は決まった組み立ての相づち {種類(dip_mcp.convo.reply.ACK_KINDS): [1 文, ...]}(種類ごとに 3 つまで、順に回す)
 - facts: 逆質問に答える事実のファイル(entry.json と同じフォルダ。無くてよい)。aica 全体の事実に足して読む(dip_mcp.convo.facts)
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dip_mcp.convo import facts as F
+from dip_mcp.convo import reply as R
 
 CARD_MARK = "{n}"  # 職歴カードのひな形の欄(career{n}.role)。1 枚目に広げて確かめる
 SPECIAL_TARGETS = ("segment", "__ng__")  # 欄でない問いの的(区分、避けたいこと)
+VARIANTS = (1, 2)  # text のほかの言い方の数
+ACKS_MAX = 3  # 決まった組み立ての相づちの、種類ごとの数
+MARK_RE = re.compile(r"\{\w+\}")  # 問いの文の差し込み({which} など)
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,7 @@ class Entry:
     switch: list = field(default_factory=list)
     infer: dict = field(default_factory=dict)
     texts: dict = field(default_factory=dict)
+    tone: dict = field(default_factory=dict)
     facts: dict = field(default_factory=lambda: F.load(None))
     groups: list = field(default_factory=list)
     topics: dict = field(default_factory=dict)
@@ -72,6 +81,35 @@ def check_bank(name: str, bank, slots) -> None:
         stray = [c for c in (q.get("choice_effects") or {}) if c not in choices]
         if stray:
             raise ValueError(f"{name}: 問い {qid} の効き目がボタンに無い {stray}")
+        check_variants(name, q)
+
+
+def check_variants(name: str, q: dict) -> None:
+    """問いの言い方: text のほかに 1〜2 通り。重ならず、問いは 1 つまで、差し込みは text にあるものだけ。"""
+    v = q.get("variants")
+    if not isinstance(v, list) or len(v) not in VARIANTS or not all(isinstance(x, str) and x.strip() for x in v):
+        raise ValueError(f"{name}: 問い {q['id']} に言い方(variants)が 1〜2 通り無い")
+    if len({q["text"], *v}) != len(v) + 1:
+        raise ValueError(f"{name}: 問い {q['id']} の言い方が重なる")
+    marks = set(MARK_RE.findall(q["text"]))
+    for x in v:
+        if len(R.QMARK_RE.findall(x)) > 1 or not set(MARK_RE.findall(x)) <= marks:
+            raise ValueError(f"{name}: 問い {q['id']} の言い方 {x}(問いは 1 つ、差し込みは text にあるものだけ)")
+
+
+def check_tone(name: str, tone) -> None:
+    """言い回しの調子: style と、相づちの種類ごとの決まった相づち(1 文、ACK_MAX 字まで、ほめない、問わない)。"""
+    if not isinstance(tone, dict) or not str(tone.get("style") or "").strip():
+        raise ValueError(f"{name}: 調子(tone.style)が無い")
+    acks = tone.get("acks") or {}
+    missing = [k for k in R.ACK_KINDS if not acks.get(k)]
+    if missing or set(acks) - set(R.ACK_KINDS):
+        raise ValueError(f"{name}: 決まった相づち(tone.acks)の種類 {missing or sorted(set(acks) - set(R.ACK_KINDS))}")
+    for k, xs in acks.items():
+        bad = [x for x in xs if not isinstance(x, str) or len(R.sentences(x)) != 1 or R.chars(x) > R.ACK_MAX
+               or R.PRAISE_RE.search(x) or R.QMARK_RE.search(x)]
+        if len(xs) > ACKS_MAX or bad:
+            raise ValueError(f"{name}: 決まった相づち {k} {bad or xs}")
 
 
 def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
@@ -118,7 +156,8 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
     lacking = [t for t in required_texts if not texts.get(t)]
     if lacking:
         raise ValueError(f"{name}: 決まった文が無い {lacking}")
+    check_tone(name, d.get("tone"))
     facts = F.load(Path(path).parent / d["facts"] if d.get("facts") else None)
     return Entry(entry=name, title=d["title"], bank=bank, slots=described, switch=list(d.get("switch") or []),
-                 infer=d.get("infer") or {}, texts=texts, facts=facts, groups=groups, topics=topics,
+                 infer=d.get("infer") or {}, texts=texts, tone=d["tone"], facts=facts, groups=groups, topics=topics,
                  mention_questions=mention_questions)

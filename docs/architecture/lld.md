@@ -238,8 +238,8 @@ classDiagram
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」) | `harness`、`session` |
 | `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247)。会話の層に載せ替える版 `c2.py` と入り口の定義 `entry.json`(task 355) | `harness`、`session`、`store`、`draft`、`c2` |
-| `convo/` | 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))。作っている途中で、使うのは正社員の c2 だけ(v4 は守りの前処理と `_call_llm` だけを読み込む)。下の「会話の層」 | `guard`、`acts`、`values`、`entry`、`state`、`turn` |
-| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/`。会話の層の読む段の骨組みは `prompts/convo/` | - |
+| `convo/` | 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))。作っている途中で、使うのは正社員の c2 だけ(v4 は守りの前処理と `_call_llm` だけを読み込む)。下の「会話の層」 | `guard`、`acts`、`values`、`entry`、`state`、`turn`、`reply` |
+| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/`。会話の層の読む段と言う段の骨組みは `prompts/convo/` | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md`。ハーネス版は `parttime_chat_harness.md` と `fulltime_chat_harness.md` | - |
 
 `logic.py` は見出しのコメントで次のように分かれています(R14)。
@@ -1568,7 +1568,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 #### 会話の層(作っている途中。正社員の c2)
 
 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))を
-`dip_mcp/convo/` に作っています。10 枚のカード(設計メモ §5)の 2 枚目(task 355)、3 枚目(task 356)、5 枚目(task 358)までで、使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)だけです。
+`dip_mcp/convo/` に作っています。10 枚のカード(設計メモ §5)の 2 枚目(task 355)、3 枚目(task 356)、4 枚目(task 357)、5 枚目(task 358)までで、使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)だけです。
 本番の既定(c1、v4)は変えていません。始めた相談は始めた版のまま進みます(状態の `version`。`career/session.harness_of`)。
 
 | 部品 | 中身 |
@@ -1576,15 +1576,17 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/convo/guard.py`、`crisis.json` | 守りの前処理。危ない言葉の表(v4 の `crisis_v4.json` と同じ言葉と窓口)で照らす `crisis_hit` と、窓口の後の「続ける」(`wants_resume`)。入り口の調子の文に共通の窓口をはさむ `crisis_text`。伏せた印と氏名・要配慮の部分を値から除く `scrub`、返事に出たかを見る `leaks`。v4 も `crisis_hit` を読み込む |
 | `dip_mcp/convo/acts.py` | 発言の働き(act)の型と、読む段の出力の検証(`validate_reading`。値は発言の部分文字列、数は発言に数字で書いてあるもの、知っている欄と入り口だけ)。場面の一覧の読む段の正解も同じ型 |
 | `dip_mcp/convo/values.py` | 値の当て方(`plan`。答え、言い足し、直す、取り消す、迷う、パス)と確かさ(`confidence`)、言い足しのつなぎ方(`merge`) |
-| `dip_mcp/convo/entry.py` | 入り口の定義(`dip_mcp/<入り口>/entry.json`)の読み込みと形の確かめ(欄の説明、質問バンク、移る先、ボタンから推せる欄、決まった文、事実のファイル、問いの群、話題、本人の言葉の候補を足す問い) |
+| `dip_mcp/convo/entry.py` | 入り口の定義(`dip_mcp/<入り口>/entry.json`)の読み込みと形の確かめ(欄の説明、質問バンクと問いの言い方 `variants`、移る先、ボタンから推せる欄、決まった文、言い回しの調子 `tone`、事実のファイル、問いの群、話題、本人の言葉の候補を足す問い) |
 | `dip_mcp/convo/plan.py` | 応じ方の計画(`respond`。設計メモ §4.6 の表)。act と当てた結果から、相づちの種類、逆質問に答えるか、注意の 1 行、次の問い(選び直す、同じ問い、前の問い、今の欄を閉じて次へ)、数え方を決める。「中断」の注意を添えるか(`pause_due`) |
 | `dip_mcp/convo/facts.py`、`facts.json` | 逆質問に答える事実のデータ。aica 全体の事実(`facts.json`)に入り口の事実(`dip_mcp/career/facts.json`)を足す。運営者が確かめる(`checked`) |
 | `dip_mcp/convo/pick.py` | 問いの選び方と候補(task 358): スコアの高い問いを群の順とバンクの順で選ぶ `best`、話題のおまけ `bonus`、本人の言葉を最初のページの頭に置く `put_first` |
-| `dip_mcp/convo/state.py` | 状態の器。直前のやりとり 4 つ(読む段に渡す)、直前の返信 2 つ、候補に使える本人の言葉 5 つ |
+| `dip_mcp/convo/state.py` | 状態の器。直前のやりとり 4 つ(読む段に渡す)、直前の返信 2 つとその相づち(言う段の重複の確かめ)、決まった相づちを回す位置、候補に使える本人の言葉 5 つ |
+| `dip_mcp/convo/reply.py` | 言う段。返事の部品(相づち → 逆質問の答え → 注意 → 区切り → 問い)の計画 `new_plan`、問いの言い方の選び方 `pick`、モデルの返事の確かめ `validate`、決まった組み立て `fallback`、吹き出しへの組み方 `render`、「他の候補」の前置き `more_lead` |
 | `dip_mcp/convo/turn.py` | 呼び直しの部品: 出力を確かめて 1 回だけやり直す `call_llm`(c1 と v4 の `_call_llm` もこれ)、ボタンの照らし合わせ `match_button`、プロンプトの組み立て |
-| `dip_mcp/career/c2.py`、`entry.json`、`facts.json` | 正社員の c2。c1 の予算、まとめ、結果と言う段を使い、守りの前処理、読む段(`read`)、値の当て方、応じ方の計画、問いの選び方と候補を層に替えた版 |
+| `dip_mcp/career/c2.py`、`entry.json`、`facts.json` | 正社員の c2。c1 の予算、まとめ、結果を使い、守りの前処理、読む段(`read`)、値の当て方、応じ方の計画、問いの選び方と候補、言う段(`say`)を層に替えた版。入り口の定義には、正社員の調子(丁寧語)と決まった相づち、聞き直しと「他の候補」と注意の文を置く |
 | `dip_mcp/prompts/convo/read_ja.txt`、`prompts/career/prompt_read_ja.txt` | 読む段のプロンプト。層の骨組みに、正社員の決まりをつなぐ |
-| `dip_mcp/prompts/career/prompt_say_plan_ja.txt` | 言う段の計画の決まり(c2)。c1 の言う段のプロンプトにつなぎ、計画(相づちの種類、逆質問の事実)を渡す |
+| `dip_mcp/prompts/convo/say_ja.txt` | 言う段のプロンプトの骨組み。入り口の名前、調子、応じ方の計画(相づちの種類、逆質問の事実)、問いの言い方を差し込む |
+| `dip_mcp/career/bank.json` の `variants` | 問いの文のほかの言い方(1〜2 通り)。c2 だけが読む(c1 は読まない) |
 
 c2 の 1 ターン(c1 と違うところ):
 
@@ -1594,8 +1596,6 @@ c2 の 1 ターン(c1 と違うところ):
   ハーネスの状態(`convo`)からシステムプロンプトに入れる。覚える発言は、氏名と要配慮の部分を「…」にしたもの
 - 今の問いの欄には、本人の文の全部でなく、その欄の部分を入れる。ほかの欄の値は捨てない(空なら推測。文の欄に値があればつなぐ)。
   直した値は確かめた値(high)で置きかえ、取り消した欄は空にする。今の問いに答えずにほかの欄だけを言ったら、同じ問いを出し直す
-- 返事に伏せた印・氏名・要配慮の部分が出たら、やり直す(だめなら問いの文だけ)。言う段のモデルに渡す今の発言は、その部分を「…」にした文
-  (呼び出しの `model_text`。ランタイムの `_harness_turn` が、あればそれを本人の発言として渡す。c1 と v4 の呼び出しには無い)
 - 問いは、フェーズの順と上限(`ORDER`、`PHASE_CAP`)でなく、まだ出していない全部の問いから選ぶ(`c2.advance`、`pick_question`)。
   スコアは c1 の優先度(HARD 5 〜 LOW 1)に、今の発言で値を言った欄と同じ話題(`entry.json` の `topics`)の問いへのおまけ 0.5 を足したもの。
   同点は群(`groups`。はじめ、条件、職歴、好み)の順、次にバンクの並び。区切りの 1 行は群が変わったときに出す(群の `line`)
@@ -1607,10 +1607,22 @@ c2 の 1 ターン(c1 と違うところ):
   事実にある数は言ってよい)。答えでないターンが 2 回続いた次のターンと、疲れたと言ったターンには「中断」の注意(入り口の定義の `note_pause`)を
   相談で 1 回だけ添える。疲れたと言った後は HARD のほかの問いを聞かない(`harness.HURRY`)。前の問いに戻る頼みは、前の問いを直す問い
   (mode `back`、「そのまま」つき)として出し、答えたら元の問いに戻る。聞き方への不満だけのターンは、今の欄を空のまま次へ。事実と違う頼みは
-  決まった文(`note_falsify`)で断る。注意の文は相づちの後、区切りの前にハーネスが入れる(`c2.bubble`)
+  決まった文(`note_falsify`)で断る(モデルを呼ばない)
+- 言う段は stage `say`(出力の形は c1 と同じ `ReplyOut`)。モデルが書くのは、問いの前の相づち(1 文、40 字まで。種類は計画の `ack`)と、
+  逆質問の答えだけ。問いの文は、質問バンクの言い方(`text` と `variants`)のどれかを一字一句そのまま使う。同じ問いを出し直すときは、
+  前に使った言い方を避ける。注意(聞き直し、飛ばした問い、計画の注意)と区切り(群の 1 行、形 C の「✓職歴」)は、ハーネスが相づちと問いの間に置く
+- モデルの返事は `reply.validate` で確かめる: 問いの言い方、相づちの文の数と字数、ほめ言葉、本人を責める言い方(「読み取れなかった」)、
+  問いが 2 つ、出どころの無い数(事実にある数は言ってよい)、伏せた印・氏名・要配慮の部分、相づちの終わり 4 字が直前の 2 つと同じ(「〜ですね。」が 3 回続く)、
+  直前の返信と同じ文、吹き出しの字数(80 字。逆質問の答えがあるときは 120 字)。だめなら 1 回やり直し、それでもだめなら決まった組み立て
+  (入り口の定義の相づちを、種類ごとに順に回す。直したときは計画の about の文を先に試す)。相づちも答えも要らないターン(読めない答えの聞き直し、
+  聞き返しへの説明、危ない言葉の後の「続ける」、事実と違う頼み)と、渡す事実の無い逆質問(入り口の定義の「お答えできません」の文で答える)は、
+  モデルを呼ばない。言う段のモデルに渡す今の発言と直前のやりとりは、氏名と要配慮の部分を「…」にしたもの(呼び出しの `model_text` と `model_history`。
+  ランタイムの `_harness_turn` が、あれば会話の記録の代わりに渡す。会話の記録には伏せる前の発言が残るため。c1 と v4 の呼び出しには無い)
+- ハーネスの結果には、返事の部品の並び `parts`(`[[種類, 文]]`)が付く(場面の一覧の判定に使う)
 - LINE のスタンプ: c2 の相談の間だけ、ランタイムが「[スタンプ]」の文にして渡す(`server._line_kind` の `sticker`、`career/session.on_layer`)。
   c2 は読む段を呼ばずに雑談として読む。今の会話が 30 分空いていたら答えない(今までどおり)
-- 1 ターンのモデルの呼び出しは c1 と同じ(ボタン 1 回、打った文 2 回、上限 4 回)。危ない言葉は 0 回、スタンプは言う段の 1 回
+- 1 ターンのモデルの呼び出しは c1 と同じ(ボタン 1 回、打った文 2 回、上限 4 回)。危ない言葉、聞き直し、聞き返しへの説明、「他の候補」、
+  事実と違う頼みは言う段を呼ばない。スタンプは言う段の 1 回
 
 #### 条件の問いの選択肢
 

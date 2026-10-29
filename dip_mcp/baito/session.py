@@ -190,9 +190,10 @@ class ReplayLLM:
         return self._next("read", self.render_prompt("read", payload), payload.get("user_text", ""))
 
     def generate(self, view: dict):
-        """view に model_text(正社員の c2 が伏せた本人の発言)があれば、呼び出しに入れる。ランタイムは、それを本人の発言としてモデルに渡す。"""
+        """view に model_text(正社員の c2 が伏せた本人の発言)と model_history(伏せた直前のやりとり)があれば、呼び出しに入れる。
+        ランタイムは、それを本人の発言と直前のやりとりとしてモデルに渡す。"""
         stage = self.prompt_stage(view)
-        extra = {"model_text": view["model_text"]} if "model_text" in view else None
+        extra = {k: view[k] for k in ("model_text", "model_history") if k in view} or None
         return self._next(stage, self.render_prompt(stage, view), view.get("user_text", ""), extra)
 
 

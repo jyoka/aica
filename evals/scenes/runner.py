@@ -41,7 +41,7 @@ STICKER = "[スタンプ]"  # ランタイムがスタンプを文にした形(�
 TALK_MOCK_TEXT = "(トークの AI の返事。モックでは書かない)"
 TALK_MOCK_CHECKS = {"crisis_reply", "llm_calls_max", "stays"}  # talk の場面で、モックで判定する条件
 CAREER_SAY = re.compile(r"次に聞くこと\(JSON\): (\{.*\})")
-CAREER_PLAN = re.compile(r"計画\(JSON\): (\{.*\})")  # c2 の応じ方の計画(dip_mcp/prompts/career/prompt_say_plan_ja.txt)
+CAREER_PLAN = re.compile(r"計画\(JSON\): (\{.*\})")  # c2 の応じ方の計画(dip_mcp/prompts/convo/say_ja.txt)
 BAITO_SAY = re.compile(r"次に聞くこと（JSON）: (\{.*\})")
 BAITO_RESULT = re.compile(r"結果材料（JSON）: (\{.*\})")
 HOOK_FROM_BUTTON = 15  # 押したボタンのラベルを相づちに使う字数の上限(HOOK_MAX と同じ)
@@ -160,10 +160,22 @@ def _career_snap(h, active: bool) -> dict:
     q = H.qmap(h, H.BANK).get(cur.get("qid"))
     return {"active": active, "version": h.version, "phase": h.phase, "qid": cur.get("qid"), "mode": cur.get("mode"),
             "targets": list(q["targets"]) if q else [], "question": q["text"] if q else None,
-            "first_choices": list(q["pages"][0]) if q else [],
+            "phrasings": _phrasings(h, q), "first_choices": list(q["pages"][0]) if q else [],
             "slots": {s: {k: e.get(k) for k in ("text", "value", "number", "range", "unit", "status", "confidence", "from")}
                       for s, e in h.slots.items()},
             "pending": {s: e.get("text") for s, e in h.pending.items()}, "notes": {}}
+
+
+def _phrasings(h, q) -> list[str]:
+    """問いの言い方(会話の層の版は、質問バンクの variants も。同じ問いの出し直しで回す。dip_mcp.career.c2.phrasings)。"""
+    if q is None:
+        return []
+    if h.version != "c2":
+        return [q["text"]]
+    from dip_mcp.career import c2
+    from dip_mcp.career import harness as H
+
+    return c2.phrasings(q, H.BANK)
 
 
 def _baito_snap(h, active: bool) -> dict:
@@ -291,7 +303,7 @@ class _HarnessDriver:
                     "closed": r.get("ended") or "exit", "note": "相談を閉じてトークの AI に渡した"}
         return {"text": r["reply"], "bubbles": list(r.get("bubbles") or [r["reply"]]), "choices": list(r["choices"]),
                 "counted": bool(r["counted"]), "llm_calls": int(r.get("llm_calls", len(outputs))), "how": "harness",
-                "closed": self.closed(r)}
+                "closed": self.closed(r)} | ({"parts": r["parts"]} if r.get("parts") else {})
 
     def closed(self, r: dict) -> str | None:
         return None
@@ -387,10 +399,12 @@ class CareerC1(_HarnessDriver):
 
 class CareerC2(CareerC1):
     """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
-    台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとり)に入れる。言う段は c1 と同じ。
+    台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとりと返信、その相づち)に入れる。
+    言う段の台本は c1 と同じ「相づち + 問いの文」(問いの文は、ハーネスが勧める言い方)。返信には部品の並び(parts)が付く。
     スタンプは、新しい版の相談の間はランタイムが「[スタンプ]」の文にして渡す(line_runtime/server.py の _line_kind。task 356)。"""
     version = "c2"
     stickers = True
+    _texts: Texts | None = None
 
     def harness(self):
         from dip_mcp.career import c2
@@ -401,7 +415,10 @@ class CareerC2(CareerC1):
         from dip_mcp.convo import state as CS
 
         for t in scene.get("history") or []:
-            (CS.heard if t["who"] == "user" else CS.replied)(h.convo, t["text"])
+            if t["who"] == "user":
+                CS.heard(h.convo, t["text"])
+            else:
+                CS.replied(h.convo, t["text"], K.ack_of(K.split_parts(t["text"], self.texts())))
 
     def read(self, reading, targets):
         return {"acts": list(reading.get("acts", [])), "hook": reading.get("hook"), "mentions": list(reading.get("mentions") or []),
@@ -416,11 +433,18 @@ class CareerC2(CareerC1):
 
     def texts(self) -> Texts:
         from dip_mcp.career import c2
+        from dip_mcp.career import harness as H
 
+        if CareerC2._texts is not None:
+            return CareerC2._texts
         t = super().texts()
+        variants = [x.replace("{which}", w) for q in H.BANK for x in q.get("variants") or [] for w in ("直近の", "その前の")]
+        t.questions = sorted({*t.questions, *variants})
+        t.notes = [*t.notes, *(c2.ENTRY.texts[k] for k in ("retry", "retry_number", "no_answer"))]
         t.crisis = c2.CRISIS_TEXT.split("\n")
-        t.fixed = [*t.fixed, c2.ENTRY.texts["crisis_resume"]]
-        t.notes = [c2.ENTRY.texts[f"note_{n}"] for n in c2.P.NOTES]  # 注意の 1 行(応じ方の計画。task 356)
+        t.notes = [*t.notes, *(c2.ENTRY.texts[f"note_{n}"] for n in c2.P.NOTES)]  # 注意の 1 行(応じ方の計画。task 356)
+        t.fixed = [*t.fixed, *(c2.ENTRY.texts[k] for k in ("crisis_resume", "retry_review", "more_done"))]
+        CareerC2._texts = t
         return t
 
 

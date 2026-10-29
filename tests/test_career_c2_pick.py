@@ -23,7 +23,6 @@ from tests.test_convo import CAREER_ENTRY
 
 CARD5_SCENES = ("multi-infer-raise-target", "multi-career-in-why-now", "t326-salary-reask", "t326-more-lead", "flow-more-typed",
                 "short-ok-ambiguous")
-LATER_CARD = {("t326-salary-reask", "ack_varies")}  # 相づちの言い回しを散らすのは 4 枚目のカード(§4.8)
 RELATIVE = ("今と同じ", "今より")  # 数の問いの候補に置かない、本人の今の値と比べる言い方(本人の今の値は聞いていない)
 
 
@@ -72,7 +71,7 @@ def test_c2_passes_the_card_5_scenes():
     rows = {r["scene"]: r for r in R.run(["career"], {"career": "c2"}, list(CARD5_SCENES))}
     assert set(rows) == set(CARD5_SCENES)
     bad = {(sid, x["check"]) for sid, r in rows.items() for x in r["results"] if not x.get("judge") and x["status"] != K.PASS}
-    assert bad == LATER_CARD
+    assert not bad, bad  # t326-salary-reask の ack_varies(相づちの言い回し)は 4 枚目(task 357)を取り込んで合格する
     # c1 は二択の「どっちでも」で同じ欄の二択を続ける(§2.6 の 8)。c2 は「こだわりなし」にして続けない
     c1 = R.run(["career"], {"career": "c1"}, ["short-ok-ambiguous"])[0]
     assert {x["check"] for x in c1["results"] if x["status"] == K.FAIL} == {"slot", "not_asks"}
