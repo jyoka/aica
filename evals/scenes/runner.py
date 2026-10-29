@@ -183,10 +183,12 @@ def _phrasings(h, q) -> list[str]:
 
 def _baito_snap(h, active: bool) -> dict:
     from dip_mcp.baito import harness as B
+    from dip_mcp.baito import v5 as V5
 
     cur = h.current or {}
     qid = cur.get("qid")
     q = B.qmap(B.BANK).get("q_segment" if qid == "confirm_segment" else qid)
+    question = (q["alt_text"] if cur.get("mode") == "reask" else q["text"]) if q else None
     slots = {s: {"text": B.value_ja(s, e.get("value")), "value": e.get("value"), "status": "filled" if B.is_filled(e) else None,
                  "confidence": e.get("confidence"), "from": e.get("from")} for s, e in h.slots.items()}
     if h.near.get("area"):
@@ -194,24 +196,22 @@ def _baito_snap(h, active: bool) -> dict:
                               "status": "filled", "confidence": "high", "from": "near"}
     return {"active": active, "version": h.version, "phase": h.phase, "qid": qid, "mode": cur.get("mode"),
             "targets": ["segment"] if qid == "confirm_segment" else (list(q["targets"]) if q else []),
-            "question": (q["alt_text"] if cur.get("mode") == "reask" else q["text"]) if q else None,
+            "question": question, "phrasings": V5.phrasings(q) if q and h.version == V5.VERSION else [question] if q else [],
             "first_choices": B.visible_choices(q, h) if q else [],
             "slots": slots, "pending": {s: e.get("value") for s, e in h.pending.items()}, "notes": dict(h.notes)}
 
 
 def snaps(st, uid: str, last: dict) -> dict:
     """dip の状態にある相談の写し({entry: snap})。閉じた相談は、閉じたときの状態(last)を active=False で残す。"""
-    from dip_mcp.baito import harness as B
     from dip_mcp.baito import session as baito_session
-    from dip_mcp.career import harness as H
     from dip_mcp.career import session as career_session
 
     u = st.user(uid)
     out = {}
-    for entry, mod, harness, snap in (("career", career_session, H, _career_snap), ("baito", baito_session, B, _baito_snap)):
+    for entry, mod, snap in (("career", career_session, _career_snap), ("baito", baito_session, _baito_snap)):
         d = (u.get(mod.KEY) or {}).get("harness")
         if d:
-            out[entry] = snap(harness.State.from_dict(d), True)
+            out[entry] = snap(mod.HARNESSES[d["version"]].State.from_dict(d), True)
         elif entry in last:
             out[entry] = snap(last[entry], False)
     return out
@@ -283,6 +283,10 @@ class _HarnessDriver:
     def env(self, scene: dict) -> dict:
         raise NotImplementedError
 
+    def flags(self) -> dict:
+        """この版の機能フラグ(ほかの入り口の場面を回すとき、移る先の版として使う)。"""
+        raise NotImplementedError
+
     @property
     def session(self):
         raise NotImplementedError
@@ -344,10 +348,14 @@ class CareerC1(_HarnessDriver):
         return session
 
     def env(self, scene):
-        from dip_mcp import logic
         from dip_mcp.career import harness as H
 
-        return {logic.CAREER_HARNESS_FLAG: self.version, H.FORM_ENV: scene.get("form", "C")}
+        return self.flags() | {H.FORM_ENV: scene.get("form", "C")}
+
+    def flags(self):
+        from dip_mcp import logic
+
+        return {logic.CAREER_HARNESS_FLAG: self.version}
 
     def harness(self):
         from dip_mcp.career import harness as H
@@ -484,16 +492,20 @@ class BaitoV4(_HarnessDriver):
         return session
 
     def env(self, scene):
+        return self.flags()
+
+    def flags(self):
         from dip_mcp import logic
 
-        return {logic.BAITO_HARNESS_FLAG: "v4"}
+        return {logic.BAITO_HARNESS_FLAG: self.version}
 
     def setup(self, st, uid, scene):
         from dip_mcp.baito import harness as B
 
         s = self.session
         s.start(st, uid, quick=False)
-        h = B.State.from_dict(st.user(uid)[s.KEY]["harness"])
+        d = st.user(uid)[s.KEY]["harness"]
+        h = s.HARNESSES[d["version"]].State.from_dict(d)
         h.segment = scene["segment"]
         known = dict(scene.get("known") or {})
         if "near.area" in known:
@@ -516,7 +528,11 @@ class BaitoV4(_HarnessDriver):
             q = B.qmap(B.BANK)[asking]
             h.phase = q["phase"]
             B._present(h, q, "ask")
+        self.seed(h, scene)
         s._save(st, uid, h)
+
+    def seed(self, h, scene) -> None:
+        """版の覚えに、場面の前の会話を入れる(v4 には無い)。"""
 
     def read(self, reading, targets):
         return to_v4(reading, targets)
@@ -552,6 +568,53 @@ class BaitoV4(_HarnessDriver):
                      choices=sorted({c for q in B.BANK for c in q["choices"]}), crisis=list(B.CRISIS["reply"]))
 
 
+class BaitoV5(BaitoV4):
+    """アルバイト・パートの相談の会話の層の版(BAITO_HARNESS_VERSION=v5。dip_mcp/baito/v5.py)。読む段は act の並びをそのまま読むので、
+    台本の LLM は場面の reading をそのまま返す。前の会話(history)は層の覚えに入れる。問いのターンの言う段は層のプロンプト
+    (「相づち + 問いの文」。正社員の c2 と同じ台本)、まとめと結果は v4 と同じ台本。スタンプは「[スタンプ]」の文にして渡す。
+    移る先の正社員は、場面を回すときに版を渡さなければ層の版(c2)にする(入り口を移す場面を、同じターンの移り方で判定するため)。"""
+    version = "v5"
+    stickers = True
+    _texts: Texts | None = None
+
+    def env(self, scene):
+        from dip_mcp import logic
+
+        return {logic.CAREER_HARNESS_FLAG: "c2"} | self.flags()
+
+    def seed(self, h, scene):
+        CareerC2.seed(self, h, scene)
+
+    def read(self, reading, targets):
+        return CareerC2.read(self, reading, targets)
+
+    def write(self, call, ack):
+        """層の言う段(計画のあるプロンプト)は c2 と同じ台本。まとめ、結果、入口のカードのリアクションは v4 の台本。"""
+        m = CAREER_PLAN.search(call["system"])
+        if call["stage"] != "say" or not m:
+            return super().write(call, ack)
+        if json.loads(m.group(1)).get("ack") is None:
+            ack = ""
+        q = json.loads(CAREER_SAY.search(call["system"]).group(1))
+        return {"reply": ack + q["text"]}
+
+    def closed(self, r):
+        return r.get("closed") or super().closed(r)
+
+    def texts(self) -> Texts:
+        from dip_mcp.baito import v5 as V5
+
+        if BaitoV5._texts is not None:
+            return BaitoV5._texts
+        t = super().texts()
+        t.questions = sorted({*t.questions, *(x for xs in V5.VARIANTS.values() for x in xs)})
+        t.notes = [*t.notes, *(V5.ENTRY.texts[k] for k in ("retry", "no_answer", *(f"note_{n}" for n in V5.P.NOTES))),
+                   *(s["note"] for s in V5.ENTRY.switch)]
+        t.fixed = [*t.fixed, *(V5.ENTRY.texts[k] for k in ("later", "exit", "retry_review"))]
+        BaitoV5._texts = t
+        return t
+
+
 class TalkT0:
     """トークの AI の今の動き(TALK_LAYER_VERSION が無い)。本物のランタイムを、モックのトークの AI で回す。
     ハーネスの機能フラグは本番の既定(v4、c1)にする。"""
@@ -569,7 +632,7 @@ class TalkT0:
         return Texts(crisis=list(B.CRISIS["reply"]))
 
 
-VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4}, "talk": {"t0": TalkT0}}
+VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4, "v5": BaitoV5}, "talk": {"t0": TalkT0}}
 CURRENT = {"career": "c1", "baito": "v4", "talk": "t0"}  # 今の本番の版(既定。BAITO_HARNESS_VERSION=v4 など)
 
 
@@ -579,7 +642,7 @@ def layer_driver(entry: str):
 
     if not logic.layer_on(entry):
         return None
-    version = logic.career_harness_version() if entry == "career" else os.environ.get(logic.BAITO_HARNESS_FLAG, "").strip()
+    version = logic.career_harness_version() if entry == "career" else logic.baito_harness_version()
     return VERSIONS[entry][version]() if version in VERSIONS[entry] else None
 
 
@@ -595,13 +658,13 @@ def _uid(scene: dict) -> str:
     return f"scene-{scene['id']}"
 
 
-def run_harness_scene(scene: dict, d, state_path: Path) -> dict:
-    """career と baito の 1 場面を回して、記録(checks の形)を返す。"""
+def run_harness_scene(scene: dict, d, state_path: Path, others: dict | None = None) -> dict:
+    """career と baito の 1 場面を回して、記録(checks の形)を返す。others は、ほかの入り口の版の機能フラグ(入り口を移す先の版)。"""
     from dip_mcp.data import State
 
     st, uid = State(state_path), _uid(scene)
     replies, error = [], None
-    with environ(d.env(scene) | {"DIP_STATE_PATH": str(state_path)}), capture_finish() as last:
+    with environ(d.env(scene) | (others or {}) | {"DIP_STATE_PATH": str(state_path)}), capture_finish() as last:
         try:
             _seed_profile(st, uid, scene)
             d.setup(st, uid, scene)
@@ -701,7 +764,9 @@ def run(entries=None, versions: dict | None = None, ids=None, judge=None) -> lis
             if not mine:
                 continue
             d = driver(entry, (versions or {}).get(entry))
-            records = run_talk_scenes(mine, d, path) if entry == "talk" else [run_harness_scene(s, d, path) for s in mine]
+            others = {k: v for e, ver in (versions or {}).items() if e not in (entry, "talk")
+                      for k, v in driver(e, ver).flags().items()}  # 移る先の版(渡したときだけ)
+            records = run_talk_scenes(mine, d, path) if entry == "talk" else [run_harness_scene(s, d, path, others) for s in mine]
             out += [score(s, r, judge) for s, r in zip(mine, records, strict=True)]
     return out
 

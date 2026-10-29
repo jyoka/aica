@@ -1,0 +1,344 @@
+{
+ "entry": "baito",
+ "title": "アルバイト・パートの相談",
+ "note": "アルバイト・パートの相談の入り口の定義(設計メモ docs/design/conversation-layer.md §4.1、§4.13)。読むのは v5(BAITO_HARNESS_VERSION=v5)だけ。質問バンク bank_v4.json は PRD の原文なので書き換えず、問いの言い方はここの variants に置く(言い換えのある問いは PRD の alt_text)。形は dip_mcp/convo/entry.py",
+ "bank": "bank_v4.json",
+ "facts": "facts.json",
+ "slots": {
+  "age_band": "本人の年齢(本人が自分の年齢を言ったときだけ)",
+  "days_per_week": "週に何日働けるか",
+  "time_slots": "働ける時間帯(いくつでも)",
+  "commute": "通勤でどこまで行けるか",
+  "hourly_wage_min": "時給はいくら以上がいいか",
+  "shift_length": "1回に何時間働きたいか",
+  "customer_facing": "接客が好きか、避けたいか",
+  "physical": "体力仕事や立ち仕事がどこまでいけるか",
+  "purpose": "バイト代の使い道、バイトの目的(いくつでも)",
+  "pace": "忙しい職場と落ち着いた職場のどちらがいいか",
+  "teaching_style": "仕事の教わり方",
+  "social": "職場の付き合いの濃さ",
+  "environment_noise": "にぎやかな場所と静かな場所のどちらがいいか",
+  "wage_priority": "時給、近さ、ラクさのどれを優先するか",
+  "recognition": "だれにほめられるとうれしいか",
+  "coworker_age": "一緒に働く人の年代や立場",
+  "school_permission": "学校のバイトのルール",
+  "exam_flex": "テスト期間のシフト",
+  "long_vacation": "長期休みの働き方",
+  "start_time_pref": "学校のあと、いつから働くか",
+  "available_hours": "家のことの合間に働ける時間",
+  "sudden_leave": "急なお休みがどのくらいありそうか",
+  "fuyou": "扶養の範囲内で働きたいか",
+  "remote": "在宅で働きたいか",
+  "shift_flex": "シフトを固定にするか、自分で選ぶか",
+  "leave_support": "休むときに安心できる形",
+  "side_job_allowed": "今の会社の副業のルール",
+  "weekday_or_weekend": "平日と週末のどちらが入りやすいか",
+  "energy_left": "本業のあとに残っている体力",
+  "avoid_coworkers": "バイト先で会社の人に会うのがいやか",
+  "work_style": "毎週決まって働くか、空いた日だけ働くか",
+  "weekend_length": "週末に働くなら 1 日か半日か",
+  "near.area": "働きたいエリア(都県の名前が発言にあるときだけ)"
+ },
+ "switch": [
+  {
+   "to": "career",
+   "label": "正社員で探す",
+   "track": "正社員",
+   "note": "正社員でも探せるよ。移るときは下のボタンを押してね。"
+  }
+ ],
+ "carry": {
+  "career": {
+   "area": {
+    "slot": "near.area",
+    "how": "same"
+   },
+   "work_hours": {
+    "slot": "days_per_week",
+    "how": "near"
+   },
+   "work_style": {
+    "slot": "remote",
+    "how": "near"
+   }
+  }
+ },
+ "groups": [
+  {
+   "name": "はじめ",
+   "phases": [
+    "icebreak"
+   ],
+   "line": null
+  },
+  {
+   "name": "条件",
+   "phases": [
+    "hard_filter"
+   ],
+   "line": null
+  },
+  {
+   "name": "二択",
+   "phases": [
+    "scenario_game"
+   ],
+   "line": null
+  },
+  {
+   "name": "逆選択",
+   "phases": [
+    "reverse_pick"
+   ],
+   "line": null
+  },
+  {
+   "name": "好み",
+   "phases": [
+    "fill_gaps"
+   ],
+   "line": null
+  },
+  {
+   "name": "確認",
+   "phases": [
+    "confirm"
+   ],
+   "line": null
+  }
+ ],
+ "topics": {
+  "時間": [
+   "days_per_week",
+   "time_slots",
+   "available_hours",
+   "weekday_or_weekend",
+   "shift_length",
+   "weekend_length",
+   "start_time_pref",
+   "exam_flex",
+   "long_vacation",
+   "shift_flex"
+  ],
+  "場所": [
+   "commute",
+   "remote"
+  ],
+  "人": [
+   "customer_facing",
+   "social",
+   "coworker_age",
+   "avoid_coworkers",
+   "recognition"
+  ],
+  "体": [
+   "physical",
+   "pace",
+   "environment_noise",
+   "energy_left"
+  ],
+  "お金": [
+   "hourly_wage_min",
+   "wage_priority",
+   "purpose",
+   "fuyou"
+  ]
+ },
+ "texts": {
+  "retry": "近いのを押すだけでも大丈夫だよ。",
+  "retry_review": "合ってたら「これでOK」を押してね。ちがうところは、文で送ってね。",
+  "no_answer": "それは、ここでは答えられないんだ。",
+  "switched_in": "アルバイト・パートで探すね",
+  "later": "OK、ここまでの分は残しておくね。また相談するときは、続きから聞くね！",
+  "exit": "OK、ここでやめておくね。答えてくれた分は残しておくよ。",
+  "note_pause": "「中断」と送れば、ここまでの分は残るよ。",
+  "note_falsify": "事実とちがうことは書けないんだ。そのままの言葉で大丈夫だよ。"
+ },
+ "tone": {
+  "style": "くだけた話し言葉(「〜だよ」「〜してね」「〜なんだね」)で、短く明るく。絵文字は使わない。上から目線、説教、決めつけにしない",
+  "examples": [
+   "推しのライブ遠征、楽しみだね！",
+   "週3なら続けやすそうだね。",
+   "暑いと外に出るのもしんどいよね。"
+  ],
+  "acks": {
+   "short": [
+    "OK、ありがとう！",
+    "了解だよ。",
+    "なるほど、わかった！"
+   ],
+   "done": [
+    "直しておいたよ。",
+    "OK、そっちに直すね。",
+    "変えておいたよ！"
+   ],
+   "light": [
+    "話してくれてありがとう！",
+    "そうなんだね。",
+    "なるほどね。"
+   ],
+   "empathy": [
+    "話してくれてありがとう。",
+    "それはしんどかったね。",
+    "気持ち、ちゃんと受け取ったよ。"
+   ],
+   "apology": [
+    "ごめんね、ちゃんと受け取ったよ。",
+    "何回も聞いちゃってごめんね。",
+    "ごめん、くり返しちゃったね。"
+   ]
+  }
+ },
+ "variants": {
+  "q_money": [
+   "バイト代は、何に使う予定？"
+  ],
+  "q_segment": [
+   "今の生活に近いのはどれ？"
+  ],
+  "hf_age": [
+   "ごめん、これだけ確認させて！年齢はどれに近い？"
+  ],
+  "hf_days": [
+   "ざっくりでOK！週に何日くらいがいい？"
+  ],
+  "hf_time": [
+   "一番働きやすい時間帯だけでいいよ！どれ？"
+  ],
+  "hf_commute": [
+   "通勤、いちばん遠くてどこまでならアリ？"
+  ],
+  "hf_school": [
+   "学校のバイトのルール、どれが近い？"
+  ],
+  "hf_hours": [
+   "いちばん多いパターンだとどれ？"
+  ],
+  "hf_leave": [
+   "急に休む日、月にどれくらいありそう？"
+  ],
+  "hf_sideok": [
+   "副業のルール、どれがいちばん近い？"
+  ],
+  "hf_weekday": [
+   "平日と週末、どっちが入りやすい？"
+  ],
+  "sc_line": [
+   "お店に行列ができたら、どう思う？"
+  ],
+  "sc_shift": [
+   "1回のシフト、理想はどっち？"
+  ],
+  "sc_teach": [
+   "教わるなら、どっちのやり方がいい？"
+  ],
+  "sc_after": [
+   "バイトのあと、うれしいのはどっち？"
+  ],
+  "sc_noise": [
+   "どっちの場所で働きたい？"
+  ],
+  "sc_wage_commute": [
+   "時給が100円ちがうなら、徒歩5分と電車30分のどっちの店？"
+  ],
+  "sc_praise": [
+   "ほめられるなら、だれからがうれしい？"
+  ],
+  "sc_st_peers": [
+   "一緒に働く仲間、どっちがいい？"
+  ],
+  "sc_st_exam": [
+   "テストの前は、シフトをどうしたい？"
+  ],
+  "sc_st_summer": [
+   "夏休みのバイト、どうする？"
+  ],
+  "sc_st_resume": [
+   "バイトを選ぶなら、どっちを大事にする？"
+  ],
+  "sc_st_after": [
+   "学校が終わったら、いつから働きたい？"
+  ],
+  "sc_st_perk": [
+   "もらえるなら、どっちがうれしい？"
+  ],
+  "sc_hm_fixed": [
+   "シフトの決め方、どっちがラク？"
+  ],
+  "sc_hm_fever": [
+   "家族が急に熱を出したら、どっちが安心？"
+  ],
+  "sc_hm_remote": [
+   "働く場所は、どっちがいい？"
+  ],
+  "sc_hm_peers": [
+   "職場の雰囲気、どっちがいい？"
+  ],
+  "sc_hm_money": [
+   "バイト代は、どう使う？"
+  ],
+  "sc_hm_exp": [
+   "仕事の内容、どっちがいい？"
+  ],
+  "sc_sj_brain": [
+   "副業には、どっちを求める？"
+  ],
+  "sc_sj_weekend": [
+   "週末に働くなら、どのくらい？"
+  ],
+  "sc_sj_coworker": [
+   "バイト先で会社の人に会ったら、どう？"
+  ],
+  "sc_sj_stand": [
+   "選ぶなら、どっち？"
+  ],
+  "sc_sj_goal": [
+   "副業は、何のため？"
+  ],
+  "sc_sj_stable": [
+   "働き方、どっちがいい？"
+  ],
+  "rp_student": [
+   "この3つなら、いちばんやりたくないのはどれ？"
+  ],
+  "rp_homemaker": [
+   "この3つなら、いちばんやりたくないのはどれ？"
+  ],
+  "rp_side_job": [
+   "この3つなら、いちばんやりたくないのはどれ？"
+  ],
+  "rp_general": [
+   "この3つなら、いちばんやりたくないのはどれ？"
+  ],
+  "fg_wage": [
+   "時給は、いくらからならいい？"
+  ],
+  "fg_shift": [
+   "1回に働くのは、何時間くらいがいい？"
+  ],
+  "fg_customer": [
+   "接客の仕事はどう？"
+  ],
+  "fg_physical": [
+   "体を動かす仕事はどう？"
+  ],
+  "fg_purpose": [
+   "バイトのいちばんの目的は？"
+  ],
+  "fg_exam": [
+   "テストの期間、シフトはどうしたい？"
+  ],
+  "fg_fuyou": [
+   "扶養の範囲で働きたい？"
+  ],
+  "fg_remote": [
+   "家でできる仕事も気になる？"
+  ],
+  "fg_energy": [
+   "本業が終わったら、体力はどのくらい残ってる？"
+  ],
+  "q_held_segment": [
+   "{labels}の話の前に、ひとつ確認！今のあなたに近いのは？"
+  ]
+ }
+}

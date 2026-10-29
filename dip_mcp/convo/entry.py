@@ -2,12 +2,14 @@
 
 入り口ごとに違うもの(欄の説明、質問バンク、移る先、決まった文など)は、データ(dip_mcp/<入り口>/entry.json)にする。
 形はここで確かめる(知らない欄、文の無い問い、言い方の足りない問い、ボタンに無い候補の効き目、足りない決まった文、調子)。壊れていれば ValueError で、
-読み込むとき(dip の起動)に止まる。今の版で読むのは、正社員の c2 だけ。
+読み込むとき(dip の起動)に止まる。読むのは、正社員の c2 とアルバイト・パートの v5 だけ。
 
 entry.json の形:
 - entry: 入り口の名前(career / baito)。title: 読む段に渡す入り口の名前(「正社員ヒアリング」)
 - bank: 質問バンクのファイル(entry.json と同じフォルダ。問いの形は入り口のまま。層は targets と text と variants と候補だけを見る)。
   どの問いにも、text のほかの言い方を variants に 1〜2 通り置く(言い方は合わせて 2〜3 通り。§4.8。同じ問いを出し直すときに回す)
+- variants: 質問バンクを書き換えられない入り口(アルバイト・パートの bank_v4.json は PRD の原文)の、問いの言い方 {問いの id: [言い方]}。
+  読み込むときに、質問バンクの問いの写しに足す(ファイルは変えない)。バンクに variants がある問いには置かない
 - slots: {欄: 読む段に渡す説明}。入り口の欄のすべてに置く
 - switch: 移れる入り口 [{"to", "label", "track", "note"}](§4.5)。label は移るボタンの文、track は移った先の雇用区分
   (logic.TRACKS。移った先が層の版なら、層が区分を書く)、note は「考えている」(consider)ときに 1 回だけ添える注意の 1 行
@@ -89,6 +91,18 @@ def check_bank(name: str, bank, slots) -> None:
         check_variants(name, q)
 
 
+def with_variants(name: str, bank: list, variants) -> list:
+    """入り口の定義の variants を、質問バンクの問いの写しに足す(variants が無ければバンクのまま)。"""
+    if variants is None:
+        return bank
+    ids = {q.get("id") for q in bank}
+    stray = sorted(set(variants) - ids) if isinstance(variants, dict) else ["(形が dict でない)"]
+    both = [q["id"] for q in bank if q.get("id") in variants and q.get("variants")] if not stray else []
+    if stray or both:
+        raise ValueError(f"{name}: variants の問い {stray or both}(質問バンクに無いか、バンクに言い方がある)")
+    return [dict(q, variants=variants[q["id"]]) if q.get("id") in variants else q for q in bank]
+
+
 def check_variants(name: str, q: dict) -> None:
     """問いの言い方: text のほかに 1〜2 通り。重ならず、問いは 1 つまで、差し込みは text にあるものだけ。"""
     v = q.get("variants")
@@ -124,6 +138,7 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
     if not name or not d.get("title"):
         raise ValueError(f"{path}: entry と title が要る")
     bank = json.loads((Path(path).parent / d["bank"]).read_text(encoding="utf-8"))
+    bank = with_variants(name, bank, d.get("variants"))
     slots = set(slots)
     check_bank(name, bank, slots)
     described = d.get("slots") or {}

@@ -15,15 +15,25 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=R.__doc__.splitlines()[0])
     ap.add_argument("--entry", choices=list(S.ENTRIES), action="append",
                     help="回す入り口(何回でも。既定は全部)")
-    ap.add_argument("--version", help="入り口の版(--entry を 1 つだけ渡すとき。既定は今の版: "
-                    + "、".join(f"{e} {v}" for e, v in R.CURRENT.items()) + ")")
+    ap.add_argument("--version", action="append",
+                    help="入り口の版。「入り口=版」(何回でも。例: --version career=c2 --version baito=v5。入り口を移す先の版にもなる)か、"
+                    "--entry を 1 つだけ渡すときの版だけ。既定は今の版: " + "、".join(f"{e} {v}" for e, v in R.CURRENT.items()))
     ap.add_argument("--scene", action="append", help="回す場面の id(何回でも)")
     ap.add_argument("-v", "--verbose", action="store_true", help="すべての条件と、返信を出す")
     ap.add_argument("--log", help="結果の JSON(results.json)と点(score.md)を書くディレクトリ")
     args = ap.parse_args(argv)
-    if args.version and (not args.entry or len(args.entry) != 1):
-        ap.error("--version は --entry を 1 つだけ渡すときに使う")
-    versions = {args.entry[0]: args.version} if args.version else None
+    versions = {}
+    for v in args.version or []:
+        if "=" in v:
+            entry, _, ver = v.partition("=")
+            if entry not in S.ENTRIES:
+                ap.error(f"--version の入り口 {entry} は {', '.join(S.ENTRIES)} のどれか")
+            versions[entry] = ver
+        elif not args.entry or len(args.entry) != 1:
+            ap.error("版だけの --version は --entry を 1 つだけ渡すときに使う(ほかは「入り口=版」)")
+        else:
+            versions[args.entry[0]] = v
+    versions = versions or None
     try:
         rows = R.run(args.entry, versions, args.scene)
     except ValueError as e:

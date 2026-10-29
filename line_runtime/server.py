@@ -975,7 +975,7 @@ def line_login() -> line_channel.LineLogin:
 
 def _line_kind(e: dict) -> str | None:
     """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
-    解除 unlink、データを見る view_data、データを消す forget_data)、会話の層の版(正社員の c2)の相談の間のスタンプ
+    解除 unlink、データを見る view_data、データを消す forget_data)、会話の層の版(正社員の c2、アルバイト・パートの v5)の相談の間のスタンプ
     (sticker。「[スタンプ]」の文としてハーネスに渡す。設計メモ docs/design/conversation-layer.md §4.12。今の版の相談とトークでは
     今までどおり答えない)、友だち追加(follow)、アカウント連携の結果(account_link)、
     「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)、使い始める同意のクイックリプライ
@@ -992,7 +992,7 @@ def _line_kind(e: dict) -> str | None:
             return "consent"
         return line_channel.link_command(text) or line_channel.data_command(text) or "message"
     if e.get("type") == "message" and msg.get("type") == "sticker" \
-            and career_session.on_layer(state, line_channel.line_user(src["userId"])):
+            and any(m.on_layer(state, line_channel.line_user(src["userId"])) for m in (career_session, baito_session)):
         return "sticker"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"

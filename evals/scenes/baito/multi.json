@@ -30,14 +30,16 @@
    {"who": "agent", "text": "年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）"}
   ],
   "asking": "hf_age",
-  "says": [{"text": "17の高校生で、週3くらい入りたい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "age_band", "text": "17の高校生", "value": "15_17"}, {"act": "add", "slot": "days_per_week", "text": "週3くらい", "value": "3-4"}, {"act": "add", "slot": "segment", "text": "高校生", "value": "student"}]}}],
+  "says": [{"text": "17の高校生で、週3くらい入りたい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "age_band", "text": "17の高校生", "value": "15_17"}, {"act": "add", "slot": "days_per_week", "text": "週3くらい", "value": "3-4"}, {"act": "add", "slot": "segment", "text": "高校生", "value": "student"}]}},
+           {"text": "15〜17歳", "button": true}],
   "expect": [
+   {"check": "slot", "slot": "days_per_week", "value": "3-4", "at": 0},
    {"check": "slot", "slot": "age_band", "value": "15_17"},
    {"check": "slot", "slot": "days_per_week", "value": "3-4"},
    {"check": "not_asks", "slots": ["age_band", "days_per_week"]},
    {"check": "reply_contains", "any": ["22時"]}
   ],
-  "note": "未成年の決まりの注意(NOTICE の minor_rules)は今のまま出す"
+  "note": "未成年の決まりの注意(NOTICE の minor_rules)は今のまま出す。年齢は「17歳」のようなはっきりした形だけ読み、「17の高校生」はボタンで 1 回確かめてから 15〜17 歳として入れる(task 258 の決まり。jyoka/tasks#354 の Decision)。一緒に言った日数は、確かめている間も捨てない"
  },
  {
   "id": "baito-multi-remote-hours",

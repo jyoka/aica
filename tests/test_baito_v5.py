@@ -1,0 +1,661 @@
+"""アルバイト・パートの相談の v5(会話の層に載せ替えた版。dip_mcp/baito/v5.py、設計メモ docs/design/conversation-layer.md §5 の 7 枚目)。
+
+実 LLM なし。台本の LLM と偽のモデルで、相談のツール(dip_mcp.baito.session)と、本物のランタイムと dip の MCP を回す。
+- 確かめる場面: baito の全部、baito-switch-to-fulltime(移る先は正社員の c2)、switch-career-to-baito(正社員の c2 から v5 へ)
+- PRD の結果の検査(設計メモ §4.13、§6 の 9): 20 ペルソナ(evals.baito_sim --version v5)と、未成年の NG、深夜を出さない、中学生以下に
+  推薦しない、金額を言わない、カードに無い職種を言わない、闇バイトの注意。turn() の形とプロンプトの原文の検査は v4 だけに残す
+- 始めるときに希望の項目と引き継ぎの記録を読む、「やめる」「あとで」、入り口を移す(LINE の Webhook で、同じターンに移る)、スタンプ
+- 引き継ぎの記録が、LINE の「データを消す」と Web の「すべて消す」で一緒に消える(jyoka/tasks#359 の Decision)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from functools import partial
+from typing import ClassVar
+
+import pytest
+from fastapi.testclient import TestClient
+
+from dip_mcp import logic
+from dip_mcp.baito import harness as H
+from dip_mcp.baito import session
+from dip_mcp.baito import v5 as V5
+from dip_mcp.career import session as career_session
+from dip_mcp.convo import switch as SW
+from dip_mcp.data import State, now
+from evals import baito_sim
+from evals.scenes import checks as K
+from evals.scenes import runner as R
+from line_runtime import baito_chat
+from line_runtime.agent import PINNED_USER
+from line_runtime.line_channel import line_user
+from tests.test_career_c2 import FakeReadLLM, act, say_question
+from tests.test_career_chat import USAGE, start_script
+from tests.test_consult import ConsultModel
+from tests.test_handle import call, reply
+from tests.test_line_data import _ask, _say, _tap
+from tests.test_line_webhook import RAW_USER, _event, _post, _server, line_id_key  # noqa: F401  line_id_key はフィクスチャ
+from tests.test_revisit import greet
+from tests.test_talk_page import app, open_talk, stream  # noqa: F401  app はフィクスチャ
+
+UID = "w-00000000000000b5"
+CASUAL = "とりあえずバイトでいい。週3くらいで"
+QM = H.qmap(H.BANK)
+
+
+@pytest.fixture(autouse=True)
+def v5_on(monkeypatch):
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v5")
+    monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, "c2")
+    monkeypatch.delenv("CAREER_HARNESS_FORM", raising=False)
+
+
+def script(readings=None):
+    """台本の LLM(相談のツールの呼び直しの 1 回分): 読む段は readings の act の並び(無ければ空)、言う段は場面の一覧と同じ台本。"""
+    def out(c):
+        if c["stage"] == "read":
+            said = re.search(r"本人の今の発言: (.*)", c["system"]).group(1).strip()
+            return {"acts": (readings or {}).get(said, []), "hook": None, "mentions": [], "ng": []}
+        return R.BaitoV5().write(c, "OK！")
+    return out
+
+
+def run(st, text, scr=None, uid=UID):
+    """発言 1 つを、ランタイムと同じ呼び直しで進める(呼んだ段の名前も返す)。"""
+    scr = scr or script()
+    outputs, stages = [], []
+    r = session.turn(st, uid, text, None)
+    while r.get("status") == "llm":
+        stages.append(r["call"]["stage"])
+        outputs.append({"stage": r["call"]["stage"], "output": scr(r["call"])})
+        r = session.turn(st, uid, text, outputs)
+    return r, stages
+
+
+def harness(st, uid=UID) -> V5.State:
+    h = session._load(st, uid)
+    assert h is not None and h.version == "v5"
+    return h
+
+
+def walk(st, uid=UID, limit=40) -> list[str]:
+    """ボタンの先頭(まとめは「これでOK」)を押し続け、出した問いの id を返す。"""
+    asked = []
+    for _ in range(limit):
+        h = session._load(st, uid)
+        if h is None:
+            break
+        cur = h.current
+        asked.append(cur["qid"])
+        said = H.REVIEW_OK if cur["mode"] == "review" else "18歳以上" if cur["qid"] == "hf_age" else cur["choices"][0]
+        r, _ = run(st, said, uid=uid)
+        if not r.get("active") or r["status"] == "result":
+            break
+    return asked
+
+
+# ----------------------------- 確かめる場面 -----------------------------
+def test_v5_passes_every_baito_scene():
+    rows = R.run(["baito"], {"baito": "v5"})
+    assert rows and all(r["error"] is None for r in rows)
+    code = [(r["scene"], x["check"], x["status"], x["detail"]) for r in rows for x in r["results"] if not x.get("judge")]
+    assert [c for c in code if c[2] != K.PASS] == []  # モックで判定しない条件も無い(閉じてトークの AI に渡すターンが無い)
+    by = {r["scene"]: r for r in rows}
+    # 「やっぱり正社員で探したい」は、読む段を呼ばずに、同じターンで正社員の c2 に移る(言う段 1 回)
+    sw = by["baito-switch-to-fulltime"]["replies"][0]
+    assert (sw["how"], sw["switched"], sw["llm_calls"]) == ("harness", {"from": "baito", "to": "career"}, 1)
+    # 「やめる」は決まった文で閉じる(トークの AI を挟まない)
+    stop = by["baito-flow-stop"]["replies"][0]
+    assert (stop["how"], stop["closed"], stop["llm_calls"]) == ("harness", "exit", 0)
+    # 値を読めない「うん」は「受け取れなかった」と言わず、違う言い方で聞き直す
+    un = by["baito-short-un"]["replies"][0]
+    assert V5.ENTRY.texts["retry"] in un["text"] and QM["hf_days"]["alt_text"] in un["text"]
+
+
+def test_v4_still_reads_the_same_scenes_as_before():
+    """今の版(v4)は変えていない: 層の版だけが受ける場面(直す、「あとで」、移るボタン)は v4 では今までどおり落ちる。"""
+    rows = {r["scene"]: r for r in R.run(["baito"], {"baito": "v4"},
+                                          ["baito-correct-days", "baito-flow-later", "baito-switch-also-fulltime"])}
+    for sid, check in (("baito-correct-days", "slot"), ("baito-flow-later", "closed"),
+                       ("baito-switch-also-fulltime", "offers_entries")):
+        assert any(x["check"] == check and x["status"] == K.FAIL for x in rows[sid]["results"]), sid
+
+
+def test_switch_career_to_baito_is_judged_again_with_v5():
+    """正社員の c2 から「とりあえずバイトでいい。週3くらいで」: v5 は層の版なので、トークの AI を挟まず同じターンで移る。
+    発言の中の週 3 は日数に推測で入り、日数を聞き直さない。勤務地(横浜)は都県の名前が無いので近くで探すのエリアには入れない。"""
+    row = R.run(["career"], {"career": "c2", "baito": "v5"}, ["switch-career-to-baito"])[0]
+    assert all(x["status"] == K.PASS for x in row["results"] if not x.get("judge")), row["results"]
+    rep = row["replies"][0]
+    assert (rep["how"], rep["switched"], rep["llm_calls"]) == ("harness", {"from": "career", "to": "baito"}, 2)  # 読む段 + 言う段
+    snap = rep["states"]["baito"]
+    assert snap["qid"] == H.QUICK_PICK and "near.area" not in snap["slots"]
+    assert (snap["slots"]["days_per_week"]["value"], snap["slots"]["days_per_week"]["confidence"]) == ("3-4", "low")
+
+
+# ----------------------------- PRD の結果の検査(v5 のテスト) -----------------------------
+def test_the_20_personas_pass_the_prd_acceptance_on_v5():
+    """evals.baito_sim --version v5: 20 ペルソナ(モック)が、v4 と同じ基準値と合否指標で合格する(未成年の違反、結果の違反、
+    取りこぼし、ループ、15 ターン超えがどれも 0)。"""
+    r, bad = baito_sim.check(version="v5")
+    assert bad == [], bad
+    by = {m["persona"]: m for m in r["results"]["v4"]}
+    assert len(by) == 20 and all(m["reached"] for m in by.values())
+    assert all(not m["minor_violation"] and not m["result_violation"] for m in by.values())
+    assert by["jhs"]["blocked"] == "under_15" and by["jhs"]["recs"] == []  # 中学生以下には推薦しない
+    assert "深夜シフト" in by["hs16"]["derived_ng"] and by["danger"]["danger_warned"]
+
+
+class LLM:
+    """ハーネスを直に回す偽の LLM: 読む段は readings、言う段は gen(無ければ場面の台本)。呼んだ段を数える。"""
+
+    def __init__(self, readings=None, gen=None):
+        self.readings, self.gen, self.calls = readings or {}, gen, []
+
+    def read(self, payload):
+        self.calls.append("read")
+        return json.dumps({"acts": self.readings.get(payload["user_text"], []), "hook": None, "mentions": [], "ng": []},
+                          ensure_ascii=False)
+
+    def generate(self, view):
+        self.calls.append("generate")
+        if self.gen is not None and "plan" in view:
+            return json.dumps({"reply": self.gen + view["text"]}, ensure_ascii=False)
+        return json.dumps(R.BaitoV5().write({"stage": V5.prompt_stage(view), "system": V5.render_prompt(V5.prompt_stage(view), view)},
+                                            "OK！"), ensure_ascii=False)
+
+
+def at(qid, segment="student", age=None):
+    st = V5.new_state()
+    V5.start(st, H.BANK)
+    st.segment = segment
+    if age:
+        H.apply_update(st, "age_band", age, "high", "t")
+    st.asked.append("hf_age")  # 年齢はもう聞いた(答えていなければ未成年として扱う)
+    q = QM[qid]
+    st.phase = q["phase"]
+    H._present(st, q, "ask")
+    return st
+
+
+def test_minor_rules_hold_on_v5_turns():
+    """年齢が分からない・未成年: 深夜のボタンを出さず、打った深夜は入れない(注意を出す)。ルールの NG が付く。"""
+    st = at("hf_days")
+    r = V5.turn(st, "週1〜2日", H.BANK, LLM())
+    assert st.current["qid"] == "hf_time" and "深夜もOK" not in r["view"]["choices"] and H.minor_mode(st)
+    assert st.derived_ng == H.DERIVED_NG_MINOR
+    said = "夕方と深夜がいい"
+    r = V5.turn(st, said, H.BANK, LLM({said: [act("answer", slot="time_slots", text="夕方と深夜", value=["evening", "late_night"])]}))
+    assert st.slots["time_slots"]["value"] == ["evening"] and H.NOTICE["late_night_removed"] in r["reply"]
+    st = at("hf_age")
+    r = V5.turn(st, "中学生以下", H.BANK, LLM())
+    assert r["done"] and st.blocked == "under_15" and st.result["recommendations"] == []
+    assert H.NOTICE["under_15"] in r["reply"]
+
+
+def test_v5_replies_never_say_amounts_or_jobs_not_on_the_card():
+    """モデルの相づちが金額(扶養の 103 万)やカードに無い職種(居酒屋)を言ったら、2 回とも捨てて決まった組み立てにする。"""
+    for said in ("扶養は103万円までだよ。", "居酒屋もあるよ。"):
+        st = at("hf_days", age="18_plus")
+        llm = LLM(gen=said)
+        r = V5.turn(st, "週3〜4日", H.BANK, llm)
+        assert said not in r["reply"] and llm.calls == ["generate", "generate"], said
+        assert any(e["kind"] == "generate_fallback" for e in st.log)
+        assert r["reply"].endswith(QM[st.current["qid"]]["text"])
+
+
+def test_danger_words_get_the_notice_without_the_model_and_are_not_counted():
+    st = at("fg_wage", age="18_plus")
+    llm = LLM()
+    r = V5.turn(st, "受け取るだけで日給5万のやつってどう？", H.BANK, llm)
+    assert H.NOTICE["danger"] in r["reply"] and QM["fg_wage"]["text"] in r["reply"]
+    assert llm.calls == [] and not r["counted"] and st.turns == 0 and r["view"]["aside"] == "danger"
+
+
+def test_typed_age_keeps_the_task_258_rule():
+    """年齢ははっきりした形だけ読む。「中2」は、読む段が中学生以下と読んでも、ボタンで 1 回確かめる。2 回目も「中学」なら止める。"""
+    st = at("hf_age")
+    llm = LLM({"中2です": [act("answer", slot="age_band", text="中2", value="under_15")]})
+    V5.turn(st, "中2です", H.BANK, llm)
+    assert (st.blocked, st.current["qid"], st.current["mode"]) == (None, "hf_age", "reask") and "age_jhs" in st.flags
+    r = V5.turn(st, "だから中学生だって", H.BANK, llm)
+    assert st.blocked == "under_15" and H.NOTICE["under_15"] in r["reply"]
+    st = at("hf_days")
+    V5.turn(st, "17歳です", H.BANK, LLM({"17歳です": [act("add", slot="age_band", text="17歳", value="15_17")]}))
+    assert st.slots["age_band"]["value"] == "15_17"  # ほかの問いでも、はっきりした形なら読む(v4 と同じ)
+
+
+# ----------------------------- 相談のツール -----------------------------
+def test_new_v5_consultation_reads_saved_preferences_and_the_handoff(tmp_path):
+    """v5 で始めるとき、前の相談で保存した希望(時給、エリア)は確かめた値として入れ、正社員から引き継いだ働ける時間(週 3)は推測で
+    日数に入れる。どちらも聞き直さない。記録は読んだら消す。都県でない勤務地(横浜)はエリアに入れない。"""
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"min_wage": "1200", "area": "東京"})
+    SW.write(st, UID, SW.record("career", "baito", {"area": {"status": "filled", "text": "横浜", "confidence": "high"}},
+                                [{"act": "add", "slot": "work_hours", "text": "週3くらい"}], CASUAL, now(UID)))
+    out = session.start(st, UID, quick=False)
+    assert out["started"] and SW.KEY not in st.user(UID)
+    h = harness(st)
+    assert (h.slots["hourly_wage_min"]["value"], h.slots["hourly_wage_min"]["confidence"]) == (1200, "high")
+    assert (h.slots["days_per_week"]["value"], h.slots["days_per_week"]["confidence"]) == ("3-4", "low")
+    assert h.near["area"] == "東京"
+    asked = walk(st)
+    assert "hf_days" not in asked and "fg_wage" not in asked and "review" in asked
+    assert not session.active(st, UID)
+
+
+def test_stop_and_later_close_with_a_fixed_text_and_keep_what_was_confirmed(tmp_path):
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    for said in ("旅行・遊び", "学生", "18歳以上"):
+        run(st, said)
+    while harness(st).current["qid"] != "hf_days":
+        run(st, harness(st).current["choices"][0])
+    run(st, "週3〜4日")
+    r, stages = run(st, "やめる")
+    assert stages == [] and (r["status"], r["closed"], r["reply"]) == ("result", "exit", V5.ENTRY.texts["exit"])
+    assert r["choices"] == session.RESULT_CHOICES and not session.active(st, UID)
+    prefs = logic.stated_preferences(st.user(UID))
+    assert prefs["days_per_week"]["value"] == "週3〜4日" and "purpose" not in prefs  # 確かめた値(high)だけ。推測の目的は保存しない
+    session.start(st, UID, quick=False)
+    assert harness(st).slots["days_per_week"]["from"] == V5.SAVED
+    assert "hf_days" not in walk(st)  # 保存した日数は聞かない
+    session.start(st, UID, quick=False)
+    said = "また今度にする"
+    r, stages = run(st, said, script({said: [act("later")]}))
+    assert stages == ["read"] and r["closed"] == "later" and "続き" in r["reply"]
+
+
+def _to_hf_time(st):
+    """q_money、q_segment、hf_age、hf_school、hf_days にボタンで答え、hf_time を聞いているところまで進める。"""
+    session.start(st, UID, quick=False)
+    for said in ("旅行・遊び", "学生", "18歳以上"):
+        run(st, said)
+    while harness(st).current["qid"] != "hf_days":
+        run(st, harness(st).current["choices"][0])
+    run(st, "週3〜4日")
+    assert harness(st).current["qid"] == "hf_time"
+
+
+def test_later_resumes_from_the_question_it_left_and_does_not_ask_again(tmp_path):
+    """「あとで」は「続きから聞くね」と返す(設計メモ §4.6)。次に始めると、閉じたときの問い(hf_time)から続け、答えた問いを聞き直さない。
+    答えた日数(high)は閉じたときに保存し、続きの後の結果でも同じ値のまま。"""
+    st = State(tmp_path / "state.json")
+    _to_hf_time(st)
+    asked = list(harness(st).asked)
+    r, stages = run(st, "あとで")
+    assert stages == [] and r["closed"] == "later" and "続き" in r["reply"] and r["saved"] == ["days_per_week"]
+    assert not session.active(st, UID) and session.PAUSED_KEY in st.user(UID)
+    out = session.start(st, UID, quick=False)
+    assert out["started"] and out["question"]["id"] == "hf_time" and session.PAUSED_KEY not in st.user(UID)
+    h = harness(st)
+    assert h.asked == asked and h.slots["school_permission"]["value"] == "ok" and h.segment == "student"
+    rest = walk(st)
+    assert rest[0] == "hf_time" and not set(rest) & {"q_money", "q_segment", "hf_age", "hf_school", "hf_days"}
+    assert logic.stated_preferences(st.user(UID))["days_per_week"]["value"] == "週3〜4日"
+
+
+def test_later_rereads_what_was_changed_on_the_profile_page_while_paused(tmp_path):
+    """「あとで」の後にプロフィール画面で日数を直したら、続きはその値を読み直し、閉じるときに前の値に戻さない。
+    区切りに読めない値(「週4日」)に直したら、前の値を入れたままにしない。"""
+    st = State(tmp_path / "state.json")
+    _to_hf_time(st)
+    run(st, "あとで")
+    logic.save_preferences(st, UID, {"days_per_week": "週5日以上"})
+    session.start(st, UID, quick=False)
+    assert (harness(st).slots["days_per_week"]["value"], harness(st).slots["days_per_week"]["from"]) == ("5+", V5.SAVED)
+    logic.save_preferences(st, UID, {"days_per_week": "週1〜2日"})  # 相談の途中に、もう一度直す
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["days_per_week"]["value"] == "週1〜2日"
+    st2 = State(tmp_path / "state2.json")
+    _to_hf_time(st2)
+    run(st2, "あとで")
+    logic.save_preferences(st2, UID, {"days_per_week": "週4日"})
+    session.start(st2, UID, quick=False)
+    assert "days_per_week" not in harness(st2).slots
+
+
+def test_later_then_switching_in_from_career_continues_the_paused_consultation(tmp_path):
+    """「あとで」の後に正社員の相談から移ってきたら、取っておいた相談の続き(hf_time)に移る。"""
+    st = State(tmp_path / "state.json")
+    _to_hf_time(st)
+    run(st, "あとで")
+    SW.write(st, UID, SW.record("career", "baito", {}, [], CASUAL, now(UID)))
+    scr, outputs = script(), []
+    r = session.switch_in(st, UID, CASUAL)
+    while r.get("status") == "llm":
+        outputs.append({"stage": r["call"]["stage"], "output": scr(r["call"])})
+        r = session.switch_in(st, UID, CASUAL, outputs)
+    assert r["status"] == "reply" and r["question"] == "hf_time" and r["switched"] == {"from": "career"}
+    assert session.PAUSED_KEY not in st.user(UID) and SW.KEY not in st.user(UID)
+    assert harness(st).slots["days_per_week"]["value"] == "3-4"
+
+
+def test_forget_all_also_erases_the_paused_consultation(tmp_path):
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _to_hf_time(st)
+    run(st, "あとで")
+    profile.forget_all(st, UID)
+    assert session.PAUSED_KEY not in st.user(UID)
+    assert session.start(st, UID, quick=False)["question"]["id"] == "q_money"
+
+
+def test_saved_preferences_are_neither_rounded_nor_written_back(tmp_path):
+    """前の相談で保存した希望は、区切りに丸めずに読めるものだけ入れ(「1300」「朝、週末」は入れない)、入れたまま閉じても書き戻さない。
+    相談の途中にプロフィール画面で直した値も、閉じるときに戻さない(正社員の session._finish と同じ)。"""
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"min_wage": "1300", "time_band": "朝、週末", "days_per_week": "週3〜4日",
+                                     "area": "東京"})
+    session.start(st, UID, quick=False)
+    h = harness(st)
+    assert "hourly_wage_min" not in h.slots and "time_slots" not in h.slots
+    assert (h.slots["days_per_week"]["from"], h.near["area"]) == (V5.SAVED, "東京")
+    for said in ("旅行・遊び", "学生", "18歳以上"):
+        run(st, said)
+    logic.save_preferences(st, UID, {"days_per_week": "週1〜2日", "area": "神奈川"})  # 相談の途中にプロフィール画面で直す
+    r, _ = run(st, "やめる")
+    assert r["closed"] == "exit"
+    prefs = {k: v["value"] for k, v in logic.stated_preferences(st.user(UID)).items()}
+    assert prefs == {"min_wage": "1300", "time_band": "朝、週末", "days_per_week": "週1〜2日", "area": "神奈川"}
+
+
+def test_saved_time_band_is_kept_when_untouched_and_rebuilt_only_when_answered(tmp_path):
+    """保存した時間帯(「夕方〜夜」)は入れて聞かず、そのまま閉じても書き直さない。区切りに読めない「夕方〜夜、土日」は入れない。"""
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"time_band": "夕方〜夜"})
+    session.start(st, UID, quick=False)
+    assert harness(st).slots["time_slots"] == {"value": ["evening"], "confidence": "high", "from": V5.SAVED}
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["time_band"]["value"] == "夕方〜夜"
+    logic.save_preferences(st, UID, {"time_band": "夕方〜夜、土日"})
+    session.start(st, UID, quick=False)
+    assert "time_slots" not in harness(st).slots
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["time_band"]["value"] == "夕方〜夜、土日"
+
+
+def test_switch_to_career_writes_the_handoff_without_age_and_moves_directly(tmp_path):
+    """「やっぱり正社員で探したい」(移る強い頼み): 読む段を呼ばずに閉じ、記録(近くで探すのエリアと日数。年齢は入れない)を書く。
+    正社員が層の版(c2)なら direct。正社員の switch_in が記録を読む。"""
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    h = harness(st)
+    h.near["area"] = "東京"
+    for s, v in (("age_band", "18_plus"), ("days_per_week", "5+")):
+        H.apply_update(h, s, v, "high", "t")
+    session._save(st, UID, h)
+    r, stages = run(st, "やっぱり正社員で探したい")
+    assert stages == [] and (r["active"], r["ended"], r["switch_to"], r["direct"]) == (False, "switch", "career", True)
+    rec = st.user(UID)[SW.KEY]
+    assert rec["from"] == "baito" and rec["slots"]["near.area"]["text"] == "東京" and "age_band" not in rec["slots"]
+    assert logic.stated_preferences(st.user(UID))["days_per_week"]["value"] == "週5日以上"
+    outputs = []
+    out = career_session.switch_in(st, UID, "やっぱり正社員で探したい")
+    while out.get("status") == "llm":
+        outputs.append({"stage": "say", "output": say_question(out["call"])})
+        out = career_session.switch_in(st, UID, "やっぱり正社員で探したい", outputs)
+    assert out["active"] and career_session._load(st, UID).slots["area"]["text"] == "東京" and SW.KEY not in st.user(UID)
+
+
+def test_considering_fulltime_offers_the_button_once_and_the_button_moves(tmp_path):
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    said = "正社員も考えてるんだよね"
+    consider = script({said: [act("switch", to="career", strength="consider")]})
+    r, _ = run(st, said, consider)
+    label, note = V5.ENTRY.switch[0]["label"], V5.ENTRY.switch[0]["note"]
+    assert r["choices"][0] == label and note in r["reply"] and r["counted"] is False
+    assert r["choices"][1:] == QM["q_money"]["choices"]
+    r, _ = run(st, said, consider)
+    assert r["choices"][0] == label and note not in r["reply"]  # 注意は 1 回だけ
+    r, stages = run(st, label)
+    assert stages == [] and r["switch_to"] == "career"
+
+
+def test_switch_in_refuses_when_not_on_the_layer_or_already_consulting(tmp_path, monkeypatch):
+    st = State(tmp_path / "state.json")
+    session.start(st, UID)
+    assert session.switch_in(st, UID, CASUAL) == {"active": False}  # 進めている相談がある
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+    st2 = State(tmp_path / "state2.json")
+    assert session.switch_in(st2, UID, CASUAL) == {"active": False}  # 層の版でない(トークの AI に渡す)
+    assert logic.layer_on("baito") is False and logic.baito_harness_on()
+
+
+def test_started_consultations_keep_their_version(tmp_path, monkeypatch):
+    """始めた相談は始めた版のまま進む(状態の version)。v4 の相談は v4 のハーネス、v5 の相談は v5 のハーネス。"""
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+    r, _ = run(st, "旅行・遊び")
+    assert harness(st).version == "v5" and r.get("parts")
+    st2 = State(tmp_path / "state2.json")
+    session.start(st2, UID, quick=False)
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v5")
+    r, _ = run(st2, "旅行・遊び")
+    assert session._load(st2, UID).version == "v4" and "parts" not in r
+
+
+def test_read_prompt_and_schema():
+    st = at("hf_days")
+    p = V5.read_payload(st, H.BANK, "週3くらい")
+    text = V5.render_prompt("read", p)
+    assert "{{" not in text and "3-4=週3〜4日" in text and "value" in text
+    out = baito_chat.SCHEMAS["read"](acts=[act("answer", slot="time_slots", text="夕方", value=["evening"]),
+                                           act("add", slot="hourly_wage_min", text="1200", value=1200)],
+                                     hook=None, mentions=[], ng=[]).model_dump()
+    got, probs = V5.validator("夕方で、1200以上")(out)
+    assert probs == [] and [a["value"] for a in got["acts"]] == [["evening"], 1200]
+    got, probs = V5.validator("週3")({"acts": [act("answer", slot="days_per_week", text="週3", value="週3〜4日")]})
+    assert got["acts"][0]["value"] == "3-4"  # 表示名もキーに直す
+    got, probs = V5.validator("駅近")({"acts": [act("add", slot="commute", text="駅近", value="駅近")]})
+    assert got["acts"] == [] and probs == ["value_not_in_buckets:commute"]
+
+
+# ----------------------------- ランタイム(LINE の Webhook) -----------------------------
+class FakeBaitoLLM:
+    """v5 の言う段(層のプロンプト)は問いの文だけを返す。読む段は READINGS。呼んだ段を残す。"""
+
+    READINGS: ClassVar[dict] = {}
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def __call__(self, stage, system, messages):
+        self.calls.append(stage)
+        if stage == "read":
+            said = re.search(r"本人の今の発言: (.*)", system).group(1).strip()
+            return {"acts": self.READINGS.get(said, []), "hook": None, "mentions": [], "ng": []}, USAGE
+        q = json.loads(re.search(r"次に聞くこと\(JSON\): (\{.*\})", system).group(1))
+        return {"reply": q["text"]}, USAGE
+
+
+def career_llm():
+    llm = FakeReadLLM()
+    llm.READINGS = {**FakeReadLLM.READINGS, CASUAL: [act("switch", to="baito", strength="want"),
+                                                    act("add", slot="work_hours", text="週3くらい")]}
+    return llm
+
+
+def test_line_webhook_c2_casual_switch_to_v5_moves_in_the_same_turn_without_the_talk_ai(tmp_path, monkeypatch):
+    """本番の入口(LINE の Webhook)で、c2 の相談の途中の「とりあえずバイトでいい。週3くらいで」: トークの AI を呼ばずに、同じターンで
+    v5 の相談が入口のカードから始まる。週 3 は日数に推測で入り、区分はアルバイト・パートになり、記録は消える。"""
+    uid = line_user(RAW_USER)
+    model = ConsultModel(script=[*start_script(uid), reply(["(トークの AI は呼ばれない)"])])
+    baito = FakeBaitoLLM()
+    server, fake = _server(tmp_path, monkeypatch, model)
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, career_llm=career_llm(), baito_llm=baito))
+    with TestClient(server.app) as client:
+        _say(client, "正社員で転職したいので相談したい", 1)
+        assert career_session.active(server.state, uid)
+        _say(client, CASUAL, 2)
+        texts = [m.get("text", "") for m in fake.sent()[-1][1]["messages"]]
+    st = State(tmp_path / "state.json")
+    h = harness(st, uid)
+    assert model.script and baito.calls == ["say"]  # トークの AI を呼ばない。v5 の言う段 1 回
+    assert h.current["qid"] == H.QUICK_PICK and any(H.QUICK_TEXT in t for t in texts)
+    assert (h.slots["days_per_week"]["value"], h.slots["days_per_week"]["from"]) == ("3-4", "handoff:career")
+    assert logic.search_track(st.user(uid)) == "アルバイト・パート" and SW.KEY not in st.user(uid)
+    assert not career_session.active(st, uid)
+
+
+def baito_start_script() -> list:
+    return [call("set_search_track", {"line_user_id": PINNED_USER, "track": "アルバイト・パート", "evidence": "バイトを探したい"}, "t0"),
+            call("get_counseling_playbook", {"track": "アルバイト・パート", "channel": "chat"}, "pb"),
+            call("start_baito_consultation", {"line_user_id": PINNED_USER}, "st"),
+            reply(["一緒に探そう！"])]
+
+
+def sticker(n: int) -> dict:
+    e = _event("message", event_id=f"01S{n}", token=f"reply-token-s{n}")
+    e["message"] = {"type": "sticker", "id": "1", "packageId": "446", "stickerId": "1988"}
+    return e
+
+
+def test_line_sticker_during_a_v5_consultation_is_passed_to_the_harness(tmp_path, monkeypatch):
+    """v5 の相談の間のスタンプは「[スタンプ]」の文としてハーネスに渡る(モデルを呼ばない)。相談の外のスタンプには今までどおり答えない。"""
+    uid = line_user(RAW_USER)
+    model = ConsultModel(script=baito_start_script())
+    baito = FakeBaitoLLM()
+    server, fake = _server(tmp_path, monkeypatch, model)
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, baito_llm=baito))
+    with TestClient(server.app) as client:
+        _post(client, [sticker(0)])
+        assert fake.sent() == []  # 相談の外のスタンプ: 答えない
+        _say(client, "バイトを探したい", 1)
+        assert session.on_layer(server.state, uid)
+        n = len(fake.sent())
+        _post(client, [sticker(1)])
+        assert len(fake.sent()) == n + 1
+        texts = [m.get("text", "") for m in fake.sent()[-1][1]["messages"]]
+    assert baito.calls == [] and any(H.QUICK_TAP_TEXT in t for t in texts)
+
+
+# ----------------------------- 引き継ぎの記録を消す(jyoka/tasks#359 の Decision) -----------------------------
+@pytest.fixture
+def v4_destination(monkeypatch):
+    """移る先のアルバイト・パートを今の版(v4)にする: 正社員の c2 が書いた記録は、トークの AI が受けるので読まれずに残る。"""
+    monkeypatch.setenv(logic.BAITO_HARNESS_FLAG, "v4")
+
+
+def test_line_forget_data_also_erases_the_handoff(tmp_path, monkeypatch, v4_destination):
+    """LINE で c2 の相談から移ると言い、記録が残っている間に「データを消す」→「すべて消す」: 記録も消える。"""
+    uid = line_user(RAW_USER)
+    model = ConsultModel(script=[*start_script(uid), reply(["アルバイト・パートで探しましょう"])])
+    server, fake = _server(tmp_path, monkeypatch, model)
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, career_llm=career_llm()))
+    with TestClient(server.app) as client:
+        _say(client, "正社員で転職したいので相談したい", 1)
+        _say(client, CASUAL, 2)
+        rec = server.state.user(uid).get(SW.KEY)
+        assert rec and rec["said"] == CASUAL and rec["acts"][0]["text"] == "週3くらい"
+        data = _ask(client, fake, 3)
+        assert SW.KEY in server.state.user(uid)  # 確かめるまでは消さない
+        _tap(client, data, 4)
+        assert SW.KEY not in server.state.user(uid)
+    assert SW.KEY not in State(tmp_path / "state.json").user(uid)
+
+
+def test_web_forget_all_also_erases_the_handoff(app, monkeypatch, v4_destination):  # noqa: F811
+    """Web のトークで同じく移ると言い、プロフィール画面の「すべて消す」: 記録も消える。"""
+    from line_runtime import runtime
+
+    model = ConsultModel(script=[greet, *start_script(PINNED_USER), reply(["アルバイト・パートで探しましょう"])])
+    monkeypatch.setattr(app, "LineRuntime", lambda: runtime.LineRuntime(model=model, in_memory=True, career_llm=career_llm()))
+    with TestClient(app.app) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        stream(client, uid, "message", th, "正社員で転職したいので相談したい")
+        assert career_session.active(app.state, uid)
+        stream(client, uid, "message", th, CASUAL)
+        assert app.state.user(uid).get(SW.KEY, {}).get("said") == CASUAL
+        assert client.post("/api/profile/forget").status_code == 200
+        assert SW.KEY not in app.state.user(uid)
+
+
+def test_runtime_direct_switch_from_v5_to_c2_reads_the_written_handoff(tmp_path, monkeypatch):
+    """ランタイム(本物、dip の MCP も本物)で、v5 の相談の途中の「やっぱり正社員で探したい」: トークの AI も読む段も呼ばずに、同じターンで
+    正社員の c2 が始まる(言う段 1 回)。v5 が書いた記録の勤務地(近くで探すのエリア)は聞き直さない。"""
+    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    h = harness(st)
+    h.near["area"] = "東京"
+    session._save(st, UID, h)
+    logic.set_search_track(st, UID, "アルバイト・パート", evidence="バイトを探したい")
+    model = ConsultModel(script=[reply(["(トークの AI は呼ばれない)"])])
+    llm = FakeReadLLM()
+    from line_runtime.runtime import LineRuntime
+
+    async def go():
+        async with LineRuntime(model=model, in_memory=True, career_llm=llm, baito_llm=FakeBaitoLLM()) as rt:
+            return await rt.handle(UID, "message", "やっぱり正社員で探したい")
+
+    out = asyncio.run(go())
+    st = State(tmp_path / "state.json")
+    c = career_session._load(st, UID)
+    assert c is not None and c.current["qid"] == "q_segment" and c.slots["area"]["text"] == "東京"
+    assert model.script and [stage for stage, _, _ in llm.calls] == ["say"]
+    assert out["track_switch"]["track"] == "正社員" and not session.active(st, UID) and SW.KEY not in st.user(UID)
+
+
+# ----------------------------- 敵対的なレビューで見つけたこと -----------------------------
+def test_asking_for_jobs_still_leaves_to_the_talk_ai_and_does_not_switch_to_career(tmp_path):
+    """「求人を見せて」は v4 と同じく相談の外へ(トークの AI が求人を出す)。正社員へは移らず、記録も書かない。"""
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    for said in ("求人を見せて", "バイトの求人を見たい"):
+        assert V5.asked_to_switch(harness(st), said) is None, said
+    r = session.turn(st, UID, "求人を見せて")
+    assert (r["active"], r["ended"]) == (False, "exit") and SW.KEY not in st.user(UID)
+
+
+def test_a_stopped_junior_high_student_can_still_leave_with_stop_words(tmp_path):
+    """中学生以下で止めた後(結果の後も相談を閉じない)も、「やめる」で閉じられる(モデルを呼ばない)。止めた印は残る。"""
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    while harness(st).current["qid"] != "hf_age":
+        run(st, harness(st).current["choices"][0])
+    r, _ = run(st, "中学生以下")
+    assert r.get("blocked") == "under_15" and session.active(st, UID)
+    r, stages = run(st, "やめる")
+    assert stages == [] and r["closed"] == "exit" and not session.active(st, UID)
+    assert st.user(UID).get(session.BLOCK_KEY)
+
+
+def test_saved_or_carried_late_night_is_not_dropped_silently(tmp_path):
+    """前の相談の「夕方、深夜」は、年齢が分からないうちは入れない(深夜を黙って落とした値を確かめた値にしない)。時間帯は年齢の後に聞く。"""
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"time_band": "夕方、深夜", "days_per_week": "週3〜4日"})
+    session.start(st, UID, quick=False)
+    h = harness(st)
+    assert "time_slots" not in h.slots and h.slots["days_per_week"]["value"] == "3-4" and h.notices_sent == []
+    rec = SW.record("career", "baito", {}, [{"act": "add", "slot": "work_hours", "text": "夕方と深夜"}], "", now(UID))
+    h2 = V5.new_state()
+    V5.take_handoff(h2, rec)
+    assert "time_slots" not in h2.slots
+
+
+def test_retracting_the_age_does_not_lift_the_stop_and_the_handoff_has_no_age(tmp_path):
+    st = at("sc_line", age="under_15")
+    assert st.blocked == "under_15"
+    said = "さっきの年齢はなしで"
+    V5.turn(st, said, H.BANK, LLM({said: [act("retract", slot="age_band")]}))
+    assert st.slots["age_band"]["value"] == "under_15" and st.blocked == "under_15"
+    st = State(tmp_path / "state.json")
+    session.start(st, UID, quick=False)
+    said = "17歳だけど、とりあえず正社員で探したいかも"
+    r, _ = run(st, said, script({said: [act("add", slot="age_band", text="17歳", value="15_17"),
+                                        act("switch", to="career", strength="want")]}))
+    assert r["switch_to"] == "career" and all(a.get("slot") != "age_band" for a in st.user(UID)[SW.KEY]["acts"])

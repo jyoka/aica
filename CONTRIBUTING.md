@@ -99,6 +99,10 @@ CI は API キーを持たない環境で、次の 3 つを回します。すべ
 CI は `--log evidence/baito_sim` を付けて回し、単体チェックとシミュレーターの出力、移植版の結果、会話ログの写し、合否を
 証跡に残します。pytest の `tests/test_baito_harness.py` も同じ検査を回します。
 
+会話の層の版 v5(`dip_mcp/baito/v5.py`)は、`python -m evals.baito_sim --version v5` で 20 ペルソナを同じ基準値に照らします
+(`BAITO_HARNESS=aica_port_v5`。単体チェックは v4 だけ)。pytest の `tests/test_baito_v5.py` が回し、PRD の結果の検査
+(未成年の NG、深夜、中学生以下、金額、カードに無い職種)もそこで確かめます。
+
 §13-1 P3(実 LLM での測定、`python -m evals.baito_sim --real`)は実 API を使うので、CI では確かめません。
 人が予算を決めて回します。
 
