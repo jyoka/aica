@@ -242,7 +242,10 @@ def save_user_preferences(
     正社員の条件)を保存する。チャットと音声で共有され、次の会話では get_user_conversation_summary の
     stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
     保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
-    return logic.save_preferences(state, line_user_id, preferences, room)
+    out = logic.save_preferences(state, line_user_id, preferences, room)
+    if out["saved"]:  # 本人がトークで言い直した: 「あとで」で取っておいたバイトの相談からも、前の値を消す(jyoka/tasks#375)
+        state.update(line_user_id, session.forget_paused)
+    return out
 
 
 @mcp.tool()
