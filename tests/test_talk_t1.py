@@ -271,6 +271,23 @@ def test_prompt_adds_the_facts_the_entry_buttons_and_the_words_rule_only_on_t1(m
     assert "会話の層の決まり" not in server.baitoru_assistant("A")
 
 
+def test_prompt_starts_the_consultation_without_asking_conditions_and_names_only_the_tools_it_shows(monkeypatch):
+    # task 377: 実モデルのトークの AI は、dip の Prompt の「条件だけなら相談に入らずエリアを聞く」に従い、相談を始めなかった。
+    # t1 は、区分が決まって探したいと言ったら同じターンで相談を始める決まりを、その決まりより先にする
+    from dip_mcp import server
+
+    text = server.baitoru_assistant("A")
+    assert "エリアや時間帯などの条件を聞かず、求人も探さずに、同じターンで相談を始める" in text
+    assert "アルバイト・パートは start_baito_consultation、正社員は start_career_consultation" in text
+    assert "より先にする" in text.split("### 相談を始めるとき")[1]
+    # 正社員は、始めた発言の条件を先に保存しない(c2 が保存した値を確かめた値として入れ、発言の年収を読まないため)
+    assert "start_career_consultation に text を渡すターンは、その発言の条件(年収・勤務地・働き方・時期)を save_user_preferences で保存しない" in text
+    monkeypatch.delenv(logic.BAITO_HARNESS_FLAG)  # アルバイト・パートのハーネスが無ければ、そのツールは見せないので決まりにも書かない
+    assert "(正社員は start_career_consultation)" in talk.start_rule()
+    monkeypatch.delenv(logic.CAREER_HARNESS_FLAG)
+    assert talk.start_rule() == ""
+
+
 def test_entry_buttons_come_from_the_entry_definitions():
     from dip_mcp.baito import v5
     from dip_mcp.career import c2
