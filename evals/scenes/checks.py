@@ -161,6 +161,9 @@ def _slot_check(ctx, i, c):
     bad = []
     if "contains" in c and nfkc(c["contains"]) not in nfkc(e.get("text") or ""):
         bad.append(f"字「{c['contains']}」が無い")
+    mixed = [x for x in c.get("not_contains", []) if nfkc(x) in nfkc(e.get("text") or "")]
+    if mixed:
+        bad.append(f"ほかの欄の言葉 {mixed} が混じる「{e.get('text')}」")
     if "value" in c:
         v = e.get("value")
         if not (v == c["value"] or (isinstance(v, list) and c["value"] in v)):

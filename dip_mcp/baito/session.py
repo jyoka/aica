@@ -160,7 +160,7 @@ class ReplayMismatch(BaseException):  # 同じく turn() の外へ出す(ハー�
 
 
 class ReplayLLM:
-    """ハーネスの llm(extract / generate)。受け取った出力を順に返し、尽きたら NeedLLM で止める。
+    """ハーネスの llm(extract / read / generate)。受け取った出力を順に返し、尽きたら NeedLLM で止める。
     出力の 1 つは {"stage", "output": モデルの JSON} か、呼び出しが失敗した印 {"stage", "error": 型の名前}
     (ハーネスは失敗 1 回として数える)。stage が求めと違えば ReplayMismatch。
     render_prompt と prompt_stage はハーネスのもの(既定はアルバイト・パート。正社員の dip_mcp.career.session も使う)。"""
@@ -171,9 +171,9 @@ class ReplayLLM:
         self.render_prompt = render_prompt or H.render_prompt
         self.prompt_stage = prompt_stage or H.prompt_stage
 
-    def _next(self, stage: str, system: str, user_text: str):
+    def _next(self, stage: str, system: str, user_text: str, extra: dict | None = None):
         if self.used >= len(self.outputs):
-            raise NeedLLM({"stage": stage, "system": system, "user_text": user_text, "n": self.used})
+            raise NeedLLM({"stage": stage, "system": system, "user_text": user_text, "n": self.used, **(extra or {})})
         out = self.outputs[self.used]
         self.used += 1
         if not isinstance(out, dict) or out.get("stage", stage) != stage:
@@ -185,9 +185,15 @@ class ReplayLLM:
     def extract(self, payload: dict):
         return self._next("extract", self.render_prompt("extract", payload), payload.get("user_text", ""))
 
+    def read(self, payload: dict):
+        """会話の層の読む段(正社員の c2。dip_mcp/career/c2.py)。"""
+        return self._next("read", self.render_prompt("read", payload), payload.get("user_text", ""))
+
     def generate(self, view: dict):
+        """view に model_text(正社員の c2 が伏せた本人の発言)があれば、呼び出しに入れる。ランタイムは、それを本人の発言としてモデルに渡す。"""
         stage = self.prompt_stage(view)
-        return self._next(stage, self.render_prompt(stage, view), view.get("user_text", ""))
+        extra = {"model_text": view["model_text"]} if "model_text" in view else None
+        return self._next(stage, self.render_prompt(stage, view), view.get("user_text", ""), extra)
 
 
 def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = None) -> dict:

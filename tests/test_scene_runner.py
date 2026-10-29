@@ -127,7 +127,7 @@ def test_talk_scenes_judge_only_the_guard_and_stays():
 
 def test_unknown_version_is_refused():
     with pytest.raises(ValueError, match="まだ回せない"):
-        R.driver("career", "c2")
+        R.driver("career", "c9")
 
 
 def test_cli_prints_the_score_table(capsys, tmp_path):
@@ -135,7 +135,7 @@ def test_cli_prints_the_score_table(capsys, tmp_path):
     out = capsys.readouterr().out
     assert "○ career/t326-order" in out and "| career c1 | 1 |" in out
     assert (tmp_path / "results.json").is_file() and (tmp_path / "score.md").is_file()
-    assert cli.main(["--entry", "career", "--version", "c2"]) == 2
+    assert cli.main(["--entry", "career", "--version", "c9"]) == 2
 
 
 # ----------------------------- 読む段の正解を今の版に写す -----------------------------

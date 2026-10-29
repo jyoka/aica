@@ -40,6 +40,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+from dip_mcp.convo import acts as convo_acts
+
 DIR = Path(__file__).resolve().parent
 
 # 入り口(設計メモ §2.1)。場面のフォルダの名前
@@ -84,8 +86,9 @@ CODE_CHECKS = {
     "asks": {"qid": "str?", "slot": "str?", "entry": "str?"},  # 次の問いがこの id か、この欄を聞く(どちらか 1 つ)
     "not_asks": {"slots": "list", "entry": "str?"},         # 次の問いがこの欄を聞かない(聞き直さない)
     "keeps_question": {},                                   # 今の問い(asking)を出し直す。候補のボタンも出す
-    "slot": {"slot": "str", "contains": "str?", "value": "any?", "status": "str?", "confidence": "str?",
-             "number": "num?", "entry": "str?"},            # 欄に値があり、引数のとおり(contains は値の字に含む。
+    "slot": {"slot": "str", "contains": "str?", "not_contains": "list?", "value": "any?", "status": "str?",
+             "confidence": "str?", "number": "num?", "entry": "str?"},  # 欄に値があり、引数のとおり(contains は値の字に含む。
+                                                            # not_contains は値の字にどれも無い(ほかの欄の言葉が混じらない)。
                                                             # value は baito の区切りのキー。複数の値の欄なら含む)
     "slot_not_high": {"slot": "str", "entry": "str?"},      # 欄が空か推測(low)。確かめた値(high)にしない
     "slot_open": {"slot": "str", "entry": "str?"},          # 欄が空(まだ聞いていない扱い)
@@ -135,24 +138,10 @@ ORDER_PARTS = ("ack", "answer", "note", "phase_line", "ask")  # 相づち、逆�
 TYPES = {"str": str, "list": list, "int": int, "num": (int, float), "any": (str, int, float)}
 STATE_CHECKS = ("asks", "not_asks", "slot", "slot_not_high", "slot_open")  # entry を書ける(入り口を移した後を見る)
 
-# 読む段の正解の act(設計メモ §4.3)。値は {引数: 型}。値の act の引数は VALUE_ARGS
-VALUE_ACTS = ("answer", "add", "correct", "unsure")
-VALUE_ARGS = {"slot": "str", "text": "str", "number": "num?", "unit": "str?", "choice": "str?", "value": "any?"}
-ACTS = {
-    **dict.fromkeys(VALUE_ACTS, VALUE_ARGS),            # 今の問いへの答え、ほかの欄の値、直す、迷う
-    "retract": {"slot": "str"},                          # もう答えた欄を取り消す
-    "dont_know": {"slot": "str?"}, "pass": {"slot": "str?"},  # 覚えていない、言いたくない・特にない(既定は今の問いの欄)
-    **{a: {} for a in ("more", "clarify", "go_back", "show_result", "restart", "later", "stop")},  # 操作
-    "confirm": {},                                       # まとめに「合ってる」と答える
-    "switch": {"to": "str", "strength": "str"},          # 別の入り口の話。strength は want(移りたい)か consider(考えている)
-    **{a: {} for a in ("chitchat", "ask_service", "ask_advice", "story", "complaint", "falsify", "crisis", "danger")},
-    "emotion": {"feeling": "str"},                       # 感情(FEELINGS)
-    "sensitive": {"span": "str"}, "name": {"span": "str"},  # 要配慮の部分、氏名の部分(発言の部分文字列)
-}
-FEELINGS = ("anxious", "angry", "tired", "sad")
-STRENGTHS = ("want", "consider")
-HOOK_MAX = 15  # 相づちに使う本人の言葉の字数(設計メモ §4.3)
-MENTION_MAX = 10  # 候補に使う本人の言葉の字数(設計メモ §4.7)
+# 読む段の正解の act(設計メモ §4.3)。会話の層の読む段と同じ型(dip_mcp/convo/acts.py)。値は {引数: 型}
+ACTS, VALUE_ACTS, VALUE_ARGS = convo_acts.ACTS, convo_acts.VALUE_ACTS, convo_acts.VALUE_ARGS
+FEELINGS, STRENGTHS = convo_acts.FEELINGS, convo_acts.STRENGTHS
+HOOK_MAX, MENTION_MAX = convo_acts.HOOK_MAX, convo_acts.MENTION_MAX  # 相づちに使う本人の言葉と、候補に使う本人の言葉の字数
 
 
 def is_code(check: dict) -> bool:

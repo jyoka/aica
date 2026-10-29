@@ -13,6 +13,7 @@
   "says": [{"text": "新卒からみほん商事で経理を6年やってきて、数字を締めるのは得意なんだけど、毎月同じ作業の繰り返しで、このまま30代を終えるのかと思ったら怖くなって。去年から独学でデータ分析の勉強をしてて、それを仕事にできたらいいなと思ってる。親には反対されてるけど", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "毎月同じ作業の繰り返し"}, {"act": "add", "slot": "career1.role", "text": "経理"}, {"act": "add", "slot": "direction", "text": "データ分析"}, {"act": "story"}, {"act": "emotion", "feeling": "anxious"}], "hook": "データ分析の勉強", "mentions": ["経理", "データ分析"]}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "status": "filled", "confidence": "high"},
+   {"check": "slot", "slot": "why_now", "not_contains": ["経理", "データ分析"]},
    {"check": "slot", "slot": "career1.role", "contains": "経理"},
    {"check": "bubble_max", "chars": 80},
    {"check": "one_question"},
@@ -20,7 +21,7 @@
    {"check": "personal_touch"},
    {"check": "empathy"}
   ],
-  "note": "相づちは長い話の要点 1 つに触れる 1 文。話を要約し直して返さない。相づちで家族の話に踏み込まない"
+  "note": "相づちは長い話の要点 1 つに触れる 1 文。話を要約し直して返さない。相づちで家族の話に踏み込まない。きっかけの欄には、きっかけの部分だけを入れ、職歴とやりたいことの言葉を混ぜない(jyoka/tasks#354 の Decision)"
  },
  {
   "id": "emotion-anxious",
