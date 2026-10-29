@@ -9,7 +9,12 @@ entry.json の形:
 - bank: 質問バンクのファイル(entry.json と同じフォルダ。問いの形は入り口のまま。層は targets と text と候補だけを見る)
 - slots: {欄: 読む段に渡す説明}。入り口の欄のすべてに置く
 - switch: 移れる入り口 [{"to", "label"}]。label は移るボタンの文(§4.5。使うのは 6 枚目のカード)
-- infer: ボタンから推せるほかの欄 {問いの id: {ボタン: {欄: 値の文}}}(§4.7 の 1。推測(low)で入れ、まとめで確かめる)
+- infer: ボタンから推せるほかの欄 {問いの id: {ボタン: {欄: 値の文}}}(§4.7 の 1。推測(low)で入れ、まとめで確かめる)。
+  質問バンクの choice_effects に書いた、問いの欄でない欄への効き目も同じく推測で入れる(入り口のハーネスが当てる)
+- groups: 問いの群 [{"name", "phases": [質問バンクのフェーズ], "line": 区切りの 1 行か null}](§4.7。並びが群の順)。
+  質問バンクのどのフェーズも、ちょうど 1 つの群に入る
+- topics: 話題 {名前: [欄]}(§4.7 の話題のおまけ)。1 つの欄がいくつの話題に入ってもよい
+- mention_questions: 本人の言葉の候補を足す問いの id(§4.7。職歴カードはひな形の id)
 - texts: 決まった文 {名前: 文か、行のリスト}。入り口が求める名前は required_texts で渡す
 - facts: 逆質問に答える事実のファイル(entry.json と同じフォルダ。無くてよい)。aica 全体の事実に足して読む(dip_mcp.convo.facts)
 """
@@ -36,6 +41,9 @@ class Entry:
     infer: dict = field(default_factory=dict)
     texts: dict = field(default_factory=dict)
     facts: dict = field(default_factory=lambda: F.load(None))
+    groups: list = field(default_factory=list)
+    topics: dict = field(default_factory=dict)
+    mention_questions: tuple = ()
 
 
 def _choices(q: dict) -> list[str]:
@@ -92,10 +100,25 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
             bad = [s for s, v in values.items() if s not in slots or not str(v).strip()]
             if bad:
                 raise ValueError(f"{name}: infer の {qid} {label} の欄 {bad}")
+    groups = d.get("groups") or []
+    phases = [p for g in groups for p in g.get("phases") or []]
+    if groups and (len(phases) != len(set(phases)) or set(phases) != {q.get("phase") for q in bank}
+                   or any(not str(g.get("name") or "").strip() or not g.get("phases") for g in groups)):
+        raise ValueError(f"{name}: 群が質問バンクのフェーズと合わない({phases})")
+    topics = d.get("topics") or {}
+    for t, members in topics.items():
+        bad = [s for s in members or [] if s not in slots]
+        if not members or bad:
+            raise ValueError(f"{name}: 話題 {t} の欄 {bad or members}")
+    mention_questions = tuple(d.get("mention_questions") or ())
+    stray = [m for m in mention_questions if m not in qs]
+    if stray:
+        raise ValueError(f"{name}: 本人の言葉の候補を足す問いが質問バンクに無い {stray}")
     texts = d.get("texts") or {}
     lacking = [t for t in required_texts if not texts.get(t)]
     if lacking:
         raise ValueError(f"{name}: 決まった文が無い {lacking}")
     facts = F.load(Path(path).parent / d["facts"] if d.get("facts") else None)
     return Entry(entry=name, title=d["title"], bank=bank, slots=described, switch=list(d.get("switch") or []),
-                 infer=d.get("infer") or {}, texts=texts, facts=facts)
+                 infer=d.get("infer") or {}, texts=texts, facts=facts, groups=groups, topics=topics,
+                 mention_questions=mention_questions)

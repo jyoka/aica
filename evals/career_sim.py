@@ -2,6 +2,7 @@
 
     ./.venv/bin/python -m evals.career_sim                      # 表と合否。最後に「すべて合格」
     ./.venv/bin/python -m evals.career_sim --log evidence/career_sim   # 同じ。結果の JSON と会話ログを DIR にも書く
+    ./.venv/bin/python -m evals.career_sim --version c2         # 会話の層の版(dip_mcp/career/c2.py)で回す。既定は c1
 
 設計メモ docs/design/fulltime-hearing.md の §6.2 の表の「モック ○」の行(完了率、推定時間、ターン、HARD が空、wasted、
 予算で止まること)と、PRD v4.1 の合否指標(§4-1)と v3 の受け入れチェック(§11.3 の 1〜3、5〜7)を正社員に置き換えたものを見る。
@@ -17,6 +18,9 @@
   コードで見る: 下書きに書く欄の数字が、本人役の発言(押したボタンのラベルも)と履歴書の欄に無ければ made_up_number に数える。
   下書きの空欄の数が、結果の「空欄はNつ」、形 D の完成のカルーセルの「空欄Nつ」、職歴カードの空欄(harness.blank_cards)と空欄に戻した
   数字の和のどれかと違えば draft_blanks に数える
+- c2(会話の層の版。task 358)は、読み取りを act の並び(llm.read)で返す。本人役が言いたかった値は、今の問いの欄なら answer、
+  ほかの欄なら add、「特にない」は pass。c2 は問いの選び方をフェーズの上限(PHASE_CAP)から群とスコアに替えたので、
+  関門 phase_mismatch はターンの数の合計だけを見る
 - 形 D(task 246)は、そのターンの Flex(dip_mcp/career/ui.py が選び、line_runtime/career_ui.py が作る)の中の字も本人役が読む
   (§6.1)。「始める」の 1 枚は「始める」を押す。Flex の字数(職歴カード 60 字、帯 24 字、プロフィールカード 80 字)も見る。
   帯を切った形 D は run_one(band=False)
@@ -31,6 +35,7 @@ import zlib
 from collections import Counter
 from pathlib import Path
 
+from dip_mcp.career import c2 as C2
 from dip_mcp.career import draft as D
 from dip_mcp.career import harness as H
 from dip_mcp.career import ui as UI
@@ -41,6 +46,7 @@ from line_runtime import career_ui, progress_ui
 from resume_lines import blank_count, check_numbers
 
 FORMS = ("B", "C", "D")
+VERSIONS = {H.VERSION: H, C2.VERSION: C2}  # 回せるハーネスの版
 MAX_STEPS = 60  # 1 会話の処理の上限(PRD §4-1 の M-loop)
 NOTHING = "特にない"
 # 合否の指標(どれも 0 で合格)。PRD v4.1 §4-1 と v3 §11.3 の置き換え
@@ -78,6 +84,17 @@ class OracleLLM:
         self.returned += [dict(u) for u in m.get("slots", [])]
         return json.dumps({"slot_updates": m.get("slots", []), "ng_updates": m.get("ng", []), "segment": m.get("segment"),
                            "intent": m.get("intent", "answer"), "review_ack": m.get("review_ack")}, ensure_ascii=False)
+
+    def read(self, payload):
+        """c2 の読む段: 言いたかったことを act の並びにする(今の問いの欄は answer、ほかの欄は add)。"""
+        self.calls["read"] += 1
+        m = self.meaning
+        self.returned += [dict(u) for u in m.get("slots", [])]
+        acts = [{"act": "answer" if u["slot"] in payload["targets"] else "add",
+                 **{k: u[k] for k in ("slot", "text", "number", "unit") if u.get(k) is not None}} for u in m.get("slots", [])]
+        acts += [{"act": m["intent"]}] if m.get("intent") in ("pass", "dont_know") else []
+        acts += [{"act": "confirm"}] if m.get("review_ack") == "all" else []
+        return json.dumps({"acts": acts, "ng": m.get("ng", [])}, ensure_ascii=False)
 
     def generate(self, view):
         self.calls["generate"] += 1
@@ -198,18 +215,19 @@ def _flex_problems(part: dict | None, built: dict | None) -> list[str]:
     return bad
 
 
-def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band=True) -> dict:
+def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band=True, version=H.VERSION) -> dict:
     """1 つの会話。roundtrip=True は、毎ターンの前に状態を JSON にして戻す(dip が毎回保存した状態から始めるのと同じ)。
-    band=False は帯を切った形 D(dip_mcp.career.ui.BAND_ENV と同じ)。"""
+    band=False は帯を切った形 D(dip_mcp.career.ui.BAND_ENV と同じ)。version はハーネスの版(c1 か c2)。"""
     bank = bank or H.BANK
-    st = H.new_state(form=form, prefill=prefill(persona))
+    M = VERSIONS[version]
+    st = M.new_state(form=form, prefill=prefill(persona))
     llm, actor, clock = llm or OracleLLM(), MockActor(persona), Clock()
     transcript, ui, presented, parts = [], [], Counter(), []
     crash = loop = False
     reask = 0
     mem = UI.fresh_mem(st, band)
     try:
-        out = H.start(st, bank)
+        out = M.start(st, bank)
         part = UI.start_payload(st)
         UI.add_read(st, part)
         for step in range(MAX_STEPS + 1):
@@ -240,9 +258,9 @@ def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band
             transcript.append(f"本人: {'[ボタン] ' if pressed else ''}{text}")
             llm.meaning = meaning
             if roundtrip:
-                st = H.State.from_dict(json.loads(json.dumps(st.to_dict(), ensure_ascii=False)))
+                st = M.State.from_dict(json.loads(json.dumps(st.to_dict(), ensure_ascii=False)))
             prev = UI.before(st)
-            out = H.turn(st, text, bank, llm)
+            out = M.turn(st, text, bank, llm)
             part, mem = UI.update(st, mem, prev, out)
             key = ((st.current or {}).get("qid"), (st.current or {}).get("mode"), st.turns)
             presented[key] += 1
@@ -252,7 +270,7 @@ def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band
     except Exception as e:  # noqa: BLE001
         crash = True
         transcript.append(f"CRASH: {type(e).__name__}: {e}")
-    return {"persona": persona["id"], "form": form, "state": st, "clock": clock, "llm": llm, "transcript": transcript,
+    return {"persona": persona["id"], "form": form, "version": version, "state": st, "clock": clock, "llm": llm, "transcript": transcript,
             "ui": ui, "crash": crash, "loop": loop, "reask": reask, "parts": parts,
             "complete": part["complete"] if part and part["kind"] == UI.COMPLETE else None}
 
@@ -307,7 +325,7 @@ def metrics(r: dict, persona: dict) -> dict:
         "dropped": dropped,
         "spam_hard_high": [k for k in hk if cap[k].get("confidence") == "high" and str(cap[k].get("from", "")).startswith(
             ("free_other", "choice:sc_", "choice:rp_"))],
-        "phase_mismatch": int(sum(st.phase_turns.values()) != st.turns or any(
+        "phase_mismatch": int(sum(st.phase_turns.values()) != st.turns or r.get("version", H.VERSION) == H.VERSION and any(
             n > H.PHASE_CAP.get(p, 99) for p, n in st.phase_turns.items())),
         "over_max_turns": int(st.turns > H.MAX_TURNS),
         "budget_violation": budget,
@@ -328,11 +346,11 @@ def failures(m: dict) -> list[str]:
     return [f"{k}={m[k]}" for k in GATES if m[k]]
 
 
-def run_all(personas=None, forms=FORMS) -> list[dict]:
+def run_all(personas=None, forms=FORMS, version=H.VERSION) -> list[dict]:
     rows = []
     for form in forms:
         for p in personas or load_personas():
-            r = run_one(p, form)
+            r = run_one(p, form, version=version)
             rows.append({"persona": p["id"], "form": form, "metrics": metrics(r, p), "transcript": r["transcript"],
                          "summary": H.summary(r["state"])})
     return rows
@@ -355,8 +373,10 @@ def table(rows: list[dict]) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--log", help="結果の JSON と会話ログを書くディレクトリ")
+    ap.add_argument("--version", choices=sorted(VERSIONS), default=H.VERSION, help="ハーネスの版(既定 c1)")
     args = ap.parse_args(argv)
-    rows = run_all()
+    rows = run_all(version=args.version)
+    print(f"版 {args.version}")
     print("配分は icebreak/hard_filter/career_cards/scenario_game/reverse_pick/fill_gaps/review のターン")
     print(table(rows))
     bad = [(r["form"], r["persona"], failures(r["metrics"])) for r in rows if failures(r["metrics"])]

@@ -1,7 +1,7 @@
 """正社員ヒアリングの c2(CAREER_HARNESS_VERSION=c2)。会話の層(dip_mcp/convo/)に載せ替えていく版。
 
-設計は docs/design/conversation-layer.md(§5 の 2 枚目まで)と ADR-0011。c1(dip_mcp/career/harness.py)は変えずに残し、
-この版は c1 の決める段(問いの選び方、予算、まとめ、結果)と言う段をそのまま使う。c1 と違うのは次のところ:
+設計は docs/design/conversation-layer.md(§5 の 2 枚目、3 枚目、5 枚目まで)と ADR-0011。c1(dip_mcp/career/harness.py)は変えずに残し、
+この版は c1 の予算、まとめ、結果と言う段をそのまま使う。c1 と違うのは次のところ:
 
 - 守りの前処理(§4.11): ボタンでない文は、読む段の前に危ない言葉の表(dip_mcp.convo.guard)と照らす。当たれば、モデルを呼ばず、
   数えずに決まった文(相談窓口。前後の文は入り口の定義 entry.json の丁寧語)を返す。次の発言が「続ける」なら同じ問いから続ける。
@@ -13,7 +13,14 @@
   雑談や逆質問と一緒でも捨てない(空なら推測(low)、文の欄に値があれば言い足しとしてつなぐ)。直した値は high で置きかえる。
   取り消した欄は空にする。迷っている値は low で入れて進む。今の問いに答えずにほかの欄の値だけを言ったときは、同じ問いを出し直す
 - 個人情報(§4.11): 伏せた印と、読む段が示した氏名・要配慮の部分は、値から除き、返事に出たらやり直す
-- ボタンから推せるほかの欄(§4.7 の 1): 入り口の定義の infer。推測(low)で入れ、聞かずにまとめで確かめる
+- ボタンから推せるほかの欄(§4.7 の 1、§4.4): 入り口の定義の infer と、質問バンクの choice_effects のうち問いの欄でない欄。
+  どちらも空の欄にだけ推測(low)で入れ、聞かずにまとめで確かめる(c1 は効き目のどの欄にも問いのフェーズの確かさを使う)
+- 問いの選び方(§4.7。dip_mcp.convo.pick): フェーズの順と上限(ORDER、PHASE_CAP)をやめ、全部の問いから
+  スコア(c1 の優先度 + 今の話題のおまけ)のいちばん高いものを選ぶ。同点は群(入り口の定義の groups)の順、次にバンクの並び。
+  区切りの 1 行は、問いの群が変わったときに出す(群の line)。予算(can_ask)、最初の問い、まとめは c1 のまま
+- 本人の言葉の候補(§4.7): 職歴の仕事、活かしたい経験、続けたいことの問い(入り口の定義の mention_questions)は、本人がこの会話で
+  言った言葉(読む段の mentions)を最初のページの頭に 1 つ足す。押せば、その言葉が問いの欄の値になる
+- 場面の二択に「どっちでも」(打った pass。§4.4): その欄を「こだわりなし」(推測)にし、同じ欄の二択を続けない
 - 応じ方の計画(§4.6。dip_mcp.convo.plan): 読んだ act と当てた結果から、返事の部品(相づちの種類、逆質問の答えの事実、注意の 1 行)と、
   次の問い(選び直す、同じ問い、前の問い、今の欄を閉じて次へ)と、数え方を決める。逆質問には事実のデータ(facts.json と
   dip_mcp/convo/facts.json)だけを渡し、そのターンの吹き出しは 120 字まで。注意の文は入り口の定義の texts をハーネスがそのまま入れる
@@ -33,6 +40,7 @@ from dip_mcp.convo import acts as A
 from dip_mcp.convo import entry as E
 from dip_mcp.convo import facts as F
 from dip_mcp.convo import guard
+from dip_mcp.convo import pick as PK
 from dip_mcp.convo import plan as P
 from dip_mcp.convo import state as CS
 from dip_mcp.convo import values as V
@@ -83,12 +91,102 @@ def _log(state):
 
 # ----------------------------- ターン -----------------------------
 def start(state, bank=H.BANK):
-    """最初の問い(c1 と同じ)。初めの 1 回だけ、出した文を直前のやりとりに覚える。"""
+    """最初の問い(c1 の start と同じ。問いはこの版の advance で選ぶ)。初めの 1 回だけ、読む時間を数え、出した文を直前のやりとりに覚える。"""
+    H._init_volatile(state)
     first = state.current is None
-    out = H.start(state, bank)
+    if first and state.form in H.UI_FORMS:  # 形 D: 先に「始める」の 1 枚
+        state.current = {"qid": "start", "mode": "start", "choices": [H.START_GO, H.LATER]}
+    elif first:
+        advance(state, bank)
+    lead = (H.START_LEAD_UI if state.form in H.UI_FORMS else H.START_LEAD) if state.turns == 0 else None
+    out = H._represent(state, bank, counted=False, lead=lead, read=False)
     if first:
+        state.seconds += H.read_seconds(out["bubbles"] + out["choices"])
         CS.replied(state.convo, out["reply"])
     return out
+
+
+# ----------------------------- 問いの選び方(§4.7) -----------------------------
+def pick_question(state, bank, budget=True):
+    """まだ出していない全部の問いから、スコア(c1 の優先度 + 今の話題のおまけ)のいちばん高いものを選ぶ。同点は群の順、次にバンクの並び。"""
+    touched = getattr(state, "_topics", set())
+    scored = []
+    for i, q in enumerate(H.questions(state, bank)):
+        if q["phase"] not in H.PRE_REVIEW or q["id"] in state.asked:
+            continue
+        s = H.score(state, q, budget)
+        if s > 0:
+            s += PK.bonus(q["targets"], touched, ENTRY.topics)
+        scored.append((s, PK.group_index(q["phase"], ENTRY.groups), i, q))
+    return PK.best(scored)
+
+
+def advance(state, bank):
+    """次に出すものを決めて state.current に入れる(c1 の advance の、フェーズの順と上限を群とスコアに替えたもの)。
+    state.phase は出した問いのフェーズまで進め、戻さない(後から segment が決まって出す HARD は、c1 と同じく今のフェーズのまま)。
+    出す問いが無いか、ターンの上限か「まとめて」なら、まとめ(と結果)へ。"""
+    if state.phase in H.PRE_REVIEW and state.turns < H.MAX_TURNS and "show_result" not in state.flags:
+        q = pick_question(state, bank)
+        if q is not None:
+            if H.ORDER.index(q["phase"]) > H.ORDER.index(state.phase):
+                state.phase = q["phase"]
+            _present(state, q)
+            return
+        state.phase = "review"
+    else:
+        state.phase = H.next_phase(state)
+    if state.phase == "review":
+        if state.stop_reason is None:
+            state.stop_reason = H._why_stop(state, bank)
+            H.ev(state, "stop", reason=state.stop_reason, seconds=round(state.seconds, 1))
+        state.last_card = H.build_card(state)
+        state.current = {"qid": "review", "mode": "review", "choices": [H.REVIEW_OK]}
+    else:
+        state.current = {"qid": "result", "mode": "result", "choices": []}
+
+
+def _template(q):
+    """職歴カードの問いはひな形の id(card_role1 -> card_role)。"""
+    return q["id"][: -len(str(q["card"]))] if q.get("card") else q["id"]
+
+
+def _with_word(q, word):
+    """本人の言葉を最初のページの頭に置いた問い。ボタンの決まりに入らなければ None。"""
+    pages = PK.put_first(q["pages"], word, H.page_choices(q, [], "ask"), H.chars, H.LABELS_MAX, H.QUICK_MAX, H.LABEL_MAX)
+    return H._with_choices(dict(q, pages=pages)) if pages else None
+
+
+def _mention(state, q):
+    """問いに足す本人の言葉 -> (言葉, 足した問い)。新しい言葉から。同じ種類の欄(職歴の仕事なら、ほかの職歴の仕事)の値になった言葉は使わない。"""
+    if _template(q) not in ENTRY.mention_questions:
+        return None, None
+    fields = {t.split(".")[-1] for t in q["targets"]}
+    taken = {H.nfkc(e.get("text") or "") for s, e in state.slots.items() if e and s.split(".")[-1] in fields}
+    for word in reversed(state.convo.get("mentions", [])):
+        if word in taken:
+            continue
+        got = _with_word(q, word)
+        if got is not None:
+            return word, got
+    return None, None
+
+
+def _present(state, q):
+    """問いを出す(c1 の _present)。本人の言葉の候補を足したときは、その言葉を state.current に覚える(_q が同じ問いを作り直す)。"""
+    word, got = _mention(state, q)
+    H._present(state, got or q)
+    if word:
+        state.current["mention"] = word
+        H.ev(state, "mention", qid=q["id"], word=word)
+
+
+def _q(state, bank):
+    """今出している問い(本人の言葉の候補を足したなら、足した形)。"""
+    cur = state.current or {}
+    q = H.qmap(state, bank).get(cur.get("qid"))
+    if q is not None and cur.get("mention"):
+        q = _with_word(q, cur["mention"]) or q
+    return q
 
 
 def turn(state, user_text, bank=H.BANK, llm=None):
@@ -96,6 +194,7 @@ def turn(state, user_text, bank=H.BANK, llm=None):
     終わりに、発言(氏名と要配慮の部分は伏せる)と返信を直前のやりとりに覚える。"""
     H._init_volatile(state)
     state._spans = []
+    state._topics = set()
     snap = state.to_dict()
     try:
         out = _turn(state, user_text, bank, llm)
@@ -105,6 +204,7 @@ def turn(state, user_text, bank=H.BANK, llm=None):
         state.__dict__.update(restored.__dict__)
         H._init_volatile(state, reset=True)
         state._spans = []
+        state._topics = set()
         H.ev(state, "internal_error", error=type(e).__name__)
         return H._represent(state, bank, counted=False)  # 氏名の部分が分からないので、発言を覚えない
     if isinstance(user_text, str) and H.nfkc(user_text):
@@ -150,7 +250,7 @@ def _turn(state, user_text, bank, llm):
     state._user_text = text
     state._progress = []
     if state.current is None:
-        H.advance(state, bank)
+        advance(state, bank)
     if state.closed or state.result:
         return H._stored(state)
     if not H.nfkc(text):
@@ -158,7 +258,7 @@ def _turn(state, user_text, bank, llm):
         return H._represent(state, bank, counted=False)
     state.said.append(text)
     cur = state.current
-    q = H.qmap(state, bank).get(cur["qid"])
+    q = _q(state, bank)
     button = match_button(state, text)
     button = H.LEGACY_BUTTONS.get(button, button)
     fix = H.fix_targets(state).get(H.nfkc(text))
@@ -174,12 +274,12 @@ def _turn(state, user_text, bank, llm):
     if button == H.LATER or (button is None and fix is None and H.nfkc(text) in H.END_WORDS):
         return H._close(state, "later")
     if cur["mode"] == "start":  # 形 D の「始める」: 最初の問いを出す。打った文は、最初の問いへの答えとして読む
-        H.advance(state, bank)
+        advance(state, bank)
         if button is not None:
             H.ev(state, "started")
             return H._represent(state, bank, counted=False)
         cur = state.current
-        q = H.qmap(state, bank).get(cur["qid"])
+        q = _q(state, bank)
         button = match_button(state, text)
     if button == H.MORE and q is not None:
         return _more(state, q)
@@ -201,6 +301,8 @@ def _turn(state, user_text, bank, llm):
         state._user_text = guard.mask(text, state._spans)  # 言う段に、氏名と要配慮の部分を渡さない
     if A.has(reading, "crisis"):  # 表に無い危ない言い方(§6 の 15)。読む段の 1 回のほかは呼ばない
         return _crisis(state)
+    if reading is not None:  # 候補に使える本人の言葉を覚える(氏名・要配慮の部分と伏せた印を含むものは覚えない)
+        CS.mentioned(state.convo, [w for w in reading["mentions"] if guard.scrub(w, state._spans) == w])
     if A.has(reading, "later", "stop"):
         if q is not None and cur["mode"] != "review":
             _apply(state, q, reading, text, retry=False)  # 「あとで」と一緒に打った答えも残す(次は聞かない)
@@ -261,16 +363,17 @@ def _ask_turn(state, bank, llm, q, button, reading, text):
         if button in q.get("escape", []):
             H._apply_escape(state, q, button)
         else:
-            H._apply_choice(state, q, button)
-            _infer(state, q, button)
+            _apply_choice(state, q, button)
         return _next(state, bank, llm, q, before)
     got = _apply(state, q, reading, text)
     done = P.respond(reading, answered=True)
     if got["answered"]:
         return _next(state, bank, llm, q, before, plan=done)
     if any(o["op"] == "escape" for o in ops):
-        H._apply_escape(state, q, H.DONT_KNOW if A.has(reading, "dont_know") and H.DONT_KNOW in q.get("escape", [])
-                        else H.PASS)
+        label = H.DONT_KNOW if A.has(reading, "dont_know") and H.DONT_KNOW in q.get("escape", []) else H.PASS
+        H._apply_escape(state, q, label)
+        if label == H.PASS and q["phase"] not in H.DIRECT:
+            _no_pref(state, q)
         return _next(state, bank, llm, q, before, plan=done)
     if A.has(reading, "show_result"):
         H._flag(state, "show_result")
@@ -307,9 +410,11 @@ def _next(state, bank, llm, q, before=None, skipped=None, plan=None):
     state.offtrack = 0
     H._count(state, q["phase"])
     phase_before = state.phase
-    H.advance(state, bank)
+    before = before if before is not None else dict(state.slots)
+    state._topics = PK.touched_topics(_stated(state, before), ENTRY.topics)
+    advance(state, bank)
     if state.form != "B":
-        H._progress(state, before if before is not None else dict(state.slots), phase_before)
+        _progress(state, before, phase_before)
     if skipped:
         state._progress = [skipped, *state._progress][-2:]
     return _say(state, bank, llm, plan=plan)
@@ -338,7 +443,7 @@ def _review(state, bank, llm, button, reading, text):
         H.apply_review(state, ext, button_ok=button == H.REVIEW_OK, user_text=guard.scrub(text, state._spans))
     if A.has(reading, "show_result"):
         state._need_more_review = False
-    H.advance(state, bank)
+    advance(state, bank)
     return _say(state, bank, llm)
 
 
@@ -394,8 +499,7 @@ def _apply(state, q, reading, said, retry=True):
         old = state.slots.get(slot) if slot in pri else state.pending.get(slot)
         if op == "set":
             if _choice_ok(q, a, said):
-                H._apply_choice(state, q, a["choice"], text=o["text"], src="free")
-                _infer(state, q, a["choice"])
+                _apply_choice(state, q, a["choice"], text=o["text"], src="free")
                 got["answered"] = True
                 continue
             if H.SLOTS[slot]["kind"] == "number" and "number" not in a and retry and f"num:{q['id']}" not in state.retried:
@@ -440,11 +544,68 @@ def _put(state, slot, e, pri):
     H.ev(state, "set", slot=slot, status=e["status"], confidence=e["confidence"], frm=e["from"])
 
 
-def _infer(state, q, label):
-    """ボタンから推せるほかの欄(入り口の定義の infer)を、空のときだけ推測(low)で入れる。"""
+def _own(q, key):
+    """効き目の欄が、問いの欄か区分・避けたいこと(問いそのものの答え)か。"""
+    return key in q["targets"] or key.startswith("__")
+
+
+def _apply_choice(state, q, label, text=None, src="button", infer=True):
+    """候補の効き目を当てる(§4.4、§4.7 の 1)。問いの欄への効き目は c1 の _apply_choice のまま(問いのフェーズの確かさ)。
+    ほかの欄への効き目(質問バンクの choice_effects と入り口の定義の infer)は、infer=True のとき、空の欄にだけ推測(low)で入れる。
+    効き目がほかの欄にしか無い候補も、ラベルが問いの欄の値になる(候補はどれも問いの欄の値になる)。"""
+    effects = q["choice_effects"].get(label)
+    if effects is not None and any(not _own(q, k) for k in effects):
+        own = {k: v for k, v in effects.items() if _own(q, k)}
+        rest = {c: e for c, e in q["choice_effects"].items() if c != label}
+        q = dict(q, choice_effects=rest | ({label: own} if own else {}))
+    H._apply_choice(state, q, label, text=text, src=src)
+    if infer:
+        _infer(state, q, label, {k: v for k, v in (effects or {}).items() if not _own(q, k)})
+
+
+def _infer(state, q, label, effects):
+    """ボタンから推せるほかの欄を、空のときだけ推測(low)で入れる。effects は質問バンクの、問いの欄でない欄への効き目。
+    入り口の定義の infer は {欄: 値の文}。"""
+    frm = f"infer:{q['id']}"
     for slot, text in (ENTRY.infer.get(q["id"]) or {}).get(label, {}).items():
-        if H.is_open(state.slots.get(slot)) and slot not in state.pending:
-            H.set_slot(state, slot, H.entry("filled", text, confidence="low", frm=f"infer:{q['id']}"))
+        effects = effects | {slot: {"text": text}}
+    for slot, eff in effects.items():
+        if slot not in H.ALL_SLOTS or not H.is_open(state.slots.get(slot)) or slot in state.pending:
+            continue
+        if "value" in eff:
+            v = eff["value"]
+            ja = "・".join(H.SLOTS[slot]["values"].get(x, x) for x in v) if isinstance(v, list) else H.SLOTS[slot]["values"].get(v, v)
+            e = H.entry("filled", ja, v, confidence="low", frm=frm)
+        elif eff.get("nopref"):
+            e = H.entry("filled", label, H.NOPREF, confidence="low", frm=frm)
+        else:
+            e = H.entry("filled", eff.get("text") or label, None if "text" in eff else label, rng=eff.get("range"),
+                        unit=eff.get("unit"), confidence="low", frm=frm)
+        H.set_slot(state, slot, e)
+
+
+def _no_pref(state, q):
+    """場面の二択に「どっちでも」と打った(pass): 空の欄を「こだわりなし」(推測)にし、同じ欄の二択を続けない(§4.4)。
+    条件の欄でない欄は、c1 のパスと同じく値なし(まとめで「スキップ」)。"""
+    pri = H.active_slots(state)
+    for t in q["targets"]:
+        if t in pri and H.is_open(state.slots.get(t)):
+            H.set_slot(state, t, H.entry("passed", H.PASS, H.NOPREF if t in H.CONDITION_SLOTS else None, confidence="low",
+                                         frm=f"pass:{q['id']}"))
+
+
+def _stated(state, before):
+    """このターンに本人が値を言った欄(推したほかの欄とパスを除く)。話題のおまけ(§4.7)に使う。"""
+    return [s for s, e in state.slots.items() if e != before.get(s) and e.get("status") == "filled"
+            and not str(e.get("from", "")).startswith("infer:")]
+
+
+def _progress(state, before, phase_before):
+    """形 C の「✓職歴」の行(c1 の _progress)と、問いの群が変わったときの区切りの 1 行(入り口の定義の群の line。§4.7)。"""
+    H._progress(state, before, state.phase)  # 職歴の行だけ(フェーズは変わっていないとして、c1 の区切りの行を出さない)
+    g = PK.group_index(state.phase, ENTRY.groups)
+    if g != PK.group_index(phase_before, ENTRY.groups) and g < len(ENTRY.groups) and ENTRY.groups[g].get("line"):
+        state._progress = [*state._progress, ENTRY.groups[g]["line"]][-2:]
 
 
 def _apply_fix(state, q, slot, button, reading, text):
@@ -460,7 +621,7 @@ def _apply_fix(state, q, slot, button, reading, text):
     elif escape is not None:
         state.slots[slot] = H.entry("passed", H.PASS, H.NOPREF if slot in H.CONDITION_SLOTS else None, frm=f"fix:{q['id']}")
     elif button is not None:
-        H._apply_choice(state, q, button)
+        _apply_choice(state, q, button, infer=False)
     elif reading is not None:
         _apply(state, q, reading, text, retry=False)
     e = state.slots.get(slot)
@@ -521,9 +682,9 @@ def _resume(state, bank, qid):
     oq = H.qmap(state, bank).get(qid)
     slots = [t for t in (oq or {}).get("targets", []) if t in H.ALL_SLOTS]
     if oq is not None and (not slots or any(H.is_open(state.slots.get(t)) for t in slots)):
-        H._present(state, oq)
+        _present(state, oq)
     else:
-        H.advance(state, bank)
+        advance(state, bank)
 
 
 def _more(state, q):
