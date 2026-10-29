@@ -87,6 +87,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | `python -m pytest -q` | テスト | 使わない |
 | `python -m evals.baito_sim` | アルバイト・パートのハーネスの回帰(モックの LLM) | 使わない |
 | `python -m evals.career_sim` | 正社員のヒアリングのハーネスの回帰(モック) | 使わない |
+| `python -m evals.scenes` | 会話の層の場面の一覧を回して、入り口ごとの点を出す(台本の LLM) | 使わない |
 | `python -m evals.run` | 評価。模擬ユーザーとシナリオを会話させて採点する | 使う |
 | `python -m line_runtime.ledger` | 費用台帳を人と日ごとに集計する | 使わない |
 

@@ -10,7 +10,7 @@
    {"who": "agent", "text": "週に何日くらい入れそう？"}
   ],
   "asking": "hf_days",
-  "says": [{"text": "正社員も考えてるんだよね", "button": false}],
+  "says": [{"text": "正社員も考えてるんだよね", "button": false, "reading": {"acts": [{"act": "switch", "to": "career", "strength": "consider"}]}}],
   "expect": [
    {"check": "stays"},
    {"check": "not_closed"},
@@ -34,7 +34,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "やっぱり正社員で探したい", "button": false}],
+  "says": [{"text": "やっぱり正社員で探したい", "button": false, "reading": {"acts": [{"act": "switch", "to": "career", "strength": "want"}]}}],
   "expect": [
    {"check": "switches_to", "entry": "career"},
    {"check": "profile", "key": "track", "contains": "正社員"},
@@ -56,7 +56,7 @@
    {"who": "agent", "text": "今のあなたに近いのは？"}
   ],
   "asking": "q_segment",
-  "says": [{"text": "正社員じゃなくてバイトで探したい", "button": false}],
+  "says": [{"text": "正社員じゃなくてバイトで探したい", "button": false, "reading": {"acts": []}}],
   "expect": [
    {"check": "stays"},
    {"check": "not_closed"},

@@ -10,7 +10,7 @@
    {"who": "agent", "text": "週に何日くらい入れそう？"}
   ],
   "asking": "hf_days",
-  "says": [{"text": "うん", "button": false}],
+  "says": [{"text": "うん", "button": false, "reading": {"acts": []}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -29,7 +29,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "学校終わってからならいける", "button": false}],
+  "says": [{"text": "学校終わってからならいける", "button": false, "reading": {"acts": [{"act": "answer", "slot": "time_slots", "text": "学校終わってから", "value": ["evening"]}]}}],
   "expect": [
    {"check": "slot", "slot": "time_slots", "value": "evening"},
    {"check": "counted"},
@@ -47,7 +47,7 @@
    {"who": "agent", "text": "通うなら、どこまでOK？"}
   ],
   "asking": "hf_commute",
-  "says": [{"text": "でんしゃで30ぷんまで", "button": false}],
+  "says": [{"text": "でんしゃで30ぷんまで", "button": false, "reading": {"acts": [{"act": "answer", "slot": "commute", "text": "でんしゃで30ぷんまで", "value": "train_30"}]}}],
   "expect": [
    {"check": "slot", "slot": "commute", "value": "train_30"},
    {"check": "not_asks", "slots": ["commute"]}

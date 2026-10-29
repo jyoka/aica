@@ -10,7 +10,7 @@
    {"who": "agent", "text": "働ける時間はどれが近い？"}
   ],
   "asking": "hf_hours",
-  "says": [{"text": "家事と育児でもうクタクタ…", "button": false}],
+  "says": [{"text": "家事と育児でもうクタクタ…", "button": false, "reading": {"acts": [{"act": "emotion", "feeling": "tired"}], "hook": "家事と育児"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -29,7 +29,7 @@
    {"who": "agent", "text": "接客ってどう？"}
   ],
   "asking": "fg_customer",
-  "says": [{"text": "前のバイトで店長に怒鳴られてすぐ辞めた。接客はもういいかな", "button": false}],
+  "says": [{"text": "前のバイトで店長に怒鳴られてすぐ辞めた。接客はもういいかな", "button": false, "reading": {"acts": [{"act": "answer", "slot": "customer_facing", "text": "接客はもういいかな", "value": "avoid"}, {"act": "story"}, {"act": "emotion", "feeling": "sad"}]}}],
   "expect": [
    {"check": "slot", "slot": "customer_facing", "value": "avoid"},
    {"check": "empathy"},

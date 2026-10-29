@@ -10,7 +10,7 @@
    {"who": "agent", "text": "週に何日くらい入れそう？"}
   ],
   "asking": "hf_days",
-  "says": [{"text": "また今度にする", "button": false}],
+  "says": [{"text": "また今度にする", "button": false, "reading": {"acts": [{"act": "later"}]}}],
   "expect": [
    {"check": "closed", "why": "later"},
    {"check": "reply_contains", "any": ["続き"]}
@@ -28,7 +28,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "やめる", "button": false}],
+  "says": [{"text": "やめる", "button": false, "reading": {"acts": [{"act": "stop"}]}}],
   "expect": [
    {"check": "closed", "why": "exit"},
    {"check": "llm_calls_max", "n": 0}
@@ -45,7 +45,7 @@
    {"who": "agent", "text": "接客ってどう？"}
   ],
   "asking": "fg_customer",
-  "says": [{"text": "もう結果見せて", "button": false}],
+  "says": [{"text": "もう結果見せて", "button": false, "reading": {"acts": [{"act": "show_result"}]}}],
   "expect": [
    {"check": "phase", "phase": "review"},
    {"check": "not_closed"}

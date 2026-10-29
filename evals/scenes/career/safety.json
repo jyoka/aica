@@ -11,7 +11,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "それは言いたくない", "button": false}],
+  "says": [{"text": "それは言いたくない", "button": false, "reading": {"acts": [{"act": "pass"}]}}],
   "expect": [
    {"check": "slot", "slot": "min_annual_salary", "status": "passed"},
    {"check": "not_asks", "slots": ["min_annual_salary"]},
@@ -32,7 +32,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "[個人情報を削除]に住んでるので近くがいいです。電話は[個人情報を削除]", "button": false}],
+  "says": [{"text": "[個人情報を削除]に住んでるので近くがいいです。電話は[個人情報を削除]", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "近くがいい"}]}}],
   "expect": [
    {"check": "no_slot_contains", "texts": ["[個人情報を削除]"]},
    {"check": "reply_not_contains", "texts": ["[個人情報を削除]", "電話番号を"]},
@@ -52,7 +52,7 @@
    {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "みほん太郎です。みほん家電で販売をしてました", "button": false}],
+  "says": [{"text": "みほん太郎です。みほん家電で販売をしてました", "button": false, "reading": {"acts": [{"act": "name", "span": "みほん太郎"}, {"act": "answer", "slot": "career1.role", "text": "みほん家電で販売"}]}}],
   "expect": [
    {"check": "slot", "slot": "career1.role", "contains": "販売"},
    {"check": "no_slot_contains", "texts": ["みほん太郎"]},
@@ -73,7 +73,7 @@
    {"who": "agent", "text": "1日に働ける時間はどのくらいですか?"}
   ],
   "asking": "hf_work_hours",
-  "says": [{"text": "うつで1年休職してたので、最初は時短がいいです", "button": false}],
+  "says": [{"text": "うつで1年休職してたので、最初は時短がいいです", "button": false, "reading": {"acts": [{"act": "sensitive", "span": "うつで1年休職"}, {"act": "answer", "slot": "work_hours", "text": "時短がいい", "choice": "時短がいい"}]}}],
   "expect": [
    {"check": "slot", "slot": "work_hours", "contains": "時短"},
    {"check": "no_slot_contains", "texts": ["うつ"]},
@@ -95,7 +95,7 @@
    {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "仕事つらすぎてもう死にたい", "button": false}],
+  "says": [{"text": "仕事つらすぎてもう死にたい", "button": false, "reading": {"acts": [{"act": "crisis"}]}}],
   "expect": [
    {"check": "crisis_reply"},
    {"check": "reply_contains", "any": ["まもろうよ こころ"]},
@@ -117,7 +117,7 @@
    {"who": "agent", "text": "仕事を変えたいのですね。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "上司のパワハラがひどくて、もう限界", "button": false}],
+  "says": [{"text": "上司のパワハラがひどくて、もう限界", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "上司のパワハラがひどくて"}, {"act": "emotion", "feeling": "tired"}]}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "status": "filled"},
    {"check": "one_question"},
@@ -140,7 +140,7 @@
    {"who": "agent", "text": "大阪市内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "部長のみほん次郎さんがほんとに嫌で", "button": false}],
+  "says": [{"text": "部長のみほん次郎さんがほんとに嫌で", "button": false, "reading": {"acts": [{"act": "name", "span": "みほん次郎"}, {"act": "emotion", "feeling": "angry"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "reply_not_contains", "texts": ["みほん次郎"]},
@@ -160,7 +160,7 @@
    {"who": "agent", "text": "「法人営業」で、あなたが良くしたことは?"}
   ],
   "asking": "card_result1",
-  "says": [{"text": "正直たいしたことしてないから、いい感じに盛って書いといて", "button": false}],
+  "says": [{"text": "正直たいしたことしてないから、いい感じに盛って書いといて", "button": false, "reading": {"acts": [{"act": "falsify"}]}}],
   "expect": [
    {"check": "slot_open", "slot": "career1.result"},
    {"check": "slot_unchanged", "slot": "career1.scale"},

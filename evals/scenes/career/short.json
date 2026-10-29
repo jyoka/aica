@@ -10,7 +10,7 @@
    {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "はい", "button": false}],
+  "says": [{"text": "はい", "button": false, "reading": {"acts": []}}],
   "expect": [
    {"check": "slot_open", "slot": "why_now"},
    {"check": "keeps_question"},
@@ -32,7 +32,7 @@
    {"who": "agent", "text": "まとめです。違うところだけ送ってください。\nなぜ今: 年収を上げたい\n勤務地: 東京23区\n年収: 600万円以上\n時期: すぐ\n上げたい: 年収(推測)"}
   ],
   "asking": "review",
-  "says": [{"text": "うん", "button": false}],
+  "says": [{"text": "うん", "button": false, "reading": {"acts": [{"act": "confirm"}]}}],
   "expect": [
    {"check": "phase", "phase": "result"},
    {"check": "slot", "slot": "raise_target", "confidence": "high"}
@@ -51,7 +51,7 @@
    {"who": "agent", "text": "600万円以上ですね。新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "すぐにでも!", "button": false}],
+  "says": [{"text": "すぐにでも!", "button": false, "reading": {"acts": [{"act": "answer", "slot": "start_timing", "text": "すぐにでも", "choice": "すぐ"}]}}],
   "expect": [
    {"check": "slot", "slot": "start_timing", "contains": "すぐ", "confidence": "high"},
    {"check": "not_asks", "slots": ["start_timing"]},
@@ -70,7 +70,7 @@
    {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "とうきょう23く", "button": false}],
+  "says": [{"text": "とうきょう23く", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "とうきょう23く", "choice": "東京23区"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "status": "filled"},
    {"check": "asks", "slot": "min_annual_salary"},
@@ -89,7 +89,7 @@
    {"who": "agent", "text": "400万円台ですね。新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "3か月いない", "button": false}],
+  "says": [{"text": "3か月いない", "button": false, "reading": {"acts": [{"act": "answer", "slot": "start_timing", "text": "3か月いない", "choice": "3か月以内"}]}}],
   "expect": [
    {"check": "slot", "slot": "start_timing", "contains": "3か月"},
    {"check": "not_asks", "slots": ["start_timing"]}
@@ -107,7 +107,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "ごひゃくくらいはほしいかな〜", "button": false}],
+  "says": [{"text": "ごひゃくくらいはほしいかな〜", "button": false, "reading": {"acts": [{"act": "answer", "slot": "min_annual_salary", "text": "ごひゃくくらい"}]}}],
   "expect": [
    {"check": "slot_open", "slot": "min_annual_salary"},
    {"check": "keeps_question"},
@@ -128,7 +128,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "大阪のほうがええなあ", "button": false}],
+  "says": [{"text": "大阪のほうがええなあ", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "大阪"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "大阪", "confidence": "high"},
    {"check": "asks", "slot": "min_annual_salary"},
@@ -146,7 +146,7 @@
    {"who": "agent", "text": "次は二択の質問です\n理想の水曜日の働き方は、どっち?"}
   ],
   "asking": "sc_wednesday",
-  "says": [{"text": "どっちでもいい", "button": false}],
+  "says": [{"text": "どっちでもいい", "button": false, "reading": {"acts": [{"act": "pass"}]}}],
   "expect": [
    {"check": "slot", "slot": "work_style", "status": "passed"},
    {"check": "not_asks", "slots": ["work_style"]},

@@ -9,7 +9,7 @@
    {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n今の状況に近いのは?"}
   ],
   "asking": "q_segment",
-  "says": [{"text": "あなたは誰?", "button": false}],
+  "says": [{"text": "あなたは誰?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -30,7 +30,7 @@
    {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "これ何に使うの?", "button": false}],
+  "says": [{"text": "これ何に使うの?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -51,7 +51,7 @@
    {"who": "agent", "text": "名古屋市内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "てかおすすめの会社ある?", "button": false}],
+  "says": [{"text": "てかおすすめの会社ある?", "button": false, "reading": {"acts": [{"act": "ask_advice"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -73,7 +73,7 @@
    {"who": "agent", "text": "福岡市内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "年収っていくらが普通なの?", "button": false}],
+  "says": [{"text": "年収っていくらが普通なの?", "button": false, "reading": {"acts": [{"act": "ask_advice"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "slot_open", "slot": "min_annual_salary"},
@@ -97,7 +97,7 @@
    {"who": "agent", "text": "600万円以上ですね。新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "これって人間がやってるの?AI?", "button": false}],
+  "says": [{"text": "これって人間がやってるの?AI?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -117,7 +117,7 @@
    {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "この情報ってどこに残るの?会社にバレない?", "button": false}],
+  "says": [{"text": "この情報ってどこに残るの?会社にバレない?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -139,7 +139,7 @@
    {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
   ],
   "asking": "card_scale1",
-  "says": [{"text": "あと何問くらい?", "button": false}],
+  "says": [{"text": "あと何問くらい?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -159,7 +159,7 @@
    {"who": "agent", "text": "あと少しで完成です\n働き方で、いちばん大事なのは?"}
   ],
   "asking": "fg_work_style",
-  "says": [{"text": "リモート多めってフルリモートってこと?", "button": false}],
+  "says": [{"text": "リモート多めってフルリモートってこと?", "button": false, "reading": {"acts": [{"act": "clarify"}]}}],
   "expect": [
    {"check": "slot_open", "slot": "work_style"},
    {"check": "reply_not_contains", "texts": ["読み取れなかった", "働き方で、いちばん大事なのは?"]},

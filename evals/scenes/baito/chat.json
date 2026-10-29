@@ -11,7 +11,7 @@
    {"who": "agent", "text": "高校生なんだね！週に何日くらい入れそう？"}
   ],
   "asking": "hf_days",
-  "says": [{"text": "てか今日暑すぎない？", "button": false}],
+  "says": [{"text": "てか今日暑すぎない？", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "暑すぎ"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -31,7 +31,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "[スタンプ]", "button": false}],
+  "says": [{"text": "[スタンプ]", "button": false, "reading": {"acts": [{"act": "chitchat"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -50,7 +50,7 @@
    {"who": "agent", "text": "バイト代、何に使いたい？"}
   ],
   "asking": "q_money",
-  "says": [{"text": "推しのライブ遠征したいんだよね〜", "button": false}],
+  "says": [{"text": "推しのライブ遠征したいんだよね〜", "button": false, "reading": {"acts": [{"act": "answer", "slot": "purpose", "text": "推しのライブ遠征", "value": "hobby"}], "hook": "ライブ遠征", "mentions": ["推し"]}}],
   "expect": [
    {"check": "slot", "slot": "purpose", "value": "hobby"},
    {"check": "counted"},
