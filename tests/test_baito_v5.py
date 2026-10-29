@@ -844,3 +844,164 @@ def test_ng_edited_during_the_continued_consultation_is_not_added_back_with_a_ne
     run(st, "夜勤は無理", scr)
     run(st, "やめる")
     assert logic.stated_preferences(st.user(UID))["avoids"]["value"] == "夜勤、力仕事"
+
+
+# ----------------------------- 本人が消した値を、取っておいた相談からもその時点で消す(jyoka/tasks#375) -----------------------------
+WAGE = "1,200円以上"
+ITEMS = ("avoids", "area", "days_per_week", "time_band", "min_wage")  # 消す項目: NG、勤務地、日数、時間帯、時給
+
+
+def _web_later_with_items(client, st, uid, th) -> dict:
+    """Web のトーク画面で v5 の相談を始め、NG(逆から選ぶ問いの NG_PICK)と時給(WAGE)まで答えて「あとで」で取っておく。保存した希望の項目。"""
+    stream(client, uid, "message", th, "バイトを探したい")
+    while harness(st, uid).current["qid"] != "fg_wage":
+        _web_say(client, st, uid, th, _tap_for(harness(st, uid)))
+    _web_say(client, st, uid, th, WAGE)
+    _web_say(client, st, uid, th, "あとで")
+    assert not session.active(st, uid) and session.PAUSED_KEY in st.user(uid)
+    return logic.stated_preferences(st.user(uid))
+
+
+def _stored(client, uid) -> str:
+    """「データを書き出す」の dip の状態(保存しているそのままの形)を、文字にしたもの。"""
+    return json.dumps(client.get("/api/profile/export").json()["stored"]["users"][uid], ensure_ascii=False)
+
+
+def test_web_profile_deleting_items_after_later_erases_them_from_the_paused_consultation(app, monkeypatch):  # noqa: F811
+    """Web のトーク画面で v5 の相談の NG、勤務地、日数、時間帯、時給を答えて「あとで」。プロフィール画面でそれを消した直後に、「データを書き出す」と
+    保存のファイル(取っておいた相談を含む)のどこにも、消した値が無い。続きの後の結果にも、消した NG と勤務地が戻らない(jyoka/tasks#375)。"""
+    from line_runtime import runtime
+
+    model = ConsultModel(script=[greet, *baito_start_script(),
+                                 call("start_baito_consultation", {"line_user_id": PINNED_USER}, "st2"),
+                                 reply(["続きからいこう！"])])
+    baito = LayerBaitoLLM()
+    monkeypatch.setattr(app, "LineRuntime", lambda: runtime.LineRuntime(model=model, in_memory=True, baito_llm=baito))
+    with TestClient(app.app) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        st = app.state
+        prefs = _web_later_with_items(client, st, uid, th)
+        values = [prefs[k]["value"] for k in ITEMS]
+        assert values == [NG, "東京", "週1〜2日", "朝", "1200"]
+        before = _stored(client, uid)
+        assert all(v in before for v in values)  # 消す前は、取っておいた相談にも値がある
+        for key in ITEMS:  # プロフィール画面の「消す」
+            assert client.delete(f"/api/profile/items/{key}").status_code == 200
+        after = _stored(client, uid)
+        p = st.user(uid)[session.PAUSED_KEY]
+        on_disk = json.dumps(State(app.state.path).user(uid), ensure_ascii=False)
+        assert all(v not in after and v not in on_disk for v in values)
+        h = p["harness"]
+        assert NG not in h["user_ng"] + h["saved_ng"] and "area" not in h["near"] and "time" not in h["near"]
+        assert not {"days_per_week", "time_slots", "hourly_wage_min"} & set(h["slots"])
+        assert all(v is None for v in p["kept"].values()) and h["kept"] == p["kept"]
+        assert all(e.get("slot") not in ("days_per_week", "time_slots", "hourly_wage_min") or not {"value", "values"} & set(e)
+                   for e in h["log"])
+        qid = h["current"]["qid"]
+        stream(client, uid, "message", th, "バイトの相談の続きをしたい")
+        assert harness(st, uid).current["qid"] == qid and NG not in harness(st, uid).user_ng  # 続きは閉じたときの問いから
+        seen = []
+        while session.active(st, uid):
+            seen.append(_web_say(client, st, uid, th, _tap_for(harness(st, uid))))
+    assert model.script == [] and seen and all(NG not in s for s in seen)
+    prefs = logic.stated_preferences(app.state.user(uid))
+    assert "avoids" not in prefs and "area" not in prefs
+
+
+def test_web_forget_all_after_later_erases_the_paused_consultation(app, monkeypatch):  # noqa: F811
+    """Web のトーク画面で NG を答えて「あとで」。プロフィール画面の「すべて消す」で、取っておいた相談そのものが消える(jyoka/tasks#375)。"""
+    from line_runtime import runtime
+
+    model = ConsultModel(script=[greet, *baito_start_script()])
+    baito = LayerBaitoLLM()
+    monkeypatch.setattr(app, "LineRuntime", lambda: runtime.LineRuntime(model=model, in_memory=True, baito_llm=baito))
+    with TestClient(app.app) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        _web_later_with_items(client, app.state, uid, th)
+        assert client.post("/api/profile/forget").status_code == 200
+        assert session.PAUSED_KEY not in app.state.user(uid) and NG not in json.dumps(app.state.user(uid), ensure_ascii=False)
+    assert session.PAUSED_KEY not in State(app.state.path).user(uid)
+
+
+def test_editing_an_item_after_later_replaces_the_old_value_in_the_paused_consultation(tmp_path, monkeypatch):
+    """「あとで」の後にプロフィール画面で日数を直し、トーク(トークの AI の save_user_preferences)で避けたいことを言い直す: 取っておいた相談は
+    その時点で前の値(週3〜4日、電話対応)を持たず、直した日数を入れている。続きの結果でも直した値のまま(jyoka/tasks#375)。"""
+    from dip_mcp import profile
+    from dip_mcp import server as dip_server
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    profile.edit_item(st, UID, "days_per_week", "週1〜2日")
+    p = st.user(UID)[session.PAUSED_KEY]
+    assert p["harness"]["slots"]["days_per_week"] == {"value": "1-2", "confidence": "high", "from": V5.SAVED}
+    assert p["kept"]["days_per_week"] == "週1〜2日" and "週3〜4日" not in json.dumps(p, ensure_ascii=False)
+    monkeypatch.setattr(dip_server, "state", st)
+    assert dip_server.save_user_preferences(UID, {"avoids": "力仕事"})["saved"] == ["avoids"]
+    p = st.user(UID)[session.PAUSED_KEY]
+    assert NG not in json.dumps(p, ensure_ascii=False) and p["kept"]["avoids"] == "力仕事"
+    session.start(st, UID, quick=False)
+    run(st, "やめる")
+    prefs = logic.stated_preferences(st.user(UID))
+    assert (prefs["days_per_week"]["value"], prefs["avoids"]["value"]) == ("週1〜2日", "力仕事")
+
+
+def test_unrelated_profile_change_keeps_the_paused_consultation_as_is(tmp_path):
+    """取っておいた相談が読まない項目(やりたいこと)を直しても、取っておいた相談は変えない(直前のやりとりも残す)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    before = json.dumps(st.user(UID)[session.PAUSED_KEY], ensure_ascii=False)
+    profile.edit_item(st, UID, "wants", "人と話す仕事")
+    profile.delete_item(st, UID, "wants")
+    assert json.dumps(st.user(UID)[session.PAUSED_KEY], ensure_ascii=False) == before
+
+
+def test_profile_change_rebuilds_the_review_card_and_drops_an_unreadable_paused_consultation(tmp_path):
+    """まとめのカードを出したまま取っておいた相談は、NG を消すとカードを作り直す(消した NG を載せない)。取っておいた状態が読めなければ、
+    「消す」は失敗させず、取っておいた相談ごと消す(jyoka/tasks#375)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+
+    def put_card(u):
+        h = V5.State.from_dict(u[session.PAUSED_KEY]["harness"])
+        h.last_card = H.build_card(h)
+        u[session.PAUSED_KEY]["harness"] = h.to_dict()
+
+    st.update(UID, put_card)
+    assert st.user(UID)[session.PAUSED_KEY]["harness"]["last_card"]["ng_user"] == [NG]
+    profile.delete_item(st, UID, "avoids")
+    p = st.user(UID)[session.PAUSED_KEY]
+    assert p["harness"]["last_card"]["ng_user"] == [] and NG not in json.dumps(p, ensure_ascii=False)
+    st.update(UID, lambda u: u[session.PAUSED_KEY]["harness"].__setitem__("slots", "読めない"))
+    assert profile.delete_item(st, UID, "days_per_week") == {"deleted": "days_per_week"}
+    assert session.PAUSED_KEY not in st.user(UID) and "days_per_week" not in st.user(UID)["preferences"]
+
+
+def test_profile_change_drops_handed_over_values_and_plan_texts_from_the_paused_consultation(tmp_path):
+    """取っておいた相談が正社員から引き継いだ値(came_from。近くで探すのエリアに無い「横浜」、取っておいた相談が読まない働き方)と、
+    計画の記録の文(「週の日数を…に直したよ」)も、本人が項目を消した時点で消す(jyoka/tasks#375)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    came = {"from": "career", "to": "baito", "slots": {"area": {"text": "横浜", "confidence": "high"},
+                                                         "work_style": {"text": "リモート中心", "confidence": "high"}}, "acts": []}
+
+    def put(u):
+        h = u[session.PAUSED_KEY]["harness"]
+        h["came_from"] = came
+        h["log"].append({"t": 9, "kind": "plan", "ack": "short", "about": ["週の日数を「週3〜4日」に直したよ"]})
+
+    st.update(UID, put)
+    logic.save_preferences(st, UID, {"area": "横浜", "work_style": "リモート中心"})
+    profile.delete_item(st, UID, "work_style")
+    h = st.user(UID)[session.PAUSED_KEY]["harness"]
+    assert h["came_from"] is None and "リモート中心" not in json.dumps(h, ensure_ascii=False)
+    profile.delete_item(st, UID, "days_per_week")
+    h = st.user(UID)[session.PAUSED_KEY]["harness"]
+    assert "週3〜4日" not in json.dumps(h, ensure_ascii=False) and {"kind": "plan", "t": 9, "ack": "short"} in h["log"]

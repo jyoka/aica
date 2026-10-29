@@ -361,6 +361,28 @@ def _paused(state: State, line_user_id: str) -> tuple[H.State, dict] | None:
     return h, p
 
 
+def forget_paused(u: dict) -> None:
+    """本人がプロフィール画面やトークで希望の項目を消した・直した(dip_mcp.profile と、トークの AI の save_user_preferences。
+    u は 1 人の dict): 「あとで」で取っておいた相談(PAUSED_KEY)からも、その時点で、消した・直した項目の前の値を消す
+    (V5.forget。続きを始めるまで、見えない所に残さない。jyoka/tasks#375)。続きを始めるときの読み直し(_paused)は、二重の守りとして残す。"""
+    p = u.get(PAUSED_KEY)
+    if not p:
+        return
+    try:
+        d = p["harness"]
+        if d.get("version") != V5.VERSION:
+            return
+        prefs, kept = logic.stated_preferences(u), p.get("kept") or {}
+        if V5.kept_texts(prefs) == kept and not d.get("came_from"):
+            return
+        h = V5.State.from_dict(d)
+        V5.forget(h, prefs, kept)
+    except Exception:  # noqa: BLE001  読めない状態なら、取っておいた相談ごと消す(本人の「消す」を失敗させず、前の値も残さない)
+        u.pop(PAUSED_KEY, None)
+        return
+    p["harness"], p["kept"] = h.to_dict(), dict(h.kept)
+
+
 def _unpause(state: State, line_user_id: str) -> None:
     state.update(line_user_id, lambda u: u.pop(PAUSED_KEY, None))
 
