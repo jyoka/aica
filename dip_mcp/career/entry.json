@@ -29,6 +29,20 @@
  "infer": {
   "ib_why_now": {"年収を上げたい": {"raise_target": "年収"}}
  },
+ "groups": [
+  {"name": "はじめ", "phases": ["icebreak"], "line": null},
+  {"name": "条件", "phases": ["hard_filter"], "line": "次は希望の条件です"},
+  {"name": "職歴", "phases": ["career_cards"], "line": "次は職歴です"},
+  {"name": "好み", "phases": ["scenario_game", "reverse_pick", "fill_gaps"], "line": "あと少しで完成です"}
+ ],
+ "topics": {
+  "働き方": ["work_style", "work_hours", "team_style"],
+  "時期": ["start_timing", "blank_period"],
+  "職歴1": ["career1.role", "career1.scale", "career1.result"],
+  "職歴2": ["career2.role", "career2.scale", "career2.result"],
+  "次の仕事": ["direction", "change_reason", "use_experience", "keep_doing", "stop_doing"]
+ },
+ "mention_questions": ["card_role", "hf_use_experience", "hf_keep"],
  "texts": {
   "crisis_lead": [
    "話してくださって、ありがとうございます。そう思うほど、つらい気持ちなのですね。ひとりで抱えこまなくて大丈夫です。",
