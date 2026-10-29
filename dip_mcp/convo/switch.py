@@ -15,6 +15,10 @@
   移る発言の中の値の act は、本人がそのターンに言ったまま(直接聞いていない)なので low。前に引き継いだ記録(prior)が先の入り口の
   ものなら、先の欄の名前のまま元の確かさで戻す。写した値をどの欄に入れるか(空の欄だけか)は入り口が決める
 
+- トークの AI から始める(t1。§4.5、§4.13): トークの AI が start_* に本人の発言を渡し、移る先が会話の層の版なら、dip は始めずに
+  from が talk の記録(talk_record)を書く。値はまだ読んでいない(read)。ランタイムが同じターンで移る先の switch_in を呼び、移る先は
+  その発言を自分の読む段で読み(読んだ値の act は移る先の欄の名前)、記録の acts に入れてから当てる。値の対応は無く、欄の名前のまま推測(low)
+
 引き継ぎの記録を書くのも読むのも、会話の層の版だけ(§4.15)。今の版(c1、v4)は書かず、読まない。
 """
 
@@ -30,6 +34,7 @@ KEY = "handoff"
 TTL = timedelta(minutes=30)  # 記録を読む期限。ランタイムが新しい会話を始める間(line_runtime.server.TALK_RESUME_WINDOW)と同じ
 HOWS = ("same", "near")
 ENTRY_KEYS = ("text", "value", "number", "range", "unit", "status", "confidence", "from")  # 記録に残す値の中身
+TALK = "talk"  # トークの AI(相談の外)。トークの AI が始めた相談の記録の from
 
 
 def wanted(reading: dict | None, entries) -> str | None:
@@ -76,6 +81,16 @@ def record(source: str, to: str, slots: dict, acts: list[dict], said: str, at: d
     return rec
 
 
+def talk_record(to: str, said: str, at: datetime) -> dict:
+    """トークの AI が始める相談の記録(t1)。始めた発言(said)は、移る先が自分の読む段で読む(unread)。"""
+    return record(TALK, to, {}, [], said, at) | {"read": True}
+
+
+def unread(rec: dict | None) -> bool:
+    """まだ読んでいない、トークの AI からの記録か(移る先が said を読む段で読み、acts に入れてから当てる)。"""
+    return bool(rec) and rec.get("from") == TALK and bool(rec.get("read"))
+
+
 def write(state, line_user_id: str, rec: dict) -> None:
     state.update(line_user_id, lambda u: u.__setitem__(KEY, rec))
 
@@ -109,6 +124,8 @@ def carry(rec: dict | None, entry: str, mapping: dict) -> dict:
         for s, e in (prior.get("slots") or {}).items():
             out[s] = dict(e, **{"from": entry})
     table = mapping.get(rec.get("from")) or {}
+    if rec.get("from") == TALK:  # 移る先の読む段で読んだ値: 欄の名前のまま(区切りの欄は value も)、推測で
+        table = {a.get("slot"): {"slot": a.get("slot"), "how": "talk"} for a in rec.get("acts") or [] if a.get("slot")}
     fresh: dict = {}
 
     def put(src_slot, e, conf):
@@ -118,6 +135,10 @@ def carry(rec: dict | None, entry: str, mapping: dict) -> dict:
             return
         same = m["how"] == "same"
         conf = conf if same else "low"
+        if m["how"] == "talk":
+            fresh[m["slot"]] = {"status": "filled", "text": text, "value": e.get("value"), "number": e.get("number"),
+                                "range": None, "unit": e.get("unit"), "confidence": "low", "from": TALK}
+            return
         old = fresh.get(m["slot"])
         if old is not None:
             fresh[m["slot"]] = dict(old, text=merge(old["text"], text), number=None, unit=None,

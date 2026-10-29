@@ -21,10 +21,13 @@
   まとめは review。talk には置かない
 - says: 本人の発言([{"text", "button", "reading"?}])。button は押したボタンか(打った文なら false)。2 つ以上なら続けて送る。
   reading は読む段の正解(設計メモ §4.3 の act の形。下の ACTS)。career と baito の打った文には必ず置き、ボタンには置かない
-  (ボタンは読む段を呼ばない)。talk は任意(トークの AI は読む段を持たない)。形は
+  (ボタンは読む段を呼ばない)。talk は任意(トークの AI は読む段を持たない。t1 でトークの AI が相談を始めたときに、移る先の読む段が読む)。形は
   {"acts": [{"act", ...}], "hook"?: 相づちに使う本人の言葉, "mentions"?: [候補に使える本人の言葉]}。
   acts が空なら、働きを読めない発言(「はい」「うん」だけ)。値の act の text は発言の部分文字列、number は発言に数字で
   書いてある数、baito の value はその欄の区切りのキー(複数の値の欄は list)。slot "segment" の value は区分
+  talk の場面の発言には、トークの AI の正解(talk。任意)も置ける: {"tools": [{"name", "args"}], "entry_question"?: bool}。
+  tools はそのターンにトークの AI が呼ぶツール(プロンプトの決まりのとおりに動くとしたとき)、entry_question は区分を聞く 1 問
+  (ボタンはプロンプトにある入り口を選ぶボタン)。t1 の台本のトークの AI が使う(runner.TalkScript)。t0 のモックは使わない
 - expect: 期待する振る舞い([{"check", "at"?, ...引数}])。check は下の CODE_CHECKS か JUDGE_CHECKS の名前。
   at は何番目の返信を見るか(0 から。既定は最後。"all" はすべて)。状態を見る check(slot など)も、その返信の後の状態を見る。
   状態を見る check の entry は、どの入り口の状態を見るか(既定は場面の entry。入り口を移した後の状態を見るときに書く)
@@ -274,8 +277,9 @@ def _digits(text: str) -> set[str]:
     return set(re.findall(r"\d+(?:\.\d+)?", nfkc(text).replace(",", "")))
 
 
-def _check_reading(sid: str, entry: str, slots: set[str], say: dict) -> None:
-    """読む段の正解(say の reading)の形。値の act は、発言の部分文字列と、その入り口の欄と区切りか。"""
+def _check_reading(sid: str, entry: str, slots: set[str], say: dict, reader: str | None = None) -> None:
+    """読む段の正解(say の reading)の形。値の act は、発言の部分文字列と、その入り口の欄と区切りか。
+    reader は読む入り口(talk の場面では、トークの AI が始める移る先。値の区切りはその入り口のもの)。"""
     r = say.get("reading")
     if r is None:
         if not say["button"] and entry != "talk":
@@ -315,11 +319,25 @@ def _check_reading(sid: str, entry: str, slots: set[str], say: dict) -> None:
         if "number" in a and nfkc(str(a["number"]).removesuffix(".0")) not in _digits(say["text"]):
             raise ValueError(f"{sid}: act {name} の number {a['number']} が発言に数字で無い(数を作らない)")
         if name in VALUE_ACTS:
-            _check_value(sid, entry, a)
+            _check_value(sid, reader or entry, a)
         if name == "switch" and (a["to"] not in ENTRIES or a["to"] in (entry, "talk") or a["strength"] not in STRENGTHS):
             raise ValueError(f"{sid}: switch の to か strength")
         if name == "emotion" and a["feeling"] not in FEELINGS:
             raise ValueError(f"{sid}: emotion の feeling は {FEELINGS} から")
+
+
+def _check_talk(sid: str, entry: str, say: dict) -> None:
+    """トークの AI の正解(say の talk)の形。talk の場面だけに置く。"""
+    t = say.get("talk")
+    if t is None:
+        return
+    if entry != "talk":
+        raise ValueError(f"{sid}: talk(トークの AI の正解)は talk の場面だけに置く")
+    if not isinstance(t, dict) or set(t) - {"tools", "entry_question"} or not isinstance(t.get("entry_question", False), bool):
+        raise ValueError(f"{sid}: talk の形")
+    for c in t.get("tools") or []:
+        if not isinstance(c, dict) or set(c) != {"name", "args"} or not isinstance(c["name"], str) or not isinstance(c["args"], dict):
+            raise ValueError(f"{sid}: talk の tools の形({{name, args}})")
 
 
 def _check_value(sid: str, entry: str, a: dict) -> None:
@@ -405,9 +423,15 @@ def validate(s: dict) -> None:
     if not s["says"]:
         raise ValueError(f"{sid}: says が空")
     for x in s["says"]:
-        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool) or set(x) - {"text", "button", "reading"}:
+        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool) or set(x) - {"text", "button", "reading", "talk"}:
             raise ValueError(f"{sid}: says の形")
-        _check_reading(sid, entry, _slots(entry) if entry != "talk" else set().union(*map(_slots, ("career", "baito"))), x)
+        _check_talk(sid, entry, x)
+        if entry != "talk":
+            _check_reading(sid, entry, _slots(entry), x)
+        else:  # 相談の外の発言は、トークの AI が始める移る先(switches_to が 1 つなら)の読む段が読む
+            moves = [c.get("entry") for c in s["expect"] if c.get("check") == "switches_to"]
+            reader = moves[0] if len(moves) == 1 and moves[0] in ENTRIES and moves[0] != "talk" else None
+            _check_reading(sid, entry, _slots(reader) if reader else set().union(*map(_slots, ("career", "baito"))), x, reader)
     first = s["says"][0]
     if first["button"] and (entry == "talk" or first["text"] not in _choices(entry, s["asking"], form, s["segment"])):
         raise ValueError(f"{sid}: 押したボタン {first['text']} が {s.get('asking')} のボタンに無い")

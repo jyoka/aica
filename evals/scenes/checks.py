@@ -2,7 +2,7 @@
 
 判定するのは、場面を回した記録(runner.run_scene の戻り値)。記録の形:
 - replies: 本人の発言ごとの返信。{"text", "bubbles", "choices", "counted", "llm_calls", "how", "closed", "states", "profile",
-  "parts"?}。how は返事を書いたもの(harness: 相談のハーネス、talk: トークの AI、dropped: 返事なし)。
+  "parts"?}。how は返事を書いたもの(harness: 相談のハーネス、talk: トークの AI、guard: 守りの前処理の決まった文、dropped: 返事なし)。
   closed は相談を閉じた理由(later / result / exit / track。閉じていなければ None)。states は入り口ごとの状態の写し
   ({entry: snap}。snap は runner.career_snap / baito_snap)。profile は dip の共通の値(区分 track と希望の項目)。
   parts は返事の部品の並び([[kind, text]]。新しい層が返すとき。無ければ texts から読み分ける)

@@ -1218,6 +1218,22 @@ def layer_on(entry: str) -> bool:
     return v in LAYER_VERSIONS.get(entry, ())
 
 
+# トークの AI(相談の外)と音声相談の指示に、会話の層の部品を足す版(ADR-0011、設計メモ docs/design/conversation-layer.md §4.13。
+# dip_mcp/convo/talk.py)。t1 は、危ない言葉の前処理、事実、入り口を選ぶ問い、start_* への発言の受け渡しを足す。
+# 無ければ今のまま(本番は切り替えない)。Web プロセス、dip、音声ワーカーのどれも、この値を読む
+TALK_LAYER_FLAG = "TALK_LAYER_VERSION"
+TALK_LAYER_VERSIONS = ("t1",)
+
+
+def talk_layer_version() -> str | None:
+    v = os.environ.get(TALK_LAYER_FLAG, "").strip()
+    return v if v in TALK_LAYER_VERSIONS else None
+
+
+def talk_layer_on() -> bool:
+    return talk_layer_version() is not None
+
+
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
     """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
     if track not in TRACKS:
