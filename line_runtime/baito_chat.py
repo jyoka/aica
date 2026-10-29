@@ -154,8 +154,12 @@ class SyncLLM:
         """画面に出たやりとり(本人の発言・返信)を 1 つ覚える。"""
         _append(self.convo, role, text)
 
-    def _run(self, stage: str, system: str, user_text: str):
-        msgs = messages_for(stage, user_text, recent(self.convo))
+    def _run(self, stage: str, system: str, user_text: str, view: dict | None = None):
+        """view に model_text と model_history(会話の層の版が伏せた本人の発言と、層の覚えの直前のやりとり)があれば、
+        ランタイム(runtime._harness_turn)と同じく、そちらをモデルに渡す。"""
+        view = view or {}
+        past = recent(view["model_history"]) if "model_history" in view else recent(self.convo)
+        msgs = messages_for(stage, view.get("model_text", user_text), past)
         out, usage = self._loop.run_until_complete(self.call(stage, system, msgs))
         self.used.append({"stage": stage, **usage})
         return json.dumps(out, ensure_ascii=False)
@@ -168,7 +172,7 @@ class SyncLLM:
 
     def generate(self, view: dict):
         stage = self.prompt_stage(view)
-        return self._run(stage, self.render_prompt(stage, view), view.get("user_text", ""))
+        return self._run(stage, self.render_prompt(stage, view), view.get("user_text", ""), view)
 
     def close(self) -> None:
         self._loop.close()

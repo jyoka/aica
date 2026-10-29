@@ -14,6 +14,7 @@
 | `runner.py` | 場面を回す仕組み。入り口と版ごとの回し方(`VERSIONS`)と、点(`tally`) |
 | `checks.py` | コードで判定する条件(`CODE_CHECKS`)の中身 |
 | `judge.py` | 採点の条件(`JUDGE_CHECKS`)のジャッジのプロンプトと、出力の受け取り方 |
+| `real.py` | 実モデルの回(設計メモ §5 の 9 枚目)と、その点の表(`summary`) |
 
 入り口ごとに 1 フォルダ、種類(雑談、逆質問、1 回に複数の答え、直す、感情、守り、短い答え、操作、入り口をまたぐ、jyoka/tasks#326 のトーク)ごとに 1 ファイルです。
 
@@ -60,7 +61,7 @@
 - talk の t1 は、台本のトークの AI で回し、コードの条件をすべて判定します。台本のトークの AI は、発言に置いたトークの AI の正解(`talk`:
   呼ぶツールと、区分を聞く 1 問)のとおりに動き、区分を聞くボタンはプロンプトから読みます。トークの AI が相談を始めたら、移る先(c2、v5)の
   読む段と言う段は台本の LLM(発言の `reading`)です。つまり、トークの AI がプロンプトの決まりのとおりに動くとしたときの点です(task 361)
-- 採点の条件は判定しません(skip)。`runner.run(judge=judge.judge_with(client, model))` で採点しますが、実モデルを呼ぶので 9 枚目のカードで使います
+- 採点の条件は判定しません(skip)。`runner.run(judge=judge.judge_with(client, model))` で採点しますが、実モデルを呼ぶので 9 枚目のカードで使います(下の「実モデルで回す」)
 - 終了コードは、場面を回せなかったときだけ 1 です(条件の不合格では 0。点を出す道具なので)
 
 点の表の列は、入り口と版、場面の数、コードの条件をすべて満たした場面(判定した条件のある場面のうち)、コードの条件の合格、
@@ -68,6 +69,31 @@
 今の版の点は設計メモ §7 にあります。
 
 回せる版は `runner.py` の `VERSIONS` にあります(career は `c1` と `c2`、baito は `v4` と `v5`)。新しい版(t1)は、ここに回し方を足すと、同じ場面と条件で回せます。
+
+## 実モデルで回す
+
+設計メモ §5 の 9 枚目(task 362)で、今の作りと新しい作りを実モデルで比べるときの回し方です。**実 API を使い、費用がかかります。**
+運営者が決めた台帳と上限(`evals/budget-conversation-layer.jsonl`、$21)の中で回します。鍵はリポジトリ直下の `.env` か環境変数から読みます。
+
+```sh
+L=evals/budget-conversation-layer.jsonl
+./.venv/bin/python -m evals.scenes --real --entry career --version c1 --tag career-c1-r1 --ledger $L --limit-usd 21
+./.venv/bin/python -m evals.scenes --real --entry career --version career=c2 --version baito=v5 --tag career-c2-r1 --ledger $L --limit-usd 21
+./.venv/bin/python -m evals.scenes --real --entry career --version career=c2 --version baito=v5 --read-model claude-haiku-5-5 \
+    --tag career-c2-haiku --ledger $L --limit-usd 21                                  # 読む段だけを Haiku 5.5 に
+./.venv/bin/python -m evals.scenes.real summary evals/results/scenes-real-*.jsonl     # 点の表(費用 0)
+```
+
+- 回し方は台本の回と同じで、モデルだけを実モデルにします。メッセージはランタイム(`line_runtime/runtime.py` の `_harness_turn`)と同じで、
+  本人の発言と、画面に出た直前のやりとり(場面の前の会話 `history` と、その場面の返信)を渡します。層の版が伏せた発言と覚え
+  (`model_text`、`model_history`)があれば、そちらを渡します。呼び出しの失敗は、ランタイムと同じく失敗の印としてハーネスに渡します
+- 本人がやめて相談を閉じ、トークの AI がそのターンを受けたときは、実モデルの回でもトークの AI を回さないので、判定しません
+  (そのターンの返信を見る採点の条件も skip)。talk の場面だけは、本物のランタイムを本番と同じ実モデルのトークの AI で回し、どの条件も判定します
+- 採点の条件は実モデルのジャッジ(`judge.py`。1 場面 1 回の呼び出し)で判定します。`--no-judge` で切れます
+- 1 場面ごとに台帳へ 1 行足し、場面を始める前に累計が上限に達していたら止めます(終了コード 2)。結果は 1 場面 1 行の
+  `evals/results/scenes-real-<tag>.jsonl` で、途中で止めても残ります
+- 速さは、ターンごとのハーネスのモデルの時間の合計(`model_seconds`)と段ごとの時間(`stages`)。talk はランタイムの 1 ターンの時間です
+- 点の表は、入り口と版と読む段のモデルごとに、§4.10 の合格の線(コード 95%、採点 85%、守りと入り口をまたぐ条件は 100%)に届いたかを出します
 
 ## 確かめ方
 
@@ -77,4 +103,4 @@
 
 `test_conversation_scenes.py` は、場面の数(全部で 60 以上、種類ごとに 3 以上)、入り口ごとの種類、押したボタンが質問バンクにあるか、
 読む段の正解の形、形の誤りを確かめます。`test_scene_runner.py` は、回す仕組みと条件の判定と、ジャッジのプロンプトと出力の受け取り方
-(台本の LLM)を確かめます。
+(台本の LLM)、実モデルの回の道具立て(偽のモデル。メッセージ、失敗の印、トークの AI が受けたターンの skip、点の表)を確かめます。

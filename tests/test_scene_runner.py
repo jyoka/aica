@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -299,3 +300,152 @@ def test_runner_uses_the_judge_for_the_judge_checks_only():
     assert [(x["check"], x["status"]) for x in judged] == [("responds_first", K.PASS)]
     assert len(client.seen) == 1  # 1 場面 1 回
     assert all(x["status"] in (K.PASS, K.FAIL) for x in row["results"] if not x.get("judge"))
+
+
+# ----------------------------- 実モデルの回(9 枚目。evals/scenes/real.py。ここでは偽のモデル) -----------------------------
+def fake_real(monkeypatch, driver, say, fail=()):
+    """RealModel の、モデルを呼ぶところ(_parse)だけを偽物にする: 台本の LLM と同じ出力を返し、段、モデル、メッセージを残す。
+    fail に入れた段は例外(通信の失敗)。読む段のモデルは small-model。"""
+    from evals.scenes import real as RL
+
+    real = RL.RealModel(SimpleNamespace(mark=lambda: 0), read_model="small-model")
+    real._client = object()
+    seen = []
+
+    async def parse(client, entry, stage, system, messages):
+        seen.append({"entry": entry, "stage": stage, "model": real.model_for(stage), "messages": messages})
+        if stage in fail:
+            raise RuntimeError("API が落ちた")
+        return R.ScriptLLM(driver, say, [])({"stage": stage, "system": system}), {}
+    monkeypatch.setattr(real, "_parse", parse)
+    return real, seen
+
+
+def test_real_mode_sends_the_runtime_messages_and_times_each_call(monkeypatch, tmp_path):
+    """実モデルの回は、ランタイムと同じメッセージでモデルを呼ぶ: 読む段は今の発言だけ、言う段は場面の前の会話と今の発言。
+    読む段だけを別のモデルにでき、ターンごとに呼び出しの数と時間を残す。出力が同じなら、台本の回と同じ返信になる。"""
+    scene = BY_ID["chat-weather"]
+    d = R.driver("career", "c1")
+    real, seen = fake_real(monkeypatch, d, scene["says"][0])
+    d.real = real
+    rec = R.run_harness_scene(scene, d, tmp_path / "state.json")
+    real.close()
+    (mock,) = R.run(["career"], ids=["chat-weather"])
+    rep = rec["replies"][0]
+    assert rec["error"] is None and rep["text"] == mock["replies"][0]["text"]
+    assert [(x["stage"], x["model"]) for x in seen] == [("extract", "small-model"), ("say", real.model)]
+    assert seen[0]["messages"] == [{"role": "user", "content": scene["says"][0]["text"]}]
+    said = [m["content"] for m in seen[1]["messages"]]
+    assert scene["history"][-1]["text"] in "\n".join(said) and said[-1].endswith(scene["says"][0]["text"])
+    assert rep["model_calls"] == 2 and [s["stage"] for s in rep["stages"]] == ["extract", "say"] and rep["model_seconds"] >= 0
+
+
+def test_real_mode_turns_a_failed_call_into_a_mark_like_the_runtime(monkeypatch, tmp_path):
+    """実モデルの呼び出しが落ちたら、場面のエラーにせず、ランタイムと同じく失敗の印を渡す(ハーネスがやり直し、だめなら問いの原文)。"""
+    scene = BY_ID["chat-weather"]
+    d = R.driver("career", "c2")
+    real, seen = fake_real(monkeypatch, d, scene["says"][0], fail={"say"})
+    d.real = real
+    rec = R.run_harness_scene(scene, d, tmp_path / "state.json")
+    real.close()
+    rep = rec["replies"][0]
+    assert rec["error"] is None and rep["how"] == "harness" and rep["text"]
+    assert [s["ok"] for s in rep["stages"] if s["stage"] == "say"] == [False, False]  # 1 回やり直して、決まった組み立て
+    assert rep["model_calls"] == len(seen)
+
+
+def test_real_judge_skips_replies_written_by_the_talk_ai():
+    """実モデルの回でもトークの AI は回さないので、相談を閉じたターンの返信を見る採点の条件は判定しない(ジャッジを呼ばない)。"""
+    from evals.scenes import real as RL
+
+    scene = BY_ID["chat-greeting"]
+    (row,) = R.run(["career"], ids=["chat-greeting"])
+    record = {"replies": row["replies"]}
+    checks = [c for c in scene["expect"] if not S.is_code(c)]
+    real = RL.RealModel(SimpleNamespace(mark=lambda: 0))
+    real._client = ScriptedJudge([J.Item(n=0, verdict="満たした", evidence="", reason="応じた")])
+    try:
+        assert [x["status"] for x in real.judge("judge-model")(scene, record, checks)] == [K.PASS]
+        handed = {"replies": [r | {"how": "talk", "text": ""} for r in row["replies"]]}
+        got = real.judge("judge-model")(scene, handed, checks)
+    finally:
+        real.close()
+    assert [x["status"] for x in got] == [K.SKIP] and got[0]["judge"] and len(real._client.seen) == 1
+
+
+def test_real_summary_reports_the_pass_lines_per_entry():
+    """点の表: 入り口と版ごとに、§4.10 の合格の線(コード 95%、採点 85%、守りと入り口をまたぐ条件は 100%)に届いたかを出す。
+    移った先の not_asks は、入り口をまたぐ条件に数える。速さは、モデルを呼んだターンの時間。"""
+    from evals.scenes import real as RL
+
+    row = {"entry": "career", "version": "c2", "scene": "switch-x", "category": "switch", "error": None, "rep": 0,
+           "read_model": None, "cost_usd": 0.01,
+           "results": [{"check": "switches_to", "status": K.PASS}, {"check": "not_asks", "status": K.FAIL, "args": {"entry": "baito"}},
+                       {"check": "crisis_reply", "status": K.PASS}, {"check": "no_falsify", "status": K.PASS, "judge": True},
+                       {"check": "natural", "status": K.SKIP, "judge": True}],
+           "replies": [{"model_calls": 2, "model_seconds": 3.0, "stages": [{"stage": "read", "seconds": 1.0, "ok": True},
+                                                                            {"stage": "say", "seconds": 2.0, "ok": False}]}]}
+    t = RL.tally([row])[("career", "c2", "-")]
+    assert t["code"] == [2, 3] and t["switch"] == [1, 2] and t["guard"] == [1, 1] and t["strict"] == [1, 1]
+    assert t["judge"] == [1, 1] and t["skip_judge"] == 1 and t["fallback"] == 1
+    assert RL.verdict(t, "career") == ["コードの条件 66.7% < 95%", "入り口をまたぐ条件 1/2"]
+    text = RL.summary([row])
+    assert "career c2(読む段 -): 届かない" in text and "| career c2 | - | 1 | 2.00 | 3.0 |" in text
+
+
+def test_real_cli_needs_a_ledger_and_a_limit(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--real", "--entry", "career"])
+    assert "--ledger" in capsys.readouterr().err
+
+
+def test_judge_can_be_given_the_entry_fact_data(harness_rows):
+    """事実の条件の判定し直し(real.rejudge)は、入り口の事実のデータ(facts.json)をジャッジに渡す。場面の facts は一部なので、
+    facts.json にある正しい答えを「事実に無い」にしないため。渡さなければ今までどおり。"""
+    from evals.scenes import real as RL
+
+    scene, row = BY_ID["ask-who"], harness_rows["ask-who"]
+    checks = [c for c in scene["expect"] if not S.is_code(c)]
+    facts = RL.known_facts("career")
+    assert "返事は AI が書いています。人が一つずつ書いているのではありません" in facts
+    _, plain = J.prompt(scene, row, checks)
+    _, given = J.prompt(scene, row, checks, facts)
+    assert "人が一つずつ" not in plain and "aica の確かめた事実" not in plain
+    assert "   渡した事実: 返事は AI が書いています。人が一つずつ書いているのではありません" in given
+    assert given.count("渡した事実: aica は、仕事探しを手伝う AI です") == 1  # 場面の facts と重ねない
+
+
+def _offline_real_run(monkeypatch, tmp_path, score):
+    """real.run を、モデルもメーターも呼ばずに回す(場面を回す関数と判定を偽物にする)。回した状態のパスを返す。"""
+    import evals.meter
+    from evals.scenes import real as RL
+
+    meter = SimpleNamespace(mark=lambda: 0, summary=lambda since=0: {"cost_usd": 0.01}, calls=[])
+    monkeypatch.setattr(evals.meter, "Meter", lambda: SimpleNamespace(install=lambda: meter))
+    paths = []
+
+    def run_scene(scene, d, path, others):
+        paths.append(path)
+        return {"scene": scene["id"], "entry": scene["entry"], "version": "c1", "replies": [], "error": None}
+    monkeypatch.setattr(R, "run_harness_scene", run_scene)
+    monkeypatch.setattr(R, "score", score)
+    ledger = tmp_path / "ledger.jsonl"
+    RL.run(["career"], None, ["chat-weather"], 2, ledger, 1.0, None, "t", out_dir=tmp_path, judge=False, log=lambda m: None)
+    return paths, [json.loads(x) for x in ledger.read_text().splitlines()]
+
+
+def test_real_run_uses_a_fresh_state_for_each_repeat(monkeypatch, tmp_path):
+    """--repeat の回ごとに新しい dip の状態で回す(場面の本人の id は回によらず同じなので、前の回の保存が混ざらないように)。"""
+    row = {"scene": "chat-weather", "entry": "career", "category": "chat", "version": "c1", "results": [], "replies": [], "error": None}
+    paths, rows = _offline_real_run(monkeypatch, tmp_path, lambda s, rec, j: dict(row))
+    assert len(paths) == 2 and paths[0] != paths[1]
+    assert [r["rep"] for r in rows] == [0, 1] and all(r["run"] == "scenes" for r in rows)
+
+
+def test_real_run_keeps_the_cost_when_the_judge_fails(monkeypatch, tmp_path):
+    """判定(ジャッジ)が例外で止まっても、その場面で使った費用を台帳に残し、次の回へ進む。"""
+    def fail(scene, rec, judge):
+        raise RuntimeError("ジャッジが落ちた")
+    paths, rows = _offline_real_run(monkeypatch, tmp_path, fail)
+    assert len(paths) == 2 and len(rows) == 2
+    assert all(r["cost_usd"] == 0.01 and "ジャッジが落ちた" in r["error"] for r in rows)

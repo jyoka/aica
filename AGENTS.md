@@ -40,7 +40,7 @@ python -m evals.baito_sim           # アルバイト・パートのハーネス
 - **実 API を呼ばない。** Anthropic、OpenAI、LiveKit、Deepgram、Cartesia、LINE の Messaging API を呼ぶコマンドは、
   人が Goal で明示して予算を決めたときだけ使います。[docs/usage.md の「主なコマンド」](docs/usage.md#主なコマンド)で「実 API」の列が「使う」のもの
   (`evals.run`、`resume_intake.cli`、`scripts.gen_jobs`、`scripts.gen_job_vectors`、`scripts.deploy_smoke`、
-  `scripts.line_rich_menu`(`--dry-run` を除く)、`evals.search_eval record` と `compare` など)が当たります。
+  `scripts.line_rich_menu`(`--dry-run` を除く)、`evals.search_eval record` と `compare`、`evals.scenes --real` など)が当たります。
   `.env` の鍵を読ませて Web プロセスや音声ワーカーを起動するのも同じです
 - **デプロイしない。** Render のサービスの作成や手動デプロイ、`render.yaml` の自動デプロイ(`autoDeployTrigger`)を
   有効にする変更、LINE のチャネルやリッチメニューの登録の変更はしません
