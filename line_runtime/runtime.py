@@ -78,7 +78,7 @@ GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話
 SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む dip の要約(task 237)
 # アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito、task 242)。BAITO_HARNESS_VERSION=v4 のときだけ、トークの AI が
 # start で始める。その後の本人の発言はランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない。始めた相談はフラグを
-# 戻しても最後まで進める)。新しい会話と会話の外のイベントで end する
+# 戻しても最後まで進める)。新しい会話と会話の外のイベント(挨拶・プッシュ・アップロード、音声相談に入った・音声とゲームの結果)で end する
 BAITO_START, BAITO_TURN, BAITO_END = "start_baito_consultation", "baito_turn", "end_baito_consultation"
 # 正社員の相談(職務経歴書の材料を集めるヒアリング。dip_mcp/career、task 255)。CAREER_HARNESS_VERSION=c1 のときだけ、
 # トークの AI が start で始める。あとはアルバイト・パートと同じ(ランタイムが career_turn に渡し、新しい会話で end する)
@@ -331,7 +331,8 @@ class LineRuntime:
 
     async def add_voice_result(self, user_id: str, reply: dict) -> bool:
         """音声相談の結果を、今の会話に AI の返信として続ける(LLM は呼ばない)。画面に描き直せるよう、返信は
-        そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。"""
+        そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。
+        途中のハーネスの相談は、呼び出し元が先に閉じる(end_consultations)。"""
         return await self._add_reply(user_id, reply, voice_event(reply), "voice")
 
     async def add_arcade_result(self, user_id: str, reply: dict) -> bool:
@@ -352,6 +353,22 @@ class LineRuntime:
                 update |= {"entry": "A", "line_user_id": user_id}  # 閉じた後の空の会話: 結果のターンから始まる
             await self.agent.aupdate_state(self._cfg(user_id, n), update, as_node="model")
             return True
+
+    async def end_consultations(self, user_id: str) -> None:
+        """途中のハーネスの相談を閉じる(そこまでの確かめた答えは保存する。相談をしていなければ何もしない)。
+        音声相談に本人が入ったときと、音声相談とゲームの結果をトークに足す前に、呼び出し元(server)が呼ぶ。どれも会話の外の
+        イベント(アップロードと同じ)で、結果の後の本人の発言はその返信(と選択肢)への返事なので、前の問いの答えとして
+        ハーネスに渡さず、トークの AI が結果を文脈に読んで受ける(task 364)。ターンと同じ排他の中で閉じる(相談のターンの途中で閉じない)。"""
+        async with self._locks[user_id]:
+            await self._end_consultations(user_id)
+
+    def _harnesses(self) -> list[str]:
+        """dip にあるハーネスの相談(ハーネスの相談のツールが無い dip(前の版)なら空)。"""
+        return [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+
+    async def _end_consultations(self, user_id: str) -> None:
+        for kind in self._harnesses():
+            await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
 
     async def close_conversation(self, user_id: str) -> None:
         """今の会話を閉じる(プロフィールで履歴書を消したとき)。空の会話 n+1 を書いて今の会話にし、それまでの会話
@@ -497,8 +514,7 @@ class LineRuntime:
                 if talk_thread is not None:
                     queue.put_nowait({"kind": "thread", "thread": n})
                 cfg = self._cfg(user_id, n)
-                # ハーネスの相談のツールが無い dip(前の版)なら、何もしない
-                harnesses = [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+                harnesses = self._harnesses()
                 if harnesses and EVENTS[event][1] == "user" and not starts:
                     # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
                     for kind in harnesses:
@@ -507,8 +523,7 @@ class LineRuntime:
                             await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
                             return
                 else:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる(そこまでを保存する)
-                    for kind in harnesses:
-                        await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
+                    await self._end_consultations(user_id)
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
                 # アップロードは本人の1ターン。画面に描き直すため、ファイルの表示名と確認の吹き出しを添えて保存する
