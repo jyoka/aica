@@ -33,6 +33,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dip_mcp.convo import turn as convo_turn
 from resume_draft.pii import personal_value
 from resume_lines import blank_count, check_numbers
 
@@ -995,33 +996,14 @@ def start(state, bank=BANK):
 
 
 def match_button(state, text):
-    """今のボタンか、この問いで前に見せた候補(「他の候補」で隠れた前のページ。LINE は前のボタンを消すので、打ち直した)と同じ文。"""
-    t = nfkc(text)
-    cur = state.current or {}
-    for c in [*cur.get("choices", []), *cur.get("shown", [])]:
-        if nfkc(c) == t:
-            return c
-    return None
+    """今のボタンか、この問いで前に見せた候補(「他の候補」で隠れた前のページ。LINE は前のボタンを消すので、打ち直した)と同じ文
+    (会話の層の dip_mcp.convo.turn.match_button)。"""
+    return convo_turn.match_button(state.current, text)
 
 
 def _call_llm(fn, payload, validator, state, stage):
-    probs_all = []
-    for attempt in range(1 + LLM_RETRIES):
-        try:
-            raw = fn(payload)
-        except Exception as e:  # noqa: BLE001  モデル・通信の失敗で落とさない(失敗 1 回として数える)
-            raw = None
-            probs_all.append(f"exception:{type(e).__name__}")
-        res, probs = validator(raw)
-        if res is not None:
-            if probs:
-                ev(state, f"{stage}_repaired", problems=probs)
-            if attempt:
-                ev(state, f"{stage}_retry_ok")
-            return res
-        probs_all += probs if isinstance(probs, list) else [probs]
-    ev(state, f"{stage}_fallback", problems=probs_all)
-    return None
+    """出力を確かめ、だめなら 1 回だけやり直す(会話の層の dip_mcp.convo.turn.call_llm)。"""
+    return convo_turn.call_llm(fn, payload, validator, lambda kind, **kw: ev(state, kind, **kw), stage, LLM_RETRIES)
 
 
 def _count(state, bucket=None):
@@ -1419,7 +1401,7 @@ def captured(state):
 
 def summary(state):
     """終わり(result か「あとで」)に返す状態。保存は呼ぶ側(2b のタスク)。"""
-    return {"version": VERSION, "form": state.form, "segment": state.segment, "closed": state.closed,
+    return {"version": state.version, "form": state.form, "segment": state.segment, "closed": state.closed,
             "slots": {s: v for s, v in captured(state).items() if v["status"] != "missing"},
             "ng": list(state.user_ng), "blank_cards": blank_cards(state), "turns": state.turns,
             # segment が決まらなかったので使わなかった、segment だけの欄の答え(本人が言ったので捨てない)

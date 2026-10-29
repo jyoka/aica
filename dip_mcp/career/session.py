@@ -3,7 +3,9 @@
 dip_mcp/baito/session.py と同じ。
 
 - 始める: トークの AI が、正社員のチャットの相談に入ったターンに start_career_consultation を呼ぶ
-  (CAREER_HARNESS_VERSION=c1 のときだけ。既定は使わない = 本番は今までの playbook の相談のまま)。
+  (CAREER_HARNESS_VERSION=c1 か c2 のときだけ。既定は使わない = 本番は今までの playbook の相談のまま)。
+  c2 は会話の層(dip_mcp/convo/)に載せ替えていく版(dip_mcp/career/c2.py。ADR-0011)。始めた相談は、始めた版のまま
+  最後まで進める(状態の version で版を分ける。設計メモ docs/design/conversation-layer.md §4.15)
   前の相談で保存した条件と職歴カードは high として入れ、聞かない(dip_mcp.career.store.prefill)。
   最初の返信の吹き出しと選択肢はハーネスのもの(LINE 側がトークの AI の返信をこれに置き換える)
 - 進める: その後の本人の発言は、LINE 側のランタイムが career_turn に渡す(トークの AI は呼ばない)。
@@ -34,14 +36,17 @@ from dip_mcp.baito.session import (
     ReplayLLM,
     ReplayMismatch,
 )
+from dip_mcp.career import c2 as C2
 from dip_mcp.career import draft as career_draft
 from dip_mcp.career import harness as H
 from dip_mcp.career import store
 from dip_mcp.career import ui as UI
+from dip_mcp.convo import guard
 from dip_mcp.data import State
 
 KEY = "career"
-FLAG = logic.CAREER_HARNESS_FLAG  # c1 のときだけ新しい相談を始める。始めた相談はフラグを戻しても最後まで進める
+FLAG = logic.CAREER_HARNESS_FLAG  # c1 か c2 のときだけ新しい相談を始める。始めた相談はフラグを戻しても最後まで進める
+HARNESSES = {H.VERSION: H, C2.VERSION: C2}  # 状態の version → ハーネス(c2 は c1 の決める段と言う段を使う)
 # LINE 側のランタイムだけが呼ぶツール(トークの AI には見せない。line_runtime.runtime.chat_tools が外す)
 RUNTIME_TOOLS = ("career_turn", "end_career_consultation")
 START_TOOL = "start_career_consultation"
@@ -73,10 +78,16 @@ def _load(state: State, line_user_id: str) -> H.State | None:
     if not s:
         return None
     d = s.get("harness") or {}
-    if d.get("version") != H.VERSION:  # 版が変わった状態は読まない(閉じて始め直す)
+    mod = HARNESSES.get(d.get("version"))
+    if mod is None:  # 知らない版の状態は読まない(閉じて始め直す)
         _drop(state, line_user_id)
         return None
-    return H.State.from_dict(d)
+    return mod.State.from_dict(d)
+
+
+def harness_of(h: H.State):
+    """状態の版のハーネス(dip_mcp.career.harness か dip_mcp.career.c2)。"""
+    return HARNESSES[h.version]
 
 
 def _save(state: State, line_user_id: str, h: H.State, track: str | None = None, saved_segment: str | None = None,
@@ -119,12 +130,12 @@ def start(state: State, line_user_id: str) -> dict:
     segment = None
     if started:
         user = state.user(line_user_id)
-        h = H.new_state()
+        h = C2.new_state() if logic.career_harness_version() == C2.VERSION else H.new_state()
         prefs = logic.stated_preferences(user)
         segment, items = store.prefill(user, prefs)
         H.apply_saved(h, segment, items, ng_known=store.ng_known(prefs))
         prefilled = (["segment"] if h.segment != "unknown" else []) + sorted(items) + (["avoids"] * store.ng_known(prefs))
-    out = H.start(h, H.BANK)
+    out = harness_of(h).start(h, H.BANK)
     ui = UI.start_payload(h)  # 形 D の「始める」の 1 枚
     if started:
         UI.add_read(h, ui)
@@ -145,8 +156,11 @@ def end(state: State, line_user_id: str) -> dict:
 
 def _exits(h: H.State, text: str) -> bool:
     """やめる合図か(「今はいい」「やめる」など、review の前の「バイトで探したい」)。今の選択肢そのものは合図にしない。
-    「あとで」はハーネスが受ける。"""
+    「あとで」はハーネスが受ける。c2 は、危ない言葉があれば、やめる頼みを含んでいてもハーネスに渡す(窓口を案内する。
+    アルバイト・パートと同じ。設計メモ §4.11)。"""
     if h.current and text in h.current.get("choices", []):
+        return False
+    if h.version == C2.VERSION and guard.crisis_hit(text):
         return False
     return text in EXIT_WORDS or (h.phase not in ("review", "result") and bool(EXIT_REQUEST.search(text))
                                   and not EXIT_HOLD.search(text))
@@ -170,10 +184,11 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     left = first and _track_left(state, line_user_id)
     if left or (first and _exits(h, said)):
         return {"active": False, "ended": "track" if left else "exit", "saved": _finish(state, line_user_id, h)}
-    llm = ReplayLLM(llm_outputs, H.render_prompt, lambda view: "say")
+    mod = harness_of(h)
+    llm = ReplayLLM(llm_outputs, mod.render_prompt, lambda view: "say")
     prev = UI.before(h)
     try:
-        r = H.turn(h, said, H.BANK, llm)
+        r = mod.turn(h, said, H.BANK, llm)
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
@@ -182,7 +197,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         raise RuntimeError(f"正社員の相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
     if llm.used != len(llm.outputs):
         raise RuntimeError("正社員の相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
-    ui, mem = UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
+    # 危ない言葉の決まった文(c2)には、形 D の部品(まとめの Flex など)を付けない
+    ui, mem = (None, None) if r.get("crisis") else UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
     out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase, "question": r["qid"],
            "reply": r["reply"], "bubbles": list(r["bubbles"]), "choices": list(r["choices"]), "counted": r["counted"],
            "llm_calls": llm.used} | ({"ui": ui} if ui else {})

@@ -1178,17 +1178,25 @@ VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for 
 
 
 BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 のときだけハーネスで相談する
-# 正社員のチャットのヒアリング(dip_mcp/career、ADR-0010、task 255)の機能フラグ。c1 のときだけハーネスで相談する。
+# 正社員のチャットのヒアリング(dip_mcp/career、ADR-0010、task 255)の機能フラグ。c1 か c2 のときだけハーネスで相談する
+# (c2 は会話の層に載せ替える版。ADR-0011、task 355。本番は c1)。
 # 無ければ今までどおり fulltime_chat.md の playbook で相談する(本番は切り替えない)
 CAREER_HARNESS_FLAG = "CAREER_HARNESS_VERSION"
+CAREER_HARNESS_VERSIONS = ("c1", "c2")
 
 
 def baito_harness_on() -> bool:
     return os.environ.get(BAITO_HARNESS_FLAG, "").strip() == "v4"
 
 
+def career_harness_version() -> str | None:
+    """新しく始める正社員の相談の版(c1 / c2)。フラグが無いか知らない値なら None(ハーネスを使わない)。"""
+    v = os.environ.get(CAREER_HARNESS_FLAG, "").strip()
+    return v if v in CAREER_HARNESS_VERSIONS else None
+
+
 def career_harness_on() -> bool:
-    return os.environ.get(CAREER_HARNESS_FLAG, "").strip() == "c1"
+    return career_harness_version() is not None
 
 
 def counseling_playbook(track: str, channel: str = "chat") -> dict:

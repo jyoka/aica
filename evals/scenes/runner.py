@@ -145,7 +145,7 @@ class ScriptLLM:
         return self.driver.ack(hook)
 
     def __call__(self, call: dict) -> dict:
-        if call["stage"] == "extract":
+        if call["stage"] in ("extract", "read"):
             return self.driver.read(self.say.get("reading") or {"acts": []}, self.targets)
         return self.driver.write(call, self.ack())
 
@@ -309,14 +309,19 @@ class CareerC1(_HarnessDriver):
         from dip_mcp import logic
         from dip_mcp.career import harness as H
 
-        return {logic.CAREER_HARNESS_FLAG: "c1", H.FORM_ENV: scene.get("form", "C")}
+        return {logic.CAREER_HARNESS_FLAG: self.version, H.FORM_ENV: scene.get("form", "C")}
+
+    def harness(self):
+        from dip_mcp.career import harness as H
+
+        return H
 
     def setup(self, st, uid, scene):
         from dip_mcp.career import harness as H
 
         s = self.session
         s.start(st, uid)
-        h = H.State.from_dict(st.user(uid)[s.KEY]["harness"])
+        h = self.harness().State.from_dict(st.user(uid)[s.KEY]["harness"])
         h.segment = scene["segment"]
         qs = H.questions(h, H.BANK)
         for slot, k in (scene.get("known") or {}).items():
@@ -325,6 +330,7 @@ class CareerC1(_HarnessDriver):
             (h.slots if slot in H.active_slots(h) else h.pending)[slot] = e
         h.asked = [q["id"] for q in qs if set(q["targets"]) & set(scene.get("known") or {})]
         h.said = [t["text"] for t in scene.get("history") or [] if t["who"] == "user"]
+        self.seed(h, scene)
         for q in qs:  # 分かっている欄の問いの数だけ、その問いのフェーズでターンを数えたことにする
             if set(q["targets"]) & set(scene.get("known") or {}):
                 h.phase_turns[q["phase"]] = h.phase_turns.get(q["phase"], 0) + 1
@@ -339,6 +345,9 @@ class CareerC1(_HarnessDriver):
             h.phase = q["phase"]
             H._present(h, q)
         s._save(st, uid, h)
+
+    def seed(self, h, scene) -> None:
+        """版の覚えに、場面の前の会話を入れる(c1 には無い)。"""
 
     def read(self, reading, targets):
         return to_c1(reading, targets)
@@ -372,6 +381,35 @@ class CareerC1(_HarnessDriver):
         return Texts(questions=sorted(questions), phase_lines=list(H.PHASE_LINES.values()), fixed=fixed,
                      choices=sorted({c for q in qs for c in [*q["choices"], *q.get("escape", [])]}), crisis=list(B.CRISIS["reply"]),
                      strip=[r"✓職歴\d+", r"」\d+/\d+"])  # 形 C の進み具合の行(_progress)の、職歴の番号と「n/3」
+
+
+class CareerC2(CareerC1):
+    """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
+    台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとり)に入れる。言う段は c1 と同じ。"""
+    version = "c2"
+
+    def harness(self):
+        from dip_mcp.career import c2
+
+        return c2
+
+    def seed(self, h, scene):
+        from dip_mcp.convo import state as CS
+
+        for t in scene.get("history") or []:
+            (CS.heard if t["who"] == "user" else CS.replied)(h.convo, t["text"])
+
+    def read(self, reading, targets):
+        return {"acts": list(reading.get("acts", [])), "hook": reading.get("hook"), "mentions": list(reading.get("mentions") or []),
+                "ng": []}
+
+    def texts(self) -> Texts:
+        from dip_mcp.career import c2
+
+        t = super().texts()
+        t.crisis = c2.CRISIS_TEXT.split("\n")
+        t.fixed = [*t.fixed, c2.ENTRY.texts["crisis_resume"]]
+        return t
 
 
 class BaitoV4(_HarnessDriver):
@@ -470,7 +508,7 @@ class TalkT0:
         return Texts(crisis=list(B.CRISIS["reply"]))
 
 
-VERSIONS = {"career": {"c1": CareerC1}, "baito": {"v4": BaitoV4}, "talk": {"t0": TalkT0}}
+VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4}, "talk": {"t0": TalkT0}}
 CURRENT = {"career": "c1", "baito": "v4", "talk": "t0"}  # 今の本番の版(既定。BAITO_HARNESS_VERSION=v4 など)
 
 

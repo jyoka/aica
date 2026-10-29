@@ -30,6 +30,7 @@
 ```sh
 ./.venv/bin/python -m evals.scenes                                # 全部の入り口を今の版で(career c1、baito v4、talk t0)
 ./.venv/bin/python -m evals.scenes --entry career --version c1    # 1 つの入り口と版
+./.venv/bin/python -m evals.scenes --entry career --version c2    # 正社員の会話の層の版(task 355)
 ./.venv/bin/python -m evals.scenes --scene t326-order -v          # 1 場面の返信とすべての条件
 ./.venv/bin/python -m evals.scenes --log evidence/scenes          # 結果の JSON(results.json)と点(score.md)も書く
 ```
@@ -37,7 +38,8 @@
 実 API は呼びません(費用 0。全部で 10 秒ほど。talk は dip の MCP の子プロセスを 1 つ起こす)。
 
 - career と baito は、dip の相談のツール(`session.start`、`session.turn`)を、ランタイムと同じ呼び直しで回します。
-  モデルの代わりは台本の LLM です。読む段は `reading` をその版の形に写して返し、言う段は「相づち + 問いの文」を返します。
+  モデルの代わりは台本の LLM です。読む段は `reading` をその版の形に写して返し(c2 は act の並びで読むので、写さずにそのまま)、
+  言う段は「相づち + 問いの文」を返します。c2 では、場面の前の会話(`history`)を層の覚え(直前のやりとり)にも入れます。
   相づちはわざと単調(「〜ですね。」)にしてあります。言い回しを散らすのはハーネスの仕事なので、モデルの運で点が変わらないようにするためです
 - 本人がやめて相談を閉じたターンは、ランタイムがトークの AI に渡します。返事の文と、移るか・区分と値を引き継ぐかはトークの AI しだいなので、
   それを見る条件は判定しません(skip)。逆質問の答えの部品(`order` の `answer`)も、部品の並びを返す層でないと判定しません
@@ -50,7 +52,7 @@
 守りの条件(`crisis_reply`、`no_made_up_number`、`no_slot_contains`)の合格、モックで判定しない条件の数、採点の条件の数です。
 今の版の点は設計メモ §7 にあります。
 
-新しい版(c2、v5、t1)は、`runner.py` の `VERSIONS` に回し方を足すと、同じ場面と条件で回せます。
+回せる版は `runner.py` の `VERSIONS` にあります(career は `c1` と `c2`)。新しい版(v5、t1)は、ここに回し方を足すと、同じ場面と条件で回せます。
 
 ## 確かめ方
 

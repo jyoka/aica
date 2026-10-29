@@ -589,8 +589,10 @@ class LineRuntime:
                 raise ValueError(f"{h['what']}のモデルの呼び出しが、1 ターンの上限を超えました")
             call = r["call"]
             try:
+                # 本人の発言は、ハーネスが伏せた文(model_text。正社員の c2 が氏名と要配慮の部分を伏せる)があれば、そちら
+                said = call.get("model_text", content)
                 out = await self._harness_call(kind, queue, user_id, event, call["stage"], call["system"],
-                                               baito_chat.messages_for(call["stage"], content, convo))
+                                               baito_chat.messages_for(call["stage"], said, convo))
                 outputs.append({"stage": call["stage"], "output": out})
             except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
                 log.warning("%sのモデルを呼べなかった(%s): %s", h["what"], call["stage"], type(e).__name__)

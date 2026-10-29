@@ -92,9 +92,10 @@ def default_llm(schemas: dict | None = None, what: str = "バイトの相談") -
 
 def messages_for(stage: str, user_text: str, convo: list[dict] | None = None) -> list[dict]:
     """モデルに渡すメッセージ。抽出は本人の今の発言だけ(会話から推測で埋めない。PRD §9-3 の 1)。
+    会話の層の読む段(read。正社員の c2)も今の発言だけ(直前のやりとりは、ハーネスがシステムプロンプトに入れる)。
     生成は直前のやりとりに今の発言を足したもの(脱線への1文の返事と、繰り返しを避けるため。§9-1)。"""
     said = user_text or "(はじめ)"
-    if stage == "extract" or not convo:
+    if stage in ("extract", "read") or not convo:
         return [{"role": "user", "content": said}]
     out = [dict(m) for m in convo]
     if out[-1]["role"] == "user":
@@ -131,6 +132,9 @@ class SyncLLM:
 
     def extract(self, payload: dict):
         return self._run("extract", self.render_prompt("extract", payload), payload.get("user_text", ""))
+
+    def read(self, payload: dict):
+        return self._run("read", self.render_prompt("read", payload), payload.get("user_text", ""))
 
     def generate(self, view: dict):
         stage = self.prompt_stage(view)

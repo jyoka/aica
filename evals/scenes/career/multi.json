@@ -14,6 +14,7 @@
   "says": [{"text": "東京で500万以上、リモートがいい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "東京"}, {"act": "add", "slot": "min_annual_salary", "text": "500万以上", "number": 500, "unit": "万"}, {"act": "add", "slot": "work_style", "text": "リモートがいい"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "東京", "confidence": "high"},
+   {"check": "slot", "slot": "area", "not_contains": ["500", "リモート"]},
    {"check": "slot", "slot": "min_annual_salary", "number": 500},
    {"check": "slot", "slot": "work_style", "status": "filled"},
    {"check": "not_asks", "slots": ["area", "min_annual_salary", "work_style"]},
@@ -21,7 +22,7 @@
    {"check": "no_made_up_number"},
    {"check": "responds_first"}
   ],
-  "note": "今の問いのほかの欄は推測(low)で入れてよい。聞き直さず、まとめで確かめる(spam_hard_high の決まりを残す)"
+  "note": "今の問いのほかの欄は推測(low)で入れてよい。聞き直さず、まとめで確かめる(spam_hard_high の決まりを残す)。勤務地には勤務地の部分だけを入れ、年収とリモートの言葉を混ぜない(jyoka/tasks#354 の Decision)"
  },
  {
   "id": "multi-future-timing",

@@ -45,7 +45,8 @@
 - 希死念慮・自傷の言葉(task 256。PRD に無い): 抽出の前に本人の自由入力を crisis_v4.json の言葉と照らし、当たれば
   質問を進めずに決まった文(相談窓口の案内)を返す(_crisis)。本人の文は NFKC とカタカナからひらがなへのそろえ
   (kana_fold)をしてから照らすので、一覧はひらがなと漢字の形で持つ。選択肢の文字そのものには当てない。次のターンで「続ける」と
-  言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ
+  言えば今の質問を出し直す。どのフェーズでも、結果の後でも同じ。照らす関数(crisis_hit、wants_resume)は会話の層の守りの前処理
+  (dip_mcp.convo.guard。task 355)で、言葉の表は crisis_v4.json と同じもの(dip_mcp/convo/crisis.json)を使う
 - 区切りの境目(task 268。P3 で review の「シフトは4時間くらい」を「4時間未満」で入れ、返事は「4時間くらいね」と言った):
   区切りのある項目(BUCKETS: 1回の勤務時間・時給の下限・週の日数)に打った数が境目にあれば(bucket_reads)、入れずに 2 つの区切りを
   ボタンで聞き直す(_bucket_hold・_ask_pick。項目ごとに 1 回まで。聞き直しへの打った答えは、抽出の値を入れる)。区切りに寄せて
@@ -85,6 +86,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dip_mcp.baito import quick_start as QS
+from dip_mcp.convo import turn as convo_turn
+from dip_mcp.convo.guard import crisis_hit, wants_resume
+from dip_mcp.convo.text import kana_fold  # noqa: F401  v4 の名前で残す
 
 HERE = Path(__file__).resolve().parent
 PROMPT_DIR = HERE.parent / "prompts" / "baito"
@@ -302,18 +306,6 @@ def nfkc(s):
     return unicodedata.normalize("NFKC", str(s)).strip()
 
 
-KATA_TO_HIRA = {c: c - 0x60 for c in range(0x30A1, 0x30F7)}  # ァ..ヶ -> ぁ..ゖ(長音の「ー」はそのまま)
-
-
-def kana_fold(s):
-    """NFKC にそろえ、カタカナをひらがなにする(希死念慮の言葉と「続ける」を読む前)。
-    「シニタイ」「ｼﾆﾀｲ」「しにたい」が同じ形になるので、言葉の一覧はひらがなと漢字の形だけで持てる。"""
-    return nfkc(s).translate(KATA_TO_HIRA)
-
-
-def _words_re(words):
-    return re.compile("|".join(map(re.escape, map(kana_fold, words))))
-
 
 # ----------------------------- データ(付録A・付録B) -----------------------------
 def _load_json(name):
@@ -342,9 +334,6 @@ CATALOG = load_catalog()
 CATALOG_BY_ID = {j["id"]: j for j in CATALOG}
 CRISIS = load_crisis()
 CRISIS_TEXT = "\n".join(CRISIS["reply"])
-CRISIS_RE = _words_re(CRISIS["words"])
-RESUME_RE = _words_re(CRISIS["continue_words"])
-RESUME_NOT_RE = _words_re(CRISIS["continue_not"])
 
 
 # ----------------------------- 正規化(PRD §6-3) -----------------------------
@@ -2104,23 +2093,8 @@ def match_button(state, bank, text):
 
 
 def _call_llm(fn, payload, validator, state, stage):
-    probs_all = []
-    for attempt in range(1 + LLM_RETRIES):
-        try:
-            raw = fn(payload)
-        except Exception as e:  # noqa: BLE001  モデル・通信の失敗で落とさない(失敗 1 回として数える)
-            raw = None
-            probs_all.append(f"exception:{type(e).__name__}")
-        res, probs = validator(raw)
-        if res is not None:
-            if probs:
-                ev(state, f"{stage}_repaired", problems=probs)
-            if attempt:
-                ev(state, f"{stage}_retry_ok")
-            return res
-        probs_all += probs if isinstance(probs, list) else [probs]
-    ev(state, f"{stage}_fallback", problems=probs_all)
-    return None
+    """出力を確かめ、だめなら 1 回だけやり直す(会話の層の dip_mcp.convo.turn.call_llm)。"""
+    return convo_turn.call_llm(fn, payload, validator, lambda kind, **kw: ev(state, kind, **kw), stage, LLM_RETRIES)
 
 
 def _apply_effects(state, bank, q, choices, src_kind):
@@ -2589,17 +2563,6 @@ def _turn(state, user_text, bank, llm, catalog, search=None):
 def _flag(state, key):
     if key not in state.flags:
         state.flags.append(key)
-
-
-def crisis_hit(text):
-    """本人の自由入力に、希死念慮・自傷の言葉(CRISIS["words"])があるか。文は kana_fold にそろえてから照らす。"""
-    return bool(CRISIS_RE.search(kana_fold(text)))
-
-
-def wants_resume(text):
-    """窓口を案内した次の発言が「続ける」か(「続けたくない」「大丈夫じゃない」は当たらない)。"""
-    t = kana_fold(text)
-    return bool(RESUME_RE.search(t)) and not RESUME_NOT_RE.search(t)
 
 
 def _take_crisis(state):
