@@ -11,7 +11,9 @@ from dip_mcp.baito import harness as B
 from dip_mcp.career import harness as H
 from dip_mcp.convo import acts as A
 from dip_mcp.convo import entry as E
+from dip_mcp.convo import facts as F
 from dip_mcp.convo import guard
+from dip_mcp.convo import plan as P
 from dip_mcp.convo import state as CS
 from dip_mcp.convo import turn as T
 from dip_mcp.convo import values as V
@@ -179,7 +181,8 @@ def test_career_entry_describes_every_slot_and_its_bank():
 def test_entry_shape_errors_stop_loading(tmp_path, change, match):
     d = json.loads(CAREER_ENTRY.read_text(encoding="utf-8"))
     change(d)
-    (tmp_path / "bank.json").write_text((CAREER_ENTRY.parent / "bank.json").read_text(encoding="utf-8"), encoding="utf-8")
+    for name in ("bank.json", "facts.json"):
+        (tmp_path / name).write_text((CAREER_ENTRY.parent / name).read_text(encoding="utf-8"), encoding="utf-8")
     (tmp_path / "entry.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError, match=match):
         E.load(tmp_path / "entry.json", H.ALL_SLOTS, ("career", "baito"), ("crisis_lead", "crisis_tail", "crisis_resume"))
@@ -197,3 +200,67 @@ def test_bank_shape_errors_stop_loading():
 def test_a_number_of_the_wrong_type_drops_only_the_number():
     out, probs = read([{"act": "add", "slot": "min_annual_salary", "text": "500万", "number": "500"}], "500万")
     assert out["acts"] == [{"act": "add", "slot": "min_annual_salary", "text": "500万"}] and probs == ["add_bad_type:number"]
+
+
+# ----------------------------- 応じ方の計画(§4.6) -----------------------------
+def rd(*acts):
+    return {"acts": list(acts), "hook": None, "mentions": [], "extra": {}}
+
+
+@pytest.mark.parametrize("reading, kw, want", [
+    (rd({"act": "answer", "slot": "area", "text": "東京"}), {"answered": True}, ("short", "pick", "count", [])),
+    (rd({"act": "answer", "slot": "raise_target", "text": "年収"}, {"act": "complaint"}, {"act": "emotion", "feeling": "angry"}),
+     {"answered": True}, ("apology", "pick", "count", [])),
+    (rd({"act": "answer", "slot": "why_now", "text": "パワハラ"}, {"act": "emotion", "feeling": "tired"}), {"answered": True},
+     ("empathy", "pick", "count", [])),
+    (rd({"act": "complaint"}), {}, ("apology", "skip", "count", [])),
+    (rd({"act": "go_back"}), {}, ("done", "back", "free", [])),
+    (rd({"act": "correct", "slot": "area", "text": "横浜"}), {"fixed": True}, ("done", "keep", "free", [])),
+    (rd({"act": "falsify"}), {}, (None, "keep", "free", [])),
+    (rd({"act": "chitchat"}), {}, ("light", "keep", "aside", [])),
+    (rd({"act": "ask_service"}), {}, (None, "keep", "aside", ["ask_service"])),
+    (rd({"act": "ask_advice"}, {"act": "chitchat"}), {}, ("light", "keep", "aside", ["ask_advice"])),
+    (rd({"act": "emotion", "feeling": "anxious"}), {}, ("empathy", "keep", "aside", [])),
+])
+def test_plan_follows_the_table(reading, kw, want):
+    p = P.respond(reading, **kw)
+    assert (p.ack, p.next, p.count, p.answer) == want
+    assert p.notes == (["falsify"] if "falsify" in [a["act"] for a in reading["acts"]] else [])
+
+
+def test_only_tiredness_alone_makes_the_plan_hurry():
+    assert P.respond(rd({"act": "emotion", "feeling": "tired"})).hurry
+    assert not P.respond(rd({"act": "answer", "slot": "why_now", "text": "限界"}, {"act": "emotion", "feeling": "tired"}),
+                         answered=True).hurry
+    assert not P.respond(rd({"act": "emotion", "feeling": "sad"})).hurry
+
+
+def test_pause_note_comes_after_two_offtrack_turns_or_when_tired_and_only_once():
+    chat, tired = P.respond(rd({"act": "chitchat"})), P.respond(rd({"act": "emotion", "feeling": "tired"}))
+    assert [P.pause_due(chat, n, False) for n in (1, 2, 3, 4)] == [False, False, True, True]
+    assert P.pause_due(tired, 1, False) and not P.pause_due(tired, 1, True)
+    assert not P.pause_due(P.respond(rd({"act": "go_back"})), 5, False)  # 前の問いに戻るのは脱線ではない
+    assert P.PARTS == ("ack", "answer", "note", "phase_line", "ask")
+
+
+# ----------------------------- 事実のデータ -----------------------------
+def test_entry_facts_add_to_the_common_facts_and_pick_by_kind():
+    e = E.load(CAREER_ENTRY, H.ALL_SLOTS, ("career", "baito"))
+    common = F.COMMON
+    assert e.facts["ask_service"][:len(common["ask_service"])] == common["ask_service"]
+    assert "求人はヒアリングの後に出せます" in e.facts["ask_service"]
+    assert e.facts["checked"] == {"common": None, "entry": None}  # 運営者がまだ確かめていない
+    got = F.pick(e.facts, ["ask_service"], where="career_cards", known=True)
+    assert got[:2] == ["いまは職歴を聞いています", e.facts["known"]] and not set(got) & set(e.facts["ask_advice"]) - set(
+        e.facts["ask_service"])
+    advice = F.pick(e.facts, ["ask_advice"], where="career_cards", known=True)
+    assert advice == e.facts["ask_advice"]  # 今どこかと、分かっている値の文は、aica とこの相談を聞かれたときだけ
+    assert not any(c.isdigit() for f in advice for c in f)  # 相場の数を持たない
+
+
+def test_facts_shape_errors_stop_loading(tmp_path):
+    for bad, match in (({"ask_service": "一つの文"}, "文のリスト"), ({"ask_advice": ["x" * 81]}, "80 字"),
+                       ({"where": {"a": ""}}, "where"), ({"known": 3}, "known")):
+        (tmp_path / "facts.json").write_text(json.dumps(bad, ensure_ascii=False), encoding="utf-8")
+        with pytest.raises(ValueError, match=match):
+            F.read(tmp_path / "facts.json")

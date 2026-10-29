@@ -126,6 +126,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from dip_mcp import accounts, arcade, behavior, logic, profile, retention
 from dip_mcp.baito import session as baito_session
 from dip_mcp.career import session as career_session
+from dip_mcp.convo.acts import STICKER
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import (
@@ -974,7 +975,9 @@ def line_login() -> line_channel.LineLogin:
 
 def _line_kind(e: dict) -> str | None:
     """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
-    解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
+    解除 unlink、データを見る view_data、データを消す forget_data)、会話の層の版(正社員の c2)の相談の間のスタンプ
+    (sticker。「[スタンプ]」の文としてハーネスに渡す。設計メモ docs/design/conversation-layer.md §4.12。今の版の相談とトークでは
+    今までどおり答えない)、友だち追加(follow)、アカウント連携の結果(account_link)、
     「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)、使い始める同意のクイックリプライ
     (postback。consent。ボタンと同じ「同意して始める」の文も consent)。ほかは None(無視する)。
     standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
@@ -988,6 +991,9 @@ def _line_kind(e: dict) -> str | None:
         if text.strip() == consent.texts("line")["terms"]["button"]:  # 「同意して始める」を文で送った: 発言にしない
             return "consent"
         return line_channel.link_command(text) or line_channel.data_command(text) or "message"
+    if e.get("type") == "message" and msg.get("type") == "sticker" \
+            and career_session.on_layer(state, line_channel.line_user(src["userId"])):
+        return "sticker"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
     data = str((e.get("postback") or {}).get("data") or "")
@@ -1052,7 +1058,7 @@ async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kin
         return await _line_data(uid, kind, e)
     if kind == "consent":
         return await _line_consent(uid, e)
-    if kind in ("follow", "message", "link") and consent.needed(state, uid, "terms"):
+    if kind in ("follow", "message", "sticker", "link") and consent.needed(state, uid, "terms"):
         return _line_consent_ask()  # 同意の前: 発言をターンに流さず(LLM を呼ばず、残さず)、同意をうながす
     if kind == "account_link":
         return line_channel.texts(account_link(uid, e["link"]))
@@ -1182,6 +1188,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
     挨拶がまだ返っていなければ(logic.greeting_due)、新しい会話は発言ではなく挨拶から始める(書いた文は会話に入れない。task 232)。
     挨拶の前に今の会話で本人の発言に返したら(LIFF 画面で同意し、履歴書の続きに答えたなど)、もう挨拶を待たない(logic.skip_greeting)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
+    sticker(会話の層の版の相談の間のスタンプ)は「[スタンプ]」の文の発言。今の会話が続いているときだけ(30 分を過ぎたら、今までどおり答えない)。
     エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。
     返すのは (返信, そのターンが挨拶なら入口(visit / revisit)、でなければ None)。後の方は line_channel.to_messages の greeting
@@ -1193,8 +1200,12 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
             conv = await rt.conversation(uid)
         if kind == "message" and not talk_continues(conv) and logic.greeting_due(state, uid):
             kind = "follow"  # 同意の後の挨拶がまだ返っていない(失敗した): 発言から始めず(入口 A にせず)、挨拶から始める
+        if kind == "sticker" and not talk_continues(conv):
+            return None, None  # 新しい会話はスタンプから始めない(相談は閉じる側。今までどおり答えない)
     if kind == "follow":
         event, text, new = logic.talk_entry(state, uid), None, False
+    elif kind == "sticker":
+        event, text, new = "message", STICKER, False
     else:
         event, text = ("resume_upload", None) if kind == "upload" else ("message", e["message"].get("text"))
         new = not talk_continues(conv)

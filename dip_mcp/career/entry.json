@@ -3,6 +3,7 @@
  "title": "正社員ヒアリング",
  "note": "正社員ヒアリングの入り口の定義(設計メモ docs/design/conversation-layer.md §4.1)。読むのは c2(CAREER_HARNESS_VERSION=c2)だけ。形は dip_mcp/convo/entry.py",
  "bank": "bank.json",
+ "facts": "facts.json",
  "slots": {
   "why_now": "今回、仕事を探そうと思ったきっかけ",
   "area": "働きたい場所(駅、市、「家から30分以内」など)",
@@ -38,6 +39,8 @@
    "電話がつらいときは、LINEやチャットで話せる窓口もあります。厚生労働省「まもろうよ こころ」 {source}",
    "ヒアリングは、いつでも続きからできます。続けるときは「続ける」と送ってください。"
   ],
-  "crisis_resume": "はい、続きから進めます。"
+  "crisis_resume": "はい、続きから進めます。",
+  "note_pause": "「中断」と送れば、ここまでの分が残ります。",
+  "note_falsify": "事実と違うことは書けません。小さなことでも、そのままの言葉で大丈夫です。"
  }
 }

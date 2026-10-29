@@ -11,6 +11,7 @@ entry.json の形:
 - switch: 移れる入り口 [{"to", "label"}]。label は移るボタンの文(§4.5。使うのは 6 枚目のカード)
 - infer: ボタンから推せるほかの欄 {問いの id: {ボタン: {欄: 値の文}}}(§4.7 の 1。推測(low)で入れ、まとめで確かめる)
 - texts: 決まった文 {名前: 文か、行のリスト}。入り口が求める名前は required_texts で渡す
+- facts: 逆質問に答える事実のファイル(entry.json と同じフォルダ。無くてよい)。aica 全体の事実に足して読む(dip_mcp.convo.facts)
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from dip_mcp.convo import facts as F
 
 CARD_MARK = "{n}"  # 職歴カードのひな形の欄(career{n}.role)。1 枚目に広げて確かめる
 SPECIAL_TARGETS = ("segment", "__ng__")  # 欄でない問いの的(区分、避けたいこと)
@@ -32,6 +35,7 @@ class Entry:
     switch: list = field(default_factory=list)
     infer: dict = field(default_factory=dict)
     texts: dict = field(default_factory=dict)
+    facts: dict = field(default_factory=lambda: F.load(None))
 
 
 def _choices(q: dict) -> list[str]:
@@ -92,5 +96,6 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
     lacking = [t for t in required_texts if not texts.get(t)]
     if lacking:
         raise ValueError(f"{name}: 決まった文が無い {lacking}")
+    facts = F.load(Path(path).parent / d["facts"] if d.get("facts") else None)
     return Entry(entry=name, title=d["title"], bank=bank, slots=described, switch=list(d.get("switch") or []),
-                 infer=d.get("infer") or {}, texts=texts)
+                 infer=d.get("infer") or {}, texts=texts, facts=facts)

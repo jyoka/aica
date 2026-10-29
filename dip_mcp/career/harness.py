@@ -55,6 +55,9 @@ MAX_CLARIFY = 2
 PHASE_CAP = {"icebreak": 2 + MAX_CLARIFY, "hard_filter": 5 + MAX_CLARIFY, "career_cards": 3 * CARD_COUNT + MAX_CLARIFY,
              "scenario_game": 2, "reverse_pick": 1, "fill_gaps": 3}
 MAX_ASIDES = 3
+# 疲れたと言った(会話の層の c2 の「急ぐ」。設計メモ docs/design/conversation-layer.md §4.6)。立てたら HARD のほかの問いを聞かずに
+# まとめへ進む(can_ask)。c1 は立てない
+HURRY = "hurry"
 LLM_RETRIES = 1
 FORMS = ("B", "C", "D")
 UI_FORMS = ("D",)  # LINE の Flex を付ける形(問いは C と同じ)
@@ -269,7 +272,7 @@ class State:
     last_card: dict = None
     review_log: list = field(default_factory=list)
     flags: list = field(default_factory=list)
-    stop_reason: str = None                        # review に進んだ理由: done / time / turns / show_result
+    stop_reason: str = None                        # review に進んだ理由: done / time / turns / show_result / hurry(c2)
     closed: str = None                             # later(「あとで」で終えた)
     result: dict = None
     log: list = field(default_factory=list)
@@ -408,10 +411,15 @@ def _segment_ok(q, state):
 
 def can_ask(state, slot):
     """時間とターンの予算(§3.3)。HARD は時刻を過ぎても聞き、review のための 2 ターンのうち 1 ターンまで使う。
-    ほかは、質問を止める時刻の前で、review のための 2 ターンに入る前だけ。"""
+    ほかは、質問を止める時刻の前で、review のための 2 ターンに入る前だけ。「急ぐ」(HURRY)の後は HARD だけ。"""
     if slot == "segment" or active_slots(state).get(slot) == HARD:
         return state.turns < HARD_LAST_TURN
-    return state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)
+    return _budget_left(state)
+
+
+def _budget_left(state):
+    """HARD のほかの問いを出せる予算が残っているか。"""
+    return HURRY not in state.flags and state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)
 
 
 def _card_skipped(state, slot):
@@ -433,7 +441,7 @@ def score(state, q, budget=True):
     if q["targets"] == ["__ng__"]:
         if state.user_ng or (state.slots.get("stop_doing") or {}).get("status") == "filled":
             return 0.0  # もう避けたいこと(NG、やめたいこと)を言った人には、逆選択を聞かない(聞き直しに見えるため)
-        return float(LOW) if not budget or (state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)) else 0.0
+        return float(LOW) if not budget or _budget_left(state) else 0.0
     total = 0.0
     for t in q["targets"]:
         if t in pri and is_open(state.slots.get(t)) and not _card_skipped(state, t) and (not budget or can_ask(state, t)):
@@ -516,6 +524,8 @@ def _why_stop(state, bank):
         return "turns"
     if state.seconds > stop_at(state):
         return "time"
+    if HURRY in state.flags:
+        return "hurry"
     return "done"  # フェーズの上限で出せなかった
 
 

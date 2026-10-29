@@ -1568,7 +1568,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 #### 会話の層(作っている途中。正社員の c2)
 
 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))を
-`dip_mcp/convo/` に作っています。10 枚のカード(設計メモ §5)の 2 枚目(task 355)までで、使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)だけです。
+`dip_mcp/convo/` に作っています。10 枚のカード(設計メモ §5)の 3 枚目(task 356)までで、使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)だけです。
 本番の既定(c1、v4)は変えていません。始めた相談は始めた版のまま進みます(状態の `version`。`career/session.harness_of`)。
 
 | 部品 | 中身 |
@@ -1576,11 +1576,14 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/convo/guard.py`、`crisis.json` | 守りの前処理。危ない言葉の表(v4 の `crisis_v4.json` と同じ言葉と窓口)で照らす `crisis_hit` と、窓口の後の「続ける」(`wants_resume`)。入り口の調子の文に共通の窓口をはさむ `crisis_text`。伏せた印と氏名・要配慮の部分を値から除く `scrub`、返事に出たかを見る `leaks`。v4 も `crisis_hit` を読み込む |
 | `dip_mcp/convo/acts.py` | 発言の働き(act)の型と、読む段の出力の検証(`validate_reading`。値は発言の部分文字列、数は発言に数字で書いてあるもの、知っている欄と入り口だけ)。場面の一覧の読む段の正解も同じ型 |
 | `dip_mcp/convo/values.py` | 値の当て方(`plan`。答え、言い足し、直す、取り消す、迷う、パス)と確かさ(`confidence`)、言い足しのつなぎ方(`merge`) |
-| `dip_mcp/convo/entry.py` | 入り口の定義(`dip_mcp/<入り口>/entry.json`)の読み込みと形の確かめ(欄の説明、質問バンク、移る先、ボタンから推せる欄、決まった文) |
+| `dip_mcp/convo/entry.py` | 入り口の定義(`dip_mcp/<入り口>/entry.json`)の読み込みと形の確かめ(欄の説明、質問バンク、移る先、ボタンから推せる欄、決まった文、事実のファイル) |
+| `dip_mcp/convo/plan.py` | 応じ方の計画(`respond`。設計メモ §4.6 の表)。act と当てた結果から、相づちの種類、逆質問に答えるか、注意の 1 行、次の問い(選び直す、同じ問い、前の問い、今の欄を閉じて次へ)、数え方を決める。「中断」の注意を添えるか(`pause_due`) |
+| `dip_mcp/convo/facts.py`、`facts.json` | 逆質問に答える事実のデータ。aica 全体の事実(`facts.json`)に入り口の事実(`dip_mcp/career/facts.json`)を足す。運営者が確かめる(`checked`) |
 | `dip_mcp/convo/state.py` | 状態の器。直前のやりとり 4 つ(読む段に渡す)と直前の返信 2 つ |
 | `dip_mcp/convo/turn.py` | 呼び直しの部品: 出力を確かめて 1 回だけやり直す `call_llm`(c1 と v4 の `_call_llm` もこれ)、ボタンの照らし合わせ `match_button`、プロンプトの組み立て |
-| `dip_mcp/career/c2.py`、`entry.json` | 正社員の c2。c1 の決める段と言う段を使い、守りの前処理、読む段(`read`)、値の当て方を層に替えた版 |
+| `dip_mcp/career/c2.py`、`entry.json`、`facts.json` | 正社員の c2。c1 の決める段と言う段を使い、守りの前処理、読む段(`read`)、値の当て方、応じ方の計画を層に替えた版 |
 | `dip_mcp/prompts/convo/read_ja.txt`、`prompts/career/prompt_read_ja.txt` | 読む段のプロンプト。層の骨組みに、正社員の決まりをつなぐ |
+| `dip_mcp/prompts/career/prompt_say_plan_ja.txt` | 言う段の計画の決まり(c2)。c1 の言う段のプロンプトにつなぎ、計画(相づちの種類、逆質問の事実)を渡す |
 
 c2 の 1 ターン(c1 と違うところ):
 
@@ -1592,7 +1595,14 @@ c2 の 1 ターン(c1 と違うところ):
   直した値は確かめた値(high)で置きかえ、取り消した欄は空にする。今の問いに答えずにほかの欄だけを言ったら、同じ問いを出し直す
 - 返事に伏せた印・氏名・要配慮の部分が出たら、やり直す(だめなら問いの文だけ)。言う段のモデルに渡す今の発言は、その部分を「…」にした文
   (呼び出しの `model_text`。ランタイムの `_harness_turn` が、あればそれを本人の発言として渡す。c1 と v4 の呼び出しには無い)
-- 1 ターンのモデルの呼び出しは c1 と同じ(ボタン 1 回、打った文 2 回、上限 4 回)。危ない言葉は 0 回
+- 応じ方の計画(`plan.respond`)のとおりに応じる。逆質問は、言う段に事実のデータだけを渡して答えさせる(吹き出しは 120 字まで。
+  事実にある数は言ってよい)。答えでないターンが 2 回続いた次のターンと、疲れたと言ったターンには「中断」の注意(入り口の定義の `note_pause`)を
+  相談で 1 回だけ添える。疲れたと言った後は HARD のほかの問いを聞かない(`harness.HURRY`)。前の問いに戻る頼みは、前の問いを直す問い
+  (mode `back`、「そのまま」つき)として出し、答えたら元の問いに戻る。聞き方への不満だけのターンは、今の欄を空のまま次へ。事実と違う頼みは
+  決まった文(`note_falsify`)で断る。注意の文は相づちの後、区切りの前にハーネスが入れる(`c2.bubble`)
+- LINE のスタンプ: c2 の相談の間だけ、ランタイムが「[スタンプ]」の文にして渡す(`server._line_kind` の `sticker`、`career/session.on_layer`)。
+  c2 は読む段を呼ばずに雑談として読む。今の会話が 30 分空いていたら答えない(今までどおり)
+- 1 ターンのモデルの呼び出しは c1 と同じ(ボタン 1 回、打った文 2 回、上限 4 回)。危ない言葉は 0 回、スタンプは言う段の 1 回
 
 #### 条件の問いの選択肢
 
@@ -1789,7 +1799,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
    (`accountLink`。4.12)と、「データを消す」の確かめの postback(`forget_postback` が読めるデータだけ。4.6)です。テキストが `LINK_TEXT`
    (「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら `link` と `unlink`、`VIEW_DATA_TEXT`(「データを見る」)か `FORGET_DATA_TEXT`
    (「データを消す」)なら `view_data` と `forget_data` です(前後の空白は見ない)。使い始める同意のクイックリプライの postback
-   (`consent_postback` が読めるデータ)は `consent` です。友だち解除(`unfollow`)には答えません(下)。
+   (`consent_postback` が読めるデータ)は `consent` です。スタンプ(`message.type == "sticker"`)は、会話の層の版(正社員の c2)の相談の間だけ
+   `sticker` にし、「[スタンプ]」の文の発言としてハーネスに渡します(ほかのときは答えません)。友だち解除(`unfollow`)には答えません(下)。
    `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
 4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
    ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
