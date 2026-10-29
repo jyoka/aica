@@ -1199,6 +1199,17 @@ def career_harness_on() -> bool:
     return career_harness_version() is not None
 
 
+# 会話の層の版(ADR-0011。dip_mcp/convo/)。入り口を移すとき、移る先がこの版なら、トークの AI を挟まずに同じターンで
+# 移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)。アルバイト・パートの層の版(v5)は 7 枚目のカード
+LAYER_VERSIONS = {"career": ("c2",), "baito": ()}
+
+
+def layer_on(entry: str) -> bool:
+    """新しく始める、その入り口の相談が、会話の層の版か(career は CAREER_HARNESS_VERSION、baito は BAITO_HARNESS_VERSION)。"""
+    v = career_harness_version() if entry == "career" else os.environ.get(BAITO_HARNESS_FLAG, "").strip()
+    return v in LAYER_VERSIONS.get(entry, ())
+
+
 def counseling_playbook(track: str, channel: str = "chat") -> dict:
     """その区分・チャネルの playbook(区分に共通の決まりを含む)と、会話の決まりの値。"""
     if track not in TRACKS:

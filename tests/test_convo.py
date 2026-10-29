@@ -168,7 +168,8 @@ def test_recent_keeps_the_last_four_and_clips_long_text():
 def test_career_entry_describes_every_slot_and_its_bank():
     e = E.load(CAREER_ENTRY, H.ALL_SLOTS, ("career", "baito"), ("crisis_lead", "crisis_tail", "crisis_resume"))
     assert set(e.slots) == H.ALL_SLOTS and [q["id"] for q in e.bank] == [q["id"] for q in H.BANK]
-    assert e.switch == [{"to": "baito", "label": "アルバイト・パートで探す"}]
+    assert [(s["to"], s["label"], s["track"]) for s in e.switch] == [("baito", "アルバイト・パートで探す", "アルバイト・パート")]
+    assert set(e.carry) == {"baito"} and e.carry["baito"]["near.area"] == {"slot": "area", "how": "same"}
 
 
 @pytest.mark.parametrize("change, match", [
@@ -254,7 +255,7 @@ def test_entry_facts_add_to_the_common_facts_and_pick_by_kind():
     common = F.COMMON
     assert e.facts["ask_service"][:len(common["ask_service"])] == common["ask_service"]
     assert "求人はヒアリングの後に出せます" in e.facts["ask_service"]
-    assert e.facts["checked"] == {"common": None, "entry": None}  # 運営者がまだ確かめていない
+    assert e.facts["checked"] == {"common": "2026-10-29", "entry": "2026-10-29"}  # 運営者の代わりにポリシーと突き合わせた(jyoka/tasks#356)
     got = F.pick(e.facts, ["ask_service"], where="career_cards", known=True)
     assert got[:2] == ["いまは職歴を聞いています", e.facts["known"]] and not set(got) & set(e.facts["ask_advice"]) - set(
         e.facts["ask_service"])

@@ -15,6 +15,9 @@
   モデルの運に頼らない点にする(jyoka/tasks#326 のトーク 1、3、5 の「〜ですね。」)
 - 本人が「やめる」などで相談を閉じたターンは、ランタイムがトークの AI に渡す。返事の文と、移るか・区分と値を引き継ぐかは
   トークの AI しだいなので判定しない(skip。checks._undecided)。モデルの呼び出しは少なくとも 1 回と数える
+- 会話の層の版が別の入り口へ移ると閉じたとき(switch_to)は、ランタイム(line_runtime.runtime._turn)と同じく、移る先も層の版なら
+  (direct)同じターンで移る先の相談を始める(移る先の session の switch_in。台本の LLM は移る先の版のもの)。移る先が今の版(v4)なら、
+  今と同じくトークの AI に渡す(上と同じく判定しない。設計メモ §4.15)
 - 今の LINE の入口(line_runtime/server.py の _line_kind)は、今の版(c1、v4)の相談の間とトークではスタンプを捨てるので、
   今の版の「[スタンプ]」は返事なしにする。新しい版(c2)の相談の間は、ランタイムが「[スタンプ]」の文にして渡す
 - talk は、本物のランタイム(line_runtime.runtime.LineRuntime。dip の MCP も本物)を、モックのトークの AI(TalkMock。決まった文を
@@ -298,7 +301,11 @@ class _HarnessDriver:
         while r.get("status") == "llm":
             outputs.append({"stage": r["call"]["stage"], "output": llm(r["call"])})
             r = self.session.turn(st, uid, say["text"], outputs)
-        if not r.get("active"):  # やめる合図・区分が外れた: 相談を閉じて、トークの AI がこのターンを受ける
+        if not r.get("active") and r.get("direct"):  # 層の版から層の版へ移る: 同じターンで移る先の相談を始める
+            moved = self.switch_in(st, uid, say, r["switch_to"], len(outputs))
+            if moved is not None:
+                return moved
+        if not r.get("active"):  # やめる合図・区分が外れた・今の版へ移る: 相談を閉じて、トークの AI がこのターンを受ける
             return {"text": "", "bubbles": [], "choices": [], "counted": False, "llm_calls": len(outputs) + 1, "how": "talk",
                     "closed": r.get("ended") or "exit", "note": "相談を閉じてトークの AI に渡した"}
         return {"text": r["reply"], "bubbles": list(r.get("bubbles") or [r["reply"]]), "choices": list(r["choices"]),
@@ -307,6 +314,23 @@ class _HarnessDriver:
 
     def closed(self, r: dict) -> str | None:
         return None
+
+    def switch_in(self, st, uid: str, say: dict, to: str, used: int) -> dict | None:
+        """移る先(to)の相談を、移る先の session の switch_in で始める(ランタイムの _switch_in と同じ)。始めなければ None。"""
+        dest = layer_driver(to)
+        if dest is None:
+            return None
+        llm = ScriptLLM(dest, say, [])
+        outputs: list[dict] = []
+        r = dest.session.switch_in(st, uid, say["text"], None)
+        while r.get("status") == "llm":
+            outputs.append({"stage": r["call"]["stage"], "output": llm(r["call"])})
+            r = dest.session.switch_in(st, uid, say["text"], outputs)
+        if not r.get("active"):
+            return None
+        return {"text": r["reply"], "bubbles": list(r.get("bubbles") or [r["reply"]]), "choices": list(r["choices"]),
+                "counted": bool(r["counted"]), "llm_calls": used + int(r.get("llm_calls", len(outputs))), "how": "harness",
+                "closed": None, "switched": {"from": self.entry, "to": to}} | ({"parts": r["parts"]} if r.get("parts") else {})
 
 
 class CareerC1(_HarnessDriver):
@@ -444,6 +468,7 @@ class CareerC2(CareerC1):
         t.crisis = c2.CRISIS_TEXT.split("\n")
         t.notes = [*t.notes, *(c2.ENTRY.texts[f"note_{n}"] for n in c2.P.NOTES)]  # 注意の 1 行(応じ方の計画。task 356)
         t.fixed = [*t.fixed, *(c2.ENTRY.texts[k] for k in ("crisis_resume", "retry_review", "more_done"))]
+        t.notes = [*t.notes, *(s["note"] for s in c2.ENTRY.switch)]  # 移れることの注意(task 359)
         CareerC2._texts = t
         return t
 
@@ -546,6 +571,16 @@ class TalkT0:
 
 VERSIONS = {"career": {"c1": CareerC1, "c2": CareerC2}, "baito": {"v4": BaitoV4}, "talk": {"t0": TalkT0}}
 CURRENT = {"career": "c1", "baito": "v4", "talk": "t0"}  # 今の本番の版(既定。BAITO_HARNESS_VERSION=v4 など)
+
+
+def layer_driver(entry: str):
+    """新しく始める、その入り口の相談が会話の層の版なら、その版の回し方(入り口を移す先。dip_mcp.logic.layer_on)。違えば None。"""
+    from dip_mcp import logic
+
+    if not logic.layer_on(entry):
+        return None
+    version = logic.career_harness_version() if entry == "career" else os.environ.get(logic.BAITO_HARNESS_FLAG, "").strip()
+    return VERSIONS[entry][version]() if version in VERSIONS[entry] else None
 
 
 def driver(entry: str, version: str | None = None):

@@ -29,6 +29,11 @@
   聞かずにまとめへ進む(H.HURRY)。どちらも相談で 1 回だけ。前の問いに戻る(go_back)は、前の問いを直す問いとして出し(数えない)、
   答えたら元の問いに戻る。聞き方への不満だけのターンは、今の欄を空のまま閉じて次へ(数える)。事実と違う頼みは、決まった文で断る(数えない)
 - LINE のスタンプ(§4.12): ランタイムが「[スタンプ]」の文にして渡す。読む段を呼ばずに雑談として読む
+- 入り口を移す(§4.5。dip_mcp.convo.switch): 「とりあえずバイトでいい」(読む段の switch の want)は、発言の中の値も当ててから
+  相談を閉じる(返す形の switch。引き継ぎの記録を書いて移るのは session)。移る強い頼み(session の EXIT_REQUEST。打ち消しと後回しの
+  EXIT_HOLD を除く)と移るボタンの文は、読む段を呼ばずに want にする。「バイトも考えてる」(consider)は移らずに、移るボタンを今の問いの
+  ボタンの前に足し、入り口の定義の注意を 1 回だけ添える(数えない)。ほかの入り口から移ってきた相談は、引き継ぎの記録の値を入れ
+  (take_handoff。同じ意味は元の確かさのまま、近い意味は推測)、最初の問いを移ったことの相づちと一緒に出す(enter)
 - 言う段(§4.8。dip_mcp.convo.reply): 計画を、返事の部品(相づち → 答え → 注意 → 区切り → 問い)の並びに組む。プロンプトは層の骨組み
   dip_mcp/prompts/convo/say_ja.txt に、計画と入り口の定義の調子(tone)を差し込む。モデルが書くのは相づちと逆質問の答えだけで、問いの文は
   質問バンクの言い方(text と variants)から選ぶ。同じ問いを出し直すときは、前に使った言い方を避ける。返事がだめなら 1 回やり直し、
@@ -41,6 +46,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from dip_mcp.baito.session import EXIT_HOLD
 from dip_mcp.career import harness as H
 from dip_mcp.convo import acts as A
 from dip_mcp.convo import entry as E
@@ -50,6 +56,7 @@ from dip_mcp.convo import pick as PK
 from dip_mcp.convo import plan as P
 from dip_mcp.convo import reply as RP
 from dip_mcp.convo import state as CS
+from dip_mcp.convo import switch as SW
 from dip_mcp.convo import values as V
 from dip_mcp.convo.turn import call_llm
 from dip_mcp.convo.turn import render_prompt as _render
@@ -57,7 +64,7 @@ from dip_mcp.convo.turn import render_prompt as _render
 VERSION = "c2"
 ENTRIES = ("career", "baito")  # 入り口の名前(移る先の確かめ)
 TEXTS = ("crisis_lead", "crisis_tail", "crisis_resume", "retry", "retry_number", "retry_review", "no_answer", "more_lead",
-         "more_lead_number", "more_done", *(f"note_{n}" for n in P.NOTES))
+         "more_lead_number", "more_done", "switched_in", *(f"note_{n}" for n in P.NOTES))
 # 言う段のプロンプトに渡す、相づちの種類の説明(応じ方の計画の ack。dip_mcp.convo.plan.ACKS)
 ACK_JA = {"short": "本人の答えを受け取る、短い相づち", "done": "何をしたか(計画の about)を、1 文で短く言う",
           "light": "雑談に軽く 1 文で乗る",
@@ -67,6 +74,8 @@ ENTRY = E.load(H.HERE / "entry.json", H.ALL_SLOTS, ENTRIES, TEXTS)
 CRISIS_TEXT = guard.crisis_text(ENTRY.texts["crisis_lead"], ENTRY.texts["crisis_tail"])
 CRISIS_FLAG = "crisis_shown"  # 前のターンで窓口を案内した印(1 ターンだけ残す)
 PAUSE_FLAG = "pause_noted"  # 「中断」の注意を添えた印(相談で 1 回だけ)
+SWITCH_FLAG = "switch_noted"  # 移れることの注意を添えた印(移る先ごとに、相談で 1 回だけ。「switch_noted:baito」)
+TARGETS = tuple(s["to"] for s in ENTRY.switch)  # 移れる入り口
 READ_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "read_ja.txt", H.PROMPT_DIR / "prompt_read_ja.txt"]
 SAY_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "say_ja.txt"]
 ANSWER_BUBBLE_MAX = RP.ANSWER_BUBBLE_MAX  # 逆質問に答えるターンの吹き出しの字数(§4.8、§6 の 20)
@@ -78,6 +87,7 @@ class State(H.State):
     version: str = VERSION
     convo: dict = field(default_factory=CS.new)  # 層の覚え(直前のやりとりと返信。dip_mcp.convo.state)
     offtrack: int = 0  # 続いた答えでないターンの数(計画の offtrack。答えて次へ進むと 0)
+    came_from: dict = None  # ほかの入り口から移ってきたときの引き継ぎの記録(すぐ戻るときに、元の入り口の値を戻すため。§4.5)
 
 
 def new_state(form=None, prefill=None):
@@ -315,6 +325,8 @@ def _turn(state, user_text, bank, llm):
     reading = None
     if sticker:  # スタンプは雑談(読む段を呼ばない)
         reading = A.sticker_reading()
+    elif button is None and (to := asked_to_switch(state, text)):  # 移るボタンか、移る強い頼み(読む段を呼ばない)
+        reading = SW.want_reading(to)
     elif button is None:
         reading = call_llm(llm.read, read_payload(state, bank, text), validator(text), _log(state), "read")
         state._spans = A.spans(reading)
@@ -324,12 +336,15 @@ def _turn(state, user_text, bank, llm):
         return _crisis(state)
     if reading is not None:  # 候補に使える本人の言葉を覚える(氏名・要配慮の部分と伏せた印を含むものは覚えない)
         CS.mentioned(state.convo, [w for w in reading["mentions"] if guard.scrub(w, state._spans) == w])
+    to = SW.wanted(reading, TARGETS)
+    if to:  # 別の入り口へ移る(§4.5)
+        return _switch(state, q, reading, text, to)
     if A.has(reading, "later", "stop"):
         if q is not None and cur["mode"] != "review":
             _apply(state, q, reading, text, retry=False)  # 「あとで」と一緒に打った答えも残す(次は聞かない)
         return H._close(state, "later")
-    if talk_only(reading):  # 雑談、逆質問、感情、不満、前の問いに戻るなど、値も操作も無い発言: 応じ方の計画のとおり
-        return _respond(state, bank, llm, q, P.respond(reading))
+    if talk_only(reading):  # 雑談、逆質問、感情、不満、前の問いに戻る、別の入り口を考えているなど、値も操作も無い発言: 応じ方の計画のとおり
+        return _respond(state, bank, llm, q, P.respond(reading, entries=TARGETS))
     if q is None and cur["mode"] != "review":
         return _represent(state, bank, counted=False)
     if A.has(reading, "more") and not _values(reading, q) and cur["mode"] not in ("review", "start"):  # 「ほかには?」と打った
@@ -353,7 +368,7 @@ TALK_ONLY = {*A.TALK, "emotion", "switch", "go_back", "restart", "danger", *A.SP
 
 
 def talk_only(reading):
-    """値も操作も無い発言か(act が 1 つ以上あり、どれも話・感情・入り口・守りの部分)。switch の行き先は 6 枚目のカード。"""
+    """値も操作も無い発言か(act が 1 つ以上あり、どれも話・感情・入り口・守りの部分)。移る(want)は、ここの前に受け持つ。"""
     names = [a["act"] for a in (reading or {}).get("acts", [])]
     return bool(names) and all(n in TALK_ONLY for n in names)
 
@@ -388,7 +403,7 @@ def _ask_turn(state, bank, llm, q, button, reading, text):
             _apply_choice(state, q, button)
         return _next(state, bank, llm, q, before)
     got = _apply(state, q, reading, text)
-    done = P.respond(reading, answered=True)
+    done = P.respond(reading, answered=True, entries=TARGETS)
     if got["answered"]:
         return _next(state, bank, llm, q, before, plan=done)
     if any(o["op"] == "escape" for o in ops):
@@ -403,11 +418,11 @@ def _ask_turn(state, bank, llm, q, button, reading, text):
     if got["retry"]:  # 数の問いで数が読めない 1 回目: 数えずに、ボタンで聞き直す(c1 と同じ)
         return _retry(state, bank, llm, q)
     if got["fixed"] and not got["added"]:  # 直した・取り消した: 数えずに、今の問いを出し直す(§4.6)
-        p = P.respond(reading, fixed=True)
+        p = P.respond(reading, fixed=True, entries=TARGETS)
         p.about = got["did"]
         return _say(state, bank, llm, counted=False, aside=True, plan=p)
     if got["added"] or (reading and reading["acts"]):  # ほかの欄の値だけ(雑談や逆質問と一緒でも): 同じ問いを出し直す
-        return _aside(state, bank, llm, P.respond(reading))
+        return _aside(state, bank, llm, P.respond(reading, entries=TARGETS))
     if q["id"] not in state.retried:  # 何も読めない 1 回目: 数えずに、ボタンで聞き直す(c1 と同じ)
         return _retry(state, bank, llm, q)
     kept = guard.scrub(text, state._spans)  # 2 回目: 本人の文を low で入れ、まとめで確かめる(伏せた印と氏名は除く)
@@ -657,6 +672,91 @@ def _apply_fix(state, q, slot, button, reading, text):
     H.ev(state, "fixed", slot=slot, status=e["status"])
 
 
+# ----------------------------- 入り口を移す(§4.5) -----------------------------
+def _requests():
+    """移る強い頼み {移る先: 正規表現}(今の EXIT_REQUEST。dip_mcp.career.session が持ち、session がこのモジュールを読み込むので、
+    使うときに読む)。"""
+    from dip_mcp.career.session import EXIT_REQUEST
+
+    return {"baito": EXIT_REQUEST}
+
+
+def asked_to_switch(state, text):
+    """読む段を呼ばずに移る先が決まる発言 -> 移る先か None。移るボタンの文(入り口の定義の label)か、まとめの前の移る強い頼み
+    (打ち消しと後回しの EXIT_HOLD に当たるものは除く。「バイトじゃなくて」は答えとして読む)。"""
+    t = H.nfkc(text)
+    for s in ENTRY.switch:
+        if t == H.nfkc(s["label"]):
+            return s["to"]
+    if state.phase in ("review", "result"):
+        return None
+    return next((to for to, rx in _requests().items() if to in TARGETS and SW.requested(text, rx, EXIT_HOLD)), None)
+
+
+def _switch(state, q, reading, text, to):
+    """別の入り口へ移る(switch の want): 発言の中の値も当ててから、相談を閉じる(数えない。モデルは読む段のほかに呼ばない)。
+    返す形の switch は {to, acts: 発言の中の値の act, said: 氏名と要配慮の部分を伏せた発言}。引き継ぎの記録を書き、移る先へ渡すのは
+    session(dip_mcp.career.session.turn)。"""
+    if q is not None and state.current["mode"] in ASKING:
+        _apply(state, q, reading, text, retry=False)  # 「とりあえずバイトでいい。週3くらいで」の週 3 も捨てない(§4.4)
+    acts = SW.value_acts(reading, lambda t: guard.scrub(t, state._spans))
+    state.closed, state.phase = "switch", "result"
+    state.current = {"qid": "closed", "mode": "closed", "choices": []}
+    H.ev(state, "switch", to=to, acts=len(acts))
+    return H._out(state, [], [], counted=False, read=False) | {"switch": {"to": to, "acts": acts, "said": state._user_text}}
+
+
+def take_handoff(state, rec):
+    """ほかの入り口からの引き継ぎの記録(dip_mcp.convo.switch)の値を入れる -> 入れた欄。空の欄にだけ入れる(前の相談で確かめて
+    保存した値と履歴書の値を上書きしない)。同じ意味の値は元の確かさのまま、近い意味の値は推測(low)。どちらも聞き直さず、
+    low はまとめで確かめる(HARD でも。spam_hard_high の例外)。記録は、すぐ元の入り口へ戻るときのために覚える(came_from)。"""
+    if not rec:
+        return []
+    got = []
+    for slot, e in SW.carry(rec, ENTRY.entry, ENTRY.carry).items():
+        if slot not in H.ALL_SLOTS or not H.is_open(state.slots.get(slot)) or slot in state.pending:
+            continue
+        H.set_slot(state, slot, H.entry(e.get("status") or "filled", e["text"], e.get("value"), e.get("number"), e.get("range"),
+                                        e.get("unit"), e.get("confidence") or "low", e.get("from") or rec["from"]))
+        got.append(slot)
+    state.came_from = {k: v for k, v in rec.items() if k not in ("prior", "said")}
+    H.ev(state, "handoff", source=rec["from"], slots=got)
+    return got
+
+
+def enter(state, bank=H.BANK, llm=None, said=""):
+    """ほかの入り口から同じターンで移ってきた相談の、最初の返事。引き継いだ値で埋まった問いを飛ばして最初の問いを選び、
+    移ったことの相づち(入り口の定義の switched_in を計画の about に)と問いを 1 つの吹き出しにする(言う段 1 回。数えない)。
+    形 D でも「始める」の 1 枚は出さない(本人はもう話している)。said は移る発言(伏せたもの)。言う段に渡し、直前のやりとりに覚える。"""
+    H._init_volatile(state)
+    _init_turn(state)
+    state._user_text = said
+    advance(state, bank)
+    out = _say(state, bank, llm, counted=False, plan=P.Plan(ack="done", about=[ENTRY.texts["switched_in"]], count="free"))
+    if H.nfkc(said):
+        CS.heard(state.convo, said)
+    CS.replied(state.convo, out["reply"], state._ack)
+    return out
+
+
+def _offer(state, q, p, choices, notes):
+    """別の入り口を考えている(計画の offer): 移るボタンを今の問いのボタンの前に足し、移れることの注意を移る先ごとに相談で 1 回だけ
+    添える。-> ボタン。今の問いの候補は外さない(1 回押せば答えられるように。§4.6)ので、ラベルの合計の字数(LABELS_MAX)は、
+    まとめの「直す」の「そのまま」と同じく、移るボタンの分だけ超えてよい。ボタンの数(QUICK_MAX)は超えない(超えるなら候補の後ろを外す)。"""
+    offer = [s for s in ENTRY.switch if s["to"] in p.offer]
+    for s in offer:
+        flag = f"{SWITCH_FLAG}:{s['to']}"
+        if flag not in state.flags:
+            notes.append(s["note"])
+            H._flag(state, flag)
+    if not offer:
+        return choices
+    labels = [s["label"] for s in offer]
+    cands = [c for c in choices if q is not None and c in q["choices"]]
+    tail = [c for c in choices if c not in cands]
+    return [*labels, *cands[:max(1, H.QUICK_MAX - len(labels) - len(tail))], *tail]
+
+
 # ----------------------------- 前の問いに戻る -----------------------------
 def _slot_of(q):
     return next((t for t in q["targets"] if t in H.ALL_SLOTS), None)
@@ -835,6 +935,7 @@ def view(state, bank, p, aside=False, quiet=False, lead=None):
         p.facts = F.pick(ENTRY.facts, p.answer, where=v["phase"], known=_known(state))
         answer = {"facts": p.facts, "fallback": ENTRY.texts["no_answer"]}
     notes += [ENTRY.texts[f"note_{n}"] for n in p.notes]
+    v["choices"] = _offer(state, q, p, v["choices"], notes)
     reading, button = getattr(state, "_reading", None), getattr(state, "_button", None)
     hook = (reading or {}).get("hook") or (button if button and len(button) <= A.HOOK_MAX else None)
     hidden = guard.hidden(getattr(state, "_spans", []))
