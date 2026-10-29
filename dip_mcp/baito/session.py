@@ -409,8 +409,9 @@ def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | No
         return {"active": False}
     back = _paused(state, line_user_id)  # 「あとで」で取っておいた相談があれば、その続きに移る
     h, paused = back if back is not None else (V5.new_state(quick=not state.user(line_user_id).get(BLOCK_KEY)), None)
+    prefs = logic.stated_preferences(state.user(line_user_id))
     if paused is None:
-        V5.prefill(h, logic.stated_preferences(state.user(line_user_id)))
+        V5.prefill(h, prefs)
     rec = SW.peek(state, line_user_id, V5.ENTRY.entry, now(line_user_id))
     said = (text or "").strip()
     llm = ReplayLLM(llm_outputs, V5.render_prompt, V5.prompt_stage)
@@ -420,8 +421,8 @@ def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | No
         if SW.unread(rec):  # トークの AI が始めた相談(t1): 始めた発言を読む段で読み、その値を当ててから最初の問いを選ぶ
             acts, opening, stop = V5.read_opening(h, H.BANK, llm, said)
             rec = dict(rec, acts=acts, read=False)
-        V5.take_handoff(h, rec)
-        r = V5.opening_guard(h, H.BANK, llm, stop) if stop else V5.enter(h, H.BANK, llm, opening)
+        got = V5.take_handoff(h, rec)
+        r = V5.opening_guard(h, H.BANK, llm, stop) if stop else V5.enter(h, H.BANK, llm, opening, V5.carried_words(h, rec, prefs, got))
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("バイトの相談のモデルの呼び出しが、1 ターンの上限を超えました") from None

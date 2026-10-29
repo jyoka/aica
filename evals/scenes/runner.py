@@ -455,6 +455,17 @@ class CareerC1(_HarnessDriver):
                      strip=[r"✓職歴\d+", r"」\d+/\d+"])  # 形 C の進み具合の行(_progress)の、職歴の番号と「n/3」
 
 
+def layer_ack(driver, plan: dict, ack: str) -> str:
+    """層の版の台本の相づち: 計画が相づちなしなら付けない。相づちに入れる言葉(計画の mention。移った先の最初の返事の、
+    引き継いだ値。task 379)があり、単調な相づちに無ければ、その 1 つ目を本人の言葉の代わりにした相づちにする。"""
+    if plan.get("ack", "short") is None:
+        return ""
+    mention = plan.get("mention") or []
+    if mention and not any(w in ack for w in mention):
+        return driver.ack(mention[0])
+    return ack
+
+
 class CareerC2(CareerC1):
     """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
     台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとりと返信、その相づち)に入れる。
@@ -485,9 +496,7 @@ class CareerC2(CareerC1):
     def write(self, call, ack):
         """計画が相づちなし(逆質問、事実と違う頼み)なら、相づちを付けない。ほかは c1 と同じ単調な相づち。"""
         m = CAREER_PLAN.search(call["system"])
-        if m and json.loads(m.group(1)).get("ack") is None:
-            ack = ""
-        return super().write(call, ack)
+        return super().write(call, layer_ack(self, json.loads(m.group(1)) if m else {}, ack))
 
     def texts(self) -> Texts:
         from dip_mcp.career import c2
@@ -619,10 +628,8 @@ class BaitoV5(BaitoV4):
         m = CAREER_PLAN.search(call["system"])
         if call["stage"] != "say" or not m:
             return super().write(call, ack)
-        if json.loads(m.group(1)).get("ack") is None:
-            ack = ""
         q = json.loads(CAREER_SAY.search(call["system"]).group(1))
-        return {"reply": ack + q["text"]}
+        return {"reply": layer_ack(self, json.loads(m.group(1)), ack) + q["text"]}
 
     def closed(self, r):
         return r.get("closed") or super().closed(r)

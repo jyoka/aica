@@ -320,6 +320,23 @@ def test_validate_rejects(reply, why):
     assert R.validate({"reply": reply}, plan(hidden=["みほん太郎"]), CS.new()) == (None, why)
 
 
+def test_validate_needs_a_carried_value_in_the_ack_and_takes_its_numbers_from_the_about():
+    """移った先の最初の返事(task 379): 相づちに入れる言葉(mention)が 1 つも無ければ落とす(相づちが無いときも)。
+    数は計画の about(ハーネスが記録の文から作った文)にあれば、出どころがある。"""
+    p = plan(ack="done", said="やっぱり正社員で", about=["東京、週5日以上で、正社員で探します"], mention=["東京", "週5日以上"])
+    parts, why = R.validate({"reply": "週5日以上で、正社員で探しますね。働きたい場所は?"}, p, CS.new())
+    assert why is None and R.ack_of(parts) == "週5日以上で、正社員で探しますね。"
+    assert R.validate({"reply": "わかりました。働きたい場所は?"}, p, CS.new())[1] == "mention_missing"
+    assert R.validate({"reply": "働きたい場所は?"}, p, CS.new())[1] == "mention_missing"
+    no_about = plan(ack="done", said="やっぱり正社員で", mention=["東京", "週5日以上"])
+    assert R.validate({"reply": "週5日以上ですね。働きたい場所は?"}, no_about, CS.new())[1] == "made_up_number"
+    assert R.validate({"reply": "働きたい場所は?"}, plan(), CS.new())[1] is None  # mention の無い計画は今のまま
+    wave = plan(ack="done", said="週3〜4日で", about=["週3〜4日で、正社員で探します"], mention=["週3〜4日"])
+    assert R.validate({"reply": "週3～4日で探しますね。働きたい場所は?"}, wave, CS.new())[1] is None  # 波線の違いは同じに見る
+    ack = R.fixed_ack(p, CS.new(), {"done": ["わかりました。"]})
+    assert ack == "東京、週5日以上で、正社員で探します。"  # 決まった組み立ては about の文(値が入る)
+
+
 def test_validate_rejects_a_third_same_ending_and_a_repeated_sentence_and_extra_text():
     c = CS.new()
     CS.replied(c, "同じ仕事で上を目指すのですね。", "同じ仕事で上を目指すのですね。")

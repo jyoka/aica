@@ -58,13 +58,15 @@ class Plan:
     hurry: bool = False
     offtrack: bool = False                       # 答えでないターン(続いた数を数える)
     offer: list = field(default_factory=list)    # 移るボタンを出す入り口(switch の consider)
+    mention: list = field(default_factory=list)  # 相づちに必ず入れる言葉(どれか 1 つ。移った先の最初の返事の、引き継いだ値。§4.5)
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     def for_say(self) -> dict:
         """言う段に渡す形(ack の種類、触れること、答えるか、事実)。note は渡さない(ハーネスが入れる)。"""
-        return {"ack": self.ack, "about": list(self.about), "answer": bool(self.answer), "facts": list(self.facts)}
+        return {"ack": self.ack, "about": list(self.about), "answer": bool(self.answer), "facts": list(self.facts)} | (
+            {"mention": list(self.mention)} if self.mention else {})
 
 
 def _names(reading: dict | None) -> list[str]:

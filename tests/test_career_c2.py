@@ -53,8 +53,8 @@ def c2_on(monkeypatch):
 
 
 class FakeReadLLM:
-    """読む段: 今の質問の欄に、本人の発言を答えとして返す。READINGS にある発言は、その act の並び。言う段は質問の原文。
-    出力は本物と同じ型(ReadOut)を通す。"""
+    """読む段: 今の質問の欄に、本人の発言を答えとして返す。READINGS にある発言は、その act の並び。言う段は質問の原文
+    (相づちに入れる言葉 mention が計画にあれば、その言葉の相づちを前に付ける)。出力は本物と同じ型(ReadOut)を通す。"""
 
     READINGS: ClassVar[dict] = {MULTI: [act("answer", slot="area", text="東京"),
                         act("add", slot="min_annual_salary", text="500万以上", number=500, unit="万"),
@@ -68,7 +68,8 @@ class FakeReadLLM:
         self.calls.append((stage, system, [dict(m) for m in messages]))
         if stage == "say":
             q = json.loads(re.search(r"次に聞くこと\(JSON\): (\{.*\})", system).group(1))
-            return {"reply": q["text"]}, USAGE
+            mention = json.loads(re.search(r"計画\(JSON\): (\{.*\})", system).group(1)).get("mention")
+            return {"reply": (f"{mention[0]}ですね。" if mention else "") + q["text"]}, USAGE
         assert stage == "read"
         targets = list(json.loads(re.search(r"この質問が埋めたい欄: (\{.*\})", system).group(1)))
         said = re.search(r"本人の今の発言: (.*)", system).group(1).strip()

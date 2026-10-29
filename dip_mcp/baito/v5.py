@@ -6,7 +6,8 @@
 
 - 読む段(§4.3): 1 つの intent でなく、act の並びで読む(llm.read。プロンプトは dip_mcp/prompts/convo/read_ja.txt に
   アルバイト・パートの決まり prompt_read_v5_ja.txt をつなぐ)。値の act は区切りのキーで返し、区切りにあるかを確かめる
-  (v4 の normalize_value で表示名もキーに直す)。直前のやりとり(状態の convo)も渡す
+  (v4 の normalize_value で表示名もキーに直す)。直前のやりとり(状態の convo)も渡す。「土日だけ」は週の日数と平日・週末の両方にそろえる
+  (only_days。task 379)
 - 値の当て方(§4.4): 答えとほかの欄の値は v4 の当て方(apply_update と確信度の決まり)のまま。直した値(correct)は high で置きかえ、
   取り消し(retract)は空にし、迷い(unsure)は low で入れて進む。今の問いに答えずにほかの欄の値だけを言ったときは、値を入れて同じ問いを
   出し直す(脱線と同じ数え方)。直すだけのターンは数えずに今の問いを出し直す。「わからない」は欄を空のまま、「特にない」は
@@ -56,7 +57,7 @@ VERSION = "v5"
 ENTRIES = ("career", "baito")  # 入り口の名前(移る先の確かめ)
 NEAR_AREA = "near.area"  # 近くで探すのエリア(state.near の area。区切りのキーは NEAR_AREAS の都県)
 SLOTS = (*H.SLOTS, NEAR_AREA)
-TEXTS = ("retry", "retry_review", "no_answer", "switched_in", "later", "exit", *(f"note_{n}" for n in P.NOTES))
+TEXTS = ("retry", "retry_review", "no_answer", "switched_in", "switched_in_with", "later", "exit", *(f"note_{n}" for n in P.NOTES))
 ACK_JA = {"short": "本人の答えを受け取る、短い相づち", "done": "何をしたか(計画の about)を、1 文で短く言う",
           "light": "雑談に軽く 1 文で乗る",
           "empathy": "気持ちを受け止める(励まし、根拠の無い約束、助言をしない。人やお店を評価しない。強い言葉をなぞらない)",
@@ -300,6 +301,56 @@ def to_ext(reading, state):
             "review_ack": ack}
 
 
+# 曜日だけで週の日数が決まる言い方(task 379。場面の正解の読み方は「土日だけ」が週 1〜2 日。jyoka/tasks#354 の Decision)と、
+# 平日だけの言い方。打ち消し(「土日だけは無理」)と、だけでない言い足し(「土日だけじゃなくて」)が続くものは当てない
+_NOT_ONLY = (r"(?!\s*(?:は|が|も|で|って)?\s*(?:無理|むり|ムリ|ダメ|だめ|NG|休|いや|嫌|厳し|きつ|避け|以外|じゃな|ではな|でな|なく|不可"
+             r"|出られ|出れ|入れな|働けな|わけ|訳))")
+WEEKEND_ONLY_RE = re.compile(r"(?:土日祝?|土・日|週末|土曜日?|日曜日?)(?:だけ|のみ|限定)" + _NOT_ONLY)
+WEEKDAY_ONLY_RE = re.compile(r"平日(?:だけ|のみ|限定)" + _NOT_ONLY)
+WEEKEND_PAIR = {"days_per_week": "1-2", "weekday_or_weekend": "weekend"}  # 「土日だけ」の、週の日数と平日・週末の値
+NOT_WEEKDAY = ("either", "weekend")  # 「平日だけ」に合わない平日・週末の値(「どちらでも」「土日」)
+
+
+def _hit(said, text, hits):
+    """act の部分 text が、発言の中で当たり hits(位置の並び)と重なるか。"""
+    t = H.nfkc(text or "")
+    at = said.find(t) if t else -1
+    return at >= 0 and any(s < at + len(t) and at < e for s, e in hits)
+
+
+def only_days(reading, state, user_text, targets=()):
+    """曜日を限る言い方を、週の日数と平日・週末にそろえる(task 379。v4 の normalize_value は「土日だけ」を日数に読まない)。
+    - 「土日だけ」「週末だけ」: 読む段が週の日数(1-2)か平日・週末(weekend)の片方にだけ読んだとき、もう片方も同じ部分で足す。
+      足す欄に読んだ act があるか、もう値が入っていれば足さない(前の答えを上書きしない)。今の問いの欄(targets)なら answer、ほかは add
+      (元の act が迷い unsure なら unsure)
+    - 「平日だけ」: 日数が決まらず、平日・週末の区切りは「平日の夜」だけなので足さない。平日・週末を「どちらでも」か「土日」と
+      読んだ act は落とす(実モデルが「平日だけで探したい」を「どちらでも」と読んだ)
+    当てるのは、値の act の部分が発言の当たりと重なるときだけ。"""
+    if not reading:
+        return reading
+    said = H.nfkc(user_text)
+    weekend = [m.span() for m in WEEKEND_ONLY_RE.finditer(said)]
+    weekday = [m.span() for m in WEEKDAY_ONLY_RE.finditer(said)]
+    acts = [a for a in reading.get("acts", []) if not (a["act"] in A.VALUE_ACTS and a["slot"] == "weekday_or_weekend"
+                                                       and a.get("value") in NOT_WEEKDAY and _hit(said, a.get("text"), weekday))]
+    dropped = len(reading.get("acts", [])) - len(acts)
+    have = {a["slot"] for a in acts if a["act"] in A.VALUE_ACTS}
+    added = []
+    for a in acts:
+        if a["act"] not in A.VALUE_ACTS or WEEKEND_PAIR.get(a["slot"]) != a.get("value") or not _hit(said, a.get("text"), weekend):
+            continue
+        for slot, value in WEEKEND_PAIR.items():
+            if slot in have or H.is_filled(state.slots.get(slot)) or slot in state.pending:
+                continue
+            kind = "unsure" if a["act"] == "unsure" else "answer" if slot in targets else "add"  # 迷いは迷いのまま
+            added.append({"act": kind, "slot": slot, "text": a["text"], "value": value})
+            have.add(slot)
+    if not added and not dropped:
+        return reading
+    H.ev(state, "only_days", added=[x["slot"] for x in added], dropped=dropped)
+    return dict(reading, acts=[*acts, *added])
+
+
 TALK_ONLY = {*A.TALK, "emotion", "switch", "go_back", *A.SPAN_ACTS}  # 値でも操作でもない act
 
 
@@ -420,6 +471,7 @@ def _turn(state, user_text, bank, llm, catalog, search=None):
         reading = A.sticker_reading()
     elif buttons is None:
         reading = call_llm(llm.read, read_payload(state, bank, text), validator(text), _log(state), "read")
+        reading = only_days(reading, state, text, (q or {}).get("targets") or () if cur["mode"] in ASKING else ())
         state._spans = A.spans(reading)
         state._user_text = guard.mask(text, state._spans)  # 言う段に、氏名と要配慮の部分を渡さない
     state._reading, state._button = reading, (buttons[0] if buttons and len(buttons) == 1 else None)
@@ -1065,7 +1117,7 @@ def read_opening(state, bank, llm, said):
         return [], said, "crisis"
     if H.DANGER_RE.search(H.nfkc(said)):
         return [], said, "danger"
-    reading = call_llm(llm.read, read_payload(state, bank, said), validator(said), _log(state), "read")
+    reading = only_days(call_llm(llm.read, read_payload(state, bank, said), validator(said), _log(state), "read"), state, said)
     spans = A.spans(reading)
     acts = [a for a in SW.value_acts(reading, lambda t: guard.scrub(t, spans)) if a.get("slot") != "age_band"]
     stop = "crisis" if A.has(reading, "crisis") else "danger" if A.has(reading, "danger") else None
@@ -1089,18 +1141,32 @@ def opening_guard(state, bank, llm, stop):
     return _danger(state, bank, llm, None)
 
 
-def enter(state, bank=H.BANK, llm=None, said=""):
+MENTION_SLOTS = ("days_per_week", "time_slots", "weekday_or_weekend", "commute", "remote")  # 最初の返事で触れてよい欄(条件。金額は除く)
+
+
+def carried_words(state, rec, prefs, applied):
+    """移った先の最初の返事で触れる、引き継いだ値の言葉(dip_mcp.convo.switch.mentions)。applied は take_handoff が入れた欄。
+    触れるのは条件の欄(MENTION_SLOTS。時給は金額を言わないので触れない)だけ。エリアは、近くで探すのエリア(記録か前の相談の値)か、
+    無ければ希望の項目のエリア(「名古屋」のように、近くで探すのボタンに無い文も)。"""
+    near = H.NEAR_AREAS.get(state.near.get("area")) if state.near.get("area") else None
+    area = near or ((prefs or {}).get("area") or {}).get("value") or ""
+    return SW.mentions(rec, ENTRY.entry, ENTRY.carry, applied, MENTION_SLOTS, area=area, area_slot=NEAR_AREA)
+
+
+def enter(state, bank=H.BANK, llm=None, said="", known=()):
     """ほかの入り口から同じターンで移ってきた相談の、最初の返事。最初の問い(入口のカード。止めた印のある人は年齢)を、移ったことの
     相づち(入り口の定義の switched_in を計画の about に)と一緒に 1 つの吹き出しにする(言う段 1 回。数えない)。
-    said は移る発言(伏せたもの)。言う段に渡し、直前のやりとりに覚える。"""
+    said は移る発言(伏せたもの)。言う段に渡し、直前のやりとりに覚える。known は引き継いだ値の言葉(carried_words)。
+    あれば相づちに入れる(switched_in_with。task 379)。"""
     H._init_volatile(state)
     _init_turn(state)
     state._new_notices = []
     state._user_text = said
     if state.current is None:
         advance(state, bank)
+    about, words = RP.switched_in(ENTRY.texts, known)
     out = _say(state, bank, llm, None, counted=False,
-               plan=P.Plan(ack="done", about=[ENTRY.texts["switched_in"]], count="free"))
+               plan=P.Plan(ack="done", about=[about], mention=words, count="free"))
     if H.nfkc(said):
         CS.heard(state.convo, said)
     CS.replied(state.convo, out["reply"], state._ack)
@@ -1166,7 +1232,8 @@ RETRY_JA = {"ack_repeats": "相づちの終わりが、直前の 2 つと同じ�
             "answer_missing": "逆質問に答えていない", "no_reply": "返事が空か、JSON {{\"reply\": \"...\"}} の形でない",
             "blame": "本人を責めて聞こえる言い方がある", "personal_echo": "伏せた部分(名前など)をなぞっている",
             "text_between_parts": "システムが入れる行の間か前に文がある。相づちは問いの前に 1 文だけ",
-            "extra_text": "相づちを書かない計画なのに文がある。問いの文だけにする"}
+            "extra_text": "相づちを書かない計画なのに文がある。問いの文だけにする",
+            "mention_missing": "相づちに、引き継いだ値({words})が無い。言葉のまま入れる"}
 
 
 def retry_note(raw, why, rp, recent, acks):
@@ -1176,7 +1243,8 @@ def retry_note(raw, why, rp, recent, acks):
     tails = [RP.tail(a) for a in (recent.get("acks") or [])[-1:] if a]
     word = RP.praised(H.nfkc(reply or ""), rp["said"]) or ""
     reason = RETRY_JA.get(why, f"確かめで使えなかった({why})").format(tail=tails[0] if tails else "", word=word,
-                                                                     ack_max=rp["ack_max"])
+                                                                     ack_max=rp["ack_max"],
+                                                                     words="、".join(f"「{m}」" for m in rp.get("mention") or []))
     note = (f"前の返事「{str(reply)[:120]}」は使えない。" if reply else "前の返事は使えない。") + reason + "。"
     spare = RP.fixed_ack(rp, recent, acks, turn=False) if rp["ack"] else None
     return note + (f"相づちが思いつかなければ「{spare}」をそのまま使ってよい。" if spare else "")
@@ -1258,9 +1326,10 @@ def view(state, bank, p, aside=False, quiet=False, lead=None):
     if quiet:  # モデルを呼ばない出し直し: 前置きの文、v4 の注意文と問いだけ
         kind, answer = None, None
         notes = [*([lead] if lead else []), *[n for n in notes if n != lead]]
-    rp = RP.new_plan(ask, kind, hook, answer, notes, [], v["choices"], state._user_text, hidden, p.about)
+    rp = RP.new_plan(ask, kind, hook, answer, notes, [], v["choices"], state._user_text, hidden, p.about, p.mention)
     convo = state.convo
-    ack = ACK_JA[rp["ack"]] + (f"({'。'.join(p.about)})" if rp["ack"] == "done" and p.about else "")
+    ack = ACK_JA[rp["ack"]] + (f"({'。'.join(p.about)})" if rp["ack"] == "done" and p.about else "") + (
+        f"。{'、'.join(f'「{m}」' for m in rp['mention'])}を、言葉のまま入れる" if rp["ack"] and rp["mention"] else "")
     v |= {"text": ask["text"], "user_text": state._user_text, "model_text": state._user_text, "model_history": CS.messages(convo),
           "entry": ENTRY.title, "tone": ENTRY.tone["style"], "examples": " / ".join(ENTRY.tone.get("examples") or []) or "(なし)",
           "hook": rp["hook"] or "(なし)", "ack": ack, "ack_max": rp["ack_max"],

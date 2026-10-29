@@ -210,7 +210,7 @@ def test_c2_start_with_words_writes_an_unread_record_and_switch_in_reads_it_firs
             out = {"acts": [act("name", span="みほん太郎"), *SALARY], "hook": None, "mentions": [], "ng": []}
         else:
             assert "みほん太郎" not in r["call"]["model_text"]
-            out = {"reply": "今の状況に近いのは?"}
+            out = {"reply": "年収500万以上ですね。今の状況に近いのは?"}  # 引き継いだ値を相づちに入れる(task 379)
         assert SW.KEY in st.user(UID)
         outputs.append({"stage": r["call"]["stage"], "output": out})
         r = session.switch_in(st, UID, said, outputs)

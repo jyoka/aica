@@ -14,6 +14,8 @@
   同じ意味(same)は元の確かさのまま、近い意味(near)は推測(low)で入れる。対応の無い欄は写さない(年収と時給は換算しない)。
   移る発言の中の値の act は、本人がそのターンに言ったまま(直接聞いていない)なので low。前に引き継いだ記録(prior)が先の入り口の
   ものなら、先の欄の名前のまま元の確かさで戻す。写した値をどの欄に入れるか(空の欄だけか)は入り口が決める
+- 移った先の最初の返事(mentions。task 379): 相づちに、引き継いだ値の言葉を MENTION_MAX まで入れる(「名古屋、年収500万以上で、
+  正社員で探します。」)。言葉は記録と希望の項目の文のまま。前の会話で分かっていることを、聞き直さずに踏まえていると見せるため
 
 - トークの AI から始める(t1。§4.5、§4.13): トークの AI が start_* に本人の発言を渡し、移る先が会話の層の版なら、dip は始めずに
   from が talk の記録(talk_record)を書く。値はまだ読んでいない(read)。ランタイムが同じターンで移る先の switch_in を呼び、移る先は
@@ -153,6 +155,36 @@ def carry(rec: dict | None, entry: str, mapping: dict) -> dict:
     for a in rec.get("acts") or []:
         put(a.get("slot"), a, "low")
     return out | fresh
+
+
+MENTION_MAX = 2  # 移った先の最初の返事で触れる値の数
+MENTION_CHARS = 12  # 触れる値の言葉の字数の上限(長い文の値は触れない)
+
+
+def mentions(rec: dict | None, entry: str, mapping: dict, applied, only, area: str = "", area_slot: str = "area") -> list[str]:
+    """移った先の最初の返事の相づちで触れる、引き継いだ値の言葉(§4.5、task 379)-> 言葉の並び(勤務地を先に。MENTION_MAX まで)。
+    値は、記録のうち先の入り口が入れた欄(applied。入り口の take_handoff が返す欄)で、条件の欄(only)のものと、勤務地 area だけ。
+    area は、先の入り口に今ある勤務地(記録から入れた値か、前の相談で保存した値)か、無ければ希望の項目の勤務地(呼ぶ側が選ぶ)。
+    入れなかった値(空でない欄、区切りに読めない文)と、条件でない欄(なぜ今、扶養、時給など。要配慮の言葉や金額を含みうる)は触れない。
+    言葉は記録と希望の項目の文のまま(数を作らない、換算しない。§6 の 8)。選ぶ順は、移る発言で言った値、勤務地、ほかの入れた値。"""
+    carried = carry(rec, entry, mapping)
+    ok = set(applied or ()) & set(only)
+    table = (mapping.get((rec or {}).get("from")) or {}) if rec else {}
+    said: list[tuple[str, str]] = []
+    for a in (rec or {}).get("acts") or []:
+        slot = a.get("slot") if rec.get("from") == TALK else (table.get(a.get("slot")) or {}).get("slot")
+        if slot in ok and slot != area_slot:
+            said.append((slot, a.get("text") or ""))
+    others = [(s, e.get("text") or "") for s, e in carried.items() if s in ok and s != area_slot]
+    picked: list[tuple[str, str]] = []
+    for slot, text in [*said, (area_slot, area or ""), *others]:
+        w = nfkc(text).strip()
+        if not w or len(w) > MENTION_CHARS or any(w in x or x in w for _, x in picked):
+            continue
+        picked.append((slot, w))
+        if len(picked) == MENTION_MAX:
+            break
+    return [w for s, w in picked if s == area_slot] + [w for s, w in picked if s != area_slot]
 
 
 def check_carry(name: str, carry_map, slots, entries) -> None:

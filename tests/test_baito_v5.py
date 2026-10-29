@@ -207,6 +207,101 @@ def test_v5_replies_never_say_amounts_or_jobs_not_on_the_card():
         assert r["reply"].endswith(QM[st.current["qid"]]["text"])
 
 
+# ----------------------------- 「土日だけ」を週の日数と平日・週末の両方に(task 379) -----------------------------
+WEEKEND = act("add", slot="weekday_or_weekend", text="土日", value="weekend")
+DAYS = act("add", slot="days_per_week", text="土日だけ", value="1-2")
+
+
+@pytest.mark.parametrize(("said", "acts", "targets", "added"), [
+    ("土日だけ駅近でバイトしたい", [WEEKEND], (), [("add", "days_per_week", "1-2")]),
+    ("土日だけ駅近でバイトしたい", [DAYS], (), [("add", "weekday_or_weekend", "weekend")]),
+    ("週末だけ働きたい", [act("add", slot="weekday_or_weekend", text="週末だけ", value="weekend")], (), [("add", "days_per_week", "1-2")]),
+    ("土日のみで、駅近がいい", [act("add", slot="weekday_or_weekend", text="土日のみ", value="weekend")], (),
+     [("add", "days_per_week", "1-2")]),
+    ("土日だけ、駅近で", [WEEKEND], ("days_per_week",), [("answer", "days_per_week", "1-2")]),  # 日数の問いへの答え
+])
+def test_weekend_only_fills_both_days_and_weekend(said, acts, targets, added):
+    """止めすぎない: 読む段が片方にだけ読んでも、もう片方を同じ部分で足す(場面の正解は「土日だけ」が週 1〜2 日)。"""
+    st = at("hf_days" if targets else "hf_time", age="18_plus")
+    got = V5.only_days({"acts": list(acts), "hook": None, "mentions": [], "extra": {}}, st, said, targets)
+    assert [(a["act"], a["slot"], a["value"]) for a in got["acts"][len(acts):]] == added
+    assert all(a["text"] == acts[0]["text"] for a in got["acts"][len(acts):])  # 発言の同じ部分(数を作らない)
+
+
+@pytest.mark.parametrize(("said", "acts", "filled"), [
+    ("平日だけ", [], None),  # 日数が決まらない
+    ("平日の夜だけ", [act("add", slot="weekday_or_weekend", text="平日の夜", value="weekday_evening")], None),
+    ("土日もいける", [WEEKEND], None),  # 「だけ」でない
+    ("土日だけは無理", [WEEKEND], None),  # 打ち消し
+    ("土日だけ休みたい", [WEEKEND], None),
+    ("土日だけじゃなくて平日も", [WEEKEND], None),
+    ("土日だけでなく平日も", [WEEKEND], None),
+    ("土日だけ不可", [WEEKEND], None),
+    ("土日だけ出られない", [WEEKEND], None),
+    ("土日だけって訳じゃない", [WEEKEND], None),
+    ("土日だけ、週3で", [WEEKEND, act("add", slot="days_per_week", text="週3", value="3-4")], None),  # 日数は本人が言った
+    ("土日だけ", [WEEKEND], "3-4"),  # 前の答えの日数を上書きしない
+])
+def test_weekend_only_does_not_add_what_was_not_said(said, acts, filled):
+    """入れすぎない: 「だけ」でない、打ち消し、ほかの日数を言った、もう日数が入っている、は足さない。"""
+    st = at("hf_time", age="18_plus")
+    if filled:
+        H.apply_update(st, "days_per_week", filled, "high", "t")
+    reading = {"acts": list(acts), "hook": None, "mentions": [], "extra": {}}
+    assert V5.only_days(reading, st, said) is reading
+
+
+def test_weekend_only_keeps_a_hesitant_reading_hesitant():
+    """迷い(「土日だけ、かなぁ」の unsure)から足す欄も unsure(今の問いの欄でも answer にしない。task 379 のレビュー)。"""
+    st = at("hf_days", age="18_plus")
+    unsure = act("unsure", slot="weekday_or_weekend", text="土日だけ", value="weekend")
+    got = V5.only_days({"acts": [unsure], "hook": None, "mentions": [], "extra": {}}, st, "土日だけ、かなぁ", ("days_per_week",))
+    assert [(a["act"], a["slot"], a["value"]) for a in got["acts"][1:]] == [("unsure", "days_per_week", "1-2")]
+
+
+def test_weekday_only_is_never_read_as_either_or_weekend():
+    """「平日だけで探したい」を、読む段が平日・週末の「どちらでも」と読んだ(実モデル。task 379 の試し)。その act は落とす。
+    「平日の夜だけ」の「平日の夜」と、「平日だけじゃなくて土日も」は落とさない。"""
+    st = at("hf_time", age="18_plus")
+    either = act("answer", slot="weekday_or_weekend", text="平日だけ", value="either")
+    got = V5.only_days({"acts": [either], "hook": None, "mentions": [], "extra": {}}, st, "平日だけで探したい")
+    assert got["acts"] == [] and any(e["kind"] == "only_days" and e["dropped"] == 1 for e in st.log)
+    evening = act("add", slot="weekday_or_weekend", text="平日の夜", value="weekday_evening")
+    keep = {"acts": [evening], "hook": None, "mentions": [], "extra": {}}
+    assert V5.only_days(keep, st, "平日の夜だけ") is keep
+    both = {"acts": [act("add", slot="weekday_or_weekend", text="平日だけじゃなくて土日も", value="either")], "hook": None,
+            "mentions": [], "extra": {}}
+    assert V5.only_days(both, st, "平日だけじゃなくて土日も") is both
+
+
+def test_weekend_only_answer_to_the_days_question_moves_on():
+    """日数の問いに「土日だけ、駅近で」と答え、読む段が平日・週末にだけ読んでも、日数に入って次へ進む(場面 baito-multi-weekend-near)。"""
+    st = at("hf_days", age="18_plus")
+    said = "土日だけ、駅近で"
+    V5.turn(st, said, H.BANK, LLM({said: [WEEKEND]}))
+    assert st.slots["days_per_week"]["value"] == "1-2" and st.slots["days_per_week"]["confidence"] == "high"
+    assert st.current["qid"] != "hf_days" and any(e["kind"] == "only_days" for e in st.log)
+
+
+def test_talk_start_with_weekend_only_carries_the_days_and_names_it_in_the_first_reply(tmp_path, monkeypatch):
+    """トークの AI から「土日だけ駅近でバイトしたい」で始める(場面 talk-baito-weekend): 読む段が平日・週末にだけ読んでも、
+    日数を推測で入れて聞かない。最初の返事の相づちに、その言葉を入れる(task 379)。"""
+    monkeypatch.setenv(logic.TALK_LAYER_FLAG, "t1")
+    st = State(tmp_path / "state.json")
+    said = "土日だけ駅近でバイトしたい"
+    assert session.start(st, UID, text=said)["direct"]
+    reading = {"acts": [WEEKEND], "hook": None, "mentions": [], "ng": []}
+    outputs = []
+    r = session.switch_in(st, UID, said, None)
+    while r.get("status") == "llm":
+        stage = r["call"]["stage"]
+        outputs.append({"stage": stage, "output": reading if stage == "read" else {"reply": "???"}})
+        r = session.switch_in(st, UID, said, outputs)
+    h = harness(st)
+    assert (h.slots["days_per_week"]["value"], h.slots["days_per_week"]["confidence"]) == ("1-2", "low")
+    assert h.current["qid"] == H.QUICK_PICK and r["reply"].startswith("土日で、アルバイト・パートで探すね。")
+
+
 # ----------------------------- 代替の理由(task 376。9/10 の実モデルの P3 で多かったもの) -----------------------------
 class SayModel:
     """言う段だけを台本で書くモデル。write(view, n) が n 回目(1 から)の相づちを返し、問いの文を足す。呼んだ view を残す。"""
@@ -602,7 +697,8 @@ def test_read_prompt_and_schema():
 
 # ----------------------------- ランタイム(LINE の Webhook) -----------------------------
 class FakeBaitoLLM:
-    """v5 の言う段(層のプロンプト)は問いの文だけを返す。読む段は READINGS。呼んだ段を残す。"""
+    """v5 の言う段(層のプロンプト)は問いの文だけを返す(相づちに入れる言葉 mention が計画にあれば、その言葉の相づちを前に付ける)。
+    読む段は READINGS。呼んだ段を残す。"""
 
     READINGS: ClassVar[dict] = {}
 
@@ -615,7 +711,8 @@ class FakeBaitoLLM:
             said = re.search(r"本人の今の発言: (.*)", system).group(1).strip()
             return {"acts": self.READINGS.get(said, []), "hook": None, "mentions": [], "ng": []}, USAGE
         q = json.loads(re.search(r"次に聞くこと\(JSON\): (\{.*\})", system).group(1))
-        return {"reply": q["text"]}, USAGE
+        mention = json.loads(re.search(r"計画\(JSON\): (\{.*\})", system).group(1)).get("mention")
+        return {"reply": (f"{mention[0]}だね。" if mention else "") + q["text"]}, USAGE
 
 
 def career_llm():

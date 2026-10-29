@@ -204,13 +204,15 @@ def handoff(st, uid=UID, **kw):
 
 def test_switch_in_reads_the_handoff_switches_the_track_and_asks_the_first_question(tmp_path):
     """switch_in: 勤務地(同じ意味)は元の確かさのまま、日数(近い意味)は働ける時間に推測で入れ、聞き直さない。年齢は写さない。
-    区分を正社員にして切り替えの記録を返す。返事は移ったことの相づちと最初の問い(言う段 1 回)。記録は最後まで進んだ回に消す。"""
+    区分を正社員にして切り替えの記録を返す。返事は移ったことの相づちと最初の問い(言う段 1 回)。相づちには引き継いだ値の言葉を
+    入れる(task 379)。記録は最後まで進んだ回に消す。"""
     st = State(tmp_path / "state.json")
     logic.set_search_track(st, UID, "アルバイト・パート", evidence="バイトを探したい")
     handoff(st)
-    r, calls = switch_in(st, "やっぱり正社員で探したい", lambda call: {"reply": "正社員で探しますね。" + say_question(call)["reply"]})
+    r, calls = switch_in(st, "やっぱり正社員で探したい", lambda call: {"reply": "東京で、正社員で探しますね。" + say_question(call)["reply"]})
     assert [c["stage"] for c in calls] == ["say"] and r["status"] == "reply" and r["counted"] is False
-    assert json.loads(re.search(r"計画\(JSON\): (\{.*\})", calls[0]["system"]).group(1))["about"] == ["正社員で探します"]
+    plan = json.loads(re.search(r"計画\(JSON\): (\{.*\})", calls[0]["system"]).group(1))
+    assert plan["about"] == ["東京、週5日以上で、正社員で探します"] and plan["mention"] == ["東京", "週5日以上"]
     assert calls[0]["model_text"] == "やっぱり正社員で探したい"
     h = session._load(st, UID)
     assert (h.slots["area"]["text"], h.slots["area"]["confidence"], h.slots["area"]["from"]) == ("東京", "high", "baito")
@@ -218,7 +220,7 @@ def test_switch_in_reads_the_handoff_switches_the_track_and_asks_the_first_quest
     assert (h.pending["work_hours"]["text"], h.pending["work_hours"]["confidence"]) == ("週5日以上", "low")
     assert "age_band" not in {**h.slots, **h.pending}
     assert h.came_from["from"] == "baito" and "said" not in h.came_from
-    assert r["question"] == "q_segment" and r["reply"].startswith("正社員で探しますね。") and r["switched"] == {"from": "baito"}
+    assert r["question"] == "q_segment" and r["reply"].startswith("東京で、正社員で探しますね。") and r["switched"] == {"from": "baito"}
     assert logic.search_track(st.user(UID)) == "正社員"
     assert r["track_switch"]["from"] == "アルバイト・パート" and r["track_switch"]["track"] == "正社員"
     assert SW.KEY not in st.user(UID)
@@ -234,7 +236,7 @@ def test_switch_in_falls_back_to_the_fixed_ack_and_refuses_when_not_on_the_layer
     st = State(tmp_path / "state.json")
     handoff(st)
     r, _ = switch_in(st, "やっぱり正社員で", lambda call: {"reply": "???"})  # 言う段が 2 回ともだめ: 決まった組み立て
-    assert r["reply"].startswith("正社員で探します。")
+    assert r["reply"].startswith("東京、週5日以上で、正社員で探します。")
     assert session.switch_in(st, UID, "やっぱり正社員で") == {"active": False}  # 進めている相談がある
     monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, "c1")
     st2 = State(tmp_path / "state2.json")
@@ -281,6 +283,100 @@ def test_carry_maps_only_the_entry_definition_and_never_converts_numbers():
     got = SW.carry(rec, "career", C2.ENTRY.carry)
     assert set(got) == {"work_hours"}  # 時給は年収に換算しない(対応が無い)
     assert (got["work_hours"]["text"], got["work_hours"]["confidence"]) == ("週3〜4日、朝・昼", "low")
+
+
+# ----------------------------- 移った先の最初の返事の、引き継いだ値(task 379) -----------------------------
+def test_mentions_pick_the_said_values_then_the_area_and_never_a_converted_number():
+    """触れる言葉は、記録の文と勤務地の文のまま。先の入り口が入れた欄(take_handoff が返す欄)の、条件の欄だけ。移る発言の値を先に選び、
+    並べるときは勤務地を先に。2 つまで。写らない値(年収と時給)と、長い文の値と、言い換えの重なる言葉は触れない。"""
+    from dip_mcp.baito import v5 as V5
+
+    talk = SW.talk_record("career", "正社員で年収500万以上の仕事を探したい", now(UID)) | {
+        "acts": [{"act": "add", "slot": "min_annual_salary", "text": "年収500万以上", "number": 500, "unit": "万"}]}
+    h = C2.new_state()
+    got = C2.take_handoff(h, talk)
+    assert C2.carried_words(h, talk, {"area": {"value": "大阪"}}, got) == ["大阪", "年収500万以上"]  # 勤務地は希望の項目から
+    assert C2.carried_words(h, talk, {}, got) == ["年収500万以上"]
+    assert C2.carried_words(h, talk, {}, []) == []  # 入れなかった値(空でない欄)は触れない
+    rec = SW.record("baito", "career", {
+        "near.area": {"status": "filled", "text": "東京", "confidence": "high"},
+        "hourly_wage_min": {"status": "filled", "text": "1,200円以上", "value": 1200, "confidence": "high"},
+        "days_per_week": {"status": "filled", "text": "週3〜4日", "confidence": "high"}}, [], "", now(UID))
+    h = C2.new_state()
+    got = C2.take_handoff(h, rec)
+    assert C2.carried_words(h, rec, {"area": {"value": "東京都"}}, got) == ["東京", "週3〜4日"]  # 時給は年収にしない。今の勤務地の欄を先に
+    # 正社員から: 年収は時給にしない(写らない)。発言の「週3くらい」を先に。区切りに読めない「横浜」は近くで探すに入らないので、希望の項目のエリア
+    rec = SW.record("career", "baito", {
+        "area": {"status": "filled", "text": "横浜", "confidence": "high"},
+        "min_annual_salary": {"status": "filled", "text": "500万以上", "number": 500, "confidence": "high"},
+        "work_hours": {"status": "filled", "text": "平日の日中ならいつでも大丈夫です", "confidence": "low"}},
+        [{"act": "add", "slot": "work_hours", "text": "週3くらい"}], "", now(UID))
+    b = V5.new_state()
+    got = V5.take_handoff(b, rec)
+    assert V5.carried_words(b, rec, {"area": {"value": "横浜"}}, got) == ["横浜", "週3くらい"]
+    b = V5.new_state()
+    b.near["area"] = "東京"  # 続きの相談に、もう近くで探すのエリアがある: 探すときのエリアと同じ言葉にする
+    got = V5.take_handoff(b, rec)
+    assert V5.carried_words(b, rec, {"area": {"value": "横浜"}}, got)[0] == "東京"
+    # トークの AI から(欄の名前のまま): 同じ部分の 2 つの値は 1 つ。時給は触れない(金額を言わない)
+    weekend = SW.talk_record("baito", "土日だけ駅近、時給1200円以上", now(UID)) | {"acts": [
+        {"act": "add", "slot": "hourly_wage_min", "text": "時給1200円以上", "value": "1,200"},
+        {"act": "add", "slot": "weekday_or_weekend", "text": "土日", "value": "weekend"},
+        {"act": "add", "slot": "days_per_week", "text": "土日だけ", "value": "1-2"},
+        {"act": "add", "slot": "commute", "text": "家から近く", "value": "walk_bike"}]}
+    b = V5.new_state()
+    got = V5.take_handoff(b, weekend)
+    assert "hourly_wage_min" in got and V5.carried_words(b, weekend, {}, got) == ["土日", "家から近く"]
+    assert V5.carried_words(V5.new_state(), None, {"area": {"value": "名古屋"}}, []) == ["名古屋"]
+
+
+def test_mentions_never_take_the_values_restored_from_the_prior_record():
+    """すぐ元の入り口へ戻ったとき(正社員 → バイト → 正社員): 前の記録(prior)から戻す欄のうち、条件でない欄(なぜ今、ブランクの期間。
+    要配慮の言葉を含みうる)は触れない(task 379 のレビュー)。"""
+    prior = SW.record("career", "baito", {
+        "why_now": {"status": "filled", "text": "上司と合わない", "confidence": "high"},
+        "blank_period": {"status": "filled", "text": "1年休んでた", "confidence": "high"}}, [], "", now(UID))
+    rec = SW.record("baito", "career", {"days_per_week": {"status": "filled", "text": "週3〜4日", "confidence": "high"}},
+                    [], "", now(UID), prior)
+    h = C2.new_state()
+    got = C2.take_handoff(h, rec)
+    assert "why_now" in got and C2.carried_words(h, rec, {}, got) == ["週3〜4日"]
+
+
+def test_switched_in_about_fits_the_ack_and_drops_values_from_the_back():
+    from dip_mcp.convo import reply as RP
+
+    texts = C2.ENTRY.texts
+    assert RP.switched_in(texts, ["名古屋", "年収500万以上"]) == ("名古屋、年収500万以上で、正社員で探します", ["名古屋", "年収500万以上"])
+    assert RP.switched_in(texts, []) == ("正社員で探します", [])
+    long = ["あ" * 15, "い" * 15]
+    assert RP.switched_in(texts, long) == ("あ" * 15 + "で、正社員で探します", long[:1])  # 2 つでは相づちの 40 字を超える
+
+
+def test_switch_in_puts_the_carried_values_in_the_ack_and_the_fallback_keeps_them(tmp_path, monkeypatch):
+    """移った先の最初の返事: 相づちに引き継いだ値が無ければやり直し、それでも無ければ決まった組み立て(値の入った文)。
+    値の数は記録の文にあるので、出どころの無い数にならない。"""
+    monkeypatch.setenv(logic.TALK_LAYER_FLAG, "t1")
+    st = State(tmp_path / "state.json")
+    logic.save_preferences(st, UID, {"area": "大阪"})
+    said = "正社員で年収500万以上の仕事を探したい"
+    session.start(st, UID, text=said)  # t1: トークの AI からの記録を書く
+    reading = {"acts": [act("add", slot="min_annual_salary", text="年収500万以上", number=500, unit="万")],
+               "hook": None, "mentions": [], "ng": []}
+
+    def go(say):
+        outputs, calls = [], []
+        r = session.switch_in(st, UID, said, None)
+        while r.get("status") == "llm":
+            calls.append(r["call"])
+            out = reading if r["call"]["stage"] == "read" else say(r["call"])
+            outputs.append({"stage": r["call"]["stage"], "output": out})
+            r = session.switch_in(st, UID, said, outputs)
+        return r, calls
+    r, calls = go(lambda call: {"reply": "正社員ですね。" + say_question(call)["reply"]})  # 値に触れない: 2 回とも落ちる
+    assert [c["stage"] for c in calls] == ["read", "say", "say"]
+    assert "引き継いだ値" not in calls[1]["system"] and "「大阪」、「年収500万以上」を、言葉のまま入れる" in calls[1]["system"]
+    assert r["reply"].startswith("大阪、年収500万以上で、正社員で探します。") and r["question"] == "q_segment"
 
 
 def test_entry_definition_checks_the_switch_and_carry_shape(tmp_path):

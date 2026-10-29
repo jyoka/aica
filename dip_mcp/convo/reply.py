@@ -8,7 +8,7 @@
   同じ問いを出し直すときは、前に使った言い方を避ける(pick)
 - 注意と区切りは、データの文をそのまま、ハーネスが相づちと問いの間に置く。モデルの返事に無くてもよく、あれば同じ場所にあるかを見る
 - モデルの返事の確かめ(validate): 問いの言い方が一字一句あるか、相づちが 1 文で ack_max 字までか、ほめ言葉(本人の発言をなぞった言葉は除く)、問いが 2 つ、
-  出どころの無い数、氏名などをなぞっていないか、相づちの終わり 4 字が直前の 2 つと同じでないか(「〜ですね。」が 3 回続かない)、
+  出どころの無い数、氏名などをなぞっていないか、相づちに入れる言葉(計画の mention。引き継いだ値)が 1 つはあるか、相づちの終わり 4 字が直前の 2 つと同じでないか(「〜ですね。」が 3 回続かない)、
   直前の返信と同じ文が無いか、吹き出しの字数
 - だめならモデルを 1 回呼び直し、それでもだめなら決まった組み立て(fallback): 入り口のデータの相づち(種類ごとに 3 つ、順に回す)+
   注意 + 区切り + 問い。直した・戻ったターン(計画の about)は、その文を先に試す。相づちも答えも無い計画は、モデルを呼ばずに決まった組み立てにする(needs_model)
@@ -69,11 +69,13 @@ def pick(phrasings: list[str], avoid: str | None) -> tuple[str, list[str]]:
 
 
 def new_plan(ask: dict, ack: str | None = None, hook: str | None = None, answer: dict | None = None,
-             note=(), phase_line=(), choices=(), said: str = "", hidden=(), about=()) -> dict:
+             note=(), phase_line=(), choices=(), said: str = "", hidden=(), about=(), mention=()) -> dict:
     """言う段の計画。ask は {"qid", "mode", "text": 勧める言い方, "phrasings": 使ってよい言い方}。ack は相づちの種類(ACK_KINDS か None)、
     answer は逆質問の答え({"facts": [渡す事実], "fallback": 決まった文})。渡す事実が無ければ、モデルに書かせずに決まった文で答える
     (fixed_answer)。note と phase_line は決まった文の行。choices はボタン(数の出どころ)、said は本人の発言(伏せたもの)、
-    hidden は返事に出さない部分(氏名と要配慮)。about は相づちで触れること(計画の about。「勤務地を直しました」)。相づちの字数は、吹き出しの字数から決まった部品の字数を引いた残り(ACK_MAX まで)。"""
+    hidden は返事に出さない部分(氏名と要配慮)。about は相づちで触れること(計画の about。「勤務地を直しました」)。
+    mention は相づちに必ず入れる言葉(どれか 1 つ。移った先の最初の返事の、引き継いだ値。計画の mention)。about の文の数も出どころに数える。
+    相づちの字数は、吹き出しの字数から決まった部品の字数を引いた残り(ACK_MAX まで)。"""
     fixed_answer = answer.get("fallback") if answer and not answer.get("facts") else None
     answer = answer if answer and answer.get("facts") else None
     limit = ANSWER_BUBBLE_MAX if answer or fixed_answer else BUBBLE_MAX
@@ -84,7 +86,7 @@ def new_plan(ask: dict, ack: str | None = None, hook: str | None = None, answer:
     return {"ack": ack if ack in ACK_KINDS else None, "hook": hook, "answer": answer, "fixed_answer": fixed_answer,
             "note": list(note), "phase_line": list(phase_line), "ask": ask, "limit": limit, "ack_max": max(ack_max, 0),
             "choices": list(choices), "said": said, "hidden": list(hidden), "facts": list((answer or {}).get("facts", [])),
-            "about": list(about)}
+            "about": list(about), "mention": list(mention)}
 
 
 def needs_model(plan: dict) -> bool:
@@ -137,6 +139,19 @@ def fixed_ack(plan: dict, recent: dict, acks: dict, turn: bool = True) -> str | 
     return None
 
 
+def switched_in(texts: dict, known=()) -> tuple[str, list[str]]:
+    """移った先の最初の返事の、相づちで触れること(計画の about)と、相づちに入れる言葉(計画の mention)。texts は入り口の定義の文:
+    switched_in(「正社員で探します」)と、引き継いだ値の言葉 known を入れる switched_in_with(「{values}で、正社員で探します」)。
+    言葉は「、」でつなぎ、相づちの字数(ACK_MAX。句点を含む)に入らなければ後ろから外す。入らなければ switched_in だけ。"""
+    words = list(known)
+    while words:
+        about = texts["switched_in_with"].replace("{values}", "、".join(words))
+        if chars(about) + 1 <= ACK_MAX:
+            return about, words
+        words.pop()
+    return texts["switched_in"], []
+
+
 def fallback(plan: dict, recent: dict, acks: dict) -> list[list[str]]:
     """決まった組み立て: 決まった相づち(fixed_ack)+ 答えの決まった文 + 注意 + 区切り + 問い。"""
     ack = fixed_ack(plan, recent, acks)
@@ -174,10 +189,16 @@ def praised(free: str, said: str = "") -> str | None:
 
 
 def _numbers_ok(free: str, plan: dict) -> bool:
-    pool = " ".join([plan["said"], *plan["choices"], *map(str, plan["facts"]), *_fixed_lines(plan)])
+    pool = " ".join([plan["said"], *plan["choices"], *map(str, plan["facts"]), *_fixed_lines(plan), *plan.get("about", [])])
     if digits_in(free) - digits_in(pool):
         return False
     return all(k in nfkc(pool) for k in KANJI_NUM_RE.findall(free))
+
+
+def _loose(text) -> str:
+    """相づちに入れる言葉(mention)を比べる形: 波線をそろえ、「円」と空白を除く(「週3〜4日」と「週3～4日」、
+    「年収500万以上」と「年収500万円以上」を同じに見る)。"""
+    return re.sub(r"[\s円]", "", re.sub(r"[〜～~]", "~", nfkc(text)))
 
 
 def validate(raw, plan: dict, recent: dict) -> tuple[list[list[str]] | None, str | None]:
@@ -233,6 +254,8 @@ def validate(raw, plan: dict, recent: dict) -> tuple[list[list[str]] | None, str
         ack, answer = (sents[0], "".join(sents[1:])) if plan["ack"] and len(sents) > 1 else ("", free)
         if not answer:
             return None, "answer_missing"
+    if plan["ack"] and plan.get("mention") and not any(_loose(m) in _loose(ack) for m in plan["mention"]):
+        return None, "mention_missing"
     if ack and (why := repeats(ack, recent)):
         return None, why
     parts = ([["ack", ack]] if ack else []) + ([["answer", answer]] if answer else []) + _fixed_parts(plan, ask_text)

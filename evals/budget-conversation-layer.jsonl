@@ -830,3 +830,18 @@
 {"at": "2026-10-29T08:45:02+00:00", "run": "baito-p3", "cost_usd": 0.060478, "case": "early_exit", "rep": 0, "version": "v5"}
 {"at": "2026-10-29T08:54:43+00:00", "run": "probe-376", "cost_usd": 0.018666, "case": "read:sc_st_exam"}
 {"at": "2026-10-29T08:54:45+00:00", "run": "probe-376", "cost_usd": 0.019093, "case": "read:fg_fuyou"}
+{"at": "2026-10-29T09:39:18+00:00", "run": "scenes-rejudge", "cost_usd": 0.0092, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:39:20+00:00", "run": "scenes-rejudge", "cost_usd": 0.002, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:39:22+00:00", "run": "scenes-rejudge", "cost_usd": 0.007, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:39:24+00:00", "run": "scenes-rejudge", "cost_usd": 0.0023, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:39:26+00:00", "run": "scenes-rejudge", "cost_usd": 0.0023, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:39:28+00:00", "run": "scenes-rejudge", "cost_usd": 0.0023, "tag": "baito-v5-t376", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T09:40:26+00:00", "run": "scenes", "cost_usd": 0.107107, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:40:28+00:00", "run": "scenes", "cost_usd": 0.030788, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:40:31+00:00", "run": "scenes", "cost_usd": 0.083196, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:40:31+00:00", "run": "scenes", "cost_usd": 0.084081, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:40:31+00:00", "run": "scenes", "cost_usd": 0, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:40:32+00:00", "run": "scenes", "cost_usd": 0.092083, "tag": "talk-t1-379", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T09:41:03+00:00", "run": "probe-379", "cost_usd": 0.0241, "case": "read:weekend"}
+{"at": "2026-10-29T09:41:56+00:00", "run": "probe-379", "cost_usd": 0.0409, "case": "read:weekend"}
+{"at": "2026-10-29T09:42:28+00:00", "run": "baito-p3", "cost_usd": 0.120048, "case": "age_fix", "rep": 0, "version": "v5"}
