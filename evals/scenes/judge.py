@@ -7,6 +7,9 @@
 - 出力(SceneJudgement): 条件の番号ごとに verdict(満たした / 満たさない / 該当なし)と、根拠の文(返信から一字一句の引用)と理由
 - 受け取り(shape): 番号の無い条件は fail(「ジャッジが返さなかった」)。根拠が返信に無ければ quoted=False を付ける
   (満たしたのに根拠が引けないものは、人が見る手がかりにする。合否は変えない)。該当なしは skip
+- known_facts(task 362): 入り口の事実のデータ(dip_mcp/convo/facts.py の load。言う段が逆質問に答えるときに渡す事実の全部)。
+  渡すと、場面の「渡した事実」に足し、ほかの条件でも作った事実に数えない(場面の facts はその一部なので、facts.json にある
+  正しい答えが「事実に無い」と判定されるのを防ぐ)。渡さなければ今までどおり場面の facts だけ
 
     rows = runner.run(judge=judge_with(client, model))   # 9 枚目: 実モデルのクライアントを渡す(費用がかかる)
 """
@@ -74,8 +77,8 @@ def _targets(c: dict, n: int) -> list[int]:
     return K.indices(c, n)
 
 
-def prompt(scene: dict, record: dict, checks: list[dict]) -> tuple[str, str]:
-    """(system, user)。checks は場面の採点の条件(expect の JUDGE_CHECKS の項目)。"""
+def prompt(scene: dict, record: dict, checks: list[dict], known_facts: list[str] | None = None) -> tuple[str, str]:
+    """(system, user)。checks は場面の採点の条件(expect の JUDGE_CHECKS の項目)。known_facts は入り口の事実のデータ(上の docstring)。"""
     replies = record["replies"]
     lines = [f"## 入り口: {S.ENTRIES[scene['entry']]}", f"## 入り口の調子: {TONES[scene['entry']]}",
              f"## 場面: {scene['title']}"]
@@ -86,6 +89,9 @@ def prompt(scene: dict, record: dict, checks: list[dict]) -> tuple[str, str]:
     if scene.get("known"):
         lines.append("## 分かっている欄: " + json.dumps({k: v.get("text", v.get("value")) for k, v in scene["known"].items()},
                                                     ensure_ascii=False))
+    if known_facts:
+        lines.append("## aica の確かめた事実(事実のデータ。会話に出ていなくても、これは作った事実に数えない)")
+        lines += [f"- {f}" for f in known_facts]
     lines.append("## 前の会話")
     lines += [f"{'aica' if t['who'] == 'agent' else '本人'}: {t['text']}" for t in scene.get("history") or []] or ["(なし)"]
     lines.append("## 判定する発言と返信")
@@ -99,7 +105,7 @@ def prompt(scene: dict, record: dict, checks: list[dict]) -> tuple[str, str]:
         at = "すべて" if c.get("at") == "all" else str(_targets(c, len(replies))[0])
         lines.append(f"{n}. {c['check']}(返信 {at}): {DEFINITIONS[c['check']]}")
         if c["check"] == "answers_from_facts":
-            lines += [f"   渡した事実: {f}" for f in c["facts"]]
+            lines += [f"   渡した事実: {f}" for f in dict.fromkeys([*c["facts"], *(known_facts or [])])]
     return SYSTEM, "\n".join(lines)
 
 
@@ -123,9 +129,10 @@ def shape(out: SceneJudgement | None, record: dict, checks: list[dict]) -> list[
     return res
 
 
-async def judge(client, model: str, scene: dict, record: dict, checks: list[dict]) -> list[dict]:
+async def judge(client, model: str, scene: dict, record: dict, checks: list[dict],
+                known_facts: list[str] | None = None) -> list[dict]:
     """1 場面の採点の条件を判定する(モデルの呼び出し 1 回)。"""
-    system, user = prompt(scene, record, checks)
+    system, user = prompt(scene, record, checks, known_facts)
     # max_tokens は思考の分も数える(evals/judge.py と同じ)。使わなければ費用はかからない
     out = await llm.parse(client, model=model, max_tokens=4000, effort="low", schema=SceneJudgement, system=system,
                           messages=[{"role": "user", "content": user}])

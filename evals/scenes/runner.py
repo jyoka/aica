@@ -28,6 +28,8 @@
   読む段と言う段は台本の LLM(HarnessScript。発言の reading)。トークの AI がプロンプトの決まりのとおりに動くとしたときの点
 
 採点の条件(JUDGE_CHECKS)は skip で返す。judge を渡せば採点する(evals/scenes/judge.py。実モデルの回は 9 枚目のカード)。
+実モデルで回すとき(9 枚目。evals/scenes/real.py)は、回し方(driver)の real に実モデルを置く。台本の LLM の代わりに、
+ランタイムと同じメッセージ(本人の発言と、画面に出た直前のやりとり convo)でモデルを呼ぶ。
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -283,6 +286,14 @@ class _HarnessDriver:
     """career と baito の今の版の共通: dip の相談のツールを、ランタイムと同じ呼び直しで回す。"""
     entry = version = ""
     stickers = False  # 今の LINE の入口はスタンプを捨てる(返事をしない)
+    real = None  # 実モデル(evals.scenes.real.RealModel)。None なら台本の LLM
+    convo: list | None = None  # 画面に出たやりとり(実モデルの言う段に渡す直前のやりとり。run_harness_scene が書く)
+
+    def llm_for(self, say: dict, targets: list[str]):
+        """1 ターンのハーネスの呼び直しで、出力を作るもの(call -> 出力)。"""
+        if self.real is None:
+            return ScriptLLM(self, say, targets)
+        return self.real.harness(self.entry, say["text"], self.convo or [])
 
     def env(self, scene: dict) -> dict:
         raise NotImplementedError
@@ -298,16 +309,26 @@ class _HarnessDriver:
     def setup(self, st, uid: str, scene: dict) -> None:
         raise NotImplementedError
 
+    def output(self, llm, call: dict) -> dict:
+        """呼び直しに渡す出力 1 つ。実モデルの失敗(通信、形の崩れた出力)は、ランタイム(_harness_turn)と同じく失敗の印にする
+        (ハーネスが失敗 1 回と数える)。台本の LLM の失敗は場面のエラーにする。"""
+        if self.real is None:
+            return {"stage": call["stage"], "output": llm(call)}
+        try:
+            return {"stage": call["stage"], "output": llm(call)}
+        except Exception as e:  # noqa: BLE001
+            return {"stage": call["stage"], "error": type(e).__name__}
+
     def turn(self, st, uid: str, say: dict, before: dict) -> dict:
         """1 つの発言。返すのは返信の記録(states と profile は呼ぶ側が足す)。"""
         if say["text"] == STICKER and not self.stickers:
             return {"text": "", "bubbles": [], "choices": [], "counted": False, "llm_calls": 0, "how": "dropped",
                     "closed": None, "note": "LINE の入口がスタンプを捨てる"}
-        llm = ScriptLLM(self, say, (before.get(self.entry) or {}).get("targets") or [])
+        llm = self.llm_for(say, (before.get(self.entry) or {}).get("targets") or [])
         outputs: list[dict] = []
         r = self.session.turn(st, uid, say["text"], None)
         while r.get("status") == "llm":
-            outputs.append({"stage": r["call"]["stage"], "output": llm(r["call"])})
+            outputs.append(self.output(llm, r["call"]))
             r = self.session.turn(st, uid, say["text"], outputs)
         if not r.get("active") and r.get("direct"):  # 層の版から層の版へ移る: 同じターンで移る先の相談を始める
             moved = self.switch_in(st, uid, say, r["switch_to"], len(outputs))
@@ -328,11 +349,12 @@ class _HarnessDriver:
         dest = layer_driver(to)
         if dest is None:
             return None
-        llm = ScriptLLM(dest, say, [])
+        dest.real, dest.convo = self.real, self.convo
+        llm = dest.llm_for(say, [])
         outputs: list[dict] = []
         r = dest.session.switch_in(st, uid, say["text"], None)
         while r.get("status") == "llm":
-            outputs.append({"stage": r["call"]["stage"], "output": llm(r["call"])})
+            outputs.append(dest.output(llm, r["call"]))
             r = dest.session.switch_in(st, uid, say["text"], outputs)
         if not r.get("active"):
             return None
@@ -691,18 +713,30 @@ def _uid(scene: dict) -> str:
 
 
 def run_harness_scene(scene: dict, d, state_path: Path, others: dict | None = None) -> dict:
-    """career と baito の 1 場面を回して、記録(checks の形)を返す。others は、ほかの入り口の版の機能フラグ(入り口を移す先の版)。"""
+    """career と baito の 1 場面を回して、記録(checks の形)を返す。others は、ほかの入り口の版の機能フラグ(入り口を移す先の版)。
+    実モデル(d.real)のときは、ターンごとのモデルの時間と呼び出しの数(model_seconds、model_calls)も記録に足す。"""
     from dip_mcp.data import State
+    from line_runtime import baito_chat
 
     st, uid = State(state_path), _uid(scene)
     replies, error = [], None
+    d.convo = []
+    for t in scene.get("history") or []:
+        baito_chat._append(d.convo, "user" if t["who"] == "user" else "assistant", t["text"])
     with environ(d.env(scene) | (others or {}) | {"DIP_STATE_PATH": str(state_path)}), capture_finish() as last:
         try:
             _seed_profile(st, uid, scene)
             d.setup(st, uid, scene)
             before = snaps(st, uid, last)
             for say in scene["says"]:
+                if d.real is not None:
+                    d.real.begin()
                 r = d.turn(st, uid, say, before)
+                if d.real is not None:
+                    r |= d.real.end()
+                if r["how"] != "dropped":
+                    baito_chat._append(d.convo, "user", say["text"])
+                    baito_chat._append(d.convo, "assistant", r["text"])
                 before = r["states"] = snaps(st, uid, last)
                 r["profile"] = profile(st, uid)
                 r["say"] = say
@@ -789,42 +823,57 @@ class HarnessScript:
         return ScriptLLM(self.driver, self.say, [])({"stage": stage, "system": system}), {}
 
 
-def run_talk_scenes(scenes: list[dict], d, state_path: Path) -> list[dict]:
+def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_scene=None) -> list[dict]:
     """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
-    移る先の台本の LLM で回す。"""
+    移る先の台本の LLM で回す。real(evals.scenes.real.RealModel)を渡すと、トークの AI もハーネスのモデルも実モデルで回し、
+    呼び出しの数は real が数える(どのコードの条件も判定する)。before_scene(scene) は場面を始める前に呼ぶ(費用の確かめ)。"""
     from dip_mcp.data import State
 
-    model = _talk_script() if d.scripted else _talk_model()
-    harness = {k: HarnessScript(v) for k, v in d.harness_drivers().items()}
+    if real is not None:
+        model, harness = None, {}  # None: ランタイムの既定(本番と同じ実モデル)
+        llms = {"baito": real.async_harness("baito"), "career": real.async_harness("career")}
+    else:
+        model = _talk_script() if d.scripted else _talk_model()
+        harness = {k: HarnessScript(v) for k, v in d.harness_drivers().items()}
+        llms = {k: harness.get(k) for k in ("baito", "career")}
     records = []
+
+    def calls() -> int:
+        if real is not None:
+            return real.calls()
+        return model.calls + sum(h.calls for h in harness.values())
 
     async def go():
         from line_runtime.runtime import LineRuntime
 
-        async with LineRuntime(model=model, in_memory=True, baito_llm=harness.get("baito"),
-                               career_llm=harness.get("career")) as rt:
+        async with LineRuntime(model=model, in_memory=True, baito_llm=llms["baito"], career_llm=llms["career"]) as rt:
             for scene in scenes:
+                if before_scene is not None:
+                    before_scene(scene)
                 st, uid = State(state_path), _uid(scene)
                 replies, error = [], None
                 try:
                     _seed_profile(st, uid, scene)
                     for say in scene["says"]:
-                        if d.scripted:
+                        if d.scripted and real is None:
                             model.say = say
                         for h in harness.values():
                             h.say = say
-                        n = model.calls + sum(h.calls for h in harness.values())
+                        n = calls()
+                        t0 = time.perf_counter()
                         out = await rt.handle(uid, "message", say["text"])
+                        took = time.perf_counter() - t0
                         text = "\n".join(out["bubbles"])
-                        used = model.calls + sum(h.calls for h in harness.values()) - n
+                        used = calls() - n
                         how = "guard" if out.get("guard") else "harness" if any(k in out for k in ("career", "baito")) else "talk"
                         replies.append({"text": text, "bubbles": list(out["bubbles"]), "choices": list(out["quick_replies"]),
                                         "counted": False, "llm_calls": used, "how": how, "closed": None,
-                                        "states": snaps(st, uid, {}), "profile": profile(st, uid), "say": say})
+                                        "states": snaps(st, uid, {}), "profile": profile(st, uid), "say": say}
+                                       | ({"model_calls": used, "turn_seconds": round(took, 3)} if real is not None else {}))
                 except Exception as e:  # noqa: BLE001
                     error = f"{type(e).__name__}: {e}"
                 records.append({"scene": scene["id"], "entry": "talk", "version": d.version, "replies": replies,
-                                "error": error, "texts": d.texts(), "talk_mock": not d.scripted})
+                                "error": error, "texts": d.texts(), "talk_mock": not d.scripted and real is None})
 
     with environ(d.env() | {"DIP_STATE_PATH": str(state_path)}):
         asyncio.run(go())

@@ -1130,6 +1130,31 @@ def test_real_llm_runner_writes_a_relative_ledger_where_it_was_called(tmp_path, 
     assert (tmp_path / "budget.jsonl").read_text().count("baito-p3") == 1
 
 
+def test_real_llm_runner_v5_reads_with_the_layer_and_counts_its_stages(tmp_path):
+    """--real --version v5(task 362): 実 LLM は読む段(read)をそのまま読む(シミュレーターの抽出を写さない)。段は層の call_llm で
+    数え、抽出合格率は読む段で出す。言う段には、層の覚えの直前のやりとり(model_history)を渡す。包みは外れる。"""
+    from dip_mcp.baito import v5 as V5
+    from dip_mcp.convo import turn as convo_turn
+
+    seen: list[tuple[str, list[dict]]] = []
+
+    async def fake(stage, system, messages):
+        seen.append((stage, messages))
+        out = {"read": {"acts": [], "hook": None, "mentions": [], "ng": []},
+               "result": {"reply": "x", "recommendations": []}}.get(stage, {"reply": ""})
+        return out, {"input_tokens": 0, "output_tokens": 0}
+
+    ledger = tmp_path / "budget.jsonl"
+    out = baito_sim.run_real(1, ledger, 1.0, call=fake, only=["nopref"], version="v5")
+    assert out["version"] == "v5" and out["conversations"] == 1 and out["results"][0]["reached"]
+    assert "extract" not in {s for s, _ in seen} and out["stats"]["read"]["first"] == out["stats"]["read"]["first_ok"] > 0
+    assert out["rates"]["extract_pass"] == 1.0
+    assert all(m == [m[-1]] for s, m in seen if s == "read")
+    assert any(len(m) > 1 and m[-2]["role"] == "assistant" for s, m in seen if s == "say")
+    assert '"version": "v5"' in ledger.read_text()
+    assert convo_turn.call_llm.__name__ == V5.call_llm.__name__ == "call_llm"
+
+
 # ----------------------------- (7) 希死念慮・自傷の言葉(task 256) -----------------------------
 
 

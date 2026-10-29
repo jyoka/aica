@@ -6,6 +6,8 @@
     ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/budget-baito-v4.jsonl --limit-usd 8
                                                           # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる。
                                                           # 台帳と上限はカード 242 で決めたもの。1 会話 約 $0.08・35 秒)
+    ./.venv/bin/python -m evals.baito_sim --real --version v5 --runs 1 --ledger evals/budget-conversation-layer.jsonl --limit-usd 21
+                                                          # 同じ 18 ペルソナを v5 で(設計メモ conversation-layer.md §5 の 9 枚目)
 
 モック(既定): docs/prd/baito_harness を一時ディレクトリに写し、BAITO_HARNESS=aica_port(移植版。docs/prd/baito_harness/
 aica_port.py)で `unit_checks_v4.py` と `simulate.py v4` を回す。写しの中で回すので、基準値(results_v4.json・transcripts/)は
@@ -23,6 +25,8 @@ pytest は tests/test_baito_v5.py が回す。
 - 生成段には、トーク(runtime の _harness_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
 - 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
+- --version v5(task 362): 移植版の入口を aica_port_v5 にする。実 LLM は読む段(read)をそのまま読む(ReadAdapter が写さない)。
+  段の数え方は、v5 が層の call_llm(dip_mcp.convo.turn)を通るので、そこを包む。抽出合格率は読む段(read)の 1 回目の合格率
 """
 
 from __future__ import annotations
@@ -130,11 +134,11 @@ def check(timeout: int = TIMEOUT, version: str = "v4") -> tuple[dict, list[str]]
 # ----------------------------- P3: 実 LLM -----------------------------
 
 
-def _import_sim(work: Path):
+def _import_sim(work: Path, version: str = "v4"):
     """写しの sim_v4 を、移植版を検査する形で import する(BAITO_HARNESS は import の前に入れる)。"""
-    os.environ.update(BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT))
+    os.environ.update(BAITO_HARNESS=PORTS[version], AICA_ROOT=str(ROOT))
     sys.path.insert(0, str(work))
-    for name in ("sim_v4", "bank_v4", "catalog_v4", PORT):
+    for name in ("sim_v4", "bank_v4", "catalog_v4", *PORTS.values()):
         sys.modules.pop(name, None)
     return importlib.import_module("sim_v4")
 
@@ -176,38 +180,49 @@ class Transcript:
 
 
 class StageCounter:
-    """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。"""
+    """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。
+    v5 は、層の call_llm(dip_mcp.convo.turn。v5 は名前で読み込んでいるので dip_mcp.baito.v5 の方も)を包む
+    (まとめと結果は v4 の _call_llm が同じ層の call_llm を呼ぶ)。"""
 
-    def __init__(self, harness):
-        self.harness = harness
-        self.orig = harness._call_llm
+    def __init__(self, harness, version: str = "v4"):
+        from dip_mcp.baito import v5
+        from dip_mcp.convo import turn as convo_turn
+
+        # 包むもの(モジュール, 名前)
+        self.targets = [(harness, "_call_llm")] if version == "v4" else [(convo_turn, "call_llm"), (v5, "call_llm")]
+        self.orig = {(id(m), n): getattr(m, n) for m, n in self.targets}
         self.stats: dict[str, dict] = {}
 
-    def __enter__(self):
-        def counted(fn, payload, validator, state, stage):
+    def _counted(self, orig):
+        def counted(fn, payload, validator, state, stage, *a, **kw):
             calls = [0]
 
             def fn2(p):
                 calls[0] += 1
                 return fn(p)
-            res = self.orig(fn2, payload, validator, state, stage)
+            res = orig(fn2, payload, validator, state, stage, *a, **kw)
             s = self.stats.setdefault(stage, {"first": 0, "first_ok": 0, "fallback": 0, "calls": 0})
             s["first"] += 1
             s["calls"] += calls[0]
             s["first_ok"] += int(res is not None and calls[0] == 1)
             s["fallback"] += int(res is None)
             return res
-        self.harness._call_llm = counted
+        return counted
+
+    def __enter__(self):
+        for m, n in self.targets:
+            setattr(m, n, self._counted(self.orig[(id(m), n)]))
         return self
 
     def __exit__(self, *exc):
-        self.harness._call_llm = self.orig
+        for m, n in self.targets:
+            setattr(m, n, self.orig[(id(m), n)])
 
 
 def rates(stats: dict) -> dict:
     gen = [stats.get(k, {}) for k in ("generate", "result")]
     first = sum(s.get("first", 0) for s in gen)
-    ex = stats.get("extract", {})
+    ex = stats.get("extract") or stats.get("read") or {}  # v5 は読む段(read)
     return {"generate_pass": sum(s.get("first_ok", 0) for s in gen) / first if first else None,
             "fallback": sum(s.get("fallback", 0) for s in gen) / first if first else None,
             "extract_pass": ex["first_ok"] / ex["first"] if ex.get("first") else None}
@@ -223,8 +238,8 @@ def p3_ok(r: dict, agg: dict) -> list[str]:
     return bad
 
 
-def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[str] | None = None) -> dict:
-    """P3 の測定。call は line_runtime.baito_chat.default_llm() と同じ形(テストは偽物を渡す)。"""
+def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[str] | None = None, version: str = "v4") -> dict:
+    """P3 の測定。call は line_runtime.baito_chat.default_llm() と同じ形(テストは偽物を渡す)。version は移植版の版(v4 か v5)。"""
     from evals import budget
     from line_runtime import baito_chat, config
     from line_runtime.ledger import cost_usd
@@ -236,7 +251,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
         cwd, env = os.getcwd(), {k: os.environ.get(k) for k in ("BAITO_HARNESS", "AICA_ROOT")}
         os.chdir(work)
         try:
-            sim = _import_sim(work)
+            sim = _import_sim(work, version)
             H = sim.H
             call = call or baito_chat.default_llm()
             personas = [p for p in sim.PERSONAS if p.name not in MOCK_ONLY and (not only or p.name in only)]
@@ -252,7 +267,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
             sim.signal = types.SimpleNamespace(signal=signal.signal, SIGALRM=signal.SIGALRM,
                                                alarm=lambda s: signal.alarm(600 if s else 0))
             res, spent, stopped = [], 0.0, False
-            with StageCounter(H) as counter, Transcript(H, lambda: made[-1]):
+            with StageCounter(H, version) as counter, Transcript(H, lambda: made[-1]):
                 for rep in range(runs):
                     for p in personas:
                         try:
@@ -268,7 +283,8 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
                                             - u.get("cache_write", 0), u.get("output_tokens", 0), u.get("cache_write", 0),
                                             u.get("cache_read", 0)) for u in usage)
                         spent += cost
-                        budget.record(ledger, "baito-p3", cost, case=p.name, rep=rep)
+                        budget.record(ledger, "baito-p3", cost, case=p.name, rep=rep,
+                                      **({"version": version} if version != "v4" else {}))
                         res.append(m | {"rep": rep, "llm_calls": len(usage), "cost_usd": round(cost, 4), "log": log})
                         print(f"{p.name:11} rep={rep} turns={m['turns']} reached={m['reached']} calls={len(usage)} "
                               f"${cost:.4f}", flush=True)
@@ -294,7 +310,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
            "over_max_turns": sum(1 for m in res if m["over_max_turns"]),
            "max_turns": max((m["turns"] for m in res), default=0)}
     r = rates(stats)
-    return {"runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
+    return {"version": version, "runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
             "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "results": res}
 
 
@@ -306,17 +322,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ledger", type=Path, help="--real の費用台帳(このカード用のものを渡す)")
     ap.add_argument("--limit-usd", type=float, help="--real で、台帳の累計がこの額に達したら止める")
     ap.add_argument("--version", choices=list(PORTS), default="v4",
-                    help="モックの検査で回す版(v5 は 20 ペルソナだけ。--real は v4 だけ)")
+                    help="回す版(v5 のモックの検査は 20 ペルソナだけ。--real は 18 ペルソナ)")
     ap.add_argument("--log", type=Path, metavar="DIR",
                     help="モックの検査の出力・移植版の結果・会話ログの写し・合否を DIR に書く(CI の証跡)")
     a = ap.parse_args(argv)
     if a.real:
-        if a.version != "v4":
-            ap.error("--real は v4 だけ(v5 の実モデルの比べは、設計メモ §5 の 9 枚目のカード)")
         if a.ledger is None or a.limit_usd is None:
             ap.error("--real には --ledger と --limit-usd が要る")
-        out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None)
-        dest = ROOT / "evals" / "results" / f"baito-p3-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
+        out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None, version=a.version)
+        tag = "" if a.version == "v4" else f"{a.version}-"
+        dest = ROOT / "evals" / "results" / f"baito-p3-{tag}{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(json.dumps(out, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
         print(json.dumps({k: out[k] for k in ("conversations", "spent_usd", "rates", "agg", "problems")},

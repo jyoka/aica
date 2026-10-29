@@ -53,12 +53,14 @@ def to_reading(raw, payload):
 
 
 class ReadAdapter:
-    """シミュレーターのモックの LLM(extract / generate)を、v5 の llm(read / generate)にする。"""
+    """シミュレーターのモックの LLM(extract / generate)を、v5 の llm(read / generate)にする。read を持つ LLM(実 LLM)は写さない。"""
 
     def __init__(self, llm):
         self.llm = llm
 
     def read(self, payload):
+        if hasattr(self.llm, "read"):  # 実 LLM(line_runtime.baito_chat.SyncLLM。evals.baito_sim --real --version v5)は読む段をそのまま読む
+            return self.llm.read(payload)
         return to_reading(self.llm.extract(payload), payload)
 
     def generate(self, view):

@@ -1,0 +1,737 @@
+{"at": "2026-10-29T00:00:00+00:00", "run": "上限", "cost_usd": 0.0, "limit_usd": 21.0, "decided_by": "運営者(jyoka/tasks#327 の Decision。設計メモ docs/design/conversation-layer.md §6 の 4)", "note": "§5 の 9 枚目(task 362)の台帳。入り口の順(正社員 → アルバイト・パート → 相談の外)に回す。上限に近づいたら、2 回目の場面の一覧と Haiku の回を削る"}
+{"at": "2026-10-29T07:01:25+00:00", "run": "scenes", "cost_usd": 0.0165, "tag": "pilot-c1", "entry": "career", "version": "c1", "scene": "ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:01:39+00:00", "run": "scenes", "cost_usd": 0.0141, "tag": "pilot-c1", "entry": "career", "version": "c1", "scene": "multi-area-salary-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:01:40+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "pilot-c1", "entry": "career", "version": "c1", "scene": "t326-order", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:03:57+00:00", "run": "scenes", "cost_usd": 0.0064, "tag": "pilot-v5", "entry": "baito", "version": "v5", "scene": "baito-chat-sticker", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:04:00+00:00", "run": "scenes", "cost_usd": 0.0067, "tag": "pilot-v5", "entry": "baito", "version": "v5", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:04:02+00:00", "run": "scenes", "cost_usd": 0, "tag": "pilot-t1", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:04:22+00:00", "run": "scenes", "cost_usd": 0.14595, "tag": "pilot-t0", "entry": "talk", "version": "t0", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:05:46+00:00", "run": "fulltime-hearing-20261029-160427", "cost_usd": 0.242, "case": "D-c2/p4-short", "rep": 0}
+{"at": "2026-10-29T07:06:19+00:00", "run": "baito-p3", "cost_usd": 0.077591, "case": "univ", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:06:42+00:00", "run": "scenes", "cost_usd": 0.0246, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:47+00:00", "run": "scenes", "cost_usd": 0.0142, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:47+00:00", "run": "scenes", "cost_usd": 0.0152, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:47+00:00", "run": "scenes", "cost_usd": 0.0271, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:49+00:00", "run": "scenes", "cost_usd": 0.0245, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-what-for", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:52+00:00", "run": "scenes", "cost_usd": 0.0143, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-what-for", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:52+00:00", "run": "scenes", "cost_usd": 0.0135, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:53+00:00", "run": "scenes", "cost_usd": 0.0271, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:55+00:00", "run": "scenes", "cost_usd": 0.0238, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-recommend-company", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:57+00:00", "run": "scenes", "cost_usd": 0.0141, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-recommend-company", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:58+00:00", "run": "scenes", "cost_usd": 0.0147, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-recommend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:06:58+00:00", "run": "scenes", "cost_usd": 0.0269, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:02+00:00", "run": "scenes", "cost_usd": 0.0143, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-market-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:02+00:00", "run": "scenes", "cost_usd": 0.0136, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:03+00:00", "run": "scenes", "cost_usd": 0.0258, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:04+00:00", "run": "scenes", "cost_usd": 0.0235, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-market-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:04+00:00", "run": "scenes", "cost_usd": 0.0019, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:06+00:00", "run": "scenes", "cost_usd": 0.0019, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:07+00:00", "run": "baito-p3", "cost_usd": 0.122893, "case": "hs16", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:07:07+00:00", "run": "scenes", "cost_usd": 0.0134, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-ai-or-human", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:09+00:00", "run": "scenes", "cost_usd": 0.015, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-chat-oshi", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:09+00:00", "run": "scenes", "cost_usd": 0.0248, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-ai-or-human", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:11+00:00", "run": "scenes", "cost_usd": 0.0275, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-chat-oshi", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:12+00:00", "run": "scenes", "cost_usd": 0.011, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-correct-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:13+00:00", "run": "baito-p3", "cost_usd": 0.074755, "case": "hs16", "rep": 0}
+{"at": "2026-10-29T07:07:14+00:00", "run": "scenes", "cost_usd": 0.0149, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-where-stored", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:16+00:00", "run": "scenes", "cost_usd": 0.0238, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-correct-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:16+00:00", "run": "scenes", "cost_usd": 0.0127, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-correct-dunno", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:19+00:00", "run": "scenes", "cost_usd": 0.0105, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:20+00:00", "run": "scenes", "cost_usd": 0.0133, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-how-many-left", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:20+00:00", "run": "scenes", "cost_usd": 0.0237, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-correct-dunno", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:23+00:00", "run": "scenes", "cost_usd": 0.0128, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:24+00:00", "run": "scenes", "cost_usd": 0.0128, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-what-is-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:24+00:00", "run": "scenes", "cost_usd": 0.0228, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:26+00:00", "run": "scenes", "cost_usd": 0.0271, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-where-stored", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:29+00:00", "run": "scenes", "cost_usd": 0.0135, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:29+00:00", "run": "scenes", "cost_usd": 0.105003, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:29+00:00", "run": "scenes", "cost_usd": 0.0252, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:31+00:00", "run": "scenes", "cost_usd": 0.032974, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:31+00:00", "run": "scenes", "cost_usd": 0.0244, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-how-many-left", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:33+00:00", "run": "scenes", "cost_usd": 0.077313, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:33+00:00", "run": "scenes", "cost_usd": 0.030212, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:33+00:00", "run": "scenes", "cost_usd": 0, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:35+00:00", "run": "scenes", "cost_usd": 0.06434, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:35+00:00", "run": "scenes", "cost_usd": 0.0143, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-food", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:35+00:00", "run": "scenes", "cost_usd": 0.0159, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-what-is-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:35+00:00", "run": "baito-p3", "cost_usd": 0.049281, "case": "univ", "rep": 0}
+{"at": "2026-10-29T07:07:35+00:00", "run": "scenes", "cost_usd": 0.014, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-emotion-yelled", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:36+00:00", "run": "scenes", "cost_usd": 0.0259, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-emotion-yelled", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:38+00:00", "run": "scenes", "cost_usd": 0.018, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-flow-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:38+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-flow-stop", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:39+00:00", "run": "baito-p3", "cost_usd": 0.053, "case": "univ", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:07:39+00:00", "run": "scenes", "cost_usd": 0.0084, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-flow-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:39+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-flow-stop", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:39+00:00", "run": "scenes", "cost_usd": 0.0221, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:42+00:00", "run": "scenes", "cost_usd": 0.0289, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:42+00:00", "run": "scenes", "cost_usd": 0.0187, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:43+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1796, "case": "D/p1-sales", "rep": 0}
+{"at": "2026-10-29T07:07:43+00:00", "run": "scenes", "cost_usd": 0.0145, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-grumble", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:44+00:00", "run": "scenes", "cost_usd": 0.0226, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-food", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:46+00:00", "run": "scenes", "cost_usd": 0.02855, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:47+00:00", "run": "scenes", "cost_usd": 0.0255, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:47+00:00", "run": "scenes", "cost_usd": 0.0132, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:49+00:00", "run": "scenes", "cost_usd": 0.0136, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-joke-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:49+00:00", "run": "scenes", "cost_usd": 0.050279, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:49+00:00", "run": "scenes", "cost_usd": 0.0198, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-multi-age-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:51+00:00", "run": "scenes", "cost_usd": 0.0143, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-multi-age-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:51+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.2246, "case": "D-c2/p1-sales", "rep": 0}
+{"at": "2026-10-29T07:07:51+00:00", "run": "scenes", "cost_usd": 0.0248, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-grumble", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0.0239, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-danger", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0.072196, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0.15183, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:53+00:00", "run": "scenes", "cost_usd": 0.029539, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:54+00:00", "run": "scenes", "cost_usd": 0.0124, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-emoji-only", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:54+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:54+00:00", "run": "scenes", "cost_usd": 0.012, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:54+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-danger", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:54+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:55+00:00", "run": "scenes", "cost_usd": 0.114564, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:55+00:00", "run": "scenes", "cost_usd": 0.0184, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-joke-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:57+00:00", "run": "scenes", "cost_usd": 0.0219, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-under15", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:58+00:00", "run": "scenes", "cost_usd": 0.0123, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-greeting", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:58+00:00", "run": "scenes", "cost_usd": 0.0138, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-under15", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:07:59+00:00", "run": "scenes", "cost_usd": 0.0221, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-phone", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:00+00:00", "run": "scenes", "cost_usd": 0.0212, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-emoji-only", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:01+00:00", "run": "scenes", "cost_usd": 0.0173, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-short-un", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:01+00:00", "run": "scenes", "cost_usd": 0.0107, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-phone", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:02+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:03+00:00", "run": "baito-p3", "cost_usd": 0.103828, "case": "homemaker", "rep": 0}
+{"at": "2026-10-29T07:08:04+00:00", "run": "scenes", "cost_usd": 0.0103, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-short-un", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:04+00:00", "run": "scenes", "cost_usd": 0.0227, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-short-colloquial", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:06+00:00", "run": "scenes", "cost_usd": 0.021, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-greeting", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:07+00:00", "run": "scenes", "cost_usd": 0.0109, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-short-colloquial", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:07+00:00", "run": "scenes", "cost_usd": 0.0221, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-short-typo", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:07+00:00", "run": "scenes", "cost_usd": 0.0321, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-three-in-a-row", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:08+00:00", "run": "baito-p3", "cost_usd": 0.107631, "case": "homemaker", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:08:10+00:00", "run": "scenes", "cost_usd": 0.0085, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-short-typo", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:12+00:00", "run": "scenes", "cost_usd": 0.0135, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-area-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:12+00:00", "run": "scenes", "cost_usd": 0.0243, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:14+00:00", "run": "scenes", "cost_usd": 0.0126, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:14+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:14+00:00", "run": "scenes", "cost_usd": 0.0113, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-salary-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:15+00:00", "run": "scenes", "cost_usd": 0.0584, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-three-in-a-row", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:18+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:18+00:00", "run": "scenes", "cost_usd": 0.0128, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-retract", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:19+00:00", "run": "scenes", "cost_usd": 0.0193, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-switch-hold", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:20+00:00", "run": "scenes", "cost_usd": 0.0214, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-area-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:23+00:00", "run": "scenes", "cost_usd": 0.0136, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-unsure", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:23+00:00", "run": "scenes", "cost_usd": 0.0111, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-switch-hold", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:25+00:00", "run": "scenes", "cost_usd": 0.02, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-salary-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:26+00:00", "run": "scenes", "cost_usd": 0.0103, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-dont-know-scale", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:28+00:00", "run": "scenes", "cost_usd": 0.0101, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-nothing-particular", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:30+00:00", "run": "scenes", "cost_usd": 0.022, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-retract", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:33+00:00", "run": "scenes", "cost_usd": 0.0137, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-vague-why", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:35+00:00", "run": "scenes", "cost_usd": 0.0103, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "correct-go-back", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:36+00:00", "run": "scenes", "cost_usd": 0.0214, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-unsure", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:37+00:00", "run": "baito-p3", "cost_usd": 0.120294, "case": "office", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:08:37+00:00", "run": "baito-p3", "cost_usd": 0.078804, "case": "office", "rep": 0}
+{"at": "2026-10-29T07:08:40+00:00", "run": "scenes", "cost_usd": 0.0198, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-dont-know-scale", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:41+00:00", "run": "scenes", "cost_usd": 0.0175, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-long-story", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:41+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1522, "case": "D/p2-change", "rep": 0}
+{"at": "2026-10-29T07:08:43+00:00", "run": "scenes", "cost_usd": 0.0186, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-nothing-particular", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:46+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1751, "case": "D-c2/p2-change", "rep": 0}
+{"at": "2026-10-29T07:08:47+00:00", "run": "scenes", "cost_usd": 0.0146, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-anxious", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:49+00:00", "run": "scenes", "cost_usd": 0.0224, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-vague-why", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:51+00:00", "run": "scenes", "cost_usd": 0.0191, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "correct-go-back", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:51+00:00", "run": "scenes", "cost_usd": 0.0141, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-angry-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:56+00:00", "run": "scenes", "cost_usd": 0.0129, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:08:59+00:00", "run": "scenes", "cost_usd": 0.0302, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-long-story", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:01+00:00", "run": "scenes", "cost_usd": 0.0141, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-negative-reason", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:02+00:00", "run": "scenes", "cost_usd": 0.0062, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:03+00:00", "run": "scenes", "cost_usd": 0.0223, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-anxious", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:03+00:00", "run": "scenes", "cost_usd": 0.0073, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:06+00:00", "run": "scenes", "cost_usd": 0.0146, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-laid-off", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:07+00:00", "run": "scenes", "cost_usd": 0.005, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:07+00:00", "run": "scenes", "cost_usd": 0.0077, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-more-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:08+00:00", "run": "baito-p3", "cost_usd": 0.123353, "case": "nopref", "rep": 0}
+{"at": "2026-10-29T07:09:08+00:00", "run": "scenes", "cost_usd": 0.0074, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:08+00:00", "run": "scenes", "cost_usd": 0.0025, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-skip-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:10+00:00", "run": "scenes", "cost_usd": 0.0238, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-angry-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:11+00:00", "run": "baito-p3", "cost_usd": 0.206717, "case": "nopref", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:09:11+00:00", "run": "scenes", "cost_usd": 0.0103, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-skip-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:12+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-pause-word", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:13+00:00", "run": "scenes", "cost_usd": 0.0082, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-later-with-answer", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:13+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-later-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:13+00:00", "run": "scenes", "cost_usd": 0.0168, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-recommend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:14+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:14+00:00", "run": "scenes", "cost_usd": 0.0214, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:14+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-stop-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:18+00:00", "run": "scenes", "cost_usd": 0.0063, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:19+00:00", "run": "scenes", "cost_usd": 0.0138, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-resume-next-time", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:20+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:21+00:00", "run": "scenes", "cost_usd": 0.0236, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-negative-reason", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:21+00:00", "run": "scenes", "cost_usd": 0.0031, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:23+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:24+00:00", "run": "scenes", "cost_usd": 0.0012, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:25+00:00", "run": "scenes", "cost_usd": 0.0139, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-area-salary-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:26+00:00", "run": "scenes", "cost_usd": 0.0066, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-chat-oshi", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:28+00:00", "run": "scenes", "cost_usd": 0.0111, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-future-timing", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:28+00:00", "run": "scenes", "cost_usd": 0.0249, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-laid-off", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:29+00:00", "run": "scenes", "cost_usd": 0.0052, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-chat-oshi", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:29+00:00", "run": "scenes", "cost_usd": 0.0143, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-more-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:30+00:00", "run": "scenes", "cost_usd": 0.008, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-correct-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:30+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1508, "case": "D/p3-return", "rep": 0}
+{"at": "2026-10-29T07:09:31+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-skip-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:32+00:00", "run": "scenes", "cost_usd": 0.0133, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-career-in-why-now", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:33+00:00", "run": "scenes", "cost_usd": 0.0019, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-correct-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:33+00:00", "run": "scenes", "cost_usd": 0.019, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-skip-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:33+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-pause-word", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:34+00:00", "run": "scenes", "cost_usd": 0.0048, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-correct-dunno", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:35+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1829, "case": "D-c2/p3-return", "rep": 0}
+{"at": "2026-10-29T07:09:36+00:00", "run": "scenes", "cost_usd": 0.0115, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-card-all-at-once", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:36+00:00", "run": "scenes", "cost_usd": 0.0153, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-later-with-answer", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:36+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-later-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:37+00:00", "run": "scenes", "cost_usd": 0.0041, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-correct-dunno", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:37+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-infer-raise-target", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:37+00:00", "run": "scenes", "cost_usd": 0.0033, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:38+00:00", "run": "scenes", "cost_usd": 0.0144, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-stop-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:39+00:00", "run": "scenes", "cost_usd": 0.0018, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:41+00:00", "run": "scenes", "cost_usd": 0.0129, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "multi-answer-other-question", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:41+00:00", "run": "scenes", "cost_usd": 0.0045, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:43+00:00", "run": "scenes", "cost_usd": 0.0171, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-resume-next-time", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:43+00:00", "run": "scenes", "cost_usd": 0.003, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:44+00:00", "run": "scenes", "cost_usd": 0.0144, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:45+00:00", "run": "baito-p3", "cost_usd": 0.13651, "case": "unclear", "rep": 0}
+{"at": "2026-10-29T07:09:45+00:00", "run": "scenes", "cost_usd": 0.0134, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-refuse-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:46+00:00", "run": "scenes", "cost_usd": 0.024117, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:47+00:00", "run": "scenes", "cost_usd": 0.0067, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-emotion-yelled", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:48+00:00", "run": "scenes", "cost_usd": 0.0023, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-flow-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:48+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-flow-stop", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:48+00:00", "run": "scenes", "cost_usd": 0.046187, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:49+00:00", "run": "scenes", "cost_usd": 0.0077, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-emotion-yelled", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:49+00:00", "run": "scenes", "cost_usd": 0.023, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-area-salary-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:50+00:00", "run": "scenes", "cost_usd": 0.0134, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-pii-redacted", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:50+00:00", "run": "scenes", "cost_usd": 0.096036, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:50+00:00", "run": "scenes", "cost_usd": 0.043478, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:50+00:00", "run": "scenes", "cost_usd": 0.025018, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0.089467, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0.0018, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-flow-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-flow-stop", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0.0197, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-future-timing", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0.025273, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:52+00:00", "run": "baito-p3", "cost_usd": 0.243191, "case": "unclear", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:09:52+00:00", "run": "scenes", "cost_usd": 0.0063, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:53+00:00", "run": "scenes", "cost_usd": 0.011, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-full-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:54+00:00", "run": "scenes", "cost_usd": 0.026579, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:56+00:00", "run": "scenes", "cost_usd": 0.005, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:56+00:00", "run": "scenes", "cost_usd": 0.049778, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:56+00:00", "run": "scenes", "cost_usd": 0.026167, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:56+00:00", "run": "scenes", "cost_usd": 0, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:57+00:00", "run": "scenes", "cost_usd": 0.0231, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-career-in-why-now", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:57+00:00", "run": "scenes", "cost_usd": 0.0062, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:58+00:00", "run": "scenes", "cost_usd": 0.0147, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-health", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:58+00:00", "run": "scenes", "cost_usd": 0.194023, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:09:59+00:00", "run": "scenes", "cost_usd": 0.0039, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-multi-age-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:00+00:00", "run": "scenes", "cost_usd": 0.0104, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:01+00:00", "run": "scenes", "cost_usd": 0.006, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:02+00:00", "run": "scenes", "cost_usd": 0.0214, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-card-all-at-once", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:03+00:00", "run": "scenes", "cost_usd": 0.0041, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:03+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-danger", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:03+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:04+00:00", "run": "scenes", "cost_usd": 0.0047, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-infer-raise-target", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:05+00:00", "run": "scenes", "cost_usd": 0.0031, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-multi-age-days", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:06+00:00", "run": "scenes", "cost_usd": 0.0152, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-harassment", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:06+00:00", "run": "scenes", "cost_usd": 0.0047, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-under15", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:09+00:00", "run": "scenes", "cost_usd": 0.0025, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:09+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-danger", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:09+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:09+00:00", "run": "scenes", "cost_usd": 0.0217, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "multi-answer-other-question", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:09+00:00", "run": "scenes", "cost_usd": 0.0031, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-phone", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:10+00:00", "run": "scenes", "cost_usd": 0.0124, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-third-party-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:10+00:00", "run": "scenes", "cost_usd": 0.0017, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-short-un", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:13+00:00", "run": "scenes", "cost_usd": 0.0036, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-under15", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:14+00:00", "run": "scenes", "cost_usd": 0.004, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-short-colloquial", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:14+00:00", "run": "scenes", "cost_usd": 0.0218, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-refuse-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:15+00:00", "run": "scenes", "cost_usd": 0.0136, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-falsify", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:16+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-phone", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:17+00:00", "run": "scenes", "cost_usd": 0.0032, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-short-typo", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:19+00:00", "run": "scenes", "cost_usd": 0.0134, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-hai", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:19+00:00", "run": "scenes", "cost_usd": 0.0218, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-pii-redacted", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:19+00:00", "run": "scenes", "cost_usd": 0.0016, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-short-un", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:20+00:00", "run": "baito-p3", "cost_usd": 0.118576, "case": "late_seg", "rep": 0}
+{"at": "2026-10-29T07:10:20+00:00", "run": "scenes", "cost_usd": 0.0079, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-un-review", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:21+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:22+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-short-colloquial", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:23+00:00", "run": "scenes", "cost_usd": 0.0108, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-paraphrase-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:24+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:24+00:00", "run": "scenes", "cost_usd": 0.0202, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-full-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:24+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-short-typo", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:25+00:00", "run": "scenes", "cost_usd": 0.0018, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-switch-hold", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:26+00:00", "run": "scenes", "cost_usd": 0.0106, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-typo-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:26+00:00", "run": "baito-p3", "cost_usd": 0.16369, "case": "late_seg", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:10:28+00:00", "run": "scenes", "cost_usd": 0.0107, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-typo-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:29+00:00", "run": "scenes", "cost_usd": 0.0039, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:29+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:30+00:00", "run": "scenes", "cost_usd": 0.0243, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-health", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:31+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:31+00:00", "run": "scenes", "cost_usd": 0.004, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-switch-hold", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:32+00:00", "run": "scenes", "cost_usd": 0.0118, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-colloquial-number", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:36+00:00", "run": "scenes", "cost_usd": 0.0128, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-dialect", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:39+00:00", "run": "scenes", "cost_usd": 0.0253, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-harassment", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:39+00:00", "run": "scenes", "cost_usd": 0.0106, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "short-ok-ambiguous", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:39+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1972, "case": "D/p4-short", "rep": 0}
+{"at": "2026-10-29T07:10:43+00:00", "run": "scenes", "cost_usd": 0.0138, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "switch-career-to-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:44+00:00", "run": "scenes", "cost_usd": 0.0227, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-third-party-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:47+00:00", "run": "scenes", "cost_usd": 0.0169, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-falsify", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:47+00:00", "run": "scenes", "cost_usd": 0.0048, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:49+00:00", "run": "scenes", "cost_usd": 0.0055, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-who", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:49+00:00", "run": "baito-p3", "cost_usd": 0.100649, "case": "no_seg", "rep": 0}
+{"at": "2026-10-29T07:10:49+00:00", "run": "scenes", "cost_usd": 0.0066, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:51+00:00", "run": "scenes", "cost_usd": 0.0161, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-hai", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:51+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-who", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:52+00:00", "run": "scenes", "cost_usd": 0.0059, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-who", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:52+00:00", "run": "scenes", "cost_usd": 0.015, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-un-review", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:53+00:00", "run": "scenes", "cost_usd": 0.0131, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "switch-career-also-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:54+00:00", "run": "scenes", "cost_usd": 0.0063, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-what-for", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:54+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "switch-career-carried-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:55+00:00", "run": "scenes", "cost_usd": 0.0069, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-what-for", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:55+00:00", "run": "scenes", "cost_usd": 0.0192, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-paraphrase-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:56+00:00", "run": "scenes", "cost_usd": 0.0006, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "t326-order", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:57+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "t326-salary-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:57+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-what-for", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:57+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "t326-more-lead", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:57+00:00", "run": "scenes", "cost_usd": 0.0062, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:59+00:00", "run": "scenes", "cost_usd": 0.0192, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-typo-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:10:59+00:00", "run": "scenes", "cost_usd": 0.0059, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-recommend-company", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:10:59+00:00", "run": "baito-p3", "cost_usd": 0.14169, "case": "no_seg", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:10:59+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.2194, "case": "D-c2/p4-short", "rep": 0}
+{"at": "2026-10-29T07:11:00+00:00", "run": "scenes", "cost_usd": 0.0071, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-recommend-company", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:01+00:00", "run": "scenes", "cost_usd": 0.0191, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-typo-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:02+00:00", "run": "scenes", "cost_usd": 0.0085, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-chat-weather", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:02+00:00", "run": "scenes", "cost_usd": 0.0043, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "t326-whole-talk", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:03+00:00", "run": "scenes", "cost_usd": 0.0147, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-colloquial-number", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:03+00:00", "run": "scenes", "cost_usd": 0.0087, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-market-salary", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:04+00:00", "run": "scenes", "cost_usd": 0.0028, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-chat-sticker", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:05+00:00", "run": "scenes", "cost_usd": 0.0055, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-market-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:05+00:00", "run": "scenes", "cost_usd": 0.0052, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-recommend-company", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:08+00:00", "run": "scenes", "cost_usd": 0.0213, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-dialect", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:09+00:00", "run": "scenes", "cost_usd": 0.0038, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-chat-oshi", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:09+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-ai-or-human", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:11+00:00", "run": "scenes", "cost_usd": 0.0187, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "short-ok-ambiguous", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:11+00:00", "run": "scenes", "cost_usd": 0.0043, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-market-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:12+00:00", "run": "scenes", "cost_usd": 0.0065, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-ai-or-human", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:13+00:00", "run": "scenes", "cost_usd": 0.0064, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-correct-days", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:14+00:00", "run": "baito-p3", "cost_usd": 0.064742, "case": "age_skip", "rep": 0}
+{"at": "2026-10-29T07:11:15+00:00", "run": "scenes", "cost_usd": 0.0045, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-ai-or-human", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:16+00:00", "run": "scenes", "cost_usd": 0.0223, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "switch-career-to-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:16+00:00", "run": "scenes", "cost_usd": 0.0064, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-where-stored", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:17+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.087, "case": "D/p5-resume", "rep": 0}
+{"at": "2026-10-29T07:11:18+00:00", "run": "scenes", "cost_usd": 0.0075, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-where-stored", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:18+00:00", "run": "scenes", "cost_usd": 0.0035, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-correct-dunno", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:21+00:00", "run": "scenes", "cost_usd": 0.0016, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-correct-unsure-wage", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:21+00:00", "run": "scenes", "cost_usd": 0.0216, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "switch-career-also-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:22+00:00", "run": "scenes", "cost_usd": 0.0047, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "switch-career-carried-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:23+00:00", "run": "scenes", "cost_usd": 0.0072, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-how-many-left", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:23+00:00", "run": "scenes", "cost_usd": 0.0067, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-how-many-left", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:23+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "t326-order", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:23+00:00", "run": "scenes", "cost_usd": 0.0048, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-where-stored", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:24+00:00", "run": "baito-p3", "cost_usd": 0.058271, "case": "age_skip", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:11:25+00:00", "run": "scenes", "cost_usd": 0.0077, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-emotion-tired", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:26+00:00", "run": "scenes", "cost_usd": 0.0055, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "t326-salary-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:26+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "t326-more-lead", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:26+00:00", "run": "scenes", "cost_usd": 0.0035, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-what-is-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:28+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-how-many-left", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:29+00:00", "run": "scenes", "cost_usd": 0.0086, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-what-is-remote", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:31+00:00", "run": "scenes", "cost_usd": 0.0088, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "t326-whole-talk", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:32+00:00", "run": "scenes", "cost_usd": 0.0061, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:32+00:00", "run": "scenes", "cost_usd": 0.0091, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-emotion-yelled", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:32+00:00", "run": "scenes", "cost_usd": 0.0031, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-what-is-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:33+00:00", "run": "scenes", "cost_usd": 0.0009, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-flow-later", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:33+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-flow-stop", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:34+00:00", "run": "scenes", "cost_usd": 0.0085, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-weather", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:37+00:00", "run": "scenes", "cost_usd": 0.0047, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-weather", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:37+00:00", "run": "scenes", "cost_usd": 0.0101, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-food", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:38+00:00", "run": "scenes", "cost_usd": 0.0048, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-flow-show-result", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:38+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.0932, "case": "D-c2/p5-resume", "rep": 0}
+{"at": "2026-10-29T07:11:38+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-food", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:40+00:00", "run": "baito-p3", "cost_usd": 0.084151, "case": "hm17", "rep": 0}
+{"at": "2026-10-29T07:11:42+00:00", "run": "scenes", "cost_usd": 0.0114, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-grumble", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:42+00:00", "run": "scenes", "cost_usd": 0.0042, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-food", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:42+00:00", "run": "scenes", "cost_usd": 0.0065, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-multi-weekend-near", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:43+00:00", "run": "scenes", "cost_usd": 0.0096, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-grumble", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:44+00:00", "run": "scenes", "cost_usd": 0.001, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-multi-age-days", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:46+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-multi-remote-hours", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:46+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-danger", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:46+00:00", "run": "scenes", "cost_usd": 0, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-crisis", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:47+00:00", "run": "scenes", "cost_usd": 0.003, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-joke-salary", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:48+00:00", "run": "scenes", "cost_usd": 0.0105, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-joke-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:49+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-under15", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:50+00:00", "run": "baito-p3", "cost_usd": 0.102168, "case": "hm17", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:11:50+00:00", "run": "scenes", "cost_usd": 0.0058, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-grumble", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:51+00:00", "run": "scenes", "cost_usd": 0.0074, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-emoji-only", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:52+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-sticker", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:53+00:00", "run": "scenes", "cost_usd": 0.0044, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-emoji-only", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:53+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-phone", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:54+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:55+00:00", "run": "scenes", "cost_usd": 0.0009, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-short-un", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:55+00:00", "run": "scenes", "cost_usd": 0.0049, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-joke-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:11:57+00:00", "run": "scenes", "cost_usd": 0.0065, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-greeting", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:58+00:00", "run": "scenes", "cost_usd": 0.0052, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-short-colloquial", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:11:59+00:00", "run": "scenes", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-greeting", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:00+00:00", "run": "scenes", "cost_usd": 0.0051, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-short-typo", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:01+00:00", "run": "scenes", "cost_usd": 0.003, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-emoji-only", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:01+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-sticker", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:04+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-greeting", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:05+00:00", "run": "scenes", "cost_usd": 0.0068, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-switch-also-fulltime", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:07+00:00", "run": "scenes", "cost_usd": 0.013, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-three-in-a-row", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:08+00:00", "run": "scenes", "cost_usd": 0.0019, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-switch-to-fulltime", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:09+00:00", "run": "scenes", "cost_usd": 0.0424, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-three-in-a-row", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:11+00:00", "run": "scenes", "cost_usd": 0.0079, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-area-midway", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:11+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-switch-hold", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:12+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.143, "case": "D/p6-unknown", "rep": 0}
+{"at": "2026-10-29T07:12:14+00:00", "run": "scenes", "cost_usd": 0.0041, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-area-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:14+00:00", "run": "scenes", "cost_usd": 0.0055, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-salary-later", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:14+00:00", "run": "scenes", "cost_usd": 0.0058, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-three-in-a-row", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:18+00:00", "run": "scenes", "cost_usd": 0.0036, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-salary-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:18+00:00", "run": "baito-p3", "cost_usd": 0.125718, "case": "sj17", "rep": 0}
+{"at": "2026-10-29T07:12:18+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-retract", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:19+00:00", "run": "scenes", "cost_usd": 0.0045, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-area-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:21+00:00", "run": "baito-p3", "cost_usd": 0.003592, "case": "jhs", "rep": 0}
+{"at": "2026-10-29T07:12:22+00:00", "run": "scenes", "cost_usd": 0.0024, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-salary-later", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:23+00:00", "run": "scenes", "cost_usd": 0.0047, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-retract", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:23+00:00", "run": "scenes", "cost_usd": 0.0039, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-unsure", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:25+00:00", "run": "baito-p3", "cost_usd": 0.144492, "case": "sj17", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:12:26+00:00", "run": "scenes", "cost_usd": 0.0014, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-dont-know-scale", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:26+00:00", "run": "scenes", "cost_usd": 0.007, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-retract", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:28+00:00", "run": "baito-p3", "cost_usd": 0.005286, "case": "jhs", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:12:28+00:00", "run": "scenes", "cost_usd": 0.0013, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-nothing-particular", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:28+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-unsure", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:31+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-dont-know-scale", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:31+00:00", "run": "scenes", "cost_usd": 0.0049, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-unsure", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:32+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1636, "case": "D-c2/p6-unknown", "rep": 0}
+{"at": "2026-10-29T07:12:32+00:00", "run": "scenes", "cost_usd": 0.0041, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-vague-why", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:33+00:00", "run": "scenes", "cost_usd": 0.0016, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-dont-know-scale", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:34+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-nothing-particular", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:36+00:00", "run": "scenes", "cost_usd": 0.0015, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-nothing-particular", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:36+00:00", "run": "scenes", "cost_usd": 0.0015, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "correct-go-back", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:40+00:00", "run": "scenes", "cost_usd": 0.0059, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-vague-why", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:41+00:00", "run": "scenes", "cost_usd": 0.004, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-vague-why", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:42+00:00", "run": "scenes", "cost_usd": 0.0028, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "correct-go-back", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:43+00:00", "run": "baito-p3", "cost_usd": 0.065067, "case": "freeter", "rep": 0}
+{"at": "2026-10-29T07:12:44+00:00", "run": "scenes", "cost_usd": 0.0015, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "correct-go-back", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:45+00:00", "run": "scenes", "cost_usd": 0.0113, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-long-story", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:49+00:00", "run": "scenes", "cost_usd": 0.0074, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-anxious", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:50+00:00", "run": "scenes", "cost_usd": 0.008, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-long-story", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:50+00:00", "run": "baito-p3", "cost_usd": 0.057515, "case": "freeter", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:12:52+00:00", "run": "scenes", "cost_usd": 0.0177, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-long-story", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:54+00:00", "run": "scenes", "cost_usd": 0.0088, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-angry-reask", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:57+00:00", "run": "scenes", "cost_usd": 0.0088, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-anxious", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:12:58+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-tired", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:12:58+00:00", "run": "scenes", "cost_usd": 0.0059, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-anxious", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:02+00:00", "run": "scenes", "cost_usd": 0.009, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-negative-reason", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:03+00:00", "run": "scenes", "cost_usd": 0.0069, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-angry-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:03+00:00", "run": "scenes", "cost_usd": 0.005, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-angry-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:07+00:00", "run": "scenes", "cost_usd": 0.0051, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:07+00:00", "run": "scenes", "cost_usd": 0.009, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-laid-off", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:07+00:00", "run": "scenes", "cost_usd": 0.0042, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-tired", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:08+00:00", "run": "baito-p3", "cost_usd": 0.079958, "case": "seg_flip", "rep": 0}
+{"at": "2026-10-29T07:13:09+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1537, "case": "D/p1-sales", "rep": 1}
+{"at": "2026-10-29T07:13:09+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-more-typed", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:10+00:00", "run": "scenes", "cost_usd": 0.0006, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-skip-button", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:12+00:00", "run": "scenes", "cost_usd": 0.0014, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-skip-typed", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:12+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-pause-word", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:13+00:00", "run": "scenes", "cost_usd": 0.0071, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-negative-reason", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:13+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-later-with-answer", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:13+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-later-typed", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:14+00:00", "run": "scenes", "cost_usd": 0.0051, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-negative-reason", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:15+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-stop-midway", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:17+00:00", "run": "baito-p3", "cost_usd": 0.085844, "case": "seg_flip", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:13:18+00:00", "run": "scenes", "cost_usd": 0.0109, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-laid-off", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:18+00:00", "run": "scenes", "cost_usd": 0.0032, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-resume-next-time", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:18+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-laid-off", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:20+00:00", "run": "scenes", "cost_usd": 0.001, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-more-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:20+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-more-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:20+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-show-result", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:21+00:00", "run": "scenes", "cost_usd": 0.0005, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-skip-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:21+00:00", "run": "scenes", "cost_usd": 0.0006, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-skip-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:24+00:00", "run": "scenes", "cost_usd": 0.0015, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-skip-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:24+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-pause-word", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:24+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-skip-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:24+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-pause-word", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:25+00:00", "run": "scenes", "cost_usd": 0.0014, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-later-with-answer", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:25+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-later-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:25+00:00", "run": "scenes", "cost_usd": 0.008, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-area-salary-remote", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:26+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1685, "case": "D-c2/p1-sales", "rep": 1}
+{"at": "2026-10-29T07:13:26+00:00", "run": "scenes", "cost_usd": 0.0028, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-later-with-answer", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:26+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-later-typed", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:27+00:00", "run": "scenes", "cost_usd": 0.001, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-stop-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:28+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-stop-midway", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:30+00:00", "run": "scenes", "cost_usd": 0.0061, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-future-timing", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:32+00:00", "run": "scenes", "cost_usd": 0.0073, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-resume-next-time", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:34+00:00", "run": "scenes", "cost_usd": 0.001, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:34+00:00", "run": "scenes", "cost_usd": 0.0126, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-resume-next-time", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:34+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-career-in-why-now", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:35+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-show-result", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:37+00:00", "run": "scenes", "cost_usd": 0.0054, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-card-all-at-once", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:38+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-infer-raise-target", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:39+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-area-salary-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:40+00:00", "run": "scenes", "cost_usd": 0.0106, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-area-salary-remote", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:42+00:00", "run": "scenes", "cost_usd": 0.0022, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-future-timing", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:42+00:00", "run": "baito-p3", "cost_usd": 0.091579, "case": "dropout", "rep": 0}
+{"at": "2026-10-29T07:13:43+00:00", "run": "scenes", "cost_usd": 0.0038, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "multi-answer-other-question", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:49+00:00", "run": "scenes", "cost_usd": 0.0054, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-refuse-salary", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:13:51+00:00", "run": "scenes", "cost_usd": 0.0074, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-future-timing", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:53+00:00", "run": "scenes", "cost_usd": 0.0045, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-career-in-why-now", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:56+00:00", "run": "scenes", "cost_usd": 0.0105, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-career-in-why-now", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:13:57+00:00", "run": "scenes", "cost_usd": 0.0081, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-pii-redacted", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:00+00:00", "run": "scenes", "cost_usd": 0.0017, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-full-name", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:01+00:00", "run": "scenes", "cost_usd": 0.0051, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-card-all-at-once", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:03+00:00", "run": "baito-p3", "cost_usd": 0.130495, "case": "dropout", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:14:03+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-infer-raise-target", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:03+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-card-all-at-once", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:05+00:00", "run": "scenes", "cost_usd": 0.0006, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-infer-raise-target", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:08+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1477, "case": "D/p2-change", "rep": 1}
+{"at": "2026-10-29T07:14:08+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "multi-answer-other-question", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:08+00:00", "run": "scenes", "cost_usd": 0.004, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "multi-answer-other-question", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:11+00:00", "run": "scenes", "cost_usd": 0.0074, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-health", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:11+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-crisis", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:13+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-refuse-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:13+00:00", "run": "scenes", "cost_usd": 0.0058, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-refuse-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:18+00:00", "run": "baito-p3", "cost_usd": 0.077189, "case": "danger", "rep": 0}
+{"at": "2026-10-29T07:14:18+00:00", "run": "scenes", "cost_usd": 0.0042, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-pii-redacted", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:19+00:00", "run": "scenes", "cost_usd": 0.0054, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-harassment", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:23+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-full-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:24+00:00", "run": "scenes", "cost_usd": 0.0076, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-third-party-name", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:25+00:00", "run": "scenes", "cost_usd": 0.0045, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-pii-redacted", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:27+00:00", "run": "scenes", "cost_usd": 0.0021, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-falsify", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:28+00:00", "run": "scenes", "cost_usd": 0.0022, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-full-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:28+00:00", "run": "scenes", "cost_usd": 0.0063, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-health", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:28+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:31+00:00", "run": "scenes", "cost_usd": 0.0079, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-hai", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:32+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-un-review", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:35+00:00", "run": "scenes", "cost_usd": 0.0053, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-paraphrase-button", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:36+00:00", "run": "scenes", "cost_usd": 0.0055, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-health", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:36+00:00", "run": "scenes", "cost_usd": 0.0127, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-harassment", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:38+00:00", "run": "scenes", "cost_usd": 0.0052, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-typo-area", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:39+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1775, "case": "D-c2/p2-change", "rep": 1}
+{"at": "2026-10-29T07:14:39+00:00", "run": "scenes", "cost_usd": 0.0016, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:41+00:00", "run": "scenes", "cost_usd": 0.0052, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-typo-button", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:42+00:00", "run": "scenes", "cost_usd": 0.0102, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-third-party-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:42+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-colloquial-number", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:44+00:00", "run": "baito-p3", "cost_usd": 0.079036, "case": "danger", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:14:45+00:00", "run": "baito-p3", "cost_usd": 0.03937, "case": "early_exit", "rep": 0}
+{"at": "2026-10-29T07:14:45+00:00", "run": "scenes", "cost_usd": 0.0062, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-harassment", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:47+00:00", "run": "scenes", "cost_usd": 0.0034, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-falsify", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:47+00:00", "run": "scenes", "cost_usd": 0.0078, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-dialect", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:49+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-third-party-name", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:51+00:00", "run": "scenes", "cost_usd": 0.0028, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-hai", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:51+00:00", "run": "scenes", "cost_usd": 0.0014, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "short-ok-ambiguous", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:52+00:00", "run": "scenes", "cost_usd": 0.0021, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-un-review", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:53+00:00", "run": "scenes", "cost_usd": 0.0061, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-falsify", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:55+00:00", "run": "scenes", "cost_usd": 0.0029, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-paraphrase-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:56+00:00", "run": "scenes", "cost_usd": 0.0031, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "switch-career-to-baito", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:14:58+00:00", "run": "scenes", "cost_usd": 0.0029, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-typo-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:14:59+00:00", "run": "scenes", "cost_usd": 0.0062, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-hai", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:00+00:00", "run": "scenes", "cost_usd": 0.0079, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "switch-career-also-baito", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:00+00:00", "run": "scenes", "cost_usd": 0.001, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-un-review", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:01+00:00", "run": "scenes", "cost_usd": 0.0029, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-typo-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:02+00:00", "run": "scenes", "cost_usd": 0.0022, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-colloquial-number", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:03+00:00", "run": "scenes", "cost_usd": 0.0007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "switch-career-carried-area", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:03+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-paraphrase-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:04+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "t326-order", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:06+00:00", "run": "scenes", "cost_usd": 0.0019, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-typo-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:06+00:00", "run": "scenes", "cost_usd": 0.0015, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "t326-salary-reask", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:06+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "t326-more-lead", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:07+00:00", "run": "baito-p3", "cost_usd": 0.042497, "case": "early_exit", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:15:07+00:00", "run": "scenes", "cost_usd": 0.009, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-dialect", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:08+00:00", "run": "scenes", "cost_usd": 0.002, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-typo-button", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:10+00:00", "run": "scenes", "cost_usd": 0.0027, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "short-ok-ambiguous", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:11+00:00", "run": "scenes", "cost_usd": 0.0042, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "t326-whole-talk", "rep": 0, "read_model": "claude-haiku-5-5"}
+{"at": "2026-10-29T07:15:11+00:00", "run": "scenes", "cost_usd": 0.0022, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-colloquial-number", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:11+00:00", "run": "baito-p3", "cost_usd": 0.092379, "case": "age_fix", "rep": 0}
+{"at": "2026-10-29T07:15:15+00:00", "run": "scenes", "cost_usd": 0.0051, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "switch-career-to-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:16+00:00", "run": "scenes", "cost_usd": 0.0032, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-dialect", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:20+00:00", "run": "scenes", "cost_usd": 0.0046, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "switch-career-also-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:20+00:00", "run": "scenes", "cost_usd": 0.0035, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "short-ok-ambiguous", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:21+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "switch-career-carried-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:22+00:00", "run": "scenes", "cost_usd": 0.0008, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "t326-order", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:24+00:00", "run": "scenes", "cost_usd": 0.0068, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "switch-career-to-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:25+00:00", "run": "scenes", "cost_usd": 0.0014, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "t326-salary-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:25+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "t326-more-lead", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:27+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1288, "case": "D/p3-return", "rep": 1}
+{"at": "2026-10-29T07:15:30+00:00", "run": "scenes", "cost_usd": 0.0037, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "switch-career-also-baito", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:31+00:00", "run": "scenes", "cost_usd": 0.0005, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "switch-career-carried-area", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:31+00:00", "run": "scenes", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "t326-whole-talk", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:33+00:00", "run": "scenes", "cost_usd": 0.0006, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "t326-order", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:34+00:00", "run": "scenes", "cost_usd": 0.0005, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "t326-salary-reask", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:34+00:00", "run": "scenes", "cost_usd": 0, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "t326-more-lead", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:15:37+00:00", "run": "baito-p3", "cost_usd": 0.082288, "case": "age_fix", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:15:40+00:00", "run": "scenes", "cost_usd": 0.0026, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "t326-whole-talk", "rep": 0, "read_model": null}
+{"at": "2026-10-29T07:16:02+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1833, "case": "D-c2/p3-return", "rep": 1}
+{"at": "2026-10-29T07:17:06+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1987, "case": "D/p4-short", "rep": 1}
+{"at": "2026-10-29T07:17:42+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.2226, "case": "D-c2/p4-short", "rep": 1}
+{"at": "2026-10-29T07:17:44+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.0875, "case": "D/p5-resume", "rep": 1}
+{"at": "2026-10-29T07:18:20+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.0881, "case": "D-c2/p5-resume", "rep": 1}
+{"at": "2026-10-29T07:18:51+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.1682, "case": "D/p6-unknown", "rep": 1}
+{"at": "2026-10-29T07:19:20+00:00", "run": "fulltime-hearing-20261029-160637", "cost_usd": 0.2165, "case": "D-c2/p6-unknown", "rep": 1}
+{"at": "2026-10-29T07:21:32+00:00", "run": "scenes-rejudge", "cost_usd": 0.01, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T07:21:34+00:00", "run": "scenes-rejudge", "cost_usd": 0.0055, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-who"}
+{"at": "2026-10-29T07:21:37+00:00", "run": "scenes-rejudge", "cost_usd": 0.0073, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T07:21:38+00:00", "run": "scenes-rejudge", "cost_usd": 0.0047, "tag": "baito-v4-r1", "entry": "baito", "version": "v4", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T07:21:41+00:00", "run": "scenes-rejudge", "cost_usd": 0.0072, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T07:21:43+00:00", "run": "scenes-rejudge", "cost_usd": 0.0056, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-who"}
+{"at": "2026-10-29T07:21:46+00:00", "run": "scenes-rejudge", "cost_usd": 0.0083, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T07:21:48+00:00", "run": "scenes-rejudge", "cost_usd": 0.0018, "tag": "baito-v4-r2", "entry": "baito", "version": "v4", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T07:21:50+00:00", "run": "scenes-rejudge", "cost_usd": 0.007, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T07:21:52+00:00", "run": "scenes-rejudge", "cost_usd": 0.0058, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-who"}
+{"at": "2026-10-29T07:21:54+00:00", "run": "scenes-rejudge", "cost_usd": 0.0072, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T07:21:56+00:00", "run": "scenes-rejudge", "cost_usd": 0.0046, "tag": "baito-v5-haiku", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T07:21:58+00:00", "run": "scenes-rejudge", "cost_usd": 0.0069, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T07:22:01+00:00", "run": "scenes-rejudge", "cost_usd": 0.0056, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-who"}
+{"at": "2026-10-29T07:22:03+00:00", "run": "scenes-rejudge", "cost_usd": 0.0066, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T07:22:05+00:00", "run": "scenes-rejudge", "cost_usd": 0.002, "tag": "baito-v5-r1", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T07:22:07+00:00", "run": "scenes-rejudge", "cost_usd": 0.0069, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-wage-norm"}
+{"at": "2026-10-29T07:22:09+00:00", "run": "scenes-rejudge", "cost_usd": 0.0061, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-who"}
+{"at": "2026-10-29T07:22:11+00:00", "run": "scenes-rejudge", "cost_usd": 0.0072, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-ask-recommend"}
+{"at": "2026-10-29T07:22:13+00:00", "run": "scenes-rejudge", "cost_usd": 0.0019, "tag": "baito-v5-r2", "entry": "baito", "version": "v5", "scene": "baito-safety-under15"}
+{"at": "2026-10-29T07:22:15+00:00", "run": "scenes-rejudge", "cost_usd": 0.0061, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-who"}
+{"at": "2026-10-29T07:22:18+00:00", "run": "scenes-rejudge", "cost_usd": 0.0066, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-what-for"}
+{"at": "2026-10-29T07:22:20+00:00", "run": "scenes-rejudge", "cost_usd": 0.0068, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-recommend-company"}
+{"at": "2026-10-29T07:22:23+00:00", "run": "scenes-rejudge", "cost_usd": 0.004, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-market-salary"}
+{"at": "2026-10-29T07:22:25+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1718, "case": "D/p1-sales", "rep": 0}
+{"at": "2026-10-29T07:22:26+00:00", "run": "scenes-rejudge", "cost_usd": 0.0063, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-ai-or-human"}
+{"at": "2026-10-29T07:22:28+00:00", "run": "scenes-rejudge", "cost_usd": 0.0065, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-where-stored"}
+{"at": "2026-10-29T07:22:29+00:00", "run": "scenes-rejudge", "cost_usd": 0.0056, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-how-many-left"}
+{"at": "2026-10-29T07:22:31+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "ask-what-is-remote"}
+{"at": "2026-10-29T07:22:33+00:00", "run": "scenes-rejudge", "cost_usd": 0.0036, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-weather"}
+{"at": "2026-10-29T07:22:35+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "chat-joke-salary"}
+{"at": "2026-10-29T07:22:36+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-anxious"}
+{"at": "2026-10-29T07:22:38+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "emotion-laid-off"}
+{"at": "2026-10-29T07:22:39+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "flow-resume-next-time"}
+{"at": "2026-10-29T07:22:41+00:00", "run": "scenes-rejudge", "cost_usd": 0.0037, "tag": "career-c1-r1", "entry": "career", "version": "c1", "scene": "safety-harassment"}
+{"at": "2026-10-29T07:22:43+00:00", "run": "scenes-rejudge", "cost_usd": 0.0023, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-who"}
+{"at": "2026-10-29T07:22:45+00:00", "run": "scenes-rejudge", "cost_usd": 0.0028, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-what-for"}
+{"at": "2026-10-29T07:22:47+00:00", "run": "scenes-rejudge", "cost_usd": 0.0064, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-recommend-company"}
+{"at": "2026-10-29T07:22:49+00:00", "run": "scenes-rejudge", "cost_usd": 0.0018, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-market-salary"}
+{"at": "2026-10-29T07:22:51+00:00", "run": "scenes-rejudge", "cost_usd": 0.0062, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-ai-or-human"}
+{"at": "2026-10-29T07:22:53+00:00", "run": "scenes-rejudge", "cost_usd": 0.0023, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-where-stored"}
+{"at": "2026-10-29T07:22:55+00:00", "run": "scenes-rejudge", "cost_usd": 0.0058, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-how-many-left"}
+{"at": "2026-10-29T07:22:56+00:00", "run": "scenes-rejudge", "cost_usd": 0.0016, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "ask-what-is-remote"}
+{"at": "2026-10-29T07:22:58+00:00", "run": "scenes-rejudge", "cost_usd": 0.0037, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-weather"}
+{"at": "2026-10-29T07:22:59+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "chat-joke-salary"}
+{"at": "2026-10-29T07:23:01+00:00", "run": "scenes-rejudge", "cost_usd": 0.004, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-anxious"}
+{"at": "2026-10-29T07:23:02+00:00", "run": "scenes-rejudge", "cost_usd": 0.0017, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "emotion-laid-off"}
+{"at": "2026-10-29T07:23:04+00:00", "run": "scenes-rejudge", "cost_usd": 0.0041, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "flow-resume-next-time"}
+{"at": "2026-10-29T07:23:05+00:00", "run": "scenes-rejudge", "cost_usd": 0.0036, "tag": "career-c1-r2", "entry": "career", "version": "c1", "scene": "safety-harassment"}
+{"at": "2026-10-29T07:23:08+00:00", "run": "scenes-rejudge", "cost_usd": 0.0065, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-who"}
+{"at": "2026-10-29T07:23:10+00:00", "run": "scenes-rejudge", "cost_usd": 0.0067, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-what-for"}
+{"at": "2026-10-29T07:23:13+00:00", "run": "scenes-rejudge", "cost_usd": 0.007, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-recommend-company"}
+{"at": "2026-10-29T07:23:14+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-market-salary"}
+{"at": "2026-10-29T07:23:16+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1359, "case": "D/p2-change", "rep": 0}
+{"at": "2026-10-29T07:23:17+00:00", "run": "scenes-rejudge", "cost_usd": 0.0068, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-ai-or-human"}
+{"at": "2026-10-29T07:23:19+00:00", "run": "scenes-rejudge", "cost_usd": 0.0074, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-where-stored"}
+{"at": "2026-10-29T07:23:21+00:00", "run": "scenes-rejudge", "cost_usd": 0.006, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-how-many-left"}
+{"at": "2026-10-29T07:23:23+00:00", "run": "scenes-rejudge", "cost_usd": 0.0037, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "ask-what-is-remote"}
+{"at": "2026-10-29T07:23:25+00:00", "run": "scenes-rejudge", "cost_usd": 0.0036, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-weather"}
+{"at": "2026-10-29T07:23:27+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "chat-joke-salary"}
+{"at": "2026-10-29T07:23:35+00:00", "run": "scenes-rejudge", "cost_usd": 0.004, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-anxious"}
+{"at": "2026-10-29T07:23:37+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "emotion-laid-off"}
+{"at": "2026-10-29T07:23:38+00:00", "run": "scenes-rejudge", "cost_usd": 0.0015, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "flow-resume-next-time"}
+{"at": "2026-10-29T07:23:40+00:00", "run": "scenes-rejudge", "cost_usd": 0.0043, "tag": "career-c2-haiku", "entry": "career", "version": "c2", "scene": "safety-harassment"}
+{"at": "2026-10-29T07:23:43+00:00", "run": "scenes-rejudge", "cost_usd": 0.0067, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-who"}
+{"at": "2026-10-29T07:23:45+00:00", "run": "scenes-rejudge", "cost_usd": 0.0064, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-what-for"}
+{"at": "2026-10-29T07:23:47+00:00", "run": "scenes-rejudge", "cost_usd": 0.0068, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-recommend-company"}
+{"at": "2026-10-29T07:23:49+00:00", "run": "scenes-rejudge", "cost_usd": 0.0016, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-market-salary"}
+{"at": "2026-10-29T07:23:52+00:00", "run": "scenes-rejudge", "cost_usd": 0.0028, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-ai-or-human"}
+{"at": "2026-10-29T07:23:55+00:00", "run": "scenes-rejudge", "cost_usd": 0.0077, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-where-stored"}
+{"at": "2026-10-29T07:23:57+00:00", "run": "scenes-rejudge", "cost_usd": 0.0059, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-how-many-left"}
+{"at": "2026-10-29T07:23:59+00:00", "run": "scenes-rejudge", "cost_usd": 0.0017, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "ask-what-is-remote"}
+{"at": "2026-10-29T07:24:00+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-weather"}
+{"at": "2026-10-29T07:24:02+00:00", "run": "scenes-rejudge", "cost_usd": 0.0015, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "chat-joke-salary"}
+{"at": "2026-10-29T07:24:04+00:00", "run": "scenes-rejudge", "cost_usd": 0.0016, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-anxious"}
+{"at": "2026-10-29T07:24:06+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "emotion-laid-off"}
+{"at": "2026-10-29T07:24:08+00:00", "run": "scenes-rejudge", "cost_usd": 0.0016, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "flow-resume-next-time"}
+{"at": "2026-10-29T07:24:10+00:00", "run": "scenes-rejudge", "cost_usd": 0.0038, "tag": "career-c2-r1", "entry": "career", "version": "c2", "scene": "safety-harassment"}
+{"at": "2026-10-29T07:24:13+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1418, "case": "D/p3-return", "rep": 0}
+{"at": "2026-10-29T07:24:13+00:00", "run": "scenes-rejudge", "cost_usd": 0.0071, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-who"}
+{"at": "2026-10-29T07:24:23+00:00", "run": "scenes-rejudge", "cost_usd": 0.0066, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-what-for"}
+{"at": "2026-10-29T07:24:25+00:00", "run": "scenes-rejudge", "cost_usd": 0.0067, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-recommend-company"}
+{"at": "2026-10-29T07:24:27+00:00", "run": "scenes-rejudge", "cost_usd": 0.0017, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-market-salary"}
+{"at": "2026-10-29T07:24:28+00:00", "run": "scenes-rejudge", "cost_usd": 0.0064, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-ai-or-human"}
+{"at": "2026-10-29T07:24:31+00:00", "run": "scenes-rejudge", "cost_usd": 0.0071, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-where-stored"}
+{"at": "2026-10-29T07:24:32+00:00", "run": "scenes-rejudge", "cost_usd": 0.006, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-how-many-left"}
+{"at": "2026-10-29T07:24:34+00:00", "run": "scenes-rejudge", "cost_usd": 0.0017, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "ask-what-is-remote"}
+{"at": "2026-10-29T07:24:36+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-weather"}
+{"at": "2026-10-29T07:24:37+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "chat-joke-salary"}
+{"at": "2026-10-29T07:24:39+00:00", "run": "scenes-rejudge", "cost_usd": 0.0016, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-anxious"}
+{"at": "2026-10-29T07:24:41+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "emotion-laid-off"}
+{"at": "2026-10-29T07:24:42+00:00", "run": "scenes-rejudge", "cost_usd": 0.0039, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "flow-resume-next-time"}
+{"at": "2026-10-29T07:24:44+00:00", "run": "scenes-rejudge", "cost_usd": 0.004, "tag": "career-c2-r2", "entry": "career", "version": "c2", "scene": "safety-harassment"}
+{"at": "2026-10-29T07:24:46+00:00", "run": "scenes-rejudge", "cost_usd": 0.0029, "tag": "talk-t0-r1", "entry": "talk", "version": "t0", "scene": "talk-job-search"}
+{"at": "2026-10-29T07:24:48+00:00", "run": "scenes-rejudge", "cost_usd": 0.0027, "tag": "talk-t0-r2", "entry": "talk", "version": "t0", "scene": "talk-job-search"}
+{"at": "2026-10-29T07:24:49+00:00", "run": "scenes-rejudge", "cost_usd": 0.0029, "tag": "talk-t1-r1", "entry": "talk", "version": "t1", "scene": "talk-job-search"}
+{"at": "2026-10-29T07:24:50+00:00", "run": "scenes-rejudge", "cost_usd": 0.0027, "tag": "talk-t1-r2", "entry": "talk", "version": "t1", "scene": "talk-job-search"}
+{"at": "2026-10-29T07:25:15+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1864, "case": "D/p4-short", "rep": 0}
+{"at": "2026-10-29T07:25:52+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.0815, "case": "D/p5-resume", "rep": 0}
+{"at": "2026-10-29T07:25:58+00:00", "run": "baito-p3", "cost_usd": 0.119032, "case": "office", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:26:27+00:00", "run": "baito-p3", "cost_usd": 0.16726, "case": "late_seg", "rep": 0, "version": "v5"}
+{"at": "2026-10-29T07:27:01+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.196, "case": "D/p6-unknown", "rep": 0}
+{"at": "2026-10-29T07:28:02+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.168, "case": "D/p1-sales", "rep": 1}
+{"at": "2026-10-29T07:29:00+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.149, "case": "D/p2-change", "rep": 1}
+{"at": "2026-10-29T07:29:56+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1544, "case": "D/p3-return", "rep": 1}
+{"at": "2026-10-29T07:31:00+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1891, "case": "D/p4-short", "rep": 1}
+{"at": "2026-10-29T07:31:39+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.082, "case": "D/p5-resume", "rep": 1}
+{"at": "2026-10-29T07:32:31+00:00", "run": "fulltime-hearing-20261029-162121-D", "cost_usd": 0.1443, "case": "D/p6-unknown", "rep": 1}
+{"at": "2026-10-29T07:35:26+00:00", "run": "persona-touch", "cost_usd": 0.0062, "conversation": "career D/p1-sales#0"}
+{"at": "2026-10-29T07:35:35+00:00", "run": "persona-touch", "cost_usd": 0.0039, "conversation": "career D/p2-change#0"}
+{"at": "2026-10-29T07:35:39+00:00", "run": "persona-touch", "cost_usd": 0.0035, "conversation": "career D/p3-return#0"}
+{"at": "2026-10-29T07:35:47+00:00", "run": "persona-touch", "cost_usd": 0.0048, "conversation": "career D/p4-short#0"}
+{"at": "2026-10-29T07:35:49+00:00", "run": "persona-touch", "cost_usd": 0.0031, "conversation": "career D/p5-resume#0"}
+{"at": "2026-10-29T07:35:51+00:00", "run": "persona-touch", "cost_usd": 0.0047, "conversation": "career D/p6-unknown#0"}
+{"at": "2026-10-29T07:35:54+00:00", "run": "persona-touch", "cost_usd": 0.0044, "conversation": "career D/p1-sales#1"}
+{"at": "2026-10-29T07:35:59+00:00", "run": "persona-touch", "cost_usd": 0.0041, "conversation": "career D/p2-change#1"}
+{"at": "2026-10-29T07:36:02+00:00", "run": "persona-touch", "cost_usd": 0.0038, "conversation": "career D/p3-return#1"}
+{"at": "2026-10-29T07:36:07+00:00", "run": "persona-touch", "cost_usd": 0.0047, "conversation": "career D/p4-short#1"}
+{"at": "2026-10-29T07:36:09+00:00", "run": "persona-touch", "cost_usd": 0.0031, "conversation": "career D/p5-resume#1"}
+{"at": "2026-10-29T07:36:11+00:00", "run": "persona-touch", "cost_usd": 0.0038, "conversation": "career D/p6-unknown#1"}
+{"at": "2026-10-29T07:36:14+00:00", "run": "persona-touch", "cost_usd": 0.0045, "conversation": "career D-c2/p1-sales#0"}
+{"at": "2026-10-29T07:36:17+00:00", "run": "persona-touch", "cost_usd": 0.0038, "conversation": "career D-c2/p2-change#0"}
+{"at": "2026-10-29T07:36:20+00:00", "run": "persona-touch", "cost_usd": 0.0035, "conversation": "career D-c2/p3-return#0"}
+{"at": "2026-10-29T07:36:23+00:00", "run": "persona-touch", "cost_usd": 0.0047, "conversation": "career D-c2/p4-short#0"}
+{"at": "2026-10-29T07:36:25+00:00", "run": "persona-touch", "cost_usd": 0.0031, "conversation": "career D-c2/p5-resume#0"}
+{"at": "2026-10-29T07:36:27+00:00", "run": "persona-touch", "cost_usd": 0.0035, "conversation": "career D-c2/p6-unknown#0"}
+{"at": "2026-10-29T07:36:29+00:00", "run": "persona-touch", "cost_usd": 0.0038, "conversation": "career D-c2/p1-sales#1"}
+{"at": "2026-10-29T07:36:34+00:00", "run": "persona-touch", "cost_usd": 0.0042, "conversation": "career D-c2/p2-change#1"}
+{"at": "2026-10-29T07:36:37+00:00", "run": "persona-touch", "cost_usd": 0.0035, "conversation": "career D-c2/p3-return#1"}
+{"at": "2026-10-29T07:36:40+00:00", "run": "persona-touch", "cost_usd": 0.0047, "conversation": "career D-c2/p4-short#1"}
+{"at": "2026-10-29T07:36:43+00:00", "run": "persona-touch", "cost_usd": 0.0031, "conversation": "career D-c2/p5-resume#1"}
+{"at": "2026-10-29T07:36:45+00:00", "run": "persona-touch", "cost_usd": 0.0038, "conversation": "career D-c2/p6-unknown#1"}
+{"at": "2026-10-29T07:36:48+00:00", "run": "persona-touch", "cost_usd": 0.0069, "conversation": "baito v4/hs16#0"}
+{"at": "2026-10-29T07:36:53+00:00", "run": "persona-touch", "cost_usd": 0.0062, "conversation": "baito v4/univ#0"}
+{"at": "2026-10-29T07:36:56+00:00", "run": "persona-touch", "cost_usd": 0.0081, "conversation": "baito v4/homemaker#0"}
+{"at": "2026-10-29T07:37:02+00:00", "run": "persona-touch", "cost_usd": 0.0075, "conversation": "baito v4/office#0"}
+{"at": "2026-10-29T07:37:09+00:00", "run": "persona-touch", "cost_usd": 0.006, "conversation": "baito v4/nopref#0"}
+{"at": "2026-10-29T07:37:11+00:00", "run": "persona-touch", "cost_usd": 0.0068, "conversation": "baito v4/unclear#0"}
+{"at": "2026-10-29T07:37:14+00:00", "run": "persona-touch", "cost_usd": 0.0073, "conversation": "baito v4/late_seg#0"}
+{"at": "2026-10-29T07:37:19+00:00", "run": "persona-touch", "cost_usd": 0.0067, "conversation": "baito v4/no_seg#0"}
+{"at": "2026-10-29T07:37:23+00:00", "run": "persona-touch", "cost_usd": 0.0065, "conversation": "baito v4/age_skip#0"}
+{"at": "2026-10-29T07:37:26+00:00", "run": "persona-touch", "cost_usd": 0.0073, "conversation": "baito v4/hm17#0"}
+{"at": "2026-10-29T07:37:28+00:00", "run": "persona-touch", "cost_usd": 0.0089, "conversation": "baito v4/sj17#0"}
+{"at": "2026-10-29T07:37:34+00:00", "run": "persona-touch", "cost_usd": 0.0017, "conversation": "baito v4/jhs#0"}
+{"at": "2026-10-29T07:37:39+00:00", "run": "persona-touch", "cost_usd": 0.006, "conversation": "baito v4/freeter#0"}
+{"at": "2026-10-29T07:37:42+00:00", "run": "persona-touch", "cost_usd": 0.0071, "conversation": "baito v4/seg_flip#0"}
+{"at": "2026-10-29T07:37:45+00:00", "run": "persona-touch", "cost_usd": 0.0088, "conversation": "baito v4/dropout#0"}
+{"at": "2026-10-29T07:37:47+00:00", "run": "persona-touch", "cost_usd": 0.0079, "conversation": "baito v4/danger#0"}
+{"at": "2026-10-29T07:37:49+00:00", "run": "persona-touch", "cost_usd": 0.0043, "conversation": "baito v4/early_exit#0"}
+{"at": "2026-10-29T07:37:52+00:00", "run": "persona-touch", "cost_usd": 0.0076, "conversation": "baito v4/age_fix#0"}
+{"at": "2026-10-29T07:37:54+00:00", "run": "persona-touch", "cost_usd": 0.0071, "conversation": "baito v5/hs16#0"}
+{"at": "2026-10-29T07:37:57+00:00", "run": "persona-touch", "cost_usd": 0.0061, "conversation": "baito v5/univ#0"}
+{"at": "2026-10-29T07:37:59+00:00", "run": "persona-touch", "cost_usd": 0.0067, "conversation": "baito v5/homemaker#0"}
+{"at": "2026-10-29T07:38:02+00:00", "run": "persona-touch", "cost_usd": 0.0074, "conversation": "baito v5/office#0"}
+{"at": "2026-10-29T07:38:07+00:00", "run": "persona-touch", "cost_usd": 0.0059, "conversation": "baito v5/nopref#0"}
+{"at": "2026-10-29T07:38:10+00:00", "run": "persona-touch", "cost_usd": 0.0075, "conversation": "baito v5/unclear#0"}
+{"at": "2026-10-29T07:38:13+00:00", "run": "persona-touch", "cost_usd": 0.0071, "conversation": "baito v5/late_seg#0"}
+{"at": "2026-10-29T07:38:20+00:00", "run": "persona-touch", "cost_usd": 0.0073, "conversation": "baito v5/no_seg#0"}
+{"at": "2026-10-29T07:38:22+00:00", "run": "persona-touch", "cost_usd": 0.0065, "conversation": "baito v5/age_skip#0"}
+{"at": "2026-10-29T07:38:25+00:00", "run": "persona-touch", "cost_usd": 0.0074, "conversation": "baito v5/hm17#0"}
+{"at": "2026-10-29T07:38:28+00:00", "run": "persona-touch", "cost_usd": 0.0087, "conversation": "baito v5/sj17#0"}
+{"at": "2026-10-29T07:38:29+00:00", "run": "persona-touch", "cost_usd": 0.0017, "conversation": "baito v5/jhs#0"}
+{"at": "2026-10-29T07:38:35+00:00", "run": "persona-touch", "cost_usd": 0.0059, "conversation": "baito v5/freeter#0"}
+{"at": "2026-10-29T07:38:38+00:00", "run": "persona-touch", "cost_usd": 0.007, "conversation": "baito v5/seg_flip#0"}
+{"at": "2026-10-29T07:38:44+00:00", "run": "persona-touch", "cost_usd": 0.0086, "conversation": "baito v5/dropout#0"}
+{"at": "2026-10-29T07:38:47+00:00", "run": "persona-touch", "cost_usd": 0.0079, "conversation": "baito v5/danger#0"}
+{"at": "2026-10-29T07:38:49+00:00", "run": "persona-touch", "cost_usd": 0.0043, "conversation": "baito v5/early_exit#0"}
+{"at": "2026-10-29T07:38:52+00:00", "run": "persona-touch", "cost_usd": 0.0076, "conversation": "baito v5/age_fix#0"}
