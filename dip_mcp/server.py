@@ -319,9 +319,14 @@ def baito_turn(
     text: Annotated[str, Field(description="本人の発言")],
     llm_outputs: Annotated[list[dict] | None, Field(description=(
         "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+    switch_in: Annotated[bool, Field(description=(
+        "ほかの入り口の相談が、このターンでアルバイト・パートへ移ると閉じたとき(結果の switch_to が baito で direct)だけ true。"
+        "引き継ぎの記録を読んで新しい相談を始める"))] = False,
 ) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を本人の発言 1 つで進める。
-    相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。"""
+    相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。switch_in は dip_mcp.baito.session.switch_in(v5)。"""
+    if switch_in:
+        return session.switch_in(state, line_user_id, text, llm_outputs)
     return session.turn(state, line_user_id, text, llm_outputs)
 
 

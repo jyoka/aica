@@ -48,13 +48,14 @@
    {"who": "agent", "text": "年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）"}
   ],
   "asking": "hf_age",
-  "says": [{"text": "中2です", "button": false, "reading": {"acts": [{"act": "answer", "slot": "age_band", "text": "中2", "value": "under_15"}]}}],
+  "says": [{"text": "中2です", "button": false, "reading": {"acts": [{"act": "answer", "slot": "age_band", "text": "中2", "value": "under_15"}]}},
+           {"text": "中学生以下", "button": true}],
   "expect": [
    {"check": "slot", "slot": "age_band", "value": "under_15"},
    {"check": "reply_contains", "any": ["中学生のうちは"]},
    {"check": "no_invented_facts"}
   ],
-  "note": "未成年の決まりはコードが強制する(今のまま)。柔軟にしても崩さない"
+  "note": "未成年の決まりはコードが強制する(今のまま)。柔軟にしても崩さない。年齢ははっきりした形(「14歳」やボタンの文字)だけ読み、「中2」のような言い方はボタンで 1 回確かめてから止める(task 258 の決まり。読み違いで止めないため。jyoka/tasks#354 の Decision)。その場で止める作りでも、2 つ目の発言の後は同じ状態になる"
  },
  {
   "id": "baito-safety-phone",

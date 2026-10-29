@@ -31,6 +31,8 @@
 ./.venv/bin/python -m evals.scenes                                # 全部の入り口を今の版で(career c1、baito v4、talk t0)
 ./.venv/bin/python -m evals.scenes --entry career --version c1    # 1 つの入り口と版
 ./.venv/bin/python -m evals.scenes --entry career --version c2    # 正社員の会話の層の版(task 355)
+./.venv/bin/python -m evals.scenes --entry baito --version v5     # アルバイト・パートの会話の層の版(task 360。移る先の正社員は c2)
+./.venv/bin/python -m evals.scenes --version career=c2 --version baito=v5   # 層の版どうし(入り口を移す先の版にもなる)
 ./.venv/bin/python -m evals.scenes --scene t326-order -v          # 1 場面の返信とすべての条件
 ./.venv/bin/python -m evals.scenes --log evidence/scenes          # 結果の JSON(results.json)と点(score.md)も書く
 ```
@@ -49,7 +51,9 @@
   それを見る条件は判定しません(skip)。逆質問の答えの部品(`order` の `answer`)も、部品の並びを返す層でないと判定しません
 - 会話の層の版が別の入り口へ移ると閉じたターンは、ランタイムと同じく、移る先も層の版なら同じターンで移る先の相談を始めて判定します
   (移る先の `switch_in`)。移る先が今の版(アルバイト・パートの v4)なら、今と同じくトークの AI に渡すので判定しません。
-  そのため switch-career-to-baito は、v5 ができるまで c2 でも判定しない場面です(設計メモ §4.15)
+  そのため switch-career-to-baito は、移る先を v5 にして回すと判定します(`--version career=c2 --version baito=v5`。c2 だけを回すと、
+  移る先は今の版なので判定しません。設計メモ §4.15)。v5 も c2 と同じく、言う段の台本は「相づち + 問いの文」、返信に部品の並び(`parts`)が付き、
+  スタンプを文の発言として渡します。v5 を回すときは、渡さなければ移る先の正社員を c2 にします
 - talk は、本物のランタイムをモックのトークの AI で回します。判定するのは守りの前処理(`crisis_reply`、`llm_calls_max`)と `stays` だけです。
   ほかの条件は、実モデルで比べるとき(設計メモ §5 の 9 枚目)に見ます
 - 採点の条件は判定しません(skip)。`runner.run(judge=judge.judge_with(client, model))` で採点しますが、実モデルを呼ぶので 9 枚目のカードで使います
@@ -59,7 +63,7 @@
 守りの条件(`crisis_reply`、`no_made_up_number`、`no_slot_contains`)の合格、モックで判定しない条件の数、採点の条件の数です。
 今の版の点は設計メモ §7 にあります。
 
-回せる版は `runner.py` の `VERSIONS` にあります(career は `c1` と `c2`)。新しい版(v5、t1)は、ここに回し方を足すと、同じ場面と条件で回せます。
+回せる版は `runner.py` の `VERSIONS` にあります(career は `c1` と `c2`、baito は `v4` と `v5`)。新しい版(t1)は、ここに回し方を足すと、同じ場面と条件で回せます。
 
 ## 確かめ方
 

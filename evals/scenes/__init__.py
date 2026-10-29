@@ -47,7 +47,7 @@ DIR = Path(__file__).resolve().parent
 # 入り口(設計メモ §2.1)。場面のフォルダの名前
 ENTRIES = {
     "career": "正社員ヒアリング(dip_mcp/career/)",
-    "baito": "アルバイト・パートの相談(dip_mcp/baito/、v4)",
+    "baito": "アルバイト・パートの相談(dip_mcp/baito/、v4 と v5)",
     "talk": "トークの AI(相談の外。最初のひとこと、相談の前後)",
 }
 # 場面の種類

@@ -26,7 +26,8 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `LINE_SIM_PROVIDER` | `anthropic` | LLM のプロバイダ(`anthropic`、`openai`)。エージェント、ゲームの AI、模擬ユーザー、ジャッジのモデルが変わる | 不可 |
 | `LINE_SIM_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | エージェントとゲームのまとめのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
-| `AICA_PROGRESS_UI` | `flex` | アルバイト・パートの相談(`BAITO_HARNESS_VERSION=v4`)で、プロフィールが育つのを見せる部品の出し方。`flex` は帯・プロフィールカード・完成を LINE の Flex で、`text` は Flex を切って吹き出しの文で、`no_band` は帯だけ切る。Web のトークはいつも文。ターンごとに読む | 可 |
+| `AICA_PROGRESS_UI` | `flex` | アルバイト・パートの相談(`BAITO_HARNESS_VERSION=v4` か `v5`)で、プロフィールが育つのを見せる部品の出し方。`flex` は帯・プロフィールカード・完成を LINE の Flex で、`text` は Flex を切って吹き出しの文で、`no_band` は帯だけ切る。Web のトークはいつも文。ターンごとに読む | 可 |
+| `BAITO_HARNESS_VERSION` | なし | アルバイト・パートのチャットの相談を dip のハーネスで進める版。`v4`(PRD v4.1 の移植。ADR-0009)か、`v5`(会話の層に載せ替えた版。ADR-0011、[設計メモ](design/conversation-layer.md)。試すときだけ)。無ければ playbook の相談。新しく始める相談のときに読み、始めた相談は始めた版のまま進む | 可 |
 | `CAREER_HARNESS_VERSION` | なし | 正社員のチャットの相談を dip のハーネスで進める版。`c1`(ADR-0010)か、`c2`(会話の層に載せ替えていく版。ADR-0011、[設計メモ](design/conversation-layer.md)。作っている途中で、試すときだけ)。無ければ playbook の相談。新しく始める相談のときに読み、始めた相談は始めた版のまま進む | 可 |
 | `CAREER_HARNESS_FORM` | `C` | 正社員の相談(`CAREER_HARNESS_VERSION=c1` か `c2`)の形。`B` はゲームの仕組みなし、`C` は場面の二択と進み具合の 1 行あり、`D` は C に LINE の Flex(「始める」の 1 枚、職歴カード、帯、プロフィールカード、まとめ、全部の完成)を足す。相談を始めたときに読み、終わるまで変えない | 可 |
 | `CAREER_UI_BAND` | `on` | 正社員の相談の形 D で、帯を付けるか。`off` で帯だけ切る(帯を切った D と比べるため)。相談を始めたときに読む | 可 |

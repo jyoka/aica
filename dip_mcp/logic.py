@@ -1152,7 +1152,7 @@ def set_search_track(state: State, line_user_id: str, track: str, evidence: str,
 # ----------------------------- 相談の playbook(ADR-0001) -----------------------------
 # 雇用区分とチャネルごとの、相談の進め方の指針(明らかにすること・掘り下げ方)。次に何を聞くかは決めない。
 # 区分ごとの playbook に、区分に共通の決まり(common_{channel}.md)を足して返す。
-# アルバイト・パートのチャットの相談は、機能フラグ BAITO_HARNESS_VERSION=v4 のときだけ例外で、何を聞くかを dip の
+# アルバイト・パートのチャットの相談は、機能フラグ BAITO_HARNESS_VERSION=v4(か v5)のときだけ例外で、何を聞くかを dip の
 # ハーネスが決める(dip_mcp/baito、ADR-0009)。その playbook(parttime_chat_harness.md)は、ハーネスに渡すこと
 # (start_baito_consultation)と、保存先・提案の決まりだけを書く。フラグが無ければ今までどおり(本番は切り替えない)。
 # 正社員のチャットの相談も同じく、CAREER_HARNESS_VERSION=c1 のときだけハーネス(dip_mcp/career、ADR-0010)が決める
@@ -1177,7 +1177,9 @@ CONVERSATION_RULES = {
 VOICE_CONVERSATION_RULES = {track: {"questions_max": 1, "sentences_max": 2} for track in TRACKS}
 
 
-BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 のときだけハーネスで相談する
+BAITO_HARNESS_FLAG = "BAITO_HARNESS_VERSION"  # PRD v4.1 §13-3 の機能フラグ。v4 か v5 のときだけハーネスで相談する
+# (v5 は会話の層に載せ替える版。ADR-0011、task 360。本番は v4)
+BAITO_HARNESS_VERSIONS = ("v4", "v5")
 # 正社員のチャットのヒアリング(dip_mcp/career、ADR-0010、task 255)の機能フラグ。c1 か c2 のときだけハーネスで相談する
 # (c2 は会話の層に載せ替える版。ADR-0011、task 355。本番は c1)。
 # 無ければ今までどおり fulltime_chat.md の playbook で相談する(本番は切り替えない)
@@ -1185,8 +1187,14 @@ CAREER_HARNESS_FLAG = "CAREER_HARNESS_VERSION"
 CAREER_HARNESS_VERSIONS = ("c1", "c2")
 
 
+def baito_harness_version() -> str | None:
+    """新しく始めるアルバイト・パートの相談の版(v4 / v5)。フラグが無いか知らない値なら None(ハーネスを使わない)。"""
+    v = os.environ.get(BAITO_HARNESS_FLAG, "").strip()
+    return v if v in BAITO_HARNESS_VERSIONS else None
+
+
 def baito_harness_on() -> bool:
-    return os.environ.get(BAITO_HARNESS_FLAG, "").strip() == "v4"
+    return baito_harness_version() is not None
 
 
 def career_harness_version() -> str | None:
@@ -1200,13 +1208,13 @@ def career_harness_on() -> bool:
 
 
 # 会話の層の版(ADR-0011。dip_mcp/convo/)。入り口を移すとき、移る先がこの版なら、トークの AI を挟まずに同じターンで
-# 移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)。アルバイト・パートの層の版(v5)は 7 枚目のカード
-LAYER_VERSIONS = {"career": ("c2",), "baito": ()}
+# 移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)
+LAYER_VERSIONS = {"career": ("c2",), "baito": ("v5",)}
 
 
 def layer_on(entry: str) -> bool:
     """新しく始める、その入り口の相談が、会話の層の版か(career は CAREER_HARNESS_VERSION、baito は BAITO_HARNESS_VERSION)。"""
-    v = career_harness_version() if entry == "career" else os.environ.get(BAITO_HARNESS_FLAG, "").strip()
+    v = career_harness_version() if entry == "career" else baito_harness_version()
     return v in LAYER_VERSIONS.get(entry, ())
 
 

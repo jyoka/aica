@@ -2,6 +2,7 @@
 
     ./.venv/bin/python -m evals.baito_sim                 # 単体チェック 131 件 + 20 ペルソナ(モック LLM。費用 0)
     ./.venv/bin/python -m evals.baito_sim --log evidence/baito_sim   # 同じ。出力と会話ログを DIR にも書く(CI)
+    ./.venv/bin/python -m evals.baito_sim --version v5    # 20 ペルソナを v5(会話の層の版。dip_mcp/baito/v5.py)で(モック。費用 0)
     ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/budget-baito-v4.jsonl --limit-usd 8
                                                           # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる。
                                                           # 台帳と上限はカード 242 で決めたもの。1 会話 約 $0.08・35 秒)
@@ -10,6 +11,10 @@
 aica_port.py)で `unit_checks_v4.py` と `simulate.py v4` を回す。写しの中で回すので、基準値(results_v4.json・transcripts/)は
 上書きしない(レビュー M-10)。PRD §13-1 の P4 の条件で、§11-5 の基準値(results_v4.json)と比べる(acceptance)。
 pytest は tests/test_baito_harness.py がこれを回す。
+--version v5(task 360。設計メモ docs/design/conversation-layer.md §4.13): BAITO_HARNESS=aica_port_v5(docs/prd/baito_harness/
+aica_port_v5.py。v4 の抽出のモックを v5 の読む段の形に写す)で `simulate.py v4` の 20 ペルソナだけを回し、同じ基準値と比べる。
+単体チェックは回さない(turn() の形とプロンプトの原文を見る検査は v4 だけ。PRD の結果の検査は tests/test_baito_v5.py に移した)。
+pytest は tests/test_baito_v5.py が回す。
 
 実 LLM(--real。PRD §13-1 の P3、レビュー B-3 の解釈):
 - 対象は 20 ペルソナのうち、LLM の誤りを模す malformed・spam_high を除く 18 人。本人の発言はペルソナの台本のまま。
@@ -40,25 +45,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REF = ROOT / "docs" / "prd" / "baito_harness"
 PORT = "aica_port"
+PORTS = {"v4": PORT, "v5": "aica_port_v5"}  # 版 → 参照資料の検査に差し込む移植版の入口
 NORMAL = ("hs16", "univ", "homemaker", "office", "nopref", "unclear", "late_seg", "no_seg")  # §11-2 の通常ペルソナ
 MOCK_ONLY = ("malformed", "spam_high")  # LLM の誤りを模すペルソナ(実 LLM では回さない)
 TIMEOUT = 180  # 単体チェック・シミュレーターそれぞれの上限(秒。ふだんは数秒)
 P3_TARGETS = {"generate_pass": 0.95, "fallback": 0.02, "extract_pass": 0.98}  # §16-1 の 12
 
 
-def _env() -> dict:
-    return dict(os.environ, BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT), PYTHONDONTWRITEBYTECODE="1")
+def _env(version: str = "v4") -> dict:
+    return dict(os.environ, BAITO_HARNESS=PORTS[version], AICA_ROOT=str(ROOT), PYTHONDONTWRITEBYTECODE="1")
 
 
-def run_reference(timeout: int = TIMEOUT) -> dict:
-    """参照資料の写しで、移植版の単体チェックと 20 ペルソナを回す。基準値(写す前の results_v4.json)も返す。"""
-    with tempfile.TemporaryDirectory(prefix="baito-v4-") as tmp:
+def run_reference(timeout: int = TIMEOUT, version: str = "v4") -> dict:
+    """参照資料の写しで、移植版の単体チェックと 20 ペルソナを回す。基準値(写す前の results_v4.json)も返す。
+    version が v5 なら、20 ペルソナだけを v5 で回す(単体チェックは v4 だけ)。"""
+    with tempfile.TemporaryDirectory(prefix=f"baito-{version}-") as tmp:
         work = Path(tmp) / "baito_harness"
         shutil.copytree(REF, work, ignore=shutil.ignore_patterns("__pycache__"))
-        unit = subprocess.run([sys.executable, "unit_checks_v4.py"], cwd=work, env=_env(), capture_output=True, check=False,
-                              text=True, timeout=timeout)
-        sim = subprocess.run([sys.executable, "simulate.py", "v4"], cwd=work, env=_env(), capture_output=True, text=True, check=False,
-                             timeout=timeout)
+        unit = subprocess.run([sys.executable, "unit_checks_v4.py"], cwd=work, env=_env(version), capture_output=True, check=False,
+                              text=True, timeout=timeout) if version == "v4" else \
+            subprocess.CompletedProcess([], 0, stdout="(v5 には PRD の単体チェックをかけない。tests/test_baito_v5.py)\n", stderr="")
+        sim = subprocess.run([sys.executable, "simulate.py", "v4"], cwd=work, env=_env(version), capture_output=True, text=True,
+                             check=False, timeout=timeout)
         results = json.loads((work / "results_v4.json").read_text(encoding="utf-8")) if sim.returncode == 0 else None
         transcripts = {p.name: p.read_text(encoding="utf-8") for p in sorted((work / "transcripts").glob("v4_*.txt"))}
     lines = unit.stdout.strip().splitlines()
@@ -108,9 +116,9 @@ def write_log(dest: Path, r: dict, bad: list[str]) -> None:
                                       encoding="utf-8")
 
 
-def check(timeout: int = TIMEOUT) -> tuple[dict, list[str]]:
-    """モックの検査の全部: 単体チェックが全件合格し、シミュレーターが落ちず、acceptance に問題が無い。"""
-    r = run_reference(timeout)
+def check(timeout: int = TIMEOUT, version: str = "v4") -> tuple[dict, list[str]]:
+    """モックの検査の全部: 単体チェックが全件合格し(v4 だけ)、シミュレーターが落ちず、acceptance に問題が無い。"""
+    r = run_reference(timeout, version)
     bad = [] if r["unit_returncode"] == 0 else [f"unit_checks: {r['unit_summary']}", *r["unit_fails"]]
     if r["results"] is None:
         bad.append(f"simulate.py v4 の終了コード {r['sim_returncode']}: {r['sim_stderr']}")
@@ -297,10 +305,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", help="--real のとき、回すペルソナ(カンマ区切り)")
     ap.add_argument("--ledger", type=Path, help="--real の費用台帳(このカード用のものを渡す)")
     ap.add_argument("--limit-usd", type=float, help="--real で、台帳の累計がこの額に達したら止める")
+    ap.add_argument("--version", choices=list(PORTS), default="v4",
+                    help="モックの検査で回す版(v5 は 20 ペルソナだけ。--real は v4 だけ)")
     ap.add_argument("--log", type=Path, metavar="DIR",
                     help="モックの検査の出力・移植版の結果・会話ログの写し・合否を DIR に書く(CI の証跡)")
     a = ap.parse_args(argv)
     if a.real:
+        if a.version != "v4":
+            ap.error("--real は v4 だけ(v5 の実モデルの比べは、設計メモ §5 の 9 枚目のカード)")
         if a.ledger is None or a.limit_usd is None:
             ap.error("--real には --ledger と --limit-usd が要る")
         out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None)
@@ -312,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"結果: {dest}")
         return 1 if out["problems"] else 0
     t = time.perf_counter()
-    r, bad = check()
+    r, bad = check() if a.version == "v4" else check(version=a.version)
     if a.log:
         write_log(a.log, r, bad)
     print(r["unit_summary"])

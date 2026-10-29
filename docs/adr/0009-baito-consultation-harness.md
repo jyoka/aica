@@ -104,4 +104,5 @@ PRD「バイト探しの相棒」v4.1([PRD](../prd/baito_harness/PRD_baito_agent
   PRD の「選択肢はバンクの原文のまま使う」から外れるので、参照資料(`docs/prd/baito_harness/` のバンク・台本・v4 の会話ログ)も
   同じ文面にそろえた。v1〜v3 の会話ログと `evals/baseline/` の測定の記録は、当時の記録なので変えていない
 - 会話の受け答え(読む段の発言の種類、返事の組み方、問いの選び方、入り口の移り方)は、全部の入り口に共通の会話の層として ADR-0011 で設計し直す
-  ([ADR-0011](0011-conversation-layer.md)。まだ実装していない)。v4 は書き換えずに残し、層に載せる版は v5(`BAITO_HARNESS_VERSION=v5`)にする
+  ([ADR-0011](0011-conversation-layer.md))。v4 は書き換えずに残し、層に載せる版は v5(`BAITO_HARNESS_VERSION=v5`。`dip_mcp/baito/v5.py`。
+  task 360 で作った。本番は v4 のまま)にする。PRD の検査のうち結果を見るものは v5 のテストに移し、`turn()` の形とプロンプトの原文の検査は v4 だけに残す
