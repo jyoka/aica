@@ -2161,7 +2161,7 @@ sequenceDiagram
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
 | `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態, track, progress}`(PRD v4.1 付録D。`version="v4"`、条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`。`progress` はプロフィールの進み具合を数えるために覚えること `{seen: 埋まったと数えた項目, card: プロフィールカードを出したか, restarts}`。`dip_mcp.baito.progress`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す。中学生以下で止めたときは残す) | `baito.session.start`、`turn`、`end` |
 | `baito_block` | バイトの相談で中学生以下として止めた印 `{blocked: "under_15"}`。相談を閉じても残し、あるあいだ `recommend_jobs`・`relax_conditions` は求人を返さない。後の相談で 15 歳以上と確かめたら消す | `baito.session._finish`、`job_block` |
-| `baito_paused` | バイトの相談の v5 で「あとで」と閉じた相談の状態(`harness`、`track`、`progress`、閉じたときの希望の項目の文 `kept`)。次に始めるとき(ほかの入り口から移ってくるときも)、閉じたときの問いから続け、読んだら消す | `baito.session._pause`、`_new`、`switch_in` |
+| `baito_paused` | バイトの相談の v5 で「あとで」と閉じた相談の状態(`harness`、`track`、`progress`、閉じたときの希望の項目の文 `kept`。避けたいことも。`harness` にも同じ `kept` を入れ、続きを始めたら今の文にする)。次に始めるとき(ほかの入り口から移ってくるときも)、閉じたときの問いから続け、読んだら消す | `baito.session._pause`、`_new`、`switch_in` |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
 | `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |
 | `resume_upload`、`resume_upload_seq` | 最新の読み取り結果(5.5 の envelope に `id`、`uploaded_at`、`file` を足した形)と次の番号 | `save_resume_upload` |
