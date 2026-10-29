@@ -124,6 +124,8 @@ from fastapi.responses import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from dip_mcp import accounts, arcade, behavior, logic, profile, retention
+from dip_mcp.baito import session as baito_session
+from dip_mcp.career import session as career_session
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import (
@@ -910,13 +912,27 @@ async def _arcade_ai(user: str, body: ArcadeAiIn) -> dict:
 async def arcade_save(body: ArcadeSaveIn, request: Request):
     """できた書類を下書きとして保存する(そのゲームの前の下書きを置き換える)。本人の有効な遊びの番号が要る(無い・ほかの人の
     番号なら 403)。書類の種類は雇用区分で決め、未定なら本人が選んだもの(選んでいなければ 400)。雇用区分は変えない。
-    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。"""
+    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。その前に、
+    途中のハーネスの相談は閉じる(次の発言はトークの AI が受ける。_end_consultations)。"""
     _arcade_game(body.game)
     user = _page_user(request, body.scenario_user)
     rec, reply = _arcade_save(user, body)
+    await _end_consultations(user)
     talk = await app.state.rt.add_arcade_result(user, reply)
     return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": rec["document_kind"],
             "blanks": arcade.blanks(rec), "talk": talk}
+
+
+async def _end_consultations(user: str) -> None:
+    """途中のハーネスの相談(アルバイト・パート、正社員)を閉じる。音声相談に本人が入ったときと、音声相談とゲームの結果を
+    トークに足す前に呼ぶ(LineRuntime.end_consultations。task 364)。相談をしていなければ dip を呼ばない。
+    閉じられなくても、呼び出し元(結果の記録、下書きの保存、面談)は止めない(相談は開いたまま。次の発言はハーネスが受ける)。"""
+    if not (baito_session.active(state, user) or career_session.active(state, user)):
+        return
+    try:
+        await app.state.rt.end_consultations(user)
+    except Exception as e:  # noqa: BLE001
+        line_channel.log.warning("途中の相談を閉じられませんでした(%s): %s", user, type(e).__name__)
 
 
 ARCADE_SAVE_FORBIDDEN = "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください"
@@ -1628,7 +1644,7 @@ async def _voice_wait(user_id: str, body: VoiceWaitIn) -> dict:
 @app.post("/api/voice/result")
 async def voice_result_in(body: VoiceResultIn, request: Request, background: BackgroundTasks):
     """音声アドバイザーの結果(話した希望・提案した求人・履歴書か職務経歴書の下書き)を預かり、今の会話に AI の返信として
-    続ける(再読み込みしても残る)。待っているシートがあれば知らせる。
+    続ける(再読み込みしても残る)。途中のハーネスの相談は閉じる(次の発言はトークの AI が受ける)。待っているシートがあれば知らせる。
     呼ぶのは voice-resume のワーカー(サーバー間の経路)。Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る
     (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。
     面談の途中で本人が「すべて消す」をしていたら(その前に発行した部屋の結果)、預からずに 410 を返す
@@ -1640,6 +1656,9 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
         _line_voice_to(body.room)  # 届けない宛先は忘れる
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
     retention.touch(state, body.user_id)  # 音声相談の結果も最後の利用(期間で消す掃除が数える)
+    # 途中のハーネスの相談は閉じる。ふつうは本人が部屋に入ったとき(/api/voice/session の joined)に閉じている。
+    # その知らせが届かなかったときのために、ここでも閉じる(次の発言を、前の問いの答えとしてハーネスに渡さない)
+    await _end_consultations(body.user_id)
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
@@ -1660,11 +1679,16 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
 async def voice_session(body: VoiceSessionIn, request: Request):
     """音声ワーカーが、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)を知らせる(サーバー間の経路。共有鍵で守る)。
     joined の部屋は、終わりの知らせが届くまで、その人の終わっていない部屋として数える(line_runtime.voice_rooms)。
-    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。"""
+    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。
+    本人が入ったら、トークの途中のハーネスの相談はここで閉じる(そこまでの答えを保存する。task 364)。ワーカーは
+    この後に本人の希望を読み、面談の中で話した希望を保存するので、音声で聞き直さず、閉じるときの保存が音声の希望を上書きしない。"""
     _require_internal(request)
     rooms = app.state.voice_rooms
     if body.state == "joined":
-        return {"allowed": rooms.joined(body.user_id, body.room)}
+        allowed = rooms.joined(body.user_id, body.room)
+        if allowed:
+            await _end_consultations(body.user_id)
+        return {"allowed": allowed}
     rooms.release(body.user_id, body.room)
     return {"allowed": True}
 
@@ -2501,6 +2525,7 @@ async def liff_arcade_save(body: LiffArcadeSaveIn, request: Request, background:
     line: その本人の LINE のトークに知らせを送るか(Messaging API の設定があり、ID トークンがその本人のものだったとき)。"""
     user = _liff_arcade_user(request)
     rec, reply = _arcade_save(user, body)  # 保存できないとき(403、400)は、LINE に ID トークンを確かめに行かない
+    await _end_consultations(user)
     talk = await app.state.rt.add_arcade_result(user, reply)
     line = False
     if line_channel.configured():  # Messaging API の設定が無ければ送れないので、ID トークンも確かめない
