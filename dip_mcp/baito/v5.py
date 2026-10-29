@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import dataclass, field
 
 from dip_mcp.baito import harness as H
@@ -91,6 +92,8 @@ class State(H.State):
     came_from: dict = None  # ほかの入り口から移ってきたときの引き継ぎの記録(すぐ戻るときに、元の入り口の値を戻すため。§4.5)
     closed: str = None  # 「あとで」(later)・「やめる」(exit)・別の入り口へ移る(switch)で閉じた
     saved_area: str = None  # 前の相談で保存したエリアから入れた近くで探すのエリア(閉じるときに書き戻さない)
+    saved_ng: list = field(default_factory=list)  # 「あとで」で閉じたときに避けたいことに保存した本人の NG(閉じるときに書き戻さない)
+    kept: dict = None  # 「あとで」の続きで、相談の状態が合っている希望の項目の文(kept_texts。もう一度「あとで」で閉じる前に読み直すため)
 
 
 def new_state(quick=False):
@@ -963,9 +966,20 @@ def prefill(state, prefs):
     return got
 
 
-def mark_saved(state):
-    """「あとで」で閉じて保存した後(session): 保存した項目を作った欄(high)と近くで探すのエリアを、前の相談で保存した値にする
-    (続きから聞いて閉じるときに、答え直していない欄を書き戻さない。その間にプロフィール画面で直した値を戻さないため)。"""
+def ng_items(text):
+    """避けたいことの保存の文を、NG の並びにする(session._finish が「、」でつないで保存する)。"""
+    return [x for x in re.split(r"[、,，]\s*", text or "") if x]
+
+
+def kept_texts(prefs):
+    """「あとで」の続きで読み直す希望の項目(FEEDS の項目、エリア、避けたいこと)の、今の保存の文。"""
+    return {k: (prefs.get(k) or {}).get("value") for k in (*FEEDS, "area", "avoids")}
+
+
+def mark_saved(state, prefs):
+    """「あとで」で閉じて保存した後(session。prefs は保存した後の希望の項目): 保存した項目を作った欄(high)と近くで探すのエリアを、
+    前の相談で保存した値にする。本人の NG は、避けたいことに入ったもの(字数の上限で落ちたものは入れない)を saved_ng に覚える
+    (続きから聞いて閉じるときに、答え直していない欄と保存した NG を書き戻さない。その間にプロフィール画面で直した・消した値を戻さないため)。"""
     for slots in FEEDS.values():
         for s in slots:
             e = state.slots.get(s)
@@ -973,11 +987,20 @@ def mark_saved(state):
                 e["from"] = SAVED
     if H.NEAR_AREAS.get(state.near.get("area")):
         state.saved_area = state.near["area"]
+    stored = ng_items((prefs.get("avoids") or {}).get("value"))
+    state.saved_ng = [n for n in state.user_ng if n in stored]
 
 
 def refresh_saved(state, prefs, kept):
-    """「あとで」の続きから始めるとき: 閉じた後にプロフィール画面で直した・消した項目(kept は閉じたときの保存の文)は、その項目を
-    作った前の値(from が saved か derived の欄)を外し、今の値を読み直す(prefill。読めなければ後で聞く)。"""
+    """「あとで」の続きから始めるとき(と、続きをもう一度「あとで」で閉じる前。session._pause): 閉じた後にプロフィール画面で直した・
+    消した項目(kept は閉じたとき、または続きを始めたときの保存の文)は、その項目を作った前の値(from が saved か derived の欄)を外し、
+    今の値を読み直す(prefill。読めなければ後で聞く)。避けたいことを直した・消したら、保存した本人の NG(saved_ng)のうち今の保存の文に
+    無いものを外す(まとめと結果に出さない。ルールの NG は年齢から作り直す)。読み直した文を state.kept に覚える。"""
+    if (prefs.get("avoids") or {}).get("value") != kept.get("avoids"):
+        now = ng_items((prefs.get("avoids") or {}).get("value"))
+        gone = [n for n in state.saved_ng if n not in now]
+        state.user_ng = [n for n in state.user_ng if n not in gone]
+        state.saved_ng = [n for n in state.saved_ng if n in now]
     for key, slots in FEEDS.items():
         if (prefs.get(key) or {}).get("value") == kept.get(key):
             continue
@@ -989,6 +1012,7 @@ def refresh_saved(state, prefs, kept):
         state.near.pop("area", None)
         state.saved_area = None
     prefill(state, prefs)
+    state.kept = kept_texts(prefs)
 
 
 def enter(state, bank=H.BANK, llm=None, said=""):

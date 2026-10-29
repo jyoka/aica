@@ -322,16 +322,19 @@ def _reply(h: H.State, r: dict, used: int, progress: dict | None) -> dict:
 
 def _pause(state: State, line_user_id: str, h: H.State) -> list[str]:
     """「あとで」(v5。設計メモ §4.6): そこまでの分(high)を保存して閉じ、相談の状態を PAUSED_KEY に取っておく(次に始めるとき、
-    聞いた問いを聞き直さずに続きから聞く。_new)。保存した欄は前の相談で保存した値にし(V5.mark_saved)、閉じたときの希望の項目の
-    文(kept)を覚える(続きのときに、その間にプロフィール画面で直した項目を読み直すため)。"""
+    聞いた問いを聞き直さずに続きから聞く。_new)。保存した欄と本人の NG は前の相談で保存した値にし(V5.mark_saved)、閉じたときの
+    希望の項目の文(kept。避けたいことも)を覚える(続きのときに、その間にプロフィール画面で直した・消した項目を読み直すため)。
+    続きをもう一度「あとで」で閉じるときは、先に続きの途中で直した・消した項目を読み直す(V5.refresh_saved。消した NG を相談に残さない)。"""
     old = state.user(line_user_id).get(KEY) or {}
+    if getattr(h, "kept", None) is not None:
+        V5.refresh_saved(h, logic.stated_preferences(state.user(line_user_id)), h.kept)
     saved = _finish(state, line_user_id, h, partial=True)
     if (h.current or {}).get("mode") == "pick":  # 聞き直しの答えは _finish が入れた。続きは次の問いから
         h.current = None
     h.closed = None
-    V5.mark_saved(h)
     prefs = logic.stated_preferences(state.user(line_user_id))
-    kept = {k: (prefs.get(k) or {}).get("value") for k in (*V5.FEEDS, "area")}
+    V5.mark_saved(h, prefs)
+    kept = h.kept = V5.kept_texts(prefs)
     paused = {"harness": h.to_dict(), "track": old.get("track"), "progress": old.get("progress"), "kept": kept}
     state.update(line_user_id, lambda u: u.__setitem__(PAUSED_KEY, paused))
     return saved
@@ -437,7 +440,8 @@ def _finish(state: State, line_user_id: str, h: H.State, partial: bool = False) 
     prefs = result_preferences(h, partial)
     before = ((state.user(line_user_id).get("preferences") or {}).get("avoids") or {}).get("value")
     if before and "avoids" in prefs:
-        items = list(dict.fromkeys([*_ng(h), *(x for x in re.split(r"[、,，]\s*", before) if x)]))
+        # 「あとで」で保存した NG(saved_ng)は、今の文(before)に残っていれば入る。外されていれば戻さない
+        items = list(dict.fromkeys([*(n for n in _ng(h) if n not in getattr(h, "saved_ng", ())), *V5.ng_items(before)]))
         keep = []
         for x in items:
             if len("、".join([*keep, x])) <= logic.PREFERENCE_VALUE_MAX:
@@ -476,8 +480,9 @@ def result_preferences(h: H.State, partial: bool = False) -> dict[str, str]:
     (結果の時点で推測のまま残った HARD は保存しない)。NG は、未成年のルールの NG も避けたいことに入れる
     (トークの AI が後で求人を探すときに、深夜と重い作業を外すため)。partial(途中でやめた)でも同じ決まり。
     エリアは「近くで探す」でボタンで選んだもの(task 266)。
-    v5 で前の相談の保存から入れたまま(from が saved)の欄とエリアは書き戻さない(正社員の session._finish と同じ。相談の途中に
-    プロフィール画面で直した値を戻さない)。時間帯は 3 つの欄から作るので、どれかを答えたときだけ、保存から入れた欄も含めて書く。"""
+    v5 で前の相談の保存から入れたまま(from が saved)の欄とエリア、「あとで」で閉じたときに保存した本人の NG(saved_ng)は
+    書き戻さない(正社員の session._finish と同じ。相談の途中にプロフィール画面で直した・消した値を戻さない。jyoka/tasks#374)。
+    時間帯は 3 つの欄から作るので、どれかを答えたときだけ、保存から入れた欄も含めて書く。"""
     times = ("time_slots", "available_hours", "weekday_or_weekend")
     time = [x for x in (_label(h, s) for s in times) if x] if any(
         _label(h, s) and not _saved(h, s) for s in times) else []
@@ -486,7 +491,8 @@ def result_preferences(h: H.State, partial: bool = False) -> dict[str, str]:
     out = {"time_band": "、".join(time), "days_per_week": None if _saved(h, "days_per_week") else _label(h, "days_per_week"),
            # 「近くで探す」のエリアのボタン(どこでもは入れない。task 266)
            "area": None if area and area == getattr(h, "saved_area", None) else H.NEAR_AREAS.get(area),
-           "purpose": None if _saved(h, "purpose") else _label(h, "purpose"), "avoids": "、".join(_ng(h)),
+           "purpose": None if _saved(h, "purpose") else _label(h, "purpose"),
+           "avoids": "、".join(n for n in _ng(h) if n not in getattr(h, "saved_ng", ())),
            "min_wage": str(wage["value"]) if wage and wage["confidence"] == "high" and type(wage["value"]) is int
            and not _saved(h, "hourly_wage_min") else None}
     return {k: v for k, v in out.items() if v}

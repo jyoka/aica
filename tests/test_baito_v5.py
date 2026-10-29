@@ -659,3 +659,188 @@ def test_retracting_the_age_does_not_lift_the_stop_and_the_handoff_has_no_age(tm
     r, _ = run(st, said, script({said: [act("add", slot="age_band", text="17歳", value="15_17"),
                                         act("switch", to="career", strength="want")]}))
     assert r["switch_to"] == "career" and all(a.get("slot") != "age_band" for a in st.user(UID)[SW.KEY]["acts"])
+
+
+# ----------------------------- 「あとで」の後に本人が消した値(jyoka/tasks#374) -----------------------------
+class LayerBaitoLLM:
+    """ランタイムの v5 の LLM。読む段は何も読まない(ボタンと決まった言葉だけで進める)。言う段、まとめ、結果は場面の一覧と同じ台本。"""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def __call__(self, stage, system, messages):
+        self.calls.append(stage)
+        if stage == "read":
+            return {"acts": [], "hook": None, "mentions": [], "ng": []}, USAGE
+        return R.BaitoV5().write({"stage": stage, "system": system}, "OK！"), USAGE
+
+
+NG_PICK = "コールセンター"  # rp_student で選ぶと、本人の NG「電話対応」が入る
+NG = "電話対応"
+
+
+def _tap_for(h: V5.State) -> str:
+    """利用者が押すボタン: 入口のカードは「どれもピンと来ない」、年齢は 18 歳以上、学生、逆から選ぶ問いは NG_PICK、まとめは「これでOK」。"""
+    cur = h.current
+    if cur["mode"] == "review":
+        return H.REVIEW_OK
+    pick = {H.QUICK_PICK: "どれもピンと来ない", "near_age": "18歳以上", "hf_age": "18歳以上", "q_segment": "学生",
+            "rp_student": NG_PICK}
+    return pick.get(cur["qid"], cur["choices"][0])
+
+
+def _web_say(client, st, uid, th, text) -> str:
+    """Web のトーク画面で 1 つ送り、届いた返信の文(吹き出しをつないだもの)を返す。"""
+    evs = stream(client, uid, "message", th, text)
+    return "\n".join(str(e.get("text") or "") for e in evs) + json.dumps(evs, ensure_ascii=False)
+
+
+def test_web_profile_deleting_the_ng_after_later_keeps_it_deleted_in_the_continued_result(app, monkeypatch):  # noqa: F811
+    """Web のトーク画面で v5 の相談を始め、NG(「電話対応」)を答えて「あとで」で取っておく。プロフィール画面で NG と勤務地を消し、
+    トークで相談を続けて終える: まとめにも保存にも、消した NG と勤務地が戻らない(jyoka/tasks#374)。"""
+    from line_runtime import runtime
+
+    model = ConsultModel(script=[greet, *baito_start_script(),
+                                 call("start_baito_consultation", {"line_user_id": PINNED_USER}, "st2"),
+                                 reply(["続きからいこう！"])])
+    baito = LayerBaitoLLM()
+    monkeypatch.setattr(app, "LineRuntime", lambda: runtime.LineRuntime(model=model, in_memory=True, baito_llm=baito))
+    with TestClient(app.app) as client:
+        opened, greeting = open_talk(client)
+        uid, th = opened["user"], greeting["thread"]
+        st = app.state
+        stream(client, uid, "message", th, "バイトを探したい")
+        while harness(st, uid).current["qid"] != "rp_student":
+            _web_say(client, st, uid, th, _tap_for(harness(st, uid)))
+        _web_say(client, st, uid, th, NG_PICK)
+        assert harness(st, uid).user_ng == [NG]
+        _web_say(client, st, uid, th, "あとで")
+        assert not session.active(st, uid) and session.PAUSED_KEY in st.user(uid)
+        prefs = logic.stated_preferences(st.user(uid))
+        assert (prefs["avoids"]["value"], prefs["area"]["value"]) == (NG, "東京")
+        for key in ("avoids", "area"):  # プロフィール画面の「消す」
+            assert client.delete(f"/api/profile/items/{key}").status_code == 200
+        stream(client, uid, "message", th, "バイトの相談の続きをしたい")
+        h = harness(st, uid)
+        assert h.current["qid"] == "fg_wage" and NG not in h.user_ng and not h.near.get("area")
+        seen = []
+        while session.active(st, uid):
+            seen.append(_web_say(client, st, uid, th, _tap_for(harness(st, uid))))
+    assert model.script == [] and baito.calls
+    assert seen and all(NG not in s for s in seen)  # まとめのカードの NG にも、結果にも出ない
+    prefs = logic.stated_preferences(app.state.user(uid))
+    assert "avoids" not in prefs and "area" not in prefs and prefs["days_per_week"]["value"] == "週1〜2日"
+
+
+def test_line_forget_data_after_later_erases_the_paused_consultation_and_the_ng(tmp_path, monkeypatch):
+    """LINE で v5 の相談を始め、NG を答えて「あとで」。「データを消す」→「すべて消す」の後に始め直すと、取っておいた相談の続きでなく
+    最初の入口のカードから始まり、消した NG も入っていない(jyoka/tasks#374)。"""
+    uid = line_user(RAW_USER)
+    model = ConsultModel(script=[*baito_start_script(), *baito_start_script()])
+    baito = LayerBaitoLLM()
+    server, fake = _server(tmp_path, monkeypatch, model)
+    from line_runtime.runtime import LineRuntime
+
+    monkeypatch.setattr(server, "LineRuntime", partial(LineRuntime, model=model, baito_llm=baito))
+    with TestClient(server.app) as client:
+        st, n = server.state, 1
+        _say(client, "バイトを探したい", n)
+        while harness(st, uid).current["qid"] != "rp_student":
+            n += 1
+            _say(client, _tap_for(harness(st, uid)), n)
+        _say(client, NG_PICK, n + 1)
+        _say(client, "あとで", n + 2)
+        assert session.PAUSED_KEY in st.user(uid) and logic.stated_preferences(st.user(uid))["avoids"]["value"] == NG
+        _tap(client, _ask(client, fake, n + 3), n + 4)
+        assert session.PAUSED_KEY not in st.user(uid) and not logic.stated_preferences(st.user(uid))
+        _say(client, "バイトを探したい", n + 5)
+        h = harness(st, uid)
+        assert h.current["qid"] == H.QUICK_PICK and h.user_ng == [] and h.asked == []
+    assert session.PAUSED_KEY not in State(tmp_path / "state.json").user(uid)
+
+
+def _later_with_ng(st):
+    """NG_PICK で本人の NG を答えた後に「あとで」で取っておく(保存の避けたいことは NG)。"""
+    _to_hf_time(st)
+    while harness(st).current["qid"] != "rp_student":
+        run(st, harness(st).current["choices"][0])
+    run(st, NG_PICK)
+    r, _ = run(st, "あとで")
+    assert r["closed"] == "later" and logic.stated_preferences(st.user(UID))["avoids"]["value"] == NG
+
+
+def test_ng_deleted_during_the_continued_consultation_is_not_written_back(tmp_path):
+    """「あとで」の続きを始めた後(相談の途中)にプロフィール画面で NG を消しても、閉じるときに書き戻さない。続きで新しく話した NG は足す。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    session.start(st, UID, quick=False)
+    assert harness(st).user_ng == [NG] and harness(st).saved_ng == [NG]
+    profile.delete_item(st, UID, "avoids")
+    said = "夜勤は無理"
+
+    def scr(c):  # 読む段が本人の NG「夜勤」を読む
+        return script()(c) | ({"ng": ["夜勤"]} if c["stage"] == "read" else {})
+
+    run(st, said, scr)
+    assert harness(st).user_ng == [NG, "夜勤"]
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["avoids"]["value"] == "夜勤"
+
+
+def test_ng_edited_on_the_profile_page_while_paused_keeps_only_what_is_left(tmp_path):
+    """「あとで」の後に避けたいことを直したら、続きは今の文に残った NG だけを持つ。残っていれば、そのまま書き戻さない(文を変えない)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    profile.edit_item(st, UID, "avoids", f"力仕事、{NG}")
+    session.start(st, UID, quick=False)
+    assert harness(st).user_ng == [NG]
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["avoids"]["value"] == f"力仕事、{NG}"
+    st2 = State(tmp_path / "state2.json")
+    _later_with_ng(st2)
+    profile.edit_item(st2, UID, "avoids", "力仕事")
+    session.start(st2, UID, quick=False)
+    assert harness(st2).user_ng == [] and harness(st2).saved_ng == []
+    run(st2, "やめる")
+    assert logic.stated_preferences(st2.user(UID))["avoids"]["value"] == "力仕事"
+
+
+def test_ng_deleted_during_the_continued_consultation_stays_deleted_after_later_again(tmp_path):
+    """続きの途中にプロフィール画面で NG と日数を消し、もう一度「あとで」で取っておく。次の続きにも、閉じた後の保存にも、消した NG と
+    日数が戻らない(jyoka/tasks#374)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    session.start(st, UID, quick=False)
+    for key in ("avoids", "days_per_week"):
+        profile.delete_item(st, UID, key)
+    r, _ = run(st, "あとで")
+    assert r["closed"] == "later" and not {"avoids", "days_per_week"} & set(logic.stated_preferences(st.user(UID)))
+    session.start(st, UID, quick=False)
+    h = harness(st)
+    assert NG not in h.user_ng and h.saved_ng == [] and "days_per_week" not in h.slots
+    run(st, "やめる")
+    assert not {"avoids", "days_per_week"} & set(logic.stated_preferences(st.user(UID)))
+
+
+def test_ng_edited_during_the_continued_consultation_is_not_added_back_with_a_new_ng(tmp_path):
+    """続きの途中に避けたいことを直し(「電話対応」を「力仕事」に)、同じ続きで新しい NG を話して閉じる: 直した文に新しい NG を足し、
+    外した NG は戻さない(jyoka/tasks#374)。"""
+    from dip_mcp import profile
+
+    st = State(tmp_path / "state.json")
+    _later_with_ng(st)
+    session.start(st, UID, quick=False)
+    profile.edit_item(st, UID, "avoids", "力仕事")
+
+    def scr(c):  # 読む段が本人の NG「夜勤」を読む
+        return script()(c) | ({"ng": ["夜勤"]} if c["stage"] == "read" else {})
+
+    run(st, "夜勤は無理", scr)
+    run(st, "やめる")
+    assert logic.stated_preferences(st.user(UID))["avoids"]["value"] == "夜勤、力仕事"
