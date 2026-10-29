@@ -1,6 +1,6 @@
 {
  "note": "正社員ヒアリングの事実(設計メモ docs/design/conversation-layer.md §4.6)。aica 全体の事実(dip_mcp/convo/facts.json)に足す。読むのは c2(CAREER_HARNESS_VERSION=c2)だけ。運営者が確かめる(確かめたら checked に日付を書く)。形は dip_mcp/convo/facts.py",
- "checked": null,
+ "checked": "2026-10-29",
  "sources": ["docs/design/fulltime-hearing.md の §3(入口、まとめ、あとで)", "dip_mcp/career/session.py(終えたら求人と下書き)"],
  "ask_service": [
   "いまは職務経歴書の材料を、1問ずつ集めています",

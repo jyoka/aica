@@ -26,7 +26,15 @@
   "career2.scale": "その前の仕事の大きさ(数は number に)",
   "career2.result": "その前の仕事で、どうなったか"
  },
- "switch": [{"to": "baito", "label": "アルバイト・パートで探す"}],
+ "switch": [{"to": "baito", "label": "アルバイト・パートで探す", "track": "アルバイト・パート",
+             "note": "アルバイト・パートでも探せます。移るときは下のボタンを押してください。"}],
+ "carry": {
+  "baito": {
+   "near.area": {"slot": "area", "how": "same"},
+   "days_per_week": {"slot": "work_hours", "how": "near"},
+   "time_slots": {"slot": "work_hours", "how": "near"}
+  }
+ },
  "infer": {
   "ib_why_now": {"年収を上げたい": {"raise_target": "年収"}}
  },
@@ -62,6 +70,7 @@
   "more_lead_number": "{topic}のほかの区切りです。",
   "more_done": "候補は以上です。最初の候補に戻しました。合わなければ、ひとことで送ってください。",
   "note_pause": "「中断」と送れば、ここまでの分が残ります。",
+  "switched_in": "正社員で探します",
   "note_falsify": "事実と違うことは書けません。小さなことでも、そのままの言葉で大丈夫です。"
  },
  "tone": {

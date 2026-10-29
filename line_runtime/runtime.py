@@ -516,12 +516,22 @@ class LineRuntime:
                 cfg = self._cfg(user_id, n)
                 harnesses = self._harnesses()
                 if harnesses and EVENTS[event][1] == "user" and not starts:
-                    # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
+                    # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)。
+                    # 会話の層の版が別の入り口へ移ると閉じたとき(switch_to)は、移る先も層の版なら(direct)、トークの AI を挟まずに
+                    # 同じターンで移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)。
+                    # 移る先が今の版(v4)なら、今と同じくトークの AI がこのターンを受ける
                     for kind in harnesses:
                         r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content})
                         if r.get("active"):
-                            await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
+                            r = await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
+                            if r is None:
+                                return
+                        to = r.get("switch_to")
+                        if r.get("direct") and to in harnesses and await self._switch_in(to, queue, user_id, event, cfg,
+                                                                                          content, notice):
                             return
+                        if to:
+                            break
                 else:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる(そこまでを保存する)
                     await self._end_consultations(user_id)
                 snap = await self.agent.aget_state(cfg)
@@ -572,14 +582,27 @@ class LineRuntime:
         finally:
             queue.put_nowait(None)
 
+    async def _switch_in(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
+                         notice: str | None) -> bool:
+        """別の入り口から移ってきた相談を、同じターンで始める(dip の {kind}_turn の switch_in。引き継ぎの記録を読み、区分を書き、
+        最初の問いを返す)。移る先が始めなかったら(層の版でなくなったなど)False(呼んだ側がトークの AI に渡す)。"""
+        args = {"switch_in": True}
+        r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content, **args})
+        if not r.get("active"):
+            return False
+        return await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice, args) is None
+
     async def _harness_turn(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
-                            r: dict, notice: str | None) -> None:
+                            r: dict, notice: str | None, args: dict | None = None) -> dict | None:
         """ハーネスの相談(kind = baito / career)の1ターン。ハーネス(dip の baito_turn / career_turn)がモデルの出力を求める間
         (status=llm)、そのシステムプロンプトでモデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。
         PRD v4.1 §5-4)。呼び出しが失敗したら、失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。
         返信の文と選択肢はハーネスのものをそのまま出す(正社員はまとめのカードで吹き出しが 2 つ以上になる)。
         画面を開くボタン(正社員の結果の「下書きを開く」)も、ハーネスが返したものだけを付ける。
-        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。"""
+        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。
+        args は呼び直しにも付ける引数(移ってきた相談の switch_in)。呼び直した結果が別の入り口へ移ると閉じたもの(switch_to)なら、
+        何も送らずにその結果を返す(呼んだ側が移る先を始めるか、トークの AI に渡す)。返信を送ったら None。
+        区分を切り替えた結果(移ってきた相談の track_switch)は、返信の切り替えの表示にする。"""
         h = HARNESSES[kind]
         values = (await self.agent.aget_state(cfg)).values
         convo = baito_chat.history(values.get("messages", []))
@@ -599,8 +622,10 @@ class LineRuntime:
             except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
                 log.warning("%sのモデルを呼べなかった(%s): %s", h["what"], call["stage"], type(e).__name__)
                 outputs.append({"stage": call["stage"], "error": type(e).__name__})
-            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
+            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs, **(args or {})})
             if not r.get("active"):
+                if r.get("switch_to"):
+                    return r
                 raise ValueError(f"{h['what']}が途中で閉じられました")
         reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"], buttons=r.get("buttons") or [])
         mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
@@ -620,7 +645,11 @@ class LineRuntime:
                  AIMessage(reply.model_dump_json(), additional_kwargs=mark | kept)]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
-        queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
+        shown = render(state | {"structured_response": reply})
+        if r.get("track_switch"):
+            shown["track_switch"] = r["track_switch"]
+        queue.put_nowait({"kind": "reply", **shown, **mark})
+        return None
 
     async def _harness_call(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, stage: str, system: str,
                             messages: list[dict]) -> dict:

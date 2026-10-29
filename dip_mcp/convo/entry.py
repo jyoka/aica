@@ -9,7 +9,10 @@ entry.json の形:
 - bank: 質問バンクのファイル(entry.json と同じフォルダ。問いの形は入り口のまま。層は targets と text と variants と候補だけを見る)。
   どの問いにも、text のほかの言い方を variants に 1〜2 通り置く(言い方は合わせて 2〜3 通り。§4.8。同じ問いを出し直すときに回す)
 - slots: {欄: 読む段に渡す説明}。入り口の欄のすべてに置く
-- switch: 移れる入り口 [{"to", "label"}]。label は移るボタンの文(§4.5。使うのは 6 枚目のカード)
+- switch: 移れる入り口 [{"to", "label", "track", "note"}](§4.5)。label は移るボタンの文、track は移った先の雇用区分
+  (logic.TRACKS。移った先が層の版なら、層が区分を書く)、note は「考えている」(consider)ときに 1 回だけ添える注意の 1 行
+- carry: ほかの入り口から引き継ぐ値の対応 {元の入り口: {元の欄: {"slot": この入り口の欄, "how": same / near}}}(§4.5。
+  dip_mcp.convo.switch.carry)。同じ意味は元の確かさのまま、近い意味は推測(low)で入れる。書いていない欄は引き継がない
 - infer: ボタンから推せるほかの欄 {問いの id: {ボタン: {欄: 値の文}}}(§4.7 の 1。推測(low)で入れ、まとめで確かめる)。
   質問バンクの choice_effects に書いた、問いの欄でない欄への効き目も同じく推測で入れる(入り口のハーネスが当てる)
 - groups: 問いの群 [{"name", "phases": [質問バンクのフェーズ], "line": 区切りの 1 行か null}](§4.7。並びが群の順)。
@@ -31,6 +34,7 @@ from pathlib import Path
 
 from dip_mcp.convo import facts as F
 from dip_mcp.convo import reply as R
+from dip_mcp.convo import switch as SW
 
 CARD_MARK = "{n}"  # 職歴カードのひな形の欄(career{n}.role)。1 枚目に広げて確かめる
 SPECIAL_TARGETS = ("segment", "__ng__")  # 欄でない問いの的(区分、避けたいこと)
@@ -46,6 +50,7 @@ class Entry:
     bank: list
     slots: dict
     switch: list = field(default_factory=list)
+    carry: dict = field(default_factory=dict)
     infer: dict = field(default_factory=dict)
     texts: dict = field(default_factory=dict)
     tone: dict = field(default_factory=dict)
@@ -126,8 +131,10 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
     if unknown or missing or any(not str(v).strip() for v in described.values()):
         raise ValueError(f"{name}: 欄の説明が合わない(知らない欄 {unknown}、説明の無い欄 {missing})")
     for s in d.get("switch") or []:
-        if s.get("to") not in entries or s.get("to") == name or not str(s.get("label") or "").strip():
+        if s.get("to") not in entries or s.get("to") == name or any(not str(s.get(k) or "").strip()
+                                                                    for k in ("label", "track", "note")):
             raise ValueError(f"{name}: 移る先 {s}")
+    SW.check_carry(name, d.get("carry") or {}, slots, entries)
     qs = {q["id"]: q for q in bank}
     for qid, by_label in (d.get("infer") or {}).items():
         if qid not in qs:
@@ -159,5 +166,5 @@ def load(path: Path, slots, entries=(), required_texts=()) -> Entry:
     check_tone(name, d.get("tone"))
     facts = F.load(Path(path).parent / d["facts"] if d.get("facts") else None)
     return Entry(entry=name, title=d["title"], bank=bank, slots=described, switch=list(d.get("switch") or []),
-                 infer=d.get("infer") or {}, texts=texts, tone=d["tone"], facts=facts, groups=groups, topics=topics,
+                 carry=d.get("carry") or {}, infer=d.get("infer") or {}, texts=texts, tone=d["tone"], facts=facts, groups=groups, topics=topics,
                  mention_questions=mention_questions)

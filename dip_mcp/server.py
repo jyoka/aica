@@ -348,9 +348,14 @@ def career_turn(
     text: Annotated[str, Field(description="本人の発言")],
     llm_outputs: Annotated[list[dict] | None, Field(description=(
         "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+    switch_in: Annotated[bool, Field(description=(
+        "ほかの入り口の相談が、このターンで正社員へ移ると閉じたとき(結果の switch_to が career で direct)だけ true。"
+        "引き継ぎの記録を読んで新しい相談を始める"))] = False,
 ) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を本人の発言 1 つで進める。
-    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。"""
+    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。switch_in は dip_mcp.career.session.switch_in。"""
+    if switch_in:
+        return career.switch_in(state, line_user_id, text, llm_outputs)
     return career.turn(state, line_user_id, text, llm_outputs)
 
 
