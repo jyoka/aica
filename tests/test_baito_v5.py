@@ -207,6 +207,149 @@ def test_v5_replies_never_say_amounts_or_jobs_not_on_the_card():
         assert r["reply"].endswith(QM[st.current["qid"]]["text"])
 
 
+# ----------------------------- 代替の理由(task 376。9/10 の実モデルの P3 で多かったもの) -----------------------------
+class SayModel:
+    """言う段だけを台本で書くモデル。write(view, n) が n 回目(1 から)の相づちを返し、問いの文を足す。呼んだ view を残す。"""
+
+    def __init__(self, write, readings=None):
+        self.write, self.readings, self.views = write, readings or {}, []
+
+    def read(self, payload):
+        return json.dumps({"acts": self.readings.get(payload["user_text"], []), "hook": None, "mentions": [], "ng": []},
+                          ensure_ascii=False)
+
+    def generate(self, view):
+        self.views.append(view)
+        return json.dumps({"reply": self.write(view, len(self.views)) + view["text"]}, ensure_ascii=False)
+
+
+def _after_two_acks(qid, segment, acks):
+    st = at(qid, segment=segment, age="18_plus")
+    for a in acks:
+        V5.CS.heard(st.convo, "x")
+        V5.CS.replied(st.convo, a + "y", a)
+    return st
+
+
+def _kinds(st):
+    return [e["kind"] for e in st.log if e["kind"].startswith("generate")]
+
+
+def test_ack_ending_repeated_a_third_time_is_retried_with_the_reason():
+    """「〜んだね。」が 2 回続いた後、モデルがまた「〜んだね。」と書く(9/10 の P3 で、やり直しも同じ入力なので同じ返事になり、
+    代替に倒れた)。やり直しには、1 回目の返事と落ちた理由(終わりの「んだね。」)と、使える決まった相づちを渡す。"""
+    acks = ["9〜14時くらいなんだね。", "週3〜4日なんだね。"]
+    stubborn = SayModel(lambda v, n: "けっこうあるんだね。")
+    st = _after_two_acks("hf_leave", "homemaker", acks)
+    r = V5.turn(st, "けっこうある", H.BANK, stubborn)
+    assert _kinds(st) == ["generate_fallback"] and "んだね" not in r["reply"]  # 聞かないモデルは、今までどおり決まった組み立て
+    first, again = stubborn.views
+    prompt = V5.render_prompt("say", first)
+    assert "直前の相づちの終わり: 「んだね。」。" in prompt and "やり直し: (なし)" in prompt
+    assert "けっこうあるんだね。" in again["retry"] and "「んだね。」" in again["retry"]
+    assert f"「{V5.ENTRY.tone['acks']['short'][0]}」をそのまま使ってよい" in again["retry"]
+    listens = SayModel(lambda v, n: "けっこうあるんだね。" if v["retry"] == "(なし)" else "けっこうある、了解！")
+    st = _after_two_acks("hf_leave", "homemaker", acks)
+    r = V5.turn(st, "けっこうある", H.BANK, listens)
+    assert _kinds(st) == ["generate_retry_ok"] and r["reply"].startswith("けっこうある、了解!")
+
+
+def test_tone_does_not_prime_the_same_ending():
+    """入り口の調子と例の文が、同じ終わり方(「〜なんだね」)を勧めない。例の文の終わりは、どれも違う。"""
+    tone = V5.ENTRY.tone
+    assert "「〜なんだね」" not in tone["style"] and "続けない" in tone["style"]
+    tails = [V5.RP.tail(x) for x in tone["examples"]]
+    assert len(set(tails)) == len(tails)
+    assert len({V5.RP.tail(x) for xs in tone["acks"].values() for x in xs}) > 10
+
+
+def test_echoing_the_job_tapped_in_reverse_pick_is_not_a_job_off_the_card():
+    """逆選択で押した職種をなぞる相づち(「工場の軽作業はナシ、了解！」)は、勧めていないので落とさない(9/10 の P3 で 8 ターンが
+    job_not_on_card で代替になった)。押していない職種は、打った文の語(「塾」)や次の問いのボタンにあっても、今までどおり落とす。"""
+    tapped = "工場の軽作業（立ち仕事）"
+    st = at("rp_homemaker", segment="homemaker", age="18_plus")
+    llm = SayModel(lambda v, n: "工場の軽作業はナシ、了解！")
+    r = V5.turn(st, tapped, H.BANK, llm)
+    assert len(llm.views) == 1 and _kinds(st) == [] and r["reply"].startswith("工場の軽作業はナシ、了解!")
+    st = at("rp_side_job", segment="side_job", age="18_plus")
+    r = V5.turn(st, "倉庫ピッキング", H.BANK, SayModel(lambda v, n: "倉庫はやめておくね。"))
+    assert _kinds(st) == [] and r["reply"].startswith("倉庫はやめておくね。")
+    st = at("rp_homemaker", segment="homemaker", age="18_plus")
+    llm = SayModel(lambda v, n: "カフェなら座れるよ。")
+    r = V5.turn(st, tapped, H.BANK, llm)
+    assert _kinds(st) == ["generate_fallback"] and "カフェ" not in r["reply"]
+    assert "職種の名前を書かない" in llm.views[1]["retry"]
+    said = "塾があるから平日は夜だけ"
+    st = at("hf_time", age="18_plus")
+    evening = {said: [act("answer", slot="time_slots", text="夜", value=["evening"])]}
+    r = V5.turn(st, said, H.BANK, SayModel(lambda v, n: "塾講師なら夜でもいけるね。", evening))
+    assert _kinds(st) == ["generate_fallback"] and "塾講師" not in r["reply"]
+    rp_buttons = QM["rp_side_job"]["choices"]  # 次の問いのボタン(押していない)の職種
+    assert V5._baito_check([["ack", "イベント設営もあるよ。"]], {"choices": rp_buttons, "user_text": "x"}) == "job_not_on_card"
+    assert V5._baito_check([["ack", "イベント設営はナシだね。"]], {"choices": []}, tapped="イベント設営") is None
+
+
+def test_praise_is_retried_with_the_word_and_the_persons_own_words_are_not_praise():
+    """「よし、燃えてきた」に「頼もしいね」と書く(9/10 の P3 と、task 376 の実モデルの試しで 2 回とも)。やり直しには、その言葉を
+    渡す。本人が言った言葉(「すごい」)をなぞるのは、ほめ言葉にしない。"""
+    st = at("sc_line", age="18_plus")
+    llm = SayModel(lambda v, n: "よし、燃えてきたって、頼もしいね。" if n == 1 else "燃えてきた、了解！")
+    r = V5.turn(st, "よし、燃えてきた", H.BANK, llm)
+    assert _kinds(st) == ["generate_retry_ok"] and "ほめ言葉「頼もし」" in llm.views[1]["retry"]
+    assert r["reply"].startswith("燃えてきた、了解!")  # 返事は NFKC にそろう
+    said = "すごい混んでる店はちょっと"
+    st = at("sc_line", age="18_plus")
+    calm = {said: [act("answer", slot="pace", text=said, value="calm")]}
+    r = V5.turn(st, said, H.BANK, SayModel(lambda v, n: "すごい混んでる店は苦手かぁ。", calm))
+    assert _kinds(st) == [] and r["reply"].startswith("すごい混んでる店は苦手かぁ。")
+
+
+def test_the_retry_note_is_rebuilt_the_same_way_when_the_runtime_replays_the_turn(tmp_path):
+    """ランタイムは出力を集めて相談のツールを呼び直す(session.ReplayLLM)。やり直しのプロンプトも、呼び直しで同じに作られ、
+    2 回目の出力が使われる。"""
+    st = State(tmp_path / "s.json")
+    session.start(st, UID, quick=False)
+    systems = []
+
+    def scr(c):
+        if c["stage"] == "say":
+            systems.append(c["system"])
+            return R.BaitoV5().write(c, "頼もしいね。" if "やり直し: (なし)" in c["system"] else "OK！")
+        return script()(c)
+    r, stages = run(st, "旅行・遊び", scr)
+    assert stages == ["say", "say"] and "頼もし" not in r["reply"] and r["reply"].startswith("OK!")
+    assert "ほめ言葉「頼もし」" in systems[-1] and harness(st).current["qid"] == "q_segment"
+
+
+def test_every_retry_reason_makes_a_note():
+    """やり直しの指示は、どの理由でも作れる(文は str.format に通すので、波かっこで落ちると呼び直さずに代替になる)。"""
+    st = _after_two_acks("hf_leave", "homemaker", ["9〜14時くらいなんだね。", "週3〜4日なんだね。"])
+    _, rp = V5.view(st, H.BANK, V5.P.Plan(ack="short"))
+    for why, text in V5.RETRY_JA.items():
+        for raw in (None, "", "not json", '{"reply": "けっこうあるんだね。"}'):
+            note = V5.retry_note(raw, why, rp, st.convo, V5.ENTRY.tone["acks"])
+            assert text.split("{")[0] in note, (why, raw)
+    assert 'JSON {"reply": "..."} の形でない' in V5.retry_note(None, "no_reply", rp, st.convo, V5.ENTRY.tone["acks"])
+
+
+@pytest.mark.parametrize("first", ["", '{"reply": "けっこう', TimeoutError("timeout")])
+def test_empty_broken_or_failed_first_reply_is_retried_with_the_model(first):
+    """1 回目が空の返事、途中で切れた JSON、通信の失敗(no_reply)でも、やり直しでモデルをもう 1 回呼び、2 回目の返事を使う。"""
+    class Flaky(SayModel):
+        def generate(self, view):
+            if not self.views:
+                self.views.append(view)
+                if isinstance(first, Exception):
+                    raise first
+                return first
+            return super().generate(view)
+    llm = Flaky(lambda v, n: "けっこうある、了解！")
+    st = at("hf_leave", segment="homemaker", age="18_plus")
+    r = V5.turn(st, "けっこうある", H.BANK, llm)
+    assert len(llm.views) == 2 and _kinds(st) == ["generate_retry_ok"] and r["reply"].startswith("けっこうある、了解!")
+    assert "JSON" in llm.views[1]["retry"]
+
+
 def test_danger_words_get_the_notice_without_the_model_and_are_not_counted():
     st = at("fg_wage", age="18_plus")
     llm = LLM()

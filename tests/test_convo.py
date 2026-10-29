@@ -331,6 +331,24 @@ def test_validate_rejects_a_third_same_ending_and_a_repeated_sentence_and_extra_
     assert not R.needs_model(plan(ack=None))
 
 
+def test_praise_words_the_person_said_are_only_echoed():
+    """本人の発言にある言葉(「すごい」)をなぞるのは、ほめ言葉にしない。本人が言っていないほめ言葉は今までどおり落とす。"""
+    said = "すごい混んでる店は苦手"
+    assert R.validate("すごい混んでる店は苦手なんですね。働きたい場所は?", plan(said=said), CS.new())[1] is None
+    assert R.validate("すごい混んでる店は苦手、さすがです。働きたい場所は?", plan(said=said), CS.new()) == (None, "praise")
+    assert R.praised("頼もしいね。", "よし、燃えてきた") == "頼もし" and R.praised("すごい行列だね。", "すごい行列") is None
+    # 言葉だけが同じで、前後が本人の発言と違う(「すごい残業」の後の「すごいですね」)のは、ほめ言葉
+    assert R.praised("すごいですね。", "前の職場はすごい残業で") == "すごい"
+    assert R.praised("いいですね!", "週3がいいですね") == "いいですね"
+
+
+def test_fixed_ack_can_be_looked_at_without_turning_the_rotation():
+    acks = {"short": ["わかりました。", "ありがとうございます。"]}
+    c = CS.new()
+    assert R.fixed_ack(plan(), c, acks, turn=False) == "わかりました。" and "rotation" not in c
+    assert R.fixed_ack(plan(), c, acks) == "わかりました。" and c["rotation"] == {"short": 1}
+
+
 def test_ack_budget_and_answer_bubble():
     long_ask = dict(ASK, text="あ" * 78, phrasings=["あ" * 78])
     assert R.new_plan(long_ask, "short")["ack"] is None  # 相づちの入る字数が無い

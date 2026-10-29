@@ -1594,7 +1594,7 @@ Web プロセス(`start_career_consultation` を見せるか)と dip の子プ�
 | `dip_mcp/convo/facts.py`、`facts.json` | 逆質問に答える事実のデータ。aica 全体の事実(`facts.json`)に入り口の事実(`dip_mcp/career/facts.json`)を足す。運営者が確かめる(`checked`) |
 | `dip_mcp/convo/pick.py` | 問いの選び方と候補(task 358): スコアの高い問いを群の順とバンクの順で選ぶ `best`、話題のおまけ `bonus`、本人の言葉を最初のページの頭に置く `put_first` |
 | `dip_mcp/convo/state.py` | 状態の器。直前のやりとり 4 つ(読む段に渡す)、直前の返信 2 つとその相づち(言う段の重複の確かめ)、決まった相づちを回す位置、候補に使える本人の言葉 5 つ |
-| `dip_mcp/convo/reply.py` | 言う段。返事の部品(相づち → 逆質問の答え → 注意 → 区切り → 問い)の計画 `new_plan`、問いの言い方の選び方 `pick`、モデルの返事の確かめ `validate`、決まった組み立て `fallback`、吹き出しへの組み方 `render`、「他の候補」の前置き `more_lead` |
+| `dip_mcp/convo/reply.py` | 言う段。返事の部品(相づち → 逆質問の答え → 注意 → 区切り → 問い)の計画 `new_plan`、問いの言い方の選び方 `pick`、モデルの返事の確かめ `validate`(ほめ言葉は `praised`)、決まった相づち `fixed_ack` と決まった組み立て `fallback`、吹き出しへの組み方 `render`、「他の候補」の前置き `more_lead` |
 | `dip_mcp/convo/turn.py` | 呼び直しの部品: 出力を確かめて 1 回だけやり直す `call_llm`(c1 と v4 の `_call_llm` もこれ)、ボタンの照らし合わせ `match_button`、プロンプトの組み立て |
 | `dip_mcp/career/c2.py`、`entry.json`、`facts.json` | 正社員の c2。c1 の予算、まとめ、結果を使い、守りの前処理、読む段(`read`)、値の当て方、応じ方の計画、問いの選び方と候補、言う段(`say`)を層に替えた版。入り口の定義には、正社員の調子(丁寧語)と決まった相づち、聞き直しと「他の候補」と注意の文を置く |
 | `dip_mcp/prompts/convo/read_ja.txt`、`prompts/career/prompt_read_ja.txt` | 読む段のプロンプト。層の骨組みに、正社員の決まりをつなぐ |
@@ -1603,6 +1603,7 @@ Web プロセス(`start_career_consultation` を見せるか)と dip の子プ�
 | `dip_mcp/convo/switch.py` | 入り口を移す(task 359): want と consider の読み分け、移る強い頼み、引き継ぎの記録(dip の状態の `handoff`)の書き方と読み方と消し方、値の対応 `carry` |
 | `dip_mcp/baito/v5.py`、`entry.json`、`facts.json` | アルバイト・パートの v5(task 360)。v4 の質問バンクの原文、欄と区切り、注意文、危ない言葉の文、未成年と闇バイトの決まり、入口のカード、近くで探す、フェーズの流れ、まとめと結果を使い、読む段(`read`)、値の当て方、応じ方の計画、言う段(`say`)、移り方を層に替えた版。入り口の定義には、くだけた話し言葉の調子と決まった相づち、問いの言い方(`variants`。PRD の質問バンク `bank_v4.json` は書き換えないので、ここに置く。言い換えのある問いは PRD の `alt_text`)、移る先と値の対応を置く |
 | `dip_mcp/prompts/baito/prompt_read_v5_ja.txt` | v5 の読む段の決まり(層の骨組み `read_ja.txt` の後ろにつなぐ)。値は区切りのキー |
+| `dip_mcp/prompts/baito/prompt_say_v5_ja.txt` | v5 の言う段の決まり(層の骨組み `say_ja.txt` の後ろにつなぐ。task 376): 直前の相づちの終わり 4 字を避ける、ほめない、本人とボタンのほかの職種を書かない(確かめでは、押したボタンの職種だけを除く)。やり直しでは、1 回目の返事と落ちた理由と使える決まった相づち(`v5.retry_note`)を差し込む |
 
 c2 の 1 ターン(c1 と違うところ):
 

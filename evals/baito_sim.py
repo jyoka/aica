@@ -23,7 +23,8 @@ pytest は tests/test_baito_v5.py が回す。
   モデルは line_runtime/baito_chat.py(トークと同じ LLM 層)で呼ぶ
 - M-drop の「正しい更新」は、台本に付いた抽出(sim_v4 の extraction)とする。sim_v4 の dropped がそのまま照らす
 - 生成段には、トーク(runtime の _harness_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
-- 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
+- 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数。
+  検証で落ちた出力(段、何回目、問題、出力の頭 300 字)は結果の rejected に残す(task 376)
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
 - --version v5(task 362): 移植版の入口を aica_port_v5 にする。実 LLM は読む段(read)をそのまま読む(ReadAdapter が写さない)。
   段の数え方は、v5 が層の call_llm(dip_mcp.convo.turn)を通るので、そこを包む。抽出合格率は読む段(read)の 1 回目の合格率
@@ -192,6 +193,7 @@ class StageCounter:
         self.targets = [(harness, "_call_llm")] if version == "v4" else [(convo_turn, "call_llm"), (v5, "call_llm")]
         self.orig = {(id(m), n): getattr(m, n) for m, n in self.targets}
         self.stats: dict[str, dict] = {}
+        self.rejected: list[dict] = []  # 検証で落ちたモデルの出力(段、何回目、問題、出力の頭。代替の理由を後で読むため。task 376)
 
     def _counted(self, orig):
         def counted(fn, payload, validator, state, stage, *a, **kw):
@@ -200,7 +202,13 @@ class StageCounter:
             def fn2(p):
                 calls[0] += 1
                 return fn(p)
-            res = orig(fn2, payload, validator, state, stage, *a, **kw)
+
+            def check(raw):
+                res, probs = validator(raw)
+                if res is None:
+                    self.rejected.append({"stage": stage, "attempt": calls[0], "problems": probs, "raw": str(raw)[:300]})
+                return res, probs
+            res = orig(fn2, payload, check, state, stage, *a, **kw)
             s = self.stats.setdefault(stage, {"first": 0, "first_ok": 0, "fallback": 0, "calls": 0})
             s["first"] += 1
             s["calls"] += calls[0]
@@ -290,7 +298,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
                               f"${cost:.4f}", flush=True)
                     if stopped:
                         break
-            stats = counter.stats
+            stats, rejected = counter.stats, counter.rejected
         finally:
             os.chdir(cwd)
             sys.path.remove(str(work))
@@ -311,7 +319,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
            "max_turns": max((m["turns"] for m in res), default=0)}
     r = rates(stats)
     return {"version": version, "runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
-            "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "results": res}
+            "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "rejected": rejected, "results": res}
 
 
 def main(argv: list[str] | None = None) -> int:

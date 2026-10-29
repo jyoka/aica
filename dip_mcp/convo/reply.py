@@ -7,7 +7,7 @@
 - 問いの文は、質問バンクの言い方(phrasings。1 つ目は問いの text、続けて variants)から選ぶ。モデルはそのどれかを一字一句そのまま使う。
   同じ問いを出し直すときは、前に使った言い方を避ける(pick)
 - 注意と区切りは、データの文をそのまま、ハーネスが相づちと問いの間に置く。モデルの返事に無くてもよく、あれば同じ場所にあるかを見る
-- モデルの返事の確かめ(validate): 問いの言い方が一字一句あるか、相づちが 1 文で ack_max 字までか、ほめ言葉、問いが 2 つ、
+- モデルの返事の確かめ(validate): 問いの言い方が一字一句あるか、相づちが 1 文で ack_max 字までか、ほめ言葉(本人の発言をなぞった言葉は除く)、問いが 2 つ、
   出どころの無い数、氏名などをなぞっていないか、相づちの終わり 4 字が直前の 2 つと同じでないか(「〜ですね。」が 3 回続かない)、
   直前の返信と同じ文が無いか、吹き出しの字数
 - だめならモデルを 1 回呼び直し、それでもだめなら決まった組み立て(fallback): 入り口のデータの相づち(種類ごとに 3 つ、順に回す)+
@@ -116,26 +116,31 @@ def _fixed_parts(plan: dict, ask_text: str) -> list[list[str]]:
             *(["phase_line", x] for x in plan["phase_line"]), ["ask", ask_text]]
 
 
-def fallback(plan: dict, recent: dict, acks: dict) -> list[list[str]]:
-    """決まった組み立て。acks は入り口のデータの相づち({種類: [文, ...]})。recent は層の覚え(dip_mcp.convo.state)で、
-    種類ごとの回し方の位置もここに覚える。直前の相づちと終わりが重なるもの、直前の返信と同じ文、字数を超えるものは飛ばす。
-    計画に触れること(about)が 1 つあれば、その文を先に試す(「勤務地を直しました。」)。"""
-    parts = []
+def fixed_ack(plan: dict, recent: dict, acks: dict, turn: bool = True) -> str | None:
+    """決まった相づちを 1 つ選ぶ。acks は入り口のデータの相づち({種類: [文, ...]})。recent は層の覚え(dip_mcp.convo.state)で、
+    種類ごとの回し方の位置もここに覚える(turn が False なら、位置を進めずに見るだけ)。直前の相づちと終わりが重なるもの、
+    直前の返信と同じ文、字数を超えるものは飛ばす。計画に触れること(about)が 1 つあれば、その文を先に試す(「勤務地を直しました。」)。"""
     kind = plan["ack"]
     pool = list(acks.get(kind) or []) if kind else []
     about = plan.get("about") or []
     said = f"{about[0]}。" if kind and len(about) == 1 else None
     if said and chars(said) <= plan["ack_max"] and not repeats(said, recent):
-        parts.append(["ack", said])
-    elif pool:
-        rot = recent.setdefault("rotation", {})
-        start = rot.get(kind, 0)
-        for k in range(len(pool)):
-            cand = pool[(start + k) % len(pool)]
-            if chars(cand) <= plan["ack_max"] and not repeats(cand, recent):
+        return said
+    rot = recent.setdefault("rotation", {}) if turn and pool else recent.get("rotation") or {}
+    start = rot.get(kind, 0)
+    for k in range(len(pool)):
+        cand = pool[(start + k) % len(pool)]
+        if chars(cand) <= plan["ack_max"] and not repeats(cand, recent):
+            if turn:
                 rot[kind] = (start + k + 1) % len(pool)
-                parts.append(["ack", cand])
-                break
+            return cand
+    return None
+
+
+def fallback(plan: dict, recent: dict, acks: dict) -> list[list[str]]:
+    """決まった組み立て: 決まった相づち(fixed_ack)+ 答えの決まった文 + 注意 + 区切り + 問い。"""
+    ack = fixed_ack(plan, recent, acks)
+    parts = [["ack", ack]] if ack else []
     if plan["answer"] and plan["answer"].get("fallback"):
         parts.append(["answer", plan["answer"]["fallback"]])
     return parts + _fixed_parts(plan, plan["ask"]["text"])
@@ -152,6 +157,20 @@ def repeats(ack: str, recent: dict) -> str | None:
     if last and set(sentences(ack)) & set(sentences(last)):
         return "repeats_last"
     return None
+
+
+ECHO = 2  # ほめ言葉をなぞりと見るのに、本人の発言と同じでなければならない前か後ろの字数
+
+
+def praised(free: str, said: str = "") -> str | None:
+    """ほめ言葉 -> 見つけた言葉か None。本人の発言をなぞった言葉(「すごい混んでる店は苦手」の「すごい混ん」)は除く。
+    言葉だけでなく、前か後ろの ECHO 字も本人の発言と同じときだけなぞりと見る(「すごい残業」の後の「すごいですね」はほめ言葉)。"""
+    own = nfkc(said or "")
+
+    def echoed(m) -> bool:
+        a, b = m.start(), m.end()
+        return bool(own) and ((a >= ECHO and free[a - ECHO:b] in own) or (b + ECHO <= len(free) and free[a:b + ECHO] in own))
+    return next((m.group(0) for m in PRAISE_RE.finditer(free) if not echoed(m)), None)
 
 
 def _numbers_ok(free: str, plan: dict) -> bool:
@@ -199,7 +218,7 @@ def validate(raw, plan: dict, recent: dict) -> tuple[list[list[str]] | None, str
             return None, "too_much_extra"
     elif len(sents) > 1 or chars(free) > plan["ack_max"]:
         return None, "too_much_extra"
-    if PRAISE_RE.search(free):
+    if praised(free, plan["said"]):
         return None, "praise"
     if BLAME_RE.search(free):
         return None, "blame"
