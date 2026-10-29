@@ -148,7 +148,8 @@ def _keeps_question(ctx, i, c):
     asking = ctx["scene"]["asking"]
     if snap["qid"] != asking:
         return False, f"次の問いが {snap['qid']}"
-    if not snap["question"] or nfkc(snap["question"]) not in nfkc(r["text"]):
+    said = [p for p in snap.get("phrasings") or [snap["question"]] if p]  # 会話の層の版は、言い方(variants)のどれでもよい
+    if not said or not any(nfkc(p) in nfkc(r["text"]) for p in said):
         return False, "問いの文が返事に無い"
     missing = [x for x in snap["first_choices"] if x not in r["choices"]]
     return not missing, f"候補のボタンが無い: {missing}" if missing else "同じ問いと候補"

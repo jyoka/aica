@@ -290,7 +290,7 @@ def test_salary_without_a_number_is_asked_again_with_buttons_once_then_kept_as_a
     r, _ = run(st, "高めがいいです", reading_of(act("answer", slot="min_annual_salary", text="高め")))
     h = session._load(st, UID)
     assert h.current["mode"] == "retry" and r["counted"] is False and "min_annual_salary" not in h.slots
-    assert r["reply"].startswith(H.RETRY_TEXT)
+    assert r["reply"].startswith(C2.ENTRY.texts["retry_number"]) and "読み取れなかった" not in r["reply"]  # 責めずに聞き直す
     r, _ = run(st, "高めがいいです", reading_of(act("answer", slot="min_annual_salary", text="高め")))
     h = session._load(st, UID)
     assert (h.slots["min_annual_salary"]["text"], h.slots["min_annual_salary"]["confidence"]) == ("高め", "low")

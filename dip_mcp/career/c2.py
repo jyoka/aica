@@ -1,7 +1,7 @@
 """正社員ヒアリングの c2(CAREER_HARNESS_VERSION=c2)。会話の層(dip_mcp/convo/)に載せ替えていく版。
 
-設計は docs/design/conversation-layer.md(§5 の 2 枚目まで)と ADR-0011。c1(dip_mcp/career/harness.py)は変えずに残し、
-この版は c1 の決める段(問いの選び方、予算、まとめ、結果)と言う段をそのまま使う。c1 と違うのは次のところ:
+設計は docs/design/conversation-layer.md(§5 の 2 枚目と 4 枚目まで)と ADR-0011。c1(dip_mcp/career/harness.py)は変えずに残し、
+この版は c1 の決める段(問いの選び方、予算、まとめ、結果)をそのまま使う。c1 と違うのは次のところ:
 
 - 守りの前処理(§4.11): ボタンでない文は、読む段の前に危ない言葉の表(dip_mcp.convo.guard)と照らす。当たれば、モデルを呼ばず、
   数えずに決まった文(相談窓口。前後の文は入り口の定義 entry.json の丁寧語)を返す。次の発言が「続ける」なら同じ問いから続ける。
@@ -14,16 +14,23 @@
   取り消した欄は空にする。迷っている値は low で入れて進む。今の問いに答えずにほかの欄の値だけを言ったときは、同じ問いを出し直す
 - 個人情報(§4.11): 伏せた印と、読む段が示した氏名・要配慮の部分は、値から除き、返事に出たらやり直す
 - ボタンから推せるほかの欄(§4.7 の 1): 入り口の定義の infer。推測(low)で入れ、聞かずにまとめで確かめる
+- 言う段(§4.8。dip_mcp.convo.reply): 返事を部品(相づち → 答え → 注意 → 区切り → 問い)の並びに組む。プロンプトは層の骨組み
+  dip_mcp/prompts/convo/say_ja.txt に、入り口の定義の調子(tone)を差し込む。モデルが書くのは相づちと逆質問の答えだけで、問いの文は
+  質問バンクの言い方(text と variants)から選ぶ。同じ問いを出し直すときは、前に使った言い方を避ける。返事がだめなら 1 回やり直し、
+  それでもだめなら決まった組み立て(入り口の定義の相づちを順に回す)。相づちが要らないターン(聞き直し、聞き返しの説明)はモデルを呼ばない。
+  「読み取れなかった」とは言わない(聞き直しの注意は入り口の定義の texts)。「他の候補」の前置きも texts から作る
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from dip_mcp.career import harness as H
 from dip_mcp.convo import acts as A
 from dip_mcp.convo import entry as E
 from dip_mcp.convo import guard
+from dip_mcp.convo import reply as RP
 from dip_mcp.convo import state as CS
 from dip_mcp.convo import values as V
 from dip_mcp.convo.turn import call_llm
@@ -31,10 +38,17 @@ from dip_mcp.convo.turn import render_prompt as _render
 
 VERSION = "c2"
 ENTRIES = ("career", "baito")  # 入り口の名前(移る先の確かめ)
-ENTRY = E.load(H.HERE / "entry.json", H.ALL_SLOTS, ENTRIES, ("crisis_lead", "crisis_tail", "crisis_resume"))
+TEXTS = ("crisis_lead", "crisis_tail", "crisis_resume", "retry", "retry_number", "retry_review", "no_answer", "more_lead",
+         "more_lead_number", "more_done")
+# 言う段のプロンプトに渡す、相づちの種類の説明(dip_mcp.convo.reply.ACK_KINDS)
+ACK_JA = {"answer": "本人の答えを受け取る、短い相づち", "correct": "直した・取り消したことを、何を直したか分かるように短く受け取る",
+          "chitchat": "雑談に軽く 1 文で乗る", "emotion": "気持ちを受け止める(励まし、約束、助言をしない)",
+          "complaint": "聞き方への不満に、短く詫びる(かしこまった謝罪の決まり文句にしない)", None: "付けない"}
+ENTRY = E.load(H.HERE / "entry.json", H.ALL_SLOTS, ENTRIES, TEXTS)
 CRISIS_TEXT = guard.crisis_text(ENTRY.texts["crisis_lead"], ENTRY.texts["crisis_tail"])
 CRISIS_FLAG = "crisis_shown"  # 前のターンで窓口を案内した印(1 ターンだけ残す)
 READ_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "read_ja.txt", H.PROMPT_DIR / "prompt_read_ja.txt"]
+SAY_PROMPTS = [H.PROMPT_DIR.parent / "convo" / "say_ja.txt"]
 
 
 @dataclass
@@ -49,9 +63,11 @@ def new_state(form=None, prefill=None):
 
 
 def render_prompt(stage, variables):
-    """読む段(read)は層の骨組みに正社員の決まりをつないだもの。言う段は c1 のまま。"""
+    """読む段(read)は層の骨組みに正社員の決まりをつないだもの。言う段(say)は層の骨組みに、入り口の調子を差し込んだもの。"""
     if stage == "read":
         return _render(READ_PROMPTS, variables)
+    if stage == "say":
+        return _render(SAY_PROMPTS, variables)
     return H.render_prompt(stage, variables)
 
 
@@ -77,7 +93,7 @@ def turn(state, user_text, bank=H.BANK, llm=None):
     """本人の発言 1 通を処理する(返す形は c1 の turn と同じ)。ハーネスの中の例外は、ターンの始めの状態に戻して今のものを出し直す。
     終わりに、発言(氏名と要配慮の部分は伏せる)と返信を直前のやりとりに覚える。"""
     H._init_volatile(state)
-    state._spans = []
+    _init_turn(state)
     snap = state.to_dict()
     try:
         out = _turn(state, user_text, bank, llm)
@@ -86,13 +102,21 @@ def turn(state, user_text, bank=H.BANK, llm=None):
         state.__dict__.clear()
         state.__dict__.update(restored.__dict__)
         H._init_volatile(state, reset=True)
-        state._spans = []
+        _init_turn(state)
         H.ev(state, "internal_error", error=type(e).__name__)
-        return H._represent(state, bank, counted=False)  # 氏名の部分が分からないので、発言を覚えない
+        return H._represent(state, bank, counted=False)  # 氏名の部分が分からないので、発言を覚えない。c1 の決まった出し直し
     if isinstance(user_text, str) and H.nfkc(user_text):
         CS.heard(state.convo, guard.mask(user_text, state._spans))
-        CS.replied(state.convo, out["reply"])
+        CS.replied(state.convo, out["reply"], state._ack)
     return out
+
+
+def _init_turn(state):
+    """そのターン限りの層の値: 氏名と要配慮の部分、読んだもの、押したボタン、返事の相づち、聞き直したか、聞き返しに説明したか、
+    ターンの始めの問い。"""
+    state._spans, state._reading, state._button, state._ack = [], None, None, None
+    state._retry = state._clarify = False
+    state._qid_before = (state.current or {}).get("qid")
 
 
 def read_payload(state, bank, user_text):
@@ -137,12 +161,13 @@ def _turn(state, user_text, bank, llm):
         return H._stored(state)
     if not H.nfkc(text):
         H.ev(state, "empty_input")
-        return H._represent(state, bank, counted=False)
+        return _represent(state, bank, counted=False)
     state.said.append(text)
     cur = state.current
     q = H.qmap(state, bank).get(cur["qid"])
     button = match_button(state, text)
     button = H.LEGACY_BUTTONS.get(button, button)
+    state._button = button
     fix = H.fix_targets(state).get(H.nfkc(text))
     state.seconds += H.BUTTON_SECONDS if button or fix else H.type_seconds(text)
     crisis_open = _take_crisis(state)
@@ -151,19 +176,19 @@ def _turn(state, user_text, bank, llm):
             return _crisis(state)
         if crisis_open and guard.wants_resume(text):
             H.ev(state, "crisis_resume")
-            return H._represent(state, bank, counted=False, lead=ENTRY.texts["crisis_resume"] + "\n")
+            return _represent(state, bank, counted=False, lead=ENTRY.texts["crisis_resume"])
     if button == H.LATER or (button is None and fix is None and H.nfkc(text) in H.END_WORDS):
         return H._close(state, "later")
     if cur["mode"] == "start":  # 形 D の「始める」: 最初の問いを出す。打った文は、最初の問いへの答えとして読む
         H.advance(state, bank)
         if button is not None:
             H.ev(state, "started")
-            return H._represent(state, bank, counted=False)
+            return _represent(state, bank, counted=False)
         cur = state.current
         q = H.qmap(state, bank).get(cur["qid"])
-        button = match_button(state, text)
+        button = state._button = match_button(state, text)
     if button == H.MORE and q is not None:
-        return H._more(state, q)
+        return _more(state, q)
     if fix is not None:  # 形 D のまとめの「直す」: その欄の問いを出す(数えない。c1 と同じ)
         fq = H.fix_question(state, bank, fix)
         if fq is not None and H.can_fix(state):
@@ -175,7 +200,7 @@ def _turn(state, user_text, bank, llm):
         return H._represent(state, bank, counted=False, lead=H.FIX_LIMIT_LEAD)
     reading = None
     if button is None:
-        reading = call_llm(llm.read, read_payload(state, bank, text), validator(text), _log(state), "read")
+        reading = state._reading = call_llm(llm.read, read_payload(state, bank, text), validator(text), _log(state), "read")
         state._spans = A.spans(reading)
         state._user_text = guard.mask(text, state._spans)  # 言う段に、氏名と要配慮の部分を渡さない
     if A.has(reading, "crisis"):  # 表に無い危ない言い方(§6 の 15)。読む段の 1 回のほかは呼ばない
@@ -187,9 +212,9 @@ def _turn(state, user_text, bank, llm):
     if talk_only(reading):  # 雑談、逆質問、感情など、値も操作も無い発言: 状態を変えずに今のものを出し直す
         return _aside(state, bank, llm)
     if q is None and cur["mode"] != "review":
-        return H._represent(state, bank, counted=False)
+        return _represent(state, bank, counted=False)
     if A.has(reading, "more") and not _values(reading, q) and cur["mode"] not in ("review", "start"):  # 「ほかには?」と打った
-        return H._more(state, q)
+        return _more(state, q)
     if cur["mode"] == "fix":
         H._count(state, "review")
         if button == H.FIX_KEEP:
@@ -219,6 +244,7 @@ def _ask_turn(state, bank, llm, q, button, reading, text):
     if button is None and not _values(reading, q) and A.has(reading, "clarify"):
         if state.clarified.count(cur["qid"]) < H.MAX_CLARIFY:
             H._clarify(state, q)
+            state._clarify = True
             return _say(state, bank, llm, counted=False)
         H.ev(state, "clarify_unanswered", qid=q["id"])
         return _next(state, bank, llm, q, skipped=H.CLARIFY_SKIP)
@@ -257,6 +283,7 @@ def _ask_turn(state, bank, llm, q, button, reading, text):
 def _retry(state, bank, llm, q):
     state.retried += [q["id"], f"num:{q['id']}"]
     state.current = dict(state.current, mode="retry")
+    state._retry = True
     return _say(state, bank, llm, counted=False)
 
 
@@ -285,7 +312,7 @@ def _review(state, bank, llm, button, reading, text):
         if key not in state.retried:
             state.retried.append(key)
             H._uncount(state)
-            return H._represent(state, bank, counted=False, lead=H.RETRY_TEXT)
+            return H._represent(state, bank, counted=False, lead=ENTRY.texts["retry_review"])
         H.apply_review(state, None, button_ok=False, user_text=text, promote=False)
     else:
         ext = None
@@ -446,23 +473,139 @@ def _aside(state, bank, llm):
     return _say(state, bank, llm, counted=counted, aside=True)
 
 
-def _say(state, bank, llm, counted=True, aside=False):
-    """言う段(c1 の _say と同じ)。返事に伏せた印・氏名・要配慮の部分が出たら、やり直す(だめなら問いの文だけ)。"""
+def _say(state, bank, llm, counted=True, aside=False, quiet=False, lead=None):
+    """言う段(§4.8)。まとめと結果は c1 の決まった文。問いは、計画(view)の部品を 1 つの吹き出しに組む。モデルに書かせるもの
+    (相づちか逆質問の答え)があればモデルを呼び、返事を確かめる(dip_mcp.convo.reply.validate。氏名などをなぞったら、やり直す)。
+    だめなら 1 回やり直し、それでもだめなら決まった組み立て。返す形は c1 と同じで、部品の並び(parts)が付く。"""
     cur = state.current
     if cur["mode"] == "review":
         card = state.last_card
         return H._out(state, H.review_bubbles(state, card), cur["choices"], counted=counted, card=card["lines"])
     if cur["mode"] == "result":
         return H._finish(state, counted)
-    v = H.view(state, bank, aside=aside)
-    v["model_text"] = state._user_text  # 言う段のモデルに本人の発言として渡す文(氏名と要配慮の部分を伏せたもの。runtime)
+    if cur["mode"] != "clarify" and H.qmap(state, bank).get(cur.get("qid")) is None:  # 今の問いが無い(区分が変わったなど)
+        return H._represent(state, bank, counted=counted, lead=lead)
+    v, plan = view(state, bank, aside=aside, quiet=quiet, lead=lead)
 
-    def _vr(raw):
-        r, err = H.validate_reply(raw, v)
-        if r is not None and guard.leaks(r, state._spans):
-            return None, ["personal_echo"]
-        return r, ([err] if err else [])
-    reply = call_llm(llm.generate, v, _vr, _log(state), "generate") if llm is not None else None
-    if reply is None:
-        reply = v["text"]
-    return H._out(state, [H.bubble(v, reply)], v["choices"], counted=counted)
+    def _check(raw):
+        parts, why = RP.validate(raw, plan, state.convo)
+        return parts, ([why] if why else [])
+    parts = None
+    if llm is not None and RP.needs_model(plan):
+        parts = call_llm(llm.generate, v, _check, _log(state), "generate")
+    if parts is None:
+        parts = RP.fallback(plan, state.convo, ENTRY.tone["acks"])
+    if cur["mode"] != "clarify":
+        cur["said"] = RP.ask_of(parts)  # 次に同じ問いを出し直すときは、この言い方を避ける
+    state._ack = RP.ack_of(parts)
+    return H._out(state, [RP.render(parts)], v["choices"], counted=counted) | {"parts": parts}
+
+
+ASK_MODES = ("ask", "retry", "clarify")  # 層の組み立てで出す問いの mode(ほかの start、review、fix、result、closed は c1 のまま)
+
+
+def _represent(state, bank, counted, lead=None):
+    """今のものを、モデルを呼ばずに出し直す(c1 の _represent)。問いは層の組み立てで出す(前と違う言い方。c1 の聞き直しの文を付けない)。"""
+    if (state.current or {}).get("mode") not in ASK_MODES:
+        return H._represent(state, bank, counted=counted, lead=lead)
+    return _say(state, bank, None, counted=counted, quiet=True, lead=lead)
+
+
+def phrasings(q, bank):
+    """問いの言い方: 1 つ目は問いの文、続けて質問バンクの variants。区分ごとの文(text_by_segment)や、履歴書から入った仕事の言葉を
+    引く文(text_known)に変わった問いは、その文だけ(variants は既定の文の言い換えなので)。"""
+    n = q.get("card")
+    raw = next((b for b in bank if b["id"] == (q["id"][:-len(str(n))] if n else q["id"])), q)
+    which = "直近の" if n == 1 else "その前の"
+    if q["text"] != raw["text"].replace("{which}", which):
+        return [q["text"]]
+    return [q["text"], *(x.replace("{which}", which) for x in raw.get("variants") or [])]
+
+
+def ack_kind(reading, button, aside):
+    """相づちの種類(dip_mcp.convo.reply.ACK_KINDS)。逆質問だけのターンは相づちを付けず、答えを書かせる。"""
+    if A.has(reading, "complaint"):
+        return "complaint"
+    if A.has(reading, "emotion"):
+        return "emotion"
+    if not aside or button is not None:
+        return "answer"
+    if A.has(reading, "chitchat", "story"):
+        return "chitchat"
+    if A.has(reading, "ask_service", "ask_advice"):
+        return None
+    if A.has(reading, "correct", "retract") and not A.has(reading, "add", "unsure"):
+        return "correct"
+    return "answer"
+
+
+def facts():
+    """逆質問に答えてよい事実(§4.6 の facts.json。3 枚目のカードで足す。無ければ「お答えできません」と言う)。"""
+    return []
+
+
+def view(state, bank, aside=False, quiet=False, lead=None):
+    """言う段の入力(c1 の view に、計画とプロンプトの変数を足したもの)-> (view, 計画)。model_text は、言う段のモデルに本人の発言として
+    渡す文、model_history は直前のやりとり(どちらも氏名と要配慮の部分を伏せたもの。ランタイムが、会話の記録の代わりに使う)。
+    quiet はモデルを呼ばない出し直し(相づちも答えも付けず、lead を注意の場所に置く)。"""
+    v = H.view(state, bank, aside=aside)
+    cur = state.current
+    q = H.qmap(state, bank).get(cur.get("qid"))
+    mode = cur.get("mode")
+    reading, button = getattr(state, "_reading", None), getattr(state, "_button", None)
+    notes, lines = [], []
+    for x in getattr(state, "_progress", None) or []:  # 飛ばした問いは注意、フェーズの区切りと職歴の「✓」は区切りの場所(§4.12)
+        (lines if x in H.PHASE_LINES.values() or x.startswith("✓") else notes).append(x)
+    kind = ack_kind(reading, button, aside or mode == "aside")
+    answer = None
+    if mode == "clarify":  # 聞き返しへの説明(質問バンクの explain)。説明したターンは相づちを付けない
+        ask = {"qid": cur["qid"], "mode": mode, "text": cur["text"], "phrasings": [cur["text"]]}
+        kind = None if getattr(state, "_clarify", False) else kind
+    else:
+        ps = phrasings(q, bank)
+        retry = getattr(state, "_retry", False)
+        again = retry or cur.get("qid") == getattr(state, "_qid_before", None)
+        text, allowed = RP.pick(ps, (cur.get("said") or ps[0]) if again else None)
+        if quiet:  # 決まった出し直し(「続ける」など): 脱線から戻るのではないので、前と同じ言い方
+            text = cur.get("said") if cur.get("said") in ps else ps[0]
+            allowed = [text]
+        ask = {"qid": cur["qid"], "mode": mode, "text": text, "phrasings": allowed}
+        if retry:  # 読めなかった答え: 責めずに、押すだけで答えられることを添えて、違う言い方で出し直す
+            notes.append(ENTRY.texts["retry_number" if q.get("kind") == "number" else "retry"])
+            kind = None
+        elif A.has(reading, "ask_service", "ask_advice"):  # 逆質問(ほかの働きと一緒でも): 答えの部品
+            answer = {"facts": facts(), "fallback": ENTRY.texts["no_answer"]}
+    hook = (reading or {}).get("hook") or (button if button and len(button) <= A.HOOK_MAX else None)
+    hidden = guard.hidden(getattr(state, "_spans", []))
+    if quiet:  # モデルを呼ばない出し直し(危ない言葉の後の「続ける」など): 前置きの文と問いだけ
+        kind, answer = None, None
+        notes = [lead] if lead else []
+    plan = RP.new_plan(ask, kind, hook, answer, notes, lines, v["choices"], v["user_text"], hidden)
+    convo = state.convo
+    v |= {"text": ask["text"], "model_text": v["user_text"], "model_history": CS.messages(convo), "entry": ENTRY.title, "tone": ENTRY.tone["style"],
+          "examples": " / ".join(ENTRY.tone.get("examples") or []) or "(なし)", "hook": plan["hook"] or "(なし)",
+          "ack": ACK_JA[plan["ack"]], "ack_max": plan["ack_max"],
+          "answer": (f"答える。使ってよい事実(これだけ。無いことは「お答えできません」と言う): {plan['facts']}" if plan["answer"]
+                     else f"書かない(システムが「{plan['fixed_answer']}」と答える)" if plan["fixed_answer"] else "しない"),
+          "recent_acks": " / ".join(a for a in convo.get("acks", []) if a) or "(なし)",
+          "last_reply": ((convo.get("replies") or [""])[-1] or "(なし)").replace("\n", " / "),
+          "lines": " / ".join([*notes, *lines]) or "(なし)",
+          "next_question": json.dumps({"id": ask["qid"], "mode": v["mode"], "text": ask["text"], "phrasings": ask["phrasings"]},
+                                      ensure_ascii=False)}
+    return v, plan
+
+
+def _more(state, q):
+    """「他の候補」: 見せていない候補の次のページ(c1 の _more と同じ)。前置きは入り口の定義の文で、問いの短い名前から作る
+    (モデルを呼ばない。数えない)。出し尽くしたら最初のページに戻す。"""
+    cur = state.current
+    i, cands = H.next_page(q, cur)
+    if i is None:
+        cur.update(page=len(q["pages"]), choices=H.page_choices(q, q["pages"][0], cur["mode"], more=False))
+        lead = ENTRY.texts["more_done"]
+    else:
+        cur.update(page=i, choices=H.page_choices(q, cands, cur["mode"]))
+        cur["shown"] = list(dict.fromkeys([*cur.get("shown", []), *H._shown_now(q, cur["choices"])]))
+        lead = RP.more_lead(ENTRY.texts, q["topic"], q.get("kind"))
+    H.ev(state, "more", qid=q["id"], page=cur["page"], done=i is None)
+    return H._out(state, [lead], cur["choices"], counted=False)

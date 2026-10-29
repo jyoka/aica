@@ -171,7 +171,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - {"active": False}: 相談をしていない(やめた合図・区分が外れたなら ended と saved)。トークの AI がこのターンを受け持つ
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
-    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある
+    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある。
+      会話の層の版(c2)は、返事の部品の並び parts([[種類, 文]]。dip_mcp.convo.reply)も付ける(場面の一覧の判定に使う)
     - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目。
       result に着いたときだけ、職歴カードから作った下書き(draft: id、blanks、replaced、view_url)が付く。下書きの画面を開く
       入口は 1 つ: LINE の形 D は完成のカルーセルの「下書きを開く」(ui.complete.draft_url)、ほかの形と Web のトーク
@@ -201,7 +202,7 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     ui, mem = (None, None) if r.get("crisis") else UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
     out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase, "question": r["qid"],
            "reply": r["reply"], "bubbles": list(r["bubbles"]), "choices": list(r["choices"]), "counted": r["counted"],
-           "llm_calls": llm.used} | ({"ui": ui} if ui else {})
+           "llm_calls": llm.used} | ({"ui": ui} if ui else {}) | ({"parts": r["parts"]} if r.get("parts") else {})
     if r["done"]:
         saved = _finish(state, line_user_id, h)
         out |= {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved, "blank_cards": H.blank_cards(h)}

@@ -1,4 +1,4 @@
-"""会話の層の共通の部品(dip_mcp/convo/。設計メモ docs/design/conversation-layer.md §4.1、§4.3、§4.4、§4.11)。"""
+"""会話の層の共通の部品(dip_mcp/convo/。設計メモ docs/design/conversation-layer.md §4.1、§4.3、§4.4、§4.8、§4.11)。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from dip_mcp.career import harness as H
 from dip_mcp.convo import acts as A
 from dip_mcp.convo import entry as E
 from dip_mcp.convo import guard
+from dip_mcp.convo import reply as R
 from dip_mcp.convo import state as CS
 from dip_mcp.convo import turn as T
 from dip_mcp.convo import values as V
@@ -186,10 +187,14 @@ def test_entry_shape_errors_stop_loading(tmp_path, change, match):
 
 
 def test_bank_shape_errors_stop_loading():
-    q = {"id": "a", "text": "問い", "targets": ["area"], "pages": [["東京"]], "choice_effects": {}}
+    q = {"id": "a", "text": "{which}問い", "variants": ["{which}言い方"], "targets": ["area"], "pages": [["東京"]],
+         "choice_effects": {}}
     E.check_bank("x", [q], {"area"})
     for bad, match in ((dict(q, text=""), "文が無い"), (dict(q, targets=["nope"]), "知らない的"),
-                       (dict(q, pages=[[]]), "候補が無い"), (dict(q, choice_effects={"大阪": {}}), "効き目")):
+                       (dict(q, pages=[[]]), "候補が無い"), (dict(q, choice_effects={"大阪": {}}), "効き目"),
+                       (dict(q, variants=[]), "variants"), (dict(q, variants=["a", "b", "c"]), "variants"),
+                       (dict(q, variants=["{which}問い"]), "重なる"), (dict(q, variants=["どこ?いつ?"]), "問いは 1 つ"),
+                       (dict(q, variants=["{role}の言い方"]), "差し込み")):
         with pytest.raises(ValueError, match=match):
             E.check_bank("x", [bad], {"area"})
 
@@ -197,3 +202,110 @@ def test_bank_shape_errors_stop_loading():
 def test_a_number_of_the_wrong_type_drops_only_the_number():
     out, probs = read([{"act": "add", "slot": "min_annual_salary", "text": "500万", "number": "500"}], "500万")
     assert out["acts"] == [{"act": "add", "slot": "min_annual_salary", "text": "500万"}] and probs == ["add_bad_type:number"]
+
+
+# ----------------------------- 言う段(reply) -----------------------------
+ASK = {"qid": "hf_area", "mode": "ask", "text": "働きたい場所は?", "phrasings": ["働きたい場所は?", "どこで働きたいですか?"]}
+
+
+def plan(**kw):
+    return R.new_plan(**({"ask": ASK, "ack": "answer", "said": "東京23区", "choices": ["400万円台"]} | kw))
+
+
+def test_pick_rotates_phrasings_and_avoids_the_last_one():
+    ps = ["a", "b", "c"]
+    assert R.pick(ps, None) == ("a", ps)
+    assert R.pick(ps, "a") == ("b", ["b", "c"]) and R.pick(ps, "c") == ("a", ["a", "b"])
+    assert R.pick(["a"], "a") == ("a", ["a"])
+
+
+def test_validate_reads_the_parts_and_puts_the_fixed_lines_between_ack_and_question():
+    p = plan(note=["近いものを押すだけでも大丈夫です。"], phase_line=["次は希望の条件です"])
+    parts, why = R.validate({"reply": "東京23区ですね。どこで働きたいですか?"}, p, CS.new())
+    assert why is None and [k for k, _ in parts] == ["ack", "note", "phase_line", "ask"]
+    assert R.render(parts) == "東京23区ですね。\n近いものを押すだけでも大丈夫です。\n次は希望の条件です\nどこで働きたいですか?"
+    same, _ = R.validate("東京23区ですね。\n近いものを押すだけでも大丈夫です。\n次は希望の条件です\nどこで働きたいですか?", p, CS.new())
+    assert same == parts  # モデルが書き写した決まった行は、順が合えばそのまま
+    assert R.validate("次は希望の条件です\n東京23区ですね。どこで働きたいですか?", p, CS.new())[1] == "text_between_parts"
+    assert R.render(R.validate("働きたい場所は?", plan(), CS.new())[0]) == "働きたい場所は?"  # 相づちは無くてもよい
+    # 順の違う場所に書き写した区切りは、吹き出しに 2 回出るので落とす
+    assert R.validate("次は希望の条件です\nわかりました。\n近いものを押すだけでも大丈夫です。\nどこで働きたいですか?", p,
+                      CS.new())[1] == "text_between_parts"
+    # 句点の無い言い方に、モデルが句点を付けた: 言い方のまま受ける
+    bare = plan(ask=dict(ASK, text="場所を教えてください", phrasings=["場所を教えてください"]))
+    parts, why = R.validate("わかりました。場所を教えてください。", bare, CS.new())
+    assert why is None and R.ask_of(parts) == "場所を教えてください"
+
+
+@pytest.mark.parametrize("reply, why", [
+    ("東京23区ですね。働きたいところは?", "question_missing"),
+    ("東京23区ですね。働きたい場所は?駅でも", "text_after_question"),
+    ("東京23区ですね。通勤も楽そうです。働きたい場所は?", "too_much_extra"),
+    ("東京23区とは、素晴らしい選択ですね。働きたい場所は?", "praise"),
+    ("読み取れなかったので。働きたい場所は?", "blame"),
+    ("東京23区、駅は決まってますか?働きたい場所は?", "two_questions"),
+    ("年収800万も狙えますね。働きたい場所は?", "made_up_number"),
+    ("みほん太郎さん、了解です。働きたい場所は?", "personal_echo"),
+    ("五年も続けてこられたのですね。働きたい場所は?", "made_up_number"),
+])
+def test_validate_rejects(reply, why):
+    assert R.validate({"reply": reply}, plan(hidden=["みほん太郎"]), CS.new()) == (None, why)
+
+
+def test_validate_rejects_a_third_same_ending_and_a_repeated_sentence_and_extra_text():
+    c = CS.new()
+    CS.replied(c, "同じ仕事で上を目指すのですね。", "同じ仕事で上を目指すのですね。")
+    CS.replied(c, "年収を上げたいのですね。働きたい場所は?", "年収を上げたいのですね。")
+    assert R.validate("東京23区ですね。働きたい場所は?", plan(), c) == (None, "ack_repeats")
+    assert R.validate("年収を上げたいのですね。働きたい場所は?", plan(), CS.new() | {"replies": c["replies"]})[1] == "repeats_last"
+    assert R.validate("東京23区、了解です。働きたい場所は?", plan(), c)[1] is None
+    assert R.validate("了解です。働きたい場所は?", plan(ack=None), c) == (None, "extra_text")
+    assert not R.needs_model(plan(ack=None))
+
+
+def test_ack_budget_and_answer_bubble():
+    long_ask = dict(ASK, text="あ" * 78, phrasings=["あ" * 78])
+    assert R.new_plan(long_ask, "answer")["ack"] is None  # 相づちの入る字数が無い
+    p = plan(ack=None, answer={"facts": ["aica は架空のデモです"], "fallback": "お答えできません。"})
+    assert p["limit"] == R.ANSWER_BUBBLE_MAX and R.needs_model(p)
+    parts, why = R.validate("aica は求人を探す手伝いをします。架空のデモです。働きたい場所は?", p, CS.new())
+    assert why is None and parts[0] == ["answer", "aica は求人を探す手伝いをします。架空のデモです。"]
+    assert R.validate("働きたい場所は?", p, CS.new()) == (None, "answer_missing")  # 逆質問を黙って流さない
+    fixed = plan(ack=None, answer={"facts": [], "fallback": "お答えできません。"})  # 渡す事実が無い: モデルに書かせない
+    assert fixed["limit"] == R.ANSWER_BUBBLE_MAX and not R.needs_model(fixed)
+    assert R.fallback(fixed, CS.new(), {}) == [["answer", "お答えできません。"], ["ask", "働きたい場所は?"]]
+
+
+def test_fallback_rotates_the_entry_acks_and_skips_repeats():
+    acks = {"answer": ["わかりました。", "ありがとうございます。", "なるほど、了解です。"]}
+    c = CS.new()
+    first = R.fallback(plan(), c, acks)
+    assert first == [["ack", "わかりました。"], ["ask", "働きたい場所は?"]]
+    CS.replied(c, R.render(first), "わかりました。")
+    assert R.ack_of(R.fallback(plan(), c, acks)) == "ありがとうございます。"
+    c2 = CS.new()
+    CS.replied(c2, "x", "ありがとうございます。")
+    CS.replied(c2, "y", "ございます。")  # 終わり 4 字が「います。」の相づちが 2 つ続いた: 3 つ目には使わない
+    assert R.ack_of(R.fallback(plan(), c2 | {"rotation": {"answer": 1}}, acks)) == "なるほど、了解です。"
+    assert R.fallback(plan(ack=None, note=["注意"]), CS.new(), acks) == [["note", "注意"], ["ask", "働きたい場所は?"]]
+
+
+def test_more_lead_is_built_from_the_topic():
+    texts = {"more_lead": "{topic}のほかの候補です。", "more_lead_number": "{topic}のほかの区切りです。"}
+    assert R.more_lead(texts, "年収", "number") == "年収のほかの区切りです。"
+    assert R.more_lead(texts, "働く場所", "text") == "働く場所のほかの候補です。"
+
+
+@pytest.mark.parametrize("change, match", [
+    (lambda d: d.pop("tone"), "調子"),
+    (lambda d: d["tone"]["acks"].pop("emotion"), "決まった相づち"),
+    (lambda d: d["tone"]["acks"]["answer"].append("すごいですね。"), "決まった相づち"),
+    (lambda d: d["tone"]["acks"]["answer"].__setitem__(0, "はい。そうですね。"), "決まった相づち"),
+])
+def test_entry_tone_errors_stop_loading(tmp_path, change, match):
+    d = json.loads(CAREER_ENTRY.read_text(encoding="utf-8"))
+    change(d)
+    (tmp_path / "bank.json").write_text((CAREER_ENTRY.parent / "bank.json").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "entry.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
+        E.load(tmp_path / "entry.json", H.ALL_SLOTS, ("career", "baito"))
