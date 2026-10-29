@@ -12,7 +12,7 @@
    {"who": "agent", "text": "年収はいくら以上を希望しますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "とりあえずバイトでいい。週3くらいで", "button": false}],
+  "says": [{"text": "とりあえずバイトでいい。週3くらいで", "button": false, "reading": {"acts": [{"act": "switch", "to": "baito", "strength": "want"}, {"act": "add", "slot": "work_hours", "text": "週3くらい"}]}}],
   "expect": [
    {"check": "switches_to", "entry": "baito"},
    {"check": "profile", "key": "track", "contains": "アルバイト"},
@@ -36,7 +36,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "バイトも並行して探そうかな", "button": false}],
+  "says": [{"text": "バイトも並行して探そうかな", "button": false, "reading": {"acts": [{"act": "switch", "to": "baito", "strength": "consider"}]}}],
   "expect": [
    {"check": "stays"},
    {"check": "offers_entries", "entries": ["baito"]},

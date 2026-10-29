@@ -11,7 +11,7 @@
    {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "今日めっちゃ雨だね", "button": false}],
+  "says": [{"text": "今日めっちゃ雨だね", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "雨"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "choices_include", "labels": ["東京23区", "大阪市内"]},
@@ -34,7 +34,7 @@
    {"who": "agent", "text": "次は職歴です\n事務・経理の経験ですね。直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "お腹すいた〜ラーメン食べたい", "button": false}],
+  "says": [{"text": "お腹すいた〜ラーメン食べたい", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "ラーメン"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -55,7 +55,7 @@
    {"who": "agent", "text": "500万円台ですね。新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "てか今日も上司に詰められて最悪だった", "button": false}],
+  "says": [{"text": "てか今日も上司に詰められて最悪だった", "button": false, "reading": {"acts": [{"act": "chitchat"}, {"act": "emotion", "feeling": "angry"}], "hook": "上司に詰められて"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "slot_unchanged", "slot": "why_now"},
@@ -77,7 +77,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "1億で!笑", "button": false}],
+  "says": [{"text": "1億で!笑", "button": false, "reading": {"acts": [{"act": "chitchat"}]}}],
   "expect": [
    {"check": "slot_not_high", "slot": "min_annual_salary"},
    {"check": "choices_include", "labels": ["500万円台", "600万円以上"]},
@@ -99,7 +99,7 @@
    {"who": "agent", "text": "そのお仕事で、あなたが良くしたことは?"}
   ],
   "asking": "card_result1",
-  "says": [{"text": "👍", "button": false}],
+  "says": [{"text": "👍", "button": false, "reading": {"acts": [{"act": "chitchat"}]}}],
   "expect": [
    {"check": "slot_open", "slot": "career1.result"},
    {"check": "keeps_question"},
@@ -121,7 +121,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "[スタンプ]", "button": false}],
+  "says": [{"text": "[スタンプ]", "button": false, "reading": {"acts": [{"act": "chitchat"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "slot_open", "slot": "area"},
@@ -142,7 +142,7 @@
    {"who": "agent", "text": "家から30分以内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "おはよう", "button": false}],
+  "says": [{"text": "おはよう", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "おはよう"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -163,9 +163,9 @@
   ],
   "asking": "hf_area",
   "says": [
-   {"text": "最近ジム通い始めたんだよね", "button": false},
-   {"text": "週3で行ってる", "button": false},
-   {"text": "筋肉痛やばい", "button": false}
+   {"text": "最近ジム通い始めたんだよね", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "ジム通い"}},
+   {"text": "週3で行ってる", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "週3"}},
+   {"text": "筋肉痛やばい", "button": false, "reading": {"acts": [{"act": "chitchat"}], "hook": "筋肉痛"}}
   ],
   "expect": [
    {"check": "keeps_question", "at": "all"},

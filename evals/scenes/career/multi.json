@@ -11,7 +11,7 @@
    {"who": "agent", "text": "年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "東京で500万以上、リモートがいい", "button": false}],
+  "says": [{"text": "東京で500万以上、リモートがいい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "東京"}, {"act": "add", "slot": "min_annual_salary", "text": "500万以上", "number": 500, "unit": "万"}, {"act": "add", "slot": "work_style", "text": "リモートがいい"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "東京", "confidence": "high"},
    {"check": "slot", "slot": "min_annual_salary", "number": 500},
@@ -35,7 +35,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "大阪。あと来月からなら働ける", "button": false}],
+  "says": [{"text": "大阪。あと来月からなら働ける", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "大阪"}, {"act": "add", "slot": "start_timing", "text": "来月からなら働ける"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "大阪"},
    {"check": "slot", "slot": "start_timing", "contains": "来月"},
@@ -54,7 +54,7 @@
    {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "年収上げたい。今は法人営業を8年やってる", "button": false}],
+  "says": [{"text": "年収上げたい。今は法人営業を8年やってる", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "年収上げたい", "choice": "年収を上げたい"}, {"act": "add", "slot": "career1.role", "text": "法人営業"}], "hook": "法人営業を8年", "mentions": ["法人営業"]}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "contains": "年収"},
    {"check": "slot", "slot": "career1.role", "contains": "法人営業"},
@@ -74,7 +74,7 @@
    {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "法人営業で120社担当して、新規を1年で30社増やした", "button": false}],
+  "says": [{"text": "法人営業で120社担当して、新規を1年で30社増やした", "button": false, "reading": {"acts": [{"act": "answer", "slot": "career1.role", "text": "法人営業"}, {"act": "add", "slot": "career1.scale", "text": "120社", "number": 120, "unit": "社"}, {"act": "add", "slot": "career1.result", "text": "新規を1年で30社増やした"}], "hook": "120社", "mentions": ["法人営業"]}}],
   "expect": [
    {"check": "slot", "slot": "career1.role", "contains": "法人営業"},
    {"check": "slot", "slot": "career1.scale", "number": 120},
@@ -117,7 +117,7 @@
    {"who": "agent", "text": "家から30分以内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "あ、できれば駅から歩けるところがいい", "button": false}],
+  "says": [{"text": "あ、できれば駅から歩けるところがいい", "button": false, "reading": {"acts": [{"act": "add", "slot": "area", "text": "駅から歩けるところがいい"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "駅から歩ける"},
    {"check": "keeps_question"},

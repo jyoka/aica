@@ -11,7 +11,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "あ、やっぱ週3は入れるかも", "button": false}],
+  "says": [{"text": "あ、やっぱ週3は入れるかも", "button": false, "reading": {"acts": [{"act": "correct", "slot": "days_per_week", "text": "週3は入れるかも", "value": "3-4"}]}}],
   "expect": [
    {"check": "slot", "slot": "days_per_week", "value": "3-4"},
    {"check": "keeps_question"},
@@ -31,7 +31,7 @@
    {"who": "agent", "text": "通うなら、どこまでOK？"}
   ],
   "asking": "hf_commute",
-  "says": [{"text": "わかんない", "button": false}],
+  "says": [{"text": "わかんない", "button": false, "reading": {"acts": [{"act": "dont_know"}]}}],
   "expect": [
    {"check": "slot_not_high", "slot": "commute"},
    {"check": "not_asks", "slots": ["commute"]},
@@ -50,7 +50,7 @@
    {"who": "agent", "text": "時給はいくら以上がいい？"}
   ],
   "asking": "fg_wage",
-  "says": [{"text": "1200か1500で迷う…", "button": false}],
+  "says": [{"text": "1200か1500で迷う…", "button": false, "reading": {"acts": [{"act": "unsure", "slot": "hourly_wage_min", "text": "1200か1500", "value": 1200}]}}],
   "expect": [
    {"check": "slot_not_high", "slot": "hourly_wage_min"},
    {"check": "reply_not_contains", "texts": ["受け取れなかった"]},

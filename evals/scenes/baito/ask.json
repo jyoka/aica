@@ -10,7 +10,7 @@
    {"who": "agent", "text": "時給はいくら以上がいい？"}
   ],
   "asking": "fg_wage",
-  "says": [{"text": "時給っていくらが普通？", "button": false}],
+  "says": [{"text": "時給っていくらが普通？", "button": false, "reading": {"acts": [{"act": "ask_advice"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -31,7 +31,7 @@
    {"who": "agent", "text": "通うなら、どこまでOK？"}
   ],
   "asking": "hf_commute",
-  "says": [{"text": "てかあなた誰？", "button": false}],
+  "says": [{"text": "てかあなた誰？", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -51,7 +51,7 @@
    {"who": "agent", "text": "働けるのはどの時間帯？（いくつでも）"}
   ],
   "asking": "hf_time",
-  "says": [{"text": "おすすめのバイトある？", "button": false}],
+  "says": [{"text": "おすすめのバイトある？", "button": false, "reading": {"acts": [{"act": "ask_advice"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},

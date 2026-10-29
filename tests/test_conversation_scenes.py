@@ -1,6 +1,6 @@
 """会話の層の場面の一覧(evals/scenes、設計メモ docs/design/conversation-layer.md §3)の形を確かめる。
 
-場面を回して採点する仕組みは、まだ無い(設計メモ §5 の 1 のカード)。ここで確かめるのは、データの形と、設計メモの約束
+場面を回して条件を判定する仕組みのテストは tests/test_scene_runner.py。ここで確かめるのは、データの形と、設計メモの約束
 (全部の入り口で 60 場面以上、種類ごとに 3 場面以上、入り口をまたぐ場面、jyoka/tasks#326 のトーク、
 どの場面にも費用 0 で判定できる条件)だけ。
 """
@@ -147,5 +147,42 @@ def _broken(base="chat-weather", **change):
     (_broken("talk-hello", expect=[{"check": "keeps_question"}]), "今の問いが無い"),
 ])
 def test_validate_rejects_broken_scenes(scene, msg):
+    with pytest.raises(ValueError, match=msg):
+        S.validate(scene)
+
+
+def test_every_typed_message_has_a_reading():
+    # 読む段の正解(設計メモ §5 の 1 枚目)。career と baito の打った文には必ずあり、ボタンには無い
+    for s in SCENES:
+        for x in s["says"]:
+            if s["entry"] != "talk":
+                assert ("reading" in x) == (not x["button"]), (s["id"], x["text"])
+    acts = {a["act"] for s in SCENES for x in s["says"] for a in (x.get("reading") or {}).get("acts", [])}
+    assert {"answer", "add", "correct", "retract", "unsure", "chitchat", "ask_service", "ask_advice", "emotion",
+            "switch", "crisis", "danger", "sensitive", "name", "later", "stop"} <= acts
+
+
+def _said(text, reading, base="chat-weather"):
+    return _broken(base, says=[{"text": text, "button": False, "reading": reading}])
+
+
+@pytest.mark.parametrize("scene, msg", [
+    (_broken(says=[{"text": "大阪", "button": False}]), "reading が無い"),
+    (_broken(says=[{"text": "東京23区", "button": True, "reading": {"acts": []}}]), "ボタン"),
+    (_said("大阪", {"acts": [{"act": "smile"}]}), "知らない act"),
+    (_said("大阪", {"acts": [{"act": "answer", "slot": "area", "text": "東京"}]}), "部分文字列でない"),
+    (_said("500万以上", {"acts": [{"act": "add", "slot": "min_annual_salary", "text": "500万以上", "number": 600}]}),
+     "数を作らない"),
+    (_said("大阪", {"acts": [{"act": "answer", "slot": "salary", "text": "大阪"}]}), "知らない欄"),
+    (_said("大阪", {"acts": [{"act": "answer", "slot": "area"}]}), "text が無い"),
+    (_said("大阪", {"acts": [{"act": "answer", "slot": "area", "text": "大阪", "value": "osaka"}]}), "value は置かない"),
+    (_said("大阪", {"acts": [{"act": "switch", "to": "career", "strength": "want"}]}), "switch"),
+    (_said("大阪", {"acts": [{"act": "emotion", "feeling": "happy"}]}), "feeling"),
+    (_said("大阪", {"acts": [], "hook": "東京"}), "hook"),
+    (_said("大阪", {"acts": [], "extra": 1}), "reading の形"),
+    (_said("週3", {"acts": [{"act": "answer", "slot": "days_per_week", "text": "週3", "value": "3"}]}, "baito-chat-weather"),
+     "区切りに無い"),
+])
+def test_validate_rejects_broken_readings(scene, msg):
     with pytest.raises(ValueError, match=msg):
         S.validate(scene)

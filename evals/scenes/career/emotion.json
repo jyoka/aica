@@ -10,7 +10,7 @@
    {"who": "agent", "text": "仕事を変えたいのですね。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "新卒からみほん商事で経理を6年やってきて、数字を締めるのは得意なんだけど、毎月同じ作業の繰り返しで、このまま30代を終えるのかと思ったら怖くなって。去年から独学でデータ分析の勉強をしてて、それを仕事にできたらいいなと思ってる。親には反対されてるけど", "button": false}],
+  "says": [{"text": "新卒からみほん商事で経理を6年やってきて、数字を締めるのは得意なんだけど、毎月同じ作業の繰り返しで、このまま30代を終えるのかと思ったら怖くなって。去年から独学でデータ分析の勉強をしてて、それを仕事にできたらいいなと思ってる。親には反対されてるけど", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "毎月同じ作業の繰り返し"}, {"act": "add", "slot": "career1.role", "text": "経理"}, {"act": "add", "slot": "direction", "text": "データ分析"}, {"act": "story"}, {"act": "emotion", "feeling": "anxious"}], "hook": "データ分析の勉強", "mentions": ["経理", "データ分析"]}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "status": "filled", "confidence": "high"},
    {"check": "slot", "slot": "career1.role", "contains": "経理"},
@@ -33,7 +33,7 @@
    {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "ブランク長いし、正直転職できるか不安で…", "button": false}],
+  "says": [{"text": "ブランク長いし、正直転職できるか不安で…", "button": false, "reading": {"acts": [{"act": "emotion", "feeling": "anxious"}], "hook": "ブランク"}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_counted"},
@@ -55,7 +55,7 @@
    {"who": "agent", "text": "次の仕事で、いちばん上げたいのはどれですか?"}
   ],
   "asking": "hf_raise",
-  "says": [{"text": "だから年収だって。同じこと何回聞くの?", "button": false}],
+  "says": [{"text": "だから年収だって。同じこと何回聞くの?", "button": false, "reading": {"acts": [{"act": "answer", "slot": "raise_target", "text": "年収", "choice": "年収"}, {"act": "complaint"}, {"act": "emotion", "feeling": "angry"}]}}],
   "expect": [
    {"check": "slot", "slot": "raise_target", "contains": "年収", "confidence": "high"},
    {"check": "not_asks", "slots": ["raise_target", "why_now", "min_annual_salary"]},
@@ -77,7 +77,7 @@
    {"who": "agent", "text": "「法人営業」で、あなたが良くしたことは?"}
   ],
   "asking": "card_result1",
-  "says": [{"text": "疲れた…", "button": false}],
+  "says": [{"text": "疲れた…", "button": false, "reading": {"acts": [{"act": "emotion", "feeling": "tired"}]}}],
   "expect": [
    {"check": "not_closed"},
    {"check": "reply_contains", "any": ["中断"]},
@@ -97,7 +97,7 @@
    {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "上司が無能すぎてもう無理。会社も傾いてるし", "button": false}],
+  "says": [{"text": "上司が無能すぎてもう無理。会社も傾いてるし", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "上司が無能すぎてもう無理。会社も傾いてる"}, {"act": "emotion", "feeling": "angry"}], "hook": "会社も傾いてる"}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "contains": "上司", "confidence": "high"},
    {"check": "reply_not_contains", "texts": ["無能"]},
@@ -117,7 +117,7 @@
    {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n今の状況に近いのは?"}
   ],
   "asking": "q_segment",
-  "says": [{"text": "先月リストラされて、とりあえず早く次を決めたい", "button": false}],
+  "says": [{"text": "先月リストラされて、とりあえず早く次を決めたい", "button": false, "reading": {"acts": [{"act": "add", "slot": "why_now", "text": "先月リストラされて"}, {"act": "add", "slot": "start_timing", "text": "早く次を決めたい"}, {"act": "emotion", "feeling": "anxious"}]}}],
   "expect": [
    {"check": "slot", "slot": "why_now", "contains": "リストラ"},
    {"check": "slot", "slot": "start_timing", "status": "filled"},

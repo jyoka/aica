@@ -10,7 +10,7 @@
    {"who": "agent", "text": "週に何日くらい入れそう？"}
   ],
   "asking": "hf_days",
-  "says": [{"text": "土日だけ、駅近で", "button": false}],
+  "says": [{"text": "土日だけ、駅近で", "button": false, "reading": {"acts": [{"act": "answer", "slot": "days_per_week", "text": "土日だけ", "value": "1-2"}, {"act": "add", "slot": "weekday_or_weekend", "text": "土日", "value": "weekend"}]}}],
   "expect": [
    {"check": "slot", "slot": "days_per_week", "value": "1-2"},
    {"check": "slot", "slot": "weekday_or_weekend", "value": "weekend"},
@@ -30,7 +30,7 @@
    {"who": "agent", "text": "年齢、ざっくりどれ？（働ける時間が法律で変わるから聞いてるよ）"}
   ],
   "asking": "hf_age",
-  "says": [{"text": "17の高校生で、週3くらい入りたい", "button": false}],
+  "says": [{"text": "17の高校生で、週3くらい入りたい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "age_band", "text": "17の高校生", "value": "15_17"}, {"act": "add", "slot": "days_per_week", "text": "週3くらい", "value": "3-4"}, {"act": "add", "slot": "segment", "text": "高校生", "value": "student"}]}}],
   "expect": [
    {"check": "slot", "slot": "age_band", "value": "15_17"},
    {"check": "slot", "slot": "days_per_week", "value": "3-4"},
@@ -50,7 +50,7 @@
    {"who": "agent", "text": "働ける時間はどれが近い？"}
   ],
   "asking": "hf_hours",
-  "says": [{"text": "10時から3時くらいかな。家でできるならそれがいい", "button": false}],
+  "says": [{"text": "10時から3時くらいかな。家でできるならそれがいい", "button": false, "reading": {"acts": [{"act": "answer", "slot": "available_hours", "text": "10時から3時くらい", "value": "10-16"}, {"act": "add", "slot": "remote", "text": "家でできるならそれがいい", "value": "yes"}]}}],
   "expect": [
    {"check": "slot", "slot": "available_hours", "value": "10-16"},
    {"check": "slot", "slot": "remote", "value": "yes", "confidence": "low"},

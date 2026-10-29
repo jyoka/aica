@@ -2,7 +2,7 @@
 
 1 場面 = 入り口 + 架空の前の会話 + 本人の発言 + 期待する振る舞い(言葉でなく、確かめられる条件)。どれも架空。
 入り口(entry)ごとに 1 フォルダ、種類(category)ごとに 1 ファイル(evals/scenes/<entry>/<category>.json。中身は場面のリスト)。
-ここは読み込みと形の確かめだけで、場面を回して採点する仕組みは実装のカード(設計メモ §5 の 1)で作る。
+ここは読み込みと形の確かめ。場面を回して条件を判定する仕組みは、下の docstring の終わりにあるモジュール。
 
 場面の形:
 - id: 一覧の中で重ならない名前。title: 何の場面か。source: 出どころ(本番のトークなど。任意)。note: 条件の補い(任意)
@@ -19,15 +19,25 @@
 - history: 架空の前の会話([{"who": "agent" | "user", "text"}]。judge._log と同じ形)
 - asking: 今出している問いの id(その入り口の質問バンクの id。career の職歴カードは card_role1 のように広げた名前)。
   まとめは review。talk には置かない
-- says: 本人の発言([{"text", "button"}])。button は押したボタンか(打った文なら false)。2 つ以上なら続けて送る
+- says: 本人の発言([{"text", "button", "reading"?}])。button は押したボタンか(打った文なら false)。2 つ以上なら続けて送る。
+  reading は読む段の正解(設計メモ §4.3 の act の形。下の ACTS)。career と baito の打った文には必ず置き、ボタンには置かない
+  (ボタンは読む段を呼ばない)。talk は任意(トークの AI は読む段を持たない)。形は
+  {"acts": [{"act", ...}], "hook"?: 相づちに使う本人の言葉, "mentions"?: [候補に使える本人の言葉]}。
+  acts が空なら、働きを読めない発言(「はい」「うん」だけ)。値の act の text は発言の部分文字列、number は発言に数字で
+  書いてある数、baito の value はその欄の区切りのキー(複数の値の欄は list)。slot "segment" の value は区分
 - expect: 期待する振る舞い([{"check", "at"?, ...引数}])。check は下の CODE_CHECKS か JUDGE_CHECKS の名前。
-  at は何番目の返信を見るか(0 から。既定は最後。"all" はすべて)。状態を見る check(slot など)は、最後の発言の後の状態を見る。
+  at は何番目の返信を見るか(0 から。既定は最後。"all" はすべて)。状態を見る check(slot など)も、その返信の後の状態を見る。
   状態を見る check の entry は、どの入り口の状態を見るか(既定は場面の entry。入り口を移した後の状態を見るときに書く)
+
+場面を回して条件を判定するのは evals/scenes/runner.py(python -m evals.scenes)、条件の判定は checks.py、
+採点の条件のジャッジは judge.py。
 """
 
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent
@@ -124,6 +134,25 @@ CHECK_NAMES = {**CODE_CHECKS, **JUDGE_CHECKS}
 ORDER_PARTS = ("ack", "answer", "note", "phase_line", "ask")  # 相づち、逆質問の答え、注意、区切り、問い
 TYPES = {"str": str, "list": list, "int": int, "num": (int, float), "any": (str, int, float)}
 STATE_CHECKS = ("asks", "not_asks", "slot", "slot_not_high", "slot_open")  # entry を書ける(入り口を移した後を見る)
+
+# 読む段の正解の act(設計メモ §4.3)。値は {引数: 型}。値の act の引数は VALUE_ARGS
+VALUE_ACTS = ("answer", "add", "correct", "unsure")
+VALUE_ARGS = {"slot": "str", "text": "str", "number": "num?", "unit": "str?", "choice": "str?", "value": "any?"}
+ACTS = {
+    **dict.fromkeys(VALUE_ACTS, VALUE_ARGS),            # 今の問いへの答え、ほかの欄の値、直す、迷う
+    "retract": {"slot": "str"},                          # もう答えた欄を取り消す
+    "dont_know": {"slot": "str?"}, "pass": {"slot": "str?"},  # 覚えていない、言いたくない・特にない(既定は今の問いの欄)
+    **{a: {} for a in ("more", "clarify", "go_back", "show_result", "restart", "later", "stop")},  # 操作
+    "confirm": {},                                       # まとめに「合ってる」と答える
+    "switch": {"to": "str", "strength": "str"},          # 別の入り口の話。strength は want(移りたい)か consider(考えている)
+    **{a: {} for a in ("chitchat", "ask_service", "ask_advice", "story", "complaint", "falsify", "crisis", "danger")},
+    "emotion": {"feeling": "str"},                       # 感情(FEELINGS)
+    "sensitive": {"span": "str"}, "name": {"span": "str"},  # 要配慮の部分、氏名の部分(発言の部分文字列)
+}
+FEELINGS = ("anxious", "angry", "tired", "sad")
+STRENGTHS = ("want", "consider")
+HOOK_MAX = 15  # 相づちに使う本人の言葉の字数(設計メモ §4.3)
+MENTION_MAX = 10  # 候補に使う本人の言葉の字数(設計メモ §4.7)
 
 
 def is_code(check: dict) -> bool:
@@ -247,6 +276,78 @@ def _check_known(sid: str, entry: str, slots: set[str], known: dict) -> None:
                 raise ValueError(f"{sid}: known の {k} の value {e.get('value')} が区切りに無い")
 
 
+def nfkc(s) -> str:
+    return unicodedata.normalize("NFKC", str(s)).strip()
+
+
+def _digits(text: str) -> set[str]:
+    """発言に数字で書いてある数(全角は半角に、桁の区切りの , は外す)。"""
+    return set(re.findall(r"\d+(?:\.\d+)?", nfkc(text).replace(",", "")))
+
+
+def _check_reading(sid: str, entry: str, slots: set[str], say: dict) -> None:
+    """読む段の正解(say の reading)の形。値の act は、発言の部分文字列と、その入り口の欄と区切りか。"""
+    r = say.get("reading")
+    if r is None:
+        if not say["button"] and entry != "talk":
+            raise ValueError(f"{sid}: 打った文「{say['text']}」に reading が無い")
+        return
+    if say["button"]:
+        raise ValueError(f"{sid}: ボタン「{say['text']}」に reading は置かない(ボタンは読む段を呼ばない)")
+    if not isinstance(r, dict) or not isinstance(r.get("acts"), list) or set(r) - {"acts", "hook", "mentions"}:
+        raise ValueError(f"{sid}: reading の形")
+    said = nfkc(say["text"])
+    words = ([r["hook"]] if "hook" in r else []) + list(r.get("mentions") or [])
+    if any(not isinstance(w, str) or not w or nfkc(w) not in said for w in words):
+        raise ValueError(f"{sid}: reading の hook と mentions は発言の部分文字列")
+    if len(r.get("hook", "")) > HOOK_MAX or any(len(m) > MENTION_MAX for m in r.get("mentions") or []):
+        raise ValueError(f"{sid}: reading の hook({HOOK_MAX} 字まで)か mentions({MENTION_MAX} 字まで)が長い")
+    for a in r["acts"]:
+        name = a.get("act") if isinstance(a, dict) else None
+        if name not in ACTS:
+            raise ValueError(f"{sid}: 知らない act {name}")
+        spec = ACTS[name]
+        for k, v in a.items():
+            if k == "act":
+                continue
+            if k not in spec:
+                raise ValueError(f"{sid}: act {name} に知らない引数 {k}")
+            ok = isinstance(v, (str, int, list)) if spec[k] == "any?" else _typed(v, TYPES[spec[k].rstrip("?")])
+            if not ok:
+                raise ValueError(f"{sid}: act {name} の {k} の型")
+        for k, t in spec.items():
+            if not t.endswith("?") and k not in a:
+                raise ValueError(f"{sid}: act {name} に {k} が無い")
+        if "slot" in a and a["slot"] not in slots | {"segment"}:
+            raise ValueError(f"{sid}: act {name} の知らない欄 {a['slot']}")
+        for k in ("text", "span"):
+            if k in a and (not a[k] or nfkc(a[k]) not in said):
+                raise ValueError(f"{sid}: act {name} の {k}「{a[k]}」が発言の部分文字列でない")
+        if "number" in a and nfkc(str(a["number"]).removesuffix(".0")) not in _digits(say["text"]):
+            raise ValueError(f"{sid}: act {name} の number {a['number']} が発言に数字で無い(数を作らない)")
+        if name in VALUE_ACTS:
+            _check_value(sid, entry, a)
+        if name == "switch" and (a["to"] not in ENTRIES or a["to"] in (entry, "talk") or a["strength"] not in STRENGTHS):
+            raise ValueError(f"{sid}: switch の to か strength")
+        if name == "emotion" and a["feeling"] not in FEELINGS:
+            raise ValueError(f"{sid}: emotion の feeling は {FEELINGS} から")
+
+
+def _check_value(sid: str, entry: str, a: dict) -> None:
+    """値の act の value: segment は区分、baito はその欄の区切りのキー(career の value は使わない)。"""
+    if a["slot"] == "segment":
+        if a.get("value") not in SEGMENTS.get(entry, ()) or a.get("value") == "unknown":
+            raise ValueError(f"{sid}: segment の value {a.get('value')}")
+        return
+    if entry == "baito":
+        values = _baito_values(a["slot"])
+        got = a.get("value")
+        if got is None or (values and any(v not in values for v in (got if isinstance(got, list) else [got]))):
+            raise ValueError(f"{sid}: act {a['act']} の value {got} が {a['slot']} の区切りに無い")
+    elif "value" in a:
+        raise ValueError(f"{sid}: career の値の act に value は置かない(text と number で書く)")
+
+
 def _check_state(sid: str, s: dict, c: dict, switched: set[str]) -> None:
     """状態を見る check の欄と問いが、見る入り口にあるか。"""
     entry = c.get("entry", s["entry"])
@@ -315,8 +416,9 @@ def validate(s: dict) -> None:
     if not s["says"]:
         raise ValueError(f"{sid}: says が空")
     for x in s["says"]:
-        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool):
+        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool) or set(x) - {"text", "button", "reading"}:
             raise ValueError(f"{sid}: says の形")
+        _check_reading(sid, entry, _slots(entry) if entry != "talk" else set().union(*map(_slots, ("career", "baito"))), x)
     first = s["says"][0]
     if first["button"] and (entry == "talk" or first["text"] not in _choices(entry, s["asking"], form, s["segment"])):
         raise ValueError(f"{sid}: 押したボタン {first['text']} が {s.get('asking')} のボタンに無い")

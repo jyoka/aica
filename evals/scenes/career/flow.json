@@ -10,7 +10,7 @@
    {"who": "agent", "text": "次は職歴です\n直近のお仕事を一言で教えてください"}
   ],
   "asking": "card_role1",
-  "says": [{"text": "ほかには?", "button": false}],
+  "says": [{"text": "ほかには?", "button": false, "reading": {"acts": [{"act": "more"}]}}],
   "expect": [
    {"check": "choices_include", "labels": ["企画・マーケ"]},
    {"check": "choices_exclude", "labels": ["営業", "事務"]},
@@ -52,7 +52,7 @@
    {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
   ],
   "asking": "card_scale1",
-  "says": [{"text": "これ飛ばして", "button": false}],
+  "says": [{"text": "これ飛ばして", "button": false, "reading": {"acts": [{"act": "pass"}]}}],
   "expect": [
    {"check": "slot", "slot": "career1.scale", "status": "passed"},
    {"check": "asks", "qid": "card_result1"}
@@ -70,7 +70,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "中断", "button": false}],
+  "says": [{"text": "中断", "button": false, "reading": {"acts": [{"act": "later"}]}}],
   "expect": [
    {"check": "closed", "why": "later"},
    {"check": "llm_calls_max", "n": 0},
@@ -89,7 +89,7 @@
    {"who": "agent", "text": "次は希望の条件です\n働きたい場所はどこですか?(駅や市の名前で)"}
   ],
   "asking": "hf_area",
-  "says": [{"text": "大阪市内です。続きはまた今度", "button": false}],
+  "says": [{"text": "大阪市内です。続きはまた今度", "button": false, "reading": {"acts": [{"act": "answer", "slot": "area", "text": "大阪市内", "choice": "大阪市内"}, {"act": "later"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "大阪"},
    {"check": "closed", "why": "later"}
@@ -107,7 +107,7 @@
    {"who": "agent", "text": "札幌市内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "あとで", "button": false}],
+  "says": [{"text": "あとで", "button": false, "reading": {"acts": [{"act": "later"}]}}],
   "expect": [
    {"check": "closed", "why": "later"},
    {"check": "llm_calls_max", "n": 0},
@@ -127,7 +127,7 @@
    {"who": "agent", "text": "名古屋市内ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "もういいや、やめとく", "button": false}],
+  "says": [{"text": "もういいや、やめとく", "button": false, "reading": {"acts": [{"act": "stop"}]}}],
   "expect": [
    {"check": "closed"},
    {"check": "slot_unchanged", "slot": "area"}
@@ -145,7 +145,7 @@
    {"who": "agent", "text": "職務経歴書の材料を、1問ずつ集めます。「中断」でいつでもやめられます。\n新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "前の続きからでいい?", "button": false}],
+  "says": [{"text": "前の続きからでいい?", "button": false, "reading": {"acts": [{"act": "ask_service"}]}}],
   "expect": [
    {"check": "keeps_question"},
    {"check": "not_asks", "slots": ["why_now", "area", "min_annual_salary"]},
@@ -167,7 +167,7 @@
    {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
   ],
   "asking": "card_scale1",
-  "says": [{"text": "もうまとめて", "button": false}],
+  "says": [{"text": "もうまとめて", "button": false, "reading": {"acts": [{"act": "show_result"}]}}],
   "expect": [
    {"check": "phase", "phase": "review"},
    {"check": "not_closed"}

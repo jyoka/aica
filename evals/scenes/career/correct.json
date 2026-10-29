@@ -11,7 +11,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "あ、やっぱり勤務地は横浜がいい", "button": false}],
+  "says": [{"text": "あ、やっぱり勤務地は横浜がいい", "button": false, "reading": {"acts": [{"act": "correct", "slot": "area", "text": "横浜"}]}}],
   "expect": [
    {"check": "slot", "slot": "area", "contains": "横浜", "confidence": "high"},
    {"check": "keeps_question"},
@@ -32,7 +32,7 @@
    {"who": "agent", "text": "500万円台ですね。新しい仕事は、いつから始められそうですか?"}
   ],
   "asking": "hf_timing",
-  "says": [{"text": "すぐ。あとさっきの年収、やっぱり600万以上で", "button": false}],
+  "says": [{"text": "すぐ。あとさっきの年収、やっぱり600万以上で", "button": false, "reading": {"acts": [{"act": "answer", "slot": "start_timing", "text": "すぐ", "choice": "すぐ"}, {"act": "correct", "slot": "min_annual_salary", "text": "600万以上", "number": 600, "unit": "万"}]}}],
   "expect": [
    {"check": "slot", "slot": "start_timing", "contains": "すぐ"},
    {"check": "slot", "slot": "min_annual_salary", "number": 600},
@@ -52,7 +52,7 @@
    {"who": "agent", "text": "今の仕事の、どこを変えたいですか?"}
   ],
   "asking": "hf_change_reason",
-  "says": [{"text": "ごめん、時期の「すぐ」は取り消し。まだ分からない", "button": false}],
+  "says": [{"text": "ごめん、時期の「すぐ」は取り消し。まだ分からない", "button": false, "reading": {"acts": [{"act": "retract", "slot": "start_timing"}, {"act": "dont_know", "slot": "start_timing"}]}}],
   "expect": [
    {"check": "slot_not_high", "slot": "start_timing"},
    {"check": "keeps_question"},
@@ -72,7 +72,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "うーん、450か500かで迷う", "button": false}],
+  "says": [{"text": "うーん、450か500かで迷う", "button": false, "reading": {"acts": [{"act": "unsure", "slot": "min_annual_salary", "text": "450か500か"}]}}],
   "expect": [
    {"check": "slot", "slot": "min_annual_salary", "confidence": "low"},
    {"check": "asks", "slot": "start_timing"},
@@ -93,7 +93,7 @@
    {"who": "agent", "text": "チームの人数、顧客の数、売上など、そのお仕事の大きさを数字ひとつで"}
   ],
   "asking": "card_scale1",
-  "says": [{"text": "わからない", "button": false}],
+  "says": [{"text": "わからない", "button": false, "reading": {"acts": [{"act": "dont_know"}]}}],
   "expect": [
    {"check": "slot", "slot": "career1.scale", "status": "dont_know"},
    {"check": "asks", "qid": "card_result1"},
@@ -111,7 +111,7 @@
    {"who": "agent", "text": "あと少しで完成です\n働き方で、いちばん大事なのは?"}
   ],
   "asking": "fg_work_style",
-  "says": [{"text": "特にないかな", "button": false}],
+  "says": [{"text": "特にないかな", "button": false, "reading": {"acts": [{"act": "pass"}]}}],
   "expect": [
    {"check": "slot", "slot": "work_style", "status": "passed"},
    {"check": "not_asks", "slots": ["work_style"]},
@@ -129,7 +129,7 @@
    {"who": "agent", "text": "これからの方向を一緒に整理しましょう。今回、仕事を探そうと思ったきっかけは?"}
   ],
   "asking": "ib_why_now",
-  "says": [{"text": "なんとなく…", "button": false}],
+  "says": [{"text": "なんとなく…", "button": false, "reading": {"acts": [{"act": "answer", "slot": "why_now", "text": "なんとなく"}]}}],
   "expect": [
    {"check": "reply_not_contains", "texts": ["読み取れなかった"]},
    {"check": "no_pressure"},
@@ -150,7 +150,7 @@
    {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
   ],
   "asking": "hf_salary",
-  "says": [{"text": "ごめん前の質問に戻りたい", "button": false}],
+  "says": [{"text": "ごめん前の質問に戻りたい", "button": false, "reading": {"acts": [{"act": "go_back"}]}}],
   "expect": [
    {"check": "asks", "qid": "hf_area"},
    {"check": "not_counted"},
