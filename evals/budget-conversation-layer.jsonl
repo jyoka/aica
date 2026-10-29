@@ -746,12 +746,28 @@
 {"at": "2026-10-29T08:30:40+00:00", "run": "probe-376", "cost_usd": 0.005188, "case": "repeat"}
 {"at": "2026-10-29T08:30:43+00:00", "run": "probe-376", "cost_usd": 0.00131, "case": "repeat"}
 {"at": "2026-10-29T08:30:46+00:00", "run": "probe-376", "cost_usd": 0.00137, "case": "repeat"}
+{"at": "2026-10-29T08:30:53+00:00", "run": "scenes", "cost_usd": 0.155612, "tag": "talk-t1-377-probe1", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:30:53+00:00", "run": "scenes", "cost_usd": 0.082281, "tag": "talk-t1-377-probe1", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:30:55+00:00", "run": "scenes", "cost_usd": 0.07261, "tag": "talk-t1-377-probe1", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
 {"at": "2026-10-29T08:31:37+00:00", "run": "probe-376", "cost_usd": 0.019106, "case": "read:hf_days"}
 {"at": "2026-10-29T08:31:39+00:00", "run": "probe-376", "cost_usd": 0.00317, "case": "read:hf_days"}
 {"at": "2026-10-29T08:31:41+00:00", "run": "probe-376", "cost_usd": 0.018248, "case": "read:hf_time"}
 {"at": "2026-10-29T08:31:42+00:00", "run": "probe-376", "cost_usd": 0.003147, "case": "read:hf_time"}
 {"at": "2026-10-29T08:31:44+00:00", "run": "probe-376", "cost_usd": 0.01808, "case": "read:sc_st_exam"}
 {"at": "2026-10-29T08:31:45+00:00", "run": "probe-376", "cost_usd": 0.002401, "case": "read:sc_st_exam"}
+{"at": "2026-10-29T08:32:29+00:00", "run": "scenes", "cost_usd": 0.030116, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:32:31+00:00", "run": "scenes", "cost_usd": 0.030804, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:32:32+00:00", "run": "scenes", "cost_usd": 0.05925, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:32:32+00:00", "run": "scenes", "cost_usd": 0.056518, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:32:32+00:00", "run": "scenes", "cost_usd": 0, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:32:34+00:00", "run": "scenes", "cost_usd": 0.056419, "tag": "talk-t1-377-r1", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:33:15+00:00", "run": "probe-v5-read", "cost_usd": 0.0239, "tag": "talk-t1-377-read-probe", "scene": "talk-baito-weekend"}
+{"at": "2026-10-29T08:34:15+00:00", "run": "scenes", "cost_usd": 0.026173, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-hello", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:34:17+00:00", "run": "scenes", "cost_usd": 0.027093, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-job-search", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:34:19+00:00", "run": "scenes", "cost_usd": 0.059407, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-fulltime-with-salary", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:34:19+00:00", "run": "scenes", "cost_usd": 0.046615, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-baito-weekend", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:34:19+00:00", "run": "scenes", "cost_usd": 0, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-crisis", "rep": 0, "read_model": null}
+{"at": "2026-10-29T08:34:21+00:00", "run": "scenes", "cost_usd": 0.045978, "tag": "talk-t1-377-r2", "entry": "talk", "version": "t1", "scene": "talk-after-voice", "rep": 0, "read_model": null}
 {"at": "2026-10-29T08:35:28+00:00", "run": "probe-376", "cost_usd": 0.005508, "case": "praise"}
 {"at": "2026-10-29T08:35:29+00:00", "run": "probe-376", "cost_usd": 0.000781, "case": "praise"}
 {"at": "2026-10-29T08:35:30+00:00", "run": "probe-376", "cost_usd": 0.000781, "case": "praise"}

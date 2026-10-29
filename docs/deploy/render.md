@@ -379,6 +379,49 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 | `AICA_ID_KEY` | LINE のユーザーIDを作る鍵(32 バイト以上)。**一度決めたら変えない**([ADR-0008](../adr/0008-keyed-line-user-id.md)) |
 | `AICA_PUBLIC_URL` | `https://<名前>.onrender.com` |
 
+## 相談の版を入り口ごとに切り替える **【運営者】**
+
+相談の版を、入り口ごとに環境変数を変えて会話の層の新しい版へ移します([ADR-0011](../adr/0011-conversation-layer.md)、
+[設計メモ](../design/conversation-layer.md) §4.15)。値は `aica` のダッシュボードの「Environment」に置きます(`render.yaml` には書いていません)。
+
+| 順 | 環境変数 | 今の本番 | 新しい版 | 切り替えてよいか |
+|---|---|---|---|---|
+| 1 | `CAREER_HARNESS_VERSION` | `c1` | `c2` | よい。実モデルの比べで合格の線に届いた(設計メモ §7 の task 362) |
+| 2 | `BAITO_HARNESS_VERSION` | `v4` | `v5` | まだ。線に届いていない(jyoka/tasks#376 で届いてから、この表と手順を足す) |
+| 3 | `TALK_LAYER_VERSION` | 入れない | `t1` | まだ。線に届いていない(jyoka/tasks#377 で届いてから足す) |
+| - | `CAREER_HARNESS_FORM` | `D` | 変えない | - |
+
+切り替えの動き:
+
+- 環境変数を保存すると、`aica` は起動し直します(その間は止まる)。Web プロセスと dip の子プロセスは、起動のときに値を読みます
+- 新しい版になるのは、新しく始める相談だけです。始めた相談は、始めた版のまま最後まで進みます(dip の状態の `version`)。戻したときも同じです
+- 値は小文字で書きます。知らない値(`C2` などの打ち間違いを含む)は、ハーネスを使わない扱いになり、新しく始める正社員の相談が前の playbook の相談に戻ります
+- `CAREER_HARNESS_VERSION` は音声ワーカーが読まないので、`aica-voice` には写しません
+- c2 の相談から「バイトでいい」で移るとき、アルバイト・パートがまだ v4 なら、今と同じくトークの AI がそのターンを受けて v4 を始めます。
+  v4 は c2 の引き継ぎの記録を読まないので、今と同じく聞き直します。v4 の相談から正社員へ移るときも、トークの AI が c2 を始めます
+
+### 正社員を c2 に切り替える
+
+1. 危ない言葉の決まった文を読み、よいか確かめます。文は `dip_mcp/career/entry.json` の `texts`(`crisis_lead`、`crisis_tail`、`crisis_resume`)、
+   窓口は `dip_mcp/convo/crisis.json` です。組み立てた文は `./.venv/bin/python -c "from dip_mcp.career import c2; print(c2.CRISIS_TEXT)"` で出ます(実 API は使わない)。
+   直すときは、切り替える前に PR で直します(jyoka/tasks#355 の Decision)
+2. 本番に出している版が、jyoka/tasks#375(消した値を、取っておいた相談からも消す)を含む main であることを確かめます。含まなければ、先に「Manual Deploy」で最新の main を出し、
+   `/healthz` が 200 を返すことを確かめます
+3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION=v4`、
+   `TALK_LAYER_VERSION` を入れないこと)は変えません
+4. 起動し直した後に確かめます:
+   - `/healthz` が 200 を返す
+   - 自分の LINE で正社員の相談を新しく始め、最後まで進める。「始める」の 1 枚、職歴カード、まとめ、完成のカルーセルが出る
+   - 相談の途中でスタンプを送ると、同じ問いがもう一度届く(c2 の動き。c1 では返事が無い)
+   - 相談の途中で「死にたい」のような言葉を送ると、1 の決まった文が届き、「続ける」で同じ問いに戻る
+   - 設計メモ §4.10 の最後の線(運営者の実機の確かめ)として、話し方が硬くないか、聞き直しが無いかを見る
+5. よくなければ戻します(下)
+
+### 戻し方
+
+- 「Environment」で `CAREER_HARNESS_VERSION` を `c1` に戻して保存します。新しく始める相談は c1 になります
+- 戻した時点で途中の c2 の相談は、止めずに c2 のまま最後まで進みます。c2 のコードは main から消しません(途中の相談が読むため)
+
 ## API キーはサーバーの中だけ
 
 - API キーは Render の環境変数にだけ置き、image にも リポジトリにも入れません(`.dockerignore` が `.env` を外す)

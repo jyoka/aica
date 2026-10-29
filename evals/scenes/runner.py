@@ -826,7 +826,7 @@ class HarnessScript:
 def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_scene=None) -> list[dict]:
     """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
     移る先の台本の LLM で回す。real(evals.scenes.real.RealModel)を渡すと、トークの AI もハーネスのモデルも実モデルで回し、
-    呼び出しの数は real が数える(どのコードの条件も判定する)。before_scene(scene) は場面を始める前に呼ぶ(費用の確かめ)。"""
+    呼び出しの数は real が数える(どのコードの条件も判定する)。実モデルの回は、トークの AI がそのターンに呼んだツールの名前と引数も残す(tools)。before_scene(scene) は場面を始める前に呼ぶ(費用の確かめ)。"""
     from dip_mcp.data import State
 
     if real is not None:
@@ -869,7 +869,10 @@ def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_s
                         replies.append({"text": text, "bubbles": list(out["bubbles"]), "choices": list(out["quick_replies"]),
                                         "counted": False, "llm_calls": used, "how": how, "closed": None,
                                         "states": snaps(st, uid, {}), "profile": profile(st, uid), "say": say}
-                                       | ({"model_calls": used, "turn_seconds": round(took, 3)} if real is not None else {}))
+                                       | ({"model_calls": used, "turn_seconds": round(took, 3),
+                                           "tools": [{"name": t["name"], "args": {k: v for k, v in (t.get("args") or {}).items()
+                                                                                   if k != "line_user_id"}}
+                                                     for t in out.get("tools") or []]} if real is not None else {}))
                 except Exception as e:  # noqa: BLE001
                     error = f"{type(e).__name__}: {e}"
                 records.append({"scene": scene["id"], "entry": "talk", "version": d.version, "replies": replies,

@@ -1357,7 +1357,7 @@ sequenceDiagram
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯・曜日・エリア)、興味・得意、経験、不安 |
 | `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION` が `v4` か `v5` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
-| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION=c1` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION` が `c1` か `c2` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
 | `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
@@ -1462,7 +1462,7 @@ sequenceDiagram
 
 #### 正社員の相談(ハーネス)
 
-機能フラグ `CAREER_HARNESS_VERSION=c1` のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
+機能フラグ `CAREER_HARNESS_VERSION` が `c1` か `c2`(下の「会話の層」)のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
 dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
 [設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
 形 B、C、D の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。D は C に LINE の Flex を足した形です(task 246。下の「形 D の UI」)。
@@ -1565,12 +1565,24 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
   要約は欄のあるカードだけを並べるので、職歴1を消すと職歴2が先頭になる。並びの順で決めると別のカードを直してしまう)。why_now・direction・team_style は `save_user_preferences` で上書きする。
   直し方は Prompt(`baitoru_assistant.md`)と `fulltime_chat_harness.md` に書く。segment は直さない(次の相談で選び直す)
 
-#### 会話の層(作っている途中。正社員の c2、アルバイト・パートの v5)
+#### 会話の層(正社員の c2、アルバイト・パートの v5)
 
 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))を
-`dip_mcp/convo/` に作っています。10 枚のカード(設計メモ §5)の 2 枚目(task 355)、3 枚目(task 356)、4 枚目(task 357)、5 枚目(task 358)、6 枚目(task 359)、7 枚目(task 360)までで、使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)と
-アルバイト・パートの v5(`BAITO_HARNESS_VERSION=v5`)だけです。本番の既定(c1、v4)は変えていません。始めた相談は始めた版のまま進みます
-(状態の `version`。`career/session.harness_of`、`baito/session.harness_of`)。
+`dip_mcp/convo/` に作りました(設計メモ §5 の 10 枚のカード。task 354〜363)。使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)と
+アルバイト・パートの v5(`BAITO_HARNESS_VERSION=v5`)と、トークの AI の t1(`TALK_LAYER_VERSION=t1`)です。本番の値(c1、v4、t1 なし)は運営者が
+入り口ごとに変えます。実モデルの比べ(task 362)で合格の線に届いたのは c2 だけで、手順と戻し方は [deploy/render.md](../deploy/render.md#相談の版を入り口ごとに切り替える-運営者) です。
+
+始めた相談は始めた版のまま進みます。版は相談を始めたときのフラグで決まり、dip の状態の `version` に残ります。ターンごとのハーネスは、
+フラグでなく状態の `version` から選びます(`career/session.harness_of`、`baito/session.harness_of`)。知らない版の状態は読まずに閉じます(`_load`)。
+Web プロセス(`start_career_consultation` を見せるか)と dip の子プロセスは、起動のときにフラグを読むので、本番で値を変えると `aica` が起動し直します。
+切り替えの前後の動きは `tests/test_career_cutover.py` が、本番の組み合わせ(形 D、v4、t1 なし)で確かめます(task 363):
+
+| 場合 | 動き |
+|---|---|
+| c1 の相談の途中で c2 に切り替えた | c1 のまま(c1 の読み取り `extract`)最後まで進み、保存する。次に始める相談は c2 |
+| c2 の相談の途中で c1 に戻した | c2 のまま(読む段 `read`)最後まで進む。次は c1 |
+| c2 の相談から、まだ v4 のアルバイト・パートへ移る | c2 は引き継ぎの記録を書いて閉じ、トークの AI がそのターンを受けて v4 を始める。v4 は記録を読まない |
+| v4 の相談から正社員へ移る | v4 は今と同じく閉じ、トークの AI が始める正社員の相談は c2 |
 
 | 部品 | 中身 |
 |---|---|
