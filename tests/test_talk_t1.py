@@ -1,7 +1,7 @@
 """トークの AI の t1(TALK_LAYER_VERSION=t1。設計メモ docs/design/conversation-layer.md §4.13、§5 の 8 枚目。task 361)。
 
 実 LLM なし。本物のランタイムと dip の MCP を、偽のトークの AI と偽のハーネスのモデルで動かす。
-- 確かめる場面: talk の全部(6)。t1 でコードの条件がすべて合格する。t0(今の動き)の点は変わらない
+- 確かめる場面: talk の全部(7)。t1 でコードの条件がすべて合格する。t0(今の動き)の点は変わらない
 - 守りの前処理: 相談の外の「もう死にたい」に、トークの AI を呼ばずに相談窓口の決まった文(LINE の Webhook から)。t0 は今までどおりモデルが受ける
 - start_* への発言の受け渡し: トークの AI が text を渡すと、dip は始めずに引き継ぎの記録を書き、ランタイムが同じターンで移る先の
   switch_in を呼ぶ。移る先はその発言を読む段で読み、値を推測で入れて、聞かずに最初の問いへ。トークの AI が言い換えた文は読まない
@@ -80,12 +80,12 @@ def test_talk_scenes_pass_every_code_check_on_t1_and_t0_keeps_its_score():
     from evals.scenes import runner as R
 
     rows = R.run(["talk"], {"talk": "t1"})
-    assert len(rows) == 6
+    assert len(rows) == 7
     for row in rows:
         code = [x for x in row["results"] if not x.get("judge")]
         assert code and all(x["status"] == K.PASS for x in code), (row["scene"], row["results"])
     t = R.tally(rows)["talk t1"]
-    assert (t["scenes_all_pass"], t["scenes_judged"], t["pass"], t["fail"], t["skip_code"]) == (6, 6, 20, 0, 0)
+    assert (t["scenes_all_pass"], t["scenes_judged"], t["pass"], t["fail"], t["skip_code"]) == (7, 7, 26, 0, 0)
     crisis = next(r for r in rows if r["scene"] == "talk-crisis")["replies"][0]
     assert crisis["how"] == "guard" and crisis["llm_calls"] == 0
     old = R.tally(R.run(["talk"], {"talk": "t0"}))["talk t0"]  # 今の動き(task 354 の点のまま)

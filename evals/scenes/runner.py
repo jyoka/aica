@@ -42,6 +42,7 @@ import re
 import tempfile
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from evals import scenes as S
@@ -830,6 +831,19 @@ class HarnessScript:
         return ScriptLLM(self.driver, self.say, [])({"stage": stage, "system": system}), {}
 
 
+async def _starts_new(rt, uid: str, say: dict) -> bool:
+    """この発言で新しい会話を始めるか(LINE のランタイムと同じ決まり。server._line_turn): 会話がまだ無ければ始め、発言の前に時間が空いた
+    (after_minutes)ら、前の問いのボタンの答えでなければ始める(§4.16)。空いていなければ続ける。"""
+    from line_runtime.turn import answers_last_question
+
+    if not await rt.current_thread(uid):
+        return True
+    if not say.get("after_minutes"):
+        return False
+    now = datetime.now(UTC) + timedelta(minutes=say["after_minutes"])
+    return not answers_last_question(await rt.conversation(uid), say["text"], now)
+
+
 def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_scene=None) -> list[dict]:
     """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
     移る先の台本の LLM で回す。real(evals.scenes.real.RealModel)を渡すと、トークの AI もハーネスのモデルも実モデルで回し、
@@ -868,7 +882,7 @@ def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_s
                             h.say = say
                         n = calls()
                         t0 = time.perf_counter()
-                        out = await rt.handle(uid, "message", say["text"])
+                        out = await rt.handle(uid, "message", say["text"], new_conversation=await _starts_new(rt, uid, say))
                         took = time.perf_counter() - t0
                         text = "\n".join(out["bubbles"])
                         used = calls() - n

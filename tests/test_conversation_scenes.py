@@ -110,6 +110,8 @@ def test_every_pressed_button_is_in_the_question_bank():
             for q in H.questions(st, H.BANK):
                 labels["career"] |= set(q["choices"]) | set(q.get("escape", []))
     labels["baito"] |= {c for q in B.BANK for c in q["choices"]}
+    # talk の場面の 2 つ目以降のボタンは、トークの AI が始めた相談(入口のカードと近くで探すを含む)のもの
+    labels["talk"] = labels["baito"] | set(B.QUICK_PICKS) | {B.QUICK_NEAR}
     for s in SCENES:
         for x in s["says"]:
             if x["button"]:
