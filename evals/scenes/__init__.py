@@ -28,6 +28,8 @@
   talk の場面の発言には、トークの AI の正解(talk。任意)も置ける: {"tools": [{"name", "args"}], "entry_question"?: bool}。
   tools はそのターンにトークの AI が呼ぶツール(プロンプトの決まりのとおりに動くとしたとき)、entry_question は区分を聞く 1 問
   (ボタンはプロンプトにある入り口を選ぶボタン)。t1 の台本のトークの AI が使う(runner.TalkScript)。t0 のモックは使わない
+  talk の場面の発言には、前のやりとりから空いた時間(after_minutes。任意。30 より大きい分)も置ける。ランタイムの決まり
+  (line_runtime.turn.answers_last_question。§4.16)で、前の会話を続けるか新しい会話を始めるかを決めて回す
 - expect: 期待する振る舞い([{"check", "at"?, ...引数}])。check は下の CODE_CHECKS か JUDGE_CHECKS の名前。
   at は何番目の返信を見るか(0 から。既定は最後。"all" はすべて)。状態を見る check(slot など)も、その返信の後の状態を見る。
   状態を見る check の entry は、どの入り口の状態を見るか(既定は場面の entry。入り口を移した後の状態を見るときに書く)
@@ -66,6 +68,7 @@ CATEGORIES = {
     "switch": "入り口をまたぐ(別の入り口の話、最初のひとこと、値の引き継ぎ)",
     "t326": "jyoka/tasks#326 のトーク 1〜7",
 }
+RESUME_MINUTES = 30  # after_minutes の下限(line_runtime.server.TALK_RESUME_WINDOW。その中は間が空いても同じ会話なので場面にならない)
 MIN_SCENES = 60  # 全部の入り口を合わせた最低の数(task 327 の Goal)
 MIN_PER_CATEGORY = 3  # 入り口を合わせた、1 種類あたりの最低の数
 # 入り口ごとに置く種類(設計メモ §3.2)。switch はどの入り口にも置く
@@ -423,8 +426,11 @@ def validate(s: dict) -> None:
     if not s["says"]:
         raise ValueError(f"{sid}: says が空")
     for x in s["says"]:
-        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool) or set(x) - {"text", "button", "reading", "talk"}:
+        if not str(x.get("text") or "").strip() or not isinstance(x.get("button"), bool) or set(x) - {"text", "button", "reading", "talk", "after_minutes"}:
             raise ValueError(f"{sid}: says の形")
+        gap = x.get("after_minutes")
+        if gap is not None and (entry != "talk" or type(gap) is not int or gap <= RESUME_MINUTES):
+            raise ValueError(f"{sid}: after_minutes は talk の場面で、{RESUME_MINUTES} より大きい分")
         _check_talk(sid, entry, x)
         if entry != "talk":
             _check_reading(sid, entry, _slots(entry), x)

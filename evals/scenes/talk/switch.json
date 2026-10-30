@@ -1,5 +1,30 @@
 [
  {
+  "id": "talk-resume-button",
+  "entry": "talk",
+  "category": "switch",
+  "title": "近くで探すの年齢のボタンを、6 時間後に押す",
+  "source": "本番の LINE のトーク(2026-10-30。task 415)",
+  "says": [
+   {"text": "アルバイト・パートで探す", "button": false,
+    "talk": {"tools": [{"name": "set_search_track", "args": {"track": "アルバイト・パート", "evidence": "アルバイト・パートで探す"}},
+                       {"name": "get_counseling_playbook", "args": {"track": "アルバイト・パート", "channel": "chat"}},
+                       {"name": "start_baito_consultation", "args": {}}]}},
+   {"text": "しゃべるの好き", "button": true},
+   {"text": "近くで探す", "button": true},
+   {"text": "18歳以上", "button": true, "after_minutes": 360}
+  ],
+  "expect": [
+   {"check": "switches_to", "entry": "baito", "at": 0},
+   {"check": "reply_not_contains", "texts": ["いちばん自分っぽいのは"]},
+   {"check": "reply_contains", "any": ["どのあたり"]},
+   {"check": "choices_include", "labels": ["東京"]},
+   {"check": "not_asks", "entry": "baito", "slots": ["age_band"]},
+   {"check": "slot", "entry": "baito", "slot": "age_band", "value": "18_plus"}
+  ],
+  "note": "前の問いのボタンの答えは、時間が空いても前の会話の続き(設計メモ §4.16)。もう答えた入口のカードを出さず、年齢を聞き直さず、エリアへ"
+ },
+ {
   "id": "talk-hello",
   "entry": "talk",
   "category": "switch",

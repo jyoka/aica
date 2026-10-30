@@ -305,7 +305,8 @@ def clock() -> datetime:
 
 def talk_continues(conv: dict) -> bool:
     """今の会話(LineRuntime.conversation の結果)を続けるか: 最後のやりとりから TALK_RESUME_WINDOW 以内なら続ける。
-    返信の無い会話(last_at が None)は続けない。Web のトーク画面を開いたときと、LINE のテキストのメッセージで同じ決まりを使う。"""
+    返信の無い会話(last_at が None)は続けない。Web のトーク画面を開いたときと、LINE のテキストのメッセージで同じ決まりを使う。
+    LINE のテキストは、過ぎていても前の問いのボタンの答えなら続ける(_line_turn。turn.answers_last_question)。"""
     return conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW
 
 
@@ -1184,7 +1185,8 @@ def _unlink(uid: str) -> str | None:
 async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | None]:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
-    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。ただし LINE で同意した後の
+    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。空いていても、発言が今の会話で
+    最後に出した問いのボタンの答えなら、今の会話に続ける(turn.answers_last_question。設計メモ conversation-layer.md §4.16)。ただし LINE で同意した後の
     挨拶がまだ返っていなければ(logic.greeting_due)、新しい会話は発言ではなく挨拶から始める(書いた文は会話に入れない。task 232)。
     挨拶の前に今の会話で本人の発言に返したら(LIFF 画面で同意し、履歴書の続きに答えたなど)、もう挨拶を待たない(logic.skip_greeting)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
@@ -1208,7 +1210,7 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
         event, text, new = "message", STICKER, False
     else:
         event, text = ("resume_upload", None) if kind == "upload" else ("message", e["message"].get("text"))
-        new = not talk_continues(conv)
+        new = not talk_continues(conv) and not (kind == "message" and turn.answers_last_question(conv, text, clock()))
     try:
         t = turn.accept(deps, uid, event, text, None, new_conversation=new, channel="line",
                         features=line_channel.liff_features())

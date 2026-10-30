@@ -904,7 +904,7 @@ sequenceDiagram
 - 会話の番号は、最初に使うとき `_current` がチェックポイントの最大の番号から復元します。再起動しても古い会話に戻りません
 - `LineRuntime.conversation` の `last_at` は、返信のある会話の最後のチェックポイントの時刻です。返信の無い会話は続けません
 - 続けるかは `server.talk_continues` が決めます(`last_at` が None でなく、`clock()` との差が `TALK_RESUME_WINDOW`(30 分)以内)。
-  LINE のテキストのメッセージも同じ関数で決めます(4.11)
+  LINE のテキストのメッセージも同じ関数で決めます(4.11)。LINE のテキストだけ、過ぎていても前の問いのボタンの答えなら続けます
 - `history` は 1 ターン 1 件で、本人の発言(イベントなら None)と返信(`render` と同じ形)を返します。アップロードと音声相談の
   ターンは、会話に添えた `upload`、`voice` から描き直します。画面の URL は記録から取らず、`liff_url` で組み立て直します
 
@@ -1881,6 +1881,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
     本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
     保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです。
+    30 分を超えていても、発言が今の会話で最後に出した問いのボタンの答えなら(`turn.answers_last_question`。`line_channel.answer_buttons` の文と一致し、
+    最後のやりとりから `turn.BUTTON_RESUME_WINDOW`(`purge.CONVERSATION_TTL`。30 日)以内)、今の会話に続けます(設計メモ conversation-layer.md §4.16)。
     ただし新しい会話を始めるときに、同意の後の挨拶がまだ返っていなければ(`logic.greeting_due`)、テキストは友だち追加と同じ
     挨拶のターンにします(下の「同意」)
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ

@@ -481,6 +481,25 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
     return messages
 
 
+def message_actions(value) -> list[str]:
+    """LINE のメッセージの中の、押すと本人の発言になるボタンの文(クイックリプライと Flex の message アクション)。"""
+    if isinstance(value, dict):
+        own = [value["text"]] if value.get("type") == "message" and "text" in value else []
+        return own + [t for v in value.values() for t in message_actions(v)]
+    if isinstance(value, list):
+        return [t for v in value for t in message_actions(v)]
+    return []
+
+
+def answer_buttons(reply: dict | None) -> set[str]:
+    """返信(render の結果)に付けた問いのボタンの文: クイックリプライと、カードの中のボタン(入口のカード、形 D の Flex など)。
+    実際に LINE へ送る形から読むので、クイックリプライを付けないカードでも、押せるボタンと同じになる。
+    求人のカードの「詳しく見る」「保存」は問いの答えではないので入れない。LIFF 画面へのボタンは本人の発言にならない。"""
+    if not reply:
+        return set()
+    return set(message_actions(to_messages({**reply, "cards": [], "buttons": [], "actions": []}, base_url="", features=())))
+
+
 # ----------------------------- アカウント連携 -----------------------------
 
 LINK_TEXT = "アカウント連携"  # 本人がこの文を送ると連携を始める(リッチメニューのボタンが送る文)
