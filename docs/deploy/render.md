@@ -370,6 +370,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | `aica-voice` | `400`(相談 1 件のプロセスの上限。`aica` は既定の 2000) | Blueprint |
 | `AICA_VOICE_MODELS` | `aica-voice` | `1`(build のときにモデルを image に入れる) | Blueprint |
 | `AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
+| `TALK_LAYER_VERSION` | `aica-voice` | `t1`(音声の指示に aica の事実と危ない言葉の決まった文を足す)。`aica` はダッシュボードの値なので写せない。変えるときはそろえる | Blueprint |
 
 LINE 公式アカウントもつなぐときに足すものです(README の「LINE で試す」)。Webhook URL は `https://<名前>.onrender.com/line/webhook` です。
 
@@ -388,7 +389,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 |---|---|---|---|---|
 | 1 | `CAREER_HARNESS_VERSION` | `c1` | `c2` | よい。実モデルの比べで合格の線に届いた(設計メモ §7 の task 362) |
 | 2 | `BAITO_HARNESS_VERSION` | `v4` | `v5` | まだ。線に届いていない(jyoka/tasks#376 で届いてから、この表と手順を足す) |
-| 3 | `TALK_LAYER_VERSION` | 入れない | `t1` | まだ。線に届いていない(jyoka/tasks#377 で届いてから足す) |
+| 3 | `TALK_LAYER_VERSION` | `t1` | `t1` | 切り替えた。`aica-voice` は `render.yaml` の値 |
 | - | `CAREER_HARNESS_FORM` | `D` | 変えない | - |
 
 切り替えの動き:
@@ -397,6 +398,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 - 新しい版になるのは、新しく始める相談だけです。始めた相談は、始めた版のまま最後まで進みます(dip の状態の `version`)。戻したときも同じです
 - 値は小文字で書きます。知らない値(`C2` などの打ち間違いを含む)は、ハーネスを使わない扱いになり、新しく始める正社員の相談が前の playbook の相談に戻ります
 - `CAREER_HARNESS_VERSION` は音声ワーカーが読まないので、`aica-voice` には写しません
+- `TALK_LAYER_VERSION` は音声ワーカーも読みます。`aica-voice` の値は `render.yaml` に書いています。`aica-voice` は自動でデプロイされないので、音声の指示(`voice_resume/`)を変えたら「Manual Deploy」します
 - c2 の相談から「バイトでいい」で移るとき、アルバイト・パートがまだ v4 なら、今と同じくトークの AI がそのターンを受けて v4 を始めます。
   v4 は c2 の引き継ぎの記録を読まないので、今と同じく聞き直します。v4 の相談から正社員へ移るときも、トークの AI が c2 を始めます
 
@@ -407,8 +409,8 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
    直すときは、切り替える前に PR で直します(jyoka/tasks#355 の Decision)
 2. 本番に出している版が、jyoka/tasks#375(消した値を、取っておいた相談からも消す)を含む main であることを確かめます。含まなければ、先に「Manual Deploy」で最新の main を出し、
    `/healthz` が 200 を返すことを確かめます
-3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION=v4`、
-   `TALK_LAYER_VERSION` を入れないこと)は変えません
+3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION`、
+   `TALK_LAYER_VERSION`)は変えません
 4. 起動し直した後に確かめます:
    - `/healthz` が 200 を返す
    - 自分の LINE で正社員の相談を新しく始め、最後まで進める。「始める」の 1 枚、職歴カード、まとめ、完成のカルーセルが出る

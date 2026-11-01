@@ -78,6 +78,7 @@ def test_the_voice_worker_is_a_service_of_its_own_that_reaches_the_web_service()
     assert env["VOICE_RESUME_STT_PROVIDER"]["value"] == "deepgram"  # 本番の声は OpenAI に送らない
     assert env["AICA_VOICE_MODELS"]["value"] == "1" and "ARG AICA_VOICE_MODELS" in (ROOT / "Dockerfile").read_text()
     assert int(env["VOICE_RESUME_MAX_JOBS"]["value"]) >= 1 and float(env["VOICE_RESUME_JOB_MEMORY_LIMIT_MB"]["value"]) > 0
+    assert env["TALK_LAYER_VERSION"]["value"] == "t1"  # 無いと、音声相談の指示に危ない言葉の決まった文が入らない
     # Blueprint を更新するときは sync: false の値を聞かれないので、新しいサービスの鍵は Web サービスから写す
     for key in VOICE_SECRETS:
         assert copied[key] == {"name": web["name"], "type": "web", "envVarKey": key} and key in web_env
