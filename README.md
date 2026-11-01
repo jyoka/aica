@@ -25,7 +25,7 @@ flowchart LR
     worker -- "2 MCP で聞く" --> dip
     dip -- "3 事実だけ返す" --> web
     dip -- "3 事実だけ返す" --> worker
-    web -- "4 言い方を考える" --> llm[("Anthropic / OpenAI")]
+    web -- "4 言い方を考える" --> llm[("Anthropic<br/>設定で OpenAI")]
     worker -- "4 言い方を考える" --> llm
     web -- "5 質問、求人カード" --> you
     worker -- "5 まとめ、求人" --> web
