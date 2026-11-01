@@ -132,3 +132,6 @@ services:
       # 相談 1 件のプロセスの上限(MB)。2GB から待機の分を引いた残りを 2 件で分ける。超えたらその相談だけを止める
       - key: VOICE_RESUME_JOB_MEMORY_LIMIT_MB
         value: "400"
+      # 音声の指示に aica の事実と危ない言葉の決まった文を足す。aica はダッシュボードの値なので写せない。変えるときはそろえる
+      - key: TALK_LAYER_VERSION
+        value: t1

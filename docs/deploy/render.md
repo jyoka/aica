@@ -370,6 +370,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | `aica-voice` | `400`(相談 1 件のプロセスの上限。`aica` は既定の 2000) | Blueprint |
 | `AICA_VOICE_MODELS` | `aica-voice` | `1`(build のときにモデルを image に入れる) | Blueprint |
 | `AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
+| `TALK_LAYER_VERSION` | `aica-voice` | `t1`(音声の指示に aica の事実と危ない言葉の決まった文を足す)。`aica` はダッシュボードの値なので写せない。変えるときはそろえる | Blueprint |
 
 LINE 公式アカウントもつなぐときに足すものです(README の「LINE で試す」)。Webhook URL は `https://<名前>.onrender.com/line/webhook` です。
 
@@ -397,6 +398,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 - 新しい版になるのは、新しく始める相談だけです。始めた相談は、始めた版のまま最後まで進みます(dip の状態の `version`)。戻したときも同じです
 - 値は小文字で書きます。知らない値(`C2` などの打ち間違いを含む)は、ハーネスを使わない扱いになり、新しく始める正社員の相談が前の playbook の相談に戻ります
 - `CAREER_HARNESS_VERSION` は音声ワーカーが読まないので、`aica-voice` には写しません
+- `TALK_LAYER_VERSION` は音声ワーカーも読みます。`aica-voice` の値は `render.yaml` に書いています。`aica-voice` は自動でデプロイされないので、音声の指示(`voice_resume/`)を変えたら「Manual Deploy」します
 - c2 の相談から「バイトでいい」で移るとき、アルバイト・パートがまだ v4 なら、今と同じくトークの AI がそのターンを受けて v4 を始めます。
   v4 は c2 の引き継ぎの記録を読まないので、今と同じく聞き直します。v4 の相談から正社員へ移るときも、トークの AI が c2 を始めます
 
