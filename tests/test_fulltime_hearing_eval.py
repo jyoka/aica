@@ -28,6 +28,7 @@ from evals.fulltime_hearing.actor import (
 )
 from evals.fulltime_hearing.conversation import made_up_numbers, run_conversation
 from evals.fulltime_hearing.forms import (
+    FORMS,
     RANGE_UNITS,
     SALARY,
     SCALE,
@@ -778,6 +779,33 @@ def test_harness_form_later_is_leaving_not_completing():
     asyncio.run(f.start())
     r = asyncio.run(f.send("あとで", True))
     assert not r.done and r.closed == "declined"
+
+
+def test_harness_form_c2_runs_the_layer_and_sends_its_masked_history():
+    """形 D-c2(task 362)は、会話の層の版(dip_mcp/career/c2.py)で回す。言う段のメッセージは、ランタイムと同じく
+    層が渡す直前のやりとり(model_history)と本人の発言(model_text)。読む段は今の発言だけ。"""
+    from dip_mcp.career import c2
+
+    calls: list = []
+
+    async def call(stage, system, messages):
+        calls.append((stage, messages))
+        if stage == "say":
+            return {"reply": json.loads(re.search(r"次に聞くこと\(JSON\): (\{.*\})", system).group(1))["text"]}, {}
+        return {"acts": [{"act": "chitchat"}], "hook": None, "mentions": [], "ng": []}, {}
+
+    assert "D-c2" in FORMS
+    f = FormHarness(PERSONAS["p1-sales"], "D", call=call, version="c2")
+    assert isinstance(f.st, c2.State)
+    first = asyncio.run(f.start())
+    asyncio.run(f.send(first.buttons[0], True))
+    asked = asyncio.run(f.send("同じ仕事で上へ", True))
+    asyncio.run(f.send("今日は雨だね", False))
+    reads = [m for s, m in calls if s == "read"]
+    assert reads == [[{"role": "user", "content": "今日は雨だね"}]]
+    last_say = [m for s, m in calls if s == "say"][-1]
+    assert last_say[-1] == {"role": "user", "content": "今日は雨だね"}
+    assert {"role": "assistant", "content": asked.bubbles[0]} in last_say  # 層の覚えの直前のやりとり
 
 
 def test_combine_reports_from_several_runs_and_excludes_by_file(tmp_path):

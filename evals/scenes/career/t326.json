@@ -1,0 +1,103 @@
+[
+ {
+  "id": "t326-order",
+  "entry": "career",
+  "category": "t326",
+  "title": "トーク 2〜3: 相づち、区切り、問いの順(#326 の D)",
+  "source": "jyoka/tasks#326 のトーク 1〜7(2026-10-28 の本番の LINE、形 D)",
+  "form": "D",
+  "segment": "same_path",
+  "history": [
+   {"who": "user", "text": "同じ仕事で上へ"},
+   {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [{"text": "年収を上げたい", "button": true}],
+  "expect": [
+   {"check": "order", "parts": ["ack", "phase_line", "ask"]},
+   {"check": "asks", "qid": "hf_area"},
+   {"check": "bubble_max", "chars": 80},
+   {"check": "llm_calls_max", "n": 1}
+  ]
+ },
+ {
+  "id": "t326-salary-reask",
+  "entry": "career",
+  "category": "t326",
+  "title": "トーク 4〜5: 相づちの言い回しが続かない。年収の候補に聞き直しを入れない(#326 の C)",
+  "source": "jyoka/tasks#326 のトーク 1〜7",
+  "form": "D",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい", "from": "button:ib_why_now"}},
+  "history": [
+   {"who": "user", "text": "同じ仕事で上へ"},
+   {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"},
+   {"who": "user", "text": "年収を上げたい"},
+   {"who": "agent", "text": "次は希望の条件です\n年収を上げたいのですね。働きたい場所はどこですか?(駅や市の名前で)"}
+  ],
+  "asking": "hf_area",
+  "says": [{"text": "東京23区", "button": true}],
+  "expect": [
+   {"check": "asks", "qid": "hf_salary"},
+   {"check": "choices_exclude", "labels": ["今より上げたい", "今と同じくらい"]},
+   {"check": "choices_ascending"},
+   {"check": "ack_varies", "turns": 3}
+  ],
+  "note": "ack_varies は、トーク 1、3、5 の相づちがどれも「〜ですね。」で終わったことを見る(history のトーク 1、3 と、この返信)。choices_exclude は、聞き直しの候補が 1 ページ目に移らないことを見る(c1 では 2 ページ目にある。t326-more-lead)"
+ },
+ {
+  "id": "t326-more-lead",
+  "entry": "career",
+  "category": "t326",
+  "title": "トーク 6〜7: 「他の候補」の後の吹き出しで、何の候補か分かる(#326 の A と B)",
+  "source": "jyoka/tasks#326 のトーク 1〜7",
+  "form": "D",
+  "segment": "same_path",
+  "known": {"why_now": {"text": "年収を上げたい", "from": "button:ib_why_now"}, "area": {"text": "東京23区", "from": "button:hf_area"}},
+  "history": [
+   {"who": "user", "text": "東京23区"},
+   {"who": "agent", "text": "東京23区ですね。年収はいくら以上を考えていますか?"}
+  ],
+  "asking": "hf_salary",
+  "says": [{"text": "他の候補", "button": true}],
+  "expect": [
+   {"check": "reply_contains", "any": ["年収"]},
+   {"check": "choices_ascending"},
+   {"check": "choices_exclude", "labels": ["今より上げたい", "今と同じくらい", "300万円未満"]},
+   {"check": "not_counted"},
+   {"check": "llm_calls_max", "n": 0}
+  ],
+  "note": "「他の候補」で出すのは、1 ページ目より細かい区切りか高い区切り(#326 の B)。600万円以上を探して押した人に、1 ページ目より低い「300万円未満」を出さない"
+ },
+ {
+  "id": "t326-whole-talk",
+  "entry": "career",
+  "category": "t326",
+  "title": "トーク 1〜7 を続けて通す",
+  "source": "jyoka/tasks#326 のトーク 1〜7",
+  "form": "D",
+  "segment": "same_path",
+  "history": [
+   {"who": "user", "text": "同じ仕事で上へ"},
+   {"who": "agent", "text": "同じ仕事で上を目指すのですね。今回、仕事を探そうと思ったきっかけは?"}
+  ],
+  "asking": "ib_why_now",
+  "says": [
+   {"text": "年収を上げたい", "button": true},
+   {"text": "東京23区", "button": true},
+   {"text": "他の候補", "button": true}
+  ],
+  "expect": [
+   {"check": "order", "parts": ["ack", "phase_line", "ask"], "at": 0},
+   {"check": "asks", "qid": "hf_salary", "at": 1},
+   {"check": "choices_exclude", "labels": ["今より上げたい"], "at": "all"},
+   {"check": "choices_ascending", "at": 2},
+   {"check": "choices_exclude", "labels": ["300万円未満"], "at": 2},
+   {"check": "reply_contains", "any": ["年収"], "at": 2},
+   {"check": "ack_varies", "turns": 3},
+   {"check": "no_repeat", "turns": 3},
+   {"check": "bubble_max", "chars": 80, "at": "all"},
+   {"check": "natural", "at": "all"}
+  ]
+ }
+]

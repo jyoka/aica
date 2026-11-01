@@ -14,6 +14,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
 | `GET /healthz` | ヘルスチェック。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない |
 | `scripts/deploy_smoke.py` | デプロイの smoke。ヘルスチェックと初回の挨拶の 1 往復を確かめる(実 API を 1 回使う) |
+| `.github/workflows/healthz.yml`、`scripts/healthz_watch.py` | 外形監視。GitHub Actions が 15 分ごとに公開 URL の `/healthz` を呼び、落ちていたら Issue で知らせる(下の「8. 外形監視を有効にして確かめる」) |
 
 - 状態と出力は、すべてコンテナの `/app/data` に書きます(会話、dip の状態、プロフィール、費用台帳、ターン数、音声の下書き)。
   ここに永続ディスクをつなぎます。ほかの場所は、デプロイと再起動のたびに消えます
@@ -149,6 +150,199 @@ certifi は 2026.10.19 以上が要ります。image の版は次で確かめま
 
 全体の上限(`AICA_DAILY_TURN_LIMIT_TOTAL`、既定で 1 日 1000 ターン)は残るので、1 日の費用の天井は変わりません。
 
+### 6. 通知を設定して確かめる **【運営者】**
+
+デプロイの失敗、`aica` の unhealthy、ディスクの 80% 超えなどの失敗の通知を、メールで受けます。
+設定はワークスペースに 1 つ置き、`aica` と `aica-voice` はそれに従わせます。決めた理由と現状は [Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+| 項目 | 決めたこと | 理由 |
+|---|---|---|
+| 送り先(Notification Destination) | メールだけ。宛先は、運営者が Render にログインしているアカウント | 失敗の通知は、すべてメールで届く。Slack でしか届かないのは、デプロイの成功、unhealthy からの回復、one-off job の失敗で、気づくためには要らない。通知のために Slack を用意しなくて済む |
+| 段階(Default Service Notifications) | ワークスペースの既定を「Only failure notifications」 | 「All notifications」にしても、メールで増えるのは「ディスクの使用が 80% を下回った」だけ |
+| サービスごとの上書き | しない。`aica` と `aica-voice` は「Use workspace default」 | 既定を 1 か所で変えれば両方に効く。上書きがあると、既定を変えてもそのサービスには効かない |
+| Preview Notifications | 変えない | aica はプレビューを使わない(`render.yaml` に `previews` がない)。Pro 以上のワークスペースだけの設定 |
+
+「Only failure notifications」で、メールで届く通知です(Render の文書 [Email and Slack Notifications](https://render.com/docs/notifications) の表から)。
+
+| 通知 | `aica` | `aica-voice` | 確かめ方 |
+|---|---|---|---|
+| build かデプロイが失敗した | 届く | 届く | 試せる(下の「届くことを確かめる」) |
+| 動いているサービスが unhealthy になった | 届く(`/healthz`) | 未確認。Render のヘルスチェックは Web サービスと private service だけで、バックグラウンドワーカーにはない | 試せない |
+| ディスクの使用が 80% を超えた | 届く(`aica-data` 2GB) | 対象外(ディスクがない) | 試せない |
+| Blueprint の同期が失敗した(`render.yaml` を変えた PR のマージなど) | 届く(Blueprint ごと) | 同じ | 試せない |
+| 24 時間、起動して healthy になることに失敗し続け、Render がサービスを Suspend した | 届く | 届く | 試せない |
+| Docker の image の取得が失敗した | 対象外(登録済みの image ではなく、Render が build する) | 対象外 | - |
+
+届かないものです。
+
+- メモリ不足(`Out of memory`)、`Instance Failed`、インスタンスの起動し直し。Render の通知の一覧にありません。「Events」には出ます
+  (毎日見ます。下の「7. メモリ不足とインスタンスの失敗を毎日見る」)
+- デプロイの成功と、unhealthy からの回復(Slack だけ)。回復したかは「Events」で見ます
+- `aica-voice` が固まったこと(ヘルスチェックがない。Brief の「次にやること」の 10)
+
+Render の文書に書いておらず、未確認のことです。下の「届くことを確かめる」で分かるものは、そこで控えます。
+
+- メールがワークスペースの誰に届くか(メンバー全員か、持ち主だけか)
+- 送り元のアドレス
+- `aica-voice` で unhealthy の通知が出るか
+
+**設定する**
+
+1. [Render のダッシュボード](https://dashboard.render.com/) のワークスペースのホームで、左の「Integrations」→「Notifications」を開く
+2. 「Notification Destination」を「Email」にする。Slack はつながない
+3. 「Default Service Notifications」を「Only failure notifications」にする(「None」だと何も届かない)
+4. 同じ画面の「Notification Overrides」に `aica` と `aica-voice` が無いことを見る。あれば、そのサービスの「Settings」→「Notifications」で、
+   すべての項目を「Use workspace default」に戻す
+5. `aica` と `aica-voice` の「Settings」→「Notifications」が「Use workspace default」になっていることを見る
+
+**届くことを確かめる**
+
+本番の `aica` と `aica-voice` には触れず、build が必ず失敗する試しのサービスを作って、デプロイの失敗の通知を出します。
+新しいサービスもワークスペースの既定に従うので、送り先と段階の設定を確かめられます。
+
+1. 「New」→「Web Service」→「Public Git Repository」で、`https://github.com/render-examples/flask-hello-world`(Render の例)を入れる
+2. 名前は `notify-test`、Language は「Python 3」、Build Command は `exit 1`、Instance Type は「Free」にして作る
+   (Free が選べなければ、いちばん安いものにし、確かめたらすぐ消す)
+3. build が失敗し、デプロイの失敗のメールが届くことを見る。宛先と送り元のアドレスを控える。
+   迷惑メールに入っていたら、送り元を受信箱に残すフィルタを作る。携帯でメールの通知が出ることも見る
+4. `notify-test` の「Settings」で「Delete Web Service」を押して消す
+5. 設定した日、届いた宛先、送り元を、Brief の関門 6 に書く(「設定待ち」を外す)
+
+届かないときは、迷惑メール、手順 2 と 3 の設定、`notify-test` の「Settings」→「Notifications」の順に見ます。
+
+通知が届いた後の手順は [runbook](runbook.md) にあります。
+
+ほかの通知は、本番を止めるかディスクを埋めないと出ないので、試しません。実際に起きたときに、「Events」と照らして届いたかを見ます。
+
+- unhealthy: `aica` の `/healthz` が失敗し続けたとき
+- ディスクの 80% 超え: 今の使用量は、`aica` の「Shell」で `df -h /app/data` を実行して見る
+- Blueprint の同期の失敗、Suspend: 起きたときに見る
+
+### 7. メモリ不足とインスタンスの失敗を毎日見る **【運営者】**
+
+メモリ不足(`Out of memory`)とインスタンスの失敗(`Instance Failed`)は、Render の通知では届きません。Render が起動し直すので、
+回数が増えていても気づけません。毎日 1 回、`aica` と `aica-voice` の回数を数えます。
+届く通知にしなかった理由は [Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+**準備(1 回だけ)**
+
+1. [Render のダッシュボード](https://dashboard.render.com/) の右上のアカウントから「Account Settings」→「API Keys」で、鍵を作る。
+   名前は `aica-events` など。鍵は作ったときに 1 回だけ表示される
+2. 鍵を手元の Mac のキーチェーンに入れる。最後の `-w` で、鍵を聞かれるので貼る(シェルの履歴に残さないため)
+
+   ```bash
+   security add-generic-password -a "$USER" -s render-api-key -w
+   ```
+
+- 鍵は、運営者が属するすべてのワークスペースを読み書きでき、環境変数(API キー)も読めます。`.env`、CI、Render の環境変数には入れません
+- Mac をなくしたとき、鍵が漏れたかもしれないときは、「API Keys」でその鍵を消し、作り直します
+
+**毎日見る**
+
+1. リポジトリ直下で動かす。Render の API を読むだけで、何も変えない
+
+   ```bash
+   RENDER_API_KEY=$(security find-generic-password -s render-api-key -w) ./.venv/bin/python -m scripts.render_events
+   ```
+
+   次のように出ます。回数は「直近 24 時間 / 7 日」で、`*` は直近 24 時間のものです。
+
+   ```text
+   2026-10-28 09:00 時点(日本時間)。直近 24 時間 / 7 日
+     aica: メモリ不足(Out of memory) 1 / 1、インスタンスの失敗(Instance Failed) 0 / 0
+     aica-voice: メモリ不足(Out of memory) 0 / 0、インスタンスの失敗(Instance Failed) 0 / 0
+     * 10-28 06:00 aica メモリ不足(Out of memory) 上限 2Gi evt-…
+   判定: look(* の日時を記録し、その時刻の Metrics と Logs を見る)
+   ```
+
+2. 最後の行の判定のとおりにする。look と act で見る場所は、[runbook](runbook.md) の症状ごとの手順にもあります
+
+| 判定 | 回数(サービスごと) | すること |
+|---|---|---|
+| ok | 直近 24 時間に 0 回 | 何もしない |
+| look | 直近 24 時間に 1 回以上で、act に当たらない | `*` の日時、サービス、種類を控える。そのサービスの「Metrics」で、その時刻の前後のメモリを見る。「Logs」で、落ちる直前のログを見る。メモリ不足でない失敗は、終了コードと直前のエラーを控える |
+| act | 直近 24 時間にメモリ不足が 2 回以上、7 日で 3 回以上、またはメモリ不足でない失敗が直近 24 時間に 2 回以上 | 増えています。その日のうちに、下の「act のとき」をする |
+
+- 週末などで空けたときは、`--hours 72` のように、空けた時間を渡します。7 日より前の分は数えません(API が出来事を何日残すかは未確認)
+- 公開 URL の `/healthz` が答えない、サービスが「Live」でない(落ちたまま戻っていない)ときは、判定によらず、すぐ対応します
+  ([runbook](runbook.md) の「2. はじめにすること」から)
+- 急にメモリが増えて落ちたときは、「Metrics」に山が出ないことがあります(Render の文書 [Troubleshooting Your Deploy](https://render.com/docs/troubleshooting-deploys))
+
+**act のとき**
+
+1. 「Metrics」で、メモリの増え方を見る。待機だけで上限近くにいる、相談のたびに山になる、時間とともに増え続ける(漏れ)のどれかを控える
+2. `aica` で、音声ワーカーを移している間(`AICA_VOICE_WORKER=1`)なら、上の「1 つのコンテナで動かしていたサービスを分ける」の 2 つ目の PR を先にする
+3. 移し終えた後の `aica`、または `aica-voice` なら、Brief の関門 3 の見直しのきっかけです。日時、回数、1 の増え方を書いて、カードにする
+4. メモリ不足でない失敗が続くときは、「Logs」の終了コードと直前のエラーを書いて、カードにする
+
+**鍵がないとき、API が答えないとき**
+
+コマンドの終了コードが 2(`NG: …`)のときは、ダッシュボードで同じことを見ます。
+
+1. `aica` と `aica-voice` の「Events」を開き、直近 7 日の `Out of memory` と `Instance Failed` を数える
+2. 上の表の回数の決まりで判定する
+
+- 終了コードは、ok が 0、look と act が 1、鍵がない・API が答えないが 2 です。毎日の実行を launchd などで自動にするときに使います
+- ダッシュボードの `Out of memory` と `Instance Failed` は、API ではどちらも `server_failed` の出来事で、メモリ不足のときだけ
+  理由に `oomKilled` が付く、と読んでいます(Render の API の型から。本番の出来事では確かめていない)。
+  初めて動かしたときに、「Events」と数が合うかを見て、Brief の関門 6 に書きます
+
+### 8. 外形監視を有効にして確かめる **【運営者】**
+
+外から `/healthz` を定期的に呼び、落ちたら GitHub の Issue とメールで知らせます。
+6 の Render の通知は Render の中から見た状態なので、外から届くかはこちらで見ます。決めた理由、費用、知らせが届くまでの目安は
+[Architecture Brief の関門 6](../architecture.md#6-可観測性) にあります。
+
+| 項目 | 中身 |
+|---|---|
+| 場所 | GitHub Actions のワークフロー `healthz`(`.github/workflows/healthz.yml`)。GitHub の runner から呼ぶ。判定は `scripts/healthz_watch.py` |
+| 呼ぶ URL | リポジトリの変数 `AICA_HEALTHZ_URL`(`https://<名前>.onrender.com/healthz`)。秘密情報ではないので Secrets ではなく Variables に置く。無ければジョブを飛ばし、監視しない |
+| 間隔 | 15 分ごと(毎時 7、22、37、52 分)。GitHub が混むと遅れ、その回が落とされることもある。main にあるワークフローだけが動く |
+| 判定 | 1 回の実行の中で、60 秒おきに 3 回まで呼ぶ(1 回の待ちは 10 秒)。1 回でも 200 なら動いている。3 回続けて 200 以外か時間切れなら落ちている。デプロイで数秒止まるくらいでは知らせない |
+| 落ちたとき | Issue「外形監視: /healthz に届かない」を開き、リポジトリの持ち主に割り当てる。その回のジョブは失敗にする。GitHub から、Issue の割り当てとワークフローの失敗のメールが届く |
+| 落ちている間 | 開いた Issue があれば、新しく開かない。ジョブは成功のまま、警告と Summary に「知らせ済み」と出す(同じ障害で何度もメールを送らない) |
+| 回復したとき | Issue に「回復した」とコメントして閉じる。閉じた知らせのメールが届く |
+| 閉じて 24 時間のうちにまた落ちたとき | 新しく開かず、閉じた Issue を開き直してコメントする。その回のジョブは失敗にする(メモリ不足で落ちては戻るを繰り返しても、Issue が増えない) |
+| Issue を読めない、開けない | その回のジョブを失敗にし、ワークフローの失敗のメールだけが届く。直るまで毎回届く |
+| `AICA_HEALTHZ_URL` が `https://` で始まらない | 落ちているとして Issue を開く(本文に「URL が正しくない」と出る) |
+
+メールは GitHub のアカウントのアドレスに届きます。6 の Render の通知と同じく運営者に届きますが、同じアドレスかは未確認です。
+GitHub の文書では、schedule で動いたワークフローの失敗の知らせは、ワークフローの cron を最後に変えた人に届きます。
+Issue の割り当ての知らせは、割り当てた人(リポジトリの持ち主)に届きます。
+
+Issue が開いた後の手順は [runbook](runbook.md) にあります。
+
+監視そのものが止まっても、知らせは届きません。Actions の分数が尽きた、GitHub が `schedule` の回を落とした、ワークフローが止められた、
+などのときです。ときどき「Actions」→「healthz」で、最後の実行が 15 分ほど前にあることを見ます。
+
+**有効にする**
+
+1. GitHub の jyoka/aica の「Settings」→「Secrets and variables」→「Actions」→「Variables」で「New repository variable」を押し、
+   名前 `AICA_HEALTHZ_URL`、値 `https://<名前>.onrender.com/healthz` を入れる。
+   手元からなら `gh variable set AICA_HEALTHZ_URL -R jyoka/aica --body https://<名前>.onrender.com/healthz`
+2. 「Actions」→「healthz」→「Run workflow」で動かし、ジョブが成功し、Summary に「外形監視: 200」と出ることを見る
+3. GitHub の「Settings」→「Notifications」で、「Participating, @mentions and custom」のメールと、
+   「System」→「Actions」のメール(「Only notify for failed workflows」)が有効になっていることを見る
+
+**届くことを確かめる**
+
+本番の `aica` には触れず、変数を 200 を返さない URL に変えて、落ちたときの動きを出します。
+
+1. `AICA_HEALTHZ_URL` を `https://<名前>.onrender.com/healthz-check-404`(無いパスなので 404)に変え、「Run workflow」で動かす
+2. 約 2 分後にジョブが失敗し、Issue が開き、自分に割り当てられ、メールが届くことを見る。宛先と送り元のアドレスを控える
+3. もう一度「Run workflow」で動かす。Issue が増えず、ジョブが成功(警告つき)になることを見る
+4. `AICA_HEALTHZ_URL` を元の URL に戻し、「Run workflow」で動かす。Issue が閉じることを見る
+5. 有効にした日と、届いた宛先を、Brief の関門 6 に書く(「設定待ち」を外す)
+
+**止め方**
+
+- 一時的に止める(長く止める作業の前など): 「Actions」→「healthz」→「…」→「Disable workflow」
+  (`gh workflow disable healthz.yml -R jyoka/aica`)。戻すときは「Enable workflow」。
+  止めている間に開いていた Issue は、戻した後の最初の回で、動いていれば閉じる
+- やめる: 変数 `AICA_HEALTHZ_URL` を消す(ジョブが飛ばされる)。ワークフローを消すときは PR で
+- 開いた Issue を手で閉じたときは、まだ落ちていれば次の回でまた開く
+- 「Manual Deploy」は数秒止まるだけなので、ふつうは止めなくてよい。起動に 2 分以上かかったときは Issue が開き、次の回で閉じる
+
 ## 環境変数
 
 Render の「Environment」に置きます。`.env` はコンテナに入れません。表に無いものは README の「設定」の既定のままです。
@@ -176,6 +370,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | `aica-voice` | `400`(相談 1 件のプロセスの上限。`aica` は既定の 2000) | Blueprint |
 | `AICA_VOICE_MODELS` | `aica-voice` | `1`(build のときにモデルを image に入れる) | Blueprint |
 | `AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
+| `TALK_LAYER_VERSION` | `aica-voice` | `t1`(音声の指示に aica の事実と危ない言葉の決まった文を足す)。`aica` はダッシュボードの値なので写せない。変えるときはそろえる | Blueprint |
 
 LINE 公式アカウントもつなぐときに足すものです(README の「LINE で試す」)。Webhook URL は `https://<名前>.onrender.com/line/webhook` です。
 
@@ -184,6 +379,50 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 | `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers のチャネル |
 | `AICA_ID_KEY` | LINE のユーザーIDを作る鍵(32 バイト以上)。**一度決めたら変えない**([ADR-0008](../adr/0008-keyed-line-user-id.md)) |
 | `AICA_PUBLIC_URL` | `https://<名前>.onrender.com` |
+
+## 相談の版を入り口ごとに切り替える **【運営者】**
+
+相談の版を、入り口ごとに環境変数を変えて会話の層の新しい版へ移します([ADR-0011](../adr/0011-conversation-layer.md)、
+[設計メモ](../design/conversation-layer.md) §4.15)。値は `aica` のダッシュボードの「Environment」に置きます(`render.yaml` には書いていません)。
+
+| 順 | 環境変数 | 今の本番 | 新しい版 | 切り替えてよいか |
+|---|---|---|---|---|
+| 1 | `CAREER_HARNESS_VERSION` | `c1` | `c2` | よい。実モデルの比べで合格の線に届いた(設計メモ §7 の task 362) |
+| 2 | `BAITO_HARNESS_VERSION` | `v4` | `v5` | まだ。線に届いていない(jyoka/tasks#376 で届いてから、この表と手順を足す) |
+| 3 | `TALK_LAYER_VERSION` | `t1` | `t1` | 切り替えた。`aica-voice` は `render.yaml` の値 |
+| - | `CAREER_HARNESS_FORM` | `D` | 変えない | - |
+
+切り替えの動き:
+
+- 環境変数を保存すると、`aica` は起動し直します(その間は止まる)。Web プロセスと dip の子プロセスは、起動のときに値を読みます
+- 新しい版になるのは、新しく始める相談だけです。始めた相談は、始めた版のまま最後まで進みます(dip の状態の `version`)。戻したときも同じです
+- 値は小文字で書きます。知らない値(`C2` などの打ち間違いを含む)は、ハーネスを使わない扱いになり、新しく始める正社員の相談が前の playbook の相談に戻ります
+- `CAREER_HARNESS_VERSION` は音声ワーカーが読まないので、`aica-voice` には写しません
+- `TALK_LAYER_VERSION` は音声ワーカーも読みます。`aica-voice` の値は `render.yaml` に書いています。`aica-voice` は自動でデプロイされないので、音声の指示(`voice_resume/`)を変えたら「Manual Deploy」します
+- c2 の相談から「バイトでいい」で移るとき、アルバイト・パートがまだ v4 なら、今と同じくトークの AI がそのターンを受けて v4 を始めます。
+  v4 は c2 の引き継ぎの記録を読まないので、今と同じく聞き直します。v4 の相談から正社員へ移るときも、トークの AI が c2 を始めます
+
+### 正社員を c2 に切り替える
+
+1. 危ない言葉の決まった文を読み、よいか確かめます。文は `dip_mcp/career/entry.json` の `texts`(`crisis_lead`、`crisis_tail`、`crisis_resume`)、
+   窓口は `dip_mcp/convo/crisis.json` です。組み立てた文は `./.venv/bin/python -c "from dip_mcp.career import c2; print(c2.CRISIS_TEXT)"` で出ます(実 API は使わない)。
+   直すときは、切り替える前に PR で直します(jyoka/tasks#355 の Decision)
+2. 本番に出している版が、jyoka/tasks#375(消した値を、取っておいた相談からも消す)を含む main であることを確かめます。含まなければ、先に「Manual Deploy」で最新の main を出し、
+   `/healthz` が 200 を返すことを確かめます
+3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION`、
+   `TALK_LAYER_VERSION`)は変えません
+4. 起動し直した後に確かめます:
+   - `/healthz` が 200 を返す
+   - 自分の LINE で正社員の相談を新しく始め、最後まで進める。「始める」の 1 枚、職歴カード、まとめ、完成のカルーセルが出る
+   - 相談の途中でスタンプを送ると、同じ問いがもう一度届く(c2 の動き。c1 では返事が無い)
+   - 相談の途中で「死にたい」のような言葉を送ると、1 の決まった文が届き、「続ける」で同じ問いに戻る
+   - 設計メモ §4.10 の最後の線(運営者の実機の確かめ)として、話し方が硬くないか、聞き直しが無いかを見る
+5. よくなければ戻します(下)
+
+### 戻し方
+
+- 「Environment」で `CAREER_HARNESS_VERSION` を `c1` に戻して保存します。新しく始める相談は c1 になります
+- 戻した時点で途中の c2 の相談は、止めずに c2 のまま最後まで進みます。c2 のコードは main から消しません(途中の相談が読むため)
 
 ## API キーはサーバーの中だけ
 
@@ -385,6 +624,8 @@ Auto Sync なので、マージはそのまま本番のデプロイです。`aic
 
 ## うまくいかないとき
 
+公開した後に落ちた、メモリが足りなくなったときは [runbook](runbook.md) を見ます。ここは公開するときのつまずきです。
+
 - デプロイが 15 分たっても `Deploy live` にならない: 「Logs」で起動の途中のエラーを見る。`ANTHROPIC_API_KEY` が無いと、Web プロセスは
   起動の途中で止まる
 - 「Logs」に `WARNING: /app/data is not a mounted disk.` と出る: ディスクがつながっていないか、Mount Path が `/app/data` でない。
@@ -395,3 +636,9 @@ Auto Sync なので、マージはそのまま本番のデプロイです。`aic
 参考にした Render の文書(2026-10-25 に確認): [Blueprint YAML Reference](https://render.com/docs/blueprint-spec)、
 [Persistent Disks](https://render.com/docs/disks)、[Web Services](https://render.com/docs/web-services)、
 [Health Checks](https://render.com/docs/health-checks)。
+通知の手順は、2026-10-28 に [Email and Slack Notifications](https://render.com/docs/notifications) と
+[Health Checks](https://render.com/docs/health-checks) を確認して書きました。
+メモリ不足の点検は、2026-10-28 に [Webhooks](https://render.com/docs/webhooks)、[The Render API](https://render.com/docs/api)、
+[List events](https://api-docs.render.com/reference/list-events) を確認して書きました。
+外形監視の手順は、2026-10-28 に GitHub の [Events that trigger workflows の schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule) と
+[GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) を確認して書きました。

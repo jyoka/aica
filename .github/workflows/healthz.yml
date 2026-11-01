@@ -1,0 +1,40 @@
+# 外形監視: 公開 URL の /healthz を外から 15 分ごとに呼び、続けて落ちていたら Issue を開いて運営者に知らせる。
+# 決めた理由は docs/architecture.md の関門 6、止め方と確かめ方は docs/deploy/render.md の 8。
+# 秘密情報は使わない(AGENTS.md)。URL はリポジトリの変数 AICA_HEALTHZ_URL に置き、無ければジョブを飛ばす。
+# Issue を開く、閉じるのは、Actions が実行ごとに作る github.token(下の permissions の issues: write)だけで足りる。
+# 判定と Issue の扱いは scripts/healthz_watch.py(tests/test_healthz_watch.py)。
+name: healthz
+on:
+  schedule:
+    # 15 分ごと。GitHub は 5 分が下限で、混むと遅れるか落とす(毎時 0 分が混むので避ける)。
+    # 間隔を変えるときは、Brief の関門 6 の Actions の分数の見積もりも直す
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+defaults:
+  run:
+    shell: bash
+# 前の実行が終わる前に次が来ても、同時に Issue を開かないよう 1 つずつ動かす
+concurrency:
+  group: healthz
+  cancel-in-progress: false
+jobs:
+  watch:
+    if: ${{ vars.AICA_HEALTHZ_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"  # Dockerfile と同じ。scripts/healthz_watch.py は標準ライブラリだけを使う
+      - name: Watch /healthz
+        env:
+          AICA_HEALTHZ_URL: ${{ vars.AICA_HEALTHZ_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scripts.healthz_watch --url "$AICA_HEALTHZ_URL" --repo "$GITHUB_REPOSITORY" --assignee "$GITHUB_REPOSITORY_OWNER"

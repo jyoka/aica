@@ -124,6 +124,9 @@ from fastapi.responses import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from dip_mcp import accounts, arcade, behavior, logic, profile, retention
+from dip_mcp.baito import session as baito_session
+from dip_mcp.career import session as career_session
+from dip_mcp.convo.acts import STICKER
 from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import (
@@ -302,7 +305,8 @@ def clock() -> datetime:
 
 def talk_continues(conv: dict) -> bool:
     """今の会話(LineRuntime.conversation の結果)を続けるか: 最後のやりとりから TALK_RESUME_WINDOW 以内なら続ける。
-    返信の無い会話(last_at が None)は続けない。Web のトーク画面を開いたときと、LINE のテキストのメッセージで同じ決まりを使う。"""
+    返信の無い会話(last_at が None)は続けない。Web のトーク画面を開いたときと、LINE のテキストのメッセージで同じ決まりを使う。
+    LINE のテキストは、過ぎていても前の問いのボタンの答えなら続ける(_line_turn。turn.answers_last_question)。"""
     return conv["last_at"] is not None and clock() - conv["last_at"] <= TALK_RESUME_WINDOW
 
 
@@ -910,13 +914,27 @@ async def _arcade_ai(user: str, body: ArcadeAiIn) -> dict:
 async def arcade_save(body: ArcadeSaveIn, request: Request):
     """できた書類を下書きとして保存する(そのゲームの前の下書きを置き換える)。本人の有効な遊びの番号が要る(無い・ほかの人の
     番号なら 403)。書類の種類は雇用区分で決め、未定なら本人が選んだもの(選んでいなければ 400)。雇用区分は変えない。
-    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。"""
+    今の会話があれば「下書きができました」を AI の返信として足す(LLM は呼ばない。会話が無ければ足さない)。その前に、
+    途中のハーネスの相談は閉じる(次の発言はトークの AI が受ける。_end_consultations)。"""
     _arcade_game(body.game)
     user = _page_user(request, body.scenario_user)
     rec, reply = _arcade_save(user, body)
+    await _end_consultations(user)
     talk = await app.state.rt.add_arcade_result(user, reply)
     return {"draft": rec["id"], "view_url": arcade.draft_url(user, rec["id"]), "document_kind": rec["document_kind"],
             "blanks": arcade.blanks(rec), "talk": talk}
+
+
+async def _end_consultations(user: str) -> None:
+    """途中のハーネスの相談(アルバイト・パート、正社員)を閉じる。音声相談に本人が入ったときと、音声相談とゲームの結果を
+    トークに足す前に呼ぶ(LineRuntime.end_consultations。task 364)。相談をしていなければ dip を呼ばない。
+    閉じられなくても、呼び出し元(結果の記録、下書きの保存、面談)は止めない(相談は開いたまま。次の発言はハーネスが受ける)。"""
+    if not (baito_session.active(state, user) or career_session.active(state, user)):
+        return
+    try:
+        await app.state.rt.end_consultations(user)
+    except Exception as e:  # noqa: BLE001
+        line_channel.log.warning("途中の相談を閉じられませんでした(%s): %s", user, type(e).__name__)
 
 
 ARCADE_SAVE_FORBIDDEN = "この遊びの書類は保存できません。「Markdownでコピー」で書き写してください"
@@ -958,7 +976,9 @@ def line_login() -> line_channel.LineLogin:
 
 def _line_kind(e: dict) -> str | None:
     """答えるイベント: 1 対 1 のトークの、空でないテキストのメッセージ(message。決まった文なら連携の開始 link、
-    解除 unlink、データを見る view_data、データを消す forget_data)、友だち追加(follow)、アカウント連携の結果(account_link)、
+    解除 unlink、データを見る view_data、データを消す forget_data)、会話の層の版(正社員の c2、アルバイト・パートの v5)の相談の間のスタンプ
+    (sticker。「[スタンプ]」の文としてハーネスに渡す。設計メモ docs/design/conversation-layer.md §4.12。今の版の相談とトークでは
+    今までどおり答えない)、友だち追加(follow)、アカウント連携の結果(account_link)、
     「データを消す」の確かめのクイックリプライ(postback。forget_confirm、forget_cancel)、使い始める同意のクイックリプライ
     (postback。consent。ボタンと同じ「同意して始める」の文も consent)。ほかは None(無視する)。
     standby(ほかのチャネルが応答を受け持っている間)のイベントには答えない。
@@ -972,6 +992,9 @@ def _line_kind(e: dict) -> str | None:
         if text.strip() == consent.texts("line")["terms"]["button"]:  # 「同意して始める」を文で送った: 発言にしない
             return "consent"
         return line_channel.link_command(text) or line_channel.data_command(text) or "message"
+    if e.get("type") == "message" and msg.get("type") == "sticker" \
+            and any(m.on_layer(state, line_channel.line_user(src["userId"])) for m in (career_session, baito_session)):
+        return "sticker"
     if e.get("type") == "accountLink" and isinstance(e.get("link"), dict):
         return "account_link"
     data = str((e.get("postback") or {}).get("data") or "")
@@ -1036,7 +1059,7 @@ async def _line_messages(api: line_channel.LineApi, line_uid: str, uid: str, kin
         return await _line_data(uid, kind, e)
     if kind == "consent":
         return await _line_consent(uid, e)
-    if kind in ("follow", "message", "link") and consent.needed(state, uid, "terms"):
+    if kind in ("follow", "message", "sticker", "link") and consent.needed(state, uid, "terms"):
         return _line_consent_ask()  # 同意の前: 発言をターンに流さず(LLM を呼ばず、残さず)、同意をうながす
     if kind == "account_link":
         return line_channel.texts(account_link(uid, e["link"]))
@@ -1162,10 +1185,12 @@ def _unlink(uid: str) -> str | None:
 async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | None]:
     """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
-    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。ただし LINE で同意した後の
+    続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。空いていても、発言が今の会話で
+    最後に出した問いのボタンの答えなら、今の会話に続ける(turn.answers_last_question。設計メモ conversation-layer.md §4.16)。ただし LINE で同意した後の
     挨拶がまだ返っていなければ(logic.greeting_due)、新しい会話は発言ではなく挨拶から始める(書いた文は会話に入れない。task 232)。
     挨拶の前に今の会話で本人の発言に返したら(LIFF 画面で同意し、履歴書の続きに答えたなど)、もう挨拶を待たない(logic.skip_greeting)。
     upload は LIFF 画面から履歴書を読み込んだ本人の 1 ターン(resume_upload。続け方はテキストと同じ決まり)。
+    sticker(会話の層の版の相談の間のスタンプ)は「[スタンプ]」の文の発言。今の会話が続いているときだけ(30 分を過ぎたら、今までどおり答えない)。
     エージェントには LINE の窓口と、LIFF 画面で使えるもの(line_channel.liff_features)を伝える。
     受け付けないイベント(空白だけの発言など)は None(何も返さない)。ターンの途中の失敗は、謝りの文を返す。
     返すのは (返信, そのターンが挨拶なら入口(visit / revisit)、でなければ None)。後の方は line_channel.to_messages の greeting
@@ -1177,11 +1202,15 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
             conv = await rt.conversation(uid)
         if kind == "message" and not talk_continues(conv) and logic.greeting_due(state, uid):
             kind = "follow"  # 同意の後の挨拶がまだ返っていない(失敗した): 発言から始めず(入口 A にせず)、挨拶から始める
+        if kind == "sticker" and not talk_continues(conv):
+            return None, None  # 新しい会話はスタンプから始めない(相談は閉じる側。今までどおり答えない)
     if kind == "follow":
         event, text, new = logic.talk_entry(state, uid), None, False
+    elif kind == "sticker":
+        event, text, new = "message", STICKER, False
     else:
         event, text = ("resume_upload", None) if kind == "upload" else ("message", e["message"].get("text"))
-        new = not talk_continues(conv)
+        new = not talk_continues(conv) and not (kind == "message" and turn.answers_last_question(conv, text, clock()))
     try:
         t = turn.accept(deps, uid, event, text, None, new_conversation=new, channel="line",
                         features=line_channel.liff_features())
@@ -1628,7 +1657,7 @@ async def _voice_wait(user_id: str, body: VoiceWaitIn) -> dict:
 @app.post("/api/voice/result")
 async def voice_result_in(body: VoiceResultIn, request: Request, background: BackgroundTasks):
     """音声アドバイザーの結果(話した希望・提案した求人・履歴書か職務経歴書の下書き)を預かり、今の会話に AI の返信として
-    続ける(再読み込みしても残る)。待っているシートがあれば知らせる。
+    続ける(再読み込みしても残る)。途中のハーネスの相談は閉じる(次の発言はトークの AI が受ける)。待っているシートがあれば知らせる。
     呼ぶのは voice-resume のワーカー(サーバー間の経路)。Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る
     (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。
     面談の途中で本人が「すべて消す」をしていたら(その前に発行した部屋の結果)、預からずに 410 を返す
@@ -1640,6 +1669,9 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
         _line_voice_to(body.room)  # 届けない宛先は忘れる
         raise HTTPException(410, "この面談の前に、本人が覚えていることをすべて消しました")
     retention.touch(state, body.user_id)  # 音声相談の結果も最後の利用(期間で消す掃除が数える)
+    # 途中のハーネスの相談は閉じる。ふつうは本人が部屋に入ったとき(/api/voice/session の joined)に閉じている。
+    # その知らせが届かなかったときのために、ここでも閉じる(次の発言を、前の問いの答えとしてハーネスに渡さない)
+    await _end_consultations(body.user_id)
     out = logic.record_voice_result(state, body.user_id, body.jobs, body.draft_markdown, body.files, body.preferences,
                                     body.room, body.document_kind)
     rec = logic.voice_results_since(state, body.user_id, out["recorded"])[0]
@@ -1660,11 +1692,16 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
 async def voice_session(body: VoiceSessionIn, request: Request):
     """音声ワーカーが、部屋のジョブの始まり(joined: 本人が入った)と終わり(ended)を知らせる(サーバー間の経路。共有鍵で守る)。
     joined の部屋は、終わりの知らせが届くまで、その人の終わっていない部屋として数える(line_runtime.voice_rooms)。
-    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。"""
+    その人に別の部屋があれば allowed: false(ワーカーはそのジョブを止める。古い接続トークンで入り直した部屋など)。
+    本人が入ったら、トークの途中のハーネスの相談はここで閉じる(そこまでの答えを保存する。task 364)。ワーカーは
+    この後に本人の希望を読み、面談の中で話した希望を保存するので、音声で聞き直さず、閉じるときの保存が音声の希望を上書きしない。"""
     _require_internal(request)
     rooms = app.state.voice_rooms
     if body.state == "joined":
-        return {"allowed": rooms.joined(body.user_id, body.room)}
+        allowed = rooms.joined(body.user_id, body.room)
+        if allowed:
+            await _end_consultations(body.user_id)
+        return {"allowed": allowed}
     rooms.release(body.user_id, body.room)
     return {"allowed": True}
 
@@ -2501,6 +2538,7 @@ async def liff_arcade_save(body: LiffArcadeSaveIn, request: Request, background:
     line: その本人の LINE のトークに知らせを送るか(Messaging API の設定があり、ID トークンがその本人のものだったとき)。"""
     user = _liff_arcade_user(request)
     rec, reply = _arcade_save(user, body)  # 保存できないとき(403、400)は、LINE に ID トークンを確かめに行かない
+    await _end_consultations(user)
     talk = await app.state.rt.add_arcade_result(user, reply)
     line = False
     if line_channel.configured():  # Messaging API の設定が無ければ送れないので、ID トークンも確かめない

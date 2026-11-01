@@ -2,22 +2,32 @@
 
     ./.venv/bin/python -m evals.baito_sim                 # 単体チェック 131 件 + 20 ペルソナ(モック LLM。費用 0)
     ./.venv/bin/python -m evals.baito_sim --log evidence/baito_sim   # 同じ。出力と会話ログを DIR にも書く(CI)
+    ./.venv/bin/python -m evals.baito_sim --version v5    # 20 ペルソナを v5(会話の層の版。dip_mcp/baito/v5.py)で(モック。費用 0)
     ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/budget-baito-v4.jsonl --limit-usd 8
                                                           # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる。
                                                           # 台帳と上限はカード 242 で決めたもの。1 会話 約 $0.08・35 秒)
+    ./.venv/bin/python -m evals.baito_sim --real --version v5 --runs 1 --ledger evals/budget-conversation-layer.jsonl --limit-usd 21
+                                                          # 同じ 18 ペルソナを v5 で(設計メモ conversation-layer.md §5 の 9 枚目)
 
 モック(既定): docs/prd/baito_harness を一時ディレクトリに写し、BAITO_HARNESS=aica_port(移植版。docs/prd/baito_harness/
 aica_port.py)で `unit_checks_v4.py` と `simulate.py v4` を回す。写しの中で回すので、基準値(results_v4.json・transcripts/)は
 上書きしない(レビュー M-10)。PRD §13-1 の P4 の条件で、§11-5 の基準値(results_v4.json)と比べる(acceptance)。
 pytest は tests/test_baito_harness.py がこれを回す。
+--version v5(task 360。設計メモ docs/design/conversation-layer.md §4.13): BAITO_HARNESS=aica_port_v5(docs/prd/baito_harness/
+aica_port_v5.py。v4 の抽出のモックを v5 の読む段の形に写す)で `simulate.py v4` の 20 ペルソナだけを回し、同じ基準値と比べる。
+単体チェックは回さない(turn() の形とプロンプトの原文を見る検査は v4 だけ。PRD の結果の検査は tests/test_baito_v5.py に移した)。
+pytest は tests/test_baito_v5.py が回す。
 
 実 LLM(--real。PRD §13-1 の P3、レビュー B-3 の解釈):
 - 対象は 20 ペルソナのうち、LLM の誤りを模す malformed・spam_high を除く 18 人。本人の発言はペルソナの台本のまま。
   モデルは line_runtime/baito_chat.py(トークと同じ LLM 層)で呼ぶ
 - M-drop の「正しい更新」は、台本に付いた抽出(sim_v4 の extraction)とする。sim_v4 の dropped がそのまま照らす
 - 生成段には、トーク(runtime の _harness_turn)と同じく直前のやりとり(画面に出た発言と返信)を渡す(Transcript)
-- 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数
+- 率の母数は段ごとの「1 回目の呼び出し」(やり直しを除く)。合格は 1 回目で検証を通った数。代替はやり直しても通らなかった数。
+  検証で落ちた出力(段、何回目、問題、出力の頭 300 字)は結果の rejected に残す(task 376)
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
+- --version v5(task 362): 移植版の入口を aica_port_v5 にする。実 LLM は読む段(read)をそのまま読む(ReadAdapter が写さない)。
+  段の数え方は、v5 が層の call_llm(dip_mcp.convo.turn)を通るので、そこを包む。抽出合格率は読む段(read)の 1 回目の合格率
 """
 
 from __future__ import annotations
@@ -40,25 +50,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REF = ROOT / "docs" / "prd" / "baito_harness"
 PORT = "aica_port"
+PORTS = {"v4": PORT, "v5": "aica_port_v5"}  # 版 → 参照資料の検査に差し込む移植版の入口
 NORMAL = ("hs16", "univ", "homemaker", "office", "nopref", "unclear", "late_seg", "no_seg")  # §11-2 の通常ペルソナ
 MOCK_ONLY = ("malformed", "spam_high")  # LLM の誤りを模すペルソナ(実 LLM では回さない)
 TIMEOUT = 180  # 単体チェック・シミュレーターそれぞれの上限(秒。ふだんは数秒)
 P3_TARGETS = {"generate_pass": 0.95, "fallback": 0.02, "extract_pass": 0.98}  # §16-1 の 12
 
 
-def _env() -> dict:
-    return dict(os.environ, BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT), PYTHONDONTWRITEBYTECODE="1")
+def _env(version: str = "v4") -> dict:
+    return dict(os.environ, BAITO_HARNESS=PORTS[version], AICA_ROOT=str(ROOT), PYTHONDONTWRITEBYTECODE="1")
 
 
-def run_reference(timeout: int = TIMEOUT) -> dict:
-    """参照資料の写しで、移植版の単体チェックと 20 ペルソナを回す。基準値(写す前の results_v4.json)も返す。"""
-    with tempfile.TemporaryDirectory(prefix="baito-v4-") as tmp:
+def run_reference(timeout: int = TIMEOUT, version: str = "v4") -> dict:
+    """参照資料の写しで、移植版の単体チェックと 20 ペルソナを回す。基準値(写す前の results_v4.json)も返す。
+    version が v5 なら、20 ペルソナだけを v5 で回す(単体チェックは v4 だけ)。"""
+    with tempfile.TemporaryDirectory(prefix=f"baito-{version}-") as tmp:
         work = Path(tmp) / "baito_harness"
         shutil.copytree(REF, work, ignore=shutil.ignore_patterns("__pycache__"))
-        unit = subprocess.run([sys.executable, "unit_checks_v4.py"], cwd=work, env=_env(), capture_output=True, check=False,
-                              text=True, timeout=timeout)
-        sim = subprocess.run([sys.executable, "simulate.py", "v4"], cwd=work, env=_env(), capture_output=True, text=True, check=False,
-                             timeout=timeout)
+        unit = subprocess.run([sys.executable, "unit_checks_v4.py"], cwd=work, env=_env(version), capture_output=True, check=False,
+                              text=True, timeout=timeout) if version == "v4" else \
+            subprocess.CompletedProcess([], 0, stdout="(v5 には PRD の単体チェックをかけない。tests/test_baito_v5.py)\n", stderr="")
+        sim = subprocess.run([sys.executable, "simulate.py", "v4"], cwd=work, env=_env(version), capture_output=True, text=True,
+                             check=False, timeout=timeout)
         results = json.loads((work / "results_v4.json").read_text(encoding="utf-8")) if sim.returncode == 0 else None
         transcripts = {p.name: p.read_text(encoding="utf-8") for p in sorted((work / "transcripts").glob("v4_*.txt"))}
     lines = unit.stdout.strip().splitlines()
@@ -108,9 +121,9 @@ def write_log(dest: Path, r: dict, bad: list[str]) -> None:
                                       encoding="utf-8")
 
 
-def check(timeout: int = TIMEOUT) -> tuple[dict, list[str]]:
-    """モックの検査の全部: 単体チェックが全件合格し、シミュレーターが落ちず、acceptance に問題が無い。"""
-    r = run_reference(timeout)
+def check(timeout: int = TIMEOUT, version: str = "v4") -> tuple[dict, list[str]]:
+    """モックの検査の全部: 単体チェックが全件合格し(v4 だけ)、シミュレーターが落ちず、acceptance に問題が無い。"""
+    r = run_reference(timeout, version)
     bad = [] if r["unit_returncode"] == 0 else [f"unit_checks: {r['unit_summary']}", *r["unit_fails"]]
     if r["results"] is None:
         bad.append(f"simulate.py v4 の終了コード {r['sim_returncode']}: {r['sim_stderr']}")
@@ -122,11 +135,11 @@ def check(timeout: int = TIMEOUT) -> tuple[dict, list[str]]:
 # ----------------------------- P3: 実 LLM -----------------------------
 
 
-def _import_sim(work: Path):
+def _import_sim(work: Path, version: str = "v4"):
     """写しの sim_v4 を、移植版を検査する形で import する(BAITO_HARNESS は import の前に入れる)。"""
-    os.environ.update(BAITO_HARNESS=PORT, AICA_ROOT=str(ROOT))
+    os.environ.update(BAITO_HARNESS=PORTS[version], AICA_ROOT=str(ROOT))
     sys.path.insert(0, str(work))
-    for name in ("sim_v4", "bank_v4", "catalog_v4", PORT):
+    for name in ("sim_v4", "bank_v4", "catalog_v4", *PORTS.values()):
         sys.modules.pop(name, None)
     return importlib.import_module("sim_v4")
 
@@ -168,38 +181,56 @@ class Transcript:
 
 
 class StageCounter:
-    """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。"""
+    """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。
+    v5 は、層の call_llm(dip_mcp.convo.turn。v5 は名前で読み込んでいるので dip_mcp.baito.v5 の方も)を包む
+    (まとめと結果は v4 の _call_llm が同じ層の call_llm を呼ぶ)。"""
 
-    def __init__(self, harness):
-        self.harness = harness
-        self.orig = harness._call_llm
+    def __init__(self, harness, version: str = "v4"):
+        from dip_mcp.baito import v5
+        from dip_mcp.convo import turn as convo_turn
+
+        # 包むもの(モジュール, 名前)
+        self.targets = [(harness, "_call_llm")] if version == "v4" else [(convo_turn, "call_llm"), (v5, "call_llm")]
+        self.orig = {(id(m), n): getattr(m, n) for m, n in self.targets}
         self.stats: dict[str, dict] = {}
+        self.rejected: list[dict] = []  # 検証で落ちたモデルの出力(段、何回目、問題、出力の頭。代替の理由を後で読むため。task 376)
 
-    def __enter__(self):
-        def counted(fn, payload, validator, state, stage):
+    def _counted(self, orig):
+        def counted(fn, payload, validator, state, stage, *a, **kw):
             calls = [0]
 
             def fn2(p):
                 calls[0] += 1
                 return fn(p)
-            res = self.orig(fn2, payload, validator, state, stage)
+
+            def check(raw):
+                res, probs = validator(raw)
+                if res is None:
+                    self.rejected.append({"stage": stage, "attempt": calls[0], "problems": probs, "raw": str(raw)[:300]})
+                return res, probs
+            res = orig(fn2, payload, check, state, stage, *a, **kw)
             s = self.stats.setdefault(stage, {"first": 0, "first_ok": 0, "fallback": 0, "calls": 0})
             s["first"] += 1
             s["calls"] += calls[0]
             s["first_ok"] += int(res is not None and calls[0] == 1)
             s["fallback"] += int(res is None)
             return res
-        self.harness._call_llm = counted
+        return counted
+
+    def __enter__(self):
+        for m, n in self.targets:
+            setattr(m, n, self._counted(self.orig[(id(m), n)]))
         return self
 
     def __exit__(self, *exc):
-        self.harness._call_llm = self.orig
+        for m, n in self.targets:
+            setattr(m, n, self.orig[(id(m), n)])
 
 
 def rates(stats: dict) -> dict:
     gen = [stats.get(k, {}) for k in ("generate", "result")]
     first = sum(s.get("first", 0) for s in gen)
-    ex = stats.get("extract", {})
+    ex = stats.get("extract") or stats.get("read") or {}  # v5 は読む段(read)
     return {"generate_pass": sum(s.get("first_ok", 0) for s in gen) / first if first else None,
             "fallback": sum(s.get("fallback", 0) for s in gen) / first if first else None,
             "extract_pass": ex["first_ok"] / ex["first"] if ex.get("first") else None}
@@ -215,8 +246,8 @@ def p3_ok(r: dict, agg: dict) -> list[str]:
     return bad
 
 
-def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[str] | None = None) -> dict:
-    """P3 の測定。call は line_runtime.baito_chat.default_llm() と同じ形(テストは偽物を渡す)。"""
+def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[str] | None = None, version: str = "v4") -> dict:
+    """P3 の測定。call は line_runtime.baito_chat.default_llm() と同じ形(テストは偽物を渡す)。version は移植版の版(v4 か v5)。"""
     from evals import budget
     from line_runtime import baito_chat, config
     from line_runtime.ledger import cost_usd
@@ -228,7 +259,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
         cwd, env = os.getcwd(), {k: os.environ.get(k) for k in ("BAITO_HARNESS", "AICA_ROOT")}
         os.chdir(work)
         try:
-            sim = _import_sim(work)
+            sim = _import_sim(work, version)
             H = sim.H
             call = call or baito_chat.default_llm()
             personas = [p for p in sim.PERSONAS if p.name not in MOCK_ONLY and (not only or p.name in only)]
@@ -244,7 +275,7 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
             sim.signal = types.SimpleNamespace(signal=signal.signal, SIGALRM=signal.SIGALRM,
                                                alarm=lambda s: signal.alarm(600 if s else 0))
             res, spent, stopped = [], 0.0, False
-            with StageCounter(H) as counter, Transcript(H, lambda: made[-1]):
+            with StageCounter(H, version) as counter, Transcript(H, lambda: made[-1]):
                 for rep in range(runs):
                     for p in personas:
                         try:
@@ -260,13 +291,14 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
                                             - u.get("cache_write", 0), u.get("output_tokens", 0), u.get("cache_write", 0),
                                             u.get("cache_read", 0)) for u in usage)
                         spent += cost
-                        budget.record(ledger, "baito-p3", cost, case=p.name, rep=rep)
+                        budget.record(ledger, "baito-p3", cost, case=p.name, rep=rep,
+                                      **({"version": version} if version != "v4" else {}))
                         res.append(m | {"rep": rep, "llm_calls": len(usage), "cost_usd": round(cost, 4), "log": log})
                         print(f"{p.name:11} rep={rep} turns={m['turns']} reached={m['reached']} calls={len(usage)} "
                               f"${cost:.4f}", flush=True)
                     if stopped:
                         break
-            stats = counter.stats
+            stats, rejected = counter.stats, counter.rejected
         finally:
             os.chdir(cwd)
             sys.path.remove(str(work))
@@ -286,8 +318,8 @@ def run_real(runs: int, ledger: Path, limit_usd: float, call=None, only: list[st
            "over_max_turns": sum(1 for m in res if m["over_max_turns"]),
            "max_turns": max((m["turns"] for m in res), default=0)}
     r = rates(stats)
-    return {"runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
-            "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "results": res}
+    return {"version": version, "runs": runs, "conversations": len(res), "stopped_by_budget": stopped, "spent_usd": round(spent, 4),
+            "stats": stats, "rates": r, "agg": agg, "problems": p3_ok(r, agg), "rejected": rejected, "results": res}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -297,14 +329,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", help="--real のとき、回すペルソナ(カンマ区切り)")
     ap.add_argument("--ledger", type=Path, help="--real の費用台帳(このカード用のものを渡す)")
     ap.add_argument("--limit-usd", type=float, help="--real で、台帳の累計がこの額に達したら止める")
+    ap.add_argument("--version", choices=list(PORTS), default="v4",
+                    help="回す版(v5 のモックの検査は 20 ペルソナだけ。--real は 18 ペルソナ)")
     ap.add_argument("--log", type=Path, metavar="DIR",
                     help="モックの検査の出力・移植版の結果・会話ログの写し・合否を DIR に書く(CI の証跡)")
     a = ap.parse_args(argv)
     if a.real:
         if a.ledger is None or a.limit_usd is None:
             ap.error("--real には --ledger と --limit-usd が要る")
-        out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None)
-        dest = ROOT / "evals" / "results" / f"baito-p3-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
+        out = run_real(a.runs, a.ledger, a.limit_usd, only=a.only.split(",") if a.only else None, version=a.version)
+        tag = "" if a.version == "v4" else f"{a.version}-"
+        dest = ROOT / "evals" / "results" / f"baito-p3-{tag}{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(json.dumps(out, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
         print(json.dumps({k: out[k] for k in ("conversations", "spent_usd", "rates", "agg", "problems")},
@@ -312,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"結果: {dest}")
         return 1 if out["problems"] else 0
     t = time.perf_counter()
-    r, bad = check()
+    r, bad = check() if a.version == "v4" else check(version=a.version)
     if a.log:
         write_log(a.log, r, bad)
     print(r["unit_summary"])

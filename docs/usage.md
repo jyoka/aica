@@ -50,6 +50,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 手元で `./.venv/bin/python -m scripts.deploy_smoke` を流すと、コンテナを作ってヘルスチェック(`GET /healthz`)と、同意してから初回の挨拶の
 1 往復、再起動の後も会話が残ることを確かめます(docker が要る。実 API を 1 回使う)。
 Render のサービスを作る手順と、運営者がする操作は [docs/deploy/render.md](deploy/render.md) にあります。
+相談の版(正社員の `c1` → `c2` など)を本番で切り替える手順と戻し方も、そこの「相談の版を入り口ごとに切り替える」にあります。
 
 ## LINE で試す
 
@@ -304,8 +305,12 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
 | `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
-| `python -m evals.career_sim [--log DIR]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。最後に「すべて合格」 | 使わない |
-| `python -m evals.career_choices` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_sim [--log DIR] [--version c2]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_choices [--version c2]` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
+| `python -m evals.scenes [--entry career --version c1] [--version career=c2 --version baito=v5] [--scene ID] [-v] [--log DIR]` | 会話の層の場面の一覧(`evals/scenes/`)を回して、コードの条件を判定し、入り口と版ごとの点を出す。版は career が `c1`(既定)と `c2`、baito が `v4`(既定)と `v5`。「入り口=版」で渡した版は、入り口を移す先の版にもなる(baito の `v5` は、渡さなければ移る先の正社員を `c2` にする)。台本の LLM で回す(トークの AI はモック。判定は守りの前処理と、相談を始めないことだけ)。採点の条件は判定しない([evals/scenes/README.md](../evals/scenes/README.md)) | 使わない |
+| `python -m evals.scenes --real --entry career --version c2 --tag 名前 --ledger evals/budget-conversation-layer.jsonl --limit-usd 21 [--read-model claude-haiku-5-5] [--repeat 2]` | 場面の一覧を実モデルで回し、採点の条件もジャッジで判定する(設計メモ conversation-layer.md §5 の 9 枚目)。結果は `evals/results/scenes-real-<名前>.jsonl`。`python -m evals.scenes.real summary 結果.jsonl…` で点の表(費用 0) | 使う |
+| `python -m evals.baito_sim --real [--version v5] --runs 1 --ledger <台帳> --limit-usd <上限>` | アルバイト・パートの P3。18 ペルソナを実モデルで回す(`--version v5` は会話の層の版) | 使う |
+| `python -m evals.fulltime_hearing.run --form D,D-c2 --persona all --repeat 2 --ledger <台帳> --limit-usd <上限>` | 正社員のヒアリングの評価。本人役とジャッジは実モデル。`D-c2` は形 D を会話の層の版で回す([evals/fulltime_hearing/README.md](../evals/fulltime_hearing/README.md)) | 使う |
 | `python3 evalkit/aggregate.py diff 前.json 後.json` | 評価の結果の前後を比べる | 使わない |
 | `python -m evals.budget` | 予算台帳の累計と、実行ごとの内訳 | 使わない |
 | `python -m evals.search_eval eval` | 意味検索の再現率(保存済みのベクトルで測る) | 使わない |
@@ -314,6 +319,8 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m resume_intake.cli <ファイル>` | 履歴書を 1 つ読み取る | 使う |
 | `python -m scripts.line_rich_menu [--dry-run] [--replace]` | LINE のリッチメニューを作って登録する(上の「LINE のリッチメニュー」)。`--dry-run` は画像と本文を作るだけ | 使わない(LINE を呼ぶ) |
 | `python -m scripts.deploy_smoke [--url https://…] [--cookie w-… --expect revisit]` | デプロイの smoke。手元ではコンテナを作って起動し、ヘルスチェック、初回の挨拶、再起動の後に残ることを確かめる。`--url` は公開 URL で確かめる([docs/deploy/render.md](deploy/render.md)) | 使う |
+| `python -m scripts.healthz_watch --url https://…/healthz` | 外形監視の判定。`/healthz` を 3 回まで 60 秒おきに呼び、1 回でも 200 なら終了コード 0、全部失敗なら 1。`--repo` を付けると Issue を開く、閉じる(ワークフロー `healthz` が 15 分ごとに動かす。[docs/deploy/render.md の 8](deploy/render.md#8-外形監視を有効にして確かめる-運営者)) | 使わない |
+| `RENDER_API_KEY=… python -m scripts.render_events [--hours 72]` | Render の Events から、`aica` と `aica-voice` のメモリ不足とインスタンスの失敗を、直近 24 時間と 7 日で数えて判定する(ok、look、act)。運営者が毎日 1 回、手元で動かす。Render の API を読むだけ([docs/deploy/render.md の 7](deploy/render.md#7-メモリ不足とインスタンスの失敗を毎日見る-運営者)) | 使わない(Render の API を読む。鍵は運営者だけが持つ) |
 | `python -m scripts.check_image_certs [--no-build] [--probe]` | image の CA 証明書の確かめ。コンテナを作り、certifi が 2026.10.19 以上で、ca-certificates が Debian の今の版かを確かめる(eMudhra の漏洩。[docs/deploy/render.md](deploy/render.md)) | 使わない |
 | `python -m scripts.career_ui_preview` | 正社員のヒアリングの形 D の UI(「始める」の 1 枚、帯、プロフィールカード、職歴カード、まとめ、全部の完成)の写真を `docs/images/career-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
 | `python -m scripts.career_stamp` | 職歴カードの「完成」のスタンプ(16×16 のドット絵を 4 倍にした PNG。アーケードと同じ色)を `line_runtime/static/career/stamp.png` に作り直す。`/static/career/stamp.png` で出る | 使わない |
@@ -333,6 +340,7 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 
 | 知りたいこと | 文書 |
 |---|---|
+| 1 文、機能の文、バナー、経緯 | [docs/brand.md](brand.md) |
 | 全体の図、部品、データの流れ、信頼の境界、用語 | [docs/architecture/hld.md](architecture/hld.md)(HLD) |
 | モジュール、HTTP の口、dip のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](architecture/lld.md)(LLD) |
 | 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](architecture/review-2026-10.md) |
@@ -348,3 +356,4 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 | 利用規約とプライバシーポリシー(版 1.0。画面は `/legal/terms`、`/legal/privacy`。法律の確認は利用者がする) | [docs/legal/terms.md](legal/terms.md)、[docs/legal/privacy-policy.md](legal/privacy-policy.md)、[docs/legal/README.md](legal/README.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](../evalkit/README.md) |
 | Render での公開の手順、環境変数、置くデータ | [docs/deploy/render.md](deploy/render.md) |
+| 運用の決定(段階、7 つの関門、落ちたときの対応、次にやること) | [docs/architecture.md](architecture.md)(Architecture Brief) |

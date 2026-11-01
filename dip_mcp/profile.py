@@ -11,6 +11,8 @@
   LINE 側が次の本人のターンの前に AI へ渡す(notice)。渡し終えたら消す(take_changes の n 件)
 - 本人が手で直す値にも、保存(save_user_preferences)と同じ決まり(決まった項目だけ・個人情報らしい値と長すぎる値は
   保存しない)を効かせる
+- 希望の項目を直す・消すと、バイトの相談の v5 で「あとで」と取っておいた相談からも、その項目の前の値を同じ書き込みの中で消す
+  (dip_mcp.baito.session.forget_paused。jyoka/tasks#375)
 - 「すべて消す」は、そのユーザーの dip の状態をまるごと消す(次に開くと初回訪問)。会話そのもの(LINE 側の
   チェックポイント)を消すのは LINE 側の仕事(line_runtime.server)
 - 履歴書を消すと、LINE 側は今の会話を閉じる(会話に残るアップロードの要点を読めなくする。次は新しい会話から)
@@ -23,6 +25,7 @@ import copy
 import json
 
 from dip_mcp import accounts, arcade, behavior, logic, retention
+from dip_mcp.baito import session as baito_session
 from dip_mcp.career import store as career_store
 from dip_mcp.data import State, now
 from resume_draft.pii import personal_value
@@ -122,6 +125,7 @@ def edit_item(state: State, line_user_id: str, key: str, value: str) -> dict:
     def apply(u):
         u.setdefault("preferences", {})[key] = {"value": value, "at": now(line_user_id).isoformat()}
         _note(u, "直した", logic.PREFERENCE_KEYS[key], value)
+        baito_session.forget_paused(u)  # 「あとで」で取っておいた相談からも、前の値を消す
 
     state.update(line_user_id, apply)
     return {"saved": key, "value": value}
@@ -134,6 +138,7 @@ def delete_item(state: State, line_user_id: str, key: str) -> dict:
     def apply(u):
         if (u.get("preferences") or {}).pop(key, None) is not None:
             _note(u, "消した", logic.PREFERENCE_KEYS[key])
+            baito_session.forget_paused(u)  # 「あとで」で取っておいた相談からも消す
 
     state.update(line_user_id, apply)
     return {"deleted": key}

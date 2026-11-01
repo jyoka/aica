@@ -19,13 +19,13 @@ README と `docs/` は日本語です。
 ## README の構成
 
 README は、初めて来た人が最初の画面で「何か」「なぜ使うか」「どう始めるか」をつかむためのページです。
-詳しいことは docs に置き、README からリンクします。150 行前後、長くても 180 行に収めます。
+詳しいことは docs に置き、README からリンクします。絵の HTML(`<picture>` と `<table>` の中)を除いて 150 行前後、長くても 180 行に収めます。
 
 | 順 | 見出し | 中身 |
 |---|---|---|
-| 1 | `# aica` | 太字の一言の説明と、何をするものか 2〜3 行 |
+| 1 | `# aica` | 見出しの上にバナー(`assets/brand/`)。太字の 1 文([docs/brand.md](docs/brand.md) と同じ文)、何をするものか 2〜3 行、テスト用の公開であることの注意 |
 | 2 | `## しくみ` | Mermaid の図 1 枚と箇条書き 3 つ |
-| 3 | `## 特長` | 1 行ずつ、7 つまで |
+| 3 | `## 特長` | 画面 4 枚の 2 列の表(`assets/media/`)と、1 行ずつの箇条書き 7 つまで |
 | 4 | `## はじめる` | 要るもの、コマンド 3 つ前後。詳しくは docs/usage.md |
 | 5 | `## 使い方` | 最初の 1 分の流れ。詳しくは docs/usage.md |
 | 6 | `## コマンド` | よく使うコマンドを 1 行ずつ。全部は docs/usage.md の「主なコマンド」 |
@@ -42,11 +42,14 @@ docs/ の分け方は変えません。新しい文書は、下の表の場所�
 | 内容 | 場所 |
 |---|---|
 | 何ができるか、始め方 | [README.md](README.md) |
+| README のバナーと画面 | `assets/brand/`、`assets/media/` |
+| 1 文、機能の文、バナー、経緯 | [docs/brand.md](docs/brand.md) |
 | 動かし方、LINE、LIFF、リッチメニュー、マイクの確認、アカウント連携、画面、コマンドの全部 | [docs/usage.md](docs/usage.md) |
 | 設定、環境変数、保存する期間、ターン数の上限 | [docs/configuration.md](docs/configuration.md) |
-| Render での公開の手順、環境変数、置くデータ | [docs/deploy/](docs/deploy/) |
+| Render での公開の手順、環境変数、置くデータ、落ちたときの手順(runbook) | [docs/deploy/](docs/deploy/) |
 | 何を作るか(要件と予算) | [docs/prd/](docs/prd/) |
 | 部品とデータの流れ(HLD)、モジュールと関数(LLD)、設計の見直し | [docs/architecture/](docs/architecture/) |
+| 運用の決定(段階と 7 つの関門。task-hub の `task check` が読むので、この名前で置く) | [docs/architecture.md](docs/architecture.md)(Architecture Brief) |
 | 1 つの決定とその理由 | [docs/adr/](docs/adr/) |
 | 機能ごとの設計メモ | [docs/design/](docs/design/) |
 | 利用規約とプライバシーポリシー(画面に出す原文) | [docs/legal/](docs/legal/) |
@@ -97,6 +100,10 @@ CI は API キーを持たない環境で、次の 3 つを回します。すべ
 
 CI は `--log evidence/baito_sim` を付けて回し、単体チェックとシミュレーターの出力、移植版の結果、会話ログの写し、合否を
 証跡に残します。pytest の `tests/test_baito_harness.py` も同じ検査を回します。
+
+会話の層の版 v5(`dip_mcp/baito/v5.py`)は、`python -m evals.baito_sim --version v5` で 20 ペルソナを同じ基準値に照らします
+(`BAITO_HARNESS=aica_port_v5`。単体チェックは v4 だけ)。pytest の `tests/test_baito_v5.py` が回し、PRD の結果の検査
+(未成年の NG、深夜、中学生以下、金額、カードに無い職種)もそこで確かめます。
 
 §13-1 P3(実 LLM での測定、`python -m evals.baito_sim --real`)は実 API を使うので、CI では確かめません。
 人が予算を決めて回します。

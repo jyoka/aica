@@ -236,9 +236,10 @@ classDiagram
 | `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。正社員のヒアリングの下書きも同じ場所に `CAREER_DRAFT`(`career`)の 1 件として入れる(`save_career_draft`。ゲームの指標には数えない)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`save_career_draft`、`CAREER_DRAFT`、`blanks`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
 | `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
 | `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
-| `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」) | `harness`、`session` |
-| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247) | `harness`、`session`、`store`、`draft` |
-| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/` | - |
+| `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」)。会話の層に載せ替えた版 `v5.py` と入り口の定義 `entry.json`(task 360) | `harness`、`session`、`v5` |
+| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247)。会話の層に載せ替える版 `c2.py` と入り口の定義 `entry.json`(task 355) | `harness`、`session`、`store`、`draft`、`c2` |
+| `convo/` | 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))。作っている途中で、使うのは正社員の c2 とアルバイト・パートの v5 だけ(v4 は守りの前処理と `_call_llm` だけを読み込む)。下の「会話の層」 | `guard`、`acts`、`values`、`entry`、`state`、`turn`、`reply` |
+| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/`。会話の層の読む段と言う段の骨組みは `prompts/convo/` | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md`。ハーネス版は `parttime_chat_harness.md` と `fulltime_chat_harness.md` | - |
 
 `logic.py` は見出しのコメントで次のように分かれています(R14)。
@@ -376,6 +377,7 @@ classDiagram
 | `budget.py`、`budget.jsonl` | 予算台帳。`LIMIT_USD = 4.0` で止まる |
 | `personas/` | ペルソナの架空の履歴書(読み取り結果の形)。`personas/fulltime_hearing/` は正社員のヒアリングの評価のペルソナ 6 人と事実表 |
 | `fulltime_hearing/` | 正社員のヒアリングの評価(設計メモ [fulltime-hearing.md](../design/fulltime-hearing.md) §6)。短気な本人役、いらいらと事実のジャッジ、形ごと・ペルソナごとの報告。予算台帳は `budget-fulltime-hearing.jsonl`。使い方は [README](../../evals/fulltime_hearing/README.md) |
+| `scenes/` | 会話の層の場面の一覧(設計メモ [conversation-layer.md](../design/conversation-layer.md) §3)。入り口ごと(`career/`、`baito/`、`talk/`)と入り口をまたぐ場面。読み込みと形の確かめ(`__init__.py`)、場面を回す仕組み(`runner.py`。`python -m evals.scenes`。台本の LLM で費用 0)、実モデルの回と点の表(`real.py`。`--real`。予算台帳は `budget-conversation-layer.jsonl`)、コードの条件の判定(`checks.py`)、採点の条件のジャッジ(`judge.py`)。使い方は [README](../../evals/scenes/README.md) |
 | `search_eval.py`、`search_eval_set.json` | 意味検索の評価セットと、上位 3 件の再現率 |
 | `jobtype_repro.py`、`semantic_repro.py`、`wait_repro.py` | 個別の問題を実 API で再現するスクリプト |
 | `probe.py` | 「電話はしたくない」と音声でコールセンターを外す流れを、チャットと音声で数ターンずつ実 API で確かめる小さな計測。予算台帳と $4 の停止は `run.py` と同じ |
@@ -729,7 +731,7 @@ flowchart LR
 | `save_user_preferences` | `logic.save_preferences` | `preferences` | 使う |
 | `set_search_track` | `logic.set_search_track` | `track_history` | 使う |
 | `get_counseling_playbook` | `logic.counseling_playbook` | - | 使う |
-| `start_baito_consultation`、`baito_turn`、`end_baito_consultation` | `baito.session.start`、`turn`、`end` | `baito`(進めている間)、`preferences`、`baito_block` | - |
+| `start_baito_consultation`、`baito_turn`、`end_baito_consultation` | `baito.session.start`、`turn`、`end` | `baito`(進めている間)、`baito_paused`(v5 の「あとで」)、`preferences`、`baito_block` | - |
 | `start_career_consultation`、`career_turn`、`end_career_consultation` | `career.session.start`、`turn`、`end` | `career`(進めている間)、`preferences`、`career_profile` | - |
 | `update_career_card` | `career.store.update` | `career_profile` | - |
 | `record_conversation_outcome` | `logic.record_outcome` | `outcomes` | 使う |
@@ -902,7 +904,7 @@ sequenceDiagram
 - 会話の番号は、最初に使うとき `_current` がチェックポイントの最大の番号から復元します。再起動しても古い会話に戻りません
 - `LineRuntime.conversation` の `last_at` は、返信のある会話の最後のチェックポイントの時刻です。返信の無い会話は続けません
 - 続けるかは `server.talk_continues` が決めます(`last_at` が None でなく、`clock()` との差が `TALK_RESUME_WINDOW`(30 分)以内)。
-  LINE のテキストのメッセージも同じ関数で決めます(4.11)
+  LINE のテキストのメッセージも同じ関数で決めます(4.11)。LINE のテキストだけ、過ぎていても前の問いのボタンの答えなら続けます
 - `history` は 1 ターン 1 件で、本人の発言(イベントなら None)と返信(`render` と同じ形)を返します。アップロードと音声相談の
   ターンは、会話に添えた `upload`、`voice` から描き直します。画面の URL は記録から取らず、`liff_url` で組み立て直します
 
@@ -1010,6 +1012,10 @@ sequenceDiagram
   (今の区分で使う、dip に保存できる項目だけ)、`room` です
 - Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
   `LineRuntime.add_voice_result` で今の会話に足し、待っているシート(`voice_ready` の `Condition`)に知らせます
+- トークの途中のハーネスの相談(アルバイト・パート、正社員)は、本人が部屋に入ったと知らせが来たとき(`voice_session` の joined)に
+  閉じ、そこまでの確かめた答えを保存します(`server._end_consultations`)。ワーカーはその後に本人の希望を読み、面談の中で話した希望を
+  保存するので、音声で聞き直さず、閉じるときの保存が音声の希望を上書きしません。joined が届かなかったときのために、結果を足す前にも
+  閉じます。結果の後の本人の発言は、トークの AI が受けます(task 364)
 - トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)。ただし、通話の途中で
   「すべて消す」をした部屋なら、dip が記録を断ります(4.6)。既定ではファイルに書き出さないので、下書きはどこにも残りません。
   締めの返答も「保存した」とは言わず、残せなかったことを伝えます(`finalize_interview`)
@@ -1350,8 +1356,8 @@ sequenceDiagram
 |---|---|
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯・曜日・エリア)、興味・得意、経験、不安 |
-| `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION=v4` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
-| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION=c1` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION` が `v4` か `v5` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION` が `c1` か `c2` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
 | `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
@@ -1364,7 +1370,7 @@ sequenceDiagram
 
 #### アルバイト・パートの相談(ハーネス)
 
-機能フラグ `BAITO_HARNESS_VERSION=v4` のとき、アルバイト・パートのチャットの相談は、何を聞くか・いつフェーズを切り替えるか・
+機能フラグ `BAITO_HARNESS_VERSION` が `v4` か `v5`(会話の層に載せ替えた版。[設計メモ](../design/conversation-layer.md) §4.13)のとき、アルバイト・パートのチャットの相談は、何を聞くか・いつフェーズを切り替えるか・
 いつ終えるかを dip のハーネス(`dip_mcp/baito/`)が決めます([ADR-0009](../adr/0009-baito-consultation-harness.md)、
 [PRD v4.1](../prd/baito_harness/PRD_baito_agent_v4.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、
 上の `parttime_chat.md` で相談します。
@@ -1386,7 +1392,9 @@ sequenceDiagram
 1 ターンの流れ(`LineRuntime._turn`。相談の間はトークの AI を呼びません):
 
 1. 本人の発言(`message`)が来たら、まず `baito_turn` を呼ぶ。相談をしていなければ `active=False` で、ふだんのトークの AI のターンになる。
-   新しい会話と会話の外のイベント(挨拶、プッシュ、アップロード)では `end_baito_consultation` で途中の相談を閉じる
+   新しい会話と会話の外のイベント(挨拶、プッシュ、アップロード)では `end_baito_consultation` で途中の相談を閉じる。
+   音声相談に本人が入ったとき(`/api/voice/session` の joined)と、音声相談とゲームの結果をトークに足す前も、Web サーバーが
+   `LineRuntime.end_consultations` で閉じる(結果の返信の選択肢を、前の問いの答えとしてハーネスに渡さないため。task 364)
 2. dip は保存した状態からハーネスの `turn()` を回す。選択肢そのものならモデルを呼ばずに choice_effects を当てる。モデルが要るところ
    (文の抽出、言い方、結果)まで来ると `status=llm` とシステムプロンプトを返す(状態は保存しない)
 3. ランタイムがモデルを呼び(抽出は本人の今の発言だけ、言い方は直前のやりとりも渡す)、それまでの出力を全部 `llm_outputs` に入れて
@@ -1454,7 +1462,7 @@ sequenceDiagram
 
 #### 正社員の相談(ハーネス)
 
-機能フラグ `CAREER_HARNESS_VERSION=c1` のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
+機能フラグ `CAREER_HARNESS_VERSION` が `c1` か `c2`(下の「会話の層」)のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
 dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
 [設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
 形 B、C、D の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。D は C に LINE の Flex を足した形です(task 246。下の「形 D の UI」)。
@@ -1466,11 +1474,11 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 | `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
 | `dip_mcp/career/draft.py` | result に着いたときに、職歴カードから職務経歴書の下書きを作る(`build`、`create`。LLM を呼ばない。task 247)。下の「下書き」 |
 | `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
-| `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
+| `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`、c2 の読む段 `ReadOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
 | `dip_mcp/career/ui.py` | 形 D で、そのターンに付ける部品(`ui`)と、その字を読む時間(task 246)。`session` が `turn()` の前後から呼ぶ |
 | `line_runtime/career_ui.py` | `ui` を LINE の Flex と文の形にする(task 246) |
-| `evals/career_sim.py` | モックの本人役 6 人 × 形 B、C、D の回帰(`python -m evals.career_sim`) |
-| `evals/career_choices.py` | 答えの候補・スキップと中断・「他の候補」・あいまいな問い・聞き返しの評価シナリオと、PdM の規模の聞き返しの回帰(`python -m evals.career_choices`。task 315) |
+| `evals/career_sim.py` | モックの本人役 6 人 × 形 B、C、D の回帰(`python -m evals.career_sim`。`--version c2` で会話の層の版) |
+| `evals/career_choices.py` | 答えの候補・スキップと中断・「他の候補」・あいまいな問い・聞き返しの評価シナリオと、PdM の規模の聞き返しの回帰(`python -m evals.career_choices`。task 315。`--version c2` で会話の層の版) |
 | `evals/fulltime_hearing/` | 短気な本人役の実 API の評価(設計メモ §6)。形 A は LINE 側のランタイム、形 B〜D は `forms.FormHarness` がハーネスをトークと同じモデルの呼び方でつなぐ(task 248)。いくつかの実行の結果を 1 つの報告にまとめるのは `report.py` |
 
 1 ターンの流れは、アルバイト・パートの 1〜4 と同じです(`career_turn`、`end_career_consultation`。返信の行には `career` が付く)。違うところ:
@@ -1556,6 +1564,99 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
   作らない(`not_saved`。ヒアリングを通らずに職歴を足す道にしない)。item の `career<n>` の n は、要約の `career_cards` の各カードが持つ `n`。
   要約は欄のあるカードだけを並べるので、職歴1を消すと職歴2が先頭になる。並びの順で決めると別のカードを直してしまう)。why_now・direction・team_style は `save_user_preferences` で上書きする。
   直し方は Prompt(`baitoru_assistant.md`)と `fulltime_chat_harness.md` に書く。segment は直さない(次の相談で選び直す)
+
+#### 会話の層(正社員の c2、アルバイト・パートの v5)
+
+全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))を
+`dip_mcp/convo/` に作りました(設計メモ §5 の 10 枚のカード。task 354〜363)。使うのは正社員の c2(`CAREER_HARNESS_VERSION=c2`)と
+アルバイト・パートの v5(`BAITO_HARNESS_VERSION=v5`)と、トークの AI の t1(`TALK_LAYER_VERSION=t1`)です。本番の値(c1、v4、t1 なし)は運営者が
+入り口ごとに変えます。実モデルの比べ(task 362)で合格の線に届いたのは c2 だけで、手順と戻し方は [deploy/render.md](../deploy/render.md#相談の版を入り口ごとに切り替える-運営者) です。
+
+始めた相談は始めた版のまま進みます。版は相談を始めたときのフラグで決まり、dip の状態の `version` に残ります。ターンごとのハーネスは、
+フラグでなく状態の `version` から選びます(`career/session.harness_of`、`baito/session.harness_of`)。知らない版の状態は読まずに閉じます(`_load`)。
+Web プロセス(`start_career_consultation` を見せるか)と dip の子プロセスは、起動のときにフラグを読むので、本番で値を変えると `aica` が起動し直します。
+切り替えの前後の動きは `tests/test_career_cutover.py` が、本番の組み合わせ(形 D、v4、t1 なし)で確かめます(task 363):
+
+| 場合 | 動き |
+|---|---|
+| c1 の相談の途中で c2 に切り替えた | c1 のまま(c1 の読み取り `extract`)最後まで進み、保存する。次に始める相談は c2 |
+| c2 の相談の途中で c1 に戻した | c2 のまま(読む段 `read`)最後まで進む。次は c1 |
+| c2 の相談から、まだ v4 のアルバイト・パートへ移る | c2 は引き継ぎの記録を書いて閉じ、トークの AI がそのターンを受けて v4 を始める。v4 は記録を読まない |
+| v4 の相談から正社員へ移る | v4 は今と同じく閉じ、トークの AI が始める正社員の相談は c2 |
+
+| 部品 | 中身 |
+|---|---|
+| `dip_mcp/convo/guard.py`、`crisis.json` | 守りの前処理。危ない言葉の表(v4 の `crisis_v4.json` と同じ言葉と窓口)で照らす `crisis_hit` と、窓口の後の「続ける」(`wants_resume`)。入り口の調子の文に共通の窓口をはさむ `crisis_text`。伏せた印と氏名・要配慮の部分を値から除く `scrub`、返事に出たかを見る `leaks`。v4 も `crisis_hit` を読み込む |
+| `dip_mcp/convo/acts.py` | 発言の働き(act)の型と、読む段の出力の検証(`validate_reading`。値は発言の部分文字列、数は発言に数字で書いてあるもの、知っている欄と入り口だけ)。場面の一覧の読む段の正解も同じ型 |
+| `dip_mcp/convo/values.py` | 値の当て方(`plan`。答え、言い足し、直す、取り消す、迷う、パス)と確かさ(`confidence`)、言い足しのつなぎ方(`merge`) |
+| `dip_mcp/convo/entry.py` | 入り口の定義(`dip_mcp/<入り口>/entry.json`)の読み込みと形の確かめ(欄の説明、質問バンクと問いの言い方 `variants`、移る先、ボタンから推せる欄、決まった文、言い回しの調子 `tone`、事実のファイル、問いの群、話題、本人の言葉の候補を足す問い) |
+| `dip_mcp/convo/plan.py` | 応じ方の計画(`respond`。設計メモ §4.6 の表)。act と当てた結果から、相づちの種類、逆質問に答えるか、注意の 1 行、次の問い(選び直す、同じ問い、前の問い、今の欄を閉じて次へ)、数え方を決める。「中断」の注意を添えるか(`pause_due`) |
+| `dip_mcp/convo/facts.py`、`facts.json` | 逆質問に答える事実のデータ。aica 全体の事実(`facts.json`)に入り口の事実(`dip_mcp/career/facts.json`)を足す。運営者が確かめる(`checked`) |
+| `dip_mcp/convo/pick.py` | 問いの選び方と候補(task 358): スコアの高い問いを群の順とバンクの順で選ぶ `best`、話題のおまけ `bonus`、本人の言葉を最初のページの頭に置く `put_first` |
+| `dip_mcp/convo/state.py` | 状態の器。直前のやりとり 4 つ(読む段に渡す)、直前の返信 2 つとその相づち(言う段の重複の確かめ)、決まった相づちを回す位置、候補に使える本人の言葉 5 つ |
+| `dip_mcp/convo/reply.py` | 言う段。返事の部品(相づち → 逆質問の答え → 注意 → 区切り → 問い)の計画 `new_plan`、問いの言い方の選び方 `pick`、モデルの返事の確かめ `validate`(ほめ言葉は `praised`)、決まった相づち `fixed_ack` と決まった組み立て `fallback`、吹き出しへの組み方 `render`、「他の候補」の前置き `more_lead` |
+| `dip_mcp/convo/turn.py` | 呼び直しの部品: 出力を確かめて 1 回だけやり直す `call_llm`(c1 と v4 の `_call_llm` もこれ)、ボタンの照らし合わせ `match_button`、プロンプトの組み立て |
+| `dip_mcp/career/c2.py`、`entry.json`、`facts.json` | 正社員の c2。c1 の予算、まとめ、結果を使い、守りの前処理、読む段(`read`)、値の当て方、応じ方の計画、問いの選び方と候補、言う段(`say`)を層に替えた版。入り口の定義には、正社員の調子(丁寧語)と決まった相づち、聞き直しと「他の候補」と注意の文を置く |
+| `dip_mcp/prompts/convo/read_ja.txt`、`prompts/career/prompt_read_ja.txt` | 読む段のプロンプト。層の骨組みに、正社員の決まりをつなぐ |
+| `dip_mcp/prompts/convo/say_ja.txt` | 言う段のプロンプトの骨組み。入り口の名前、調子、応じ方の計画(相づちの種類、逆質問の事実)、問いの言い方を差し込む |
+| `dip_mcp/career/bank.json` の `variants` | 問いの文のほかの言い方(1〜2 通り)。c2 だけが読む(c1 は読まない) |
+| `dip_mcp/convo/switch.py` | 入り口を移す(task 359): want と consider の読み分け、移る強い頼み、引き継ぎの記録(dip の状態の `handoff`)の書き方と読み方と消し方、値の対応 `carry` |
+| `dip_mcp/baito/v5.py`、`entry.json`、`facts.json` | アルバイト・パートの v5(task 360)。v4 の質問バンクの原文、欄と区切り、注意文、危ない言葉の文、未成年と闇バイトの決まり、入口のカード、近くで探す、フェーズの流れ、まとめと結果を使い、読む段(`read`)、値の当て方、応じ方の計画、言う段(`say`)、移り方を層に替えた版。入り口の定義には、くだけた話し言葉の調子と決まった相づち、問いの言い方(`variants`。PRD の質問バンク `bank_v4.json` は書き換えないので、ここに置く。言い換えのある問いは PRD の `alt_text`)、移る先と値の対応を置く |
+| `dip_mcp/prompts/baito/prompt_read_v5_ja.txt` | v5 の読む段の決まり(層の骨組み `read_ja.txt` の後ろにつなぐ)。値は区切りのキー |
+| `dip_mcp/prompts/baito/prompt_say_v5_ja.txt` | v5 の言う段の決まり(層の骨組み `say_ja.txt` の後ろにつなぐ。task 376): 直前の相づちの終わり 4 字を避ける、ほめない、本人とボタンのほかの職種を書かない(確かめでは、押したボタンの職種だけを除く)。やり直しでは、1 回目の返事と落ちた理由と使える決まった相づち(`v5.retry_note`)を差し込む |
+
+c2 の 1 ターン(c1 と違うところ):
+
+- ボタンでない文は、読む段の前に危ない言葉の表と照らす。当たれば、モデルを呼ばず、数えずに決まった文(相談窓口。正社員は丁寧語)を返し、
+  次の「続ける」で同じ問いに戻る。やめる頼みと一緒でも閉じない(`session._exits`)。表に無い言い方は、読む段の `crisis` でも同じ文
+- 読む段は stage `read`(出力の形は `career_chat.ReadOut`)。メッセージは今の発言だけで(`baito_chat.messages_for`)、直前のやりとりは
+  ハーネスの状態(`convo`)からシステムプロンプトに入れる。覚える発言は、氏名と要配慮の部分を「…」にしたもの
+- 今の問いの欄には、本人の文の全部でなく、その欄の部分を入れる。ほかの欄の値は捨てない(空なら推測。文の欄に値があればつなぐ)。
+  直した値は確かめた値(high)で置きかえ、取り消した欄は空にする。今の問いに答えずにほかの欄だけを言ったら、同じ問いを出し直す
+- 問いは、フェーズの順と上限(`ORDER`、`PHASE_CAP`)でなく、まだ出していない全部の問いから選ぶ(`c2.advance`、`pick_question`)。
+  スコアは c1 の優先度(HARD 5 〜 LOW 1)に、今の発言で値を言った欄と同じ話題(`entry.json` の `topics`)の問いへのおまけ 0.5 を足したもの。
+  同点は群(`groups`。はじめ、条件、職歴、好み)の順、次にバンクの並び。区切りの 1 行は群が変わったときに出す(群の `line`)
+- ボタンのほかの欄への効き目(`entry.json` の `infer` と、質問バンクの `choice_effects` のうち問いの欄でない欄)は、空の欄にだけ推測(low)で入れる。
+  場面の二択に「どっちでも」と打ったら、その欄を「こだわりなし」(推測)にして、同じ欄の二択を続けない
+- 職歴の仕事、活かしたい経験、続けたいことの問い(`mention_questions`)は、本人がこの会話で言った言葉(読む段の `mentions`)を
+  最初のページの頭に 1 つ足す(`state.current` の `mention`)。ボタンの字数の決まりに入らなければ、そのページの後ろの候補を外す
+- 応じ方の計画(`plan.respond`)のとおりに応じる。逆質問は、言う段に事実のデータだけを渡して答えさせる(吹き出しは 120 字まで。
+  事実にある数は言ってよい)。答えでないターンが 2 回続いた次のターンと、疲れたと言ったターンには「中断」の注意(入り口の定義の `note_pause`)を
+  相談で 1 回だけ添える。疲れたと言った後は HARD のほかの問いを聞かない(`harness.HURRY`)。前の問いに戻る頼みは、前の問いを直す問い
+  (mode `back`、「そのまま」つき)として出し、答えたら元の問いに戻る。聞き方への不満だけのターンは、今の欄を空のまま次へ。事実と違う頼みは
+  決まった文(`note_falsify`)で断る(モデルを呼ばない)
+- 言う段は stage `say`(出力の形は c1 と同じ `ReplyOut`)。モデルが書くのは、問いの前の相づち(1 文、40 字まで。種類は計画の `ack`)と、
+  逆質問の答えだけ。問いの文は、質問バンクの言い方(`text` と `variants`)のどれかを一字一句そのまま使う。同じ問いを出し直すときは、
+  前に使った言い方を避ける。注意(聞き直し、飛ばした問い、計画の注意)と区切り(群の 1 行、形 C の「✓職歴」)は、ハーネスが相づちと問いの間に置く
+- モデルの返事は `reply.validate` で確かめる: 問いの言い方、相づちの文の数と字数、ほめ言葉、本人を責める言い方(「読み取れなかった」)、
+  問いが 2 つ、出どころの無い数(事実にある数は言ってよい)、伏せた印・氏名・要配慮の部分、相づちの終わり 4 字が直前の 2 つと同じ(「〜ですね。」が 3 回続く)、
+  直前の返信と同じ文、吹き出しの字数(80 字。逆質問の答えがあるときは 120 字)。だめなら 1 回やり直し、それでもだめなら決まった組み立て
+  (入り口の定義の相づちを、種類ごとに順に回す。直したときは計画の about の文を先に試す)。相づちも答えも要らないターン(読めない答えの聞き直し、
+  聞き返しへの説明、危ない言葉の後の「続ける」、事実と違う頼み)と、渡す事実の無い逆質問(入り口の定義の「お答えできません」の文で答える)は、
+  モデルを呼ばない。言う段のモデルに渡す今の発言と直前のやりとりは、氏名と要配慮の部分を「…」にしたもの(呼び出しの `model_text` と `model_history`。
+  ランタイムの `_harness_turn` が、あれば会話の記録の代わりに渡す。会話の記録には伏せる前の発言が残るため。c1 と v4 の呼び出しには無い)
+- ハーネスの結果には、返事の部品の並び `parts`(`[[種類, 文]]`)が付く(場面の一覧の判定に使う)
+- LINE のスタンプ: c2 の相談の間だけ、ランタイムが「[スタンプ]」の文にして渡す(`server._line_kind` の `sticker`、`career/session.on_layer`)。
+  c2 は読む段を呼ばずに雑談として読む。今の会話が 30 分空いていたら答えない(今までどおり)
+- 1 ターンのモデルの呼び出しは c1 と同じ(ボタン 1 回、打った文 2 回、上限 4 回)。危ない言葉、聞き直し、聞き返しへの説明、「他の候補」、
+  事実と違う頼みは言う段を呼ばない。スタンプは言う段の 1 回
+
+v5 の 1 ターン(v4 と違うところ。作りの細部は `dip_mcp/baito/v5.py` の先頭と、設計メモ §4.13):
+
+- 守りの前処理(危ない言葉、闇バイトの言葉)、入口のカードと近くで探す、フェーズの流れ(`next_phase`、`PHASE_CAP`)、年齢の決まり(task 258)、
+  区切りの境目の聞き直し、区分の確かめ、まとめと結果は v4 のまま(v4 の関数を呼ぶ)。まとめと結果と、入口のカードのリアクションの言う段は v4 のプロンプト
+- 読む段は stage `read`(出力の形は `baito_chat.ReadOut`。値は区切りのキー。v4 の `normalize_value` で表示名もキーに直してから確かめる)。
+  読んだ act は v4 の抽出の形に写し(`v5.to_ext`)、答えとほかの欄の値は v4 の `_apply_ext` で当てる。直す(high で置きかえ)、取り消す、迷う(low)、
+  「特にない」(こだわりなし)、「わからない」(空のまま次へ)は v5 が当てる。今の問いに答えずにほかの欄だけを言ったら同じ問いを出し直し、
+  値を読めない「うん」は数えずに 1 回だけ違う言い方で聞き直す
+- 問いのターンの言う段は、層の組み立て(c2 と同じ `reply.py`)。v4 の注意文と決まり文句は注意の部品。返事の確かめに、v4 の決まり
+  (金額を言わない、入れていない答えと数を言わない、カードに無い職種を言わない)を足す
+- 「やめる」と「あとで」はハーネスが決まった文で閉じる(`session._exits` は v5 の相談の間はやめる言葉で閉じない)。「やっぱり正社員で」は
+  移る(`session._switch`)。ほかの入り口から移ってくるときは `session.switch_in`(dip のツール `baito_turn` の `switch_in`)
+- 新しく始めるときは、前の相談で保存した希望の項目(日数、時間帯、時給、目的、近くで探すのエリア)と、アルバイト・パートに宛てた引き継ぎの記録を
+  読んで入れる(`v5.prefill`、`take_handoff`)。引き継いだ値は、推測でも聞き直さない(まとめで確かめる)
+- PRD の検査: `evals.baito_sim --version v5` が 20 ペルソナを v5 で回す(`docs/prd/baito_harness/aica_port_v5.py`)。単体チェック 131 件は v4 だけ。
+  結果を見る検査(未成年の NG、深夜、中学生以下、金額、カードに無い職種)は `tests/test_baito_v5.py`
 
 #### 条件の問いの選択肢
 
@@ -1752,7 +1853,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
    (`accountLink`。4.12)と、「データを消す」の確かめの postback(`forget_postback` が読めるデータだけ。4.6)です。テキストが `LINK_TEXT`
    (「アカウント連携」)か `UNLINK_TEXT`(「連携解除」)なら `link` と `unlink`、`VIEW_DATA_TEXT`(「データを見る」)か `FORGET_DATA_TEXT`
    (「データを消す」)なら `view_data` と `forget_data` です(前後の空白は見ない)。使い始める同意のクイックリプライの postback
-   (`consent_postback` が読めるデータ)は `consent` です。友だち解除(`unfollow`)には答えません(下)。
+   (`consent_postback` が読めるデータ)は `consent` です。スタンプ(`message.type == "sticker"`)は、会話の層の版(正社員の c2)の相談の間だけ
+   `sticker` にし、「[スタンプ]」の文の発言としてハーネスに渡します(ほかのときは答えません)。友だち解除(`unfollow`)には答えません(下)。
    `mode` が `standby`(ほかのチャネルが応答を受け持っている間)のイベントには答えません
 4. `webhookEventId` を `SeenEvents.first_time` に渡し、受けたことがあれば捨てます。処理の前に覚えるので、処理の途中に届いた再送も捨てます。
    ID は `data/line_events.json` に直近 2,000 件を置き、再起動しても覚えています(`deliveryContext.isRedelivery` の値は見ません。同じ ID かどうかだけで決めます)。
@@ -1779,6 +1881,8 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
     本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
     保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです。
+    30 分を超えていても、発言が今の会話で最後に出した問いのボタンの答えなら(`turn.answers_last_question`。`line_channel.answer_buttons` の文と一致し、
+    最後のやりとりから `turn.BUTTON_RESUME_WINDOW`(`purge.CONVERSATION_TTL`。30 日)以内)、今の会話に続けます(設計メモ conversation-layer.md §4.16)。
     ただし新しい会話を始めるときに、同意の後の挨拶がまだ返っていなければ(`logic.greeting_due`)、テキストは友だち追加と同じ
     挨拶のターンにします(下の「同意」)
   - 友だち追加: イベントは `logic.talk_entry`(開いた記録が無ければ `visit`、あれば `revisit`)。挨拶が返り、上限の案内でなければ
@@ -2072,6 +2176,7 @@ sequenceDiagram
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
 | `baito` | 進めているアルバイト・パートの相談 `{harness: ハーネスの状態, track, progress}`(PRD v4.1 付録D。`version="v4"`、条件表・NG・聞いた質問・今の質問など。`dip_mcp.baito.harness.State.to_dict`。`progress` はプロフィールの進み具合を数えるために覚えること `{seen: 埋まったと数えた項目, card: プロフィールカードを出したか, restarts}`。`dip_mcp.baito.progress`)。結果に着いたか、やめた・新しい会話を始めたら消す(結果の条件は `preferences` に移す。中学生以下で止めたときは残す) | `baito.session.start`、`turn`、`end` |
 | `baito_block` | バイトの相談で中学生以下として止めた印 `{blocked: "under_15"}`。相談を閉じても残し、あるあいだ `recommend_jobs`・`relax_conditions` は求人を返さない。後の相談で 15 歳以上と確かめたら消す | `baito.session._finish`、`job_block` |
+| `baito_paused` | バイトの相談の v5 で「あとで」と閉じた相談の状態(`harness`、`track`、`progress`、閉じたときの希望の項目の文 `kept`。避けたいことも。`harness` にも同じ `kept` を入れ、続きを始めたら今の文にする)。次に始めるとき(ほかの入り口から移ってくるときも)、閉じたときの問いから続け、読んだら消す。取っておいた間に本人が希望の項目を消した・直したら、その時点で前の値を外す(`forget_paused`) | `baito.session._pause`、`_new`、`switch_in`、`forget_paused`(`profile.edit_item`、`delete_item`、`save_user_preferences`) |
 | `talk_opens` | 挨拶が返った時刻(直近 20 件) | `record_talk_open` |
 | `greeting_due` | LINE で同意した後、挨拶がまだ返っていない印(true。返ったら消す) | `await_greeting`、`record_talk_open` |
 | `resume_upload`、`resume_upload_seq` | 最新の読み取り結果(5.5 の envelope に `id`、`uploaded_at`、`file` を足した形)と次の番号 | `save_resume_upload` |

@@ -3,7 +3,9 @@
 dip_mcp/baito/session.py と同じ。
 
 - 始める: トークの AI が、正社員のチャットの相談に入ったターンに start_career_consultation を呼ぶ
-  (CAREER_HARNESS_VERSION=c1 のときだけ。既定は使わない = 本番は今までの playbook の相談のまま)。
+  (CAREER_HARNESS_VERSION=c1 か c2 のときだけ。既定は使わない = 本番は今までの playbook の相談のまま)。
+  c2 は会話の層(dip_mcp/convo/)に載せ替えていく版(dip_mcp/career/c2.py。ADR-0011)。始めた相談は、始めた版のまま
+  最後まで進める(状態の version で版を分ける。設計メモ docs/design/conversation-layer.md §4.15)
   前の相談で保存した条件と職歴カードは high として入れ、聞かない(dip_mcp.career.store.prefill)。
   最初の返信の吹き出しと選択肢はハーネスのもの(LINE 側がトークの AI の返信をこれに置き換える)
 - 進める: その後の本人の発言は、LINE 側のランタイムが career_turn に渡す(トークの AI は呼ばない)。
@@ -16,6 +18,11 @@ dip_mcp/baito/session.py と同じ。
   「あとで」・本人がやめると言った・区分が正社員から外れた・新しい会話を始めたときも、そこまでの分(high)を保存して閉じる。
   続きから再開はしない(次の相談は、保存した分を聞かずに始め直す)
 
+- 入り口を移す(c2。設計メモ docs/design/conversation-layer.md §4.5、§4.15): c2 が「とりあえずバイトでいい」を移る(switch)と
+  読んだら、引き継ぎの記録(dip_mcp.convo.switch。閉じたときの全部の値と、移る発言の中の値)を書き、そこまでの分(high)を保存して閉じる。
+  移る先が会話の層の版なら、ランタイムが同じターンで移る先の相談を始める(direct。区分は移る先が書く)。今の版(v4)なら、今と同じく
+  トークの AI がこのターンを受ける(v4 は記録を読まない)。ほかの入り口から移ってくるときは、ランタイムが switch_in で始める
+  (記録を読んで消し、区分を正社員にする)。トークの AI が始める相談(start)も、正社員に宛てた記録があれば読む
 - 形 D(LINE の Flex。task 246): 返信に ui(そのターンに付ける部品。dip_mcp.career.ui)を足す。LINE 側はこれを Flex にする
   (line_runtime.career_ui)。ui の字を読む時間は、ハーネスの推定時間に足してから保存する
 
@@ -34,14 +41,18 @@ from dip_mcp.baito.session import (
     ReplayLLM,
     ReplayMismatch,
 )
+from dip_mcp.career import c2 as C2
 from dip_mcp.career import draft as career_draft
 from dip_mcp.career import harness as H
 from dip_mcp.career import store
 from dip_mcp.career import ui as UI
-from dip_mcp.data import State
+from dip_mcp.convo import guard
+from dip_mcp.convo import switch as SW
+from dip_mcp.data import State, now
 
 KEY = "career"
-FLAG = logic.CAREER_HARNESS_FLAG  # c1 のときだけ新しい相談を始める。始めた相談はフラグを戻しても最後まで進める
+FLAG = logic.CAREER_HARNESS_FLAG  # c1 か c2 のときだけ新しい相談を始める。始めた相談はフラグを戻しても最後まで進める
+HARNESSES = {H.VERSION: H, C2.VERSION: C2}  # 状態の version → ハーネス(c2 は c1 の決める段と言う段を使う)
 # LINE 側のランタイムだけが呼ぶツール(トークの AI には見せない。line_runtime.runtime.chat_tools が外す)
 RUNTIME_TOOLS = ("career_turn", "end_career_consultation")
 START_TOOL = "start_career_consultation"
@@ -52,9 +63,14 @@ RESULT_CHOICES = ["求人を見る", "今はいい"]
 DRAFT_LABEL = "下書きを開く"  # 下書きの画面を開くボタン(設計メモ §5.2 の「全部の完成」。カルーセルの字 line_runtime/career_ui.py と同じ)
 START_NOTE = ("相談を始めた。この返信は、question の bubbles をそのまま送る(言い換えない。LINE 側が返信の吹き出しを"
               "bubbles に、選択肢を question の choices に置き換える)。次の質問からはハーネスが進める。")
+# トークの AI が start に本人の発言(text)を渡し、c2 で始めるとき(t1。設計メモ §4.5、§4.13): ここでは始めず、ランタイムが同じターンで
+# switch_in で始める(読む段でその発言を読むため。dip はモデルを呼ばない)
+READ_NOTE = ("相談はまだ始まっていない。LINE 側が同じターンで、渡した発言を読んで相談を始め、この返信をその最初の返信に置き換える。"
+             "返信は短い1文だけにする(問いと選択肢は書かない)。")
 MAX_LLM_CALLS = 4  # 1 ターンのモデルの呼び出しの上限(文の答えで抽出 2 回 + 生成 2 回)
 # 相談の外へ出る頼み(review の前だけ): アルバイト・パートで探したい(区分の切り替えはトークの AI がする)。
-# アルバイト・パートの EXIT_REQUEST の「正社員で探したい」と同じ形。後回しや打ち消し(EXIT_HOLD)なら相談を続ける
+# アルバイト・パートの EXIT_REQUEST の「正社員で探したい」と同じ形。後回しや打ち消し(EXIT_HOLD)なら相談を続ける。
+# c2 は、当たれば読む段を呼ばずに入り口を移す(switch の want。dip_mcp.career.c2.asked_to_switch)
 PART_TIME = r"(アルバイト|バイト|パート)"
 EXIT_REQUEST = re.compile(rf"{PART_TIME}(で|の(仕事|求人)を?)\s*(探|さが|見)|やっぱり{PART_TIME}|{PART_TIME}(が|に)(いい|したい)")
 SAVED_SEGMENT = "saved_segment"  # 前の相談で保存して入れた segment(閉じるときに書き直さない)
@@ -73,10 +89,25 @@ def _load(state: State, line_user_id: str) -> H.State | None:
     if not s:
         return None
     d = s.get("harness") or {}
-    if d.get("version") != H.VERSION:  # 版が変わった状態は読まない(閉じて始め直す)
+    mod = HARNESSES.get(d.get("version"))
+    if mod is None:  # 知らない版の状態は読まない(閉じて始め直す)
         _drop(state, line_user_id)
         return None
-    return H.State.from_dict(d)
+    return mod.State.from_dict(d)
+
+
+LAYER_VERSIONS = (C2.VERSION,)  # 会話の層の版(LINE のスタンプを「[スタンプ]」の文にして受ける。設計メモ §4.12)
+
+
+def on_layer(state: State, line_user_id: str) -> bool:
+    """進めている相談が、会話の層の版(c2)か。LINE のランタイムは、このときだけスタンプを文にして渡す(line_runtime.server._line_kind)。"""
+    d = (state.user(line_user_id).get(KEY) or {}).get("harness") or {}
+    return d.get("version") in LAYER_VERSIONS
+
+
+def harness_of(h: H.State):
+    """状態の版のハーネス(dip_mcp.career.harness か dip_mcp.career.c2)。"""
+    return HARNESSES[h.version]
 
 
 def _save(state: State, line_user_id: str, h: H.State, track: str | None = None, saved_segment: str | None = None,
@@ -108,23 +139,31 @@ def _question(out: dict) -> dict:
             "choices": list(out["choices"])}
 
 
-def start(state: State, line_user_id: str) -> dict:
-    """相談を始める(進めている相談があれば、今出しているものを返して続ける)。"""
+def start(state: State, line_user_id: str, text: str | None = None) -> dict:
+    """相談を始める(進めている相談があれば、今出しているものを返して続ける)。text はトークの AI が渡す本人の発言(t1)。
+    TALK_LAYER_VERSION=t1 で、新しく c2 で始めるときに text があれば、始めずに、トークの AI からの引き継ぎの記録を書いて switch_to を返す
+    (ランタイムが同じターンで switch_in で始め、c2 がその発言を読む段で読む。§4.5)。c1 は text を使わない(今のまま)。"""
     h = _load(state, line_user_id)
     started = h is None
     if started and not enabled():
         return {"started": False, "active": False, "error": f"正社員の相談のハーネスは使っていません({FLAG})。"
                 "get_counseling_playbook の playbook で相談する"}
+    said = (text or "").strip()
+    if started and said and logic.talk_layer_on() and logic.career_harness_version() in LAYER_VERSIONS:
+        SW.write(state, line_user_id, SW.talk_record(C2.ENTRY.entry, said, now(line_user_id)))
+        return {"started": False, "active": False, "switch_to": C2.ENTRY.entry, "direct": True, "note": READ_NOTE}
     prefilled: list[str] = []
     segment = None
     if started:
         user = state.user(line_user_id)
-        h = H.new_state()
+        h = C2.new_state() if logic.career_harness_version() == C2.VERSION else H.new_state()
         prefs = logic.stated_preferences(user)
         segment, items = store.prefill(user, prefs)
         H.apply_saved(h, segment, items, ng_known=store.ng_known(prefs))
-        prefilled = (["segment"] if h.segment != "unknown" else []) + sorted(items) + (["avoids"] * store.ng_known(prefs))
-    out = H.start(h, H.BANK)
+        carried = _take_handoff(state, line_user_id, h)
+        prefilled = (["segment"] if h.segment != "unknown" else []) + sorted({*items, *carried}) + (
+            ["avoids"] * store.ng_known(prefs))
+    out = harness_of(h).start(h, H.BANK)
     ui = UI.start_payload(h)  # 形 D の「始める」の 1 枚
     if started:
         UI.add_read(h, ui)
@@ -135,8 +174,22 @@ def start(state: State, line_user_id: str) -> dict:
             "rules": pb["rules"], "playbook": pb["playbook"]} | ({"ui": ui} if ui else {})
 
 
+def _take_handoff(state: State, line_user_id: str, h: H.State) -> list[str]:
+    """会話の層の版(c2)で始めるとき、正社員に宛てた引き継ぎの記録があれば、値を入れて記録を消す -> 入れた欄。"""
+    if h.version != C2.VERSION:
+        return []
+    rec = SW.peek(state, line_user_id, C2.ENTRY.entry, now(line_user_id))
+    if rec is None:
+        return []
+    SW.clear(state, line_user_id)
+    return C2.take_handoff(h, rec)
+
+
 def end(state: State, line_user_id: str) -> dict:
-    """相談を途中で閉じる(新しい会話を始めた・会話の外のイベントが来た)。そこまでの分(high)を保存する。"""
+    """相談を途中で閉じる(新しい会話を始めた・会話の外のイベントが来た)。そこまでの分(high)を保存する。
+    引き継ぎの記録(入り口を移したときの 1 回だけの記録。設計メモ §4.5)も、ここで消す(ランタイムは新しい会話と会話の外の
+    イベントで、どの入り口の end も呼ぶ)。"""
+    SW.clear(state, line_user_id)
     h = _load(state, line_user_id)
     if h is None:
         return {"ended": False}
@@ -145,9 +198,12 @@ def end(state: State, line_user_id: str) -> dict:
 
 def _exits(h: H.State, text: str) -> bool:
     """やめる合図か(「今はいい」「やめる」など、review の前の「バイトで探したい」)。今の選択肢そのものは合図にしない。
-    「あとで」はハーネスが受ける。"""
+    「あとで」はハーネスが受ける。c2 は、危ない言葉があれば、やめる頼みを含んでいてもハーネスに渡す(窓口を案内する。
+    アルバイト・パートと同じ。設計メモ §4.11)。c2 は「バイトで探したい」もハーネスに渡す(入り口を移す。§4.5)。"""
     if h.current and text in h.current.get("choices", []):
         return False
+    if h.version == C2.VERSION:
+        return text in EXIT_WORDS and not guard.crisis_hit(text)
     return text in EXIT_WORDS or (h.phase not in ("review", "result") and bool(EXIT_REQUEST.search(text))
                                   and not EXIT_HOLD.search(text))
 
@@ -157,7 +213,8 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     - {"active": False}: 相談をしていない(やめた合図・区分が外れたなら ended と saved)。トークの AI がこのターンを受け持つ
     - status=llm: モデルの出力がまだ要る。call.system をシステムプロンプトに、本人の発言を user にしてモデルを呼び、
       それまでの出力を全部 llm_outputs に入れて呼び直す(状態はまだ変わっていない)
-    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある
+    - status=reply: bubbles をそのまま送り、choices をクイックリプライにする。形 D なら ui(Flex にする部品)が付くことがある。
+      会話の層の版(c2)は、返事の部品の並び parts([[種類, 文]]。dip_mcp.convo.reply)も付ける(場面の一覧の判定に使う)
     - status=result: 終わった(result に着いた、か「あとで」で閉じた = closed)。相談は閉じ、saved は保存した項目。
       result に着いたときだけ、職歴カードから作った下書き(draft: id、blanks、replaced、view_url)が付く。下書きの画面を開く
       入口は 1 つ: LINE の形 D は完成のカルーセルの「下書きを開く」(ui.complete.draft_url)、ほかの形と Web のトーク
@@ -170,10 +227,11 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
     left = first and _track_left(state, line_user_id)
     if left or (first and _exits(h, said)):
         return {"active": False, "ended": "track" if left else "exit", "saved": _finish(state, line_user_id, h)}
-    llm = ReplayLLM(llm_outputs, H.render_prompt, lambda view: "say")
+    mod = harness_of(h)
+    llm = ReplayLLM(llm_outputs, mod.render_prompt, lambda view: "say")
     prev = UI.before(h)
     try:
-        r = H.turn(h, said, H.BANK, llm)
+        r = mod.turn(h, said, H.BANK, llm)
     except NeedLLM as need:
         if need.call["n"] >= MAX_LLM_CALLS:
             raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
@@ -182,10 +240,11 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         raise RuntimeError(f"正社員の相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
     if llm.used != len(llm.outputs):
         raise RuntimeError("正社員の相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
-    ui, mem = UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
-    out = {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase, "question": r["qid"],
-           "reply": r["reply"], "bubbles": list(r["bubbles"]), "choices": list(r["choices"]), "counted": r["counted"],
-           "llm_calls": llm.used} | ({"ui": ui} if ui else {})
+    if r.get("switch"):  # c2: 別の入り口へ移る
+        return _switch(state, line_user_id, h, r["switch"], llm.used)
+    # 危ない言葉の決まった文(c2)には、形 D の部品(まとめの Flex など)を付けない
+    ui, mem = (None, None) if r.get("crisis") else UI.update(h, (state.user(line_user_id).get(KEY) or {}).get("ui"), prev, r)
+    out = _reply(h, r, llm.used, ui)
     if r["done"]:
         saved = _finish(state, line_user_id, h)
         out |= {"closed": h.closed, "choices": list(RESULT_CHOICES), "saved": saved, "blank_cards": H.blank_cards(h)}
@@ -200,6 +259,67 @@ def turn(state: State, line_user_id: str, text: str, llm_outputs: list | None = 
         # 形 B と C(カルーセルが無い)と、Web のトーク(カルーセルを描かず文にする。talk-core.js)は、返信のボタンが入口
         return out | {"buttons": [{"label": DRAFT_LABEL, "url": d["view_url"]}] if d["view_url"] else []}
     _save(state, line_user_id, h, ui=mem)
+    return out
+
+
+def _reply(h: H.State, r: dict, used: int, ui: dict | None) -> dict:
+    return {"active": True, "status": "result" if r["done"] else "reply", "phase": h.phase, "question": r["qid"],
+            "reply": r["reply"], "bubbles": list(r["bubbles"]), "choices": list(r["choices"]), "counted": r["counted"],
+            "llm_calls": used} | ({"ui": ui} if ui else {}) | ({"parts": r["parts"]} if r.get("parts") else {})
+
+
+def _switch(state: State, line_user_id: str, h: H.State, sw: dict, used: int) -> dict:
+    """別の入り口へ移る(c2。設計メモ §4.5、§4.15): 引き継ぎの記録を書き、そこまでの分(high)を保存して閉じる。返すもの:
+    {"active": False, "ended": "switch", "switch_to", "direct"}。direct は、移る先が会話の層の版か(ランタイムが同じターンで
+    移る先の相談を始める。区分は移る先が書く)。そうでなければ(v4)、今と同じくトークの AI がこのターンを受ける
+    (区分の切り替えと相談を始めるのはトークの AI。v4 は記録を読まない)。"""
+    prior = getattr(h, "came_from", None)
+    rec = SW.record(C2.ENTRY.entry, sw["to"], {**h.pending, **h.slots}, sw["acts"], sw["said"], now(line_user_id), prior)
+    saved = _finish(state, line_user_id, h)
+    SW.write(state, line_user_id, rec)
+    return {"active": False, "ended": "switch", "switch_to": sw["to"], "direct": logic.layer_on(sw["to"]), "saved": saved,
+            "llm_calls": used}
+
+
+def switch_in(state: State, line_user_id: str, text: str, llm_outputs: list | None = None) -> dict:
+    """ほかの入り口から、同じターンで移ってきた相談を始める(ランタイムだけが呼ぶ。career_turn の switch_in。設計メモ §4.5)。
+    会話の層の版(c2)で新しく始めるときだけ。前の相談で保存した項目と、正社員に宛てた引き継ぎの記録の値を入れ、最初の問いを
+    移ったことの相づちと一緒に返す(返す形は turn の status=reply か status=llm と同じ。switched に移る前の入り口)。区分は正社員にし、
+    切り替えの記録を track_switch に返す(画面が切り替えの表示を出す)。記録を消して区分を書くのは、最後まで進んだ回だけ
+    (呼び直しの間は変えない)。進めている相談があるか、層の版でなければ {"active": False}(ランタイムはトークの AI に渡す)。"""
+    if _load(state, line_user_id) is not None or logic.career_harness_version() not in LAYER_VERSIONS:
+        return {"active": False}
+    user = state.user(line_user_id)
+    h = C2.new_state()
+    prefs = logic.stated_preferences(user)
+    segment, items = store.prefill(user, prefs)
+    H.apply_saved(h, segment, items, ng_known=store.ng_known(prefs))
+    rec = SW.peek(state, line_user_id, C2.ENTRY.entry, now(line_user_id))
+    said = (text or "").strip()
+    llm = ReplayLLM(llm_outputs, C2.render_prompt, lambda view: "say")
+    prev = UI.before(h)
+    try:
+        opening, stop = (rec or {}).get("said") or said, None
+        if SW.unread(rec):  # トークの AI が始めた相談(t1): 始めた発言を読む段で読み、その値を当ててから最初の問いを選ぶ
+            acts, opening, stop = C2.read_opening(h, H.BANK, llm, said)
+            rec = dict(rec, acts=acts, read=False)
+        got = C2.take_handoff(h, rec)
+        r = C2.opening_guard(h, H.BANK, stop) if stop else C2.enter(h, H.BANK, llm, opening, C2.carried_words(h, rec, prefs, got))
+    except NeedLLM as need:
+        if need.call["n"] >= MAX_LLM_CALLS:
+            raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
+        return {"active": True, "status": "llm", "call": need.call}
+    except ReplayMismatch as e:
+        raise RuntimeError(f"正社員の相談のモデルの出力が、ハーネスの求めと合いません({e})") from None
+    if llm.used != len(llm.outputs):
+        raise RuntimeError("正社員の相談のモデルの出力が、ハーネスの求めより多くあります(呼び直しの間に状態が変わった)")
+    SW.clear(state, line_user_id)
+    moved = logic.set_search_track(state, line_user_id, CAREER_TRACK, evidence=said)
+    ui, mem = (None, None) if r.get("crisis") else UI.update(h, None, prev, r)  # 窓口の文には形 D の部品を付けない(turn と同じ)
+    _save(state, line_user_id, h, CAREER_TRACK, segment, mem)
+    out = _reply(h, r, llm.used, ui) | {"switched": {"from": (rec or {}).get("from")}}
+    if moved.get("changed"):
+        out["track_switch"] = {k: moved["recorded"][k] for k in ("id", "from", "track", "undo")}
     return out
 
 

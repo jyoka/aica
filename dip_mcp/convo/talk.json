@@ -1,0 +1,15 @@
+{
+ "entry": "talk",
+ "title": "トークの AI",
+ "note": "トークの AI(相談の外)の入り口の定義(設計メモ docs/design/conversation-layer.md §4.13 の t1)。トークの AI はエージェントのままなので、欄も質問バンクも持たない。置くのは、危ない言葉の決まった文の前後(丁寧語。窓口は dip_mcp/convo/crisis.json)と、入り口を選ぶ問いの決まりの文だけ。入り口を選ぶボタンの文は、置かずに入り口の定義の移る先(dip_mcp/career/entry.json と dip_mcp/baito/entry.json の switch の label)から作る。形は dip_mcp/convo/talk.py",
+ "texts": {
+  "crisis_lead": [
+   "話してくださって、ありがとうございます。そう思うほど、つらい気持ちなのですね。ひとりで抱えこまなくて大丈夫です。",
+   "今の気持ちは、専門の相談員に話してみてください（どれも無料です）。"
+  ],
+  "crisis_tail": [
+   "電話がつらいときは、LINEやチャットで話せる窓口もあります。厚生労働省「まもろうよ こころ」 {source}",
+   "お仕事探しの話は、落ち着いたときに、いつでもここで続けられます。"
+  ]
+ }
+}

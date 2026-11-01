@@ -33,6 +33,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dip_mcp.convo import turn as convo_turn
 from resume_draft.pii import personal_value
 from resume_lines import blank_count, check_numbers
 
@@ -54,6 +55,9 @@ MAX_CLARIFY = 2
 PHASE_CAP = {"icebreak": 2 + MAX_CLARIFY, "hard_filter": 5 + MAX_CLARIFY, "career_cards": 3 * CARD_COUNT + MAX_CLARIFY,
              "scenario_game": 2, "reverse_pick": 1, "fill_gaps": 3}
 MAX_ASIDES = 3
+# 疲れたと言った(会話の層の c2 の「急ぐ」。設計メモ docs/design/conversation-layer.md §4.6)。立てたら HARD のほかの問いを聞かずに
+# まとめへ進む(can_ask)。c1 は立てない
+HURRY = "hurry"
 LLM_RETRIES = 1
 FORMS = ("B", "C", "D")
 UI_FORMS = ("D",)  # LINE の Flex を付ける形(問いは C と同じ)
@@ -90,7 +94,11 @@ END_WORDS = ("中断", "中断する", "ヒアリングを中断", "あとで") 
 LEGACY_BUTTONS = {"パス": PASS, "5人くらい": "チーム5人くらい", "10人くらい": "チーム10人くらい", "20人以上": "チーム20人以上",
                   "規模": "任される仕事の大きさ"}
 MORE = "他の候補"  # 答えの候補の次のページを出すボタン(task 315)。数えない
-MORE_LEAD = "他の候補です。"
+# 「他の候補」の吹き出し(task 326)。押した文をそのまま返すと、何の候補か分からない(本番で「他の候補です。」と返して利用者の指摘)。
+# 問いごとに手で書かず、質問バンクの短い名前(topic)から作る。数の問い(kind=number)の候補は区切り(「年収のほかの区切りです。」)
+MORE_LEAD = "{topic}のほかの{noun}です。"
+MORE_NOUN = {"number": "区切り"}
+MORE_NOUN_DEFAULT = "候補"
 MORE_DONE = "候補は以上です。最初の候補に戻しました。合わなければ、ひとことで送ってください。"
 NOPREF = "こだわりなし"
 SEGMENTS = ("same_path", "change", "return", "early")
@@ -105,7 +113,8 @@ STATUSES = ("filled", "passed", "dont_know")
 # 一言(dip_mcp.career.ui.START_NOTE)が言うので、吹き出しは START_LEAD_UI
 START_LEAD_UI = "職務経歴書の材料を、1問ずつ集めます。"
 START_LEAD = START_LEAD_UI + "「中断」でいつでもやめられます。"
-# フェーズが変わったときの 1 行(形 C と D。task 288)。残りの問いの数は出さず、次に何を聞くかだけを言う
+# フェーズが変わったときの 1 行(形 C と D。task 288)。残りの問いの数は出さず、次に何を聞くかだけを言う。
+# 吹き出しの中では、前の答えへの受け止めの後、次の問いの前に置く(bubble。task 326)
 PHASE_LINES = {"hard_filter": "次は希望の条件です", "career_cards": "次は職歴です", "scenario_game": "次は二択の質問です",
                "reverse_pick": "次は選ぶだけの質問です", "fill_gaps": "あと少しで完成です"}
 START_GO = "始める"  # 形 D の「始める」の 1 枚のボタン(履歴書の写真から始めるボタンは、LINE 側が LIFF の画面へのリンクにする)
@@ -206,7 +215,8 @@ def _with_choices(q):
 def load_bank():
     """質問バンク(データ)。プロンプトには書かない。職歴カードの問いは card_role などのひな形で、questions() が 1 枚ごとに広げる。
     どの問いも答えの候補を pages(1 ページ = 1 回に見せるボタン)で持つ(task 315)。最初のページを出し、「ほかの候補」で次の
-    ページを出す。explain は聞き返されたときの説明、explain_choices はその説明に合わせて出す候補(無ければ今のページ)。"""
+    ページを出す。explain は聞き返されたときの説明、explain_choices はその説明に合わせて出す候補(無ければ今のページ)。
+    topic は問いの短い名前で、「他の候補」の吹き出し(more_lead)に使う。"""
     return [_with_choices(q) for q in _load_json("bank.json")]
 
 
@@ -262,7 +272,7 @@ class State:
     last_card: dict = None
     review_log: list = field(default_factory=list)
     flags: list = field(default_factory=list)
-    stop_reason: str = None                        # review に進んだ理由: done / time / turns / show_result
+    stop_reason: str = None                        # review に進んだ理由: done / time / turns / show_result / hurry(c2)
     closed: str = None                             # later(「あとで」で終えた)
     result: dict = None
     log: list = field(default_factory=list)
@@ -401,10 +411,15 @@ def _segment_ok(q, state):
 
 def can_ask(state, slot):
     """時間とターンの予算(§3.3)。HARD は時刻を過ぎても聞き、review のための 2 ターンのうち 1 ターンまで使う。
-    ほかは、質問を止める時刻の前で、review のための 2 ターンに入る前だけ。"""
+    ほかは、質問を止める時刻の前で、review のための 2 ターンに入る前だけ。「急ぐ」(HURRY)の後は HARD だけ。"""
     if slot == "segment" or active_slots(state).get(slot) == HARD:
         return state.turns < HARD_LAST_TURN
-    return state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)
+    return _budget_left(state)
+
+
+def _budget_left(state):
+    """HARD のほかの問いを出せる予算が残っているか。"""
+    return HURRY not in state.flags and state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)
 
 
 def _card_skipped(state, slot):
@@ -426,7 +441,7 @@ def score(state, q, budget=True):
     if q["targets"] == ["__ng__"]:
         if state.user_ng or (state.slots.get("stop_doing") or {}).get("status") == "filled":
             return 0.0  # もう避けたいこと(NG、やめたいこと)を言った人には、逆選択を聞かない(聞き直しに見えるため)
-        return float(LOW) if not budget or (state.turns < MAX_TURNS - REVIEW_RESERVE and state.seconds <= stop_at(state)) else 0.0
+        return float(LOW) if not budget or _budget_left(state) else 0.0
     total = 0.0
     for t in q["targets"]:
         if t in pri and is_open(state.slots.get(t)) and not _card_skipped(state, t) and (not budget or can_ask(state, t)):
@@ -509,6 +524,8 @@ def _why_stop(state, bank):
         return "turns"
     if state.seconds > stop_at(state):
         return "time"
+    if HURRY in state.flags:
+        return "hurry"
     return "done"  # フェーズの上限で出せなかった
 
 
@@ -757,7 +774,20 @@ def validate_reply(raw, v):
 
 
 def bubble(v, reply):
-    return "\n".join([*v.get("progress", []), reply])
+    """1 つの吹き出し: 前の答えの 1 行(職歴カードの「✓職歴」、飛ばした問い)→ 受け止め → フェーズの区切り(PHASE_LINES)→ 問い。
+    区切りを受け止めより先に出すと、受け止めが次の問いの前置きに読める(task 326)。受け止めは、reply の中の問いの文より前の部分。
+    問いの文が見つからなければ(検証の前の reply)、区切りも reply の前に置く。"""
+    progress = list(v.get("progress", []))
+    phase = [x for x in progress if x in PHASE_LINES.values()]
+    past = [x for x in progress if x not in phase]
+    q = v.get("text", "")
+    i = reply.find(q) if phase and q else -1
+    if i < 0 and phase and q and nfkc(q) in nfkc(reply):  # 全角と半角の違い(validate_reply は NFKC で問いの文を探す)
+        reply, i = nfkc(reply), nfkc(reply).find(nfkc(q))
+    if i < 0:
+        return "\n".join([*past, *phase, reply])
+    reaction = reply[:i].strip()
+    return "\n".join([*past, *([reaction] if reaction else []), *phase, reply[i:]])
 
 
 # ----------------------------- まとめ(review) -----------------------------
@@ -976,33 +1006,14 @@ def start(state, bank=BANK):
 
 
 def match_button(state, text):
-    """今のボタンか、この問いで前に見せた候補(「他の候補」で隠れた前のページ。LINE は前のボタンを消すので、打ち直した)と同じ文。"""
-    t = nfkc(text)
-    cur = state.current or {}
-    for c in [*cur.get("choices", []), *cur.get("shown", [])]:
-        if nfkc(c) == t:
-            return c
-    return None
+    """今のボタンか、この問いで前に見せた候補(「他の候補」で隠れた前のページ。LINE は前のボタンを消すので、打ち直した)と同じ文
+    (会話の層の dip_mcp.convo.turn.match_button)。"""
+    return convo_turn.match_button(state.current, text)
 
 
 def _call_llm(fn, payload, validator, state, stage):
-    probs_all = []
-    for attempt in range(1 + LLM_RETRIES):
-        try:
-            raw = fn(payload)
-        except Exception as e:  # noqa: BLE001  モデル・通信の失敗で落とさない(失敗 1 回として数える)
-            raw = None
-            probs_all.append(f"exception:{type(e).__name__}")
-        res, probs = validator(raw)
-        if res is not None:
-            if probs:
-                ev(state, f"{stage}_repaired", problems=probs)
-            if attempt:
-                ev(state, f"{stage}_retry_ok")
-            return res
-        probs_all += probs if isinstance(probs, list) else [probs]
-    ev(state, f"{stage}_fallback", problems=probs_all)
-    return None
+    """出力を確かめ、だめなら 1 回だけやり直す(会話の層の dip_mcp.convo.turn.call_llm)。"""
+    return convo_turn.call_llm(fn, payload, validator, lambda kind, **kw: ev(state, kind, **kw), stage, LLM_RETRIES)
 
 
 def _count(state, bucket=None):
@@ -1169,8 +1180,13 @@ def _turn(state, user_text, bank, llm):
     return _say(state, bank, llm)
 
 
+def more_lead(q):
+    """「他の候補」の吹き出し(MORE_LEAD)。問いの文は繰り返さない(上の吹き出しにある)。"""
+    return MORE_LEAD.format(topic=q["topic"], noun=MORE_NOUN.get(q.get("kind"), MORE_NOUN_DEFAULT))
+
+
 def _more(state, q):
-    """「ほかの候補」: 見せていない候補の次のページを出す(数えない。問いの文は上の吹き出しにあるので、短い前置きだけ)。
+    """「ほかの候補」: 見せていない候補の次のページを出す(数えない。問いの文は上の吹き出しにあるので、何の候補かの短い前置きだけ)。
     出し尽くしたら、最初のページに戻し、文で送るよう案内する(「ほかの候補」はもう出さない)。"""
     cur = state.current
     i, cands = next_page(q, cur)
@@ -1180,7 +1196,7 @@ def _more(state, q):
     else:
         cur.update(page=i, choices=page_choices(q, cands, cur["mode"]))
         cur["shown"] = list(dict.fromkeys([*cur.get("shown", []), *_shown_now(q, cur["choices"])]))
-        lead = MORE_LEAD
+        lead = more_lead(q)
     ev(state, "more", qid=q["id"], page=cur["page"], done=i is None)
     return _out(state, [lead], cur["choices"], counted=False)
 
@@ -1395,7 +1411,7 @@ def captured(state):
 
 def summary(state):
     """終わり(result か「あとで」)に返す状態。保存は呼ぶ側(2b のタスク)。"""
-    return {"version": VERSION, "form": state.form, "segment": state.segment, "closed": state.closed,
+    return {"version": state.version, "form": state.form, "segment": state.segment, "closed": state.closed,
             "slots": {s: v for s, v in captured(state).items() if v["status"] != "missing"},
             "ng": list(state.user_ng), "blank_cards": blank_cards(state), "turns": state.turns,
             # segment が決まらなかったので使わなかった、segment だけの欄の答え(本人が言ったので捨てない)

@@ -14,6 +14,7 @@ playbook(dip_mcp/playbooks/{区分}_voice.md、get_counseling_playbook(track, "v
 
 from __future__ import annotations
 
+import os
 import re
 
 from resume_draft.schema import DEFAULT_DOCUMENT_KIND
@@ -53,11 +54,76 @@ FALLBACK_PLAYBOOK = """\
 - 聞いたことを短く要約して確かめてから propose_jobs で求人を出し、締める前に finalize_interview を呼ぶ。"""
 
 
+# 会話の層の t1(TALK_LAYER_VERSION=t1。dip_mcp.logic.TALK_LAYER_FLAG と同じ名前。設計メモ docs/design/conversation-layer.md §4.13)。
+# 音声の会話の作りは変えず、指示に aica の事実と、危ない言葉の表と決まった文を足す。voice_resume は dip のコードを読み込まないので
+# 写しを持つ(事実は dip_mcp/convo/facts.json の ask_service と ask_advice、言葉と窓口は dip_mcp/convo/crisis.json。
+# tests/voice/test_prompts.py で同じことを確かめる)。無ければ今のまま
+TALK_LAYER_FLAG = "TALK_LAYER_VERSION"
+TALK_LAYER_VERSIONS = ("t1",)
+AICA_FACTS = (
+    "aica は、仕事探しを手伝う AI です",
+    "返事は AI が書いています。人が一つずつ書いているのではありません",
+    "保存した内容は、最後に使った日から180日で消えます",
+    "LINE では「データを消す」と送れば、いつでも消せます",
+    "本人の同意なく、相談の内容を第三者に渡しません",
+    "運営者は、相談の内容を AI の学習に使いません。外部の事業者の扱いは、プライバシーポリシーの 5 のとおりです",
+    "求人は架空のデモで、実際の応募にはなりません",
+)
+ADVICE_FACTS = (
+    "求人は架空のデモで、実際の応募にはなりません",
+    "年収や時給の相場、会社の評判は、確かめた情報を持っていないのでお答えしていません",
+)
+CRISIS_WORDS = (
+    "死にたい", "しにたい", "死にたく", "しにたく", "死のう", "死んでしまいたい", "しんでしまいたい", "死んじゃいたい", "しんじゃいたい",
+    "死ねたら", "死に方", "死にてえ",
+    "消えたい", "きえたい", "消えてしまいたい", "きえてしまいたい", "消えちゃいたい", "きえちゃいたい",
+    "消えてなくなりたい", "消えて無くなりたい", "きえてなくなりたい", "いなくなりたい", "居なくなりたい",
+    "生きていたくない", "生きてたくない", "生きたくない", "生きるのがつらい", "生きるのが辛い", "生きるのに疲れ",
+    "生きる意味", "生きてる意味", "生きている意味",
+    "自殺", "じさつ", "自死", "自傷", "りすか", "りすとかっと", "手首を切", "首を吊", "首吊り", "首つり", "飛び降り", "おーばーどーず",
+)
+# 危ない言葉への決まった文(読み上げる形。窓口の名前と番号は crisis.json の contacts と同じ。記号は使わない)
+CRISIS_SPOKEN = (
+    "話してくださって、ありがとうございます。そう思うほど、つらい気持ちなのですね。ひとりで抱えこまなくて大丈夫です。"
+    "今の気持ちは、専門の相談員に話してみてください。どれも無料です。"
+    "いのちSOS、0120-061-338、毎日24時間。よりそいホットライン、0120-279-338、24時間。"
+    "18歳までなら、24時間子供SOSダイヤル、0120-0-78310、24時間。"
+    "電話がつらいときは、LINEやチャットで話せる窓口もあります。厚生労働省の「まもろうよ こころ」で探せます。"
+    "面談は、続けたいときに、いつでも続けられます。"
+)
+
+
+def talk_layer_on() -> bool:
+    return os.environ.get(TALK_LAYER_FLAG, "").strip() in TALK_LAYER_VERSIONS
+
+
+def layer_section() -> str:
+    """t1 で指示に足す決まり: aica について聞かれたときの事実と、危ない言葉の表と決まった文。"""
+    facts = "\n".join(f"  - {x}" for x in AICA_FACTS)
+    advice = "\n".join(f"  - {x}" for x in ADVICE_FACTS)
+    return f"""
+## aica について聞かれたら
+- aica やこの面談について聞かれたら(だれか、何に使うか、保存、消し方)、次の事実だけで、短く答える。ここに無いことは、分からないと伝える。
+{facts}
+- 求人について聞かれたときの事実(相場は、ツールの結果のほかは言わない):
+{advice}
+
+## 危ない言葉
+- 本人が、次のような言葉(死にたい、消えたい、生きていたくない、自分を傷つけたいなど)を話したら、面談の問いを止め、
+  ツールを呼ばずに、次の決まった文をそのまま読み上げる(この文は「1回の発話は2文まで」の例外)。
+  言葉の例: {"、".join(CRISIS_WORDS)}
+  決まった文: {CRISIS_SPOKEN}
+- 読み上げた後は、本人が続けたいと言うまで、仕事探しの問いを出さない。
+"""
+
+
 def advisor_instructions(track: str = DEFAULT_TRACK, playbook: str | None = None) -> str:
     """アドバイザーの指示: 区分によらない音声の決まりに、今の雇用区分の playbook(音声版)を足したもの。
 
     書類の呼び方(履歴書 / 職務経歴書 / 区分が未定なら「履歴書など」)は区分で変える。
+    TALK_LAYER_VERSION=t1 なら、aica の事実と危ない言葉の決まった文(layer_section)を playbook の前に足す。
     """
+    layer = layer_section() if talk_layer_on() else ""
     doc = document_name(track)
     search = SEARCH_LABEL.get(track, SEARCH_LABEL[DEFAULT_TRACK])
     return f"""\
@@ -145,7 +211,7 @@ def advisor_instructions(track: str = DEFAULT_TRACK, playbook: str | None = None
 finalize_interview ツールを呼んで下書きを保存し(summary に相談のまとめを入れる)、
 「面談を終えるとトークに{doc}の下書きと求人が出ます。内容は必ずご自身で確認・修正してくださいね」
 と案内して短くお礼を述べて締めます。
-
+{layer}
 ## 相談の playbook({track}・音声)
 {playbook or FALLBACK_PLAYBOOK}
 """

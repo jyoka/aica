@@ -28,6 +28,7 @@ from dip_mcp.baito import session
 from dip_mcp.career import harness as H
 from dip_mcp.career import session as career
 from dip_mcp.career import store as career_store
+from dip_mcp.convo import talk
 from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, State
 
 PROMPTS = Path(__file__).resolve().parent / "prompts"
@@ -39,6 +40,9 @@ UserId = Annotated[str, Field(description="LINE のユーザーID")]
 # 音声相談の部屋(引数名は logic.VOICE_ROOM_ARG)。書き込むツールに音声ワーカーだけが渡す
 # (「すべて消す」の前に始めた部屋の書き込みを断る。logic._room_forgotten)。トークの AI には見せない(line_runtime.runtime が外す)
 VoiceRoom = Annotated[str | None, Field(description="音声相談の部屋の名前(音声ワーカーだけが渡す)")]
+# 相談を始めるツールの text(TALK_LAYER_VERSION=t1 のときだけトークの AI に見せる。line_runtime.runtime.chat_tools。設計メモ §4.5、§4.13)
+START_TEXT = ("条件や区分を書いた本人の発言を、本人の言葉のまま(言い換えず、足さず)。dip が読み、書いてあった条件を聞き直さずに始める。"
+              "条件を書いた発言が無ければ渡さない")
 JobType = Annotated[str | None, Field(description=(
     "職種。雇用区分ごとの一覧から1つをそのまま選ぶ。"
     f"アルバイト・パート: {' / '.join(logic.JOB_TYPES)}。正社員: {' / '.join(logic.FULLTIME_JOB_TYPES)}。"
@@ -242,7 +246,10 @@ def save_user_preferences(
     正社員の条件)を保存する。チャットと音声で共有され、次の会話では get_user_conversation_summary の
     stated_preferences に入る。本人が言っていないこと(推測・行動履歴や履歴書からの補完)や、氏名・住所・連絡先は
     保存しない(電話番号・メールアドレス・住所らしい値と、100字を超える値はツールでも弾く)。"""
-    return logic.save_preferences(state, line_user_id, preferences, room)
+    out = logic.save_preferences(state, line_user_id, preferences, room)
+    if out["saved"]:  # 本人がトークで言い直した: 「あとで」で取っておいたバイトの相談からも、前の値を消す(jyoka/tasks#375)
+        state.update(line_user_id, session.forget_paused)
+    return out
 
 
 @mcp.tool()
@@ -302,15 +309,20 @@ def get_counseling_playbook(
 
 
 @mcp.tool()
-def start_baito_consultation(line_user_id: UserId) -> dict:
+def start_baito_consultation(
+    line_user_id: UserId,
+    text: Annotated[str | None, Field(description=START_TEXT)] = None,
+) -> dict:
     """アルバイト・パートのトーク(chat)の相談を、ハーネス(バイト探しの相棒)で始める。アルバイト・パートの playbook
     (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
     返った note に従う: question に card(入口のカード)があれば、短い1文で声をかけるだけにする(問いと選択肢は LINE 側が
     カードとボタンで出す)。card が無ければ、question の text を言い換えずに1問として聞く(選択肢は LINE 側が question の choices にする)。
     その後、入口の1タップの結果、「近くで探す」の3問と本物の求人、条件のまとめ(review)と結果(条件カードとおすすめのバイトの種類3つ)までは、
     ハーネスが本人とやりとりする。
-    結果に着くと、確かめた条件は stated_preferences に保存される。進めている相談があれば、今聞いている質問を返す。"""
-    return session.start(state, line_user_id)
+    結果に着くと、確かめた条件は stated_preferences に保存される。進めている相談があれば、今聞いている質問を返す。
+    text を渡し、結果に switch_to があれば、相談はまだ始まっていない(LINE 側が同じターンで、その発言を読んで始める)。
+    返信は短い1文だけにする(note)。"""
+    return session.start(state, line_user_id, text=text)
 
 
 @mcp.tool()
@@ -319,9 +331,14 @@ def baito_turn(
     text: Annotated[str, Field(description="本人の発言")],
     llm_outputs: Annotated[list[dict] | None, Field(description=(
         "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+    switch_in: Annotated[bool, Field(description=(
+        "ほかの入り口の相談が、このターンでアルバイト・パートへ移ると閉じたとき(結果の switch_to が baito で direct)だけ true。"
+        "引き継ぎの記録を読んで新しい相談を始める"))] = False,
 ) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)ハーネスの相談を本人の発言 1 つで進める。
-    相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。"""
+    相談をしていなければ active=False。dip_mcp.baito.session.turn を参照。switch_in は dip_mcp.baito.session.switch_in(v5)。"""
+    if switch_in:
+        return session.switch_in(state, line_user_id, text, llm_outputs)
     return session.turn(state, line_user_id, text, llm_outputs)
 
 
@@ -332,14 +349,18 @@ def end_baito_consultation(line_user_id: UserId) -> dict:
 
 
 @mcp.tool()
-def start_career_consultation(line_user_id: UserId) -> dict:
+def start_career_consultation(
+    line_user_id: UserId,
+    text: Annotated[str | None, Field(description=START_TEXT)] = None,
+) -> dict:
     """正社員のトーク(chat)の相談を、ハーネス(職務経歴書の材料を集めるヒアリング)で始める。正社員の playbook
     (get_counseling_playbook)が呼ぶように書いているときだけ、playbook を読んだのと同じターンに呼ぶ。
     この返信は、返った question の bubbles をそのまま送る(LINE 側が吹き出しと選択肢をハーネスのものに置き換える)。
     2問目から、まとめ(review)と結果までは、ハーネスが本人とやりとりする。結果に着くか、本人が「あとで」を押すと、
     確かめた条件は stated_preferences に、職歴カードは career_profile に保存される。前の相談で保存した項目は聞かない。
-    進めている相談があれば、今聞いている質問を返す。"""
-    return career.start(state, line_user_id)
+    進めている相談があれば、今聞いている質問を返す。text を渡し、結果に switch_to があれば、相談はまだ始まっていない
+    (LINE 側が同じターンで、その発言を読んで始める)。返信は短い1文だけにする(note)。"""
+    return career.start(state, line_user_id, text=text)
 
 
 @mcp.tool()
@@ -348,9 +369,14 @@ def career_turn(
     text: Annotated[str, Field(description="本人の発言")],
     llm_outputs: Annotated[list[dict] | None, Field(description=(
         "status=llm のあと、このターンでモデルが返した出力を順にすべて({\"output\": JSON} か、失敗なら {\"error\": 型の名前})"))] = None,
+    switch_in: Annotated[bool, Field(description=(
+        "ほかの入り口の相談が、このターンで正社員へ移ると閉じたとき(結果の switch_to が career で direct)だけ true。"
+        "引き継ぎの記録を読んで新しい相談を始める"))] = False,
 ) -> dict:
     """(LINE 側のランタイムだけが呼ぶ。トークの AI には見せない)正社員のハーネスの相談を本人の発言 1 つで進める。
-    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。"""
+    相談をしていなければ active=False。dip_mcp.career.session.turn を参照。switch_in は dip_mcp.career.session.switch_in。"""
+    if switch_in:
+        return career.switch_in(state, line_user_id, text, llm_outputs)
     return career.turn(state, line_user_id, text, llm_outputs)
 
 
@@ -396,7 +422,10 @@ def baitoru_assistant(entry: str = "A") -> str:
     D: フォーム離脱のプッシュ)。"""
     base = (PROMPTS / "baitoru_assistant.md").read_text(encoding="utf-8")
     entries = json.loads((PROMPTS / "entries.json").read_text(encoding="utf-8"))
-    return f"{base}\n## この会話の入口\n{entries.get(entry, entries['A'])}\n"
+    # TALK_LAYER_VERSION=t1 なら、会話の層の決まり(事実、入り口を選ぶ問い、start_* への発言の受け渡し)を足す
+    # (dip_mcp/convo/talk.py。設計メモ docs/design/conversation-layer.md §4.13)
+    layer = talk.prompt_section() if logic.talk_layer_on() else ""
+    return f"{base}\n## この会話の入口\n{entries.get(entry, entries['A'])}\n{layer}"
 
 
 # HTTP の口を 127.0.0.1 の外に開くとき(Render で、別サービスの音声ワーカーがつなぐ)に要る共有鍵。

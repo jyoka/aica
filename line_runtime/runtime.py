@@ -32,12 +32,14 @@ from dip_mcp.baito.session import MAX_LLM_CALLS as BAITO_LLM_CALLS
 from dip_mcp.baito.session import RUNTIME_TOOLS as BAITO_RUNTIME_TOOLS
 from dip_mcp.career.session import MAX_LLM_CALLS as CAREER_LLM_CALLS
 from dip_mcp.career.session import RUNTIME_TOOLS as CAREER_RUNTIME_TOOLS
+from dip_mcp.convo import talk as talk_layer
 from dip_mcp.logic import (
     ENTRIES,
     VOICE_ROOM_ARG,
     baito_harness_on,
     career_harness_on,
     liff_url,
+    talk_layer_on,
 )
 from line_runtime import (
     baito_cards,
@@ -78,11 +80,15 @@ GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話
 SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む dip の要約(task 237)
 # アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito、task 242)。BAITO_HARNESS_VERSION=v4 のときだけ、トークの AI が
 # start で始める。その後の本人の発言はランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない。始めた相談はフラグを
-# 戻しても最後まで進める)。新しい会話と会話の外のイベントで end する
+# 戻しても最後まで進める)。新しい会話と会話の外のイベント(挨拶・プッシュ・アップロード、音声相談に入った・音声とゲームの結果)で end する
 BAITO_START, BAITO_TURN, BAITO_END = "start_baito_consultation", "baito_turn", "end_baito_consultation"
 # 正社員の相談(職務経歴書の材料を集めるヒアリング。dip_mcp/career、task 255)。CAREER_HARNESS_VERSION=c1 のときだけ、
 # トークの AI が start で始める。あとはアルバイト・パートと同じ(ランタイムが career_turn に渡し、新しい会話で end する)
 CAREER_START, CAREER_TURN, CAREER_END = "start_career_consultation", "career_turn", "end_career_consultation"
+# 相談を始めるツールの本人の発言の引数(TALK_LAYER_VERSION=t1 のときだけトークの AI に見せる。dip_mcp/convo/talk.py)。
+# 始めるツールの結果に switch_to があれば、ランタイムが同じターンで移る先の switch_in で相談を始める(設計メモ §4.5、§4.13)
+START_TEXT_ARG = "text"
+STARTS = {BAITO_START: "baito", CAREER_START: "career"}
 # ランタイムが受け持つハーネスの相談。キーは返信の印(画面と評価が読む。evals/checks.py)
 HARNESSES = {
     "baito": {"turn": BAITO_TURN, "end": BAITO_END, "max_calls": BAITO_LLM_CALLS, "what": "バイトの相談",
@@ -194,11 +200,13 @@ def chat_tools(tools: list) -> list:
     ランタイムだけが呼ぶバイトの相談のツール(baito_turn・end_baito_consultation)も外す。ハーネスの機能フラグが
     v4 でなければ、相談を始めるツール(start_baito_consultation)も外す(本番は今までどおり playbook で相談する)。
     正社員の相談のツールも同じ(career_turn・end_career_consultation は外し、CAREER_HARNESS_VERSION=c1 でなければ
-    start_career_consultation も外す)。"""
+    start_career_consultation も外す)。相談を始めるツールの本人の発言(START_TEXT_ARG)は、TALK_LAYER_VERSION=t1 のときだけ見せる
+    (今の動きでは、トークの AI は今までどおり発言を渡さない)。"""
     for tool in tools:
         schema = tool.args_schema
-        if isinstance(schema, dict) and VOICE_ROOM_ARG in schema.get("properties", {}):
-            props = {k: v for k, v in schema["properties"].items() if k != VOICE_ROOM_ARG}
+        hide = {VOICE_ROOM_ARG} | (set() if talk_layer_on() or tool.name not in STARTS else {START_TEXT_ARG})
+        if isinstance(schema, dict) and hide & set(schema.get("properties", {})):
+            props = {k: v for k, v in schema["properties"].items() if k not in hide}
             tool.args_schema = schema | {"properties": props}
     hidden = (set(BAITO_RUNTIME_TOOLS) | set(CAREER_RUNTIME_TOOLS) | (set() if baito_harness_on() else {BAITO_START})
               | (set() if career_harness_on() else {CAREER_START}))
@@ -331,7 +339,8 @@ class LineRuntime:
 
     async def add_voice_result(self, user_id: str, reply: dict) -> bool:
         """音声相談の結果を、今の会話に AI の返信として続ける(LLM は呼ばない)。画面に描き直せるよう、返信は
-        そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。"""
+        そのまま本人側の記録に添える(history がそれを返す)。まだ会話が無ければ何もしない(False)。
+        途中のハーネスの相談は、呼び出し元が先に閉じる(end_consultations)。"""
         return await self._add_reply(user_id, reply, voice_event(reply), "voice")
 
     async def add_arcade_result(self, user_id: str, reply: dict) -> bool:
@@ -352,6 +361,22 @@ class LineRuntime:
                 update |= {"entry": "A", "line_user_id": user_id}  # 閉じた後の空の会話: 結果のターンから始まる
             await self.agent.aupdate_state(self._cfg(user_id, n), update, as_node="model")
             return True
+
+    async def end_consultations(self, user_id: str) -> None:
+        """途中のハーネスの相談を閉じる(そこまでの確かめた答えは保存する。相談をしていなければ何もしない)。
+        音声相談に本人が入ったときと、音声相談とゲームの結果をトークに足す前に、呼び出し元(server)が呼ぶ。どれも会話の外の
+        イベント(アップロードと同じ)で、結果の後の本人の発言はその返信(と選択肢)への返事なので、前の問いの答えとして
+        ハーネスに渡さず、トークの AI が結果を文脈に読んで受ける(task 364)。ターンと同じ排他の中で閉じる(相談のターンの途中で閉じない)。"""
+        async with self._locks[user_id]:
+            await self._end_consultations(user_id)
+
+    def _harnesses(self) -> list[str]:
+        """dip にあるハーネスの相談(ハーネスの相談のツールが無い dip(前の版)なら空)。"""
+        return [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+
+    async def _end_consultations(self, user_id: str) -> None:
+        for kind in self._harnesses():
+            await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
 
     async def close_conversation(self, user_id: str) -> None:
         """今の会話を閉じる(プロフィールで履歴書を消したとき)。空の会話 n+1 を書いて今の会話にし、それまでの会話
@@ -497,20 +522,34 @@ class LineRuntime:
                 if talk_thread is not None:
                     queue.put_nowait({"kind": "thread", "thread": n})
                 cfg = self._cfg(user_id, n)
-                # ハーネスの相談のツールが無い dip(前の版)なら、何もしない
-                harnesses = [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+                harnesses = self._harnesses()
                 if harnesses and EVENTS[event][1] == "user" and not starts:
-                    # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)
+                    # ハーネスの相談の途中なら、このターンはハーネスが受け持つ(やめる合図なら相談を閉じて、トークの AI へ)。
+                    # 会話の層の版が別の入り口へ移ると閉じたとき(switch_to)は、移る先も層の版なら(direct)、トークの AI を挟まずに
+                    # 同じターンで移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)。
+                    # 移る先が今の版(v4)なら、今と同じくトークの AI がこのターンを受ける
                     for kind in harnesses:
                         r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content})
                         if r.get("active"):
-                            await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
+                            r = await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
+                            if r is None:
+                                return
+                        to = r.get("switch_to")
+                        if r.get("direct") and to in harnesses and await self._switch_in(to, queue, user_id, event, cfg,
+                                                                                          content, notice):
                             return
+                        if to:
+                            break
                 else:  # 新しい会話・会話の外のイベント(挨拶・プッシュ・アップロード): 途中の相談は閉じる(そこまでを保存する)
-                    for kind in harnesses:
-                        await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
+                    await self._end_consultations(user_id)
                 snap = await self.agent.aget_state(cfg)
                 first = not (snap.values or {}).get("messages")
+                if EVENTS[event][1] == "user" and talk_layer_on() and (fixed := talk_layer.crisis_reply(content)):
+                    # 守りの前処理(t1。設計メモ §4.11、§4.13): 危ない言葉には、トークの AI を呼ばずに相談窓口の決まった文を返す
+                    await self._fixed_turn(queue, cfg, content, fixed, notice if not first and not starts else None,
+                                           {"entry": entry, "line_user_id": user_id} if first else {},
+                                           {"channel": channel, "channel_features": list(features)})
+                    return
                 # アップロードは本人の1ターン。画面に描き直すため、ファイルの表示名と確認の吹き出しを添えて保存する
                 # (ファイル名は受け取らないので残らない)
                 human = HumanMessage(content, additional_kwargs={"upload": facts} if EVENTS[event][1] == "upload" else {})
@@ -553,18 +592,48 @@ class LineRuntime:
                                 {"name": m.name, "args": args.get(m.tool_call_id, {}), "summary": _summary(_tool_payload(m))}
                                 for m in msgs if m.type == "tool"]})
                 state = (await self.agent.aget_state(cfg)).values
+                opened = started_by_talk(state)
+                if opened is not None and await self._switch_in(opened[0], queue, user_id, event, cfg,
+                                                                said_of(state, opened[1], content), None, human=False):
+                    return  # トークの AI が本人の発言を渡して始めた相談(t1): 移る先が発言を読み、最初の返信を送った
             queue.put_nowait({"kind": "reply", **render(state)})
         finally:
             queue.put_nowait(None)
 
+    async def _fixed_turn(self, queue: asyncio.Queue, cfg: dict, content: str, text: str, notice: str | None,
+                          first: dict, channel: dict) -> None:
+        """モデルを呼ばずに決まった文を返すターン(t1 の危ない言葉)。本人の発言と返信は、トークの AI の会話に続けて保存する
+        (画面の描き直しと、次のターンにトークの AI が読む文脈)。会話の最初のターンなら、入口とユーザー(first)も state に書く。
+        返信には guard(守りの前処理の印)が付く(評価の場面の一覧が読む)。"""
+        reply = LineReply(bubbles=[text])
+        msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
+        msgs += [HumanMessage(content), AIMessage(reply.model_dump_json(), additional_kwargs={"guard": "crisis"})]
+        await self.agent.aupdate_state(cfg, {"messages": msgs, **first, **channel}, as_node="model")
+        state = (await self.agent.aget_state(cfg)).values
+        queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), "guard": "crisis"})
+
+    async def _switch_in(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
+                         notice: str | None, human: bool = True) -> bool:
+        """別の入り口から移ってきた相談を、同じターンで始める(dip の {kind}_turn の switch_in。引き継ぎの記録を読み、区分を書き、
+        最初の問いを返す)。移る先が始めなかったら(層の版でなくなったなど)False(呼んだ側がトークの AI に渡す)。
+        トークの AI が始めた相談(t1)は、本人の発言をもう会話に保存しているので human=False(返信だけを足す)。"""
+        args = {"switch_in": True}
+        r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content, **args})
+        if not r.get("active"):
+            return False
+        return await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice, args, human) is None
+
     async def _harness_turn(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
-                            r: dict, notice: str | None) -> None:
+                            r: dict, notice: str | None, args: dict | None = None, human: bool = True) -> dict | None:
         """ハーネスの相談(kind = baito / career)の1ターン。ハーネス(dip の baito_turn / career_turn)がモデルの出力を求める間
         (status=llm)、そのシステムプロンプトでモデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。
         PRD v4.1 §5-4)。呼び出しが失敗したら、失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。
         返信の文と選択肢はハーネスのものをそのまま出す(正社員はまとめのカードで吹き出しが 2 つ以上になる)。
         画面を開くボタン(正社員の結果の「下書きを開く」)も、ハーネスが返したものだけを付ける。
-        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。"""
+        本人の発言と返信は、トークの AI の会話に続けて保存する(画面の描き直しと、相談の後にトークの AI が読む文脈)。
+        args は呼び直しにも付ける引数(移ってきた相談の switch_in)。呼び直した結果が別の入り口へ移ると閉じたもの(switch_to)なら、
+        何も送らずにその結果を返す(呼んだ側が移る先を始めるか、トークの AI に渡す)。返信を送ったら None。
+        区分を切り替えた結果(移ってきた相談の track_switch)は、返信の切り替えの表示にする。"""
         h = HARNESSES[kind]
         values = (await self.agent.aget_state(cfg)).values
         convo = baito_chat.history(values.get("messages", []))
@@ -574,14 +643,20 @@ class LineRuntime:
                 raise ValueError(f"{h['what']}のモデルの呼び出しが、1 ターンの上限を超えました")
             call = r["call"]
             try:
+                # 本人の発言と直前のやりとりは、ハーネスが伏せたもの(model_text、model_history。正社員の c2 が氏名と要配慮の部分を
+                # 伏せる)があれば、そちら(会話の記録には、伏せる前の発言が残っている)
+                said = call.get("model_text", content)
+                past = baito_chat.recent(call["model_history"]) if "model_history" in call else convo
                 out = await self._harness_call(kind, queue, user_id, event, call["stage"], call["system"],
-                                               baito_chat.messages_for(call["stage"], content, convo))
+                                               baito_chat.messages_for(call["stage"], said, past))
                 outputs.append({"stage": call["stage"], "output": out})
             except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
                 log.warning("%sのモデルを呼べなかった(%s): %s", h["what"], call["stage"], type(e).__name__)
                 outputs.append({"stage": call["stage"], "error": type(e).__name__})
-            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs})
+            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs, **(args or {})})
             if not r.get("active"):
+                if r.get("switch_to"):
+                    return r
                 raise ValueError(f"{h['what']}が途中で閉じられました")
         reply = LineReply(bubbles=r.get("bubbles") or [r["reply"]], quick_replies=r["choices"], buttons=r.get("buttons") or [])
         mark = {kind: {"phase": r["phase"], "question": r.get("question")}}
@@ -597,11 +672,15 @@ class LineRuntime:
         kept = ({"progress": ui} if ui else {}) | ({"baito_card": card} if card else {}) | (
             {"baito_jobs": found} if found else {})
         msgs = [HumanMessage(notice, additional_kwargs={"profile_notice": True})] if notice else []
-        msgs += [HumanMessage(content, additional_kwargs=mark),
-                 AIMessage(reply.model_dump_json(), additional_kwargs=mark | kept)]
+        msgs += [HumanMessage(content, additional_kwargs=mark)] if human else []
+        msgs += [AIMessage(reply.model_dump_json(), additional_kwargs=mark | kept)]
         await self.agent.aupdate_state(cfg, {"messages": msgs}, as_node="model")
         state = (await self.agent.aget_state(cfg)).values
-        queue.put_nowait({"kind": "reply", **render(state | {"structured_response": reply}), **mark})
+        shown = render(state | {"structured_response": reply})
+        if r.get("track_switch"):
+            shown["track_switch"] = r["track_switch"]
+        queue.put_nowait({"kind": "reply", **shown, **mark})
+        return None
 
     async def _harness_call(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, stage: str, system: str,
                             messages: list[dict]) -> dict:
@@ -738,6 +817,31 @@ def track_switch(turn_tools: list[dict]) -> dict | None:
     if not recs:
         return None
     return {k: recs[-1][k] for k in ("id", "from", "track", "undo")}
+
+
+def started_by_talk(state: dict) -> tuple[str, str] | None:
+    """このターンにトークの AI が本人の発言を渡して、相談を始めるツールを呼び、dip が始めずに switch_to を返したか(t1。dip_mcp/convo/talk.py)
+    -> (移る先の入り口, 渡した発言)。無ければ None。"""
+    msgs = state.get("messages") or []
+    last_human = max((i for i, m in enumerate(msgs) if m.type == "human"), default=-1)
+    args = {tc["id"]: tc["args"] for m in msgs[last_human + 1:] if m.type == "ai" for tc in (m.tool_calls or [])}
+    for m in msgs[last_human + 1:]:
+        if m.type != "tool" or m.name not in STARTS:
+            continue
+        r = _tool_payload(m)
+        if isinstance(r, dict) and r.get("switch_to") == STARTS[m.name] and r.get("direct"):
+            return STARTS[m.name], str((args.get(m.tool_call_id) or {}).get(START_TEXT_ARG) or "")
+    return None
+
+
+def said_of(state: dict, passed: str, content: str) -> str:
+    """移る先に読ませる発言: トークの AI が渡した発言が、この会話の本人の発言のどれかに含まれていればそれ(区分のボタンを押したターンに、
+    前に条件を書いた発言を渡すとき)、そうでなければ、このターンの本人の発言(トークの AI が言い換えた文や作った条件を、本人の発言として
+    読ませない)。"""
+    said = redact_personal(passed.strip()) if passed.strip() else ""
+    turns = [m.content for m in state.get("messages") or [] if m.type == "human" and isinstance(m.content, str)
+             and not m.additional_kwargs.get("profile_notice") and not m.content.startswith("[イベント:")]
+    return said if said and any(said in t for t in turns) else content
 
 
 def render(state: dict) -> dict:

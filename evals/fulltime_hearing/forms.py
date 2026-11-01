@@ -8,6 +8,8 @@
 - script-good / script-bad: 台本の良い AI と悪い AI(実 API を使わない。本人役とジャッジだけが LLM)
 - B、C、D、D-noband: ハーネス(dip_mcp/career)を実 LLM(トークと同じ line_runtime.career_chat のモデル)でつないだもの
   (FormHarness。5/5 のタスク)。D-noband は帯を切った形 D(CAREER_UI_BAND=off)。モックでの回帰は evals/career_sim.py(費用 0)。
+- D-c2: 形 D を会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)で回すもの(設計メモ conversation-layer.md §5 の
+  9 枚目。task 362)。比べるときは --form D,D-c2(どちらも本番の形 D)
 """
 
 from __future__ import annotations
@@ -310,15 +312,16 @@ class FormHarness:
     result に着いたら完了。「あとで」で閉じたら、本人が断った離脱に数える。
     取れた値は、モックの回帰と同じく終わりの状態(harness.captured)。保存した文は、その文と、職歴カードから作った下書き。"""
 
-    def __init__(self, persona: dict, form: str, band: bool = True, call=None):
+    def __init__(self, persona: dict, form: str, band: bool = True, call=None, version: str = "c1"):
         from dip_mcp.career import harness as H
         from dip_mcp.career import ui as UI
-        from evals.career_sim import prefill
+        from evals.career_sim import VERSIONS, prefill
         from line_runtime import career_chat
 
-        self.H, self.UI = H, UI
+        # H は版によらない部分(質問バンク、取れた値、欄)。M は版の 1 ターン(c1 は H、c2 は dip_mcp.career.c2)
+        self.H, self.M, self.UI = H, VERSIONS[version], UI
         self.persona, self.call = persona, call or career_chat.default_llm()
-        self.st = H.new_state(form=form, prefill=prefill(persona))
+        self.st = self.M.new_state(form=form, prefill=prefill(persona))
         self.mem = UI.fresh_mem(self.st, band)
         # 画面に出たやりとり(生成に渡す直前のやりとり)。トークでは、相談を始めた本人の発言が最初の返信の前にある
         # (無いと baito_chat.recent が assistant で始まる最初の問いを落とす)
@@ -336,7 +339,7 @@ class FormHarness:
                        done=bool(out["done"]) and not later, closed="declined" if later else "")
 
     async def start(self) -> AIReply:
-        out = self.H.start(self.st, self.H.BANK)
+        out = self.M.start(self.st, self.H.BANK)
         part = self.UI.start_payload(self.st)
         self.UI.add_read(self.st, part)
         return self._reply(out, part)
@@ -349,18 +352,21 @@ class FormHarness:
         outputs: list[dict] = []
         snap = self.st.to_dict()
         while True:
-            st = self.H.State.from_dict(snap)  # ターンの始めの状態からやり直す(dip が保存した状態から毎回始めるのと同じ)
-            replay = ReplayLLM(outputs, self.H.render_prompt, lambda view: "say")
+            st = self.M.State.from_dict(snap)  # ターンの始めの状態からやり直す(dip が保存した状態から毎回始めるのと同じ)
+            replay = ReplayLLM(outputs, self.M.render_prompt, lambda view: "say")
             prev = self.UI.before(st)
             try:
-                out = self.H.turn(st, text, self.H.BANK, replay)
+                out = self.M.turn(st, text, self.H.BANK, replay)
                 break
             except NeedLLM as need:
                 c = need.call
                 if len(outputs) >= 4:  # dip_mcp.career.session.MAX_LLM_CALLS
                     raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
+                # 本人の発言と直前のやりとりは、ハーネスが伏せたもの(c2 の model_text、model_history)があればそちら(ランタイムと同じ)
+                said = c.get("model_text", text)
+                past = baito_chat.recent(c["model_history"]) if "model_history" in c else convo
                 try:
-                    o, _ = await self.call(c["stage"], c["system"], baito_chat.messages_for(c["stage"], text, convo))
+                    o, _ = await self.call(c["stage"], c["system"], baito_chat.messages_for(c["stage"], said, past))
                     outputs.append({"stage": c["stage"], "output": o})
                 except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(ランタイムと同じ)
                     outputs.append({"stage": c["stage"], "error": type(e).__name__})
@@ -390,8 +396,8 @@ class FormHarness:
 
 
 @contextlib.asynccontextmanager
-async def _harness_forms(form: str, band: bool = True):
-    yield lambda persona: FormHarness(persona, form, band)
+async def _harness_forms(form: str, band: bool = True, version: str = "c1"):
+    yield lambda persona: FormHarness(persona, form, band, version=version)
 
 
 @contextlib.asynccontextmanager
@@ -410,6 +416,7 @@ async def _plain(cls):
 # 形の名前 -> 会話ごとの形を作る関数を出す context manager(ランタイムなどを 1 回の実行で使い回すため)
 FORMS = {"A": _a_forms, "B": lambda: _harness_forms("B"), "C": lambda: _harness_forms("C"),
          "D": lambda: _harness_forms("D"), "D-noband": lambda: _harness_forms("D", band=False),
+         "D-c2": lambda: _harness_forms("D", version="c2"),
          "script-good": lambda: _plain(ScriptGood), "script-bad": lambda: _plain(ScriptBad)}
 # 実 API を呼ばずに回せる形(本人役とジャッジだけが LLM)
 SCRIPTED = ("script-good", "script-bad")

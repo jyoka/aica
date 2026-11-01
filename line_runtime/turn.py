@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime
 
 from dip_mcp import logic, profile, retention
 from dip_mcp.data import State
-from line_runtime import consent
+from line_runtime import consent, line_channel, purge
 from line_runtime.quota import DailyQuota, limit_reply
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
@@ -26,6 +27,9 @@ LIMIT_REASON = "本日の会話数の上限に達している"
 # Web のトーク画面は LINE 風の1行の入力欄で、履歴書はファイルで受け取るので、ふつうの発言は届かない長さ。
 # 発言は会話の記録に残り、以降のターンで毎回モデルに送り直すので、1ターンの入力の費用もここで縛る
 MAX_TEXT_CHARS = 5000
+# 最後のやりとりから TALK_RESUME_WINDOW を過ぎても、前の問いのボタンの答えなら前の会話を続ける上限(answers_last_question)。
+# LINE のクイックリプライは次のメッセージまで押せるので、時間では切らず、前の会話を消すまでにする(設計メモ conversation-layer.md §4.16)
+BUTTON_RESUME_WINDOW = purge.CONVERSATION_TTL
 
 
 class BadTurn(ValueError):
@@ -68,6 +72,16 @@ class Turn:
     redacted: bool = False  # 発言の個人情報らしい所を伏せた(text は伏せた後の文)。返信に redacted を付け、画面が知らせる
     channel: str = "web"  # 今の窓口(line_runtime.agent.CHANNELS)
     features: tuple[str, ...] = ()  # LINE のトークから LIFF 画面で使えるもの(line_channel.liff_features)
+
+
+def answers_last_question(conv: dict, text: str | None, now: datetime) -> bool:
+    """本人の発言が、今の会話(LineRuntime.conversation の結果)で最後に出した問いのボタンの答えか(BUTTON_RESUME_WINDOW まで)。
+    LINE のボタンはテキストを送るので、時間が空いた後の答えと、新しい会話の最初のひとことは、文で見分ける。打った文でも、一致すれば答えとして読む。
+    返信の保存されなかったターンは飛ばして、最後に出した返信のボタンを見る(設計メモ conversation-layer.md §4.16)。"""
+    if conv["last_at"] is None or now - conv["last_at"] > BUTTON_RESUME_WINDOW:
+        return False
+    last = next((t["bot"] for t in reversed(conv["turns"]) if t["bot"]), None)
+    return (text or "").strip() in line_channel.answer_buttons(last)
 
 
 def accept(deps: TurnDeps, user_id: str, event: str, text: str | None, thread: int | None,

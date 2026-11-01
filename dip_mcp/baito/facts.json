@@ -1,0 +1,29 @@
+{
+ "note": "アルバイト・パートの相談の事実(設計メモ docs/design/conversation-layer.md §4.6)。aica 全体の事実(dip_mcp/convo/facts.json)に足す。読むのは v5(BAITO_HARNESS_VERSION=v5)だけ。運営者が確かめる(確かめたら checked に日付を書く)。形は dip_mcp/convo/facts.py",
+ "checked": null,
+ "sources": [
+  "docs/design/baito-quick-start.md(入口のカード、近くで探す)",
+  "dip_mcp/baito/session.py(終えたら条件を保存し、求人を出す)",
+  "docs/prd/baito_harness/PRD_baito_agent_v4.md(まとめと結果)"
+ ],
+ "ask_service": [
+  "いまは合うバイトを探すために、希望を1問ずつ聞いています",
+  "答えてくれた条件で、合いそうな仕事の種類と求人を出します",
+  "「中断」と送れば、ここまでの分を残してやめられます",
+  "最後にまとめを出すので、そこでちがうところを直せます"
+ ],
+ "ask_advice": [
+  "時給は地域と職種で変わります",
+  "相談のあとに、条件に合う求人の時給を見せられます",
+  "いくつか答えてもらうと、合いそうな職種を出せます"
+ ],
+ "where": {
+  "icebreak": "いまは、はじめの質問をしています",
+  "hard_filter": "いまは、ゆずれない条件を聞いています",
+  "scenario_game": "いまは、選ぶだけの二択を聞いています",
+  "reverse_pick": "いまは、選ぶだけの質問をしています",
+  "fill_gaps": "いまは残りの好みを聞いています。あと少しでまとめです",
+  "confirm": "いまは、今の立場を確かめています"
+ },
+ "known": "前の相談で分かっている分は、聞かずに進めます"
+}

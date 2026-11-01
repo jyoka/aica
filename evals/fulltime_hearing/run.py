@@ -4,7 +4,7 @@
 
 実 API を使う(本人役とジャッジ。形 A はエージェントも)。費用は台帳(既定 evals/budget-fulltime-hearing.jsonl)に
 1 会話ごとに 1 行足し、会話を始める前に累計が --limit-usd に達していたら止める(evals.run.run_cases と同じ)。
-結果は evals/results/fulltime-hearing-<日時>.{json,md} に 1 会話ごとに上書き保存する(途中で止めても残る)。
+結果は evals/results/fulltime-hearing-<日時>-<形>.{json,md} に 1 会話ごとに上書き保存する(途中で止めても残る)。
 """
 
 from __future__ import annotations
@@ -53,7 +53,8 @@ async def main(forms: list[str], persona_ids: str | None, repeat: int, limit: fl
             return 0.0
     sim_model, judge_model = SIM_MODEL[config.PROVIDER], JUDGE_MODEL[config.PROVIDER]
     started = datetime.now()
-    out = Path(out_dir) / f"fulltime-hearing-{started:%Y%m%d-%H%M%S}"
+    # 形の名前も入れる(別の形を同じ秒に並べて回すと、同じファイルに上書きし合っていた。task 362)
+    out = Path(out_dir) / f"fulltime-hearing-{started:%Y%m%d-%H%M%S}-{'_'.join(forms)}"
     runs: list[dict] = []
     doc = {"harness": "fulltime-hearing", "started_at": f"{started:%Y-%m-%d %H:%M}",
            "config": {"forms": forms, "personas": [p["id"] for p in personas], "repeat": repeat,
