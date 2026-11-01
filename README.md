@@ -1,17 +1,17 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banner-dark.svg">
-  <img alt="aica のバナー。左に 1 文「話すだけで、条件と書類の下書きと求人の候補がそろう、仕事探しの AI エージェント。」。右に、本人、エージェント、dip のツール、プロフィール、手元に残るものの 5 つの層が縦に並び、dip のツールの層だけ色が違う" src="assets/brand/banner-light.svg">
+  <img alt="aica のバナー。左に 1 文「話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。」。右に、本人、エージェント、dip のツール、プロフィール、手元に残るものの 5 つの層が縦に並び、dip のツールの層だけ色が違う" src="assets/brand/banner-light.svg">
 </picture>
 
 # aica
 
-**話すだけで、条件と書類の下書きと求人の候補がそろう、仕事探しの AI エージェント。**
+**話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。**
 
 アルバイト・パートから正社員まで、本人の話から希望と経歴をつかみ、次に何をすればよいかを提案します。
 
-> **テスト用の公開です。** 求人、店舗、ユーザー、FAQ はすべて架空のデータで、応募しても実際の応募になりません。社内資料の数値は含めていません。
+> **テスト用の公開です。** 求人、店舗、FAQ、開発用のユーザーは架空のデータで、応募しても実際の応募になりません。社内資料の数値は含めていません。使う人が話した内容の扱いは[プライバシーポリシー](docs/legal/privacy-policy.md)にあります。
 
-エージェントは業務の知識を持たず、dip のツール(MCP)を通してだけ事実を得ます。
+エージェントは業務の知識を持たず、dip のツール(MCP)を通してだけ dip の事実を得ます。
 確かめたいのは「dip が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です。
 経緯は [docs/brand.md](docs/brand.md#6-経緯) にあります。
 
@@ -19,15 +19,18 @@
 
 ```mermaid
 flowchart LR
-    you(["求職者<br/>Web / LINE"]) -- "1. トーク、履歴書" --> web["Web プロセス<br/>エージェント"]
-    you -- "1. 音声" --> lk[("LiveKit Cloud")] --> worker["音声ワーカー<br/>音声アドバイザー"]
-    web -- "2. MCP で聞く" --> dip["dip のツール<br/>LLM を使わない"]
-    worker -- "2. MCP で聞く" --> dip
-    dip -- "3. 事実だけ返す" --> web
-    web -- "4. 言い方を考える" --> llm[("Anthropic / OpenAI")]
-    web -- "5. 質問、求人カード" --> you
-    worker -- "5. まとめ、求人" --> web
+    you(["求職者<br/>Web / LINE"]) -- "1 トーク、履歴書" --> web["Web プロセス<br/>エージェント"]
+    you -- "1 音声" --> lk[("LiveKit Cloud")] --> worker["音声ワーカー<br/>音声アドバイザー"]
+    web -- "2 MCP で聞く" --> dip["dip のツール<br/>LLM を使わない"]
+    worker -- "2 MCP で聞く" --> dip
+    dip -- "3 事実だけ返す" --> web
+    dip -- "3 事実だけ返す" --> worker
+    web -- "4 言い方を考える" --> llm[("Anthropic / OpenAI")]
+    worker -- "4 言い方を考える" --> llm
+    web -- "5 質問、求人カード" --> you
+    worker -- "5 まとめ、求人" --> web
     dip --> data[("data/<br/>プロフィール、会話")]
+    web --> data
 ```
 
 - エージェントは、LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-dip-tools.md))
@@ -41,7 +44,7 @@ flowchart LR
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="docs/usage.md"><img width="360" alt="LINE のトーク。職歴を聞く問いの下に、条件が入ったことを示すプロフィールのカードが出ている" src="assets/media/talk-profile.png"></a><br>
+      <a href="docs/usage.md"><img width="360" alt="LINE 風のトーク。職歴を聞く問いの下に、条件が入ったことを示すプロフィールのカードが出ている" src="assets/media/talk-profile.png"></a><br>
       <b>トーク</b><br>
       Web と LINE で話す。答えるとプロフィールが育つ。
     </td>
@@ -60,7 +63,7 @@ flowchart LR
     <td width="50%" valign="top">
       <a href="docs/prd/resume-arcade.md"><img width="360" alt="レジュメ・アーケードの画面。探偵と農場の 2 本のゲームで職務経歴書を作れると説明している" src="assets/media/arcade.png"></a><br>
       <b>レジュメ・アーケード</b><br>
-      ゲームで答えると、本人の言葉だけで書類の下書きができる。
+      ゲームで答えると、本人が話したことだけから書類の下書きができる。
     </td>
   </tr>
 </table>
@@ -68,7 +71,7 @@ flowchart LR
 写っている求人と人は、どれも架空です。
 
 - **相談のハーネス**: アルバイト・パートと正社員で、聞くことと終わりをコードが決め、モデルは読み取りと言い方を受け持ちます
-- **履歴書の読み取り**: ファイルから経歴を読み、書き直さずに相談を続けます
+- **履歴書の読み取り**: ファイルから経歴を読み、一から書かずに相談を続けます
 - **LINE**: LIFF 画面、リッチメニュー、アカウント連携(dip の会員と結ぶ)が使えます。LINE は設定したときだけ開きます([LINE で試す](docs/usage.md#line-で試す))
 - **プロフィール**: 本人が見て、直して、消せます
 - **開発者画面**: シナリオごとに、dip から見た状態と、ターンごとの処理の流れを見られます

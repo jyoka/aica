@@ -340,6 +340,7 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 
 | 知りたいこと | 文書 |
 |---|---|
+| 1 文、機能の文、バナー、経緯 | [docs/brand.md](brand.md) |
 | 全体の図、部品、データの流れ、信頼の境界、用語 | [docs/architecture/hld.md](architecture/hld.md)(HLD) |
 | モジュール、HTTP の口、dip のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](architecture/lld.md)(LLD) |
 | 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](architecture/review-2026-10.md) |

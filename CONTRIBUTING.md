@@ -42,6 +42,7 @@ docs/ の分け方は変えません。新しい文書は、下の表の場所�
 | 内容 | 場所 |
 |---|---|
 | 何ができるか、始め方 | [README.md](README.md) |
+| README のバナーと画面 | `assets/brand/`、`assets/media/` |
 | 1 文、機能の文、バナー、経緯 | [docs/brand.md](docs/brand.md) |
 | 動かし方、LINE、LIFF、リッチメニュー、マイクの確認、アカウント連携、画面、コマンドの全部 | [docs/usage.md](docs/usage.md) |
 | 設定、環境変数、保存する期間、ターン数の上限 | [docs/configuration.md](docs/configuration.md) |

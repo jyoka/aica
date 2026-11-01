@@ -2,8 +2,8 @@
   <rect width="1280" height="400" fill="#F4F7F5"/>
   <text x="64" y="104" font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="56" font-weight="800" fill="#0B7A3C">aica</text>
   <g font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="36" font-weight="700" fill="#14241B">
-    <text x="64" y="186">話すだけで、条件と書類の下書きと</text>
-    <text x="64" y="236">求人の候補がそろう、</text>
+    <text x="64" y="186">話すと、条件を整理して、求人の候補と</text>
+    <text x="64" y="236">書類の下書きまで進められる、</text>
     <text x="64" y="286">仕事探しの AI エージェント。</text>
   </g>
   <text x="64" y="340" font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="22" fill="#44544B">テスト用の公開。求人はすべて架空のデモです。</text>
