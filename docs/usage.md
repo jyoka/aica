@@ -56,7 +56,7 @@ Render のサービスを作る手順と、運営者がする操作は [docs/dep
 
 LINE 公式アカウントからも、Web のトーク画面と同じ会話ができます。トークで使えるのは、テキストの会話と、友だち追加の挨拶と、
 アカウント連携(下の「アカウント連携を試す」)です。履歴書の読み込みと音声相談は、LIFF の設定(下の「LINE で LIFF 画面を開く」)があれば、トークのボタンから LIFF 画面で使えます。
-結果は LINE のトークに届きます。レジュメ・アーケードも、LIFF の設定があれば dip が LINE のユーザーにゲームの URL を渡すので、
+結果は LINE のトークに届きます。レジュメ・アーケードも、LIFF の設定があれば事業者が LINE のユーザーにゲームの URL を渡すので、
 エージェントがトークにゲームのボタンを出します。LIFF 画面のゲームは AI と保存を LINE の本人で使え、保存すると LINE のトークに知らせが届きます
 ([PRD](prd/resume-arcade.md) の「LINE のとき」)。
 トークに直接送ったファイルと写真は読みません。LIFF の設定が無いときは、エージェントにも「LINE では使えない」と伝え、
@@ -250,15 +250,15 @@ LIFF の設定が無いときは作りません(スクリプトが止まりま�
 
 ## アカウント連携を試す
 
-LINE のユーザーと dip の会員を、LINE の「アカウント連携」の流れで結べます。連携すると、dip のツールがその会員の行動の要約を読みます。
+LINE のユーザーと事業者の会員を、LINE の「アカウント連携」の流れで結べます。連携すると、事業者のツールがその会員の行動の要約を読みます。
 流れと守っていることは [HLD の 4.10](architecture/hld.md#410-line-のアカウント連携) にあります。
 
-- LINE で: トークに「アカウント連携」と送ると、dip のログインの画面へのボタンが届きます(`AICA_PUBLIC_URL` が要ります)。
+- LINE で: トークに「アカウント連携」と送ると、事業者のログインの画面へのボタンが届きます(`AICA_PUBLIC_URL` が要ります)。
   ログインすると LINE の画面に移り、トークに「つながりました」と届きます。「連携解除」と送ると外れます
 - Web で: 開発者画面(`/dev`)の左の「4 アカウント連携(偽物の LINE)」で「連携を始める」を押すと、本番のトーク画面(`/`)の
   匿名ユーザーで同じ流れを試せます。LINE の役は偽物の LINE がします。実 LINE は呼びません
 
-dip の会員(シミュレーション。架空)のログインです。会員の行動は fixtures のシナリオのユーザーと同じです。
+事業者の会員(シミュレーション。架空)のログインです。会員の行動は fixtures のシナリオのユーザーと同じです。
 
 | ログインID | パスワード | 会員 | 行動 |
 |---|---|---|---|
@@ -277,15 +277,15 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | 画面 | URL | 中身 |
 |---|---|---|
 | トーク画面 | `/` | 求職者が使うスマホ向けの 1 画面。トーク、保存した求人、プロフィール。履歴書のアップロードと音声相談は、入力欄の「+」か、エージェントが出すボタンから入る |
-| 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで dip から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
-| LIFF 画面 | `/liff/*` | dip の画面のモック。応募フォーム、読み取り結果、下書き。Web のブラウザでは Cookie の匿名ユーザー、LINE のアプリでは `/liff/line/*`(LIFF の ID トークンで確かめた LINE のユーザー。音声相談と履歴書の読み込みの画面もある。上の「LINE で LIFF 画面を開く」) |
+| 開発者画面 | `/dev` | 評価と説明のため。左でシナリオを選んで事業者から見た状態を見て、中央で話し、右で構成図とこのターンの処理の流れを見る |
+| LIFF 画面 | `/liff/*` | 事業者の画面のモック。応募フォーム、読み取り結果、下書き。Web のブラウザでは Cookie の匿名ユーザー、LINE のアプリでは `/liff/line/*`(LIFF の ID トークンで確かめた LINE のユーザー。音声相談と履歴書の読み込みの画面もある。上の「LINE で LIFF 画面を開く」) |
 | マイクの確認 | `/liff/line/mic-check` | LINE の LIFF の中でマイクと通話の部品が使えるかを試す。本人を決めない。LIFF の設定があるときだけ(上の「LINE の中でマイクが使えるかを確かめる」) |
 | レジュメ・アーケード | `/liff/arcade` | 遊びながら職務経歴書を作るゲームのハブ。先にトーク画面(`/`)を開いてから `http://127.0.0.1:8030/liff/arcade` を開くと、ハブの 2 本は AI(`LINE_SIM_PROVIDER` のプロバイダ)で遊べて、できた書類をプロフィールに保存できる。API キーが無い、上限に達した、AI が失敗したときは簡易分析で続く。プロフィールの「ゲームで作った下書き」からも入れる。ハブに出ない 6 本は開発者画面の左からリンクする(AI なし) |
-| dip のログイン | `/dip/login` | dip の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
+| 事業者のログイン | `/dip/login` | 事業者の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
 | LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
 
 - ブラウザごとに匿名ユーザーIDを Cookie で発行します。aica のログインはありません(URL を知っている知人だけが使う前提)。
-  dip のログインは、アカウント連携のときだけ使います
+  事業者のログインは、アカウント連携のときだけ使います
 - 1 日あたりのターン数に上限があります([configuration.md](configuration.md))
 - シナリオは 15 件で、開発者画面と評価で同じ一覧(`evals/scenarios.json`)です
 
@@ -299,7 +299,7 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 |---|---|---|
 | `python -m line_runtime.server` | Web プロセスを起動する(`127.0.0.1:8030`) | 挨拶と会話で使う |
 | `python -m voice_resume.agent dev` | 音声ワーカーを起動する | 使う |
-| `python -m dip_mcp.server --http 8020` | dip の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す。`--host 0.0.0.0` で外に開くときは `AICA_INTERNAL_KEY` が要り、鍵の無い要求は 401 | - |
+| `python -m dip_mcp.server --http 8020` | 事業者の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す。`--host 0.0.0.0` で外に開くときは `AICA_INTERNAL_KEY` が要り、鍵の無い要求は 401 | - |
 | `python -m pytest -q` | テスト | 使わない |
 | `node --test tests/js/arcade-ja.test.js` | レジュメ・アーケードの日本語の判定のテスト(pytest からも回る) | 使わない |
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
@@ -328,8 +328,8 @@ dip の会員(シミュレーション。架空)のログインです。会員�
 | `python -m scripts.baito_icons [--sheet docs/images/baito-quick-start/icons.png]` | アルバイト・パートの相談の入口と結果のカードのアイコン(64×64 の PNG 5 枚)を、`docs/images/baito-quick-start/sprites.json` から `line_runtime/static/baito/` に作り直す。`/static/baito/{名前}.png` で出る。`--sheet` は 5 枚を並べた見本も作る | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
-| `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | dip の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
-| `python -m dip_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/dip_summaries.db`)を全員分作り直す。dip のツールが読むのはこの要約で、会話の中で書いたこと(保存、応募など)は次のバッチまで本人の分だけ重ねて読む。要約が無ければ、最初にツールを使うときにシナリオのユーザーの分を作る。`data/` で回すと、開発者画面のシナリオユーザーが書いた分も要約に入る(シナリオの初期に戻すには `data/dip_events.db` と `data/dip_summaries.db` を消す) | 使わない |
+| `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | 事業者の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
+| `python -m dip_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/dip_summaries.db`)を全員分作り直す。事業者のツールが読むのはこの要約で、会話の中で書いたこと(保存、応募など)は次のバッチまで本人の分だけ重ねて読む。要約が無ければ、最初にツールを使うときにシナリオのユーザーの分を作る。`data/` で回すと、開発者画面のシナリオユーザーが書いた分も要約に入る(シナリオの初期に戻すには `data/dip_events.db` と `data/dip_summaries.db` を消す) | 使わない |
 
 評価の判定と回し方は [LLD の 4.8](architecture/lld.md#48-評価の-1-シナリオevalsrunrun_scenario)、テストの仕組みは
 [LLD の 10 章](architecture/lld.md#10-テストと評価の仕組み)にあります。
@@ -342,14 +342,14 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 |---|---|
 | 1 文、機能の文、バナー、経緯 | [docs/brand.md](brand.md) |
 | 全体の図、部品、データの流れ、信頼の境界、用語 | [docs/architecture/hld.md](architecture/hld.md)(HLD) |
-| モジュール、HTTP の口、dip のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](architecture/lld.md)(LLD) |
+| モジュール、HTTP の口、事業者のツール、主な流れ、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](architecture/lld.md)(LLD) |
 | 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](architecture/review-2026-10.md) |
 | 業務の語の定義 | [CONTEXT.md](../CONTEXT.md) |
 | エージェントの決まり(テストのコマンド、回帰の合格基準と CI、禁止事項、task-hub のマージキューの有効化) | [AGENTS.md](../AGENTS.md) |
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](prd/aica-v2-fulltime.md)(PRD) |
 | レジュメ・アーケード(遊びながら職務経歴書を作るゲーム)の要件 | [docs/prd/resume-arcade.md](prd/resume-arcade.md)(PRD) |
-| 決めたことの記録 | [ADR-0001](adr/0001-track-and-playbook-as-dip-tools.md) 雇用区分と playbook を dip のツールにする、[ADR-0002](adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](adr/0006-tools-read-summary-and-overlay-own-writes.md) dip のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
+| 決めたことの記録 | [ADR-0001](adr/0001-track-and-playbook-as-provider-tools.md) 雇用区分と playbook を事業者のツールにする、[ADR-0002](adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](adr/0006-tools-read-summary-and-overlay-own-writes.md) 事業者のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](research/apply-flow.md) |
 | 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](design/privacy.md) |

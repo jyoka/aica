@@ -1,6 +1,6 @@
 # LLD: aica の詳細設計
 
-[hld.md](hld.md) の部品の中身です。パッケージとモジュール、プロセス、HTTP の口と dip のツール、主な流れ、
+[hld.md](hld.md) の部品の中身です。パッケージとモジュール、プロセス、HTTP の口と事業者のツール、主な流れ、
 保存するデータの形、外部の呼び出し、失敗の扱い、テストで守っている約束を書きます。
 
 - 2026-10-11 の main(`7c73893`)のコードから書き起こしました。コードと食い違ったら、コードが正です
@@ -9,7 +9,7 @@
 - 書く中で見つけた設計の問題は [review-2026-10.md](review-2026-10.md) にまとめました(R17 から後は、この文書を書く中で足したもの)
 - 4.7 と 4.8 の後半、4.9、4.10、5.3 の後半、5.7 の件数、10 章の履歴書の読み取りは、README を書き直したとき(jyoka/tasks#167)に README から移しました
 - LINE のチャネル(4.11)は jyoka/tasks#177 で足しました
-- dip のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
+- 事業者のツールが行動を要約から読むところ(5.8 の後半、`behavior.py`)は task 181 で足しました
 - LINE のアカウント連携(4.12、5.9、`accounts.py`、`fake_line.py`)は task 182 で足しました
 - レジュメ・アーケードの画面(1.1 の `static/arcade/`、3.1 の口、4.10 の終わり、10 章の node のテスト)は task 187 で足しました
 - レジュメ・アーケードの AI と下書き(1.9、1.10、`dip_mcp/arcade.py`、3.1 の `/api/arcade/…`、4.10 の終わり、5.1、5.3、5.5 の `arcade`)は task 188 で足しました
@@ -31,7 +31,7 @@ flowchart TB
         llm["llm.py<br/>模擬ユーザー、ジャッジ、ゲームの SDK 呼び出し"]
         areply["arcade_reply.py<br/>ゲームの下書きの知らせ"]
     end
-    subgraph dm["dip_mcp(dip 側)"]
+    subgraph dm["dip_mcp(事業者側)"]
         mcp["server.py<br/>FastMCP baitoru-mcp"]
         logic["logic.py<br/>業務ロジック"]
         profile["profile.py<br/>プロフィールを見る、直す、消す"]
@@ -124,7 +124,7 @@ flowchart TB
 | `purge.py` | 期間で消す掃除(4.6)。Web プロセスの中で走る。CLI `python -m line_runtime.purge` は内部の口を呼ぶだけ | `purge`、`main`、`CONVERSATION_TTL`、`EVERY`、`INTERNAL_PATH` |
 | `baito_cards.py` | アルバイトの相談を 1 タップで始めるカード(入口、職種の結果)。ハーネスのターンの結果の `card` を、LINE の Flex(暗い色、static の PNG)と Web の文の形にする(下の「アルバイト・パートの相談(ハーネス)」) | `flex`、`text`、`view`、`entry_flex`、`result_flex`、`icon_url`、`CARD_BG` |
 | `progress_ui.py` | プロフィールが育つのを見せる部品(帯、プロフィールカード、完成)。ハーネスがターンの結果に足した `progress` から 0〜1 つ選び、LINE の Flex と文の形を作る。アルバイトと正社員で使う(下の「アルバイト・パートの相談(ハーネス)」) | `build`、`choose`、`mode`、`band_flex`、`card_flex`、`complete_flex`、`band_text`、`card_text`、`complete_text`、`profile_rows`、`flex_text`、`flex_chars`、`MODE_ENV`、`BAND_SIZE`、`BAR_COLOR` |
-| `career_ui.py` | 正社員のヒアリングの形 D の部品(「始める」の 1 枚、職歴カード、まとめ、全部の完成のカルーセル)を Flex と文の形にする。帯とプロフィールカードは `progress_ui` を使う。どれを付けるかは dip の `career/ui.py` が決める(下の「正社員の相談(ハーネス)」) | `build`、`start_flex`、`career_card_bubble`、`review_flex`、`complete_flex`、`flex_lines`、`flex_text`、`STAMP_PATH` |
+| `career_ui.py` | 正社員のヒアリングの形 D の部品(「始める」の 1 枚、職歴カード、まとめ、全部の完成のカルーセル)を Flex と文の形にする。帯とプロフィールカードは `progress_ui` を使う。どれを付けるかは事業者の `career/ui.py` が決める(下の「正社員の相談(ハーネス)」) | `build`、`start_flex`、`career_card_bubble`、`review_flex`、`complete_flex`、`flex_lines`、`flex_text`、`STAMP_PATH` |
 | `voice_reply.py` | 音声相談の結果をトークに続ける返信(LLM を使わない) | `voice_reply`、`summary_bubble`、`voice_history_reply`、`draft_button` |
 | `arcade_reply.py` | ゲームで下書きを保存したとき、トークに続ける返信(LLM を使わない。`LineRuntime.add_arcade_result` で足す) | `arcade_reply`、`arcade_history_reply` |
 | `resume_confirm.py` | 履歴書をアップロードした直後の確認の吹き出し(LLM を使わない) | `resume_bubbles`、`skill_heading`、`RESUME_LABEL` |
@@ -138,7 +138,7 @@ flowchart TB
 classDiagram
     class LineRuntime {
         agent: create_agent のグラフ
-        tools: dip のツール
+        tools: provider のツール
         ledger: Ledger
         _locks: ユーザーごとの asyncio.Lock
         _threads: ユーザーごとの会話の番号
@@ -172,7 +172,7 @@ classDiagram
         admit(user_id, ip)
     }
     class ScenarioMiddleware {
-        awrap_model_call: 指示に dip の Prompt を足す(ユーザーIDは載せない)
+        awrap_model_call: 指示に provider の Prompt を足す(ユーザーIDは載せない)
     }
     class TurnCallLimitMiddleware {
         awrap_model_call: 1 ターンのモデルの呼び出しを 10 回までにする
@@ -194,7 +194,7 @@ classDiagram
   10 回目の指示には、ツールを呼ばずに返信するよう添え書き(`LAST_CALL_NOTE`)を足します。それでもツールを呼んだら、11 回目はモデルを呼ばずに
   決まった返信(`TURN_LIMIT_REPLY`。うまくまとめられなかったので短く聞き直してほしい)でターンを終えます。この返信は LLM を呼んでいないので、
   費用台帳と画面の `llm` の行には載せません(`additional_kwargs` の `turn_limit`)
-- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の dip の Prompt + 窓口 + `USER_NOTE` にします。入口は会話の state(`entry`)から読みます。
+- `ScenarioMiddleware` は、指示を `PLATFORM_PROMPT` + 入口の事業者の Prompt + 窓口 + `USER_NOTE` にします。入口は会話の state(`entry`)から読みます。
   ユーザーIDは載せません。`USER_NOTE` は「ツールの `line_user_id` には `me`(`PINNED_USER`)を入れる」で、`PinUserMiddleware` が
   会話の state の `line_user_id` に置き換えます。指示はユーザーごとに変わらないので、プロンプトキャッシュも壊しません。
   窓口(`channel_note`)は state の `channel`(`web` / `line`)と `channel_features`(LINE で LIFF 画面で使えるもの)から作り、
@@ -225,28 +225,28 @@ classDiagram
 
 | モジュール | 役割 | 主な名前 |
 |---|---|---|
-| `server.py` | dip の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
+| `server.py` | 事業者の MCP サーバー(FastMCP、名前は `baitoru-mcp`)。ツールは引数の説明を持ち、中身は `logic` を呼ぶだけ(3.3) | `mcp`、`state`、`baitoru_assistant`、`faq` |
 | `logic.py` | 業務ロジック。LLM を使わない | 下の表 |
 | `profile.py` | プロフィール画面の中身と、知らせ(アカウント連携の知らせ `link_changed` も) | `delete_arcade_draft`、`edit_arcade_draft`、`edit_career_item`、`delete_career_item`、`FULLTIME_ONLY`、`link_changed`、`view`、`edit_item`、`edit_summary`、`set_track`、`undo_switch`、`switch_status`、`delete_resume`、`delete_voice_draft`、`unsave_job`、`forget_all`、`stored`、`pending_changes`、`take_changes`、`notice` |
-| `data.py` | 求人の形、dip の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
+| `data.py` | 求人の形、事業者の状態の読み書き、時計。個人情報の判定は `resume_draft.pii`(1.8) | `BaitoJob`、`Pay`、`State`、`load_jobs`、`load_users`、`now`、`uses_sim_clock`、`SIM_NOW`、`PII_FIELDS`、`pay_text`、`annual_pay_mid` |
 | `embedding.py` | 求人の意味検索 | `job_text`、`job_hash`、`embed_query`、`similarities`、`MODEL`、`DIMENSIONS` |
 | `events.py` | 行動の元データ(会員とイベントのログ)の読み書き。追記だけ。読むのは要約のバッチだけ(5.8) | `EventStore`、`KINDS`、`load_scenario_events`、`iso`、`EVENTS_PATH` |
 | `summarize.py` | 要約のバッチ(`python -m dip_mcp.summarize`)。元データから状況の要約を全員分作り直す(5.8) | `run`、`fold`、`build_summary`、`empty_summary`、`for_agent`、`head`、`SummaryStore`、`SUMMARY_MAX_CHARS`、`AGENT_APPLICATIONS`、`AGENT_SAVES`、`SUMMARIES_PATH` |
-| `behavior.py` | dip のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
+| `behavior.py` | 事業者のツールが本人の行動を読み書きするところ。要約に、会話の中で書いた分を重ねて読む。書くときは元データに追記する。LINE のユーザーIDから `dip_id` を引く 1 か所(連携の表を読む。5.8、ADR-0006、ADR-0007)。会話の中で書いた分は、今の会員の分だけ重ねる(4.12) | `view`、`record`、`overlay`、`dip_id`、`_mine`、`stores`、`WRITES` |
 | `arcade.py` | レジュメ・アーケードの遊びの記録(1 人 1 ゲームにつき最新の 1 件)と AI の回数、ゲームで作った下書き、要約に載せる要点(4.10 の終わり)。正社員のヒアリングの下書きも同じ場所に `CAREER_DRAFT`(`career`)の 1 件として入れる(`save_career_draft`。ゲームの指標には数えない)。LLM を使わない | `start_play`、`play`、`use_ai`、`save_draft`、`save_career_draft`、`CAREER_DRAFT`、`blanks`、`edit_draft`、`delete_draft`、`drafts`、`draft`、`document_kind`、`summary`、`game_url`、`draft_url`、`is_line_user`、`liff_configured`、`PLAY_TTL`、`SUMMARIES_MAX`、`DOCUMENT_BY_TRACK` |
-| `retention.py` | 期間で消す掃除の dip の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
-| `accounts.py` | dip の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
+| `retention.py` | 期間で消す掃除の事業者の状態の側(4.6、5.1)。最後の利用を書き、180 日を過ぎた人の行を丸ごと外す。会話とメモリの片付けは `line_runtime.purge` | `touch`、`mark_forgotten`、`sweep`、`still_expired`、`remove_expired`、`clock`、`USER_TTL`、`FORGOTTEN_ROOMS_TTL` |
+| `accounts.py` | 事業者の会員のログイン、nonce、bot が出した linkToken、連携の表(4.12、5.9)。LLM を使わない | `Accounts`、`of`、`hash_password`、`check_password`、`fixture_dip_id`、`MAX_FAILURES`、`LOCK`、`NONCE_TTL`、`ACCOUNTS_PATH` |
 | `baito/` | アルバイト・パートの相談のハーネス(4.9 の「アルバイト・パートの相談(ハーネス)」)。会話の層に載せ替えた版 `v5.py` と入り口の定義 `entry.json`(task 360) | `harness`、`session`、`v5` |
-| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(dip のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247)。会話の層に載せ替える版 `c2.py` と入り口の定義 `entry.json`(task 355) | `harness`、`session`、`store`、`draft`、`c2` |
+| `career/` | 正社員の相談のハーネス(4.9 の「正社員の相談(ハーネス)」)。`harness.py`(task 245)、`session.py`(事業者のツールの中身)、`store.py`(職歴カードの置き場所 `career_profile`)、`draft.py`(職歴カードから作る職務経歴書の下書き。task 247)。会話の層に載せ替える版 `c2.py` と入り口の定義 `entry.json`(task 355) | `harness`、`session`、`store`、`draft`、`c2` |
 | `convo/` | 全部の入り口に共通の会話の層([ADR-0011](../adr/0011-conversation-layer.md)、設計メモ [conversation-layer.md](../design/conversation-layer.md))。作っている途中で、使うのは正社員の c2 とアルバイト・パートの v5 だけ(v4 は守りの前処理と `_call_llm` だけを読み込む)。下の「会話の層」 | `guard`、`acts`、`values`、`entry`、`state`、`turn`、`reply` |
-| `prompts/` | dip の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/`。会話の層の読む段と言う段の骨組みは `prompts/convo/` | - |
+| `prompts/` | 事業者の Prompt。`baitoru_assistant.md`(どの入口でも同じ骨格)と `entries.json`(入口ごと)。ハーネスのプロンプトは `prompts/baito/` と `prompts/career/`。会話の層の読む段と言う段の骨組みは `prompts/convo/` | - |
 | `playbooks/` | playbook。`{parttime,fulltime,undecided}_{chat,voice}.md` と区分に共通の `common_{chat,voice}.md`。ハーネス版は `parttime_chat_harness.md` と `fulltime_chat_harness.md` | - |
 
 `logic.py` は見出しのコメントで次のように分かれています(R14)。
 
 | 見出し | 主な関数と定数 |
 |---|---|
-| (先頭)dip の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」)、`CAREER_NOTE`(要約の `career_profile` の説明) |
+| (先頭)事業者の要約、応募、フォーム | `liff_url`、`preferences`(本人の傾向)、`stated_preferences`、`conversation_summary`、`recent_applications`、`form_exit`、`HISTORY_DAYS`、やり終えた入口の `ENTRIES`、`used_entries`、`ENTRY_NOTE`(4.9 の「挨拶の入口のボタン」)、`CAREER_NOTE`(要約の `career_profile` の説明) |
 | 条件の問いの選択肢 | `condition_options`、`PAY_STEPS`、`PAY_LABELS`、`PAY_ANY`、`TIME_OPTIONS`、`DAYS_OPTIONS`、`WORK_STYLE_OPTIONS`、`START_OPTIONS`、`CONDITION_NOTE`(4.9 の「条件の問いの選択肢」) |
 | 推薦 | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`AREAS`、`AREA_GROUPS`、`ATTRIBUTE_ARGS`、`FULLTIME_STYLE_ARGS`、`MINOR_ARG`、`minor_ok`、`shift_ranges`、`recommend`、`relax`、`match_breakdown`、`job_card`、`_keyword_filter`、`_reasons`、`_keyword_reason`、`reason_vocab`、`SIM_FLOOR`、`SIM_RELATIVE`、`SIM_TOP`、`SIM_WEIGHT`、`SIM_PEAK` |
 | 相談(FAQ / 求人) | `answer_material`、`application_status`、`MIN_OVERLAP` |
@@ -260,7 +260,7 @@ classDiagram
 | 会話の段階の結果の記録 | `OUTCOMES`、`REFUSAL_WORDS`、`CONSULTATION_SUMMARY_MAX`、`record_outcome`、`consultation_summary` |
 | プッシュ | `PUSH_TRIGGERS`、`PUSH_INTERVAL_DAYS`、`push_trigger` |
 
-dip の関数はどれも、1 つ目の引数に `State` を受け取ります。MCP サーバーと Web サーバーと評価は、それぞれ自分の `State()` を作り、
+事業者の関数はどれも、1 つ目の引数に `State` を受け取ります。MCP サーバーと Web サーバーと評価は、それぞれ自分の `State()` を作り、
 同じファイルを読み書きします(5.1、6 章)。
 
 ### 1.3 resume_intake
@@ -313,9 +313,9 @@ OpenAI Realtime の構成から作り直しました)。
 |---|---|---|
 | `agent.py` | LiveKit のワーカーの入口。`python -m voice_resume.agent dev`。起動の前に内部の鍵を確かめる | `main`、`check_settings`、`prewarm`、`entrypoint`、`participant_user_id`、`prepare_advisor` |
 | `advisor.py` | 音声アドバイザー(LiveKit の `Agent`)。ツール(3.4)と、トークへの結果の返送 | `ResumeAdvisor`、`TalkForgotten`、`_post_json`、`post_failure`、`_remove_files` |
-| `dip.py` | dip のクライアント。音声で使う 7 つのツールだけを公開する | `DipMCP`、`ANON_USER_ID` |
-| `prompts.py` | 区分によらない音声の決まり、dip の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
-| `jobs.py` | 希望から `recommend_jobs` の引数を作る。dip の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`MINOR_ARG`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
+| `dip.py` | 事業者のクライアント。音声で使う 7 つのツールだけを公開する | `DipMCP`、`ANON_USER_ID` |
+| `prompts.py` | 区分によらない音声の決まり、事業者の要約から足す指示、挨拶の指示、下書きの指示 | `advisor_instructions`、`stated_preferences_note`、`consultation_summary_note`、`uploaded_resume_note`、`greeting_instructions`、`DRAFTER_SYSTEM`、`CAREER_DRAFTER_SYSTEM`、`drafter_system`、`document_kind_for`、`document_name` |
+| `jobs.py` | 希望から `recommend_jobs` の引数を作る。事業者の一覧の写し(R13) | `JOB_TYPES`、`FULLTIME_JOB_TYPES`、`TRACKS`、`AREAS`、`MINOR_ARG`、`build_recommend_args`、`split_relaxed`、`on_track`、`spoken_job_line`、`relax_option_line` |
 | `drafter.py` | 文字起こしから下書きを作る。形と `scrub_pii` は `resume_draft`(1.8) | `build_draft`、`finalize` |
 | `outputs.py` | 相談の終わりに下書きと求人の提案を作る。4 つのファイルを書くのは `WRITE_FILES` のときだけ(5.4) | `write_outputs`、`history_transcript` |
 | `render.py` | 下書きの Markdown。書類の種類で見出しと並びを変える(5.5) | `to_markdown` |
@@ -359,11 +359,11 @@ classDiagram
     ResumeAdvisor --> DipMCP
 ```
 
-- `ResumeAdvisor` の dip のツールの `line_user_id` は、LLM の引数ではなく `_user_id` から付けます(`_with_user`、`DipMCP` の各メソッド)。
+- `ResumeAdvisor` の事業者のツールの `line_user_id` は、LLM の引数ではなく `_user_id` から付けます(`_with_user`、`DipMCP` の各メソッド)。
   LLM が別のユーザーを指す道はありません
-- `_user_id` が None(metadata の無い参加者)のときは、dip を読むだけで書きません。`relax_conditions` には固定の `ANON_USER_ID` を渡します
+- `_user_id` が None(metadata の無い参加者)のときは、事業者を読むだけで書きません。`relax_conditions` には固定の `ANON_USER_ID` を渡します
 - `DipMCP.record_conversation_outcome` は `propose` と `consult` 以外を `ValueError` で断ります
-- `ResumeAdvisor` は dip に書くとき(雇用区分、希望、会話の段階の結果)、この通話の部屋の名前(`_room_name`)を `room` に付けます(4.6)
+- `ResumeAdvisor` は事業者に書くとき(雇用区分、希望、会話の段階の結果)、この通話の部屋の名前(`_room_name`)を `room` に付けます(4.6)
 
 ### 1.5 evals
 
@@ -396,7 +396,7 @@ classDiagram
 |---|---|
 | `gen_jobs.py`、`gen_job_faq.py` | 架空の求人と求人ごとの FAQ を LLM で作る |
 | `gen_job_vectors.py` | 求人のベクトル(`fixtures/job_vectors.json`)を作り直す。求人を変えたら回す |
-| `gen_dip_events.py` | dip の行動の元データ(`data/dip_events.db`)を、乱数の種を固定して作る。LLM は使わない(5.8) |
+| `gen_dip_events.py` | 事業者の行動の元データ(`data/dip_events.db`)を、乱数の種を固定して作る。LLM は使わない(5.8) |
 | `voice/e2e_audio_session.py` | 音声の E2E(10 章) |
 | `voice/live_room_smoke.py` | LiveKit の部屋の実経路の確かめ |
 | `voice/eval_stt.py`、`voice/eval_hearing.py`、`voice/tool_call_probe.py` | STT の比較、ヒアリングの深さ、ツールを同じターンで呼ぶかの計測(実 API) |
@@ -405,7 +405,7 @@ classDiagram
 
 ### 1.8 resume_draft
 
-Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_resume`)、dip の保存(`dip_mcp`)が同じものを使います。
+Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_resume`)、事業者の保存(`dip_mcp`)が同じものを使います。
 `dip_mcp` にも `voice_resume` にも依存しません。
 
 | モジュール | 役割 | 主な名前 |
@@ -476,12 +476,12 @@ Resume Draft の契約です。読み取り(`resume_intake`)、下書き(`voice_
     `住み込み` は働き方、`住宅`(住宅手当)は求人の条件なので入れません。引っ越しの仕事(`引っ越しのバイト`、`引越しスタッフ`)と、
     職業の `家は`(`専門家は`、`作家は`、`画家は`、`農家は`)も住む言葉にしません。住まいの `一軒家は`、`借家は` は住む言葉です。`から通う` も入れません(`新宿三丁目から通える` は検索の条件になるため)
   - 住む言葉の無い地名、駅、丁目、番地の形は伏せず、`personal_value` でも個人情報とみなしません。`番地は言いたくないです` も伏せません。
-    住む言葉の決まりは本人の文(トークの発言、dip の値)だけのものです。LLM が書く調べものの問いは `looks_like_address` で形だけを見ます(下)
+    住む言葉の決まりは本人の文(トークの発言、事業者の値)だけのものです。LLM が書く調べものの問いは `looks_like_address` で形だけを見ます(下)
   - 住む言葉のある文では、`ADDRESS_LIKE` に当たった住所の部分を伏せます。同じ文に検索の条件の丁目があれば、それも伏せます
     (`新宿三丁目に住んでいて、新宿三丁目5分以内で探して` は `[個人情報を削除]に住んでいて、[個人情報を削除]5分以内で探して`)。
     地名の後ろの空白 1 つの後ろの番地も伏せます(`新宿三丁目 5-1に住む` は `[個人情報を削除] [個人情報を削除]に住む`)。
     読点の後ろの番地だけの語は住所の形に当たらないので残ります(`新宿三丁目、5-1に住む` の `5-1に住む`、`住所はみほん町、552です`)
-- `personal_value` は、値に電話、メール、住所らしい所(住む言葉と一緒のもの)があるかです。dip の希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、
+- `personal_value` は、値に電話、メール、住所らしい所(住む言葉と一緒のもの)があるかです。事業者の希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、
   フォームの続き(`resume_form`)が、本人の値を受け取るかをこれで決めます。`redact_personal` は同じ 3 つを伏せます。
   相談の理由とまとめ(`record_outcome`)と、雇用区分の根拠(`set_search_track`)に使います。
   トークの発言(`line_runtime.turn.accept`、`runtime.event_input`)も `redact_personal` で伏せます
@@ -557,7 +557,7 @@ flowchart LR
     subgraph web["Web プロセス(常駐)"]
         app["python -m line_runtime.server<br/>uvicorn 127.0.0.1:8030"]
     end
-    subgraph webdip["Web の dip(Web プロセスと同じ寿命)"]
+    subgraph webdip["Web の事業者(Web プロセスと同じ寿命)"]
         dip1["python -m dip_mcp.server<br/>stdio の子プロセス"]
         dip2["python -m dip_mcp.server --http 8020<br/>DIP_MCP_URL のときだけ、人が起動"]
     end
@@ -580,16 +580,16 @@ flowchart LR
 - Web プロセスは `lifespan` で `.env` を読み、起動してよいかを確かめます。LINE か LIFF の設定があるのに `AICA_ID_KEY` が無い、短いときは
   `line_channel.check_id_key` で、音声相談の設定(`LIVEKIT_*`)があるのに `AICA_INTERNAL_KEY` が無い、短いときは
   `line_channel.check_internal_key` で、起動を止めます。次に `DailyQuota` と LINE の `SeenEvents` を作り、`LineRuntime` に入ります。`LineRuntime.__aenter__` は
-  dip と MCP のセッションを 1 本だけ張り(`dip_connection`)、ツールを読み、イベントの入口(`A`、`visit`、`revisit`、`D`)ごとに dip の
-  Prompt を読んでから、エージェントを作ります。dip の Prompt を変えたら Web プロセスを起動し直します
-- dip の子プロセスは親の環境変数をすべて受け取ります(`env=dict(os.environ)`、R15)
+  事業者と MCP のセッションを 1 本だけ張り(`dip_connection`)、ツールを読み、イベントの入口(`A`、`visit`、`revisit`、`D`)ごとに事業者の
+  Prompt を読んでから、エージェントを作ります。事業者の Prompt を変えたら Web プロセスを起動し直します
+- 事業者の子プロセスは親の環境変数をすべて受け取ります(`env=dict(os.environ)`、R15)
 - `LineRuntime.__aexit__` は、進行中のターン(`_running`)が終わるのを待ってから MCP のセッションを閉じます
 - 音声ワーカーは LiveKit Agents の CLI で動きます。CLI に渡す前に `check_settings` で、Web プロセスと同じ
   `line_channel.check_internal_key` を呼びます。鍵が無い、短いときは、何が足りないかと鍵の作り方を出して終わります(終了コード 1)。
   モデルを取るだけの `download-files` では確かめません。`prewarm` で Silero VAD を読み、相談(LiveKit の job)ごとに `entrypoint` を呼びます。
-  `entrypoint` は `DipMCP.start` で dip の子プロセスを起動し、終わりの callback で閉じます。dip に繋がらなくても相談は続けます
+  `entrypoint` は `DipMCP.start` で事業者の子プロセスを起動し、終わりの callback で閉じます。事業者に繋がらなくても相談は続けます
 - 評価は Web サーバーを通らず、自分のプロセスで `LineRuntime(in_memory=True)` を使います。会話は SQLite の `:memory:`、
-  dip の状態は `DIP_STATE_PATH` に設定した一時ファイル、費用台帳はメモリだけです
+  事業者の状態は `DIP_STATE_PATH` に設定した一時ファイル、費用台帳はメモリだけです
 - その場で終わるプロセス: `python -m line_runtime.ledger`(費用台帳の集計)、`python -m evals.budget`(予算台帳)、
   `python -m resume_intake.cli`、`python3 evalkit/aggregate.py`
 
@@ -642,10 +642,10 @@ flowchart LR
 | `POST /api/talk/track/undo` | `talk_track_undo` | 本人 + 書き込みの枠 | - | 雇用区分の取り消し、知らせ。直前の切り替えでなければ 409 |
 | `GET /api/saved` | `saved` | Cookie | - | - |
 | `GET /api/scenarios` | `scenarios` | - | - | - |
-| `POST /api/scenarios/{id}/start` | `start_scenario` | Cookie + 書き込みの枠 | - | シナリオユーザーの dip の状態を初期に戻す(`evals.scenarios.prepare`) |
-| `POST /api/event` | `event` | 本人 + 同意 | 1 | 会話、dip の状態(ツール)、費用台帳。`ValueError` は 400 |
+| `POST /api/scenarios/{id}/start` | `start_scenario` | Cookie + 書き込みの枠 | - | シナリオユーザーの事業者の状態を初期に戻す(`evals.scenarios.prepare`) |
+| `POST /api/event` | `event` | 本人 + 同意 | 1 | 会話、事業者の状態(ツール)、費用台帳。`ValueError` は 400 |
 | `POST /api/event/stream` | `event_stream` | 本人 + 同意 | 1 | 同上。途中経過は NDJSON(3.2) |
-| `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「dip から見た状態」) |
+| `POST /api/dip` | `dip_view` | 本人 | - | -(開発者画面の「事業者から見た状態」) |
 | `GET /api/profile` | `profile_get` | Cookie | - | - |
 | `GET /api/profile/export` | `profile_export` | Cookie | - | -(「データを書き出す」。本人の保存内容を JSON のファイルで返す。下の注) |
 | `PUT`、`DELETE /api/profile/items/{key}` | `profile_edit`、`profile_delete` | Cookie + 書き込みの枠 | - | 本人が話した希望か相談のまとめ、知らせ。個人情報らしい値、長すぎる値、空の値、知らない項目は 400(`_checked`)。保存していない項目を消しても 200 |
@@ -671,8 +671,8 @@ flowchart LR
 | `GET`、`POST /liff/line/apply` | `liff_line_form`、`liff_line_submit` | LIFF | - | 応募の確定(`/liff/apply` と同じ) |
 | `GET /liff/line/mic-check` | `liff_line_mic_check` | -(本人を決めない) | - | -(マイクの確認。LIFF の設定が無ければ 404) |
 | `POST /api/liff/mic-check` | `liff_mic_check_log` | -(本人を決めない) | - | ログに 1 行(`line_runtime.mic_check`)。決まった項目の外は 422、JSON でなければ 415 か 422、1 日 500 行を超えたら 429。LIFF の設定が無ければ 404 |
-| `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、dip の状態、費用台帳、連携の表 |
-| `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | dip の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
+| `POST /line/webhook` | `line_webhook` | LINE の署名 | イベントごとに 1(アカウント連携は 0) | 4.11、4.12。設定が無ければ 404。受けた webhook のイベントの ID(`data/line_events.json`)、会話、事業者の状態、費用台帳、連携の表 |
+| `GET`、`POST /dip/login` | `dip_login_page`、`dip_login` | 事業者の会員のログイン(Cookie は見ない) | - | 4.12。ログインの失敗の数、nonce。できたら LINE の accountLink の画面へ 303。ID かパスワードがちがえば 401、ロック中は 429、linkToken の形が違えば 400 |
 | `GET /api/dev/link` | `dev_link` | Cookie | - | -(開発者画面の「アカウント連携」。匿名ユーザーIDと `dip_id`) |
 | `POST /api/dev/link/start` | `dev_link_start` | Cookie + 書き込みの枠 | - | 偽物の LINE の linkToken、bot が出した linkToken の記録。連携済みなら 409 |
 | `POST /api/dev/link/unlink` | `dev_link_unlink` | Cookie | - | 連携の表から外す |
@@ -688,7 +688,7 @@ flowchart LR
   本人とシナリオユーザーの `user_lock` の中で読みます(`_own_users`。「すべて消す」と同じ順)。見るだけなので、最後の利用に数えず、状態にいない人の行も作りません。LINE の人の書き出しは「データを見る」の返事です(4.11)
 - ブラウザから本文で受け取るユーザーIDは、どれも `_require_own` を通します。URL には載せません(`logic.liff_url`)。
   ブラウザの履歴、アクセスログ、Referer に残るためです
-- dip の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
+- 事業者の状態にユーザーが書かれるのは、Cookie を持つ本人が話したときと、開発者画面でシナリオを始めたときだけです。
   Cookie の無い `POST /api/talk/open` は 401 で、何も書きません
 - ターンを数えるのは `DailyQuota.try_take` を呼ぶ 4 つの口です(`turn.run`、音声相談の開始、履歴書のアップロード、AI つきのゲームの開始)。上限のときは LLM を呼びません(ゲームは AI なしで始める)
 - IP は `_client_ip` が決めます。`AICA_TRUST_PROXY=1` のときだけ `X-Forwarded-For` の最後の値を使います
@@ -713,11 +713,11 @@ flowchart LR
 `tools` です。`track_switch` には Web サーバーが今の状態(`profile.switch_status` の `undoable`、`undone`、`past`、`gone`)を足します。
 挨拶の返信の `actions` とゲームの `buttons` は、モデルではなくコードが決めたものです(4.9 の「挨拶の入口のボタン」)。
 
-### 3.3 dip のツール(MCP)と業務ロジック
+### 3.3 事業者のツール(MCP)と業務ロジック
 
 エージェントは `load_mcp_tools` で全部のツールを読みます。音声アドバイザーは `DipMCP` の 7 つだけを使います。
 
-| ツール | 中身 | 書くもの(dip の状態のキー) | 音声 |
+| ツール | 中身 | 書くもの(事業者の状態のキー) | 音声 |
 |---|---|---|---|
 | `get_user_conversation_summary` | `logic.conversation_summary` | - | 使う |
 | `get_user_recent_applications` | `logic.recent_applications` | - | - |
@@ -754,12 +754,12 @@ flowchart LR
   受け取ります。その部屋が `forgotten_voice_rooms` にあれば、何も書かずに `error`(`FORGOTTEN_ROOM_ERROR`)を返します(4.6)。
   トークのエージェントには `room` を見せません(`runtime.chat_tools` がツールの引数から外す)
 
-Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
+Web サーバーと評価がツールを通さずに直接呼ぶ事業者の関数は、`push_trigger`、`talk_entry`、`record_talk_open`、`search_track`、
 `saved_jobs`、`form_exit`、`submit_application`、`save_resume_upload`、`resume_upload`、`record_voice_result`、`voice_results_since`、
 `voice_result`、`voice_result_count`、`record_voice_room`、`voice_room_forgotten`、`liff_url`、`_md`、
 `conversation_summary`(開発者画面)、`save_preferences` と `set_search_track`(シナリオの準備の `evals.scenarios.prepare`)と、
-`profile` の関数です。Web サーバーと評価が dip の関数を直接呼ぶのは、HLD の 1.1 で認めた形です(R1、ADR-0003)。
-守る境界はエージェントの側だけです。エージェントは dip のツールと、イベントの入力に添えた事実を通してだけ dip の事実を得ます(HLD の 1.1)。
+`profile` の関数です。Web サーバーと評価が事業者の関数を直接呼ぶのは、HLD の 1.1 で認めた形です(R1、ADR-0003)。
+守る境界はエージェントの側だけです。エージェントは事業者のツールと、イベントの入力に添えた事実を通してだけ事業者の事実を得ます(HLD の 1.1)。
 
 ### 3.4 音声アドバイザーのツールと、画面とのやりとり
 
@@ -767,9 +767,9 @@ Web サーバーと評価がツールを通さずに直接呼ぶ dip の関数�
 
 | ツール | 中身 |
 |---|---|
-| `set_search_track(track, evidence)` | dip に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
-| `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で dip に保存する(`on_track`) |
-| `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、dip の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
+| `set_search_track(track, evidence)` | 事業者に記録し(ユーザーが分かるとき)、今の区分で使わない希望を外し、音声版の playbook を読み直して `update_instructions` で指示を入れ替える |
+| `save_user_preferences(...)` | 今の区分で使う項目だけを `_DIP_PREF_KEYS` の範囲で事業者に保存する(`on_track`) |
+| `propose_jobs(...)` | 希望から `build_recommend_args` で引数を作り、事業者の `recommend_jobs` を呼ぶ。`search_only` でなければ希望を保存する。`relax` で外した条件は `relaxed` に分ける。`exclude_ids` は相談の終わりまで足していく。0 件なら `relax_conditions` で外す候補を返す(`_zero_hit_reply`) |
 | `web_research(query)`、`research_company(name, hint)` | Anthropic の web 検索のサーバーツール(`web_search_20260209`、dynamic filtering なし、1 回の調べもので `max_uses` 2 回まで。`VOICE_RESUME_PROVIDER=openai` なら Responses API の `web_search`)で調べ、検索の後の答えだけを、出典のリンクを消して話し言葉で返す。1 回の相談で `MAX_WEB_SEARCHES` 回まで(7.1。`wage_average` の web の分と合わせて数える)。問い(`_research` の `subject`)に電話、メールか、住む言葉が無くても住所の形があれば(`has_pii`、`looks_like_address`。1.8)、調べずに `PERSONAL_QUERY_REPLY` を返す(表示も出さず、回数にも数えない。`wage_average` の web の分も同じ) |
 | `wage_average(area, job_type)` | 職種の指定が無く、全国か東京都なら参考データから答える。それ以外は web で調べる |
 | `finalize_interview(summary)` | 4.4 の後半。2 回目は保存も送信もしない |
@@ -798,7 +798,7 @@ sequenceDiagram
     participant T as _turn(別の task)
     participant C as 会話(AsyncSqliteSaver)
     participant G as エージェント(create_agent)
-    participant D as dip の MCP サーバー
+    participant D as 事業者の MCP サーバー
     participant L as 費用台帳
 
     S->>H: user_id、event、text、facts、talk_thread、notice、new_conversation
@@ -836,11 +836,11 @@ sequenceDiagram
 - `new_conversation` は、発言でも新しい会話を始める指定です。LINE の発言で、最後のやりとりから間が空いたときだけ真です(4.11)。
   新しい会話の最初のターンなので、`entry`(A)と `line_user_id` を書き、知らせは置きません
 - 知らせ(`notice`)は、続きのターンの本人の入力の直前に `HumanMessage(additional_kwargs={"profile_notice": True})` で置きます。
-  新しい会話を始めるターンでは使いません(最初に dip の要約を読むので)
+  新しい会話を始めるターンでは使いません(最初に事業者の要約を読むので)
 - 受け取り手が切れても `_turn` は最後まで進みます(`handle_stream` は `queue` を読むだけ)。ツールの結果が無い会話を保存しないためです
 - `render` は、会話の中のツールの結果と音声相談の結果から `CARD_KEYS` を持つものを拾い、モデルの `job_ids` のうち拾えたものだけをカードにします。
   ボタンは `/liff/` で始まる URL だけを通します。切り替えの表示(`track_switch`)は、そのターンの `set_search_track` の結果の `recorded` から作ります
-- 挨拶のターン(`EVENTS` の種類が `greet`)では、`_turn` が LLM を呼ぶ前に `_read_summary`(dip の要約を MCP のツールで読む。LLM は呼ばない)と
+- 挨拶のターン(`EVENTS` の種類が `greet`)では、`_turn` が LLM を呼ぶ前に `_read_summary`(事業者の要約を MCP のツールで読む。LLM は呼ばない)と
   `greeting_entries` で入口のボタンを決め、会話の state の `greeting_entries` に書きます。`render` は、state に `greeting_entries` があり、
   そのターンが会話の最初の本人側の入力(挨拶のイベント)のときだけ、`actions` をそれに置き換え、`buttons` からゲームの入口(`is_arcade_entry`)を除いて
   コードのボタンを先に足します(呼び出しの上限で返した謝り `TURN_LIMIT_REPLY` には付けません)。`history` も同じ state を渡すので、
@@ -868,7 +868,7 @@ sequenceDiagram
     participant P as トーク画面(talk.html)
     participant S as Web サーバー
     participant R as LineRuntime
-    participant D as dip の状態
+    participant D as 事業者の状態
 
     P->>S: POST /api/talk/open
     S->>R: user_lock の中で conversation(user_id)
@@ -916,12 +916,12 @@ HLD の 4.2 の詳しい手順です。
 2. `extract_bytes` がファイルを Responses API の content part にして読み取り、出力に `scrub_pii` をかけます(下の表)。
    PDF の解析は CPU を使うので、`asyncio.to_thread` でイベントループの外で行います。
    使ったトークンは `Ledger.record(user_id, "resume_upload", ...)` で費用台帳に書きます
-3. 読み取れた項目が無ければ(`unconfirmed` を除いて空)、dip に保存せず、`app.state.unread_uploads` に事実を置きます
+3. 読み取れた項目が無ければ(`unconfirmed` を除いて空)、事業者に保存せず、`app.state.unread_uploads` に事実を置きます
 4. 読み取れたら `logic.save_resume_upload` が、`personal` を空にし、もう一度 `scrub_pii` をかけ、`resume_upload_seq` から番号を振って
    最新の 1 件として保存します。`profile.resume_uploaded` が、まだ渡していない「履歴書を消した」知らせを落とします
-5. 画面は確認の吹き出しを出し、`/api/event/stream` に `resume_upload` を送ります。`turn.upload_facts` は dip の読み取り結果か
+5. 画面は確認の吹き出しを出し、`/api/event/stream` に `resume_upload` を送ります。`turn.upload_facts` は事業者の読み取り結果か
    `unread_uploads` から事実を作ります(画面からは受け取りません)
-6. 入力の文(`event_input`)は、画面に出した確認をくり返さずに読み取り結果を見て続けるよう指示します。エージェントは dip の要約
+6. 入力の文(`event_input`)は、画面に出した確認をくり返さずに読み取り結果を見て続けるよう指示します。エージェントは事業者の要約
    (`get_user_conversation_summary`)を呼び直して `uploaded_resume` を見て、次の 1 問を返します
 
 `content_part` が送る形です([privacy.md](../design/privacy.md) の 3.2 の案 B)。
@@ -976,7 +976,7 @@ sequenceDiagram
     participant K as LiveKit Cloud
     participant E as entrypoint
     participant A as ResumeAdvisor
-    participant D as DipMCP(dip の子プロセス)
+    participant D as DipMCP(事業者の子プロセス)
     participant O as Anthropic(既定)
     participant F as data/voice-resume/
     participant S as Web サーバー
@@ -1008,27 +1008,27 @@ sequenceDiagram
 
 - 会話の段階の結果はコードが決めます。求人を提案できたら `propose`、できなければ `consult` です(`ResumeAdvisor._record_outcome`)
 - 下書きの書類は今の区分で決まります(`prompts.document_kind_for`)。正社員なら職務経歴書、それ以外は履歴書です
-- `_deliver_to_talk` が送るのは `user_id`、`jobs`(dip のカードの形)、`draft_markdown`、`document_kind`、`files`、`preferences`
-  (今の区分で使う、dip に保存できる項目だけ)、`room` です
-- Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を dip の求人データから作り直し、`voice_reply` の返信を
+- `_deliver_to_talk` が送るのは `user_id`、`jobs`(事業者のカードの形)、`draft_markdown`、`document_kind`、`files`、`preferences`
+  (今の区分で使う、事業者に保存できる項目だけ)、`room` です
+- Web サーバー(`voice_result_in`)は `logic.record_voice_result` で求人を事業者の求人データから作り直し、`voice_reply` の返信を
   `LineRuntime.add_voice_result` で今の会話に足し、待っているシート(`voice_ready` の `Condition`)に知らせます
 - トークの途中のハーネスの相談(アルバイト・パート、正社員)は、本人が部屋に入ったと知らせが来たとき(`voice_session` の joined)に
   閉じ、そこまでの確かめた答えを保存します(`server._end_consultations`)。ワーカーはその後に本人の希望を読み、面談の中で話した希望を
   保存するので、音声で聞き直さず、閉じるときの保存が音声の希望を上書きしません。joined が届かなかったときのために、結果を足す前にも
   閉じます。結果の後の本人の発言は、トークの AI が受けます(task 364)
 - トークに届かなかったとき(410 以外)は、警告のログだけで、会話の段階の結果は記録します(R20)。ただし、通話の途中で
-  「すべて消す」をした部屋なら、dip が記録を断ります(4.6)。既定ではファイルに書き出さないので、下書きはどこにも残りません。
+  「すべて消す」をした部屋なら、事業者が記録を断ります(4.6)。既定ではファイルに書き出さないので、下書きはどこにも残りません。
   締めの返答も「保存した」とは言わず、残せなかったことを伝えます(`finalize_interview`)
 
 ### 4.5 音声アドバイザーの決まり
 
-相談の進め方(何を明らかにするか、掘り下げ方、選択肢の作り方、保存先)は、チャットと同じく dip の playbook の音声版にあります
+相談の進め方(何を明らかにするか、掘り下げ方、選択肢の作り方、保存先)は、チャットと同じく事業者の playbook の音声版にあります
 (`dip_mcp/playbooks/{区分}_voice.md` と `common_voice.md`)。`prompts.advisor_instructions` は、区分によらない音声の決まりに、
 今の区分の playbook を足して指示にします。playbook が読めないときは `FALLBACK_PLAYBOOK` で続けます。
 
 区分によらない決まり:
 
-- 雇用区分: dip の要約の `search_track` の playbook で始めます。未定なら最初に 1 問で確かめます。明示と強い合図なら
+- 雇用区分: 事業者の要約の `search_track` の playbook で始めます。未定なら最初に 1 問で確かめます。明示と強い合図なら
   `set_search_track` で切り替えます。履歴書の内容や前に話した希望だけでは切り替えません
 - 今の区分で使わない条件(正社員の相談での時給、時間帯、週の日数、アルバイト・パートの相談での希望年収、働き方、時期)は、
   検索にも保存にも入れません(`jobs.on_track`、`PARTTIME_ONLY_KEYS`、`FULLTIME_ONLY_KEYS`)
@@ -1036,9 +1036,9 @@ sequenceDiagram
 - 0 件のときは `relax_conditions` で「どの条件を外すと何件になるか」を調べ、どれを外すかを本人に 1 回で選んでもらいます
 - 出さない求人(電話が中心の求人、すでに出した求人)は `exclude_ids` で外し、相談の終わりまで覚えます。外して探し直して 0 件なら、
   前の提案を残します(本人が聞いた求人はトークに届く。2026-10-04 のユーザーの決定)
-- dip の要約に前に話した希望、相談のまとめ、アップロードした履歴書があれば、指示に足して確認形で使います(`stated_preferences_note`、
+- 事業者の要約に前に話した希望、相談のまとめ、アップロードした履歴書があれば、指示に足して確認形で使います(`stated_preferences_note`、
   `consultation_summary_note`、`uploaded_resume_note`)。履歴書の要点は大事な順に `RESUME_NOTE_MAX_CHARS`(600 字)に収まる行だけを入れ、
-  行の途中では切りません。氏名と連絡先は dip の要約に無いので、指示にも入りません
+  行の途中では切りません。氏名と連絡先は事業者の要約に無いので、指示にも入りません
 - アルバイト・パートの相談は全体 3〜5 分、6〜8 問、1 つのテーマの掘り下げは 1 回までです(`parttime_voice.md`)。
   正社員は全体 5 分前後で、成果の数字は職歴 1 件につき 1 回だけ聞きます(`fulltime_voice.md`)
 
@@ -1065,12 +1065,12 @@ sequenceDiagram
     participant P as プロフィール画面
     participant S as Web サーバー
     participant R as LineRuntime
-    participant D as dip の状態
+    participant D as 事業者の状態
     participant L as 費用台帳
     participant F as data/voice-resume/
 
     P->>S: POST /api/profile/forget(LINE は「データを消す」の確かめの後。下)
-    S->>S: _forget_all: 消すユーザー = 本人のユーザーID + そのシナリオユーザー(dip にいる人と一覧の人)
+    S->>S: _forget_all: 消すユーザー = 本人のユーザーID + そのシナリオユーザー(事業者にいる人と一覧の人)
     S->>R: 全員の user_lock を取る
     loop ユーザーごと
         S->>R: forget(1 つのトランザクションで会話を消す)
@@ -1081,18 +1081,18 @@ sequenceDiagram
     S->>F: 書き出した下書きのファイルを消す
 ```
 
-- 会話を消してから dip の状態を消します。途中で失敗しても、もう一度押せばやり直せます
+- 会話を消してから事業者の状態を消します。途中で失敗しても、もう一度押せばやり直せます
 - `forget_all` は `resume_upload_seq`、`voice_result_seq` を残します。古いリンクの番号が、消した後の新しい結果を開かないためです。
   消す前に発行した部屋は `forgotten_voice_rooms` に移し、後から届いた結果を 410 で断ります。持ち越す値は、1 人の行を初期に戻すのと
   同じロックの中で書き戻します(`State.reset_user` の `keep`)
 - 音声相談の途中で消したとき(`docs/design/privacy.md` の 3.8 の案 A):
-  - 消した後も通話は続きます。ワーカーの dip への書き込み(`set_search_track`、`save_user_preferences`、`record_conversation_outcome`)には
-    部屋の名前が付き、dip はその部屋が `forgotten_voice_rooms` にあれば何も書かずに断ります。判定は書き込みと同じ `state.update` の中
+  - 消した後も通話は続きます。ワーカーの事業者への書き込み(`set_search_track`、`save_user_preferences`、`record_conversation_outcome`)には
+    部屋の名前が付き、事業者はその部屋が `forgotten_voice_rooms` にあれば何も書かずに断ります。判定は書き込みと同じ `state.update` の中
     (状態のファイルのロックの中)で行うので、「すべて消す」と書き込みが同時に来ても、間に合わない時間がありません(`logic._room_forgotten`)
   - 断られたら、アドバイザーは保存できなかったとだけ扱い、会話は続けます(今の保存の失敗と同じ。区分は切り替えません)
   - 相談の終わりにワーカーが結果を送って 410 を受けたときは、会話の段階の結果と相談のまとめを記録せず、書き出したファイルがあれば
     消します(`ResumeAdvisor._deliver_to_talk`、`finalize_interview`)。410 以外の理由で届かなかったとき(内部の鍵の設定違いなど)は、
-    ファイルは開発で書き出したときだけ残ります(8 章、R20)。会話の段階の結果は、そのときも dip が部屋を見て断ります
+    ファイルは開発で書き出したときだけ残ります(8 章、R20)。会話の段階の結果は、そのときも事業者が部屋を見て断ります
   - トークのツールは部屋を渡さないので、今までどおり書けます。消した後に始めた部屋の書き込みも通ります
 - 履歴書を消す(`profile_resume_delete`)ときは、`close_conversation` で空の会話 n+1 を書いてから、それまでの会話をすべて消し、
   そのあと読み取り結果を消します。古い会話を開いたタブの発言は stale になります
@@ -1111,7 +1111,7 @@ LINE の「データを消す」([個人情報の設計メモ](../design/privacy
   (`FORGET_ASK_TEXT`)と、クイックリプライ「すべて消す」「やめる」を返します。どちらも postback で、押した文(`displayText`)がトークに出ます
 - 「すべて消す」の postback のデータは `aica-forget=<番号>` です。番号は `secrets.token_urlsafe(16)` で、`app.state.line_forget_asks` に
   ユーザーごとに 1 つ、期限(10 分、`FORGET_CONFIRM_SECONDS`)と一緒にメモリで覚えます。番号が合い、期限の内なら `_forget_all(l-…)` で、
-  Web と同じ処理で消します。会話、dip の状態(連番と消す前の部屋は持ち越す)、連携の表、`unread_uploads`、音声の下書きのファイルです
+  Web と同じ処理で消します。会話、事業者の状態(連番と消す前の部屋は持ち越す)、連携の表、`unread_uploads`、音声の下書きのファイルです
 - 確かめは 1 回だけ使えます。「やめる」は覚えた番号を捨てて `FORGET_CANCELLED_TEXT` を返します。番号が合わない(前の確かめ、
   ほかの人の確かめ)、期限切れ、再起動の後の確かめは `FORGET_EXPIRED_TEXT` を返し、消しません。番号が合わないときは、今の確かめを
   残します。期限の切れた確かめは、次に見る、消すの決まった文か確かめの postback を受けたときに、どのユーザーの分も捨てます。「すべて消す」と文で書いて送っても、ふつうの発言として
@@ -1126,7 +1126,7 @@ sequenceDiagram
     autonumber
     participant S as Web サーバー
     participant R as LineRuntime
-    participant D as dip の状態
+    participant D as 事業者の状態
     participant L as 費用台帳
 
     Note over S: 起動時、1 日 1 回(_purge_daily)、POST /api/internal/purge
@@ -1182,7 +1182,7 @@ flowchart TB
     score --> top
 ```
 
-- 本人の傾向(`preferences`)は dip ID と連携したユーザーだけです。90 日以内の応募と、30 日以内の閲覧と保存から数えます
+- 本人の傾向(`preferences`)は事業者 ID と連携したユーザーだけです。90 日以内の応募と、30 日以内の閲覧と保存から数えます
 - 両方の区分の求人が残ったら(`mixed`)、時間帯の傾向は点にしません
 - `keywords` で 0 件になり、意味検索は使えたが求人を分けられなかったときは、引数で探し直すための `keywords_note` を返します
 - 理由は 2 つまでです。属性で絞った理由(2 つあるときは 1 つ目)、keywords の本人の言葉、属性の 2 つ目、過去の応募、時間帯、駅かエリア、職種、正社員の働き方、待遇の順に並べます。
@@ -1203,7 +1203,7 @@ flowchart TB
   MCP の `recommend_jobs`・`relax_conditions` と音声の `build_recommend_args` も同じ名前 `minor` を受け取ります(`tests/test_minor_search.py`)。
   付けないとき(false)は今までと同じ結果です。中学生以下は検索の前に止めます(`baito.session.job_block`)
 
-keywords と属性の使い分けです。どの言葉をどの引数にするかは dip の Prompt(`baitoru_assistant.md`)にあります。
+keywords と属性の使い分けです。どの言葉をどの引数にするかは事業者の Prompt(`baitoru_assistant.md`)にあります。
 
 - 意味検索は、言い換え(「コーヒーが好き」「子どもに勉強を教えたい」)を部分一致の取りこぼしから救うためのものです。文章は作りません
 - embedding では分けられない言い換えと否定(「体を動かしたい」「人と話すのが苦手」「立ち仕事は避けたい」「接客はしたくない」)は、
@@ -1240,14 +1240,14 @@ sequenceDiagram
 
     H->>B: budget.check(累計が $4 なら止める)
     H->>X: シナリオと回
-    X->>X: prepare(dip の状態を初期に戻し、種の希望、区分、履歴書を入れる)
+    X->>X: prepare(事業者の状態を初期に戻し、種の希望、区分、履歴書を入れる)
     opt プッシュのシナリオ
         X->>X: push_trigger(許可されなければ失敗)
     end
     X->>R: handle(1 通目のイベント)
     loop max_turns まで
         alt upload_resume があり、操作が出たか upload_by_turn
-            X->>X: upload_resume(dip に保存)
+            X->>X: upload_resume(事業者に保存)
             X->>R: handle(resume_upload)
         else 台本(script)がある
             X->>R: handle(message、台本の文)
@@ -1279,7 +1279,7 @@ sequenceDiagram
 | 挨拶の入口(`greeting_entry_violations`、結果の `greeting_offers`、`greeting_mentions`、`greeting_expected`) | 初回訪問・再訪とも、1 通目のボタンが、窓口で使える入口(`available_entries`。Web は 3 つ、LINE は `--features`)のうちシナリオの種(`seed_voice_draft`、`seed_resume`、`seed_arcade_draft`)でやり終えていないもの(`expected_entries`)とちょうど同じ(2026-10-26、jyoka/tasks#237。足りなければ、やり終えたものや使えないものを出したら違反)。本文で触れる入口(`greeting_mentions`)は 1 つまでで、ボタンの付かない入口には触れない。初回訪問は選択肢に「求人」と「相談」がある(`expect_menu`)。再訪は、シナリオの `expect_greeting_offer`(`resume_upload`、`voice_consult`、`arcade`、下書きの続き `blanks`)があればそれを文で勧める(期待の入口がその窓口で使えないか、やり終えていれば問わない)。ゲームの入口は `/liff/arcade…` のボタン(下書きの画面 `/liff/arcade/draft` は数えない)、下書きの続きは「空欄」を含む選択肢 |
 | 挨拶の言い方と並び(`greeting_wording_violations`) | 初回訪問・再訪の 1 通目で、こちらから連絡した言い方(「ご連絡しました」「お声がけしました」。過去・完了の形と、連絡・声かけの進行の形「ご連絡しております」)をしない。問いがあれば最後の吹き出しを問いで終える。再訪は、行動履歴に言い切り(「見ていましたね」)で触れない。問いの文の中の「ご覧になっていたので、」「見ていらっしゃいましたね、」も言い切りに数える。前に話したこと(`seed_preferences`・`seed_track`)が無い人に「今回も」と言わない。入口を勧めたら、勧めの文を問いと同じ吹き出しに置かない。吹き出しの合計が `GREETING_TOTAL_MAX`(アルバイト・パートと未定は 90 字、正社員は 130 字)まで |
 | プッシュ | 本番と同じく `push_trigger` を通してから始める |
-| 事実性(`fact_violations`、指標 `fabrications`) | 返信の金額、日付、徒歩分数、件数、求人名が、この会話で dip から来た情報(ツールの結果、プッシュの根拠の事実、dip の Prompt)か本人の発言にあるか。数字は同じ単位の値とだけ照合する(徒歩の分数は `walk_min`、件数は `total` など。ID や日付の中の数字は根拠にしない)。dip の Prompt の例文の日付は根拠にしない。その場で作った架空の求人名は文字列では見分けにくいので、求人名で捕まえるのは実在の求人の出し間違い。保存した希望が本人の発言に無いのも違反(本人が決めていない条件を記録しない) |
+| 事実性(`fact_violations`、指標 `fabrications`) | 返信の金額、日付、徒歩分数、件数、求人名が、この会話で事業者から来た情報(ツールの結果、プッシュの根拠の事実、事業者の Prompt)か本人の発言にあるか。数字は同じ単位の値とだけ照合する(徒歩の分数は `walk_min`、件数は `total` など。ID や日付の中の数字は根拠にしない)。事業者の Prompt の例文の日付は根拠にしない。その場で作った架空の求人名は文字列では見分けにくいので、求人名で捕まえるのは実在の求人の出し間違い。保存した希望が本人の発言に無いのも違反(本人が決めていない条件を記録しない) |
 | 相談の長さ(`consult_length_violations`、どのシナリオでも。結果の `consult_questions`、指標 `consult_offer_at`) | 相談に入った(相談の合図の発言、playbook を読んだ、入口の 1 文)ターンから、求人を見るかを聞く(または探す)までの問いを数え、4 問目までに聞いたか。本人が切り上げたらやめる。「分からない」「特にない」(丁寧形の「分かりません」、くだけた形の「わかんない」も)が 2 回続いた後の返信が、条件の 1 問か求人を見るかの問いか。正社員のハーネスのターン(返信に `career` が付く)は、どちらにも数えない(問いの数はハーネスが決める) |
 | 相談(`consult_mode` のシナリオ) | 初回の選択肢に「まず相談する」がある。相談の入口で playbook を読み、求人を出さずに 1 問から始める。本人が切り上げる前に相談を締めない。相談で聞いた項目を保存する。目的を確かめる前に求人を出さない(本人が自分から「求人を見せて」と言ったときを除く)。「求人を見せて」の後は、エリアが分からなければエリアの 1 問だけを聞いて次のターンで探してよい(ほかの条件も聞いたら違反)。本人の発言にも履歴書にも無い職種を選択肢に 2 つ以上並べない |
 | 同じ問いと決まり文句(`echo_streak_violations`、`stock_phrase_violations`、`shared_sentences`、指標 `echo_acks`) | 受け止めの「〜ですね」の平叙文(`echo_acks`)を、続けて 2 つの返信で使わない(求人を見るかを聞く返信のまとめは数えない)。相談の入りと区分の切り替えを、決まり文句(「いくつか伺いながら一緒に整理します」、区分を切り替えたターンの、区分と「で考えますね」だけの文)のまま言わない。1 つの実行の中で、3 件以上の会話に出た同じ文は md の「複数の会話で同じ文」に出す(挨拶の T1、問い、短い文、Prompt が文言を決めている文は除く。違反には数えない)。やりたいこと(`REASK` の wants)は「どんな仕事をしてみたいですか」の語順と「取り組んでみたい」の言い換えも聞き直しに数え、本人のことは前の値に言い足して保存し直したターンでも、前に保存していれば白紙の問いを聞き直しに数える |
@@ -1311,7 +1311,7 @@ sequenceDiagram
 - `--only T-side-job,B-exit` でシナリオを絞ります。知らない ID は費用を使う前にエラーです
 - 実行エラーになった回は失敗に数えず、件数を別に出します
 - 比べるときは `evalkit/aggregate.py diff` を使い、差がノイズ幅(95%)を超えた指標だけを改善か悪化とします。2 回ずつでは、ばらつきの判断は弱いです
-- 結果の `detail` には、ターンごとの生の返信(`turn_log`。dip のツールの args と result を含む)、本人の発言、アップロードを残します。
+- 結果の `detail` には、ターンごとの生の返信(`turn_log`。事業者のツールの args と result を含む)、本人の発言、アップロードを残します。
   `evals/checks.py` を直したあとは `evals.run.recheck(detail)` で、実 API を使わずにコードの判定をやり直せます
 - `--rejudge 結果.json` は、結果を `evals/results/<元の名前>-rejudge-<日時>.{json,md}` に別に書き、md に元の判定との差
   (深さの 4 項目と design_fit)を出します。費用はジャッジの分だけ予算台帳に載り、$4 の停止も同じです
@@ -1321,7 +1321,7 @@ sequenceDiagram
 - 予算台帳は、別の worktree のタスクへ累計を引き継ぐため git に入れます。`.gitattributes` で `merge=union` にしてあるので、
   別のブランチで足した行はマージで両方残ります
 - シナリオを始める前に累計が $4 に達していたら止まります(終了コード 2)。続けるかは人が決めます。累計と実行ごとの内訳は `python -m evals.budget` で見ます
-- dip の子プロセスが呼ぶ embedding は計測の外です(1 回 1k トークン未満で、1 円にも届かない)
+- 事業者の子プロセスが呼ぶ embedding は計測の外です(1 回 1k トークン未満で、1 円にも届かない)
 - Ctrl-C で止めても、その回に払った分は台帳に載り(`interrupted: true`)、結果の json に `stopped: "interrupted"` を書きます。
   `probe.py` は止めた回も `{"id": ..., "interrupted": true}` で `results` に残し、md に「中断」と出します(台帳と結果の回数がそろう)。
   SIGKILL(`kill -9`)とプロセスの異常終了は防げません。そのときは払った分(OpenAI の使用量の画面などで確かめる)を
@@ -1341,7 +1341,7 @@ sequenceDiagram
 
 ### 4.9 相談の進め方(チャット)
 
-エージェントの相談は、別のエージェントやグラフではありません。dip の Prompt(`baitoru_assistant.md` の「相談」)の入口と、
+エージェントの相談は、別のエージェントやグラフではありません。事業者の Prompt(`baitoru_assistant.md` の「相談」)の入口と、
 雇用区分ごとの playbook(`dip_mcp/playbooks/`、ADR-0001)で動きます。playbook は `get_counseling_playbook(track, channel)` で配ります。
 音声アドバイザーの決まりは 4.5 です。
 
@@ -1356,12 +1356,12 @@ sequenceDiagram
 |---|---|
 | `fulltime_chat.md`(正社員) | 目的と転職の理由、強み(履歴書と会話から本人の言葉で)、やりたいことと避けたいこと、条件(年収、勤務地、働き方、時期)、不安。条件に `time_band` は使わない。経歴の答えは `experience` に保存する |
 | `parttime_chat.md`(アルバイト・パート) | 目的、生活の制約(時間帯・曜日・エリア)、興味・得意、経験、不安 |
-| `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION` が `v4` か `v5` のときだけ) | 相談は dip のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
-| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION` が `c1` か `c2` のときだけ) | 相談は dip のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `parttime_chat_harness.md`(アルバイト・パート、`BAITO_HARNESS_VERSION` が `v4` か `v5` のときだけ) | 相談は事業者のハーネスが進める(下の「アルバイト・パートの相談(ハーネス)」)。playbook は、同じターンに `start_baito_consultation` を呼ぶことと、保存先・提案の決まりだけ |
+| `fulltime_chat_harness.md`(正社員、`CAREER_HARNESS_VERSION` が `c1` か `c2` のときだけ) | 相談は事業者のハーネスが進める(下の「正社員の相談(ハーネス)」)。playbook は、同じターンに `start_career_consultation` を呼ぶことと、保存先・提案の決まりだけ |
 | `undecided_chat.md`(未定) | まず区分を 1 問で確かめる(雇用区分の合図の決まり) |
 | `common_chat.md`(区分に共通) | 相談の問いは 4 問まで: 相談に入ってから 4 問目までに、求人を見るかを聞く(区分を確かめる問い、経歴の問い、求人を見るかの問いも数える。本人が続けたいと言えば続ける)。掘り下げは 1 項目に 1 回まで。「分からない」「特にない」が 2 回続いたら、掘り下げをやめて条件の 1 問へ。条件(エリア、職種、時間帯、日数、年収など)は 1 問に 1 つで、必ず選択肢を付ける(下の「条件の問いの選択肢」)。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種を並べない。前は「目的とやりたいことを最低 1 回ずつ掘り下げ、目安は 5、6 問」で、jyoka/tasks#221 の評価で相談の 5 件が 8 ターンまでに求人に届かなかった([設計メモの 18 章](../design/line-sim-scenarios.md)) |
 
-- playbook と dip の Prompt の例文は、評価のペルソナの発言と経歴に重ならない例にします(`tests/test_playbook.py` が確かめる)
+- playbook と事業者の Prompt の例文は、評価のペルソナの発言と経歴に重ならない例にします(`tests/test_playbook.py` が確かめる)
 - 会話の決まり(`CONVERSATION_RULES`)は、アルバイト・パートと未定が v1 のまま(吹き出し 80 字、本人の 3 回目の返信までに会話の段階に入る)です。
   正社員は経歴や本人の言葉を受け止めてから聞くので、吹き出し 120 字、6 回目の返信までに緩めます。相談の途中は、どの区分もこの期限を当てません
 - 話した内容は `save_user_preferences` で本人の言葉のまま保存し、そのまま求人の提案の条件にします。言い直しは要りません
@@ -1371,7 +1371,7 @@ sequenceDiagram
 #### アルバイト・パートの相談(ハーネス)
 
 機能フラグ `BAITO_HARNESS_VERSION` が `v4` か `v5`(会話の層に載せ替えた版。[設計メモ](../design/conversation-layer.md) §4.13)のとき、アルバイト・パートのチャットの相談は、何を聞くか・いつフェーズを切り替えるか・
-いつ終えるかを dip のハーネス(`dip_mcp/baito/`)が決めます([ADR-0009](../adr/0009-baito-consultation-harness.md)、
+いつ終えるかを事業者のハーネス(`dip_mcp/baito/`)が決めます([ADR-0009](../adr/0009-baito-consultation-harness.md)、
 [PRD v4.1](../prd/baito_harness/PRD_baito_agent_v4.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、
 上の `parttime_chat.md` で相談します。
 
@@ -1380,7 +1380,7 @@ sequenceDiagram
 | `dip_mcp/baito/harness.py` | PRD の参照実装 `harness_v4.py` を移したもの(付録C の名前をすべて持つ)。3 段の `turn()`、条件表、統合、確信度、未成年・中学生の決まり、出題、フェーズ、review のカード、結果。PRD の前に置いた入口のカードと職種の結果(`quick_pick`・`quick_result`、task 265)と、「近くで探す」の 3 問と求人(`near_*`、task 266)。移したときに直したところはファイルの先頭に書いてある |
 | `dip_mcp/baito/bank_v4.json`、`catalog_v4.json` | 質問バンク 49 問(付録A)と職種カタログ 24 件(付録B)。PRD の `bank_v4.py`・`catalog_v4.py` の原文のまま。バンクの末尾に、区分の確認の質問 `q_held_segment`(task 257、ADR-0009)を 1 問足した |
 | `dip_mcp/prompts/baito/` | プロンプト 4 種(main・extract・review・result)。PRD の原文のまま。`render_prompt` が `{{変数}}` を埋める |
-| `dip_mcp/baito/session.py` | 相談を dip の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。「近くで探す」の求人を dip の `recommend`・`relax` で探す(`near_search`)。結果で `stated_preferences` に保存する |
+| `dip_mcp/baito/session.py` | 相談を事業者の状態(1 人の dict の `baito`)に保存して 1 ターンずつ進める。モデルの出力を受け取りながら `turn()` をやり直す(`ReplayLLM`)。「近くで探す」の求人を事業者の `recommend`・`relax` で探す(`near_search`)。結果で `stated_preferences` に保存する |
 | `dip_mcp/baito/quick_start.py` | 1 タップで始める相談([設計メモ baito-quick-start.md](../design/baito-quick-start.md))の決まった表。時間帯のボタン(朝・昼・夕方・夜・深夜)→ ハーネスの `time_slots` → 検索の `time_band` の対応 `TIME_BUTTONS`(メモの 6.2)。未成年には夜と深夜のボタンを出さない(`time_buttons`)。ボタンをハーネスの `time_slots` の値にする(`time_slot`、複数は `time_slots`)。ボタンの言葉は `search_time_band`(複数は `search_time_bands`)で直してから `recommend` に渡す(そのままだと「朝」「昼」は 0 件)。時間帯を複数選ぶときのボタン [どれでもOK] [これで探す] [選び直す](`ANY_BUTTON`・`DONE_BUTTON`・`RESET_BUTTON`。task 287) |
 | `dip_mcp/baito/progress.py` | プロフィールの進み具合 `progress`(何を数えるか、どのターンにプロフィールカードを付けるか)。`turn()` の前後の状態から作る。ハーネスの本体は変えない |
 | `line_runtime/progress_ui.py` | `progress` から帯・プロフィールカード・完成を 0〜1 つ選び、Flex と文の形を作る(正社員の UI もこれを使う) |
@@ -1395,12 +1395,12 @@ sequenceDiagram
    新しい会話と会話の外のイベント(挨拶、プッシュ、アップロード)では `end_baito_consultation` で途中の相談を閉じる。
    音声相談に本人が入ったとき(`/api/voice/session` の joined)と、音声相談とゲームの結果をトークに足す前も、Web サーバーが
    `LineRuntime.end_consultations` で閉じる(結果の返信の選択肢を、前の問いの答えとしてハーネスに渡さないため。task 364)
-2. dip は保存した状態からハーネスの `turn()` を回す。選択肢そのものならモデルを呼ばずに choice_effects を当てる。モデルが要るところ
+2. 事業者は保存した状態からハーネスの `turn()` を回す。選択肢そのものならモデルを呼ばずに choice_effects を当てる。モデルが要るところ
    (文の抽出、言い方、結果)まで来ると `status=llm` とシステムプロンプトを返す(状態は保存しない)
 3. ランタイムがモデルを呼び(抽出は本人の今の発言だけ、言い方は直前のやりとりも渡す)、それまでの出力を全部 `llm_outputs` に入れて
    `baito_turn` を呼び直す。呼び出しが失敗したら失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文)。
    1 ターンにモデルは最大 4 回(抽出 2 回 + 生成 2 回)
-4. 最後まで進むと、dip が状態を保存し、返事の文(注意文はハーネスが前に付ける)と選択肢(未成年に深夜を出さない、バンクの原文)と
+4. 最後まで進むと、事業者が状態を保存し、返事の文(注意文はハーネスが前に付ける)と選択肢(未成年に深夜を出さない、バンクの原文)と
    `progress` を返す。ランタイムは `progress_ui.build` で部品を 0〜1 つ選び、本人の発言と返信を、トークの AI の会話に続けて保存する
    (返信の行には `baito` が付き、部品は返信の行の `additional_kwargs` の `progress` に置く。`render` が返信の `progress` にする)
 5. 「今はいい」「やめる」、review の前の「求人を見せて」「正社員で」、始めた後の区分の取り消し・切り替え、新しい会話で相談を閉じ、
@@ -1431,11 +1431,11 @@ sequenceDiagram
 | 未成年 | 年齢の「中学生以下」はそこで止める(今の流れの結果と同じ文。モデルは呼ばない)。「ひみつ」は未成年として進む。未成年と年齢が分からない人には「夜」「深夜」のボタンを出さない(`quick_start.time_buttons`)。打っても選択肢に無いので読まない | `harness._near_turn`、`near_choices` |
 | 時間帯の複数選択 | 押すたびに足し(`near` の `time_pick`。選んだものはボタンから消し、[これで探す] を先頭、[選び直す] を最後に出す。モデルは呼ばない)、[これで探す] で決める。[どれでもOK] と、出しているボタンを全部押したときは、すぐ決める。打った答えは、ボタンの言葉と「全部」「だけ」・つなぎの言葉だけなら読み(「朝〜夕方」のような範囲は読まずに聞き直す)、2 つ以上か「全部」「だけ」ならそのまま決める(「だけ」は前に押したものと入れ替える。`read_times`)。決めた答えは `time_slots`(high)と `near` の `time`(ボタンの list。前の相談の 1 つの文字も `near_times` が読む)。task 287 | `harness._near_time_turn`、`read_times`、`near_times` |
 | 検索の条件 | エリア(`AREA_GROUPS` の広い言い方。どこでもは絞らない)、時間帯(§6.2 の表で直した `time_band` の list。`recommend` は、どれか 1 つに合う求人を出す)、入口の絵の talk・physical の値(§4 の表。`QUICK_SEARCH`)、`minor`(`minor_mode`。年齢が分からなければ true。必ず付ける)。区分はアルバイト・パート | `harness.near_search`、`session.near_search` |
-| 検索 | ハーネスは探さない。`turn()` の `search`(session が渡す)が dip の `recommend` を呼び、0 件なら `relax` の options の先頭(いちばん件数が増える条件。`minor` は外す候補にならない)も返す。中学生以下で止めた印(`baito_block`)があれば探さない | `harness._near_jobs`、`session.near_search` |
+| 検索 | ハーネスは探さない。`turn()` の `search`(session が渡す)が事業者の `recommend` を呼び、0 件なら `relax` の options の先頭(いちばん件数が増える条件。`minor` は外す候補にならない)も返す。中学生以下で止めた印(`baito_block`)があれば探さない | `harness._near_jobs`、`session.near_search` |
 | 吹き出し | 「昼・東京で、座ってできる仕事は 5 件！」「昼・夕方・東京で、〜」のように、効いた条件と件数(時間帯を全部選んだときは時間帯を言わない)(検索の結果の `total` のまま)。0 件なら「〜は見つからなかった…」と「時間帯を外すと 4 件あるよ！」、ボタン「時間帯を外して探す」(押すとその条件を外して探し直す。外した条件は `drop` に残し、その問いを聞き直して答え直したら `drop` から戻す。`harness._undrop`)。外す案も無ければ、選び直しを勧める | `harness.near_text` |
 | ボタン | [もっと絞る] は icebreak(今の流れ)に入る。年齢・時間帯は high で入っているので聞かない(エリアはハーネスの項目に無い)。[ちがう] は入口のカードに戻す(絵の答えは外し、3 問の答えは残す。選び直した後の [近くで探す] は、聞き直さずに求人を出す) | `harness._near_turn`、`_clear_quick` |
 | ターンと帯 | 3 問と求人のターンは数えない。`progress` は出さない。入口から始めた相談(`quick_start`)は、[もっと絞る] で icebreak に入ったターンから帯とプロフィールカードを出す | `progress.update` |
-| ランタイム | `baito_turn` が求人を `jobs`(dip の求人カード)で返し、`_harness_turn` が返信の行の `additional_kwargs` の `baito_jobs` に置く。`render` がそれを返信の `cards`(LINE は `_cards_message` のカルーセル、Web のトークは求人カード)にする。後のターンでトークの AI が同じ求人を指せるよう、`render` の求人の出どころにも入れる | `session.turn`、`runtime._harness_turn`、`render` |
+| ランタイム | `baito_turn` が求人を `jobs`(事業者の求人カード)で返し、`_harness_turn` が返信の行の `additional_kwargs` の `baito_jobs` に置く。`render` がそれを返信の `cards`(LINE は `_cards_message` のカルーセル、Web のトークは求人カード)にする。後のターンでトークの AI が同じ求人を指せるよう、`render` の求人の出どころにも入れる | `session.turn`、`runtime._harness_turn`、`render` |
 | 求人の後の発言 | ボタンでない発言(カルーセルの「詳しく見る」「保存」も)は、相談を閉じて(答えた条件とエリアを保存して)トークの AI に渡す。ただし、年齢に触れた発言(はっきりした年齢、「中学」、「16歳」を含む文、「高2」「未成年」。カルーセルの文の「」の中の求人名は見ない。`says_age`)はハーネスが読み直し(未成年なら夜・深夜の答えを聞き直して探し直す。中学生以下は止める)、闇バイトの言葉と、窓口の案内の後の「続ける」もハーネスが受ける | `session._exits`、`harness._near_turn`、`result_preferences` |
 | 検索の失敗 | 検索が例外を出したら、時間帯の問いに戻し続けず、謝りの文(`NEAR_FAILED_TEXT`)と [もっと絞る] [ちがう] を出す(ログ `near_search_failed`) | `harness._near_jobs` |
 
@@ -1463,7 +1463,7 @@ sequenceDiagram
 #### 正社員の相談(ハーネス)
 
 機能フラグ `CAREER_HARNESS_VERSION` が `c1` か `c2`(下の「会話の層」)のとき、正社員のチャットの相談も、何を聞くか・いつフェーズを切り替えるか・いつ終えるかを
-dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
+事業者のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
 [設計メモ](../design/fulltime-hearing.md))。モデルは抽出と言い方だけです。フラグが無ければ(本番の既定)、上の `fulltime_chat.md` で相談します。
 形 B、C、D の切り替えは `CAREER_HARNESS_FORM`(既定は C)です。D は C に LINE の Flex を足した形です(task 246。下の「形 D の UI」)。
 
@@ -1471,9 +1471,9 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 |---|---|
 | `dip_mcp/career/harness.py`、`bank.json` | 3 段の `turn()`、職歴カード、時間の予算、フェーズ、まとめのカード(task 245)。前の相談で保存した欄を入れる `apply_saved`(task 255) |
 | `dip_mcp/prompts/career/` | 抽出(`prompt_extract_ja.txt`)と言い方(`prompt_say_ja.txt`)。まとめと結果はハーネスの決まった文で、モデルを呼ばない |
-| `dip_mcp/career/session.py` | 相談を dip の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
+| `dip_mcp/career/session.py` | 相談を事業者の状態(1 人の dict の `career`)に保存して 1 ターンずつ進める(`ReplayLLM` はアルバイト・パートのものを使う)。終わりに保存する |
 | `dip_mcp/career/draft.py` | result に着いたときに、職歴カードから職務経歴書の下書きを作る(`build`、`create`。LLM を呼ばない。task 247)。下の「下書き」 |
-| `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。dip のツール `update_career_card`。保存している欄だけ) |
+| `dip_mcp/career/store.py` | 保存先。条件を `stated_preferences` の項目に写す(`preferences_of`)、segment と職歴カードと segment だけの欄を `career_profile` に入れる(`save`)、次の相談に入れる(`prefill`)、プロフィールの形(`view`)、要約の形(`summary`。職歴カードは番号 `n` を持つ)、トークで言い直した欄を直す(`update`。事業者のツール `update_career_card`。保存している欄だけ) |
 | `line_runtime/career_chat.py` | 段ごとのモデルの出力の形(抽出 `ExtractOut`、言い方 `ReplyOut`、c2 の読む段 `ReadOut`)。モデルを呼ぶところは `baito_chat.default_llm` を使う |
 | `dip_mcp/career/ui.py` | 形 D で、そのターンに付ける部品(`ui`)と、その字を読む時間(task 246)。`session` が `turn()` の前後から呼ぶ |
 | `line_runtime/career_ui.py` | `ui` を LINE の Flex と文の形にする(task 246) |
@@ -1498,7 +1498,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 
 | 決まり | 中身 | 実装 |
 |---|---|---|
-| どれを付けるか | 1 ターンに 0〜1 つ。完成 > まとめ > プロフィールカード > 職歴カード > 帯(hearing-progress-ui.md §3.4)。最初の返信は「始める」の 1 枚。アルバイトと違い、選ぶのは dip の側(本人の推定時間に Flex の字を数えるため)。LINE 側は描くだけ | `career.ui.update`、`start_payload` |
+| どれを付けるか | 1 ターンに 0〜1 つ。完成 > まとめ > プロフィールカード > 職歴カード > 帯(hearing-progress-ui.md §3.4)。最初の返信は「始める」の 1 枚。アルバイトと違い、選ぶのは事業者の側(本人の推定時間に Flex の字を数えるため)。LINE 側は描くだけ | `career.ui.update`、`start_payload` |
 | 数えるもの | 全体は今の segment の条件の HARD と MID と、職歴カードの欄 6 つ。埋まったのは、そのうち一度でも値が入ったもの(パス、「覚えていない」、「こだわりなし」も)。segment が変わったときだけ新しい表で数え直す。出し始めは hard_filter の最初のターンから | `career.ui.table`、`update` |
 | 職歴カード | 欄が埋まったターンだけ。見出し(「職歴1(直近)」)と一言(残り 1 つなら「あと1つ」、全部埋まって空欄があれば「空欄あり」。完成のカルーセルでは、もう聞かないので完成でなければ「空欄あり」。数字の「n/3」は出さない。task 288)、バー、仕事・規模・結果(空きは灰色の「まだ」、パスと「覚えていない」も灰色)。頭は番号と「直近/その前」で、勤め先と期間は出さない(未定)。勤め先と期間は分けて聞いていない(問いは仕事を一言で聞く)ので、仕事の欄に本人の言葉のまま入る。勤め先と期間を頭に別に出すか(分けて聞くか、仕事の欄から抜き出すか)は決めていない(設計メモ §5.2、§8)。中の字は 60 字まで(長い値から切る)。3 つが本人の言葉で埋まったら「完成」の字と、スタンプの絵(`/static/career/stamp.png`。`AICA_PUBLIC_URL` が https のときだけ) | `career.ui.career_card`、`career_ui.career_card_bubble` |
 | 育ち方 | 「n/13」の数字は出さない(task 288)。聞き終えたフェーズ(`mem["cards"]` の数)で、条件の途中は 🌱「芽が出ました」、条件を聞き終えたら 🌿「育っています」、職歴も聞き終えたら 🌷「もうすぐ完成です」、完成は 🌸「できあがりました」(「始める」の 1 枚と同じ絵)。帯の一言「プロフィールの芽が出ました」は、相談で最初の帯だけ(履歴書や前の相談の値が先に入っていても。`mem["sprouted"]`) | `career.ui.growth` |
@@ -1559,7 +1559,7 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 - 「あとで」で閉じたときは作らない
 - 評価の `draft_number_violations` は、結果の「下書きを開く」(返信に `career` が付く)を「下書きを見る」の 1 回に数えない
 - LINE の「直す」(ポリシー 1.4 §7 の「トークで言い直す」): 本人が言い直したら、トークの AI が直す。職歴カードの欄と segment だけの欄は
-  dip のツール `update_career_card`(`store.update`。中身はプロフィール画面と同じ `store.edit` で、文だけを持ち、数と区切りは作らない。
+  事業者のツール `update_career_card`(`store.update`。中身はプロフィール画面と同じ `store.edit` で、文だけを持ち、数と区切りは作らない。
   AI 自身が直すので、画面で直したときの知らせ `profile_changes` は残さない。直すのは、もう保存している欄だけで、保存していない欄は
   作らない(`not_saved`。ヒアリングを通らずに職歴を足す道にしない)。item の `career<n>` の n は、要約の `career_cards` の各カードが持つ `n`。
   要約は欄のあるカードだけを並べるので、職歴1を消すと職歴2が先頭になる。並びの順で決めると別のカードを直してしまう)。why_now・direction・team_style は `save_user_preferences` で上書きする。
@@ -1572,9 +1572,9 @@ dip のハーネス(`dip_mcp/career/`)が決めます([ADR-0010](../adr/0010-ful
 アルバイト・パートの v5(`BAITO_HARNESS_VERSION=v5`)と、トークの AI の t1(`TALK_LAYER_VERSION=t1`)です。本番の値(c1、v4、t1 なし)は運営者が
 入り口ごとに変えます。実モデルの比べ(task 362)で合格の線に届いたのは c2 だけで、手順と戻し方は [deploy/render.md](../deploy/render.md#相談の版を入り口ごとに切り替える-運営者) です。
 
-始めた相談は始めた版のまま進みます。版は相談を始めたときのフラグで決まり、dip の状態の `version` に残ります。ターンごとのハーネスは、
+始めた相談は始めた版のまま進みます。版は相談を始めたときのフラグで決まり、事業者の状態の `version` に残ります。ターンごとのハーネスは、
 フラグでなく状態の `version` から選びます(`career/session.harness_of`、`baito/session.harness_of`)。知らない版の状態は読まずに閉じます(`_load`)。
-Web プロセス(`start_career_consultation` を見せるか)と dip の子プロセスは、起動のときにフラグを読むので、本番で値を変えると `aica` が起動し直します。
+Web プロセス(`start_career_consultation` を見せるか)と事業者の子プロセスは、起動のときにフラグを読むので、本番で値を変えると `aica` が起動し直します。
 切り替えの前後の動きは `tests/test_career_cutover.py` が、本番の組み合わせ(形 D、v4、t1 なし)で確かめます(task 363):
 
 | 場合 | 動き |
@@ -1600,7 +1600,7 @@ Web プロセス(`start_career_consultation` を見せるか)と dip の子プ�
 | `dip_mcp/prompts/convo/read_ja.txt`、`prompts/career/prompt_read_ja.txt` | 読む段のプロンプト。層の骨組みに、正社員の決まりをつなぐ |
 | `dip_mcp/prompts/convo/say_ja.txt` | 言う段のプロンプトの骨組み。入り口の名前、調子、応じ方の計画(相づちの種類、逆質問の事実)、問いの言い方を差し込む |
 | `dip_mcp/career/bank.json` の `variants` | 問いの文のほかの言い方(1〜2 通り)。c2 だけが読む(c1 は読まない) |
-| `dip_mcp/convo/switch.py` | 入り口を移す(task 359): want と consider の読み分け、移る強い頼み、引き継ぎの記録(dip の状態の `handoff`)の書き方と読み方と消し方、値の対応 `carry` |
+| `dip_mcp/convo/switch.py` | 入り口を移す(task 359): want と consider の読み分け、移る強い頼み、引き継ぎの記録(事業者の状態の `handoff`)の書き方と読み方と消し方、値の対応 `carry` |
 | `dip_mcp/baito/v5.py`、`entry.json`、`facts.json` | アルバイト・パートの v5(task 360)。v4 の質問バンクの原文、欄と区切り、注意文、危ない言葉の文、未成年と闇バイトの決まり、入口のカード、近くで探す、フェーズの流れ、まとめと結果を使い、読む段(`read`)、値の当て方、応じ方の計画、言う段(`say`)、移り方を層に替えた版。入り口の定義には、くだけた話し言葉の調子と決まった相づち、問いの言い方(`variants`。PRD の質問バンク `bank_v4.json` は書き換えないので、ここに置く。言い換えのある問いは PRD の `alt_text`)、移る先と値の対応を置く |
 | `dip_mcp/prompts/baito/prompt_read_v5_ja.txt` | v5 の読む段の決まり(層の骨組み `read_ja.txt` の後ろにつなぐ)。値は区切りのキー |
 | `dip_mcp/prompts/baito/prompt_say_v5_ja.txt` | v5 の言う段の決まり(層の骨組み `say_ja.txt` の後ろにつなぐ。task 376): 直前の相づちの終わり 4 字を避ける、ほめない、本人とボタンのほかの職種を書かない(確かめでは、押したボタンの職種だけを除く)。やり直しでは、1 回目の返事と落ちた理由と使える決まった相づち(`v5.retry_note`)を差し込む |
@@ -1652,7 +1652,7 @@ v5 の 1 ターン(v4 と違うところ。作りの細部は `dip_mcp/baito/v5.
 - 問いのターンの言う段は、層の組み立て(c2 と同じ `reply.py`)。v4 の注意文と決まり文句は注意の部品。返事の確かめに、v4 の決まり
   (金額を言わない、入れていない答えと数を言わない、カードに無い職種を言わない)を足す
 - 「やめる」と「あとで」はハーネスが決まった文で閉じる(`session._exits` は v5 の相談の間はやめる言葉で閉じない)。「やっぱり正社員で」は
-  移る(`session._switch`)。ほかの入り口から移ってくるときは `session.switch_in`(dip のツール `baito_turn` の `switch_in`)
+  移る(`session._switch`)。ほかの入り口から移ってくるときは `session.switch_in`(事業者のツール `baito_turn` の `switch_in`)
 - 新しく始めるときは、前の相談で保存した希望の項目(日数、時間帯、時給、目的、近くで探すのエリア)と、アルバイト・パートに宛てた引き継ぎの記録を
   読んで入れる(`v5.prefill`、`take_handoff`)。引き継いだ値は、推測でも聞き直さない(まとめで確かめる)
 - PRD の検査: `evals.baito_sim --version v5` が 20 ペルソナを v5 で回す(`docs/prd/baito_harness/aica_port_v5.py`)。単体チェック 131 件は v4 だけ。
@@ -1661,10 +1661,10 @@ v5 の 1 ターン(v4 と違うところ。作りの細部は `dip_mcp/baito/v5.
 #### 条件の問いの選択肢
 
 探す条件(エリア、職種、時給か年収、時間帯と曜日、週の日数、正社員なら働き方と時期)の問いは、1 問に 1 つだけ聞き、必ず選択肢を付けます
-(dip の Prompt の対話ルールの「条件の問い」、playbook の「探す条件」)。条件の問いは、選択肢なしでよい「自由な問い」に当たりません。
+(事業者の Prompt の対話ルールの「条件の問い」、playbook の「探す条件」)。条件の問いは、選択肢なしでよい「自由な問い」に当たりません。
 LINE の実機(2026-10-26)で、エリアと年収の下限を 1 問で聞き、選択肢が無かったため(利用者の決定、2026-10-26。[設計メモの 22 章](../design/line-sim-scenarios.md))。
 
-エージェントが候補を作れずに選択肢を外さないよう、dip の要約に候補 `condition_options` を載せます(`logic.condition_options`。LLM を使わない)。
+エージェントが候補を作れずに選択肢を外さないよう、事業者の要約に候補 `condition_options` を載せます(`logic.condition_options`。LLM を使わない)。
 項目の名前は `save_user_preferences` の項目と同じです。
 
 | 項目 | 候補 | 区分 |
@@ -1700,13 +1700,13 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
 
 | 段 | どこで | 決め方 |
 |---|---|---|
-| やり終えたか | dip の `logic.used_entries(user)`(要約の `used_entries` と、その説明 `ENTRY_NOTE`) | 音声相談は、音声相談の結果に下書き(`draft_markdown`)がある。履歴書は `resume_upload` がある。ゲームは `arcade_drafts` がある。新しい記録の項目は足さず、今ある記録から決めます。開いただけ、途中でやめた、の記録は無いので数えません |
+| やり終えたか | 事業者の `logic.used_entries(user)`(要約の `used_entries` と、その説明 `ENTRY_NOTE`) | 音声相談は、音声相談の結果に下書き(`draft_markdown`)がある。履歴書は `resume_upload` がある。ゲームは `arcade_drafts` がある。新しい記録の項目は足さず、今ある記録から決めます。開いただけ、途中でやめた、の記録は無いので数えません |
 | 窓口で使えるか | `runtime.usable_entries(channel, features)` | LINE は `line_channel.liff_features` にあるもの。Web は features が空なら 3 つとも(評価と開発者画面)、本番のトーク画面は `line_channel.web_features`(音声相談は LiveKit の設定があるときだけ)。ゲームは要約に `arcade_url` があるときだけ |
 | ボタン | `runtime.greeting_entries(summary, channel, features)` | やり終えていなくて使える入口を、`actions`(`voice_consult`、`resume_upload` の順)とゲームの `buttons`(「ゲームで書類を作る」、`arcade_url`)にします。3 つともやり終えていれば空です |
-| 付ける | `LineRuntime._turn` と `render` | 挨拶のターンの初めに dip の要約を MCP で読み(`_read_summary`)、会話の state の `greeting_entries` に書きます。`render` はその会話の最初の返信だけ、モデルの入口(`actions` とゲームのボタン)をこれに置き換えます。入口でないボタン(「下書きを見る」など)は残します。同じ会話の 2 回目からの返信には付けません |
+| 付ける | `LineRuntime._turn` と `render` | 挨拶のターンの初めに事業者の要約を MCP で読み(`_read_summary`)、会話の state の `greeting_entries` に書きます。`render` はその会話の最初の返信だけ、モデルの入口(`actions` とゲームのボタン)をこれに置き換えます。入口でないボタン(「下書きを見る」など)は残します。同じ会話の 2 回目からの返信には付けません |
 
 - 記録を消すと(プロフィールの項目ごとの削除、「すべて消す」、期間で消す掃除)、`used_entries` から外れ、次の挨拶でまた案内します
-- dip の Prompt(`baitoru_assistant.md` の「挨拶の入口」、`entries.json` の `visit`・`revisit`)は、挨拶に入口の `actions` とゲームのボタンを付けず、本文で 3 つを並べないように言います。
+- 事業者の Prompt(`baitoru_assistant.md` の「挨拶の入口」、`entries.json` の `visit`・`revisit`)は、挨拶に入口の `actions` とゲームのボタンを付けず、本文で 3 つを並べないように言います。
   必要なら 1 つだけ 1 文で触れてよく、触れてよいのはボタンの付く入口だけです。再訪の勧めの 1 文の決まり(どれを勧めるか)は前のままです
 - LINE の通数(挨拶は 2 通まで。`line_channel.to_messages` の見出し)と、挨拶の長さの目安は前のままです
 
@@ -1734,10 +1734,10 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
 - ヘッダーに今の雇用区分(「正社員で相談中」など)を出します
 - 履歴書と音声相談は、会話の中から入ります(ヘッダーの常設ボタンは無い)。エージェントが経歴を聞く場面で、返信の `actions` として
   [ファイルを選ぶ] [話して伝える(音声・約5分)] を出します。`quick_replies` の答えの候補と「今はいい」と並び、押しても発言は送りません(「文字で話す」の選択肢は、押すと答えが 1 ターン遅れるだけなので付けない。2026-10-26)。
-  いつ出すかは dip の Prompt の「履歴書・音声の提案」です
+  いつ出すかは事業者の Prompt の「履歴書・音声の提案」です
 - 自分から使う人は、入力欄の左の「+」から「履歴書・職務経歴書を送る」「音声で相談する」に入れます(LINE と同じ置き場)
 - 書類の呼び方は雇用区分にそろえます。アルバイト・パートは履歴書、正社員は職務経歴書です。未定のあいだは「+」メニューと音声アドバイザーが「履歴書など」と言います
-- 開発者画面の dip の状態、構成図、処理の流れ、シナリオの一覧は出しません。ターン数の上限とユーザーの分離は、トーク画面にも効きます
+- 開発者画面の事業者の状態、構成図、処理の流れ、シナリオの一覧は出しません。ターン数の上限とユーザーの分離は、トーク画面にも効きます
 
 プロフィール(中身は `dip_mcp/profile.py`、口は 3.1、消す流れは 4.6):
 
@@ -1745,7 +1745,7 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
   本人が見て、直して、消せます。空の項目は「まだありません」です
 - 読み取り結果と下書きの「見る」リンクは `/liff/resume?rid=…`、`/liff/voice/draft?rid=…` です。ユーザーIDを載せません
 - 知らせは「[お知らせ: 本人が画面で…]」の形です。トークの切り替えの表示のボタンでの取り消しだけなら「本人がトークの表示のボタンで…」です。
-  扱いの決まりは dip の Prompt にあります
+  扱いの決まりは事業者の Prompt にあります
 - 履歴書を消すときは、会話で保存した内容(経験など)は残ると確認の文言で伝えます。消すものが無ければ会話を閉じません
 - 雇用区分の「記録ごと消す」は、切り替えの記録をすべて消して未定に戻します(確認つき)。直前の切り替えを戻す「取り消し」とは別です
 - 職歴カード(正社員のヒアリングで保存した `career_profile`)は、保存したものがあるときだけ「職歴カード」の枠に出します。
@@ -1754,11 +1754,11 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
 
 切り替えの表示:
 
-- 区分が切り替わったターンは、返信の前に「正社員の相談に切り替えました [アルバイトで探す]」のような表示を出します。元は dip の記録(`track_switch`)です
+- 区分が切り替わったターンは、返信の前に「正社員の相談に切り替えました [アルバイトで探す]」のような表示を出します。元は事業者の記録(`track_switch`)です
 - ボタンは `POST /api/talk/track/undo`(本文は `{"user_id": ..., "id": 切り替えの記録の id}`)です。根拠を「(トークの切り替えの表示のボタンで、本人が取り消した)」として取り消しを記録します。
   LLM もターンも使いません。後に別の切り替えがある、取り消し済み、記録ごと消したときは 409 です
-- 次の本人のターンの前に知らせを渡し、エージェントは dip の要約を読み直して、戻した区分で続けます
-- 再読み込みしても、表示の状態(取り消せる、取り消した)は dip の記録から描き直します
+- 次の本人のターンの前に知らせを渡し、エージェントは事業者の要約を読み直して、戻した区分で続けます
+- 再読み込みしても、表示の状態(取り消せる、取り消した)は事業者の記録から描き直します
 
 履歴書のアップロード(4.3 の画面の側):
 
@@ -1773,8 +1773,8 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
   「アドバイザーが話しています」の状態と、「面談を終える」があります
 - 相談が終わるとシートが閉じ、同じトークにエージェントの返信として「音声で話した内容のまとめ」、求人カード、「履歴書の下書きを見る」
   (正社員の相談なら「職務経歴書の下書きを見る」)が続きます。システム通知のラベルは出しません。会話に入るので、再読み込みしても残ります
-- まとめは、本人が話した希望(dip に保存したのと同じ項目。個人情報らしい値は捨てる)からコードで作ります(`voice_reply.py`、吹き出しは 80 字以内)
-- 次のトークの会話では、エージェントがそれを dip の要約から読んで、確認形で 1 回だけ触れます。聞き直しません
+- まとめは、本人が話した希望(事業者に保存したのと同じ項目。個人情報らしい値は捨てる)からコードで作ります(`voice_reply.py`、吹き出しは 80 字以内)
+- 次のトークの会話では、エージェントがそれを事業者の要約から読んで、確認形で 1 回だけ触れます。聞き直しません
 - 通話中に × を押すと確認を出します。結果が届く前に閉じたら、次の発言とアップロードの前に履歴を読み直して結果を描きます。
   閉じてから 2 分を過ぎたら読み直しをやめます。後で届いた結果は、開き直せば出ます
 - 「面談を終える」から 2 分たっても届かなければ、× で閉じてよいと案内します
@@ -1788,7 +1788,7 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
 - Docker の image には `docs/` のうち `docs/legal/` だけを入れます(`.dockerignore`)
 - 開ける所: トーク画面のヘッダーの下の 1 行(テスト用の公開で、求人は架空のデモだという文と、2 つのリンク)、LIFF 画面の下(`_page` の `legal_links`。
   殻、読み取り結果、下書き、応募フォーム、履歴書の読み込み、マイクの確認)、LINE の音声相談の画面の下、アーケードのハブの下。
-  どれも別のタブで開き、開いている画面を離れません。dip のログインと偽物の LINE の画面は aica ではない役なので置きません
+  どれも別のタブで開き、開いている画面を離れません。事業者のログインと偽物の LINE の画面は aica ではない役なので置きません
 - 版は `legal.TERMS_VERSION`、`legal.PRIVACY_VERSION`(今はどちらも 1.0)で、原文の「版」の行と同じです。同意の記録(個人情報の task 8/12)はこの値を残し、
   版が上がったら同意を取り直します
 - 応募フォームの続き(`/liff/apply`、`/liff/line/apply`)は体験の画面です。架空の求人であることと「本物の情報は入れないでください」を出し、
@@ -1796,7 +1796,7 @@ Claude Sonnet 5.5 に替えたら(jyoka/tasks#235)、初回訪問の挨拶にゲ
 
 開発者画面(`/dev`。評価と説明のため。3 列。合言葉などの制限は無い):
 
-- 左: シナリオを選ぶ(1 通目の出どころ、つまり挨拶(初回訪問、再訪)と dip のプッシュでまとめた一覧)、dip から見た状態
+- 左: シナリオを選ぶ(1 通目の出どころ、つまり挨拶(初回訪問、再訪)と事業者のプッシュでまとめた一覧)、事業者から見た状態
   (状況、応募、保存、「本人の希望」、「会話の結果」)、やり直す(このシナリオを最初から)
 - 中央: トーク。求人カードは Flex Message 風で、アルバイト・パートは時給と勤務時間、正社員は年収か月給の幅と働き方と休日、
   ほかに駅、おすすめの理由、「詳しく見る」「保存」を出します。LIFF のボタンを押すと応募フォームの LIFF 画面(モック)が開き、送信すると応募済みになります
@@ -1870,7 +1870,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 - ユーザーIDは `line_user(userId)` = `"l-" + HMAC-SHA256(AICA_ID_KEY, userId)` の先頭 16 桁です([ADR-0008](../adr/0008-keyed-line-user-id.md))。
   鍵は aica 専用の `AICA_ID_KEY`(32 バイト以上)で、鍵を知らなければ userId から `l-…` を作れません。チャネルシークレットは鍵に
   使いません(作り直すと全員の ID が変わるため)。LINE の設定があるのに鍵が無い、短いときは、`lifespan` の `check_id_key` で起動を
-  止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、dip の状態、費用台帳、ログには渡しません
+  止めます。鍵を変えると全員の ID が変わり、それまでのデータとつながりません。LINE の userId は宛先にだけ使い、会話、事業者の状態、費用台帳、ログには渡しません
 - 1 件ごとに返すメッセージは `_line_messages` が決めます。`account_link`、`link`、`unlink` は 4.12、`view_data`、`forget_data`、
   `forget_confirm`、`forget_cancel` は `_line_data`(下と 4.6)で、どれも LLM を使わず、ターン数も数えません
 - 使い始める同意(下の「同意」)がまだなら、友だち追加、テキスト、`link` には、ターンに流さず `_line_consent_ask` を返します
@@ -1879,7 +1879,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   - テキスト: イベント `message`、`thread` は None(stale の照合はしない)。`user_lock` の中で `rt.conversation` を読み、
     `talk_continues`(Web のトーク画面を開いたときと同じ関数と `TALK_RESUME_WINDOW`。4.2)が真なら今の会話に続けます。
     偽なら(最後のやりとりから 30 分を超えた、返信のある会話がまだ無い)、`turn.accept` に `new_conversation=True` を渡し、
-    本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に dip の要約を読むので、
+    本人の発言から新しい会話を始めます。入口は A で、挨拶は挟みません(理由は HLD の 4.8)。最初に事業者の要約を読むので、
     保存した希望と相談のまとめは新しい会話にも渡ります。プロフィールの変更の知らせ(`profile_notice`)は渡さず、返ったら渡し終えた扱いです。
     30 分を超えていても、発言が今の会話で最後に出した問いのボタンの答えなら(`turn.answers_last_question`。`line_channel.answer_buttons` の文と一致し、
     最後のやりとりから `turn.BUTTON_RESUME_WINDOW`(`purge.CONVERSATION_TTL`。30 日)以内)、今の会話に続けます(設計メモ conversation-layer.md §4.16)。
@@ -1920,7 +1920,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 - LINE には同意の画面が無いので、友だち追加の挨拶の代わりに、要点(`consent.line_text`。消し方の行は「データを消す」)と、規約とポリシーの
   URL(`AICA_PUBLIC_URL` + `/legal/terms`、`/legal/privacy`。公開 URL が無ければ URL を付けず、警告のログ)を 1 つのテキストで返し、
   クイックリプライ「同意して始める」を付けます(`consent_messages`)。postback のデータは `aica-consent=<版の tag>` で、押した文がトークに出ます
-- 同意の前のテキストと「アカウント連携」にも同じものを返します。発言はターンに流さず、会話にも dip の状態にも残しません。
+- 同意の前のテキストと「アカウント連携」にも同じものを返します。発言はターンに流さず、会話にも事業者の状態にも残しません。
   「同意して始める」と文で送っても同意になりません(postback だけ)。「データを見る」「データを消す」「連携解除」は同意の前もできます
 - 押されたら(`consent`)、postback の版が今の版なら `consents.terms` に記録し、`logic.await_greeting` で挨拶を待つ印
   (`greeting_due`)を付けてから、友だち追加と同じ挨拶のターン(`_line_turn(uid, "follow")`)を返します。版が違えば記録せず、
@@ -1931,7 +1931,7 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
   会話を切らないよう、今までどおり発言のターンにします
 - 「同意して始める」と同じ文のテキスト(前後の空白は除く)は、`_line_kind` が `consent` にします。会話に本人の発言として入れません。
   同意の前は同意の要点を示し直し、同意の後は postback と同じに扱います
-- もう同意している人の `consent`(前のボタンの押し直し、その文)には、挨拶のターンを返します(dip が決める初回訪問か再訪)。
+- もう同意している人の `consent`(前のボタンの押し直し、その文)には、挨拶のターンを返します(事業者が決める初回訪問か再訪)。
   ただし印が無く、今の会話が返った挨拶だけで続いているとき(`_just_greeted`。挨拶の直後の二度押し)は、何も返しません
 - LIFF 画面の履歴書と音声は、使う直前に同意を取ります。履歴書の画面は、同意がまだなら同意の文と「同意してファイルを選ぶ」を出し、
   ファイルを選ぶ欄を隠します。押すと `POST /api/liff/consent` で記録して欄を出します。音声相談の画面は `talk-core.js` の `ask` で、
@@ -1957,11 +1957,11 @@ LINE 公式アカウント(Messaging API)は 2 つ目のチャネルです(HLD �
 
 - 「データを見る」: `user_lock` の中で、プロフィール画面と同じ `_profile_view(l-…)` と、会話があるか(`current_thread` が 1 以上)を読み、
   `data_view_messages` でテキストにします。区分けは、雇用区分(切り替えの記録と根拠の発言つき)、目的、希望、経歴、相談のまとめ、
-  履歴書の読み取り結果(トークの確認と同じ要点)、音声相談の下書き、ゲームで作った下書き、保存した求人、応募した求人、dip の会員との連携、会話です。
+  履歴書の読み取り結果(トークの確認と同じ要点)、音声相談の下書き、ゲームで作った下書き、保存した求人、応募した求人、事業者の会員との連携、会話です。
   値の無い項目は出さず、無い区分けは「なし」です。1 つ 5,000 字(UTF-16 の単位で数える)まで、5 つまでのテキストに詰めます。
   収まらなければ、どの区分けも落とさずに、区分けごとの行の数を 20、10、5、3 と減らし、残りは「ほか N 件」と書きます(1 行も UTF-16 の単位で 200 まで。絵文字は割らずに切ります)。
   LINE の userId と `l-…` は出しません。
-  見るだけでは dip の状態にユーザーを作りません。この返事を、LINE の人の書き出し(開示)とします
+  見るだけでは事業者の状態にユーザーを作りません。この返事を、LINE の人の書き出し(開示)とします
 - 「データを消す」: 4.6 の終わり
 - 友だち解除(`unfollow`。ブロック): 受けても何もしません(`_line_kind` が None)。データは消さず、もう一度友だち追加すると再訪として
   前の続きから使えます。間違えて押すこともあるからです。使われなくなったユーザーは、期間で消す掃除(設計メモの 3.3。
@@ -1986,7 +1986,7 @@ LIFF 画面を LINE の本人で開く(`/liff/line/…`、task 203。流れは H
 - 中身は Web の画面と同じ関数(`_resume_page`、`_voice_draft_page`、`_apply_form_page`、`_apply_submit`)が作ります
 - リッチメニューから開く最初の画面(`_liff_voice_page`、`_liff_upload_page`)と、3 つの画面の同意の画面
   (`_liff_terms_page`、`_consent_html` の `.lf-btn`)と殻(`_liff_shell`)は、1 つの枠 `_liff_frame` と共通の CSS `LIFF_CSS` で出します
-  (task 241)。上に aica の名前の帯、下に `legal.footer_html`。`_page` の `site`(「(LIFF・dip の画面)」など)は出しません。
+  (task 241)。上に aica の名前の帯、下に `legal.footer_html`。`_page` の `site`(「(LIFF・事業者の画面)」など)は出しません。
   最初の画面は `_liff_intro` の、見出しと何ができるか(1 行)、箇条書き(3 点ほど)の下に、押すボタンを 1 つ置きます。
   ゲームの一覧は、同意の後は Web と同じピクセルアートのハブ(`resume-arcade.html`)です(ゲームの雰囲気を残すため。2026-10-26)。履歴書のファイルを選ぶ欄は、透明にした `<input type="file">` を大きな枠(`.lf-pick`)に重ね、
   選んだファイルの名前を出します。ボタンの緑は白い文字との対比のため濃い緑(`--lf-btn`)で、LINE の緑は飾りにだけ使います。
@@ -2059,7 +2059,7 @@ sequenceDiagram
     participant D as server.dip_login(/dip/login)
     participant A as dip_mcp.accounts.Accounts
     participant BH as dip_mcp.behavior と profile
-    participant T as dip のツール
+    participant T as 事業者のツール
 
     U->>L: 「アカウント連携」(LINK_TEXT)
     L->>W: POST /line/webhook(署名つき)
@@ -2091,7 +2091,7 @@ sequenceDiagram
     Note over T,A: 次のターンから behavior.dip_id(l-…)が会員の dip_id を返し、ツールはその会員の要約を読む
 ```
 
-**dip のログイン(`Accounts.login`)**
+**事業者のログイン(`Accounts.login`)**
 
 - パスワードは `pbkdf2_sha256$回数$塩$ハッシュ`(PBKDF2-SHA256、塩 16 バイト、20 万回)で持ちます。fixtures の会員のログインは
   `fixtures/dip_accounts.json` にあり、`data/dip_accounts.db` を初めて作るときに入れます
@@ -2142,7 +2142,7 @@ sequenceDiagram
 | ファイル | 書く者 | 読む者 | 形式 |
 |---|---|---|---|
 | `.env` | 人 | `line_runtime.config.load_env`、`voice_resume.config.load_env` | `KEY=VALUE`。今の環境変数を上書きしない |
-| `data/state.json`(`DIP_STATE_PATH`) | `State._write`(Web プロセス、dip の子プロセス、評価) | `State._read` | JSON(5.1) |
+| `data/state.json`(`DIP_STATE_PATH`) | `State._write`(Web プロセス、事業者の子プロセス、評価) | `State._read` | JSON(5.1) |
 | `data/state.lock` | `State._lock` | 同 | `fcntl.flock` の印 |
 | `data/line_checkpoints.db` | `AsyncSqliteSaver`、`LineRuntime._erase`、`erase_old_thread`、`vacuum` | LineRuntime | SQLite(5.2) |
 | `data/costs.jsonl` | `Ledger.record`(追記)、`Ledger.fold_old`(書き直し) | `python -m line_runtime.ledger` | JSON Lines(5.3) |
@@ -2155,22 +2155,22 @@ sequenceDiagram
 | `data/dip_events.db` | `scripts/gen_dip_events.py`、`EventStore.append`(追記だけ。`behavior.record`)、`behavior.stores`(最初の準備) | 要約のバッチ | SQLite(5.8)。場所は `State` と同じディレクトリ |
 | `data/dip_summaries.db` | 要約のバッチ(`SummaryStore.replace_all`) | `SummaryStore.get`(`behavior.view`) | SQLite(5.8)。場所は `State` と同じディレクトリ |
 | `data/dip_events.lock` | `behavior.stores` | 同 | `fcntl.flock` の印(最初の準備を 1 つのプロセスだけが行う) |
-| `data/dip_accounts.db` | `dip_mcp.accounts.Accounts`(Web プロセス、`State.reset` と `reset_user`) | `Accounts.dip_id`(`behavior.dip_id`。dip の子プロセスも) | SQLite(5.9)。場所は `State` と同じディレクトリ |
-| `fixtures/*.json` | 人、`scripts/gen_*.py` | dip、評価 | 5.7 |
+| `data/dip_accounts.db` | `dip_mcp.accounts.Accounts`(Web プロセス、`State.reset` と `reset_user`) | `Accounts.dip_id`(`behavior.dip_id`。事業者の子プロセスも) | SQLite(5.9)。場所は `State` と同じディレクトリ |
+| `fixtures/*.json` | 人、`scripts/gen_*.py` | 事業者、評価 | 5.7 |
 | `voice_resume/data/wage_reference.json` | `scripts/voice/update_wage_reference.py` | `wages.load_reference` | `WageReference` |
 
-`data/` の場所は `LINE_SIM_DATA_DIR` で変えられます(LineRuntime と `resume_intake`)。dip の状態は `DIP_STATE_PATH`、音声の出力は
+`data/` の場所は `LINE_SIM_DATA_DIR` で変えられます(LineRuntime と `resume_intake`)。事業者の状態は `DIP_STATE_PATH`、音声の出力は
 `VOICE_RESUME_OUT_DIR` で別に決まります。
 
-### 5.1 dip の状態(`data/state.json`)
+### 5.1 事業者の状態(`data/state.json`)
 
 `{"users": {ユーザーID: ユーザー}}` の 1 つの JSON です。ファイルが無ければ `fixtures/users.json`(`dip_id` を除く)を初期の状態にします。
-知らないユーザーは `_new_user`(新規)として読み、書くときに作ります。dip と連携しているかは連携の表(5.9)で決まり、ここには持ちません。
+知らないユーザーは `_new_user`(新規)として読み、書くときに作ります。事業者と連携しているかは連携の表(5.9)で決まり、ここには持ちません。
 
 | キー | 中身 | 書く関数 |
 |---|---|---|
 | `line_user_id`、`label` | ユーザーID、開発者画面の説明 | fixtures、`_new_user` |
-| `dip_writes` | 会話の側から dip に書いた行動のイベント `{seq, at, kind, job_id, data, dip_id}`(元データに追記したものと同じ。連携していない人は `seq` と `dip_id` が None。`dip_id` は書いたときの会員)。今の会員の分で要約に入ったものは次に書くときに落とす(5.8、4.12) | `behavior.record`(`save_job`、`resume_form`、`submit_application`、`push_trigger`、`profile.unsave_job`) |
+| `dip_writes` | 会話の側から事業者に書いた行動のイベント `{seq, at, kind, job_id, data, dip_id}`(元データに追記したものと同じ。連携していない人は `seq` と `dip_id` が None。`dip_id` は書いたときの会員)。今の会員の分で要約に入ったものは次に書くときに落とす(5.8、4.12) | `behavior.record`(`save_job`、`resume_form`、`submit_application`、`push_trigger`、`profile.unsave_job`) |
 | `outcomes` | `{at, outcome, reason, confidence, summary?}` | `record_outcome` |
 | `preferences` | `{項目: {value, at}}`(本人が話した希望。`PREFERENCE_KEYS` の 16 項目) | `save_preferences`、`profile.edit_item` |
 | `track_history` | `{id, at, from, track, evidence, undo}`(`id` は乱数) | `set_search_track` |
@@ -2263,7 +2263,7 @@ sequenceDiagram
 - IP ごとの匿名ユーザーIDの数(20): Cookie を作り直して匿名ユーザーIDごとの上限を迂回する道を閉じます。一度その IP から使われた
   匿名ユーザーIDは、その日は続けて使えます。新しい匿名ユーザーIDだけが数に空きを要ります
 - 全体のターン(1000): 本番のモデルで 1 ターン約 $0.05 なので、1 日約 $50 が天井です
-- 全体の匿名ユーザーIDの数(300): IP をいくつ持っていても、dip の状態にユーザーが増え続けないようにします。1000 ターンを 1 人 3 ターン強で
+- 全体の匿名ユーザーIDの数(300): IP をいくつ持っていても、事業者の状態にユーザーが増え続けないようにします。1000 ターンを 1 人 3 ターン強で
   分けられる人数を目安にしました。その日に一度使われた匿名ユーザーIDは続けて使え、その日に初めて使う匿名ユーザーIDだけが数に空きを要ります
 - 匿名ユーザーIDの数の上限は、会話のほか、シナリオの開始とプロフィールの書き換えにも効きます(`_admit`、超えると 429)
 - IPv6 は /64 を 1 つの IP として数えます。家庭の回線でも /64 以上をもらえるので、送信元のアドレスを替えて迂回できないようにするためです。
@@ -2272,7 +2272,7 @@ sequenceDiagram
   `AICA_TRUST_PROXY=1` にし(Render なら Environment に設定)、プロキシが付けた最後の値だけを使います。付けないと全員がプロキシの IP として数えられ、IP の上限ですぐ止まります
 - 上限を超えたら LLM を呼ばず、「本日のご利用回数の上限に達した、明日また使える」という案内を返します(返信に `limited: true`)。
   IP の上限は「この回線からの」、全体の上限は「本日はたくさんのご利用があり」と、どの上限か分かる文にします(`limit_reply`)
-- プッシュは、上限に空きが無ければ dip に聞く前に送らないと決めます。履歴書のアップロードと音声相談の開始は 429 です。空の発言は数える前に 400 で断ります
+- プッシュは、上限に空きが無ければ事業者に聞く前に送らないと決めます。履歴書のアップロードと音声相談の開始は 429 です。空の発言は数える前に 400 で断ります
 - 当日の数は `data/quota.json` にあるので、再起動しても消えません。IP の数は当日の分だけです
 - 対象は Web の API だけです。評価(`evals.run`)は `LineRuntime` を直接使うので、上限はかかりません
 
@@ -2288,11 +2288,11 @@ sequenceDiagram
 ### 5.4 音声相談の出力(`data/voice-resume/`)
 
 本番では書き出しません(既定)。書き出すのは、開発で `VOICE_RESUME_WRITE_FILES=1` にしたときだけです(`config.WRITE_FILES`)。
-理由: 同じ下書きは dip の状態の `voice_results` に入ります。文字起こしは下書きを作った後に使いません([privacy.md](../design/privacy.md) の 3.3)。
+理由: 同じ下書きは事業者の状態の `voice_results` に入ります。文字起こしは下書きを作った後に使いません([privacy.md](../design/privacy.md) の 3.3)。
 
 - 既定では、`outputs.write_outputs` は下書きの envelope、Markdown、求人の提案を作って返すだけです。置き場のディレクトリも作りません
-- 既定の結果の `files` は空です。トークへ送る `files` も、dip の状態の `voice_results` の `files` も空になります
-- 下書きの Markdown は、トークが受け取った結果として dip の状態に入ります(`logic.record_voice_result`)
+- 既定の結果の `files` は空です。トークへ送る `files` も、事業者の状態の `voice_results` の `files` も空になります
+- 下書きの Markdown は、トークが受け取った結果として事業者の状態に入ります(`logic.record_voice_result`)
 
 書き出すときは、相談ごとに日本時間の時刻(`YYYYmmdd-HHMMSS`)を付けて 4 つのファイルを書きます。
 
@@ -2303,12 +2303,12 @@ sequenceDiagram
 | `transcript-<時刻>.json` | 文字起こし `[{role, text}]` |
 | `job-proposal-<時刻>.json` | `preferences`(本人の希望)、`recommend_args`(最後の検索の条件)、`relaxed`(外した条件)、`search_attempts`(検索の経緯)、`proposed_job_ids`、`jobs` |
 
-書き出したときは、ファイルの絶対パスが結果の `files` に入り、dip の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
+書き出したときは、ファイルの絶対パスが結果の `files` に入り、事業者の状態の `voice_results` にも残ります。Web サーバーはそのパスで消します(R9)。
 
 ### 5.5 Resume Draft
 
 履歴書と職務経歴書の共通の形です。読み取り結果(`resume_intake`)と下書き(`voice_resume`)が同じ形を使います。
-この節が正で、形のコードは `resume_draft/schema.py` の 1 か所です(1.8)。読み取り、下書き、dip の保存(`save_resume_upload`)が
+この節が正で、形のコードは `resume_draft/schema.py` の 1 か所です(1.8)。読み取り、下書き、事業者の保存(`save_resume_upload`)が
 同じものを使います。形を変えるときは、この節と `resume_draft/schema.py` を直し、`tests/test_resume_draft.py` の固定値
 (`tests/fixtures/resume_draft_schema.json`)を作り直します。
 
@@ -2325,7 +2325,7 @@ sequenceDiagram
 - `created_at` はオフセット付きの ISO 8601 で、日本時間(`+09:00`)です
 - `self_pr` は `job_summary` の言い換えにしません。材料が無ければ空文字にして、確かめたい点を `unconfirmed` に挙げます
 - 文字列から電話、メール、郵便番号を `scrub_pii`(`resume_draft/pii.py` の 1 か所)で消します。全角の数字、長音記号やマイナスの
-  ハイフン、全角の `＠` と `．` は、`fold_pii` でそろえてから照合します。読み取りの直後と、dip に保存するときの 2 回かけます
+  ハイフン、全角の `＠` と `．` は、`fold_pii` でそろえてから照合します。読み取りの直後と、事業者に保存するときの 2 回かけます
 
 形(format_version 1.0):
 
@@ -2371,7 +2371,7 @@ sequenceDiagram
 - `source` は作ったところです。読み取り結果は `upload`(`resume_intake.extract.finalize`)、下書きは `voice-interview`(`voice_resume.drafter.finalize`)、
   ゲームで作った下書きは `arcade`(`resume_arcade.draft.to_envelope`。1.1 で `document_kind` を書く)です
 - 読み取り結果は 1.0 のまま出します。アップロードしたファイルがどちらの書類かは決めません
-- dip に保存した読み取り結果は、envelope に `id`、`uploaded_at`、`file`(「履歴書(PDF)」のような種類だけ)を足した形です(`save_resume_upload`)
+- 事業者に保存した読み取り結果は、envelope に `id`、`uploaded_at`、`file`(「履歴書(PDF)」のような種類だけ)を足した形です(`save_resume_upload`)
 
 format_version 1.1 は、envelope に任意の項目 `document_kind` を足しただけです。`resume` の中身は 1.0 と同じです。
 
@@ -2448,26 +2448,26 @@ format_version 1.1 は、envelope に任意の項目 `document_kind` を足し�
 | `listings.json` | 掲載の開始と終了の日付 |
 | `faq.json`、`job_faq.json` | 全体の FAQ と、求人ごとの Q&A |
 | `users.json` | 開発者画面と評価のシナリオユーザーの初期状態(5 人。中身は [line-sim-scenarios.md](../design/line-sim-scenarios.md) の 3 章)。`dip_id` と説明だけで、行動は `dip_events.json` にある。`dip_id` は連携の表の種(5.9) |
-| `dip_accounts.json` | dip の会員 4 人のログイン(ログインID とパスワードのハッシュ)。試すためのパスワードは README の「アカウント連携を試す」 |
-| `dip_events.json` | シナリオのユーザーのうち dip ID のある 4 人の、行動の元データ(会員とイベント。5.8) |
+| `dip_accounts.json` | 事業者の会員 4 人のログイン(ログインID とパスワードのハッシュ)。試すためのパスワードは README の「アカウント連携を試す」 |
+| `dip_events.json` | シナリオのユーザーのうち事業者 ID のある 4 人の、行動の元データ(会員とイベント。5.8) |
 
 求人は 103 件で、アルバイト・パートが 63 件(`jobs.json` 60 件、`anchor_jobs.json` 3 件)、正社員が 40 件(`fulltime_jobs.json`)です。
 `jobs.json` は `python -m scripts.gen_jobs` で作り直せます。`fulltime_jobs.json` は手書きです。求人を変えたら `python -m scripts.gen_job_vectors` を回します。
 
-### 5.8 dip の行動の元データと状況の要約
+### 5.8 事業者の行動の元データと状況の要約
 
 HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-log-and-member-summary.md) にあります。
 
 1. 生成器とシナリオのユーザー(`fixtures/dip_events.json`)が、行動の元データ(`data/dip_events.db`)に会員とイベントを書く(追記だけ)
 2. 要約のバッチ(`python -m dip_mcp.summarize`)が、元データから全員分の状況の要約を作り直し、`data/dip_summaries.db` を置き換える(1 人 1 行)
-3. dip のツールが要約を読む。会話の中で書いたことは元データに追記し、次のバッチまでは本人の分だけ要約に重ねて読む(`dip_mcp/behavior.py`、
+3. 事業者のツールが要約を読む。会話の中で書いたことは元データに追記し、次のバッチまでは本人の分だけ要約に重ねて読む(`dip_mcp/behavior.py`、
    [ADR-0006](../adr/0006-tools-read-summary-and-overlay-own-writes.md))
 
 **行動の元データ(`data/dip_events.db`、`dip_mcp/events.py`)**
 
 | 表 | 列 | 決まり |
 |---|---|---|
-| `members` | `dip_id`(主キー)、`registered_at` | dip の会員。LINE のユーザーIDは持たない(連携は dip の状態の `dip_id`。引くのは `behavior.dip_id`) |
+| `members` | `dip_id`(主キー)、`registered_at` | 事業者の会員。LINE のユーザーIDは持たない(連携は事業者の状態の `dip_id`。引くのは `behavior.dip_id`) |
 | `events` | `seq`(番号、増えるだけ)、`dip_id`、`at`、`kind`、`job_id`、`data`(JSON) | 追記だけ。UPDATE と DELETE はトリガーで止まる。`at` は日本時間の ISO 8601(秒まで) |
 
 | `kind` | 意味 | `job_id` | `data` |
@@ -2480,7 +2480,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 | `apply` | 応募 | あり | `status`(応募したときの選考の状態) |
 | `status` | 選考の状態の変化 | あり | `status` |
 | `inquiry` | 本人から求人への問い合わせ | あり | `topic` |
-| `contact` | dip から本人への接触(プッシュの記録) | なし | `channel`、`message` |
+| `contact` | 事業者から本人への接触(プッシュの記録) | なし | `channel`、`message` |
 
 **生成器(`python -m scripts.gen_dip_events`)**
 
@@ -2503,7 +2503,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 
 要約の 1 行(`summaries` の表。列は `dip_id`、`as_of`、`through_seq`、`summary`(JSON))の中身です。期間は `as_of` から暦日で数えます。
 
-| キー | 中身 | 今の dip のツールのどこに当たるか |
+| キー | 中身 | 今の事業者のツールのどこに当たるか |
 |---|---|---|
 | `as_of`、`through_seq` | どの時刻までの、何番までのイベントで作ったか | - |
 | `last_visit`、`visits_30d` | 直近の訪問の日時、30 日の訪問の回数 | (今のツールは使わない) |
@@ -2563,9 +2563,9 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 
 | 表 | 列 | 中身 |
 |---|---|---|
-| `logins` | `dip_id`(主キー)、`login_id`(一意)、`password_hash` | dip の会員のログイン |
+| `logins` | `dip_id`(主キー)、`login_id`(一意)、`password_hash` | 事業者の会員のログイン |
 | `login_failures` | `login_id`(主キー)、`failures`、`last_failed_at`、`locked_until` | ログインID ごとの、続けてまちがえた数とロック(会員にいない ID も) |
-| `nonces` | `nonce_hash`(主キー)、`dip_id`、`link_token_hash`、`expires_at`、`used_at` | dip が作った nonce。期限から 10 分過ぎたものは、次に作るときに消す |
+| `nonces` | `nonce_hash`(主キー)、`dip_id`、`link_token_hash`、`expires_at`、`used_at` | 事業者が作った nonce。期限から 10 分過ぎたものは、次に作るときに消す |
 | `link_tokens` | `link_token_hash`(主キー)、`user_id`、`expires_at` | bot が LINE からもらって本人に出した linkToken。期限の過ぎたものは次に覚えるときに消す |
 | `links` | `user_id`(主キー)、`dip_id`、`linked_at` | 連携の表。`user_id` は aica のユーザーID(`l-…`、`w-…`、シナリオユーザー)。LINE の userId は持たない |
 | `meta` | `key`、`value` | 種を入れたか(`seeded`) |
@@ -2575,16 +2575,16 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 ## 6. 並行と排他
 
 - **ユーザーの排他**: `LineRuntime._locks[user_id]`(`asyncio.Lock`)。1 人のターンは 1 つずつ進みます。Web サーバーは、会話を読む、
-  dip の状態を初期に戻す、取り消す、消すときも `user_lock` を取ります(進行中のターンと交差させない)。「すべて消す」は全員分を取ります
-- **dip の状態**: `State` は毎回ファイルを読み、`update` は `fcntl.flock`(`state.lock`)の中で読む、変える、書くを行います。書くときは
+  事業者の状態を初期に戻す、取り消す、消すときも `user_lock` を取ります(進行中のターンと交差させない)。「すべて消す」は全員分を取ります
+- **事業者の状態**: `State` は毎回ファイルを読み、`update` は `fcntl.flock`(`state.lock`)の中で読む、変える、書くを行います。書くときは
   プロセスごとの一時ファイルから置き換えます(`State._write`)。メモリには持ちません。読むだけの `user` もロックを取ります
 - **会話**: `AsyncSqliteSaver` の 1 つの接続です。`_erase` は saver の `lock` を取り、1 つのトランザクションで消します
 - **ターン数**: `DailyQuota._lock`(`threading.Lock`)の中で数えて書きます。ファイルは一時ファイルを使わずに書き直します(R18)
 - **費用台帳**: `Ledger._lock` の中で 1 行を追記します。期間で消す掃除の書き直し(`fold_old`)も同じロックの中です
 - **期間で消す掃除**: `app.state.purge_lock`(`asyncio.Lock`)で 1 つずつ走ります。会話は、そのユーザーの `user_lock` の中で消します。
   180 日を過ぎた人は、その人たちとシナリオユーザーの `user_lock` を名前の順にまとめて取ってから消します(「すべて消す」と同じ順なので、互いに待ち合っても止まりません)。
-  ロックを取った後と、dip の状態から外す読み書きの中で、もう一度期限を確かめます(対象を決めた後に使われた人を消さない)
-- **dip の行動の元データと要約**: 最初の準備(要約が無いときのシナリオの元データとバッチ)は `dip_events.lock` の `fcntl.flock` の中で 1 回だけ行います。
+  ロックを取った後と、事業者の状態から外す読み書きの中で、もう一度期限を確かめます(対象を決めた後に使われた人を消さない)
+- **事業者の行動の元データと要約**: 最初の準備(要約が無いときのシナリオの元データとバッチ)は `dip_events.lock` の `fcntl.flock` の中で 1 回だけ行います。
   要約は別の名前のファイルに作ってから置き換えるので、ロックを取らずに読む側は、準備が終わるまで要約が無いと見てロックを待ちます。
   追記は SQLite の 1 つのトランザクションです。`behavior.record` は元データに追記してから `State.update` で `dip_writes` に足します
   (準備は `state.lock` を取らず、`State.update` の中では `stores` を呼ばないので、2 つのロックは入れ子になりません)
@@ -2595,7 +2595,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 - **音声相談の待ち合わせ**: ユーザーごとの `asyncio.Condition`(`app.state.voice_ready`)。結果が届いたら `notify_all` します
 - **プロセスのメモリにあるもの**: `_locks`、`_threads`、`_running`、`voice_ready`、`unread_uploads`、`Ledger.rows`。Web プロセスは
   1 つだけの前提です(HLD 7 章、R12)
-- dip の状態の読み書きは同期の呼び出しで、Web サーバーの非同期の処理の中からも呼びます(R8)
+- 事業者の状態の読み書きは同期の呼び出しで、Web サーバーの非同期の処理の中からも呼びます(R8)
 
 ## 7. 外部の呼び出しと費用
 
@@ -2603,7 +2603,7 @@ HLD の 4.9 の中身です。決定は [ADR-0005](../adr/0005-separate-event-lo
 |---|---|---|---|---|
 | エージェント | `LineRuntime._turn` | Anthropic Messages `claude-sonnet-5-5`(既定)か OpenAI Responses `gpt-6-sol` | ターンごとに 1 回以上(ツールを呼ぶたび) | 費用台帳 |
 | 履歴書の読み取り | `resume_intake.extract._extract` | Anthropic Messages `claude-sonnet-5-5`(既定。`RESUME_INTAKE_MODEL`)か OpenAI Responses `gpt-6-sol`。テキストのある PDF はテキストだけ(4.3) | アップロードごとに 1 回 | 費用台帳 |
-| 意味検索の問い合わせ | `dip_mcp.embedding._api_embed`(dip の子プロセス) | OpenAI Embeddings `text-embedding-3-large`、1024 次元、1 回 5 秒で打ち切り、1 回だけ再試行 | `recommend_jobs` の keywords ごとに 1 回(同じ文はプロセスの中で 512 件まで覚える) | なし(R19) |
+| 意味検索の問い合わせ | `dip_mcp.embedding._api_embed`(事業者の子プロセス) | OpenAI Embeddings `text-embedding-3-large`、1024 次元、1 回 5 秒で打ち切り、1 回だけ再試行 | `recommend_jobs` の keywords ごとに 1 回(同じ文はプロセスの中で 512 件まで覚える) | なし(R19) |
 | 求人のベクトル | `scripts/gen_job_vectors.py` | 同上 | 人が回す | なし |
 | 音声の文字起こし | `voice_resume.stt.create_stt` | Deepgram `nova-3`(ストリーミング) | 相談の間ずっと | なし(R6) |
 | 音声アドバイザー | `voice_resume.agent.entrypoint`(`voice_llm.create_llm`) | Anthropic Messages(ストリーミング)`claude-sonnet-5-5`(既定。思考を切る)か OpenAI Chat Completions `gpt-6-sol`(`reasoning_effort=none`) | 本人の発話ごと | なし(R6) |
@@ -2741,22 +2741,22 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 | 画面との接続が切れた | ターンは最後まで進めて会話を保存する | `LineRuntime.handle_stream`、`_running` |
 | 別のタブで会話が替わった | LLM を呼ばず stale。使ったターンは返す | `turn.stale_thread`、`LineRuntime._turn`、`DailyQuota.refund` |
 | ターン数の上限 | LLM を呼ばずに案内の返信(`limit_reply`)か 429 | `DailyQuota.try_take` |
-| プッシュを送れない | `sent: false` と理由。上限なら dip に聞く前に止める | `push_trigger`、`turn.run` |
+| プッシュを送れない | `sent: false` と理由。上限なら事業者に聞く前に止める | `push_trigger`、`turn.run` |
 | 意味検索が使えない(キーが無い、失敗、時間切れ) | 部分一致に戻る。失敗は覚えない | `embedding.embed_query`、`logic._keyword_filter` |
 | 求人のベクトルが古い | その求人は部分一致だけで探す | `embedding.similarities` |
 | エージェントが一覧に無い値を渡した | `error` と使える値を返し、指定し直させる | `logic._job_type_error` など |
 | 構造化出力が無い | 「(返信を生成できませんでした)」 | `runtime.render` |
-| モデルが dip の返していない求人を指した | カードにせず `unknown_job_ids` に出す | `runtime.render` |
-| 履歴書を読み取れない(API の失敗) | 502。dip に何も書かない | `server.resume_upload` |
+| モデルが事業者の返していない求人を指した | カードにせず `unknown_job_ids` に出す | `runtime.render` |
+| 履歴書を読み取れない(API の失敗) | 502。事業者に何も書かない | `server.resume_upload` |
 | 履歴書から何も読めない | 前の読み取り結果を残し、読めなかった前提で 1 問 | `server.resume_upload`、`event_input` |
 | 消す途中で失敗 | 会話は 1 つのトランザクション。もう一度押せばやり直せる順で消す | `LineRuntime._erase`、`profile_forget`、`profile_resume_delete` |
-| dip の MCP に繋がらない(音声) | 相談は始まる。`propose_jobs` は「提案できない」と LLM に伝え、会話を締めさせる | `voice_resume.agent.entrypoint`、`ResumeAdvisor.propose_jobs` |
-| dip の要約か playbook が読めない(音声) | 確認なし、`FALLBACK_PLAYBOOK` で始める | `prepare_advisor`、`advisor_instructions` |
+| 事業者の MCP に繋がらない(音声) | 相談は始まる。`propose_jobs` は「提案できない」と LLM に伝え、会話を締めさせる | `voice_resume.agent.entrypoint`、`ResumeAdvisor.propose_jobs` |
+| 事業者の要約か playbook が読めない(音声) | 確認なし、`FALLBACK_PLAYBOOK` で始める | `prepare_advisor`、`advisor_instructions` |
 | 求人の検索の失敗(音声) | 警告のログを出し、LLM に伝えて会話を締めさせる | `ResumeAdvisor.propose_jobs` |
 | 保存、記録、調べものの失敗(音声) | 警告のログを出し、LLM に伝えて会話を続ける | `ResumeAdvisor` の各ツール |
 | 下書きの保存の失敗 | 決まった文で LLM に謝らせる(例外の文は LLM にも渡さない)。トークへは送らない | `finalize_interview` |
-| 結果をトークに届けられない(410) | dip に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
-| 結果をトークに届けられない(ほか) | 警告のログだけ。会話の段階の結果は記録する(「すべて消す」の前の部屋なら dip が断る)。下書きは開発で書き出したときだけファイルに残る(R20) | 同上 |
+| 結果をトークに届けられない(410) | 事業者に記録せず、書いたファイルを消す | `ResumeAdvisor._deliver_to_talk` |
+| 結果をトークに届けられない(ほか) | 警告のログだけ。会話の段階の結果は記録する(「すべて消す」の前の部屋なら事業者が断る)。下書きは開発で書き出したときだけファイルに残る(R20) | 同上 |
 | 画面へのデータチャネルの失敗 | 無視して音声を続ける | `ResumeAdvisor._publish` |
 | LINE の署名が無い、違う | 400。エージェントを動かさず、何も書かない | `server.line_webhook` |
 | LINE の同じイベントが再送された | 200 を返して捨てる | `line_channel.SeenEvents` |
@@ -2785,9 +2785,9 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
 
 ## 9. 守る約束(テストで確かめているもの)
 
-1. 求人カードは dip のツールが返した求人だけです(`tests/test_render.py`、`tests/test_handle.py::test_recommended_jobs_come_back_as_cards`)。
-   音声の結果も dip の求人データで作り直します(`tests/test_voice.py::test_record_voice_result_rebuilds_cards_from_dip_jobs_only`)
-2. dip のツールの `line_user_id` は会話のユーザーに固定されます(`tests/test_isolation.py::test_dip_tools_are_pinned_to_the_conversation_user`)
+1. 求人カードは事業者のツールが返した求人だけです(`tests/test_render.py`、`tests/test_handle.py::test_recommended_jobs_come_back_as_cards`)。
+   音声の結果も事業者の求人データで作り直します(`tests/test_voice.py::test_record_voice_result_rebuilds_cards_from_dip_jobs_only`)
+2. 事業者のツールの `line_user_id` は会話のユーザーに固定されます(`tests/test_isolation.py::test_dip_tools_are_pinned_to_the_conversation_user`)
 3. ブラウザの口は正しい Cookie が要り、他人のユーザーIDでは読めず話せません(`tests/test_isolation.py`、`tests/test_multiuser.py`、
    `tests/test_profile_page.py::test_another_users_profile_can_be_neither_read_nor_changed`)。本人のデータの URL にユーザーIDは載りません
    (`test_links_to_a_users_data_carry_no_user_id`)
@@ -2810,7 +2810,7 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
    トークの発言(Web、LINE、`handle` を直に呼ぶとき)の電話、メール、住所らしい所は、LLM に送る前と会話を保存する前に伏せ、
    ふつうの条件の言い方と求人カードのボタンの文は伏せず、伏せても求人の検索は続きます(`tests/test_redact_before_send.py`)。
    住所らしい所は住む言葉と同じ文のときだけ伏せ、電話とメールはいつも伏せます(`::test_addresses_are_redacted_only_with_words_about_where_the_user_lives`)。
-   system prompt にユーザーIDは無く、ツールは `me` のまま本人の分に届き、dip のツールの結果にもユーザーIDは入りません
+   system prompt にユーザーIDは無く、ツールは `me` のまま本人の分に届き、事業者のツールの結果にもユーザーIDは入りません
    (`::test_system_prompt_has_no_user_id_and_tools_still_reach_this_user`、`::test_dip_tools_do_not_return_the_user_id`)。
    音声相談の調べものの問いに電話、メールか、住む言葉が無くても番地まである住所の形があれば調べず、番地の無い地名は調べます
    (`tests/voice/test_advisor.py::test_research_with_personal_values_is_refused_without_searching`、
@@ -2827,20 +2827,20 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
    (`tests/test_resume_upload.py::test_upload_of_text_pdf_sends_only_its_text`、
    `tests/test_resume_intake.py::test_pdf_without_usable_text_is_sent_as_file`、`::test_pdf_too_large_to_parse_is_sent_as_file`、
    `::test_crafted_pdf_is_rejected_cheaply`)
-10. 音声の写し(職種、エリア、雇用区分、希望の項目)は dip と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
-11. 会話の決まりの値は playbook、dip の Prompt、評価の形式の判定で同じです
+10. 音声の写し(職種、エリア、雇用区分、希望の項目)は事業者と同じです(`tests/voice/test_jobs.py` の `*_match_line_sim`)
+11. 会話の決まりの値は playbook、事業者の Prompt、評価の形式の判定で同じです
     (`tests/test_playbook.py::test_conversation_rules_match_between_playbooks_prompt_and_eval_format_checks`)
 12. 求人のベクトルは求人のデータと合っています(`tests/test_embedding.py::test_job_vectors_file_is_in_sync_with_the_job_data`)
 13. 「すべて消す」と履歴書を消すことは、途中で失敗しても、もう一度押せばやり直せ、古いリンクが新しい結果を開きません
     (`tests/test_profile_page.py` の `test_forget_all_*`、`test_a_close_that_fails_midway_*`、`test_forget_all_keeps_the_link_numbers_*`)
-14. 雇用区分の切り替えの表示は dip の記録から作り、返信の文からは推測しません
+14. 雇用区分の切り替えの表示は事業者の記録から作り、返信の文からは推測しません
     (`tests/test_track_switch.py::test_the_switch_comes_from_the_dip_record_not_from_the_reply_text`)
 15. 予算台帳が $4 に達したら評価は次のシナリオを始めず、止めても払った分を載せます(`tests/test_eval_harness.py`)
 16. 音声の検索のために外した条件と推測した職種は、本人の希望として保存しません
     (`tests/voice/test_advisor.py::test_relaxed_or_guessed_search_conditions_are_not_saved_as_wishes`)
 17. `POST /api/event` と `POST /api/event/stream` は、同じ入力に同じ判定(許可、プッシュの見送り、stale、ターン数の上限、400)を返し、
     違うのは書き出しの形と例外の扱いだけです(`tests/test_event_turn.py`)
-18. 本番のユーザーの dip の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
+18. 本番のユーザーの事業者の記録と期間の判定は実際の時刻で、シナリオユーザーと評価のユーザーは `SIM_NOW` です(`tests/test_clock.py`)
 19. LINE の webhook は、署名が合うときだけエージェントを動かし、同じイベントに 2 回答えず、返信は 1 回だけ届きます。LINE のユーザーは
     実際の時刻を使い、匿名ユーザーIDとシナリオユーザーと重ならず、LINE の userId はどのファイルにも残りません。設定が無ければ 404 です
     (`tests/test_line_webhook.py`)。LINE のテキストは、最後のやりとりから 29 分なら同じ会話、31 分なら新しい会話で、新しい会話にも
@@ -2853,13 +2853,13 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     (`::test_generator_makes_the_same_data_from_the_same_seed`)。バッチの後に足したイベントは次のバッチまで要約に入りません
     (`::test_events_added_after_a_batch_wait_for_the_next_batch`)。要約の 1 行は上限の字数を超えません
     (`::test_summary_stays_under_the_length_cap_for_a_heavy_member`)
-21. dip のツールは行動の元データを読みません。元データを読む関数を、呼ばれたら落ちるものに差し替えても、どのツールも動きます
+21. 事業者のツールは行動の元データを読みません。元データを読む関数を、呼ばれたら落ちるものに差し替えても、どのツールも動きます
     (`tests/test_dip_summary_read.py::test_tools_never_read_the_raw_events`)。シナリオの 5 人で、行動を読むツールの結果は
     task 180 の時点(`tests/fixtures/dip_tools_main.json`)と同じで、違うのは `as_of` だけです(`::test_tools_return_the_same_as_main_except_as_of`)。
     保存した直後の会話で保存が読め、要約の行は次のバッチまで変わりません
     (`::test_a_saved_job_is_there_right_after_saving_while_the_summary_waits_for_the_batch`)
 
-22. アカウント連携は、偽物の LINE で linkToken から accountLink の webhook まで通り、その後の dip のツールがその会員の要約を読みます
+22. アカウント連携は、偽物の LINE で linkToken から accountLink の webhook まで通り、その後の事業者のツールがその会員の要約を読みます
     (`tests/test_account_link.py::test_line_user_links_end_to_end_and_tools_then_read_the_members_summary`)。nonce の使い回し、期限切れ、
     `link.result` が failed、署名の無い webhook、別の linkToken との組み合わせは連携しません。ログインの失敗には上限があり、
     解除すると未連携の扱いに戻ります。シナリオのユーザーは最初から連携済みです(`tests/test_account_link.py`)
@@ -2879,7 +2879,7 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     `getUserMedia` が無いときを動かし、結果とエラーの名前が画面に出て、サーバーには結果の 1 回だけを送ります
     (`tests/test_liff.py::test_the_mic_check_page_in_a_browser`)。ログの受け口は決まった項目の外(声、文字起こし、ユーザーID)を 422 で断り、
     ログには結果の 1 行だけが残ります(`::test_the_mic_check_log_keeps_one_result_line_and_nothing_else`)
-26. 音声相談の途中で「すべて消す」をしたら、その通話のその後の雇用区分と希望は dip が断り、状態に残りません。会話は続きます
+26. 音声相談の途中で「すべて消す」をしたら、その通話のその後の雇用区分と希望は事業者が断り、状態に残りません。会話は続きます
     (`tests/test_voice_track.py::test_writes_after_forget_all_in_the_same_call_are_refused`)。会話の段階の結果も断り、部屋を付けない
     トークの書き込みと、消した後に始めた部屋の書き込みは通ります(`::test_dip_refuses_every_write_of_a_forgotten_room`)。
     「すべて消す」が行を戻した直後に届いた書き込みも断ります(`::test_a_write_that_lands_while_forget_all_is_running_is_refused`)。
@@ -2898,7 +2898,7 @@ Deepgram の改善プログラムから外れる(`mip_opt_out=true`)と割引が
     動かしても、ログにその値は出ず、例外の型名だけが出ます。下書きの失敗のツールの結果にも例外の文は入りません。本番の音声ワーカー
     (`start`)と Web プロセスでは、SDK のロガーと、後から登録した livekit-agents のプラグインのロガーが INFO を出しません
     (`tests/test_log_privacy.py`)
-28. 音声相談は、既定では文字起こし、下書き、求人の提案をファイルに書き出さず、下書きは dip の状態に入ってトークに届きます
+28. 音声相談は、既定では文字起こし、下書き、求人の提案をファイルに書き出さず、下書きは事業者の状態に入ってトークに届きます
     (`tests/voice/test_outputs.py::test_by_default_nothing_is_written_but_the_draft_is_returned`、`tests/test_voice_track.py` の `_draft`)。
     書き出すのは `VOICE_RESUME_WRITE_FILES=1` のときだけです(`tests/voice/test_outputs.py::test_writing_files_is_off_unless_the_setting_is_1`)
 
@@ -2941,11 +2941,11 @@ python3 -m unittest discover -s evalkit  # evalkit
 
 - LLM は偽物にします。決められた順にツールを呼んで返事をする台本のモデル(`tests/test_handle.py` など)、呼ばれた回数を数えるモデル
   (`tests/test_quota.py`)、`responses.parse` を持つスタブ(履歴書の読み取り、下書き)です
-- dip の MCP サーバーは本物を stdio で起動します。dip の状態は `DIP_STATE_PATH` で一時ファイルにします
+- 事業者の MCP サーバーは本物を stdio で起動します。事業者の状態は `DIP_STATE_PATH` で一時ファイルにします
 - Web サーバーは FastAPI の `TestClient` で、`lifespan` ごと動かします。時刻は `server.clock` を、日付は `DailyQuota` の `clock` を差し替えます
 - `browser` fixture を使うテストは、Playwright の Chromium で画面を押します。この fixture(`tests/test_talk_actions.py`)は
   `pytest.importorskip` で、playwright が入っていなければ飛ばします
-- 音声は、台本(文字起こし)からアドバイザーのツールを呼びます。dip は本物の MCP、トークは本物の HTTP サーバーで、区分の切り替えは
+- 音声は、台本(文字起こし)からアドバイザーのツールを呼びます。事業者は本物の MCP、トークは本物の HTTP サーバーで、区分の切り替えは
   LiveKit の `AgentSession` の中でも確かめます(`tests/test_voice_track.py`)。LiveKit Cloud、STT、TTS は使いません
 - LINE の API は `server.line_api` を差し替え、`httpx.MockTransport` の偽物の LINE API で受けます(`tests/test_line_webhook.py` の `FakeLine`)
 - 意味検索は `embedding._api_embed` を差し替えるか、`fixtures/search_query_vectors.json` の保存済みのベクトルを使います
@@ -3011,6 +3011,6 @@ python3 evalkit/aggregate.py diff evals/results/sim-A.json evals/results/sim-B.j
 ./.venv/bin/python scripts/voice/live_room_smoke.py     # ワーカーを起動してから。LiveKit の部屋の実経路
 ```
 
-- `e2e_audio_session.py` は本人役の発話を `gpt-4o-mini-tts` で合成し、Deepgram、アドバイザー(既定は claude-sonnet-5-5 + dip の MCP)、Cartesia を
+- `e2e_audio_session.py` は本人役の発話を `gpt-4o-mini-tts` で合成し、Deepgram、アドバイザー(既定は claude-sonnet-5-5 + 事業者の MCP)、Cartesia を
   本番と同じ部品で通します。LiveKit の転送とターンの判定は通らないので、ブラウザで確かめます
 - 成果物(文字起こし、下書き、求人の提案、費用)は `voice_resume/results/` に残ります

@@ -40,9 +40,9 @@
 ./.venv/bin/python -m evals.scenes --log evidence/scenes          # 結果の JSON(results.json)と点(score.md)も書く
 ```
 
-実 API は呼びません(費用 0。全部で 10 秒ほど。talk は dip の MCP の子プロセスを 1 つ起こす)。
+実 API は呼びません(費用 0。全部で 10 秒ほど。talk は事業者の MCP の子プロセスを 1 つ起こす)。
 
-- career と baito は、dip の相談のツール(`session.start`、`session.turn`)を、ランタイムと同じ呼び直しで回します。
+- career と baito は、事業者の相談のツール(`session.start`、`session.turn`)を、ランタイムと同じ呼び直しで回します。
   モデルの代わりは台本の LLM です。読む段は `reading` をその版の形に写して返し(c2 は act の並びで読むので、写さずにそのまま)、
   言う段は「相づち + 問いの文」を返します。c2 では、場面の前の会話(`history`)を層の覚え(直前のやりとり)にも入れ、
   計画が相づちなし(逆質問)なら相づちを付けません。「[スタンプ]」は、c1 では返事なし(今の LINE の入口が捨てる)、
