@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" role="img" aria-label="aica のバナー。左に 1 文。右に、本人の話からエージェントが聞き、dip のツールが事実を返し、条件の整理から求人の候補と書類の下書きまで進む流れ">
+  <rect width="1280" height="400" fill="#F4F7F5"/>
+  <text x="64" y="104" font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="56" font-weight="800" fill="#0B7A3C">aica</text>
+  <g font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="36" font-weight="700" fill="#14241B">
+    <text x="64" y="186">話すと、条件を整理して、求人の候補と</text>
+    <text x="64" y="236">書類の下書きまで進められる、</text>
+    <text x="64" y="286">仕事探しの AI エージェント。</text>
+  </g>
+  <text x="64" y="340" font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="22" fill="#44544B">テスト用の公開。求人はすべて架空のデモです。</text>
+  <g font-family="system-ui, -apple-system, 'Hiragino Sans', sans-serif" font-size="24" font-weight="600">
+    <rect x="760" y="44" width="456" height="58" rx="10" fill="#FFFFFF" stroke="#BFD0C5" stroke-width="2"/>
+    <text x="988" y="82" text-anchor="middle" fill="#14241B">本人: トーク、音声、履歴書、ゲーム</text>
+    <rect x="760" y="116" width="456" height="58" rx="10" fill="#FFFFFF" stroke="#BFD0C5" stroke-width="2"/>
+    <text x="988" y="154" text-anchor="middle" fill="#14241B">エージェント: 聞く、言い方を考える</text>
+    <rect x="760" y="188" width="456" height="58" rx="10" fill="#0B7A3C"/>
+    <text x="988" y="226" text-anchor="middle" fill="#FFFFFF">dip のツール: 事実だけを返す</text>
+    <rect x="760" y="260" width="456" height="58" rx="10" fill="#FFFFFF" stroke="#BFD0C5" stroke-width="2"/>
+    <text x="988" y="298" text-anchor="middle" fill="#14241B">プロフィール: 見て、直して、消せる</text>
+    <rect x="760" y="332" width="456" height="44" rx="10" fill="#DDEEE3"/>
+    <text x="988" y="362" text-anchor="middle" font-size="22" fill="#14241B">条件 + 書類の下書き + 求人の候補</text>
+  </g>
+</svg>

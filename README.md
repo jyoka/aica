@@ -1,56 +1,82 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banner-dark.svg">
+  <img alt="aica のバナー。左に 1 文「話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。」。右に、本人、エージェント、dip のツール、プロフィール、手元に残るものの 5 つの層が縦に並び、dip のツールの層だけ色が違う" src="assets/brand/banner-light.svg">
+</picture>
+
 # aica
 
-**求職者と話して、アルバイト・パートから正社員まで、その人に合う仕事探しを相談と提案で支える AI エージェント。**
+**話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。**
 
-- LINE 公式アカウントの AI アシスタント(バイトル)を手元で再現する検証環境(旧称 line-sim)から始まりました
-- LINE 側(会話の頭脳)と dip 側(求人とユーザー理解)に分け、**エージェントは dip のツール(MCP)を通してだけ dip の事実を得る**という境界を守っています。
-  Web サーバーは dip の関数を直接呼びます([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-dip-tools.md))
-- 確かめたいのは「dip が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です
-- 求人、店舗、ユーザー、FAQ はすべて架空のデータです。社内資料の数値は含めていません
+アルバイト・パートから正社員まで、本人の話から希望と経歴をつかみ、次に何をすればよいかを提案します。
 
-旧リポジトリ `jyoka/aica_ra_a2a_poc`(main、コミット `cda42fd`)から、履歴なしで移植しました。旧リポジトリの評価結果、
-作業ログ、アーカイブは持ってきていません。履歴書の読み取り(`resume_intake/`)は task 63、音声相談(`voice_resume/`)は task 62 で移しました。
+> **テスト用の公開です。** 求人、店舗、FAQ、開発用のユーザーは架空のデータで、応募しても実際の応募になりません。社内資料の数値は含めていません。使う人が話した内容の扱いは[プライバシーポリシー](docs/legal/privacy-policy.md)にあります。
+
+エージェントは業務の知識を持たず、dip のツール(MCP)を通してだけ dip の事実を得ます。
+確かめたいのは「dip が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です。
+経緯は [docs/brand.md](docs/brand.md#6-経緯) にあります。
 
 ## しくみ
 
 ```mermaid
 flowchart LR
-    seeker(["求職者<br/>ブラウザ"])
-    lineu(["求職者<br/>LINE アプリ"])
-    lineapi[("LINE プラットフォーム")]
-    web["Web プロセス(line_runtime)<br/>Web サーバー + エージェント"]
-    dip["dip の MCP サーバー(dip_mcp)<br/>dip のツール、dip の Prompt、playbook"]
-    lk[("LiveKit Cloud")]
-    worker["音声ワーカー(voice_resume)<br/>音声アドバイザー"]
-    data[("data/<br/>dip の状態、会話")]
-    llm[("OpenAI / Anthropic")]
-
-    seeker -- "トーク、履歴書" --> web
-    lineu -- "トーク" --> lineapi -- "webhook" --> web
-    web -- "MCP" --> dip
-    web --> llm
-    seeker -- "音声" --> lk --> worker
-    worker -- "MCP" --> dip
-    worker -- "結果" --> web
-    dip --> data
+    you(["求職者<br/>Web / LINE"]) -- "1 トーク、履歴書" --> web["Web プロセス<br/>エージェント"]
+    you -- "1 音声" --> lk[("LiveKit Cloud")] --> worker["音声ワーカー<br/>音声アドバイザー"]
+    web -- "2 MCP で聞く" --> dip["dip のツール<br/>LLM を使わない"]
+    worker -- "2 MCP で聞く" --> dip
+    dip -- "3 事実だけ返す" --> web
+    dip -- "3 事実だけ返す" --> worker
+    web -- "4 言い方を考える" --> llm[("Anthropic<br/>設定で OpenAI")]
+    worker -- "4 言い方を考える" --> llm
+    web -- "5 質問、求人カード" --> you
+    worker -- "5 まとめ、求人" --> web
+    dip --> data[("data/<br/>プロフィール、会話")]
     web --> data
 ```
 
-- エージェントは業務の知識を持ちません。LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します
-- dip のツールは LLM を使わず、事実だけを返します。求人カードは、dip が返した求人だけをコードで描きます
+- エージェントは、LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-dip-tools.md))
+- dip のツールは LLM を使いません。求人カードは、dip が返した求人だけをコードで描きます
 - 音声相談もトークと同じ雇用区分、playbook、プロフィールを使い、結果はトークに戻ります
 
 部品とデータの流れは [HLD](docs/architecture/hld.md) にあります。
 
 ## 特長
 
-- 求職者と話すチャネルは 2 つ: Web のトーク画面(LINE 風の画面)と LINE 公式アカウント。LINE は設定したときだけ開きます([LINE で試す](docs/usage.md#line-で試す))
-- アルバイト・パートの相談と、正社員のヒアリングのハーネスを持ちます
-- 履歴書の読み込み、音声相談、レジュメ・アーケード(遊びながら職務経歴書を作るゲーム)から、プロフィールを育てます
-- LINE では、LIFF 画面、リッチメニュー、アカウント連携(dip の会員と結ぶ)が使えます
-- 開発者画面で、シナリオごとに dip から見た状態と、ターンごとの処理の流れを見られます
-- 模擬ユーザーとジャッジで会話を採点する評価と、モックの LLM で回す回帰を持ちます
-- 1 日のターン数の上限と費用台帳で、費用を抑えます
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md"><img width="360" alt="LINE 風のトーク。職歴を聞く問いの下に、条件が入ったことを示すプロフィールのカードが出ている" src="assets/media/talk-profile.png"></a><br>
+      <b>トーク</b><br>
+      Web と LINE で話す。答えるとプロフィールが育つ。
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/architecture/hld.md"><img width="360" alt="トークに架空の求人カードが並ぶ。時給、時間、最寄り駅と、おすすめの理由が書かれている" src="assets/media/job-cards.png"></a><br>
+      <b>求人カード</b><br>
+      dip が返した求人だけを、コードで描く。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/usage.md"><img width="360" alt="音声で相談する画面。5 分ほどの会話で、まとめと求人がトークに届くと説明している" src="assets/media/voice.png"></a><br>
+      <b>音声相談</b><br>
+      5 分ほど話すと、まとめと求人がトークに届く。
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/prd/resume-arcade.md"><img width="360" alt="レジュメ・アーケードの画面。探偵と農場の 2 本のゲームで職務経歴書を作れると説明している" src="assets/media/arcade.png"></a><br>
+      <b>レジュメ・アーケード</b><br>
+      ゲームで答えると、本人が話したことだけから書類の下書きができる。
+    </td>
+  </tr>
+</table>
+
+写っている求人と人は、どれも架空です。
+
+- **相談のハーネス**: アルバイト・パートと正社員で、聞くことと終わりをコードが決め、モデルは読み取りと言い方を受け持ちます
+- **履歴書の読み取り**: ファイルから経歴を読み、一から書かずに相談を続けます
+- **LINE**: LIFF 画面、リッチメニュー、アカウント連携(dip の会員と結ぶ)が使えます。LINE は設定したときだけ開きます([LINE で試す](docs/usage.md#line-で試す))
+- **プロフィール**: 本人が見て、直して、消せます
+- **開発者画面**: シナリオごとに、dip から見た状態と、ターンごとの処理の流れを見られます
+- **評価**: 模擬ユーザーとジャッジで会話を採点し、モックの LLM で回帰を回します
+- **費用の上限**: 1 日のターン数の上限と費用台帳で、費用を抑えます
 
 ## はじめる
 
@@ -108,6 +134,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | 機能ごとの設計メモ(シナリオごとの会話設計、個人情報など) | [docs/design/](docs/design/) |
 | 利用規約とプライバシーポリシー | [docs/legal/](docs/legal/README.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](docs/research/apply-flow.md) |
+| 1 文、機能の文、バナー、経緯 | [docs/brand.md](docs/brand.md) |
 | 業務の語の定義 | [CONTEXT.md](CONTEXT.md) |
 | 評価の結果の集計と比較 | [evalkit/README.md](evalkit/README.md) |
 
