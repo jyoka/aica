@@ -39,6 +39,57 @@ flowchart LR
 
 部品とデータの流れは [HLD](docs/architecture/hld.md) にあります。
 
+### LangGraph の構成
+
+トークの AI は、LangChain の `create_agent` で作った LangGraph のグラフです(`line_runtime/agent.py` の `build_agent`)。
+エージェントは 1 つで、`model` と `tools` の 2 つのノードを回します。
+
+```mermaid
+flowchart TD
+    input(["本人の発言、挨拶、アップロード"]) --> rt["LineRuntime<br/>このターンの受け持ちを決める"]
+    rt -- "1 相談の途中" --> harness["相談のハーネス<br/>次に聞くことはコードが決める"]
+    rt -- "2 危ない言葉" --> fixed["決まった文<br/>LLM を呼ばない"]
+    rt -- "3 それ以外" --> model
+    subgraph lg["LangGraph のグラフ"]
+        model["model ノード<br/>LLM とミドルウェア 3 つ"] -- "ツールの呼び出し" --> tools["tools ノード<br/>PinUserMiddleware"]
+        tools -- "結果" --> model
+    end
+    tools -- "MCP" --> dip["dip のツール"]
+    harness -- "MCP" --> dip
+    model -- "LineReply" --> reply(["返信"])
+    harness --> reply
+    fixed --> reply
+    model --> saver[("チェックポイント<br/>data/line_checkpoints.db")]
+    harness --> saver
+    fixed --> saver
+```
+
+| 部品 | 中身 |
+|---|---|
+| state | `LineState`。`messages` に、`entry`、`line_user_id`、`channel`、`channel_features`、`greeting_entries` を足す |
+| チェックポイント | `AsyncSqliteSaver`。会話は `thread_id` = `<ユーザーID>:<番号>` |
+| ツール | `MultiServerMCPClient` と `load_mcp_tools` で dip のツールを読む。キャッシュのため名前の順に固定する |
+| 返信の形 | `ProviderStrategy(LineReply)` の構造化出力 |
+| 途中経過 | `astream(stream_mode="updates")`。モデルの呼び出しを費用台帳に記録し、ツールの進み具合を画面に送る |
+
+ミドルウェアは、外側から次の順です。
+
+| ミドルウェア | すること |
+|---|---|
+| `ScenarioMiddleware` | 入口と窓口から指示を組み立てる。ユーザーIDは載せない |
+| `TurnCallLimitMiddleware` | 1 ターンのモデルの呼び出しを 10 回までにする |
+| `AnthropicPromptCachingMiddleware` | キャッシュの区切りを付ける。OpenAI のモデルでは何もしない |
+| `PinUserMiddleware` | ツールの `line_user_id` を会話のユーザーに固定する。LLM の渡す値は信じない |
+
+LangGraph を使わない部分もあります。
+
+- **相談のハーネス**: dip のハーネスが次を決め、モデルは `baito_chat` か `career_chat` から直接呼びます。会話は `aupdate_state` で同じチェックポイントに保存します
+  相談の途中の発言は、危ない言葉もハーネスが受けます。決まった文を返すかは、ハーネスの版によります
+- **音声相談**: LiveKit Agents で動きます
+- **履歴書の読み取りとゲームの AI**: Anthropic か OpenAI の SDK を直接呼びます
+
+`interrupt` と複数エージェントの構成は使っていません。詳しくは [LLD の 1.1](docs/architecture/lld.md) にあります。
+
 ## 特長
 
 <table>
