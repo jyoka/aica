@@ -33,7 +33,7 @@
    curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://<名前>.onrender.com/healthz
    ```
 
-   - `/healthz` は起動を終えていれば `200` を返すだけです。ディスク、dip、LLM は見ません。`200` でもトークが答えないことはあります
+   - `/healthz` は起動を終えていれば `200` を返すだけです。ディスク、事業者、LLM は見ません。`200` でもトークが答えないことはあります
 2. [Render のダッシュボード](https://dashboard.render.com/) で、`aica` と `aica-voice` の状態を見る。「Live」か、デプロイの途中か、失敗か、Suspend か
 3. それぞれの「Events」で、直近の出来事を見る。`Out of memory`、`Instance Failed`、デプロイの成功と失敗、Suspend
 4. 下の「4. 症状ごとの手順」から、当たる行を選ぶ
@@ -147,14 +147,14 @@ Render の文書に書いてある、戻るものと戻らないものです。
   - 繰り返し落ちる、モデルを取れない: A で `aica` を起動し直す(Web も止まる)。相談の少ない時間にします
 - 確かめ方: `aica` の「Logs」に警告が続かないこと。5 の 5 で音声相談を 1 件する
 
-### 4.4 `aica` のコンテナの中の dip の MCP サーバーが落ちる
+### 4.4 `aica` のコンテナの中の事業者の MCP サーバーが落ちる
 
 - 気づき方: 知らせは来ません。利用者から「音声相談で、希望が保存されない」「要約が出ない」など
 - 見る場所: `aica` の「Logs」で `WARNING: dip MCP server for the voice worker exited; restarting in 10s` が繰り返し出ていないか。
-  `aica-voice` の「Logs」で、dip の呼び出しの失敗(15 秒で諦める)が出ていないか
+  `aica-voice` の「Logs」で、事業者の呼び出しの失敗(15 秒で諦める)が出ていないか
 - 戻し方:
-  - 10 秒後にループが起動し直します。音声相談は、dip の道具なしで続きます
-  - 繰り返し落ちる: `AICA_INTERNAL_KEY` が `aica` にあるか(無いと dip の口は起動しない)を「Environment」で見る。無ければ D。あれば A で `aica` を起動し直す
+  - 10 秒後にループが起動し直します。音声相談は、事業者の道具なしで続きます
+  - 繰り返し落ちる: `AICA_INTERNAL_KEY` が `aica` にあるか(無いと事業者の口は起動しない)を「Environment」で見る。無ければ D。あれば A で `aica` を起動し直す
 - 確かめ方: `aica` の「Logs」に警告が続かないこと。5 の 5
 
 ### 4.5 `aica-voice` が落ちる、固まる
@@ -242,7 +242,7 @@ Render の文書に書いてある、戻るものと戻らないものです。
      ./.venv/bin/python -m scripts.deploy_smoke --url https://<名前>.onrender.com
      ```
 
-5. 音声相談を確かめる(`aica-voice` と、音声ワーカーと dip の MCP サーバーのとき)。**実 API を使うので、運営者だけがします**。
+5. 音声相談を確かめる(`aica-voice` と、音声ワーカーと事業者の MCP サーバーのとき)。**実 API を使うので、運営者だけがします**。
    トークの音声相談のボタンから 1 件相談し、`aica-voice` の「Logs」に相談が出て、結果がトークに届くこと
 6. 2 の 5 で控えた Issue に、原因、戻し方、戻った時刻を書いて閉じる。メモリ不足が続くなら、render.md の 7 の「act のとき」のとおりカードにする
 

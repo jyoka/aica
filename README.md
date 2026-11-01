@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banner-dark.svg">
-  <img alt="aica のバナー。左に 1 文「話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。」。右に、本人、エージェント、dip のツール、プロフィール、手元に残るものの 5 つの層が縦に並び、dip のツールの層だけ色が違う" src="assets/brand/banner-light.svg">
+  <img alt="aica のバナー。左に 1 文「話すと、条件を整理して、求人の候補と書類の下書きまで進められる、仕事探しの AI エージェント。」。右に、本人、エージェント、事業者のツール、プロフィール、手元に残るものの 5 つの層が縦に並び、事業者のツールの層だけ色が違う" src="assets/brand/banner-light.svg">
 </picture>
 
 # aica
@@ -11,8 +11,8 @@
 
 > **テスト用の公開です。** 求人、店舗、FAQ、開発用のユーザーは架空のデータで、応募しても実際の応募になりません。社内資料の数値は含めていません。使う人が話した内容の扱いは[プライバシーポリシー](docs/legal/privacy-policy.md)にあります。
 
-エージェントは業務の知識を持たず、dip のツール(MCP)を通してだけ dip の事実を得ます。
-確かめたいのは「dip が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です。
+エージェントは業務の知識を持たず、事業者のツール(MCP)を通してだけ事業者の事実を得ます。
+確かめたいのは「事業者が書ける Prompt とツールの中身だけで、狙った会話体験になるか」です。
 経緯は [docs/brand.md](docs/brand.md#6-経緯) にあります。
 
 ## しくみ
@@ -21,20 +21,20 @@
 flowchart LR
     you(["求職者<br/>Web / LINE"]) -- "1 トーク、履歴書" --> web["Web プロセス<br/>エージェント"]
     you -- "1 音声" --> lk[("LiveKit Cloud")] --> worker["音声ワーカー<br/>音声アドバイザー"]
-    web -- "2 MCP で聞く" --> dip["dip のツール<br/>LLM を使わない"]
-    worker -- "2 MCP で聞く" --> dip
-    dip -- "3 事実だけ返す" --> web
-    dip -- "3 事実だけ返す" --> worker
+    web -- "2 MCP で聞く" --> provider["事業者のツール<br/>LLM を使わない"]
+    worker -- "2 MCP で聞く" --> provider
+    provider -- "3 事実だけ返す" --> web
+    provider -- "3 事実だけ返す" --> worker
     web -- "4 言い方を考える" --> llm[("Anthropic<br/>設定で OpenAI")]
     worker -- "4 言い方を考える" --> llm
     web -- "5 質問、求人カード" --> you
     worker -- "5 まとめ、求人" --> web
-    dip --> data[("data/<br/>プロフィール、会話")]
+    provider --> data[("data/<br/>プロフィール、会話")]
     web --> data
 ```
 
-- エージェントは、LINE の共通ルールと、dip から受け取る dip の Prompt と playbook で話します([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-dip-tools.md))
-- dip のツールは LLM を使いません。求人カードは、dip が返した求人だけをコードで描きます
+- エージェントは、LINE の共通ルールと、事業者から受け取る事業者の Prompt と playbook で話します([ADR-0003](docs/adr/0003-agent-gets-facts-only-through-provider-tools.md))
+- 事業者のツールは LLM を使いません。求人カードは、事業者が返した求人だけをコードで描きます
 - 音声相談もトークと同じ雇用区分、playbook、プロフィールを使い、結果はトークに戻ります
 
 部品とデータの流れは [HLD](docs/architecture/hld.md) にあります。
@@ -54,8 +54,8 @@ flowchart TD
         model["model ノード<br/>LLM とミドルウェア 3 つ"] -- "ツールの呼び出し" --> tools["tools ノード<br/>PinUserMiddleware"]
         tools -- "結果" --> model
     end
-    tools -- "MCP" --> dip["dip のツール"]
-    harness -- "MCP" --> dip
+    tools -- "MCP" --> provider["事業者のツール"]
+    harness -- "MCP" --> provider
     model -- "LineReply" --> reply(["返信"])
     harness --> reply
     fixed --> reply
@@ -68,7 +68,7 @@ flowchart TD
 |---|---|
 | state | `LineState`。`messages` に、`entry`、`line_user_id`、`channel`、`channel_features`、`greeting_entries` を足す |
 | チェックポイント | `AsyncSqliteSaver`。会話は `thread_id` = `<ユーザーID>:<番号>` |
-| ツール | `MultiServerMCPClient` と `load_mcp_tools` で dip のツールを読む。キャッシュのため名前の順に固定する |
+| ツール | `MultiServerMCPClient` と `load_mcp_tools` で事業者のツールを読む。キャッシュのため名前の順に固定する |
 | 返信の形 | `ProviderStrategy(LineReply)` の構造化出力 |
 | 途中経過 | `astream(stream_mode="updates")`。モデルの呼び出しを費用台帳に記録し、ツールの進み具合を画面に送る |
 
@@ -83,7 +83,7 @@ flowchart TD
 
 LangGraph を使わない部分もあります。
 
-- **相談のハーネス**: dip のハーネスが次を決め、モデルは `baito_chat` か `career_chat` から直接呼びます。会話は `aupdate_state` で同じチェックポイントに保存します
+- **相談のハーネス**: 事業者のハーネスが次を決め、モデルは `baito_chat` か `career_chat` から直接呼びます。会話は `aupdate_state` で同じチェックポイントに保存します
   相談の途中の発言は、危ない言葉もハーネスが受けます。決まった文を返すかは、ハーネスの版によります
 - **音声相談**: LiveKit Agents で動きます
 - **履歴書の読み取りとゲームの AI**: Anthropic か OpenAI の SDK を直接呼びます
@@ -102,7 +102,7 @@ LangGraph を使わない部分もあります。
     <td width="50%" valign="top">
       <a href="docs/architecture/hld.md"><img width="360" alt="トークに架空の求人カードが並ぶ。時給、時間、最寄り駅と、おすすめの理由が書かれている" src="assets/media/job-cards.png"></a><br>
       <b>求人カード</b><br>
-      dip が返した求人だけを、コードで描く。
+      事業者が返した求人だけを、コードで描く。
     </td>
   </tr>
   <tr>
@@ -123,9 +123,9 @@ LangGraph を使わない部分もあります。
 
 - **相談のハーネス**: アルバイト・パートと正社員で、聞くことと終わりをコードが決め、モデルは読み取りと言い方を受け持ちます
 - **履歴書の読み取り**: ファイルから経歴を読み、一から書かずに相談を続けます
-- **LINE**: LIFF 画面、リッチメニュー、アカウント連携(dip の会員と結ぶ)が使えます。LINE は設定したときだけ開きます([LINE で試す](docs/usage.md#line-で試す))
+- **LINE**: LIFF 画面、リッチメニュー、アカウント連携(事業者の会員と結ぶ)が使えます。LINE は設定したときだけ開きます([LINE で試す](docs/usage.md#line-で試す))
 - **プロフィール**: 本人が見て、直して、消せます
-- **開発者画面**: シナリオごとに、dip から見た状態と、ターンごとの処理の流れを見られます
+- **開発者画面**: シナリオごとに、事業者から見た状態と、ターンごとの処理の流れを見られます
 - **評価**: 模擬ユーザーとジャッジで会話を採点し、モックの LLM で回帰を回します
 - **費用の上限**: 1 日のターン数の上限と費用台帳で、費用を抑えます
 
@@ -147,7 +147,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 1. トーク画面(`http://127.0.0.1:8030/`)を開き、同意の画面で「同意して始める」を押す。
    押すとエージェントが挨拶のために実 API を呼び、費用がかかります
-2. トークに希望を書くと、エージェントが質問し、dip が返した求人をカードで出します
+2. トークに希望を書くと、エージェントが質問し、事業者が返した求人をカードで出します
 3. 入力欄の「+」から、履歴書のアップロードと音声相談に入れます
 4. 開発者画面(`/dev`)では、左でシナリオを選び、中央で話し、右で構成図とこのターンの処理の流れを見ます。シナリオを選ぶまで実 API を呼びません
 
@@ -179,7 +179,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 | 運用の決定(段階、7 つの関門、落ちたときの対応、次にやること) | [docs/architecture.md](docs/architecture.md)(Architecture Brief) |
 | 何を作るか(aica v2、レジュメ・アーケード、アルバイト・パートのハーネス) | [docs/prd/](docs/prd/) |
 | 全体の図、部品、データの流れ、信頼の境界、用語 | [docs/architecture/hld.md](docs/architecture/hld.md)(HLD) |
-| モジュール、HTTP の口、dip のツール、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](docs/architecture/lld.md)(LLD) |
+| モジュール、HTTP の口、事業者のツール、データの形、失敗の扱い、テスト | [docs/architecture/lld.md](docs/architecture/lld.md)(LLD) |
 | 設計の問題と直し方の案 | [docs/architecture/review-2026-10.md](docs/architecture/review-2026-10.md) |
 | 決めたことの記録 | [docs/adr/](docs/adr/) |
 | 機能ごとの設計メモ(シナリオごとの会話設計、個人情報など) | [docs/design/](docs/design/) |

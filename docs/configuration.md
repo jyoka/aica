@@ -27,18 +27,18 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `LINE_SIM_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | エージェントとゲームのまとめのモデル | 不可 |
 | `LINE_SIM_EFFORT` | `low` | エージェントの思考の深さ | 不可 |
 | `AICA_PROGRESS_UI` | `flex` | アルバイト・パートの相談(`BAITO_HARNESS_VERSION=v4` か `v5`)で、プロフィールが育つのを見せる部品の出し方。`flex` は帯・プロフィールカード・完成を LINE の Flex で、`text` は Flex を切って吹き出しの文で、`no_band` は帯だけ切る。Web のトークはいつも文。ターンごとに読む | 可 |
-| `BAITO_HARNESS_VERSION` | なし | アルバイト・パートのチャットの相談を dip のハーネスで進める版。`v4`(PRD v4.1 の移植。ADR-0009)か、`v5`(会話の層に載せ替えた版。ADR-0011、[設計メモ](design/conversation-layer.md)。試すときだけ。本番は `v4`)。無ければ playbook の相談。新しく始める相談のときに読み、始めた相談は始めた版のまま進む | 可 |
-| `CAREER_HARNESS_VERSION` | なし | 正社員のチャットの相談を dip のハーネスで進める版。`c1`(ADR-0010)か、`c2`(会話の層に載せ替えた版。ADR-0011、[設計メモ](design/conversation-layer.md))。無ければ playbook の相談(知らない値も同じ)。新しく始める相談のときに読み、始めた相談は始めた版のまま進む。本番は `c1`。`c2` への切り替えと戻し方は [deploy/render.md](deploy/render.md#相談の版を入り口ごとに切り替える-運営者) | 可 |
-| `TALK_LAYER_VERSION` | なし | トークの AI(相談の外)と音声相談の指示に、会話の層の部品を足す版。`t1`(ADR-0011、[設計メモ](design/conversation-layer.md) §4.13)は、危ない言葉への決まった文(トークの AI を呼ばない)、aica の事実と区分を選ぶボタンの決まり、相談を始めるツールへの本人の発言の受け渡し(移る先が `c2`、`v5` のとき)、音声の指示の事実と危ない言葉の文を足す。Web プロセス、dip、音声ワーカーのどれもこの値を読むので、変えるときはそろえる。無ければ今のまま(`aica-voice` は `render.yaml` で `t1`) | 可 |
+| `BAITO_HARNESS_VERSION` | なし | アルバイト・パートのチャットの相談を事業者のハーネスで進める版。`v4`(PRD v4.1 の移植。ADR-0009)か、`v5`(会話の層に載せ替えた版。ADR-0011、[設計メモ](design/conversation-layer.md)。試すときだけ。本番は `v4`)。無ければ playbook の相談。新しく始める相談のときに読み、始めた相談は始めた版のまま進む | 可 |
+| `CAREER_HARNESS_VERSION` | なし | 正社員のチャットの相談を事業者のハーネスで進める版。`c1`(ADR-0010)か、`c2`(会話の層に載せ替えた版。ADR-0011、[設計メモ](design/conversation-layer.md))。無ければ playbook の相談(知らない値も同じ)。新しく始める相談のときに読み、始めた相談は始めた版のまま進む。本番は `c1`。`c2` への切り替えと戻し方は [deploy/render.md](deploy/render.md#相談の版を入り口ごとに切り替える-運営者) | 可 |
+| `TALK_LAYER_VERSION` | なし | トークの AI(相談の外)と音声相談の指示に、会話の層の部品を足す版。`t1`(ADR-0011、[設計メモ](design/conversation-layer.md) §4.13)は、危ない言葉への決まった文(トークの AI を呼ばない)、aica の事実と区分を選ぶボタンの決まり、相談を始めるツールへの本人の発言の受け渡し(移る先が `c2`、`v5` のとき)、音声の指示の事実と危ない言葉の文を足す。Web プロセス、事業者、音声ワーカーのどれもこの値を読むので、変えるときはそろえる。無ければ今のまま(`aica-voice` は `render.yaml` で `t1`) | 可 |
 | `CAREER_HARNESS_FORM` | `C` | 正社員の相談(`CAREER_HARNESS_VERSION=c1` か `c2`)の形。`B` はゲームの仕組みなし、`C` は場面の二択と進み具合の 1 行あり、`D` は C に LINE の Flex(「始める」の 1 枚、職歴カード、帯、プロフィールカード、まとめ、全部の完成)を足す。相談を始めたときに読み、終わるまで変えない | 可 |
 | `CAREER_UI_BAND` | `on` | 正社員の相談の形 D で、帯を付けるか。`off` で帯だけ切る(帯を切った D と比べるため)。相談を始めたときに読む | 可 |
 | `LINE_SIM_PORT` | `8030` | Web サーバーのポート(コンテナでは `PORT`、既定 10000) | 不可 |
 | `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
 | `AICA_SECURE_COOKIE` | なし(コンテナの image では `1`) | `1` のとき、匿名ユーザーIDの Cookie に Secure を付ける。https で公開するときに使う。http で開くと Cookie が送り返されない | 可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
-| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの dip の MCP サーバーの URL。Web プロセスと音声ワーカーが読む。音声ワーカーは `AICA_INTERNAL_KEY` を付けて送る(Render では `scripts/voice_worker_start.sh` が作る) | 不可 |
-| `DIP_STATE_PATH` | `data/state.json` | dip の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
-| `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の dip の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
+| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの事業者の MCP サーバーの URL。Web プロセスと音声ワーカーが読む。音声ワーカーは `AICA_INTERNAL_KEY` を付けて送る(Render では `scripts/voice_worker_start.sh` が作る) | 不可 |
+| `DIP_STATE_PATH` | `data/state.json` | 事業者の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
+| `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の事業者の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
 | `RESUME_INTAKE_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`) | 履歴書の読み取りのプロバイダ(`anthropic`、`openai`) | 不可 |
 | `RESUME_INTAKE_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | 履歴書の読み取りのモデル | 不可 |
 | `RESUME_INTAKE_EFFORT` | `none` | 履歴書の読み取りの思考の深さ(Anthropic だけ。`none` は思考を切る。書いてあることを写すだけなので) | 不可 |
@@ -70,7 +70,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `LINE_CHANNEL_SECRET` | なし | チャネルシークレット。webhook の署名(`X-Line-Signature`)を確かめる。`LINE_CHANNEL_ACCESS_TOKEN` と両方あるときだけ `POST /line/webhook` を開く(無ければ 404) | 可 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | なし | チャネルアクセストークン(長期)。入力中の表示、返信、push、アカウント連携の linkToken の発行に使う | 可 |
 | `AICA_ID_KEY` | なし(LINE の 2 つか LIFF の 2 つがあるときは必須) | LINE のユーザーID(`l-…`)を作る HMAC-SHA256 の鍵。LIFF の本人の Cookie の署名の鍵も、ここから作る。32 バイト以上(例 `python -c "import secrets; print(secrets.token_hex(32))"`)。LINE の 2 つか LIFF の 2 つがあるのに無い、短いときは起動で止まる。変えると全員の ID が変わり、それまでのデータとつながらない([ADR-0008](adr/0008-keyed-line-user-id.md)) | 可 |
-| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(Tailscale Funnel かトンネルの https の URL)。LINE で出す LIFF 画面(LIFF の設定が無いとき)と dip のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
+| `AICA_PUBLIC_URL` | なし | 手元の Web サーバーの公開 URL(Tailscale Funnel かトンネルの https の URL)。LINE で出す LIFF 画面(LIFF の設定が無いとき)と事業者のログインの画面へのリンクの前に付ける。無ければリンクを出さず、アカウント連携も始めない | 可 |
 | `LINE_LIFF_ID` | なし | LIFF アプリ(LINE ミニアプリのその環境)の LIFF ID。`LINE_LIFF_CHANNEL_ID` と両方あるときだけ、LINE のボタンと操作(履歴書、音声相談、レジュメ・アーケード)を LIFF アプリで開き、`/liff/line/…` の画面と `POST /api/liff/…` を開く(無ければ 404 で、ほかは今までどおり)。そのときは `AICA_ID_KEY` も要る(無い、短いときは起動で止まる) | 可 |
 | `LINE_LIFF_CHANNEL_ID` | なし | LIFF アプリを置いたチャネル(LINE ミニアプリのその環境)の ID。LIFF の ID トークンを LINE に確かめてもらうときの `client_id`(`aud`)。前の名前の `LINE_LOGIN_CHANNEL_ID` も読む(こちらが先) | 可 |
 
@@ -83,10 +83,10 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`。手元の docker 向け。Render では、音声ワーカーを別サービスに移し終えたら `0`) | 不可 |
-| `AICA_DIP_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの dip の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
+| `AICA_DIP_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの事業者の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
 | `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
-| `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは dip の状態に入り、トークに届く([privacy.md](design/privacy.md) の 3.3) | 不可 |
+| `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは事業者の状態に入り、トークに届く([privacy.md](design/privacy.md) の 3.3) | 不可 |
 | `VOICE_RESUME_OUT_DIR` | `data/voice-resume` | `VOICE_RESUME_WRITE_FILES=1` のときの、下書き、文字起こし、求人の提案の置き場 | 不可 |
 | `VOICE_RESUME_MAX_SESSION_MINUTES` | `10` | 1 回の音声相談の長さの上限(分)。時間が来たら、下書きを保存していなければ締めの返答を作り、部屋を閉じる | 不可 |
 | `VOICE_RESUME_MAX_WEB_SEARCHES` | `5` | 1 回の音声相談で web を調べる回数の上限(調べもの、平均時給、会社の 3 つの合計) | 不可 |

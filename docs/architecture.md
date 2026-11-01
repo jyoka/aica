@@ -31,9 +31,9 @@ aica の運用の決定を、アーキテクチャの 7 つの関門に沿って
 | もの | 今 | 出典 |
 |---|---|---|
 | Web サービス `aica` | Docker、Standard(2GB)、Singapore、`numInstances: 1`。ヘルスチェック `/healthz`。自動デプロイは off | `render.yaml` |
-| `aica` のコンテナの中 | Web プロセス(uvicorn、ワーカー 1 つ)、dip の子プロセス、音声ワーカー向けの dip の MCP サーバー(`AICA_DIP_PORT=8020`)、移す間の音声ワーカー(`AICA_VOICE_WORKER=1`) | `scripts/container_start.sh` |
+| `aica` のコンテナの中 | Web プロセス(uvicorn、ワーカー 1 つ)、事業者の子プロセス、音声ワーカー向けの事業者の MCP サーバー(`AICA_DIP_PORT=8020`)、移す間の音声ワーカー(`AICA_VOICE_WORKER=1`) | `scripts/container_start.sh` |
 | 音声ワーカー `aica-voice` | Docker のバックグラウンドワーカー、Standard(2GB)、1 台。ヘルスチェックなし、ディスクなし。相談は同時 2 件、1 件 400MB まで | `render.yaml` |
-| ストレージ | 永続ディスク `aica-data` 2GB を `/app/data` に。SQLite 4 つ(会話、dip のイベント、要約、アカウント)と、JSON と JSONL(`state.json`、`quota.json`、`costs.jsonl`、`line_events.json`)。マネージド DB はない | `render.yaml`、[HLD の 4.6](architecture/hld.md#46-保存するデータ) |
+| ストレージ | 永続ディスク `aica-data` 2GB を `/app/data` に。SQLite 4 つ(会話、事業者のイベント、要約、アカウント)と、JSON と JSONL(`state.json`、`quota.json`、`costs.jsonl`、`line_events.json`)。マネージド DB はない | `render.yaml`、[HLD の 4.6](architecture/hld.md#46-保存するデータ) |
 | バックアップ | Render のディスクのスナップショットだけ(Render の文書では 24 時間ごと、7 日残る)。リポジトリに手順はなく、復元を試したことはない | [Render の Persistent Disks](https://render.com/docs/disks) |
 | デプロイ | 「Manual Deploy」。Blueprint の Auto Sync を有効にする手順なので、`render.yaml` を変えた PR は main に入ると本番に反映される(ダッシュボードの状態は未確認) | [docs/deploy/render.md](deploy/render.md) |
 | CI | GitHub Actions。PR と main で pytest、ruff、`evals.baito_sim`。秘密情報は渡さない | `.github/workflows/ci.yml` |
@@ -67,10 +67,10 @@ Render の通知は設定待ちです。設定するまでは、ダウンにも�
 
 | 落ちるもの | 影響 | 自動の復旧 |
 |---|---|---|
-| `aica` のコンテナ全体(2GB を超える、Web プロセスが終わる) | トーク、履歴書、ゲーム、LINE の webhook、dip がすべて止まる。台数は 1 なので代わりはない。進行中のターンは失われる。プロセスのメモリにある状態(ターンの排他、音声相談の待ち合わせ、読み取れなかったアップロード)も消える。ディスクのデータは残る | Render が起動し直す。Render の文書では、メモリ不足のとき `Out of memory` のイベントが、終わったインスタンスに `Instance Failed` のイベントが出る。起動し直すまでの時間は測っていない |
-| `aica` の Web プロセスが固まる(生きているが答えない) | 上と同じ | `/healthz` が 15 秒続けて失敗すると Render が要求を止め、60 秒続けて失敗すると起動し直す(Render の [Health Checks](https://render.com/docs/health-checks))。`/healthz` は起動を終えていれば 200 を返すだけで、ディスクや dip は見ない |
+| `aica` のコンテナ全体(2GB を超える、Web プロセスが終わる) | トーク、履歴書、ゲーム、LINE の webhook、事業者がすべて止まる。台数は 1 なので代わりはない。進行中のターンは失われる。プロセスのメモリにある状態(ターンの排他、音声相談の待ち合わせ、読み取れなかったアップロード)も消える。ディスクのデータは残る | Render が起動し直す。Render の文書では、メモリ不足のとき `Out of memory` のイベントが、終わったインスタンスに `Instance Failed` のイベントが出る。起動し直すまでの時間は測っていない |
+| `aica` の Web プロセスが固まる(生きているが答えない) | 上と同じ | `/healthz` が 15 秒続けて失敗すると Render が要求を止め、60 秒続けて失敗すると起動し直す(Render の [Health Checks](https://render.com/docs/health-checks))。`/healthz` は起動を終えていれば 200 を返すだけで、ディスクや事業者は見ない |
 | `aica` のコンテナの中の音声ワーカー | `aica-voice` が相談を受けていれば、相談は続く。トークは動く | `scripts/container_start.sh` のループが 10 秒後に起動し直す |
-| `aica` のコンテナの中の dip の MCP サーバー | `aica-voice` の相談は、dip の道具なしで続く(呼び出しは 15 秒で諦める)。トークは動く | 同じく 10 秒後に起動し直す |
+| `aica` のコンテナの中の事業者の MCP サーバー | `aica-voice` の相談は、事業者の道具なしで続く(呼び出しは 15 秒で諦める)。トークは動く | 同じく 10 秒後に起動し直す |
 | `aica-voice` | 移す間は `aica` の音声ワーカーが相談を受ける。移し終えた後は音声相談が止まる | プロセスが終われば Render が起動し直す(と render.md に書いてある。本番では確かめていない)。ヘルスチェックはないので、固まったときは起動し直さない |
 | 音声相談 1 件のプロセスが上限を超える | その相談だけが止まる | livekit-agents が止める。上限は `aica-voice` で 400MB、`aica` で 2000MB(既定) |
 | デプロイ、環境変数の保存 | 止まる。ディスクつきなので、古いインスタンスを止めてから新しいものを起動する。Render の文書では数秒で、測っていない。進行中のターンは、Web プロセスが終えてから止まる(`Dockerfile` の tini)。音声相談は切れる | - |
@@ -108,7 +108,7 @@ Render の通知は設定待ちです。設定するまでは、ダウンにも�
 - 理由: Web プロセスは 1 つだけで動かす作り(ターンの排他やターン数の上限をプロセスとファイルで持つ。[review-2026-10.md の R12](architecture/review-2026-10.md#r12-web-プロセスのメモリに状態があり1-プロセスでしか動かない))で、
   ファイルを 1 つのディスクに置けば足りる。DB を分ける理由はまだない
 - 見直すきっかけ: ディスクの使用が 80% を超えたとき(Render の通知)。Web を 2 台以上にしたくなったとき。
-  スナップショットからの復元が使えないと分かったとき。dip の状態の JSON(R8)が重くなったとき
+  スナップショットからの復元が使えないと分かったとき。事業者の状態の JSON(R8)が重くなったとき
 - 路線とコスト: マネージド有料(Render のディスク)。月額は Render の料金ページで確かめる。払う理由: ディスクの保持と日ごとのスナップショットを任せたい
 - ベータの最低要件との差: バックアップの復元を試していない。SQLite を開いたままのスナップショットで中身がそろうかは確かめていない(Render の文書は、MySQL などの DB を置いたディスクでは、DB を直すためにディスクを戻さないよう書いている)。
   Render と GitHub の権限(誰がダッシュボードと鍵を見られるか)は未確認
@@ -139,7 +139,7 @@ Render の通知は設定待ちです。設定するまでは、ダウンにも�
 
 - 決定: Render の上で、`aica` を 1 台、`aica-voice` を 1 台で動かす。冗長化とフェイルオーバーはしない。
   落ちたら Render が起動し直す。`aica` は `/healthz` が 60 秒続けて失敗すると起動し直される。
-  `aica` のコンテナの中の音声ワーカーと dip の MCP サーバーは、シェルのループが 10 秒後に起動し直す。
+  `aica` のコンテナの中の音声ワーカーと事業者の MCP サーバーは、シェルのループが 10 秒後に起動し直す。
   メモリの上限はサービスごとに 2GB。音声相談は 1 件ごとに上限があり(`aica-voice` で 400MB)、超えるとその相談だけを止める。
   `aica` の Web プロセスには上限がなく、コンテナ全体が 2GB を超えると Web も止まる。
   落ちたときの影響と復旧は、上の「[落ちたときの影響と自動の復旧](#落ちたときの影響と自動の復旧)」の表のとおり。
@@ -189,7 +189,7 @@ Render の通知は設定待ちです。設定するまでは、ダウンにも�
   `AICA_ID_KEY` は、変えると全員の LINE のユーザーIDが変わり、それまでのデータとつながらなくなる。
   漏れたら変えて、つながらなくなることを受け入れる([ADR-0008](adr/0008-keyed-line-user-id.md))。
   環境変数を保存すると `aica` は起動し直し、止まる。鍵を入れ間違えると起動で止まる(上の表)。
-  dip の子プロセスがすべての環境変数を受け取る(R15)
+  事業者の子プロセスがすべての環境変数を受け取る(R15)
 
 ## 6. 可観測性
 

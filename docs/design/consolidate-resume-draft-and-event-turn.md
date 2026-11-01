@@ -152,7 +152,7 @@ def track_status(state, user_id, reply) -> dict | None:  # server._track_status 
 
 決まりごと:
 
-- 手順の順番は今と同じにします(上の表の順)。プッシュの上限の確かめは `push_trigger` より前です。dip に接触として記録させないためです
+- 手順の順番は今と同じにします(上の表の順)。プッシュの上限の確かめは `push_trigger` より前です。事業者に接触として記録させないためです
 - 副作用(開いた記録、知らせの渡し終わり、`search_track`)は、`reply` の行を出す前に済ませます。今の stream と同じ順です
 - `run` が `BadTurn` に包むのは LineRuntime の `ValueError` だけです。包む `try` は、`handle_stream` から次の行を受け取る
   ところ(`__anext__`)だけを囲みます。`push_trigger` や、`reply` の行を受け取った後の副作用(開いた記録、`search_track`)の
@@ -269,8 +269,8 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 | 場面 | JSON | stream の行の種類 |
 |---|---|---|
 | 本人の発言 | `reply` の行から `kind` を除いたものと同じ。`search_track` がある | `start`、`llm`、`reply` |
-| プッシュを dip が見送る(`F-follow-new` の `prepare` で `sim-new` を写した未連携のユーザーに、`form_exit` を送る。dip は「dip ID と未連携」で断る) | `{"sent": False, "reason": ...}` | `start`、`gate`、`reply` |
-| 上限のときのプッシュ | `{"sent": False, "reason": LIMIT_REASON}`。dip に接触が残らない | `start`、`reply`(`gate` なし) |
+| プッシュを事業者が見送る(`F-follow-new` の `prepare` で `sim-new` を写した未連携のユーザーに、`form_exit` を送る。事業者は「事業者 ID と未連携」で断る) | `{"sent": False, "reason": ...}` | `start`、`gate`、`reply` |
+| 上限のときのプッシュ | `{"sent": False, "reason": LIMIT_REASON}`。事業者に接触が残らない | `start`、`reply`(`gate` なし) |
 | ロックの外の stale | `{"stale": True, "thread": n}`。ターンを数えない | `start`、`stale` |
 | ターン数の上限 | `limited: True` の返信(`limit_reply`) | `start`、`reply` |
 | 空の発言、知らないイベント、読み取り結果の無い `resume_upload` | 400。ターンを数えない | 400 |
@@ -296,7 +296,7 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 開発者画面のシナリオでは、プッシュの見送りは起こせません。`prepare` が接触の記録を消すので(`evals/scenarios.py:49, 54`)、
 `B-exit` と `pii` は毎回許可されます。`F-follow-new` は挨拶(`visit`)なので、プッシュになりません。
 見送りは API で確かめます。開発者画面で `F-follow-new` を始めたユーザーに、`/api/event/stream` で `form_exit` を送り、
-`gate` の行に `"allowed": false` と「dip ID と未連携」の理由が出るのを見ます。
+`gate` の行に `"allowed": false` と「事業者 ID と未連携」の理由が出るのを見ます。
 
 ### PR の範囲((2/3) jyoka/tasks#163)
 
@@ -320,7 +320,7 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 
 ### 今の main での重複
 
-| もの | 読み取り(`resume_intake/`) | 下書き(`voice_resume/`) | dip の保存(`dip_mcp/`) |
+| もの | 読み取り(`resume_intake/`) | 下書き(`voice_resume/`) | 事業者の保存(`dip_mcp/`) |
 |---|---|---|---|
 | 型(5 つの部品の型と `ResumeDraft`) | `schema.py:25-78` | `schema.py:48-101` | `resume_intake.schema` を import(`logic.py:43`) |
 | `JST`、`PERSONAL_KEYS` | `schema.py:19`、`:22` | `schema.py:42`、`:45` | `PERSONAL_KEYS` を import |
@@ -354,7 +354,7 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 | `〒１５０－０００１` | 見ない(郵便番号は対象外) | 残る |
 | `090 12345678` | 見つけない | 消す |
 
-- 全角の電話番号とメールは、読み取り結果と下書きから消えずに残り、dip にもそのまま保存されます
+- 全角の電話番号とメールは、読み取り結果と下書きから消えずに残り、事業者にもそのまま保存されます
 - 逆に `scrub_pii` だけが消すものもあります(区切りが空白 1 つの電話番号、郵便番号)。`scrub_pii` を `has_pii` の決まりに
   置き換えるだけでは、今より守りが弱くなります
 
@@ -364,7 +364,7 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 merge を除くと 3 つです。うち 2 つは移植(`bde3f6b`、`6caf047`)です(`2cf85e0` は main を取り込んだ merge)。移植の後に両方の `schema.py` を触ったのは `45e36e7`(task 108)だけで、
 下書きに `document_kind` を足し、読み取り側には「1.0 のまま出す」という説明を足しました。
 
-一方、安全の振る舞いは実際にずれました。`98aec97`(task 99、2026-09-29)は dip 側に `fold_pii` を足し、`has_pii` と `redact_pii` を
+一方、安全の振る舞いは実際にずれました。`98aec97`(task 99、2026-09-29)は事業者側に `fold_pii` を足し、`has_pii` と `redact_pii` を
 全角に対応させました。2 つの `scrub_pii` は、そのとき直されていません。決まりが 3 か所にあり、1 か所だけが直ったためです。
 
 ### 判断: 直す
@@ -416,7 +416,7 @@ def scrub_pii(value): ...
 - `fold_pii` の表に無い文字だけの文字列では、`scrub_pii` の結果は今と変わりません。`fold_pii` がその文字列を変えないからです
 - `fold_pii` した文字の中で `PII_VALUE` に当たる範囲は、新しい `scrub_pii` がすべて消すようにします。テストで確かめます(下)。
   ただし消した後に残りの文字がつながり、新しくメールの形になることはあります(今の main でも、半角だけの文字列で起きる)
-- `dip_mcp/data.py` の `PII_FIELDS`(項目名の一覧)は dip の画面の決まりなので、`data.py` に残します
+- `dip_mcp/data.py` の `PII_FIELDS`(項目名の一覧)は事業者の画面の決まりなので、`data.py` に残します
 
 `document_kind_for(track)`、`document_name(track)`、`UNDECIDED_DOCUMENT_NAME`(`voice_resume/schema.py:23-33`)は、音声相談で
 雇用区分から書類を選ぶ決まりです。Resume Draft の形ではないので、`voice_resume/prompts.py` へ移します。
@@ -469,13 +469,13 @@ def scrub_pii(value): ...
 - `line_runtime/static/talk-core.js:189`(「`voice_resume/schema.py` の `document_name` と同じ」を `voice_resume/prompts.py` に)
 - `voice_resume/README.md:43`
 
-`README.md:314`(読み取りの直後と dip への保存のときの 2 回、消す)は、移した後も正しいので変えません。
+`README.md:314`(読み取りの直後と事業者への保存のときの 2 回、消す)は、移した後も正しいので変えません。
 
 ### 意図して変えること、変えないこと
 
 変えること:
 
-- 全角の数字、長音記号やマイナスのハイフン、全角の `＠` と `．` で書かれた電話、メール、郵便番号を、読み取り結果、下書き、dip の保存から消す
+- 全角の数字、長音記号やマイナスのハイフン、全角の `＠` と `．` で書かれた電話、メール、郵便番号を、読み取り結果、下書き、事業者の保存から消す
 - LLM に送るスキーマの説明の文(7 か所)
 
 変えないこと:
@@ -525,7 +525,7 @@ def scrub_pii(value): ...
 
 (3/3) で、次の趣旨に書き換えます。
 
-- このドキュメントが正で、実装は `resume_draft/schema.py` の 1 か所。読み取り、下書き、dip の保存が同じものを使う
+- このドキュメントが正で、実装は `resume_draft/schema.py` の 1 か所。読み取り、下書き、事業者の保存が同じものを使う
 - 電話、メール、郵便番号を消す決まりは `resume_draft/pii.py` の 1 か所。全角をそろえてから照合する
 - 説明の文は読み取りと下書きで共通。「書いてあるまま」と「本人が言ったまま」の違いは、それぞれの指示に書く
 
@@ -561,7 +561,7 @@ def scrub_pii(value): ...
 - 「ずれ」の表の 6 つの文字列を、`has_pii` と 2 つの `scrub_pii` に通した結果。`fold_pii` してから今の 3 つの型で消すと、全角の行も消えること
 - `OutputParserException` と `pydantic.ValidationError` が `ValueError` の子であること。`raise BadTurn(...) from e` の後に `__cause__` から元の文が取れること
 - 未連携のユーザーへのプッシュの見送り。`F-follow-new` の `prepare` で写したユーザーに `logic.push_trigger(..., "form_exit")` を呼ぶと、
-  「dip ID と未連携なので行動イベントがない」で断られる。`B-exit` で写したユーザーは許可される(`.venv` で確かめた)
+  「事業者 ID と未連携なので行動イベントがない」で断られる。`B-exit` で写したユーザーは許可される(`.venv` で確かめた)
 - `logic.document_kind` を使う場所(`dip_mcp/profile.py:61`、`line_runtime/server.py:740`、`line_runtime/voice_reply.py:73`、`:96`)
 
 確かめていないこと:
