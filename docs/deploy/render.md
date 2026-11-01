@@ -389,7 +389,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 |---|---|---|---|---|
 | 1 | `CAREER_HARNESS_VERSION` | `c1` | `c2` | よい。実モデルの比べで合格の線に届いた(設計メモ §7 の task 362) |
 | 2 | `BAITO_HARNESS_VERSION` | `v4` | `v5` | まだ。線に届いていない(jyoka/tasks#376 で届いてから、この表と手順を足す) |
-| 3 | `TALK_LAYER_VERSION` | 入れない | `t1` | まだ。線に届いていない(jyoka/tasks#377 で届いてから足す) |
+| 3 | `TALK_LAYER_VERSION` | `t1` | `t1` | 切り替えた。`aica-voice` は `render.yaml` の値 |
 | - | `CAREER_HARNESS_FORM` | `D` | 変えない | - |
 
 切り替えの動き:
@@ -409,8 +409,8 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
    直すときは、切り替える前に PR で直します(jyoka/tasks#355 の Decision)
 2. 本番に出している版が、jyoka/tasks#375(消した値を、取っておいた相談からも消す)を含む main であることを確かめます。含まなければ、先に「Manual Deploy」で最新の main を出し、
    `/healthz` が 200 を返すことを確かめます
-3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION=v4`、
-   `TALK_LAYER_VERSION` を入れないこと)は変えません
+3. 「Environment」で `CAREER_HARNESS_VERSION` を `c1` から `c2` に変えて保存します。ほかの値(`CAREER_HARNESS_FORM=D`、`BAITO_HARNESS_VERSION`、
+   `TALK_LAYER_VERSION`)は変えません
 4. 起動し直した後に確かめます:
    - `/healthz` が 200 を返す
    - 自分の LINE で正社員の相談を新しく始め、最後まで進める。「始める」の 1 枚、職歴カード、まとめ、完成のカルーセルが出る
