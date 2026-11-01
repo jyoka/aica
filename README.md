@@ -47,11 +47,11 @@ flowchart LR
 ```mermaid
 flowchart TD
     input(["本人の発言、挨拶、アップロード"]) --> rt["LineRuntime<br/>このターンの受け持ちを決める"]
-    rt -- "危ない言葉" --> fixed["決まった文<br/>LLM を呼ばない"]
-    rt -- "相談の途中" --> harness["相談のハーネス<br/>次に聞くことはコードが決める"]
-    rt -- "それ以外" --> model
+    rt -- "1 相談の途中" --> harness["相談のハーネス<br/>次に聞くことはコードが決める"]
+    rt -- "2 危ない言葉" --> fixed["決まった文<br/>LLM を呼ばない"]
+    rt -- "3 それ以外" --> model
     subgraph lg["LangGraph のグラフ"]
-        model["model ノード<br/>ミドルウェアと LLM"] -- "ツールの呼び出し" --> tools["tools ノード"]
+        model["model ノード<br/>LLM とミドルウェア 3 つ"] -- "ツールの呼び出し" --> tools["tools ノード<br/>PinUserMiddleware"]
         tools -- "結果" --> model
     end
     tools -- "MCP" --> dip["dip のツール"]
@@ -84,6 +84,7 @@ flowchart TD
 LangGraph を使わない部分もあります。
 
 - **相談のハーネス**: dip のハーネスが次を決め、モデルは `baito_chat` か `career_chat` から直接呼びます。会話は `aupdate_state` で同じチェックポイントに保存します
+  相談の途中の発言は、危ない言葉もハーネスが受けます。決まった文を返すかは、ハーネスの版によります
 - **音声相談**: LiveKit Agents で動きます
 - **履歴書の読み取りとゲームの AI**: Anthropic か OpenAI の SDK を直接呼びます
 
