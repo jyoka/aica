@@ -1,8 +1,8 @@
-"""個人情報の決まり。読み取り(resume_intake)、下書き(voice_resume)、dip(dip_mcp)が同じものを使う。
+"""個人情報の決まり。読み取り(resume_intake)、下書き(voice_resume)、事業者(provider_mcp)が同じものを使う。
 
 - 探す: has_pii / redact_pii(PII_VALUE。電話番号とメールアドレス)。トークの発言、相談の記録、保存する値の照合に使う
 - 住所: ADDRESS_LIKE / address_spans(住所らしい所。住む言葉 RESIDENCE_WORDS と同じ文のときだけ)。本人の値を保存・反映するかは personal_value(電話、メール、住所)で、
-  文の中で伏せるのは redact_personal(同じ 3 つ)で決める。dip の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
+  文の中で伏せるのは redact_personal(同じ 3 つ)で決める。事業者の希望の保存、まとめ、フォームの続き、雇用区分の根拠が使う
   トークの発言(line_runtime.turn.accept)も同じ 3 つを伏せる。音声相談の調べものの問い(voice_resume.advisor)は LLM が書いて外へ出るので、
   電話、メールか、住む言葉が無くても住所の形があれば断る(has_pii / looks_like_address)
 - 消す: scrub_pii(SCRUB_PATTERNS。電話番号、メール、郵便番号)。Resume Draft の文字列から機械的に落とす

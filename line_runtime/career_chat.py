@@ -1,8 +1,8 @@
-"""正社員のヒアリング(dip_mcp/career)のターンで、モデルを呼ぶところ。形はアルバイト・パートの line_runtime/baito_chat.py と同じ。
+"""正社員のヒアリング(provider_mcp/career)のターンで、モデルを呼ぶところ。形はアルバイト・パートの line_runtime/baito_chat.py と同じ。
 
-何を聞くか・いつ終えるかは dip のハーネスが決める(dip のツール career_turn)。ハーネスがモデルの出力を求めたら
+何を聞くか・いつ終えるかは事業者のハーネスが決める(事業者のツール career_turn)。ハーネスがモデルの出力を求めたら
 (status=llm)、ここがそのシステムプロンプトでモデルを呼び、段ごとに決まった JSON を受け取る:
-  extract(Stage1) = ExtractOut、say(Stage3) = ReplyOut({"reply"})。c2(会話の層。dip_mcp/career/c2.py)の読む段は
+  extract(Stage1) = ExtractOut、say(Stage3) = ReplyOut({"reply"})。c2(会話の層。provider_mcp/career/c2.py)の読む段は
   read = ReadOut(発言の働き act の並び)。まとめと結果はハーネスが作るので、モデルは呼ばない。
 出力の中身(発言の部分文字列か、数が発言にあるか、ほめ言葉、問いが 2 つ)を確かめるのはハーネス(validate_extract / validate_reply)。
 会話の記録の読み方(history)とメッセージの組み立て(messages_for)は baito_chat と同じものを使う。
@@ -27,7 +27,7 @@ class SlotUpdate(BaseModel):
 
 
 class ExtractOut(BaseModel):
-    """読み取り(Stage1)の出力(dip_mcp/prompts/career/prompt_extract_ja.txt)。確信度はハーネスが決める。"""
+    """読み取り(Stage1)の出力(provider_mcp/prompts/career/prompt_extract_ja.txt)。確信度はハーネスが決める。"""
 
     slot_updates: list[SlotUpdate]
     ng_updates: list[str]
@@ -42,7 +42,7 @@ ActName = Literal["answer", "add", "correct", "unsure", "retract", "dont_know", 
 
 
 class ReadAct(BaseModel):
-    """発言の働き 1 つ(dip_mcp/convo/acts.py の ACTS)。使わない引数は null。"""
+    """発言の働き 1 つ(provider_mcp/convo/acts.py の ACTS)。使わない引数は null。"""
 
     act: ActName
     slot: str | None = Field(description="値の act、retract、dont_know、pass の欄のキー(欄の一覧)。区分なら segment")
@@ -58,8 +58,8 @@ class ReadAct(BaseModel):
 
 
 class ReadOut(BaseModel):
-    """会話の層の読む段の出力(CAREER_HARNESS_VERSION=c2。dip_mcp/prompts/convo/read_ja.txt と
-    dip_mcp/prompts/career/prompt_read_ja.txt)。中身を確かめるのはハーネス(dip_mcp.convo.acts.validate_reading)。"""
+    """会話の層の読む段の出力(CAREER_HARNESS_VERSION=c2。provider_mcp/prompts/convo/read_ja.txt と
+    provider_mcp/prompts/career/prompt_read_ja.txt)。中身を確かめるのはハーネス(provider_mcp.convo.acts.validate_reading)。"""
 
     acts: list[ReadAct]
     hook: str | None = Field(description="相づちに使える本人の言葉(15 字まで)")

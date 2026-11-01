@@ -1,6 +1,6 @@
 """ゲームで作った書類(Markdown)を Resume Draft(resume_draft.schema)に写す。
 
-写し方の中身は resume_draft.markdown にある(正社員のヒアリングの下書きも同じ形で、dip_mcp が使うため)。
+写し方の中身は resume_draft.markdown にある(正社員のヒアリングの下書きも同じ形で、provider_mcp が使うため)。
 ここは、ゲームの側の呼び名をそのまま残す。
 """
 

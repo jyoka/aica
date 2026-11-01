@@ -1,10 +1,10 @@
-"""保存項目の拡張と相談のまとめ(aica v2 の D。jyoka/tasks#61 を吸収)のテスト。実 API なし、dip の MCP は本物。
+"""保存項目の拡張と相談のまとめ(aica v2 の D。jyoka/tasks#61 を吸収)のテスト。実 API なし、事業者の MCP は本物。
 
 確かめること:
 (1) 新しい項目(目的・強み・やりたいこと・避けたいこと・不安、正社員の条件)が保存され、要約に出る。
     個人情報らしい値は全項目で弾かれ、年収の桁表記は個人情報に数えない。
 (2) 相談のまとめ(200字以内)が記録されて要約に出る。200字を超えると記録されない。
-(3) チャットで保存した項目と相談のまとめが、音声アドバイザーの指示に入る(PR #10 と同じ作り: 本物の dip MCP を stdio で)。
+(3) チャットで保存した項目と相談のまとめが、音声アドバイザーの指示に入る(PR #10 と同じ作り: 本物の事業者の MCP を stdio で)。
 (4) 音声で保存した項目が、次のチャットの要約に出る。
 (5) 評価の「聞き直し」の判定が新しい項目に効き、確認・掘り下げの問いは違反にしない。
 """
@@ -15,14 +15,14 @@ import asyncio
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from evals.checks import conversation_checks, reask_violations, turn_violations
+from provider_mcp import logic
+from provider_mcp.data import State
 from resume_draft.pii import PII_VALUE
 from tests.test_handle import ScriptedModel, call, reply, run
 from voice_resume.advisor import ResumeAdvisor
 from voice_resume.agent import prepare_advisor
-from voice_resume.dip import DipMCP
+from voice_resume.provider import ProviderMCP
 
 UID = "w-3333333333333333:sim-new"
 NEW_ITEMS = {
@@ -53,7 +53,7 @@ def test_new_items_are_saved_and_show_up_in_the_summary(tmp_path):
     summary = logic.conversation_summary(state, UID)
     assert {k: v["value"] for k, v in summary["stated_preferences"].items()} == NEW_ITEMS
     assert "consultation_summary" in summary["note"] and "purpose" in summary["note"]
-    # 行動履歴のある人(dip 連携済み)の要約にも同じ形で出る
+    # 行動履歴のある人(事業者連携済み)の要約にも同じ形で出る
     logic.save_preferences(state, "sim-browsing", {"purpose": "生活費の足しに"})
     linked = logic.conversation_summary(state, "sim-browsing")
     assert linked["linked"] and linked["stated_preferences"]["purpose"]["value"] == "生活費の足しに"
@@ -153,9 +153,9 @@ def test_consultation_summary_drops_contact_info(tmp_path):
 
 
 def test_the_rule_for_the_consultation_summary_is_in_the_prompt_and_the_tool():
-    from dip_mcp import server
+    from provider_mcp import server
 
-    prompt = server.baitoru_assistant()
+    prompt = server.job_assistant()
     assert "相談のまとめ(200字以内)" in prompt and "本人の発言に基づく事実と、次に確かめることだけ" in prompt
     tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
     desc = str(tools["record_conversation_outcome"].inputSchema)
@@ -169,8 +169,8 @@ def test_the_rule_for_the_consultation_summary_is_in_the_prompt_and_the_tool():
 
 
 def test_chat_items_and_consultation_summary_reach_the_voice_advisor(tmp_path, monkeypatch):
-    """チャットの相談で保存した項目と相談のまとめが、同じユーザーの音声相談の指示に入る(本物の dip MCP)。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    """チャットの相談で保存した項目と相談のまとめが、同じユーザーの音声相談の指示に入る(本物の事業者の MCP)。"""
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     model = ScriptedModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=["まず相談する", "今はいい"]),
         call("save_user_preferences", {"line_user_id": UID, "preferences": {
@@ -185,12 +185,12 @@ def test_chat_items_and_consultation_summary_reach_the_voice_advisor(tmp_path, m
     assert turns[2]["tools"][0]["result"]["recorded"]["summary"] == SUMMARY_TEXT
 
     async def start():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            return await prepare_advisor(dip, UID)
+            return await prepare_advisor(provider, UID)
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     advisor, _greeting = asyncio.run(start())
     for fact in ("前職の経験を活かしたい", "未経験の職種で通用するか不安", SUMMARY_TEXT, "## 前の会話の相談のまとめ"):
@@ -206,18 +206,18 @@ def test_chat_items_and_consultation_summary_reach_the_voice_advisor(tmp_path, m
 
 
 def test_voice_items_show_up_in_the_next_chat_summary(tmp_path, monkeypatch):
-    """音声相談で本人が話した目的・不安が dip に保存され、次のチャットの要約(stated_preferences)に出る。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    """音声相談で本人が話した目的・不安が事業者に保存され、次のチャットの要約(stated_preferences)に出る。"""
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
 
     async def interview():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor = ResumeAdvisor(dip=dip, user_id=UID)
+            advisor = ResumeAdvisor(provider=provider, user_id=UID)
             await advisor.propose_jobs(job_type="カフェ", purpose="生活費の足しに", concerns="立ち仕事が続くか不安",
                                        wants="人と話す仕事")
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     asyncio.run(interview())
     model = ScriptedModel(script=[

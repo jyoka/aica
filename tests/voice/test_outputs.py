@@ -53,7 +53,7 @@ def test_stamp_and_created_at_use_japan_time(tmp_path, monkeypatch):
 
 def test_by_default_nothing_is_written_but_the_draft_is_returned(tmp_path, monkeypatch):
     """既定では文字起こし・下書き・求人の提案をファイルに書き出さない(docs/design/privacy.md の 3.3)。
-    下書きは返り値に入り、トーク(dip の状態)へ渡せる。"""
+    下書きは返り値に入り、トーク(事業者の状態)へ渡せる。"""
     out = tmp_path / "voice-resume"
     monkeypatch.setattr(config, "OUT_DIR", out)
     monkeypatch.setattr(config, "WRITE_FILES", False)

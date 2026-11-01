@@ -11,7 +11,7 @@ POST /line/webhook(line_runtime.server)が使う部品。FastAPI には依存し
 - 返信: runtime.render の結果を LINE のメッセージにする(to_messages)。1 回 5 メッセージまで。
 - 送信: LineApi(入力中の表示・返信・push・linkToken の発行)。HTTP は httpx(すでに入っている依存。LINE の SDK は足さない)。
 - アカウント連携(task 182): 決まった文(LINK_TEXT / UNLINK_TEXT。リッチメニューのボタンが送る文)で始める・解除する。
-  dip のログインの画面へのボタン(link_messages)と、dip がログインの後に本人を送る LINE の画面の URL(account_link_url)。
+  事業者のログインの画面へのボタン(link_messages)と、事業者がログインの後に本人を送る LINE の画面の URL(account_link_url)。
 - LIFF(task 203): LINE のアプリで開く LIFF 画面の本人。LIFF の ID トークンを LINE ログインの検証の API で確かめ(LineLogin)、
   sub からトークと同じ line_user の ID を作る。確かめた本人は署名つきの Cookie の値(liff_session)で覚える。
   LINE_LIFF_ID と LINE_LIFF_CHANNEL_ID(前の名前 LINE_LOGIN_CHANNEL_ID も読む)の両方があるときだけ使う(liff_configured)。
@@ -49,7 +49,7 @@ ID_KEY_ENV = "AICA_ID_KEY"
 MIN_ID_KEY_BYTES = 32  # 鍵の長さの下限(UTF-8 のバイト数)
 
 API_BASE = "https://api.line.me"
-ACCOUNT_LINK_URL = "https://access.line.me/dialog/bot/accountLink"  # dip がログインの後に本人を送る LINE の画面
+ACCOUNT_LINK_URL = "https://access.line.me/dialog/bot/accountLink"  # 事業者がログインの後に本人を送る LINE の画面
 MAX_MESSAGES = 5  # 1 回の返信・push で送れるメッセージの数(Messaging API の上限)
 LOADING_SECONDS = 60  # 入力中の表示の長さ(5〜60 秒。返信を送ると消える)
 LINE_ID = re.compile(r"l-[0-9a-f]{16}")
@@ -136,13 +136,13 @@ LIFF_SESSION_SECONDS = 3600
 LIFF_PAGES = ("/liff/apply", "/liff/resume", "/liff/voice/draft")  # LIFF_PREFIX の下にもある画面(line_runtime.server)
 ARCADE_PATH = "/liff/arcade"  # レジュメ・アーケード(ハブと各ゲーム)。LIFF_PREFIX の下にもある。LIFF で開けなければ LINE に出さない
 # 返信の actions → LINE で開く LIFF 画面(LIFF_PREFIX の下のパス)とボタンの文言。Web のトークの「ファイルを選ぶ」「話して伝える」の代わり。
-# ボタンの文言は、挨拶の本文(dip の Prompt の entries.json の visit)とリッチメニュー(scripts.line_rich_menu)と同じ言い方にし、
+# ボタンの文言は、挨拶の本文(事業者の Prompt の entries.json の visit)とリッチメニュー(scripts.line_rich_menu)と同じ言い方にし、
 # 絵文字を付けない(トークの決まりの「絵文字なし」。task 231)
 LIFF_ACTIONS = {
     "resume_upload": ("履歴書を読み込む", "resume/upload"),
     "voice_consult": ("音声で相談する", "voice"),
 }
-ARCADE_LABEL = "ゲームで書類を作る"  # ゲームのボタンの文言(dip の Prompt が buttons の label に書く文言と同じ)
+ARCADE_LABEL = "ゲームで書類を作る"  # ゲームのボタンの文言(事業者の Prompt が buttons の label に書く文言と同じ)
 LIVEKIT_ENVS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")  # 音声相談に要る(voice_resume.livekit_token と同じ)
 
 
@@ -342,7 +342,7 @@ def _text(s: str) -> dict:
 
 
 def _card_bubble(c: dict) -> dict:
-    """求人カード(dip_mcp.logic.job_card の形)を Flex の bubble に。ボタンは Web のカードと同じ文を本人の発言として送る。"""
+    """求人カード(provider_mcp.logic.job_card の形)を Flex の bubble に。ボタンは Web のカードと同じ文を本人の発言として送る。"""
     fulltime = c.get("employment_type") == "正社員"
     meta = " · ".join(x for x in ("正社員" if fulltime else "", c.get("job_type") or "", c.get("area") or "") if x)
     pay = c.get("pay_text") or (f"時給{c['hourly_wage']}円" if c.get("hourly_wage") else "")  # v1 の記録は hourly_wage
@@ -411,7 +411,7 @@ def to_messages(reply: dict, base_url: str | None = None, features: tuple[str, .
     - bubbles → テキスト
     - actions → LIFF で使えれば(liff_features)LIFF 画面へのボタン(LIFF_ACTIONS)。使えなければ、吹き出しの後ろに断りの文。
       ボタンの箱では buttons より先に並べる(挨拶の入口が「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」の順になる)
-    - cards → Flex の carousel(render が dip のツールの返した求人だけにしている)
+    - cards → Flex の carousel(render が事業者のツールの返した求人だけにしている)
     - buttons(/liff/…)→ LIFF URL にできれば LIFF URL(liff_url_of)、できなければ公開 URL(base_url。既定は AICA_PUBLIC_URL)
       へのリンク。どちらも無ければ出さない。レジュメ・アーケードは LIFF URL にできるときだけ出す(公開 URL では本人にならない)
     - 挨拶のターン(greeting)で、ボタンがあり、求人が無く、吹き出しが 2 つ以上なら、吹き出しの 1 つを入口のボタンの見出しにする。
@@ -504,14 +504,14 @@ def answer_buttons(reply: dict | None) -> set[str]:
 
 LINK_TEXT = "アカウント連携"  # 本人がこの文を送ると連携を始める(リッチメニューのボタンが送る文)
 UNLINK_TEXT = "連携解除"
-LINK_LOGIN_PATH = "/dip/login"  # dip のログインの画面(偽物。line_runtime.server)
-LINK_INTRO = "dip にログインすると、この LINE と dip の会員がつながり、閲覧や応募の状況をふまえて相談できます。リンクの期限は 10 分です。"
-LINKED_TEXT = "dip の会員とつながりました。閲覧や応募の状況をふまえて相談できます。解除するときは「連携解除」と送ってください。"
-ALREADY_LINKED_TEXT = "この LINE は、もう dip の会員とつながっています。解除するときは「連携解除」と送ってください。"
-LINK_FAILED_TEXT = "dip の会員とつなげませんでした。もう一度「アカウント連携」と送って、最初からやり直してください。"
-LINK_UNAVAILABLE_TEXT = "いまは dip の会員とつなぐことができません。少し時間をおいて、もう一度送ってください。"
-UNLINKED_TEXT = "dip の会員との連携を解除しました。もう一度つなぐときは「アカウント連携」と送ってください。"
-NOT_LINKED_TEXT = "この LINE は、dip の会員とつながっていません。つなぐときは「アカウント連携」と送ってください。"
+LINK_LOGIN_PATH = "/provider/login"  # 事業者のログインの画面(偽物。line_runtime.server)
+LINK_INTRO = "事業者にログインすると、この LINE と事業者の会員がつながり、閲覧や応募の状況をふまえて相談できます。リンクの期限は 10 分です。"
+LINKED_TEXT = "事業者の会員とつながりました。閲覧や応募の状況をふまえて相談できます。解除するときは「連携解除」と送ってください。"
+ALREADY_LINKED_TEXT = "この LINE は、もう事業者の会員とつながっています。解除するときは「連携解除」と送ってください。"
+LINK_FAILED_TEXT = "事業者の会員とつなげませんでした。もう一度「アカウント連携」と送って、最初からやり直してください。"
+LINK_UNAVAILABLE_TEXT = "いまは事業者の会員とつなぐことができません。少し時間をおいて、もう一度送ってください。"
+UNLINKED_TEXT = "事業者の会員との連携を解除しました。もう一度つなぐときは「アカウント連携」と送ってください。"
+NOT_LINKED_TEXT = "この LINE は、事業者の会員とつながっていません。つなぐときは「アカウント連携」と送ってください。"
 
 
 def link_command(text: str) -> str | None:
@@ -520,13 +520,13 @@ def link_command(text: str) -> str | None:
 
 
 def link_messages(base: str, link_token: str) -> list[dict]:
-    """dip のログインの画面(linkToken つき)へのボタン。"""
+    """事業者のログインの画面(linkToken つき)へのボタン。"""
     url = f"{base}{LINK_LOGIN_PATH}?{urlencode({'linkToken': link_token})}"
     return [_text(LINK_INTRO),
-            {"type": "flex", "altText": "dip にログインして連携する", "contents": {"type": "bubble", "size": "kilo", "body": {
+            {"type": "flex", "altText": "事業者にログインして連携する", "contents": {"type": "bubble", "size": "kilo", "body": {
                 "type": "box", "layout": "vertical", "contents": [
                     {"type": "button", "style": "primary", "color": "#06c755", "height": "sm",
-                     "action": {"type": "uri", "label": "dip にログイン", "uri": url}}]}}}]
+                     "action": {"type": "uri", "label": "事業者にログイン", "uri": url}}]}}}]
 
 
 def texts(*items: str) -> list[dict]:
@@ -546,7 +546,7 @@ FORGET_CANCEL_POSTBACK = "aica-forget-cancel"
 FORGET_LABEL, FORGET_CANCEL_LABEL = "すべて消す", "やめる"
 # Web の「すべて消す」(static/talk.html の FORGET_WHAT、FORGET_KEPT)と同じ範囲
 FORGET_WHAT = "aica が覚えていること(雇用区分、希望、相談のまとめ、履歴書の読み取り結果、音声相談の下書き、ゲームで作った下書き)、保存した求人、応募、これまでの会話"
-FORGET_ASK_TEXT = (f"{FORGET_WHAT}をすべて消します。dip の会員との連携も外れます。消したものは元に戻せません。"
+FORGET_ASK_TEXT = (f"{FORGET_WHAT}をすべて消します。事業者の会員との連携も外れます。消したものは元に戻せません。"
                    "その日の利用回数は消えません。費用の記録は、あなたを見分ける番号を外して残ります。\n\n"
                    f"消してよければ、下の「{FORGET_LABEL}」を押してください(10 分以内)。")
 FORGOT_TEXT = (f"{FORGET_WHAT}を消しました。次に話しかけると、はじめての方として始まります。\n"
@@ -638,7 +638,7 @@ def _view_sections(view: dict, talked: bool, linked: bool, cap: int) -> list[str
     sections.append(_view_section("応募した求人", [
         f"・{a['title'] or a['job_id']}({'、'.join(x for x in (a['applied'], a['status']) if x)})"
         for a in view["applications"]], cap))
-    sections.append(f"■ dip の会員との連携\n{'あり' if linked else NONE_TEXT}")
+    sections.append(f"■ 事業者の会員との連携\n{'あり' if linked else NONE_TEXT}")
     sections.append("■ 会話\n" + ("このトークでの、あなたの発言と aica の返信" if talked else NONE_TEXT))
     return sections
 
@@ -674,7 +674,7 @@ def _pack(parts: list[str]) -> list[str]:
 
 def data_view_messages(view: dict, talked: bool, linked: bool) -> list[dict]:
     """「データを見る」の返事。view はプロフィール画面と同じ形(server._profile_view)。talked は会話を保存しているか、
-    linked は dip の会員と連携しているか。値の無い項目は出さず、無い区分けは「なし」と書く。
+    linked は事業者の会員と連携しているか。値の無い項目は出さず、無い区分けは「なし」と書く。
     どの区分けも落とさずに 5 つのメッセージに収める: 収まらなければ、区分けごとの行の数を減らし、残りは「ほか N 件」と書く。"""
     for cap in VIEW_CAPS:
         chunks = _pack([VIEW_INTRO, *_view_sections(view, talked, linked, cap), VIEW_OUTRO])

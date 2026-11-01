@@ -1,6 +1,6 @@
-"""正社員ヒアリングの c2 の言う段(会話の層。dip_mcp/convo/reply.py、設計メモ docs/design/conversation-layer.md §4.8、§5 の 4 枚目)。
+"""正社員ヒアリングの c2 の言う段(会話の層。provider_mcp/convo/reply.py、設計メモ docs/design/conversation-layer.md §4.8、§5 の 4 枚目)。
 
-実 LLM なし。本人から見た流れを、LINE の Webhook と本物のランタイムと dip の MCP で通す(偽の LINE、偽のモデル)。偽のモデルの言う段は、
+実 LLM なし。本人から見た流れを、LINE の Webhook と本物のランタイムと事業者の MCP で通す(偽の LINE、偽のモデル)。偽のモデルの言う段は、
 わざと単調な相づち(本人の言葉 +「ですね。」)を書く(jyoka/tasks#326 のトーク 1、3、5 の「〜ですね。」の代わり)。
 - 相づちの終わりが 3 回続く返事は捨て、入り口の定義の決まった相づちで組む
 - 区切りの行は、相づちの後、問いの前
@@ -19,14 +19,14 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.convo import reply as RP
-from dip_mcp.data import State
 from line_runtime.career_chat import SCHEMAS
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.convo import reply as RP
+from provider_mcp.data import State
 from tests.test_career_c2 import UID, act, run
 from tests.test_career_chat import USAGE, current_qid, start_script
 from tests.test_consult import ConsultModel

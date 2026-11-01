@@ -12,8 +12,8 @@ import json
 
 from fastapi.testclient import TestClient
 
-from dip_mcp import behavior, logic, profile
 from line_runtime.quota import LIMIT_MESSAGE, limit_reply
+from provider_mcp import behavior, logic, profile
 from tests.test_quota import _server
 
 LIMIT_REASON = "本日の会話数の上限に達している"
@@ -81,8 +81,8 @@ def test_a_message_gets_the_same_reply_with_the_search_track(tmp_path, monkeypat
     assert out["json"][3:] == out["stream"][3:] == (1, 1)
 
 
-def test_a_push_dip_declines_is_not_sent(tmp_path, monkeypatch):
-    """未連携のユーザー(F-follow-new)へのプッシュは dip が見送る。会話数は使わない。"""
+def test_a_push_provider_declines_is_not_sent(tmp_path, monkeypatch):
+    """未連携のユーザー(F-follow-new)へのプッシュは事業者が見送る。会話数は使わない。"""
     def scene(api):
         user = api.start("F-follow-new")
         status, r = api.send(user, "form_exit")
@@ -91,16 +91,16 @@ def test_a_push_dip_declines_is_not_sent(tmp_path, monkeypatch):
     out = both(tmp_path, monkeypatch, scene)
     assert out["json"][:2] == out["stream"][:2]
     status, r = out["json"][:2]
-    assert status == 200 and r["sent"] is False and "dip ID と未連携" in r["reason"]
+    assert status == 200 and r["sent"] is False and "事業者 ID と未連携" in r["reason"]
     assert set(r) == {"sent", "reason"}
     assert out["stream"][2] == ["start", "gate", "reply"]
     assert out["json"][3:] == out["stream"][3:] == (0, 0)
 
 
-def test_a_push_at_the_limit_is_not_sent_and_leaves_no_contact_in_dip(tmp_path, monkeypatch):
-    """上限に達していたら、dip に聞く前(接触として記録する前)にプッシュを見送る。"""
+def test_a_push_at_the_limit_is_not_sent_and_leaves_no_contact_in_provider(tmp_path, monkeypatch):
+    """上限に達していたら、事業者に聞く前(接触として記録する前)にプッシュを見送る。"""
     def scene(api):
-        user = api.start("B-exit")  # 上限が無ければ dip が許可するユーザー
+        user = api.start("B-exit")  # 上限が無ければ事業者が許可するユーザー
         assert api.send(user, "message", "こんにちは")[0] == 200  # 上限の 1 回を使う
         contact = behavior.view(api.server.state, user)["last_contact"]
         status, r = api.send(user, "form_exit")
@@ -271,7 +271,7 @@ def test_an_error_before_the_runtime_runs_is_a_500_or_cuts_the_stream(tmp_path, 
         user = api.start("B-exit")
 
         def broken(*args, **kwargs):
-            raise RuntimeError("dip が落ちた")
+            raise RuntimeError("事業者が落ちた")
 
         monkeypatch.setattr(logic, "push_trigger", broken)
         body = {"user_id": user, "event": "form_exit"}

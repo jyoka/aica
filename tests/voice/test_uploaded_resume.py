@@ -1,7 +1,7 @@
 """トークでアップロードした履歴書を、音声相談が踏まえて始めることのテスト。実 API なし。
 
-トークで履歴書をアップロード → dip の状態に resume_upload が保存される(task 63)→ 同じユーザーが
-「音声で相談」に入る → 音声ワーカーは面談の前に dip の要約(本物の MCP サーバー、stdio)を読み、
+トークで履歴書をアップロード → 事業者の状態に resume_upload が保存される(task 63)→ 同じユーザーが
+「音声で相談」に入る → 音声ワーカーは面談の前に事業者の要約(本物の MCP サーバー、stdio)を読み、
 アドバイザーの指示と最初の挨拶に履歴書の要点が入る。別のユーザーや要約が読めないときは従来どおり始める。
 """
 
@@ -9,17 +9,17 @@ from __future__ import annotations
 
 import asyncio
 
-from dip_mcp import logic
-from dip_mcp.data import State
+from provider_mcp import logic
+from provider_mcp.data import State
 from tests.test_resume_upload import PII, clean_draft
 from voice_resume.advisor import ResumeAdvisor
 from voice_resume.agent import prepare_advisor
-from voice_resume.dip import DipMCP
 from voice_resume.prompts import (
     RESUME_NOTE_MAX_CHARS,
     greeting_instructions,
     uploaded_resume_note,
 )
+from voice_resume.provider import ProviderMCP
 
 U1 = "w-1111111111111111:sim-new"  # 履歴書をアップロードしてから音声で相談するブラウザ
 U2 = "w-2222222222222222:sim-new"  # 履歴書を出していない別のブラウザ
@@ -27,23 +27,23 @@ U2 = "w-2222222222222222:sim-new"  # 履歴書を出していない別のブラ�
 
 def _start_interviews(tmp_path, monkeypatch, *users):
     """トークで U1 が履歴書をアップロードした状態で、音声ワーカーの面談開始処理を各ユーザーで走らせる。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))  # dip の子プロセスも同じ状態を使う
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))  # 事業者の子プロセスも同じ状態を使う
     state = State(tmp_path / "state.json")
     logic.save_resume_upload(state, U1, {"format_version": "1.0", "resume": clean_draft().model_dump()})
 
     async def run():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            return [await prepare_advisor(dip, u) for u in users]
+            return [await prepare_advisor(provider, u) for u in users]
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     return asyncio.run(run())
 
 
 def _saved_resume(tmp_path) -> dict:
-    """トークのアップロードと同じ保存(dip_mcp.logic.save_resume_upload)を通した、要約の uploaded_resume。"""
+    """トークのアップロードと同じ保存(provider_mcp.logic.save_resume_upload)を通した、要約の uploaded_resume。"""
     state = State(tmp_path / "resume-state.json")
     logic.save_resume_upload(state, U1, {"format_version": "1.0", "resume": clean_draft().model_dump()})
     return logic.uploaded_resume(state.user(U1))
@@ -68,19 +68,19 @@ def test_voice_interview_starts_from_the_uploaded_resume(tmp_path, monkeypatch):
 
 
 def test_summary_failure_or_no_user_starts_as_before():
-    class BrokenDip:
+    class BrokenProvider:
         async def get_user_conversation_summary(self, user_id):
-            raise RuntimeError("dip down")
+            raise RuntimeError("provider down")
 
-    for dip, user in ((BrokenDip(), U1), (None, U1), (BrokenDip(), None)):
-        advisor, greeting = asyncio.run(prepare_advisor(dip, user))
+    for provider, user in ((BrokenProvider(), U1), (None, U1), (BrokenProvider(), None)):
+        advisor, greeting = asyncio.run(prepare_advisor(provider, user))
         assert advisor.instructions == ResumeAdvisor().instructions
         assert greeting == greeting_instructions()
 
 
 def test_resume_note_is_bounded_and_never_carries_personal_info(tmp_path):
     resume = _saved_resume(tmp_path)
-    # 連絡先は dip に保存する時点で消えている。要約に personal などが紛れ込んでも(本来は無い)、
+    # 連絡先は事業者に保存する時点で消えている。要約に personal などが紛れ込んでも(本来は無い)、
     # 決まった項目だけを拾うので指示に入らない
     leaked = {**resume, "personal": {"name": "佐藤 美咲", "phone": "090-0000-1111"}, "name": "佐藤 美咲"}
     assert not any(p in uploaded_resume_note(leaked) for p in (*PII, "佐藤"))
@@ -161,11 +161,11 @@ def test_education_only_resume_is_still_used():
         {"school": "みほん高等学校", "status": "在学中", "period": "2021年4月〜"},
     ]}}
 
-    class Dip:
+    class Provider:
         async def get_user_conversation_summary(self, user_id):
             return summary
 
-    advisor, greeting = asyncio.run(prepare_advisor(Dip(), U1))
+    advisor, greeting = asyncio.run(prepare_advisor(Provider(), U1))
     assert "学歴: みほん高等学校(在学中" in advisor.instructions
     assert "みほん中学校" not in advisor.instructions  # 1行だけ(在学中か最終学歴)
     assert "在学中なので、授業のある時間帯は働けない前提" in advisor.instructions

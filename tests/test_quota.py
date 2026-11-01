@@ -10,7 +10,6 @@ from functools import partial
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp.data import State
 from line_runtime import ledger as ledger_mod
 from line_runtime.quota import (
     DEFAULT_IP_IDS,
@@ -30,6 +29,7 @@ from line_runtime.quota import (
     total_ids_limit,
     total_limit,
 )
+from provider_mcp.data import State
 from tests.test_handle import reply
 
 
@@ -66,7 +66,7 @@ QUOTA_ENVS = ("AICA_DAILY_TURN_LIMIT_PER_IP", "AICA_DAILY_NEW_IDS_PER_IP", "AICA
 
 
 def _server(tmp_path, monkeypatch, limit: str | None, **env: str):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")
     for k in QUOTA_ENVS:
@@ -113,7 +113,7 @@ def test_over_the_limit_gets_a_polite_notice_without_calling_the_llm_and_recover
         assert r["bubbles"] == [LIMIT_MESSAGE] and r["limited"] and r["cards"] == []
         last = _stream(client, user, "message", "もっと")[-1]
         assert last["kind"] == "reply" and last["bubbles"] == [LIMIT_MESSAGE]
-        # プッシュも送らない(dip に接触として記録させない)
+        # プッシュも送らない(事業者に接触として記録させない)
         assert client.post("/api/event", json={"user_id": user, "event": "form_exit"}).json()["sent"] is False
         assert model.calls == 2 and len(server.app.state.rt.ledger.rows) == rows
         # 同じブラウザのシナリオユーザーを替えても、上限は人(匿名ID)単位で共有

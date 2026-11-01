@@ -1,11 +1,11 @@
 # PRD の参照資料(バイト探しの相棒の質問バンク・ハーネス・シミュレーター)は原文のまま置くので、lint しない。
-# 移した先(dip_mcp/baito、evals/baito_sim.py)は lint する
+# 移した先(provider_mcp/baito、evals/baito_sim.py)は lint する
 extend-exclude = ["docs/prd/baito_harness"]
 
-# line-sim 配下のみに効く。実行ディレクトリによらず dip_mcp / line_runtime / evals / resume_intake / voice_resume を
+# line-sim 配下のみに効く。実行ディレクトリによらず provider_mcp / line_runtime / evals / resume_intake / voice_resume を
 # ローカルパッケージとして扱い、import の並び(I001)の判定を安定させる。
 [lint.isort]
-known-first-party = ["dip_mcp", "line_runtime", "evals", "resume_arcade", "resume_draft", "resume_intake", "resume_lines", "voice_resume"]
+known-first-party = ["provider_mcp", "line_runtime", "evals", "resume_arcade", "resume_draft", "resume_intake", "resume_lines", "voice_resume"]
 
 [lint.per-file-ignores]
 # 評価レポートの見出し・結果ファイル名の時刻はローカル時刻で十分(既知の DTZ005 ×2)

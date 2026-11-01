@@ -1,7 +1,7 @@
 """正社員のヒアリングの、答えの候補・スキップと中断・聞き返しの評価シナリオ(task 315。費用 0。実 API を呼ばない)。
 
     ./.venv/bin/python -m evals.career_choices          # シナリオごとの合否。最後に「すべて合格」
-    ./.venv/bin/python -m evals.career_choices --version c2   # 会話の層の版(dip_mcp/career/c2.py)で回す。既定は c1
+    ./.venv/bin/python -m evals.career_choices --version c2   # 会話の層の版(provider_mcp/career/c2.py)で回す。既定は c1
 
 設計メモ docs/design/fulltime-hearing.md の §5.3。2026-10-28 に利用者が本番の LINE で見た 4 つ(候補が「パス」と「あとで」だけ、
 「パス」と「あとで」の違いが分からない、何の規模か分からない、聞き返すと同じ問いと「うまく受け取れませんでした」)を、
@@ -26,8 +26,8 @@ import argparse
 import json
 import sys
 
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import harness as H
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import harness as H
 
 FORMS = H.FORMS
 SEGMENTS = (*H.SEGMENTS, "unknown")

@@ -1,6 +1,6 @@
-"""アルバイト・パートの相談の v5(会話の層に載せ替えた版。dip_mcp/baito/v5.py、設計メモ docs/design/conversation-layer.md §5 の 7 枚目)。
+"""アルバイト・パートの相談の v5(会話の層に載せ替えた版。provider_mcp/baito/v5.py、設計メモ docs/design/conversation-layer.md §5 の 7 枚目)。
 
-実 LLM なし。台本の LLM と偽のモデルで、相談のツール(dip_mcp.baito.session)と、本物のランタイムと dip の MCP を回す。
+実 LLM なし。台本の LLM と偽のモデルで、相談のツール(provider_mcp.baito.session)と、本物のランタイムと事業者の MCP を回す。
 - 確かめる場面: baito の全部、baito-switch-to-fulltime(移る先は正社員の c2)、switch-career-to-baito(正社員の c2 から v5 へ)
 - PRD の結果の検査(設計メモ §4.13、§6 の 9): 20 ペルソナ(evals.baito_sim --version v5)と、未成年の NG、深夜を出さない、中学生以下に
   推薦しない、金額を言わない、カードに無い職種を言わない、闇バイトの注意。turn() の形とプロンプトの原文の検査は v4 だけに残す
@@ -19,19 +19,19 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import session
-from dip_mcp.baito import v5 as V5
-from dip_mcp.career import session as career_session
-from dip_mcp.convo import switch as SW
-from dip_mcp.data import State, now
 from evals import baito_sim
 from evals.scenes import checks as K
 from evals.scenes import runner as R
 from line_runtime import baito_chat
 from line_runtime.agent import PINNED_USER
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import session
+from provider_mcp.baito import v5 as V5
+from provider_mcp.career import session as career_session
+from provider_mcp.convo import switch as SW
+from provider_mcp.data import State, now
 from tests.test_career_c2 import FakeReadLLM, act, say_question
 from tests.test_career_chat import USAGE, start_script
 from tests.test_consult import ConsultModel
@@ -573,7 +573,7 @@ def test_later_then_switching_in_from_career_continues_the_paused_consultation(t
 
 
 def test_forget_all_also_erases_the_paused_consultation(tmp_path):
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _to_hf_time(st)
@@ -825,9 +825,9 @@ def test_web_forget_all_also_erases_the_handoff(app, monkeypatch, v4_destination
 
 
 def test_runtime_direct_switch_from_v5_to_c2_reads_the_written_handoff(tmp_path, monkeypatch):
-    """ランタイム(本物、dip の MCP も本物)で、v5 の相談の途中の「やっぱり正社員で探したい」: トークの AI も読む段も呼ばずに、同じターンで
+    """ランタイム(本物、事業者の MCP も本物)で、v5 の相談の途中の「やっぱり正社員で探したい」: トークの AI も読む段も呼ばずに、同じターンで
     正社員の c2 が始まる(言う段 1 回)。v5 が書いた記録の勤務地(近くで探すのエリア)は聞き直さない。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     st = State(tmp_path / "state.json")
     session.start(st, UID, quick=False)
     h = harness(st)
@@ -1011,7 +1011,7 @@ def _later_with_ng(st):
 
 def test_ng_deleted_during_the_continued_consultation_is_not_written_back(tmp_path):
     """「あとで」の続きを始めた後(相談の途中)にプロフィール画面で NG を消しても、閉じるときに書き戻さない。続きで新しく話した NG は足す。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1031,7 +1031,7 @@ def test_ng_deleted_during_the_continued_consultation_is_not_written_back(tmp_pa
 
 def test_ng_edited_on_the_profile_page_while_paused_keeps_only_what_is_left(tmp_path):
     """「あとで」の後に避けたいことを直したら、続きは今の文に残った NG だけを持つ。残っていれば、そのまま書き戻さない(文を変えない)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1052,7 +1052,7 @@ def test_ng_edited_on_the_profile_page_while_paused_keeps_only_what_is_left(tmp_
 def test_ng_deleted_during_the_continued_consultation_stays_deleted_after_later_again(tmp_path):
     """続きの途中にプロフィール画面で NG と日数を消し、もう一度「あとで」で取っておく。次の続きにも、閉じた後の保存にも、消した NG と
     日数が戻らない(jyoka/tasks#374)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1071,7 +1071,7 @@ def test_ng_deleted_during_the_continued_consultation_stays_deleted_after_later_
 def test_ng_edited_during_the_continued_consultation_is_not_added_back_with_a_new_ng(tmp_path):
     """続きの途中に避けたいことを直し(「電話対応」を「力仕事」に)、同じ続きで新しい NG を話して閉じる: 直した文に新しい NG を足し、
     外した NG は戻さない(jyoka/tasks#374)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1103,7 +1103,7 @@ def _web_later_with_items(client, st, uid, th) -> dict:
 
 
 def _stored(client, uid) -> str:
-    """「データを書き出す」の dip の状態(保存しているそのままの形)を、文字にしたもの。"""
+    """「データを書き出す」の事業者の状態(保存しているそのままの形)を、文字にしたもの。"""
     return json.dumps(client.get("/api/profile/export").json()["stored"]["users"][uid], ensure_ascii=False)
 
 
@@ -1168,8 +1168,8 @@ def test_web_forget_all_after_later_erases_the_paused_consultation(app, monkeypa
 def test_editing_an_item_after_later_replaces_the_old_value_in_the_paused_consultation(tmp_path, monkeypatch):
     """「あとで」の後にプロフィール画面で日数を直し、トーク(トークの AI の save_user_preferences)で避けたいことを言い直す: 取っておいた相談は
     その時点で前の値(週3〜4日、電話対応)を持たず、直した日数を入れている。続きの結果でも直した値のまま(jyoka/tasks#375)。"""
-    from dip_mcp import profile
-    from dip_mcp import server as dip_server
+    from provider_mcp import profile
+    from provider_mcp import server as provider_server
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1177,8 +1177,8 @@ def test_editing_an_item_after_later_replaces_the_old_value_in_the_paused_consul
     p = st.user(UID)[session.PAUSED_KEY]
     assert p["harness"]["slots"]["days_per_week"] == {"value": "1-2", "confidence": "high", "from": V5.SAVED}
     assert p["kept"]["days_per_week"] == "週1〜2日" and "週3〜4日" not in json.dumps(p, ensure_ascii=False)
-    monkeypatch.setattr(dip_server, "state", st)
-    assert dip_server.save_user_preferences(UID, {"avoids": "力仕事"})["saved"] == ["avoids"]
+    monkeypatch.setattr(provider_server, "state", st)
+    assert provider_server.save_user_preferences(UID, {"avoids": "力仕事"})["saved"] == ["avoids"]
     p = st.user(UID)[session.PAUSED_KEY]
     assert NG not in json.dumps(p, ensure_ascii=False) and p["kept"]["avoids"] == "力仕事"
     session.start(st, UID, quick=False)
@@ -1189,7 +1189,7 @@ def test_editing_an_item_after_later_replaces_the_old_value_in_the_paused_consul
 
 def test_unrelated_profile_change_keeps_the_paused_consultation_as_is(tmp_path):
     """取っておいた相談が読まない項目(やりたいこと)を直しても、取っておいた相談は変えない(直前のやりとりも残す)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1202,7 +1202,7 @@ def test_unrelated_profile_change_keeps_the_paused_consultation_as_is(tmp_path):
 def test_profile_change_rebuilds_the_review_card_and_drops_an_unreadable_paused_consultation(tmp_path):
     """まとめのカードを出したまま取っておいた相談は、NG を消すとカードを作り直す(消した NG を載せない)。取っておいた状態が読めなければ、
     「消す」は失敗させず、取っておいた相談ごと消す(jyoka/tasks#375)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)
@@ -1225,7 +1225,7 @@ def test_profile_change_rebuilds_the_review_card_and_drops_an_unreadable_paused_
 def test_profile_change_drops_handed_over_values_and_plan_texts_from_the_paused_consultation(tmp_path):
     """取っておいた相談が正社員から引き継いだ値(came_from。近くで探すのエリアに無い「横浜」、取っておいた相談が読まない働き方)と、
     計画の記録の文(「週の日数を…に直したよ」)も、本人が項目を消した時点で消す(jyoka/tasks#375)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     st = State(tmp_path / "state.json")
     _later_with_ng(st)

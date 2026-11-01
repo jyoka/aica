@@ -4,7 +4,7 @@
 propose_jobs を呼ばず、本人が促すまで検索されなかった。その場面(と調べものの場面)を
 台本で再現し、実 LLM(voice_resume.voice_llm.create_llm。既定は claude-sonnet-5-5)に対して「同じターンでツールが呼ばれた回数 / 試行回数」を測る。
 
-LLM 以外は呼ばない: 求人検索(dip MCP)と web 検索はスタブ。1試行 = セッションを作り、
+LLM 以外は呼ばない: 求人検索(事業者の MCP)と web 検索はスタブ。1試行 = セッションを作り、
 実会話から起こした履歴を chat_ctx に入れ、引き金の発話1つを session.run で流す。
 
     ./.venv/bin/python scripts/voice/tool_call_probe.py --trials 5
@@ -39,7 +39,7 @@ NO_JOBS_OUTPUT = (
     "と伝えてください(例: エリアや時給)。"
 )
 RELAX_WAGE_HISTORY = [
-    ("assistant", ("こんにちは、バイトルのキャリアアドバイザーです。5分ほどで希望と経験を伺い、"
+    ("assistant", ("こんにちは、aica のキャリアアドバイザーです。5分ほどで希望と経験を伺い、"
      "最後に求人の提案と履歴書の下書きをお出しします。どんなバイトを探していますか?")),
     ("user", "決めてないな。"),
     ("assistant", "まだ決まっていなくて大丈夫です。働きたいエリアや最寄り駅はありますか?"),
@@ -50,8 +50,8 @@ RELAX_WAGE_HISTORY = [
     ("user", "東京平均値はどのぐらい"),
     ("assistant", "少し調べますね。"),
     ("tool_call", "wage_average", '{"area": "東京"}',
-     "東京都のアルバイト・パートの平均時給は1428円です(マイナビ 2026年8月調査)。"),
-    ("assistant", ("マイナビの2026年8月の調査では、東京都のアルバイト・パートの平均時給は1428円です。"
+     "東京都のアルバイト・パートの平均時給は1428円です(民間の平均時給調査 2026年8月)。"),
+    ("assistant", ("民間の平均時給調査(2026年8月)では、東京都のアルバイト・パートの平均時給は1428円です。"
      "希望する時給の下限はありますか?")),
     ("user", "基本平均時給 が ちょっと 高め"),
     ("assistant", "東京の平均より少し高めですね。時給1500円以上を目安にしてよいですか?"),
@@ -96,7 +96,7 @@ RELAX_WAGE_HISTORY = [
 ]
 
 RESEARCH_HISTORY = [
-    ("assistant", ("こんにちは、バイトルのキャリアアドバイザーです。5分ほどで希望と経験を伺い、"
+    ("assistant", ("こんにちは、aica のキャリアアドバイザーです。5分ほどで希望と経験を伺い、"
      "最後に求人の提案と履歴書の下書きをお出しします。どんなバイトを探していますか?")),
     ("user", "飲食のホールを考えています"),
     ("assistant", "飲食ホールですね。働きたいエリアか最寄り駅はありますか?"),
@@ -118,7 +118,7 @@ SCENARIOS = {
 }
 
 
-class StubDip:
+class StubProvider:
     """recommend_jobs を記録して0件を返す(実会話と同じ「見つからない」状況)。"""
 
     def __init__(self):
@@ -140,7 +140,7 @@ def stub_research_client():
 
 async def run_trial(scenario: dict) -> tuple[bool, list[str], str, dict]:
     """1試行。返り値: (同じターンで期待ツールが呼ばれたか, 呼ばれたツール名, 最初の発話, トークン量)。"""
-    advisor = ResumeAdvisor(dip=StubDip(), research_client_factory=stub_research_client)
+    advisor = ResumeAdvisor(provider=StubProvider(), research_client_factory=stub_research_client)
     session = AgentSession(
         llm=voice_llm.create_llm()
     )

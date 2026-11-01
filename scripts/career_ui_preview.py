@@ -1,6 +1,6 @@
 """正社員のヒアリングの形 D(line_runtime/career_ui.py)の画面の写真を作る(task 246)。
 
-正社員のハーネス(dip_mcp/career)を形 D にして、偽のモデルとボタン(文の問いは架空の答え)で最後まで進め、部品ごとに 1 ターンの
+正社員のハーネス(provider_mcp/career)を形 D にして、偽のモデルとボタン(文の問いは架空の答え)で最後まで進め、部品ごとに 1 ターンの
 返信(吹き出し 1 つと Flex 1 つ、クイックリプライ)を、LINE のトークに近い見た目の HTML に描いて PNG にする。
 Flex は LINE の Flex の決まりをまねて描くだけで(scripts/progress_ui_preview.py と同じ大きさの表)、LINE の実機の描き方ではない
 (実機では確かめていない)。スタンプの絵は line_runtime/static/career/stamp.png をそのまま使う。
@@ -18,10 +18,10 @@ import json
 import os
 from pathlib import Path
 
-from dip_mcp.career import harness as H
-from dip_mcp.career import ui as UI
 from line_runtime import career_ui as C
 from line_runtime import line_channel
+from provider_mcp.career import harness as H
+from provider_mcp.career import ui as UI
 from scripts.progress_ui_preview import BUBBLE_W, SPACE_PX, TEXT_PX, page
 
 STAMP = Path(__file__).resolve().parents[1] / "line_runtime" / "static" / "career" / "stamp.png"
@@ -154,7 +154,7 @@ def scene_html(title: str, s: dict) -> str:
     bubbles = "".join(f'<div class="bubble">{html.escape(b)}</div>' for b in s["bubbles"])
     col = "max-width:none" if carousel else ""
     return (f'<div class="phone" id="shot" style="width:{width}px"><div class="cap">{html.escape(title)}</div>{me}'
-            f'<div class="row"><div class="avatar">B</div><div class="col" style="{col}">{bubbles}'
+            f'<div class="row"><div class="avatar">a</div><div class="col" style="{col}">{bubbles}'
             f'{flex_html(s["built"]["flex"])}</div></div>' + (f'<div class="qr">{qr}</div>' if qr else "") + "</div>")
 
 

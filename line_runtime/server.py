@@ -1,13 +1,13 @@
-"""Web: 本番のトーク画面(/)+ 開発者画面(/dev: シナリオ起動・dip の状態・処理の流れ)+ LIFF 画面(dip 側のモック)。
+"""Web: 本番のトーク画面(/)+ 開発者画面(/dev: シナリオ起動・事業者の状態・処理の流れ)+ LIFF 画面(事業者側のモック)。
 
 本番の / は求職者が使うトーク1画面。シナリオを選ばせず、開いたブラウザの匿名ユーザー(匿名ID そのもの)について
 最後のやりとりから30分以内なら今の会話を続け(/api/talk/history で履歴を描き直す。LLM は呼ばない)、
-過ぎていれば dip が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から新しい会話を始める。
+過ぎていれば事業者が初回訪問か再訪かを決め(/api/talk/open)、AI 側の1通目から新しい会話を始める。
 /dev のシナリオは評価と同じ一覧(evals/scenarios.json)。どれも AI 側の1通目から始まる。
 
     ./.venv/bin/python -m line_runtime.server   # http://127.0.0.1:8030
 
-LIFF 画面と状態確認 API は本来 dip が持つ Web 画面なので、dip の State を直接使う。
+LIFF 画面と状態確認 API は本来事業者が持つ Web 画面なので、事業者の State を直接使う。
 エージェントとの会話は LineRuntime(MCP 経由)だけを通る。
 
 マルチユーザー: 画面を開いたとき(GET / と GET /dev)にブラウザごとに匿名ユーザーIDを発行し、Cookie で保持する
@@ -30,9 +30,9 @@ LINE 公式アカウント(task 177): POST /line/webhook が 2 つ目のチャ�
 ADR-0008)。署名(X-Line-Signature)が合わなければ 400。テキストのメッセージは Web と同じターンの処理(line_runtime.turn)に流し、
 友だち追加(follow)では初回の挨拶を返す。部品は line_runtime.line_channel。
 
-LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント連携」と送ると、bot が LINE から linkToken をもらい、dip の
-ログインの画面(GET/POST /dip/login。dip の画面の偽物)へのボタンを返す。ログインできると dip が nonce を作り、本人を LINE の
-accountLink の画面に送る。LINE から accountLink の webhook が来たら、nonce から会員を引いて連携の表に書く(dip_mcp.accounts)。
+LINE のアカウント連携(task 182、ADR-0007): 本人が「アカウント連携」と送ると、bot が LINE から linkToken をもらい、事業者の
+ログインの画面(GET/POST /provider/login。事業者の画面の偽物)へのボタンを返す。ログインできると事業者が nonce を作り、本人を LINE の
+accountLink の画面に送る。LINE から accountLink の webhook が来たら、nonce から会員を引いて連携の表に書く(provider_mcp.accounts)。
 「連携解除」で外す。Web の LINE 風の画面の匿名ユーザーは、開発者画面から同じ流れを試せる(/api/dev/link。LINE の役は
 偽物の LINE(line_runtime.fake_line)がして、accountLink の画面は /fake-line/… に置く)。
 
@@ -43,7 +43,7 @@ LINE で見る、消す(docs/design/privacy.md の 3.7): 「データを見る�
 
 レジュメ・アーケード(task 187、188。docs/prd/resume-arcade.md): ゲームの画面(/liff/arcade…)は Cookie を発行も要求もしない。
 ハブに出す 2 本は、AI と下書きの API(/api/arcade/start、/ai、/save)を Cookie の本人として呼ぶ。画面は指示の文を送らず、
-LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(dip_mcp.arcade)と人ごとの 1 日の回数。
+LLM はサーバーが resume_arcade で呼ぶ(LINE_SIM_PROVIDER)。費用の上限は遊びの番号ごと(provider_mcp.arcade)と人ごとの 1 日の回数。
 LINE のアプリで開いたゲーム(/liff/line/arcade/…)は、同じ中身の /api/liff/arcade/… を LIFF の本人(LINE のユーザー)として呼ぶ(task 219)。
 
 LINE のアプリで開く LIFF 画面(task 203): LINE_LIFF_ID とチャネル ID があるときだけ、/liff/line/… を開く(無ければ 404)。
@@ -56,7 +56,7 @@ LINE のトークから LIFF 画面で使う操作(task 204): 返信の actions 
 履歴書の確認と続きの返事は、その本人の LINE のトークに push で届く。push の宛先(LINE の userId)は、操作を始めるときに LIFF の
 ID トークンをもう一度確かめて受け取り、届けるまでメモリにだけ置く(保存しない)。
 
-LINE のアプリで遊ぶゲーム(task 219): LIFF の設定があれば、dip は LINE のユーザーにもゲームの URL を渡し(dip_mcp.arcade.game_url)、
+LINE のアプリで遊ぶゲーム(task 219): LIFF の設定があれば、事業者は LINE のユーザーにもゲームの URL を渡し(provider_mcp.arcade.game_url)、
 LINE のトークでは LIFF URL のボタンになる。LIFF の中のゲームは、AI と保存を LIFF の本人で呼び(/api/liff/arcade/…。回数の上限は
 Web と同じ)、保存した下書きはその LINE のユーザーのものになる。保存の知らせは、その本人の LINE のトークに 1 回 push で届く。
 
@@ -82,7 +82,7 @@ line_runtime.legal が HTML にする。Cookie を発行も要求もしない。
 LINE のリッチメニューから開く 3 つの最初の画面(音声相談、履歴書の読み込み、ゲームの一覧)と、本人を確かめる殻(LIFF の
 画面すべての殻)は、1 つの枠(_liff_frame、見た目は LIFF_CSS)で出す(task 241)。上から、見出しと何ができるか(1 行)、何分
 かかるか・何が届くかの箇条書き(_liff_intro)、押すボタン 1 つ(ゲームの一覧は、ボタンの代わりに遊ぶゲームを選ぶ)。同意の画面も
-同じ枠と同じボタンで出す。ほかの LIFF の画面(読み取り結果、下書き、応募フォーム)は、まだ dip の画面と同じ枠(_page)。
+同じ枠と同じボタンで出す。ほかの LIFF の画面(読み取り結果、下書き、応募フォーム)は、まだ事業者の画面と同じ枠(_page)。
 """
 
 from __future__ import annotations
@@ -123,11 +123,6 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from dip_mcp import accounts, arcade, behavior, logic, profile, retention
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import session as career_session
-from dip_mcp.convo.acts import STICKER
-from dip_mcp.data import State, load_jobs
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import (
     config,
@@ -155,6 +150,11 @@ from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import LineRuntime
 from line_runtime.voice_reply import voice_reply
 from line_runtime.voice_rooms import JOIN_WINDOW, ActiveVoiceRooms
+from provider_mcp import accounts, arcade, behavior, legacy, logic, profile, retention
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import session as career_session
+from provider_mcp.convo.acts import STICKER
+from provider_mcp.data import State, load_jobs
 from resume_arcade import draft as arcade_draft
 from resume_arcade import schemas as arcade_schemas
 from resume_arcade import stages as arcade_stages
@@ -169,7 +169,7 @@ state = State()
 # ブラウザごとの匿名ユーザーID(Cookie)。ブラウザ側には ID しか置かず、状態はすべてサーバー側でこの ID にひも付く。
 ANON_COOKIE = "aica_uid"
 ANON_ID = re.compile(r"w-[0-9a-f]{16}")
-# 最後に画面を開いた日から 180 日(使われなくなった人の dip の状態を消す期間と同じ。dip_mcp.retention.USER_TTL)
+# 最後に画面を開いた日から 180 日(使われなくなった人の事業者の状態を消す期間と同じ。provider_mcp.retention.USER_TTL)
 ANON_COOKIE_MAX_AGE = 180 * 24 * 3600
 
 
@@ -220,7 +220,7 @@ def _require_own(request: Request, user_id: str) -> None:
 
 
 def _page_user(request: Request, scenario_user: str | None) -> str:
-    """dip の画面(LIFF)を開いたユーザー。URL にはユーザーIDを載せず(dip_mcp.logic.liff_url)、Cookie の匿名IDで
+    """事業者の画面(LIFF)を開いたユーザー。URL にはユーザーIDを載せず(provider_mcp.logic.liff_url)、Cookie の匿名IDで
     本人を決める。開発者画面のシナリオなら、URL の scenario_user を付けた「匿名ID:シナリオユーザー」。"""
     anon = _owner(request)
     if not scenario_user:
@@ -277,7 +277,7 @@ class _NothingToDelete(Exception):
 
 def _profile_writer(request: Request, adds: bool = False) -> str:
     """プロフィールを書き換える本人(Cookie の匿名ID)。この IP の匿名IDの数を超えるなら 429。
-    書き換えは最後の利用として記録する(期間で消す掃除が数える。dip_mcp.retention)。
+    書き換えは最後の利用として記録する(期間で消す掃除が数える。provider_mcp.retention)。
     使い始める同意の前は、足す、直す口(adds)は 403。消す口は同意の前もできるが、最後の利用は書かない。
     同意の前で本人の行がまだ無ければ、消すものが無いので何も書かずに空のプロフィールを返す(_NothingToDelete。
     消す口の中の State.update が空の行を作らないように)。"""
@@ -382,7 +382,7 @@ async def internal_purge(request: Request):
 
 @app.get("/healthz")
 async def healthz():
-    """ヘルスチェック(Render が数秒ごとに呼ぶ)。起動を終えていれば 200。LLM も dip も呼ばず、Cookie も発行しない。"""
+    """ヘルスチェック(Render が数秒ごとに呼ぶ)。起動を終えていれば 200。LLM も事業者も呼ばず、Cookie も発行しない。"""
     return {"status": "ok"}
 
 
@@ -396,7 +396,7 @@ async def index(request: Request):
 
 @app.get("/dev")
 async def dev(request: Request):
-    """開発者画面(評価・説明用): シナリオの起動・dip から見た状態・構成図と処理の流れ。"""
+    """開発者画面(評価・説明用): シナリオの起動・事業者から見た状態・構成図と処理の流れ。"""
     resp = FileResponse(STATIC / "dev.html")
     _issue(request, resp)
     return resp
@@ -515,7 +515,7 @@ def _arcade_draft_edit(user: str, rid: int, markdown: str, scenario_user: str = 
 def _arcade_draft_html(rec: dict, scenario_user: str | None, action: str = arcade.DRAFT_PATH) -> str:
     """下書きの画面の中身: 書類(Markdown のまま)、確かめたい点(数字の空欄のある行)、直す欄。"""
     todo = "".join(f"<li>{escape(x)}</li>" for x in rec["resume"]["unconfirmed"])
-    # 正社員のヒアリングの下書き(dip_mcp/career/draft.py)は、職歴カードの言葉の空欄もある
+    # 正社員のヒアリングの下書き(provider_mcp/career/draft.py)は、職歴カードの言葉の空欄もある
     where, blanks = (("正社員の相談", "数字や言葉") if rec["game"] == arcade.CAREER_DRAFT
                      else (f"ゲーム({arcade.GAME_NAMES.get(rec['game'], rec['game'])})", "数字"))
     return (f"<p>{escape(where)}で、あなたの答えから作った"
@@ -554,14 +554,14 @@ async def talk_open(request: Request):
     """本番のトーク画面を開いた: ユーザーは匿名ID そのもの(シナリオ用ユーザーは使わない)。
     - 最後のやりとりから30分以内: 今の会話を続ける(event は None)。画面は /api/talk/history で履歴を描き直す。
       LLM は呼ばず、会話数も使わない。
-    - それ以外: dip がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで
+    - それ以外: 事業者がそのユーザーの状態から初回訪問か再訪かを決める。続けて画面がそのイベントで
       /api/event/stream を呼び、AI 側の1通目(挨拶)で新しい会話が始まる。開いた記録は挨拶が返ったときに残す
       (返す途中で接続が切れて残せなかったら、次に開いたとき、保存された挨拶から補う)。
     thread は画面が表示する会話の番号(発言のときに送り返す。新しい会話なら挨拶のストリームの thread で置き換わる)。
     consent は同意の状態と文言(line_runtime.consent.view)。使い始める同意(terms)がまだなら、上のどちらもせず event は None で、
     画面は同意の画面を出す(同意したら開き直す。LLM は呼ばない)。履歴書と音声の同意も、画面はここで受け取る。
     状態を初期に戻すことはしない。
-    Cookie(GET / で発行)が無ければ 401。ここでは ID を発行せず、dip の状態にも書かない(書くのは挨拶が返ったとき)。"""
+    Cookie(GET / で発行)が無ければ 401。ここでは ID を発行せず、事業者の状態にも書かない(書くのは挨拶が返ったとき)。"""
     uid = _owner(request)
     rt = app.state.rt
     async with rt.user_lock(uid):  # 進行中のターンと交差しないように
@@ -649,7 +649,7 @@ class UndoIn(BaseModel):
 
 @app.post("/api/talk/track/undo")
 async def talk_track_undo(body: UndoIn, request: Request):
-    """トークの切り替えの表示のボタン: その切り替えを取り消して元の区分に戻す(dip に取り消しとして記録。LLM は呼ばず、
+    """トークの切り替えの表示のボタン: その切り替えを取り消して元の区分に戻す(事業者に取り消しとして記録。LLM は呼ばず、
     会話数も使わない)。AI には次の本人のターンの前に知らせる(turn.profile_notice)。直前の切り替えでなければ 409。
     本人の Cookie のユーザー(/dev の「匿名ID:シナリオユーザー」も)だけ。進行中のターンが終わってから変える。"""
     _require_own(request, body.user_id)
@@ -676,7 +676,7 @@ async def scenarios():
 
 @app.post("/api/scenarios/{scenario_id}/start")
 async def start_scenario(scenario_id: str, request: Request):
-    """シナリオを最初から始める: そのユーザーの dip の状態を初期に戻す。続けて画面が /api/event/stream を呼び、
+    """シナリオを最初から始める: そのユーザーの事業者の状態を初期に戻す。続けて画面が /api/event/stream を呼び、
     AI 側の1通目(挨拶・プッシュ)が届く。新しい会話は、どのシナリオでも最初のイベント(visit・revisit・プッシュ)が
     始めるので、ここでは始めない(ここでも始めると会話番号が1つ飛び、再起動後に前の会話へ戻ってしまう)。
     進行中のターンが終わってから初期化する(終わったターンの記録が、初期化した状態に書き込まれないように)。
@@ -755,26 +755,26 @@ class UserIn(BaseModel):
     user_id: str
 
 
-@app.post("/api/dip")
-async def dip_view(body: UserIn, request: Request):
-    """dip 側から見たユーザー状態(デバッグ用): 要約と記録された会話結果。保存・応募・最後の接触は、dip のツールと同じく
-    行動の要約に、この会話で書いた分を重ねたもの(dip_mcp.behavior.view。新しい順)。"""
+@app.post("/api/provider")
+async def provider_view(body: UserIn, request: Request):
+    """事業者側から見たユーザー状態(デバッグ用): 要約と記録された会話結果。保存・応募・最後の接触は、事業者のツールと同じく
+    行動の要約に、この会話で書いた分を重ねたもの(provider_mcp.behavior.view。新しい順)。"""
     user_id = body.user_id
     _require_own(request, user_id)
     u, b = state.user(user_id), behavior.view(state, user_id)
     return {"summary": logic.conversation_summary(state, user_id), "outcomes": u.get("outcomes", []),
             "saves": b["saves"], "applications": b["applications"], "last_contact": b["last_contact"],
-            "dip_id": behavior.dip_id(state, user_id)}
+            "provider_id": behavior.provider_id(state, user_id)}
 
 
 # ----------------------------- レジュメ・アーケードの AI と下書き -----------------------------
 # ゲームの画面(ハブに出す 2 本)が呼ぶ。画面は LLM を直接呼ばない。送るのはゲームの名前、段、本人の答え(まとめの段では書類の行)
 # だけで、指示の文と出力の形はサーバー(resume_arcade)が持つ。本人は、ほかの LIFF 画面と同じく Cookie の匿名ID
 # (開発者画面のシナリオなら scenario_user を付けた「匿名ID:シナリオユーザー」)。Cookie が無ければ 401。
-# - start: 遊びの番号を返す(1 人 1 ゲームにつき最新の 1 件。dip_mcp.arcade)。AI を使えるときだけターンを 1 つ数える
+# - start: 遊びの番号を返す(1 人 1 ゲームにつき最新の 1 件。provider_mcp.arcade)。AI を使えるときだけターンを 1 つ数える
 # - ai: 有効な番号の遊びで、回数が残っていれば 1 回 LLM を呼ぶ。だめなら LLM を呼ばずに「簡易分析で続ける」を返す
 #   (ok: false。ターンも費用台帳も増えない)。画面はその段を端末の簡単な判定で続ける
-# - save: 本人の有効な番号の遊びの書類を、下書きとして dip に保存し、今の会話に「下書きができました」を足す(LLM は呼ばない)
+# - save: 本人の有効な番号の遊びの書類を、下書きとして事業者に保存し、今の会話に「下書きができました」を足す(LLM は呼ばない)
 # 答えの全文はログに出さない(有無と長さだけ)。
 
 ARCADE_AI_ENV = "AICA_ARCADE_AI"  # 0 にすると AI を止める(すべて簡易分析)
@@ -927,7 +927,7 @@ async def arcade_save(body: ArcadeSaveIn, request: Request):
 
 async def _end_consultations(user: str) -> None:
     """途中のハーネスの相談(アルバイト・パート、正社員)を閉じる。音声相談に本人が入ったときと、音声相談とゲームの結果を
-    トークに足す前に呼ぶ(LineRuntime.end_consultations。task 364)。相談をしていなければ dip を呼ばない。
+    トークに足す前に呼ぶ(LineRuntime.end_consultations。task 364)。相談をしていなければ事業者を呼ばない。
     閉じられなくても、呼び出し元(結果の記録、下書きの保存、面談)は止めない(相談は開いたまま。次の発言はハーネスが受ける)。"""
     if not (baito_session.active(state, user) or career_session.active(state, user)):
         return
@@ -959,7 +959,7 @@ def _arcade_save(user: str, body: ArcadeSaveIn) -> tuple[dict, dict]:
 
 # ----------------------------- LINE 公式アカウント(Messaging API) -----------------------------
 # 2 つ目のチャネル。ユーザーは LINE の userId から作った「l-<ハッシュ>」(line_channel.line_user。userId は保存しない)。
-# 本番のユーザーなので dip の時計は実際の時刻(data.uses_sim_clock に当たらない)。会話数は LINE のユーザーごとと全体で数え、
+# 本番のユーザーなので事業者の時計は実際の時刻(data.uses_sim_clock に当たらない)。会話数は LINE のユーザーごとと全体で数え、
 # IP ごとには数えない(どの人の webhook も LINE のサーバーから届く)。
 # webhook にはすぐ 200 を返し、ターンは応答の後に進める(LLM が遅くても LINE が待ちきれずに再送しないように)。
 
@@ -1035,7 +1035,7 @@ async def _line_handle(events: list[dict]) -> None:
 
 async def _line_user_events(line_uid: str, events: list[dict]) -> None:
     """1 人の LINE ユーザーのイベント: 入力中の表示を出し、ターンを進め、返信トークで返す(返せなければ push)。
-    line_uid(LINE の userId)はここでだけ宛先に使い、会話にも dip の状態にも渡さない。"""
+    line_uid(LINE の userId)はここでだけ宛先に使い、会話にも事業者の状態にも渡さない。"""
     uid = line_channel.line_user(line_uid)
     # 同じ人の webhook どうしも、届いた順に 1 つずつ(入力中の表示を待つ間に、後の発言が先にターンへ入らないように)
     async with app.state.line_locks[uid], line_api() as api:
@@ -1111,9 +1111,9 @@ async def _just_greeted(uid: str) -> bool:
 
 
 async def _line_link_start(api: line_channel.LineApi, line_uid: str, uid: str) -> list[dict]:
-    """連携を始める: LINE から linkToken をもらい、だれに出したかを覚えて、dip のログインの画面へのボタンを返す。
+    """連携を始める: LINE から linkToken をもらい、だれに出したかを覚えて、事業者のログインの画面へのボタンを返す。
     もう連携していれば、そう伝える。公開 URL(ボタンの前に付ける)が無い・linkToken がもらえなければ、始められないと伝える。"""
-    if behavior.dip_id(state, uid):
+    if behavior.provider_id(state, uid):
         return line_channel.texts(line_channel.ALREADY_LINKED_TEXT)
     base = line_channel.public_url()
     if not base.startswith(("https://", "http://")):
@@ -1138,7 +1138,7 @@ async def _line_data(uid: str, kind: str, e: dict) -> list[dict]:
         async with rt.user_lock(uid):  # 進行中のターンが書き終えてから読む
             talked = await rt.current_thread(uid) > 0
             view = _profile_view(uid)
-        return line_channel.data_view_messages(view, talked=talked, linked=behavior.dip_id(state, uid) is not None)
+        return line_channel.data_view_messages(view, talked=talked, linked=behavior.provider_id(state, uid) is not None)
     if kind == "forget_data":
         nonce = secrets.token_urlsafe(16)
         asks[uid] = (nonce, now + line_channel.FORGET_CONFIRM_SECONDS)
@@ -1158,7 +1158,7 @@ def account_link(uid: str, link: dict) -> str:
     """accountLink のイベントの link(result と nonce)で、連携の表に書く。本人に伝える文を返す。
     呼ぶのは、署名を確かめた LINE の webhook と、開発者画面の偽物の LINE(Web の匿名ユーザー)。
     result が ok でなければ nonce を使えなくして、連携しない。nonce が無い・知らない・使い終わった・期限切れ・
-    別のユーザーに出した linkToken のものなら、連携しない(dip_mcp.accounts.complete_link)。"""
+    別のユーザーに出した linkToken のものなら、連携しない(provider_mcp.accounts.complete_link)。"""
     nonce = link.get("nonce")
     if not isinstance(nonce, str) or not nonce:
         return line_channel.LINK_FAILED_TEXT
@@ -1175,7 +1175,7 @@ def account_link(uid: str, link: dict) -> str:
 
 def _unlink(uid: str) -> str | None:
     """連携を解除する(連携の表から外す)。未連携の扱いに戻る: 要約を読まず、会員に書いた分も重ねない(behavior.view)。
-    会話の途中なら次のターンの前に AI へ知らせる。外した dip_id(連携していなければ None)。"""
+    会話の途中なら次のターンの前に AI へ知らせる。外した provider_id(連携していなければ None)。"""
     gone = accounts.of(state).unlink(uid)
     if gone:
         profile.link_changed(state, uid, linked=False)
@@ -1183,7 +1183,7 @@ def _unlink(uid: str) -> str | None:
 
 
 async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | None]:
-    """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は dip が初回訪問か再訪かを決めて挨拶する。
+    """Web と同じターンの処理(turn.accept → turn.reply_of)。follow は事業者が初回訪問か再訪かを決めて挨拶する。
     テキストは、Web のトーク画面を開いたときと同じ決まり(talk_continues)で、最後のやりとりから 30 分以内なら今の会話に
     続け、それより空いたら(返信のある会話がまだ無いときも)新しい会話を本人の発言から始める(挨拶は挟まない)。空いていても、発言が今の会話で
     最後に出した問いのボタンの答えなら、今の会話に続ける(turn.answers_last_question。設計メモ conversation-layer.md §4.16)。ただし LINE で同意した後の
@@ -1229,10 +1229,10 @@ async def _line_turn(uid: str, kind: str, e: dict) -> tuple[dict | None, str | N
     return reply, t.entry if t.kind == "greet" and t.entry in line_channel.GREETING_HEADINGS else None
 
 
-# ----------------------------- dip のログイン(アカウント連携。dip の画面の偽物) -----------------------------
-# LINE のトークのボタン(と開発者画面)から linkToken つきで開く。ログインできたら dip が nonce を作り、LINE の accountLink の
-# 画面に送る(linkToken が偽物の LINE のものなら、このサーバーの /fake-line/… に送る)。会員はクッキーで決めない(dip の会員の
-# ログインで決める)。ログインを続けてまちがえると、しばらくログインできない(dip_mcp.accounts)。
+# ----------------------------- 事業者のログイン(アカウント連携。事業者の画面の偽物) -----------------------------
+# LINE のトークのボタン(と開発者画面)から linkToken つきで開く。ログインできたら事業者が nonce を作り、LINE の accountLink の
+# 画面に送る(linkToken が偽物の LINE のものなら、このサーバーの /fake-line/… に送る)。会員はクッキーで決めない(事業者の会員の
+# ログインで決める)。ログインを続けてまちがえると、しばらくログインできない(provider_mcp.accounts)。
 
 LINK_TOKEN_FORM = re.compile(r"[A-Za-z0-9_\-]{8,128}")
 FAKE_ACCOUNT_LINK_PATH = "/fake-line/dialog/bot/accountLink"
@@ -1242,7 +1242,7 @@ LOGIN_MESSAGES = {"bad": "ログインID かパスワードがちがいます。
 
 def _login_form(link_token: str, message: str = "") -> str:
     note = f"<p style='color:#b3261e'>{escape(message)}</p>" if message else ""
-    return (f"{note}<p>dip の会員のログインID とパスワードでログインすると、LINE と dip の会員がつながります。</p>"
+    return (f"{note}<p>事業者の会員のログインID とパスワードでログインすると、LINE と事業者の会員がつながります。</p>"
             f"<form method='post' action='{line_channel.LINK_LOGIN_PATH}'>"
             f"<input type='hidden' name='linkToken' value='{escape(link_token)}'>"
             "<label>ログインID<input name='login_id' autocomplete='username' required></label>"
@@ -1251,19 +1251,19 @@ def _login_form(link_token: str, message: str = "") -> str:
 
 
 def _bad_link_page() -> HTMLResponse:
-    return HTMLResponse(_page("dip にログイン", "<p>このリンクは使えません。LINE のトークから、もう一度「アカウント連携」と"
+    return HTMLResponse(_page("事業者にログイン", "<p>このリンクは使えません。LINE のトークから、もう一度「アカウント連携」と"
                                                "送ってください。</p>", legal_links=False), status_code=400)
 
 
 @app.get(line_channel.LINK_LOGIN_PATH, response_class=HTMLResponse)
-async def dip_login_page(link_token: Annotated[str, Query(alias="linkToken")] = ""):
+async def provider_login_page(link_token: Annotated[str, Query(alias="linkToken")] = ""):
     if not LINK_TOKEN_FORM.fullmatch(link_token):
         return _bad_link_page()
-    return _page("dip にログイン", _login_form(link_token), legal_links=False)
+    return _page("事業者にログイン", _login_form(link_token), legal_links=False)
 
 
 @app.post(line_channel.LINK_LOGIN_PATH)
-async def dip_login(link_token: Annotated[str, Form(alias="linkToken")] = "", login_id: Annotated[str, Form()] = "",
+async def provider_login(link_token: Annotated[str, Form(alias="linkToken")] = "", login_id: Annotated[str, Form()] = "",
                     password: Annotated[str, Form()] = ""):
     """ログインできたら nonce を作って会員と linkToken に結び、LINE の accountLink の画面へ送る(303)。
     できなければ理由を出してもう一度(ID とパスワードのどちらがちがうかは言わない)。"""
@@ -1272,32 +1272,32 @@ async def dip_login(link_token: Annotated[str, Form(alias="linkToken")] = "", lo
     acc = accounts.of(state)
     r = await asyncio.to_thread(acc.login, login_id, password)  # ハッシュの計算は遅いので、ほかの要求を止めない
     if "error" in r:
-        return HTMLResponse(_page("dip にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]]), legal_links=False),
+        return HTMLResponse(_page("事業者にログイン", _login_form(link_token, LOGIN_MESSAGES[r["error"]]), legal_links=False),
                             status_code=429 if r["error"] == "locked" else 401)
-    nonce = acc.issue_nonce(r["dip_id"], link_token)
+    nonce = acc.issue_nonce(r["provider_id"], link_token)
     base = FAKE_ACCOUNT_LINK_PATH if app.state.fake_line.knows(link_token) else line_channel.ACCOUNT_LINK_URL
     return RedirectResponse(line_channel.account_link_url(link_token, nonce, base), status_code=303)
 
 
 # ----------------------------- 開発者画面から試すアカウント連携(偽物の LINE) -----------------------------
-# Web の LINE 風の画面(/)の匿名ユーザー(Cookie の匿名ID)を、LINE のときと同じ流れで dip の会員につなぐ。
+# Web の LINE 風の画面(/)の匿名ユーザー(Cookie の匿名ID)を、LINE のときと同じ流れで事業者の会員につなぐ。
 # bot が LINE に linkToken を頼むところと、accountLink の画面と webhook は偽物の LINE(app.state.fake_line)がする。
 
 
 @app.get("/api/dev/link")
 async def dev_link(request: Request):
     uid = _owner(request)
-    return {"user_id": uid, "dip_id": behavior.dip_id(state, uid)}
+    return {"user_id": uid, "provider_id": behavior.provider_id(state, uid)}
 
 
 @app.post("/api/dev/link/start")
 async def dev_link_start(request: Request):
-    """連携を始める: 偽物の LINE が linkToken を出し、bot がだれに出したかを覚える。開く dip のログインの画面の URL を返す。
+    """連携を始める: 偽物の LINE が linkToken を出し、bot がだれに出したかを覚える。開く事業者のログインの画面の URL を返す。
     もう連携していれば 409。"""
     uid = _owner(request)
     _require_consent(uid, "terms")
     _admit(request, uid)
-    if behavior.dip_id(state, uid):
+    if behavior.provider_id(state, uid):
         raise HTTPException(409, line_channel.ALREADY_LINKED_TEXT)
     token = app.state.fake_line.issue_link_token(uid)
     accounts.of(state).record_link_token(uid, token)
@@ -1326,7 +1326,7 @@ async def fake_line_account_link(request: Request, link_token: Annotated[str, Qu
 
 # ----------------------------- わたしのプロフィール(覚えていることを見る・直す・消す) -----------------------------
 # 本番のトーク画面の下のナビ「プロフィール」。読むのも変えるのも、本人の匿名ID(Cookie)のユーザーだけ
-# (パスにユーザーIDは載せない。Cookie が無い・不正なら 401)。中身は dip_mcp.profile。変えたことは次の本人のターンの前に AI へ渡す(turn.profile_notice)。
+# (パスにユーザーIDは載せない。Cookie が無い・不正なら 401)。中身は provider_mcp.profile。変えたことは次の本人のターンの前に AI へ渡す(turn.profile_notice)。
 
 
 class ProfileEditIn(BaseModel):
@@ -1479,8 +1479,8 @@ EXPORT_ABOUT = ("aica が保存している、あなたのデータです。prof
 @app.get("/api/profile/export")
 async def profile_export(request: Request):
     """データを書き出す(開示。docs/design/privacy.md の 3.7): 本人の保存内容を 1 つの JSON のファイルで返す。
-    範囲は「すべて消す」と同じ(本人と、同じ Cookie の /dev のシナリオ利用者)。dip の状態の行、連携、会話、費用台帳の行。
-    見るだけなので、最後の利用に数えず、dip の状態にユーザーを作らない。LLM は呼ばず、会話数も使わない。"""
+    範囲は「すべて消す」と同じ(本人と、同じ Cookie の /dev のシナリオ利用者)。事業者の状態の行、連携、会話、費用台帳の行。
+    見るだけなので、最後の利用に数えず、事業者の状態にユーザーを作らない。LLM は呼ばず、会話数も使わない。"""
     user_id = _owner(request)
     rt = app.state.rt
     async with AsyncExitStack() as locks:  # 進行中のターンが書き終えてから読む(「すべて消す」と同じ人たち、同じ順)
@@ -1497,18 +1497,18 @@ async def profile_export(request: Request):
 
 @app.post("/api/profile/forget")
 async def profile_forget(request: Request):
-    """すべて消す: dip の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
+    """すべて消す: 事業者の状態(保存した求人・応募を含むプロフィール、閲覧、トークを開いた記録など)と会話(チェックポイント)を消す。
     次に開くと初回訪問として始まる。会話数の上限の数は消さない(消すと上限を逃れられるため)。費用台帳は、その人の行の
     ユーザーIDを外す(金額とトークン数は残す。docs/design/privacy.md の 3.3)。
     同じ Cookie の /dev のシナリオ利用者(「匿名ID:シナリオユーザー」)の記録も、本人の記録なので一緒に消す。
-    会話を消してから dip の状態を消す(会話を消す途中で失敗すれば何も消えておらず、dip の状態を消すところで失敗しても
+    会話を消してから事業者の状態を消す(会話を消す途中で失敗すれば何も消えておらず、事業者の状態を消すところで失敗しても
     続きを開ける会話は残っていない。どちらも、もう一度押せばやり直せる)。"""
     await _forget_all(_owner(request))
     return {"forgotten": True}
 
 
 def _own_users(anon: str) -> list[str]:
-    """本人と、同じ Cookie の /dev のシナリオ利用者(dip に記録がある人と、シナリオの一覧の人の両方)。名前の順
+    """本人と、同じ Cookie の /dev のシナリオ利用者(事業者に記録がある人と、シナリオの一覧の人の両方)。名前の順
     (この順で user_lock を取る)。「すべて消す」と「データを書き出す」の範囲。"""
     return sorted({anon, *(u for u in state.user_ids() if u.startswith(f"{anon}:")),
                    *(f"{anon}:{s}" for s in _scenario_users())})
@@ -1537,7 +1537,7 @@ async def _forget_all(anon: str) -> None:
 # (サーバー間の経路なので共有鍵 AICA_INTERNAL_KEY で守る)、ここがそれを今の会話に AI の返信として続ける。
 # シートは開いている間だけ POST /api/voice/wait で待ち、届いたら閉じて同じ返信をトークに描く(常時の問い合わせはしない)。
 # ユーザーIDは本文で受け取り、URL には載せない。
-# 1 人が開ける部屋は同時に 1 つまで(部屋ごとにワーカーのジョブと dip MCP の子プロセスができる。line_runtime.voice_rooms)。
+# 1 人が開ける部屋は同時に 1 つまで(部屋ごとにワーカーのジョブと事業者の MCP の子プロセスができる。line_runtime.voice_rooms)。
 # ワーカーは本人が部屋に入ったとき・ジョブを終えたときに POST /api/voice/session で知らせる(共有鍵つき)。
 # 結果(/api/voice/result)が届いただけでは部屋を終わりにしない(結果を送らせた後も、接続したままジョブを持ち続けられるので)。
 
@@ -1553,7 +1553,7 @@ class VoiceWaitIn(BaseModel):
 
 
 class VoiceResultIn(BaseModel):
-    """voice-resume が面談の終わりに送ってくる結果。求人は dip のカードの形(job_id で照合し直す)。
+    """voice-resume が面談の終わりに送ってくる結果。求人は事業者のカードの形(job_id で照合し直す)。
     user_id は「音声で相談」を押したトークのユーザー(匿名ユーザーID、または「匿名ID:シナリオユーザー」)。
     preferences は音声で本人が話した希望(トークに出す「話した内容のまとめ」に使う)。"""
     user_id: str
@@ -1661,7 +1661,7 @@ async def voice_result_in(body: VoiceResultIn, request: Request, background: Bac
     呼ぶのは voice-resume のワーカー(サーバー間の経路)。Cookie ではなく共有鍵(AICA_INTERNAL_KEY)で守る
     (匿名IDを知っているだけでは、他人の会話に結果のターンを足せない)。
     面談の途中で本人が「すべて消す」をしていたら(その前に発行した部屋の結果)、預からずに 410 を返す
-    (消した後に dip の記録を作り直さない。ワーカーは 410 を見て、会話の結果も記録しない)。
+    (消した後に事業者の記録を作り直さない。ワーカーは 410 を見て、会話の結果も記録しない)。
     LINE の LIFF 画面から始めた面談(部屋が line_voice_rooms にある)なら、同じ返信をその本人の LINE のトークに push する
     (応答の後に送る。out["line"] は送ることにしたか)。"""
     _require_internal(request)
@@ -1736,7 +1736,7 @@ def resume_client():
 @app.post("/api/resume/upload")
 async def resume_upload(request: Request, user_id: Annotated[str, Form()], file: Annotated[UploadFile, File()],
                         thread: int | None = None):
-    """トークからアップロードされた履歴書(PDF / JPEG / PNG)を読み取り、そのユーザーの dip の状態に保存する。
+    """トークからアップロードされた履歴書(PDF / JPEG / PNG)を読み取り、そのユーザーの事業者の状態に保存する。
     ファイルはディスクに置かず、ファイル名も保存しない。personal は常に空欄、文字列中の電話・メール・郵便番号は除く。
     保存した結果は get_user_conversation_summary の uploaded_resume として、同じユーザーの会話から参照される。
     アップロードは本人の1ターン: 画面は本人側に「履歴書(PDF)」の吹き出しを出し、ここが返す確認を AI 側に出してから、
@@ -1747,7 +1747,7 @@ async def resume_upload(request: Request, user_id: Annotated[str, Form()], file:
 
 
 async def _read_resume(user_id: str, file: UploadFile, ip: str | None, thread: int | None = None) -> dict:
-    """履歴書を読み取って dip に保存し、トークに出す確認を返す(Web のトークと LIFF 画面で共通)。会話数を 1 つ使う。
+    """履歴書を読み取って事業者に保存し、トークに出す確認を返す(Web のトークと LIFF 画面で共通)。会話数を 1 つ使う。
     使い始める同意と履歴書の同意の前なら、読まずに 403。"""
     _require_consent(user_id, "terms", "resume")
     name = file.filename or ""
@@ -1838,11 +1838,11 @@ def _resume_html(r: dict) -> str:
             "内容は必ずご自身で確認してください。</p>" + (rows or "<p>読み取れた項目はありませんでした。</p>"))
 
 
-# ----------------------------- LIFF(dip の応募フォーム画面のモック) -----------------------------
+# ----------------------------- LIFF(事業者の応募フォーム画面のモック) -----------------------------
 
 @app.get("/liff/apply", response_class=HTMLResponse)
 async def liff_form(job: str, request: Request, scenario_user: str | None = None):
-    """入力途中の応募フォームの続き。本人は Cookie から決める(URL にユーザーIDは無い。dip_mcp.logic.liff_url)。"""
+    """入力途中の応募フォームの続き。本人は Cookie から決める(URL にユーザーIDは無い。provider_mcp.logic.liff_url)。"""
     return _apply_form_page(_page_user(request, scenario_user), job, scenario_user)
 
 
@@ -1881,7 +1881,7 @@ def _apply_submit(user: str, job: str) -> HTMLResponse | str:
     exit_ = logic.form_exit(state, user)
     if exit_ is None or exit_["job_id"] != job:  # 入力途中の応募が無ければ確定しない(状態にも書かない)
         return HTMLResponse(_page("応募フォーム", "<p>入力途中の応募はありません。</p>"), status_code=404)
-    # 入力値は受け取っても読まない・保存しない(架空のデモ)。応募の確定だけを dip の状態に反映する。
+    # 入力値は受け取っても読まない・保存しない(架空のデモ)。応募の確定だけを事業者の状態に反映する。
     logic.submit_application(state, user, job)
     return _page("応募の体験", f"<p>{escape(APPLY_DONE_TEXT)}</p><p>このタブを閉じてトークに戻れます。</p>")
 
@@ -2631,9 +2631,9 @@ async def liff_mic_check_log(body: MicCheckIn, request: Request):
     return {"ok": True}
 
 
-def _page(title: str, body: str, site: str = "LIFF・dip の画面", legal_links: bool = True) -> str:
-    """LIFF と dip の画面の枠。aica の画面(legal_links)なら、下にテスト用の公開であることと、規約とポリシーへのリンクを置く。
-    dip のログインと偽物の LINE の画面は、aica ではない役の画面なので置かない。"""
+def _page(title: str, body: str, site: str = "LIFF・事業者の画面", legal_links: bool = True) -> str:
+    """LIFF と事業者の画面の枠。aica の画面(legal_links)なら、下にテスト用の公開であることと、規約とポリシーへのリンクを置く。
+    事業者のログインと偽物の LINE の画面は、aica ではない役の画面なので置かない。"""
     footer = legal.footer_html() if legal_links else ""
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>
@@ -2652,6 +2652,7 @@ button{{width:100%;padding:12px;border:0;border-radius:8px;background:#06c755;co
 def main() -> None:
     import uvicorn
 
+    legacy.prepare_or_exit()  # データを使う前に、旧い名前のデータを移すか、空のデータで動き始めないかを確かめる
     # SDK(OpenAI、Anthropic、httpx など)の INFO や DEBUG のログに、送った本文が出ないように(docs/design/privacy.md の 3.4)
     quiet_sdk_loggers()
     # X-Forwarded-For は _client_ip だけが AICA_TRUST_PROXY に従って読む(uvicorn には書き換えさせない)。

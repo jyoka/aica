@@ -1,18 +1,16 @@
 """下書きの空欄の数字を聞いたら、下書きの画面へつなぐ(会話の改善 C (7/10)、task 228)。実 LLM・実 LINE は呼ばない。
 
 aica は下書きに書き込まない(利用者の判断 D4)。数字を聞いて本人が答えたら「下書きを見る」を出し、本人が画面で数字を入れる。
-- dip の要約: arcade_draft に下書きの画面の URL(view_url)が載る。Web と、LIFF の設定がある LINE だけ(ユーザーIDは URL に載せない)
+- 事業者の要約: arcade_draft に下書きの画面の URL(view_url)が載る。Web と、LIFF の設定がある LINE だけ(ユーザーIDは URL に載せない)
 - LINE のトーク: エージェントが view_url をボタンにすると、LIFF URL のボタンになる。LIFF の設定が無ければ URL もボタンも無い
 - 評価の判定(evals/checks.py の draft_number_violations): 答えの後の「下書きを見る」、1 つの会話で 1 回だけ、履歴書の数字は確認形
-- dip の Prompt: 上の決まりが書いてある
+- 事業者の Prompt: 上の決まりが書いてある
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dip_mcp import arcade, logic
-from dip_mcp.data import State
 from evals.checks import conversation_checks, draft_number_violations
 from evals.scenarios import (
     load_arcade_draft,
@@ -22,6 +20,8 @@ from evals.scenarios import (
 )
 from line_runtime.agent import PINNED_USER
 from line_runtime.line_channel import line_user
+from provider_mcp import arcade, logic
+from provider_mcp.data import State
 from tests.test_arcade_liff import _links
 from tests.test_handle import call, reply, run
 from tests.test_liff_actions import CHANNEL, ID_KEY, LIFF_ID, _no_liff
@@ -36,7 +36,7 @@ TO_SCREEN = "下書きの画面で、この数字を入れて仕上げられま�
 NEXT = "経費精算の見直しは、何件くらいでしたか?"
 
 
-# ----------------------------- dip の要約の下書きの画面の URL -----------------------------
+# ----------------------------- 事業者の要約の下書きの画面の URL -----------------------------
 
 
 def test_the_summary_has_the_draft_screen_url_for_web_and_for_line_with_liff(tmp_path, monkeypatch):
@@ -76,7 +76,7 @@ def test_the_developer_screen_draft_url_keeps_only_the_scenario_user(tmp_path):
 
 
 def blank_filler(messages):
-    """dip の Prompt の「ゲームで書類を作る」どおりに動く偽のモデル。「空欄を埋める」には履歴書の数字で確かめ、
+    """事業者の Prompt の「ゲームで書類を作る」どおりに動く偽のモデル。「空欄を埋める」には履歴書の数字で確かめ、
     本人が答えたら要約の view_url を「下書きを見る」にする(view_url が無ければボタンを出さない)。"""
     human = next(m for m in reversed(messages) if m.type == "human").content
     if "空欄を埋める" not in human and "2日" not in human:

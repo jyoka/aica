@@ -1,4 +1,4 @@
-"""評価ハーネス(evals/run.py・judge.py・budget.py)をオフラインで。LLM は台本・偽物で差し替え、dip の MCP は本物。
+"""評価ハーネス(evals/run.py・judge.py・budget.py)をオフラインで。LLM は台本・偽物で差し替え、事業者の MCP は本物。
 
 - 深さのジャッジ: ジャッジを差し替えて、4項目が verdict と根拠の発言(evidence・quoted)つきで結果と指標に出ること
 - 費用: 台帳の累計が $4 に達したら、次のシナリオを始めずに止まること。--only とターン上限
@@ -83,7 +83,7 @@ def _rule(name: str) -> str:
 
 
 def test_judge_prompt_closes_on_thanks_and_asks_only_on_hesitation():
-    # Prompt(baitoru_assistant.md の対話ルール)と同じ: お礼つきの「考えます」は短く締める(迷いの問いは減点)。
+    # Prompt(job_assistant.md の対話ルール)と同じ: お礼つきの「考えます」は短く締める(迷いの問いは減点)。
     # 迷いを言っている「考えます」のあとに迷いの点を1問聞くのは正しい。待つのは「今はいい」の後(task 223 の D1)
     rule = _rule("design_fit")
     assert "お礼や終わりの挨拶と一緒の「考えます」(「ありがとう、考えます」)は会話の終わり" in rule
@@ -229,7 +229,7 @@ class CareerAgent(BaseChatModel):
 
 
 def _run(sc, client, model, tmp_path, monkeypatch, use_judge=False, max_turns=8):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from evals.meter import Meter
     from evals.run import run_scenario
     from line_runtime.runtime import LineRuntime
@@ -242,16 +242,16 @@ def _run(sc, client, model, tmp_path, monkeypatch, use_judge=False, max_turns=8)
 
 
 def test_persona_with_a_resume_uploads_when_offered_and_is_judged(tmp_path, monkeypatch):
-    from dip_mcp import logic
-    from dip_mcp.data import State
     from evals.run import JUDGE_MODEL, to_run
     from line_runtime import config
+    from provider_mcp import logic
+    from provider_mcp.data import State
 
     sc = SCENARIOS["T-career-fulltime"]
     client = FakeClient(["転職を考えていて、正社員の仕事を相談したい", "新しいプロダクトを企画したいからです"])
     r = _run(sc, client, CareerAgent(), tmp_path, monkeypatch, use_judge=True)
     # T1 の挨拶の入口ではアップロードせず(ペルソナは選択肢を選ばずに書く)、T2 で経歴の場面の履歴書の操作が出たので、
-    # 本人の次の1ターンはアップロード(dip に保存され、会話に入る)
+    # 本人の次の1ターンはアップロード(事業者に保存され、会話に入る)
     assert r["upload_turn"] == 3 and r["action_offers"] == [{"turn": 1, "actions": ["voice_consult", "resume_upload"]},
                                                             {"turn": 2, "actions": ["resume_upload"]}]
     assert r["greeting_offers"] == ["voice_consult", "resume_upload", "arcade"]
@@ -591,13 +591,13 @@ def test_depth_is_counted_only_on_consult_and_persona_scenarios():
 
 
 def test_keyword_trace_is_split_per_conversation(tmp_path, monkeypatch):
-    """dip が残した keywords の検索の記録(DIP_KEYWORDS_TRACE)を、会話ごとに切り分けて結果に付ける。"""
+    """事業者が残した keywords の検索の記録(PROVIDER_KEYWORDS_TRACE)を、会話ごとに切り分けて結果に付ける。"""
     from evals import run
 
-    monkeypatch.delenv("DIP_KEYWORDS_TRACE", raising=False)
+    monkeypatch.delenv("PROVIDER_KEYWORDS_TRACE", raising=False)
     assert run._trace_size() == 0 and run._trace_since(0) == []
     trace = tmp_path / "keywords.jsonl"
-    monkeypatch.setenv("DIP_KEYWORDS_TRACE", str(trace))
+    monkeypatch.setenv("PROVIDER_KEYWORDS_TRACE", str(trace))
     assert run._trace_size() == 0  # まだ1回も検索していない
     trace.write_text('{"keywords": "前の会話", "peak": 0.2}\n', encoding="utf-8")
     at = run._trace_size()

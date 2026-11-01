@@ -1,15 +1,15 @@
 """音声相談の雇用区分・playbook・保存と、職務経歴書の下書き(aica v2 の G)の台本テスト。実 API なし。
 
 音声アドバイザーの LLM の代わりに、台本どおりにツール(set_search_track / save_user_preferences / propose_jobs /
-finalize_interview)を呼ぶ。dip は本物の MCP サーバー(stdio)、トークは本物の HTTP サーバー(uvicorn)で、
+finalize_interview)を呼ぶ。事業者は本物の MCP サーバー(stdio)、トークは本物の HTTP サーバー(uvicorn)で、
 面談の結果はワーカーと同じ経路(POST /api/voice/result、共有鍵つき)でトークに届く。下書きを作る LLM はスタブ。
 確かめること:
 (1) 音声アドバイザーの指示に、今の雇用区分に合った音声版の playbook が入る(区分ごと)
-(2) 音声で区分が切り替わり、dip に記録される(根拠の発言そのまま)。指示の playbook も入れ替わる。話した内容が保存項目に入る
+(2) 音声で区分が切り替わり、事業者に記録される(根拠の発言そのまま)。指示の playbook も入れ替わる。話した内容が保存項目に入る
 (3) 正社員の面談の下書きは document_kind=職務経歴書・format_version 1.1 で、職務要約と成果が入る。アルバイトは履歴書
 (4) 書類の呼び方が、区分ごとに入口(「+」メニュー)・アドバイザー・吹き出し・ボタン・ページの題・本文の見出しでそろう
-(5) 面談の途中で「すべて消す」をしたら、その面談の結果で dip の記録を作り直さない。その後に話した区分と希望も dip が断る
-(6) 既定では data/voice-resume/ にファイルを書き出さず、下書きは dip の状態に入ってトークに届く(docs/design/privacy.md の 3.3)
+(5) 面談の途中で「すべて消す」をしたら、その面談の結果で事業者の記録を作り直さない。その後に話した区分と希望も事業者が断る
+(6) 既定では data/voice-resume/ にファイルを書き出さず、下書きは事業者の状態に入ってトークに届く(docs/design/privacy.md の 3.3)
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dip_mcp import logic
+from provider_mcp import logic
 from resume_draft.schema import Certification, Education, ResumeDraft, WorkExperience
 from tests.test_talk_actions import (  # noqa: F401  フィクスチャ
     advised,
@@ -34,8 +34,8 @@ from tests.test_talk_page import app  # noqa: F401  フィクスチャ
 from voice_resume import advisor as advisor_module
 from voice_resume import config as voice_config
 from voice_resume.agent import prepare_advisor
-from voice_resume.dip import DipMCP
 from voice_resume.prompts import CAREER_DRAFTER_SYSTEM, DRAFTER_SYSTEM
+from voice_resume.provider import ProviderMCP
 
 BAITO, SEISHAIN, MITEI = "アルバイト・パート", "正社員", "未定"
 DOC = {SEISHAIN: "職務経歴書", BAITO: "履歴書"}  # 下書きの書類(未定のまま終わったら履歴書)
@@ -118,24 +118,24 @@ def _browser_user(url: str, server):
 
 
 def _interview(uid: str, steps, room: Room | None = None):
-    """本物の dip MCP につないで面談を始め(prepare_advisor)、台本の手順(advisor を受け取る async 関数)を順に走らせる。
-    (アドバイザー, 最初の挨拶への指示, 手順の返り値, 面談後の dip の要約)"""
+    """本物の事業者の MCP につないで面談を始め(prepare_advisor)、台本の手順(advisor を受け取る async 関数)を順に走らせる。
+    (アドバイザー, 最初の挨拶への指示, 手順の返り値, 面談後の事業者の要約)"""
 
     async def run():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor, greeting = await prepare_advisor(dip, uid, room=room)
+            advisor, greeting = await prepare_advisor(provider, uid, room=room)
             out = [await step(advisor) for step in steps]
-            return advisor, greeting, out, await dip.get_user_conversation_summary(uid)
+            return advisor, greeting, out, await provider.get_user_conversation_summary(uid)
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     return asyncio.run(run())
 
 
 def _draft(advisor, server, uid: str) -> tuple[dict, str]:
-    """面談の下書き(JSON と、dip の状態に入った Markdown)。既定ではファイルに書き出さないので、ファイルは無い。"""
+    """面談の下書き(JSON と、事業者の状態に入った Markdown)。既定ではファイルに書き出さないので、ファイルは無い。"""
     assert advisor.finalized["files"] == [] and not voice_config.OUT_DIR.exists()
     rec = logic.voice_results_since(server.state, uid, 0)[-1]
     assert rec["draft_markdown"] == advisor.finalized["markdown"] and rec["files"] == []
@@ -197,7 +197,7 @@ def _scripted_llm(steps: list[tuple]):
 
 def test_in_a_live_voice_session_the_switch_swaps_the_playbook_within_the_same_turn(app):  # noqa: F811
     """LiveKit の AgentSession(文字のターン)の中で、本人の発話から set_search_track が呼ばれると、同じターンの次の
-    LLM の呼び出しから正社員の音声版の playbook になる。話した目的はその場で保存される(本物の dip MCP)。"""
+    LLM の呼び出しから正社員の音声版の playbook になる。話した目的はその場で保存される(本物の事業者の MCP)。"""
     from livekit.agents import AgentSession
 
     uid = "w-5555555555555555"
@@ -209,18 +209,18 @@ def test_in_a_live_voice_session_the_switch_swaps_the_playbook_within_the_same_t
     ])
 
     async def run():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor, _ = await prepare_advisor(dip, uid)
+            advisor, _ = await prepare_advisor(provider, uid)
             session = AgentSession(llm=model)
             await session.start(agent=advisor)
             await session.run(user_input="転職を考えていて、正社員で探したいです")
             await session.run(user_input="今の会社では企画に関われないので、企画の仕事に移りたいです")
             await session.aclose()
-            return await dip.get_user_conversation_summary(uid)
+            return await provider.get_user_conversation_summary(uid)
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     summary = asyncio.run(run())
     seen = ["# playbook: 正社員(音声)" in text for text in model.instructions]
@@ -263,9 +263,9 @@ def test_voice_switches_to_fulltime_saves_what_was_said_and_drafts_a_career_shee
     advisor, greeting, (switched, saved, proposed, done, same), summary = _interview(
         uid, [switch, save, propose, finalize, again], room=room)
 
-    # 区分は未定から始まり、本人の発言で正社員に切り替わって dip に記録される(根拠は発言そのまま)
+    # 区分は未定から始まり、本人の発言で正社員に切り替わって事業者に記録される(根拠は発言そのまま)
     assert "履歴書などの下書き" in greeting
-    assert "正社員" in switched and "dip に記録済み" in switched and "今の区分はすでに正社員" in same
+    assert "正社員" in switched and "事業者に記録済み" in switched and "今の区分はすでに正社員" in same
     assert summary["search_track"] == SEISHAIN
     assert [(h["from"], h["track"], h["evidence"], h["undo"]) for h in summary["track_history"]] == [
         (MITEI, SEISHAIN, "転職を考えていて、正社員で探したいです。", False)]
@@ -432,7 +432,7 @@ def test_the_plus_menu_names_the_document_of_the_current_track_in_the_browser(ta
 
 def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk, livekit, monkeypatch):  # noqa: F811
     """プロフィール画面の PR レビューからの後続指摘: 面談の途中で本人が「すべて消す」をしたら、その面談の結果が後から
-    届いても、トークにも dip にも記録を作り直さない(ワーカーは会話の結果も記録しない)。その面談で書き出した下書き・文字起こしのファイルも消す。
+    届いても、トークにも事業者にも記録を作り直さない(ワーカーは会話の結果も記録しない)。その面談で書き出した下書き・文字起こしのファイルも消す。
     負例: 消した後に始めた面談の結果は、これまでどおり届く。"""
     url, server = talk
     monkeypatch.setattr(voice_config, "WRITE_FILES", True)  # 書き出したファイルも消すことを確かめる(開発のとき)
@@ -470,7 +470,7 @@ def test_a_voice_result_from_before_forget_all_does_not_recreate_the_record(talk
 
 def test_writes_after_forget_all_in_the_same_call_are_refused(talk, livekit):  # noqa: F811
     """R7(docs/design/privacy.md の 3.8 の案 A): 面談の途中で本人が「すべて消す」をしたら、その通話でその後に話した
-    雇用区分と希望は、dip が断って状態に残さない。アドバイザーは保存できなかったとだけ扱い、会話は続ける。
+    雇用区分と希望は、事業者が断って状態に残さない。アドバイザーは保存できなかったとだけ扱い、会話は続ける。
     負例: 消した後に始めた面談の書き込みは、これまでどおり通る。"""
     url, server = talk
     client, uid = _browser_user(url, server)
@@ -503,11 +503,11 @@ def test_writes_after_forget_all_in_the_same_call_are_refused(talk, livekit):  #
     assert summary["search_track"] == SEISHAIN
 
 
-def test_dip_refuses_every_write_of_a_forgotten_room(tmp_path):
-    """dip の側: 「すべて消す」の前に始めた部屋を付けた書き込み(希望・雇用区分・会話の結果)は、何も残さずに断る。
+def test_provider_refuses_every_write_of_a_forgotten_room(tmp_path):
+    """事業者の側: 「すべて消す」の前に始めた部屋を付けた書き込み(希望・雇用区分・会話の結果)は、何も残さずに断る。
     負例: 部屋を付けないトークの書き込みと、消した後に始めた部屋の書き込みは通る。"""
-    from dip_mcp import profile
-    from dip_mcp.data import State
+    from provider_mcp import profile
+    from provider_mcp.data import State
 
     state, uid, old, new = State(tmp_path / "state.json"), "w-7777777777777777", "voice-resume-old", "voice-resume-new"
     logic.record_voice_room(state, uid, old)
@@ -532,8 +532,8 @@ def test_dip_refuses_every_write_of_a_forgotten_room(tmp_path):
 def test_a_write_that_lands_while_forget_all_is_running_is_refused(tmp_path):
     """「すべて消す」が 1 人の行を初期に戻した直後(連携を外すなど、まだ終わっていない間)に届いた、消す前の部屋の書き込みも断る。
     行を戻すことと、消す前の部屋を残すことは、同じロックの中で行う(間の時間に書き込みが通らないように)。"""
-    from dip_mcp import profile
-    from dip_mcp.data import State
+    from provider_mcp import profile
+    from provider_mcp.data import State
 
     state, uid, room = State(tmp_path / "state.json"), "w-8888888888888888", "voice-resume-old"
     logic.record_voice_room(state, uid, room)
@@ -556,14 +556,14 @@ def test_a_write_that_lands_while_forget_all_is_running_is_refused(tmp_path):
 
 
 def test_the_chat_ai_does_not_see_the_room_argument(tmp_path, monkeypatch):
-    """部屋は音声ワーカーだけが渡す引数: dip の書き込むツールは受け取るが、トークの AI に渡すツールの引数には出さない。"""
-    from dip_mcp import server
+    """部屋は音声ワーカーだけが渡す引数: 事業者の書き込むツールは受け取るが、トークの AI に渡すツールの引数には出さない。"""
     from line_runtime.runtime import LineRuntime
+    from provider_mcp import server
     from tests.test_handle import ScriptedModel
 
     writes = {t.name for t in asyncio.run(server.mcp.list_tools()) if logic.VOICE_ROOM_ARG in t.inputSchema["properties"]}
     assert writes == {"save_user_preferences", "set_search_track", "record_conversation_outcome"}
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
 
     async def chat_tools():
         async with LineRuntime(model=ScriptedModel(), in_memory=True) as rt:
@@ -589,8 +589,8 @@ def test_switching_mid_call_drops_the_conditions_of_the_old_track():
     assert advisor.preferences == {"area": "新宿", "purpose": "企画の仕事に移りたい"}
 
 
-def test_saving_tells_the_advisor_which_values_dip_refused(app):  # noqa: F811
-    """dip が弾いた値(長すぎる・個人情報らしい)は「保存しました」と言わず、保存できなかったと返す。"""
+def test_saving_tells_the_advisor_which_values_provider_refused(app):  # noqa: F811
+    """事業者が弾いた値(長すぎる・個人情報らしい)は「保存しました」と言わず、保存できなかったと返す。"""
     uid = "w-6666666666666666"
 
     async def save(a):

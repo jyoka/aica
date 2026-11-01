@@ -2,9 +2,9 @@
 
 消すもの(数は 3.3 の推奨。使われ方を見て変えてよい):
 - 会話(data/line_checkpoints.db): 会話(thread_id)ごとに、最後のやりとりから CONVERSATION_TTL(30 日)
-- 使われなくなった人(data/state.json の行と連携の表): 最後の利用から 180 日。会話、dip の状態、音声のファイル、
+- 使われなくなった人(data/state.json の行と連携の表): 最後の利用から 180 日。会話、事業者の状態、音声のファイル、
   Web プロセスのメモリ(未読のアップロード、音声の待ち)の順に片付ける(「すべて消す」の server.profile_forget と同じ順)。
-  「すべて消す」と違い、持ち越す値も残さない(dip_mcp.retention)
+  「すべて消す」と違い、持ち越す値も残さない(provider_mcp.retention)
 - 「すべて消す」で持ち越した部屋の名前: 消した時刻から 1 日
 - 費用台帳(data/costs.jsonl)のユーザーID: 90 日を過ぎた行を日ごとの合計にする(line_runtime.ledger.fold_old)
 - 最後に SQLite(会話と連携の表)を VACUUM する
@@ -31,9 +31,9 @@ from collections.abc import Callable, Iterable
 from contextlib import AsyncExitStack
 from datetime import timedelta
 
-from dip_mcp import accounts, retention
-from dip_mcp.data import State
 from line_runtime.runtime import LineRuntime
+from provider_mcp import accounts, retention
+from provider_mcp.data import State
 
 CONVERSATION_TTL = timedelta(days=30)  # 会話を消すまで(最後のやりとりから)
 EVERY = timedelta(days=1)  # 定期の掃除の間隔
@@ -67,7 +67,7 @@ async def purge(rt: LineRuntime, state: State, *, scenario_users: Iterable[str],
             # 対象を決めた後に使われた人(ロックを待つ間のターンなど)は外す
             people = await asyncio.to_thread(retention.still_expired, state, list(swept["expired"]))
             doomed = [uid for uid in targets if retention.person(uid) in people]
-            for uid in doomed:  # 会話を消してから dip の状態を消す(server.profile_forget と同じ順)
+            for uid in doomed:  # 会話を消してから事業者の状態を消す(server.profile_forget と同じ順)
                 await rt.forget(uid)
             removed = await asyncio.to_thread(retention.remove_expired, state, people)
         for uid in doomed:

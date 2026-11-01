@@ -7,7 +7,7 @@
     ./.venv/bin/python -m evals.scenes --log evidence/scenes            # 結果の JSON と会話ログも書く
 
 回し方(どの版も、本番と同じ入口から):
-- career と baito は、dip の相談のツールの中身(dip_mcp/career/session.py、dip_mcp/baito/session.py の start と turn)を、
+- career と baito は、事業者の相談のツールの中身(provider_mcp/career/session.py、provider_mcp/baito/session.py の start と turn)を、
   ランタイム(line_runtime.runtime._harness_turn)と同じく呼び直しで回す。status=llm のたびに台本の LLM が出力を作る。
   場面の前の会話(segment、known、asking)は、相談を始めた後のハーネスの状態に入れる。推定時間は 0 から数える
 - 台本の LLM(ScriptLLM): 読む段は、場面の読む段の正解(reading。act の形)を、その版の読む段の形に写して返す
@@ -21,7 +21,7 @@
   今と同じくトークの AI に渡す(上と同じく判定しない。設計メモ §4.15)
 - 今の LINE の入口(line_runtime/server.py の _line_kind)は、今の版(c1、v4)の相談の間とトークではスタンプを捨てるので、
   今の版の「[スタンプ]」は返事なしにする。新しい版(c2)の相談の間は、ランタイムが「[スタンプ]」の文にして渡す
-- talk は、本物のランタイム(line_runtime.runtime.LineRuntime。dip の MCP も本物)を、モックのトークの AI(TalkMock。決まった文を
+- talk は、本物のランタイム(line_runtime.runtime.LineRuntime。事業者の MCP も本物)を、モックのトークの AI(TalkMock。決まった文を
   返し、ツールを呼ばない)で回す。判定するのは守りの前処理(crisis_reply、llm_calls_max)と stays だけ。ほかは 9 枚目で実モデルで見る
 - talk の t1(TALK_LAYER_VERSION=t1。task 361)は、同じランタイムを台本のトークの AI(TalkScript)で回し、コードの条件をすべて判定する。
   台本のトークの AI は、発言の talk(トークの AI の正解)のツールを呼び、区分を聞く 1 問のボタンはプロンプトから読む。移る先(c2、v5)の
@@ -52,7 +52,7 @@ STICKER = "[スタンプ]"  # ランタイムがスタンプを文にした形(�
 TALK_MOCK_TEXT = "(トークの AI の返事。モックでは書かない)"
 TALK_MOCK_CHECKS = {"crisis_reply", "llm_calls_max", "stays"}  # talk の場面で、モックで判定する条件
 CAREER_SAY = re.compile(r"次に聞くこと\(JSON\): (\{.*\})")
-CAREER_PLAN = re.compile(r"計画\(JSON\): (\{.*\})")  # c2 の応じ方の計画(dip_mcp/prompts/convo/say_ja.txt)
+CAREER_PLAN = re.compile(r"計画\(JSON\): (\{.*\})")  # c2 の応じ方の計画(provider_mcp/prompts/convo/say_ja.txt)
 BAITO_SAY = re.compile(r"次に聞くこと（JSON）: (\{.*\})")
 BAITO_RESULT = re.compile(r"結果材料（JSON）: (\{.*\})")
 HOOK_FROM_BUTTON = 15  # 押したボタンのラベルを相づちに使う字数の上限(HOOK_MAX と同じ)
@@ -89,7 +89,7 @@ def _escape(reading: dict, name: str, targets: list[str]) -> bool:
 
 
 def to_c1(reading: dict, targets: list[str]) -> dict:
-    """正社員 c1 の読む段の出力(dip_mcp/prompts/career/prompt_extract_ja.txt)に写す。値の act はどれも slot_updates
+    """正社員 c1 の読む段の出力(provider_mcp/prompts/career/prompt_extract_ja.txt)に写す。値の act はどれも slot_updates
     (c1 は答え、言い足し、直す、迷うを分けない)。intent は c1 の決まり 5 の順: あとで・やめる → later、まとめて → show_result、
     ほかの候補 → more、聞き返し → clarify、今の問いのパス・覚えていない → pass / dont_know、値があれば answer、
     答えでない話(雑談、逆質問、感情、取り消し、別の入り口の話など。c1 に行き先が無い)だけなら aside、何も読めなければ answer。"""
@@ -119,7 +119,7 @@ def to_c1(reading: dict, targets: list[str]) -> dict:
 
 
 def to_v4(reading: dict, targets: list[str]) -> dict:
-    """アルバイト・パート v4 の読む段の出力(dip_mcp/prompts/baito/prompt_extract_v4_ja.txt)に写す。intent は v4 の 6 種:
+    """アルバイト・パート v4 の読む段の出力(provider_mcp/prompts/baito/prompt_extract_v4_ja.txt)に写す。intent は v4 の 6 種:
     最初から → restart、闇バイト → danger、結果見せて → show_result、聞き返し → clarify、値があれば answer、
     答えでない話(雑談、逆質問、感情、あとで、やめる、別の入り口の話など。v4 に行き先が無い)だけなら aside。
     パスと「わからない」は v4 に語彙が無いので、何も読めないのと同じ answer にする。"""
@@ -165,7 +165,7 @@ class ScriptLLM:
 
 # ----------------------------- 入り口の状態の写し -----------------------------
 def _career_snap(h, active: bool) -> dict:
-    from dip_mcp.career import harness as H
+    from provider_mcp.career import harness as H
 
     cur = h.current or {}
     q = H.qmap(h, H.BANK).get(cur.get("qid"))
@@ -178,20 +178,20 @@ def _career_snap(h, active: bool) -> dict:
 
 
 def _phrasings(h, q) -> list[str]:
-    """問いの言い方(会話の層の版は、質問バンクの variants も。同じ問いの出し直しで回す。dip_mcp.career.c2.phrasings)。"""
+    """問いの言い方(会話の層の版は、質問バンクの variants も。同じ問いの出し直しで回す。provider_mcp.career.c2.phrasings)。"""
     if q is None:
         return []
     if h.version != "c2":
         return [q["text"]]
-    from dip_mcp.career import c2
-    from dip_mcp.career import harness as H
+    from provider_mcp.career import c2
+    from provider_mcp.career import harness as H
 
     return c2.phrasings(q, H.BANK)
 
 
 def _baito_snap(h, active: bool) -> dict:
-    from dip_mcp.baito import harness as B
-    from dip_mcp.baito import v5 as V5
+    from provider_mcp.baito import harness as B
+    from provider_mcp.baito import v5 as V5
 
     cur = h.current or {}
     qid = cur.get("qid")
@@ -210,9 +210,9 @@ def _baito_snap(h, active: bool) -> dict:
 
 
 def snaps(st, uid: str, last: dict) -> dict:
-    """dip の状態にある相談の写し({entry: snap})。閉じた相談は、閉じたときの状態(last)を active=False で残す。"""
-    from dip_mcp.baito import session as baito_session
-    from dip_mcp.career import session as career_session
+    """事業者の状態にある相談の写し({entry: snap})。閉じた相談は、閉じたときの状態(last)を active=False で残す。"""
+    from provider_mcp.baito import session as baito_session
+    from provider_mcp.career import session as career_session
 
     u = st.user(uid)
     out = {}
@@ -226,7 +226,7 @@ def snaps(st, uid: str, last: dict) -> dict:
 
 
 def profile(st, uid: str) -> dict:
-    from dip_mcp import logic
+    from provider_mcp import logic
 
     u = st.user(uid)
     return {"track": logic.search_track(u), **{k: v["value"] for k, v in logic.stated_preferences(u).items()}}
@@ -235,8 +235,8 @@ def profile(st, uid: str) -> dict:
 @contextlib.contextmanager
 def capture_finish():
     """相談を閉じるときのハーネスの状態を覚える(session._finish は状態を消してから保存するので、閉じた後の欄を見るため)。"""
-    from dip_mcp.baito import session as baito_session
-    from dip_mcp.career import session as career_session
+    from provider_mcp.baito import session as baito_session
+    from provider_mcp.career import session as career_session
 
     last: dict = {}
     saved = {}
@@ -272,7 +272,7 @@ def environ(values: dict):
 
 
 def _seed_profile(st, uid: str, scene: dict) -> None:
-    from dip_mcp import logic
+    from provider_mcp import logic
 
     prof = dict(scene.get("profile") or {})
     track = prof.pop("track", None)
@@ -284,7 +284,7 @@ def _seed_profile(st, uid: str, scene: dict) -> None:
 
 # ----------------------------- 入り口ごとの今の版 -----------------------------
 class _HarnessDriver:
-    """career と baito の今の版の共通: dip の相談のツールを、ランタイムと同じ呼び直しで回す。"""
+    """career と baito の今の版の共通: 事業者の相談のツールを、ランタイムと同じ呼び直しで回す。"""
     entry = version = ""
     stickers = False  # 今の LINE の入口はスタンプを捨てる(返事をしない)
     real = None  # 実モデル(evals.scenes.real.RealModel)。None なら台本の LLM
@@ -370,27 +370,27 @@ class CareerC1(_HarnessDriver):
 
     @property
     def session(self):
-        from dip_mcp.career import session
+        from provider_mcp.career import session
 
         return session
 
     def env(self, scene):
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         return self.flags() | {H.FORM_ENV: scene.get("form", "C")}
 
     def flags(self):
-        from dip_mcp import logic
+        from provider_mcp import logic
 
         return {logic.CAREER_HARNESS_FLAG: self.version}
 
     def harness(self):
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         return H
 
     def setup(self, st, uid, scene):
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         s = self.session
         s.start(st, uid)
@@ -438,8 +438,8 @@ class CareerC1(_HarnessDriver):
         return "later" if r.get("closed") == "later" else "result"
 
     def texts(self) -> Texts:
-        from dip_mcp.baito import harness as B
-        from dip_mcp.career import harness as H
+        from provider_mcp.baito import harness as B
+        from provider_mcp.career import harness as H
 
         qs = []
         for form in H.FORMS:
@@ -468,7 +468,7 @@ def layer_ack(driver, plan: dict, ack: str) -> str:
 
 
 class CareerC2(CareerC1):
-    """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
+    """正社員ヒアリングの会話の層の版(CAREER_HARNESS_VERSION=c2。provider_mcp/career/c2.py)。読む段は act の並びをそのまま読むので、
     台本の LLM は場面の reading をそのまま返す。前の会話(history)は、層の覚え(直前のやりとりと返信、その相づち)に入れる。
     言う段の台本は c1 と同じ「相づち + 問いの文」(問いの文は、ハーネスが勧める言い方)。返信には部品の並び(parts)が付く。
     スタンプは、新しい版の相談の間はランタイムが「[スタンプ]」の文にして渡す(line_runtime/server.py の _line_kind。task 356)。"""
@@ -477,12 +477,12 @@ class CareerC2(CareerC1):
     _texts: Texts | None = None
 
     def harness(self):
-        from dip_mcp.career import c2
+        from provider_mcp.career import c2
 
         return c2
 
     def seed(self, h, scene):
-        from dip_mcp.convo import state as CS
+        from provider_mcp.convo import state as CS
 
         for t in scene.get("history") or []:
             if t["who"] == "user":
@@ -500,8 +500,8 @@ class CareerC2(CareerC1):
         return super().write(call, layer_ack(self, json.loads(m.group(1)) if m else {}, ack))
 
     def texts(self) -> Texts:
-        from dip_mcp.career import c2
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import c2
+        from provider_mcp.career import harness as H
 
         if CareerC2._texts is not None:
             return CareerC2._texts
@@ -523,7 +523,7 @@ class BaitoV4(_HarnessDriver):
 
     @property
     def session(self):
-        from dip_mcp.baito import session
+        from provider_mcp.baito import session
 
         return session
 
@@ -531,12 +531,12 @@ class BaitoV4(_HarnessDriver):
         return self.flags()
 
     def flags(self):
-        from dip_mcp import logic
+        from provider_mcp import logic
 
         return {logic.BAITO_HARNESS_FLAG: self.version}
 
     def setup(self, st, uid, scene):
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         s = self.session
         s.start(st, uid, quick=False)
@@ -577,7 +577,7 @@ class BaitoV4(_HarnessDriver):
         return f"{hook}なんだね！" if hook else "OK！"
 
     def write(self, call, ack):
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         system = call["system"]
         if call["stage"] == "review":
@@ -594,7 +594,7 @@ class BaitoV4(_HarnessDriver):
         return "result" if r["status"] == "result" and not r.get("blocked") else None
 
     def texts(self) -> Texts:
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         questions = {x for q in B.BANK for x in (q.get("text"), q.get("alt_text")) if x}
         questions |= {B.QUICK_TEXT, B.QUICK_RESULT_TEXT, *B.NEAR_TEXT.values()}
@@ -605,7 +605,7 @@ class BaitoV4(_HarnessDriver):
 
 
 class BaitoV5(BaitoV4):
-    """アルバイト・パートの相談の会話の層の版(BAITO_HARNESS_VERSION=v5。dip_mcp/baito/v5.py)。読む段は act の並びをそのまま読むので、
+    """アルバイト・パートの相談の会話の層の版(BAITO_HARNESS_VERSION=v5。provider_mcp/baito/v5.py)。読む段は act の並びをそのまま読むので、
     台本の LLM は場面の reading をそのまま返す。前の会話(history)は層の覚えに入れる。問いのターンの言う段は層のプロンプト
     (「相づち + 問いの文」。正社員の c2 と同じ台本)、まとめと結果は v4 と同じ台本。スタンプは「[スタンプ]」の文にして渡す。
     移る先の正社員は、場面を回すときに版を渡さなければ層の版(c2)にする(入り口を移す場面を、同じターンの移り方で判定するため)。"""
@@ -614,7 +614,7 @@ class BaitoV5(BaitoV4):
     _texts: Texts | None = None
 
     def env(self, scene):
-        from dip_mcp import logic
+        from provider_mcp import logic
 
         return {logic.CAREER_HARNESS_FLAG: "c2"} | self.flags()
 
@@ -636,7 +636,7 @@ class BaitoV5(BaitoV4):
         return r.get("closed") or super().closed(r)
 
     def texts(self) -> Texts:
-        from dip_mcp.baito import v5 as V5
+        from provider_mcp.baito import v5 as V5
 
         if BaitoV5._texts is not None:
             return BaitoV5._texts
@@ -656,13 +656,13 @@ class TalkT0:
     scripted = False  # モックのトークの AI(決まった文。ツールを呼ばない)。判定するのは TALK_MOCK_CHECKS だけ
 
     def env(self, scene=None):
-        from dip_mcp import logic
+        from provider_mcp import logic
 
         return {logic.BAITO_HARNESS_FLAG: "v4", logic.CAREER_HARNESS_FLAG: "c1", logic.TALK_LAYER_FLAG: None,
-                "FASTMCP_LOG_LEVEL": "WARNING"}  # dip の MCP の子プロセスの、リクエストごとのログを出さない
+                "FASTMCP_LOG_LEVEL": "WARNING"}  # 事業者の MCP の子プロセスの、リクエストごとのログを出さない
 
     def texts(self) -> Texts:
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         return Texts(crisis=list(B.CRISIS["reply"]))
 
@@ -672,7 +672,7 @@ class TalkT0:
 
 
 class TalkT1(TalkT0):
-    """トークの AI の t1(TALK_LAYER_VERSION=t1。dip_mcp/convo/talk.py)。本物のランタイムを、台本のトークの AI(TalkScript)で回す。
+    """トークの AI の t1(TALK_LAYER_VERSION=t1。provider_mcp/convo/talk.py)。本物のランタイムを、台本のトークの AI(TalkScript)で回す。
     台本のトークの AI は、プロンプトの決まりのとおりに動くとしたときの動き: 発言の talk(正解)のツールを呼び、entry_question なら
     プロンプトにある入り口を選ぶボタンで区分を 1 問聞く。相談の移る先は会話の層の版(c2、v5)で、移る先の読む段と言う段は台本の LLM
     (発言の reading)。守りの前処理はランタイムのコード。どのコードの条件も判定する(返事の文は台本なので、採点の条件は 9 枚目)。"""
@@ -680,12 +680,12 @@ class TalkT1(TalkT0):
     scripted = True
 
     def env(self, scene=None):
-        from dip_mcp import logic
+        from provider_mcp import logic
 
         return super().env(scene) | {logic.CAREER_HARNESS_FLAG: "c2", logic.BAITO_HARNESS_FLAG: "v5", logic.TALK_LAYER_FLAG: "t1"}
 
     def texts(self) -> Texts:
-        from dip_mcp.convo import talk
+        from provider_mcp.convo import talk
 
         return Texts(crisis=talk.CRISIS_TEXT.split("\n"))
 
@@ -699,8 +699,8 @@ CURRENT = {"career": "c1", "baito": "v4", "talk": "t0"}  # 今の本番の版(�
 
 
 def layer_driver(entry: str):
-    """新しく始める、その入り口の相談が会話の層の版なら、その版の回し方(入り口を移す先。dip_mcp.logic.layer_on)。違えば None。"""
-    from dip_mcp import logic
+    """新しく始める、その入り口の相談が会話の層の版なら、その版の回し方(入り口を移す先。provider_mcp.logic.layer_on)。違えば None。"""
+    from provider_mcp import logic
 
     if not logic.layer_on(entry):
         return None
@@ -723,15 +723,15 @@ def _uid(scene: dict) -> str:
 def run_harness_scene(scene: dict, d, state_path: Path, others: dict | None = None) -> dict:
     """career と baito の 1 場面を回して、記録(checks の形)を返す。others は、ほかの入り口の版の機能フラグ(入り口を移す先の版)。
     実モデル(d.real)のときは、ターンごとのモデルの時間と呼び出しの数(model_seconds、model_calls)も記録に足す。"""
-    from dip_mcp.data import State
     from line_runtime import baito_chat
+    from provider_mcp.data import State
 
     st, uid = State(state_path), _uid(scene)
     replies, error = [], None
     d.convo = []
     for t in scene.get("history") or []:
         baito_chat._append(d.convo, "user" if t["who"] == "user" else "assistant", t["text"])
-    with environ(d.env(scene) | (others or {}) | {"DIP_STATE_PATH": str(state_path)}), capture_finish() as last:
+    with environ(d.env(scene) | (others or {}) | {"PROVIDER_STATE_PATH": str(state_path)}), capture_finish() as last:
         try:
             _seed_profile(st, uid, scene)
             d.setup(st, uid, scene)
@@ -779,7 +779,7 @@ def _talk_model():
     return TalkMock()
 
 
-ENTRY_BUTTONS_RE = re.compile(r"付ける: ((?:「[^」]+」)+)")  # t1 のプロンプトの、入り口を選ぶボタン(dip_mcp.convo.talk.prompt_section)
+ENTRY_BUTTONS_RE = re.compile(r"付ける: ((?:「[^」]+」)+)")  # t1 のプロンプトの、入り口を選ぶボタン(provider_mcp.convo.talk.prompt_section)
 TALK_SCRIPT_ASK = "どちらで探しますか?"  # 台本のトークの AI が区分を聞く 1 問
 
 
@@ -845,10 +845,10 @@ async def _starts_new(rt, uid: str, say: dict) -> bool:
 
 
 def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_scene=None) -> list[dict]:
-    """talk の場面を、1 つのランタイムで回す(dip の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
+    """talk の場面を、1 つのランタイムで回す(事業者の MCP の子プロセスを場面ごとに起こさない)。t1 は台本のトークの AI と、
     移る先の台本の LLM で回す。real(evals.scenes.real.RealModel)を渡すと、トークの AI もハーネスのモデルも実モデルで回し、
     呼び出しの数は real が数える(どのコードの条件も判定する)。実モデルの回は、トークの AI がそのターンに呼んだツールの名前と引数も残す(tools)。before_scene(scene) は場面を始める前に呼ぶ(費用の確かめ)。"""
-    from dip_mcp.data import State
+    from provider_mcp.data import State
 
     if real is not None:
         model, harness = None, {}  # None: ランタイムの既定(本番と同じ実モデル)
@@ -899,7 +899,7 @@ def run_talk_scenes(scenes: list[dict], d, state_path: Path, real=None, before_s
                 records.append({"scene": scene["id"], "entry": "talk", "version": d.version, "replies": replies,
                                 "error": error, "texts": d.texts(), "talk_mock": not d.scripted and real is None})
 
-    with environ(d.env() | {"DIP_STATE_PATH": str(state_path)}):
+    with environ(d.env() | {"PROVIDER_STATE_PATH": str(state_path)}):
         asyncio.run(go())
     return records
 

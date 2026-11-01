@@ -1,4 +1,4 @@
-"""aica の v5(dip_mcp/baito/v5.py。会話の層に載せ替えた版)を、この参照資料のシミュレーターで回すための入口(aica task 360)。
+"""aica の v5(provider_mcp/baito/v5.py。会話の層に載せ替えた版)を、この参照資料のシミュレーターで回すための入口(aica task 360)。
 
     BAITO_HARNESS=aica_port_v5 python3 simulate.py v4   # results_v4.json と transcripts/ を上書きするので、写しの中で回す
 
@@ -20,8 +20,8 @@ if os.environ.get("AICA_ROOT"):
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from dip_mcp.baito import harness as _v4
-from dip_mcp.baito import v5 as _v5
+from provider_mcp.baito import harness as _v4
+from provider_mcp.baito import v5 as _v5
 
 INTENT_ACTS = {"clarify": "clarify", "show_result": "show_result", "restart": "restart", "danger": "danger", "aside": "chitchat"}
 

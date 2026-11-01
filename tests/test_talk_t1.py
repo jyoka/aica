@@ -1,9 +1,9 @@
 """トークの AI の t1(TALK_LAYER_VERSION=t1。設計メモ docs/design/conversation-layer.md §4.13、§5 の 8 枚目。task 361)。
 
-実 LLM なし。本物のランタイムと dip の MCP を、偽のトークの AI と偽のハーネスのモデルで動かす。
+実 LLM なし。本物のランタイムと事業者の MCP を、偽のトークの AI と偽のハーネスのモデルで動かす。
 - 確かめる場面: talk の全部(7)。t1 でコードの条件がすべて合格する。t0(今の動き)の点は変わらない
 - 守りの前処理: 相談の外の「もう死にたい」に、トークの AI を呼ばずに相談窓口の決まった文(LINE の Webhook から)。t0 は今までどおりモデルが受ける
-- start_* への発言の受け渡し: トークの AI が text を渡すと、dip は始めずに引き継ぎの記録を書き、ランタイムが同じターンで移る先の
+- start_* への発言の受け渡し: トークの AI が text を渡すと、事業者は始めずに引き継ぎの記録を書き、ランタイムが同じターンで移る先の
   switch_in を呼ぶ。移る先はその発言を読む段で読み、値を推測で入れて、聞かずに最初の問いへ。トークの AI が言い換えた文は読まない
 - プロンプト: 事実と、入り口を選ぶボタン(入り口の定義の移る先の文)と、text の決まり。音声相談の指示: 事実と危ない言葉の決まった文
 """
@@ -18,15 +18,15 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.convo import facts as F
-from dip_mcp.convo import guard, talk
-from dip_mcp.convo import switch as SW
-from dip_mcp.data import State
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.convo import facts as F
+from provider_mcp.convo import guard, talk
+from provider_mcp.convo import switch as SW
+from provider_mcp.data import State
 from tests.test_career_c2 import FakeReadLLM, act
 from tests.test_consult import ConsultModel
 from tests.test_handle import call, reply
@@ -58,7 +58,7 @@ def start_career(text: str | None, uid: str = UID) -> list:
 
 
 def handle(tmp_path, monkeypatch, model, says, career_llm=None, baito_llm=None):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from line_runtime.runtime import LineRuntime, history
 
     async def go():
@@ -194,7 +194,7 @@ def test_start_without_words_or_t1_or_on_c1_and_v4_starts_as_before(tmp_path, mo
 
 
 def test_c2_start_with_words_writes_an_unread_record_and_switch_in_reads_it_first(tmp_path):
-    """dip の中: c2 の start(text)は始めずに、トークの AI からの記録(読んでいない)を書く。switch_in は読む段を先に呼び、
+    """事業者の中: c2 の start(text)は始めずに、トークの AI からの記録(読んでいない)を書く。switch_in は読む段を先に呼び、
     読んだ値の act を記録に入れてから当てる(呼び直しの間は記録を消さない)。氏名は値にも言う段にも渡さない。"""
     st = State(tmp_path / "state.json")
     said = "みほん太郎です。正社員で年収500万以上の仕事を探したい"
@@ -258,9 +258,9 @@ def test_start_tools_show_the_words_argument_only_on_t1(monkeypatch):
 
 # ----------------------------- プロンプト -----------------------------
 def test_prompt_adds_the_facts_the_entry_buttons_and_the_words_rule_only_on_t1(monkeypatch):
-    from dip_mcp import server
+    from provider_mcp import server
 
-    text = server.baitoru_assistant("A")
+    text = server.job_assistant("A")
     assert "「アルバイト・パートで探す」「正社員で探す」" in text  # 入り口の定義の移る先の文
     assert all(x in text for x in F.COMMON["ask_service"] + F.COMMON["ask_advice"])
     assert "start_career_consultation の text" in text
@@ -268,15 +268,15 @@ def test_prompt_adds_the_facts_the_entry_buttons_and_the_words_rule_only_on_t1(m
 
     assert re.findall(r"「([^」]+)」", ENTRY_BUTTONS_RE.search(text).group(1)) == talk.entry_buttons()
     monkeypatch.delenv(logic.TALK_LAYER_FLAG)
-    assert "会話の層の決まり" not in server.baitoru_assistant("A")
+    assert "会話の層の決まり" not in server.job_assistant("A")
 
 
 def test_prompt_starts_the_consultation_without_asking_conditions_and_names_only_the_tools_it_shows(monkeypatch):
-    # task 377: 実モデルのトークの AI は、dip の Prompt の「条件だけなら相談に入らずエリアを聞く」に従い、相談を始めなかった。
+    # task 377: 実モデルのトークの AI は、事業者の Prompt の「条件だけなら相談に入らずエリアを聞く」に従い、相談を始めなかった。
     # t1 は、区分が決まって探したいと言ったら同じターンで相談を始める決まりを、その決まりより先にする
-    from dip_mcp import server
+    from provider_mcp import server
 
-    text = server.baitoru_assistant("A")
+    text = server.job_assistant("A")
     assert "エリアや時間帯などの条件を聞かず、求人も探さずに、同じターンで相談を始める" in text
     assert "アルバイト・パートは start_baito_consultation、正社員は start_career_consultation" in text
     assert "より先にする" in text.split("### 相談を始めるとき")[1]
@@ -289,8 +289,8 @@ def test_prompt_starts_the_consultation_without_asking_conditions_and_names_only
 
 
 def test_entry_buttons_come_from_the_entry_definitions():
-    from dip_mcp.baito import v5
-    from dip_mcp.career import c2
+    from provider_mcp.baito import v5
+    from provider_mcp.career import c2
 
     assert talk.entry_buttons() == [c2.ENTRY.switch[0]["label"], v5.ENTRY.switch[0]["label"]]
     assert talk.crisis_reply("ふつうの話") is None and talk.crisis_reply("消えたい") == talk.CRISIS_TEXT
@@ -308,8 +308,8 @@ def test_voice_instructions_get_the_facts_and_the_crisis_text_only_on_t1(monkeyp
     assert "## 危ない言葉" not in off and VP.CRISIS_SPOKEN not in off and "aica について聞かれたら" not in off
 
 
-def test_voice_copies_match_the_dip_facts_and_crisis_table():
-    """voice_resume は dip のコードを読み込まないので、写しが dip のデータと同じかを確かめる。"""
+def test_voice_copies_match_the_provider_facts_and_crisis_table():
+    """voice_resume は事業者のコードを読み込まないので、写しが事業者のデータと同じかを確かめる。"""
     from voice_resume import prompts as VP
 
     assert VP.TALK_LAYER_FLAG == logic.TALK_LAYER_FLAG and VP.TALK_LAYER_VERSIONS == logic.TALK_LAYER_VERSIONS

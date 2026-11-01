@@ -1,7 +1,7 @@
 #!/bin/sh
 # コンテナの起動(Dockerfile の CMD)。Web プロセスを 0.0.0.0:$PORT で動かす。
 # AICA_VOICE_WORKER=1 なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間)。Render の音声ワーカーは別サービスで
-# (render.yaml の aica-voice、scripts/voice_worker_start.sh)、AICA_DIP_PORT の dip の MCP サーバーに private network でつなぐ。
+# (render.yaml の aica-voice、scripts/voice_worker_start.sh)、AICA_PROVIDER_PORT の事業者の MCP サーバーに private network でつなぐ。
 set -eu
 
 export LINE_SIM_HOST="${LINE_SIM_HOST:-0.0.0.0}"
@@ -11,6 +11,10 @@ export LINE_SIM_PORT="${LINE_SIM_PORT:-${PORT:-10000}}"
 if ! python -c 'import os, sys; sys.exit(0 if os.path.ismount("/app/data") else 1)'; then
     echo "WARNING: /app/data is not a mounted disk. Conversations and state will be lost on restart." >&2
 fi
+
+# 旧い名前のデータを移す(docs/deploy/render.md の「旧い名前からの移行」)。ディスクを読み書きするプロセスを始める前にする。
+# 移せないときと、空のデータで動き始めそうなときは、理由を出してここで止まる(set -e)
+python -m provider_mcp.legacy
 
 if [ "${AICA_VOICE_WORKER:-}" = "1" ]; then
     # 音声ワーカーは同じコンテナの Web プロセスに結果を返す。モデル(VAD、turn detector)はディスクに置き、2 回目からは読むだけ
@@ -28,12 +32,12 @@ if [ "${AICA_VOICE_WORKER:-}" = "1" ]; then
     fi
 fi
 
-if [ -n "${AICA_DIP_PORT:-}" ]; then
-    # 別サービスの音声ワーカーが使う dip の MCP サーバー。状態(/app/data)はこのコンテナのディスクにあるので、ここで動かす。
-    # 0.0.0.0 で開くので AICA_INTERNAL_KEY が要る(無ければ dip_mcp.server が起動しない)。落ちても Web プロセスは止めない
+if [ -n "${AICA_PROVIDER_PORT:-}" ]; then
+    # 別サービスの音声ワーカーが使う事業者の MCP サーバー。状態(/app/data)はこのコンテナのディスクにあるので、ここで動かす。
+    # 0.0.0.0 で開くので AICA_INTERNAL_KEY が要る(無ければ provider_mcp.server が起動しない)。落ちても Web プロセスは止めない
     (while true; do
-        python -m dip_mcp.server --http "$AICA_DIP_PORT" --host 0.0.0.0 || true
-        echo "WARNING: dip MCP server for the voice worker exited; restarting in 10s" >&2
+        python -m provider_mcp.server --http "$AICA_PROVIDER_PORT" --host 0.0.0.0 || true
+        echo "WARNING: provider MCP server for the voice worker exited; restarting in 10s" >&2
         sleep 10
     done) &
 fi

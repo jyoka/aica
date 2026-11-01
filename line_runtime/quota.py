@@ -230,7 +230,7 @@ class DailyQuota:
 
     def take_daily(self, kind: str, user_id: str, limit: int) -> bool:
         """ターンとは別の 1 日の回数(kind ごと、人ごと)を 1 つ使う。limit に達していたら使わずに False。0 以下なら上限なし。
-        「すべて消す」でも消えない(dip の状態ではなくここに置くので、消して数え直させない)。"""
+        「すべて消す」でも消えない(事業者の状態ではなくここに置くので、消して数え直させない)。"""
         with self._lock:
             self._roll()
             counts = self._extra.setdefault(kind, {})

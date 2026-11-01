@@ -38,18 +38,18 @@ CASES = {
 
 
 async def run_once(rt, meter, case: dict) -> dict:
-    from dip_mcp import logic
-    from dip_mcp.data import State
     from evals.checks import REFUSAL
     from evals.scenarios import prepare
     from line_runtime.runtime import EVENTS
+    from provider_mcp import logic
+    from provider_mcp.data import State
 
     prepare(State(), {"user": case["user"], "event": case["event"]})
     facts = None
     if EVENTS[case["event"]][1] == "push":
         gate = logic.push_trigger(State(), case["user"], case["event"])
         if not gate["allowed"]:
-            raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
+            raise RuntimeError(f"事業者がプッシュを許可しなかった: {gate['reason']}")
         facts = gate["facts"]
     k = meter.mark()
     turns, event, text = [], case["event"], None
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     from line_runtime.config import load_env
 
     load_env()
-    os.environ["DIP_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
     ap = argparse.ArgumentParser()
     ap.add_argument("--case", choices=list(CASES), default="consider")
     ap.add_argument("--n", type=int, default=10)

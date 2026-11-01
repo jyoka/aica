@@ -101,7 +101,7 @@ def _numeric(f: dict) -> bool:
 
 async def extract_facts(client, model: str, transcript: list[dict], persona: dict, resume: dict | None = None) -> dict:
     """形 A の会話の記録から、事実表の項目ごとの取れた値(captured の形)。本人が先に送った履歴書(resume。読み取り結果)
-    があれば、それも本人の言葉として取り出してよい(形 A も dip の状態に持っていて、形 B〜D は high として入れるため)。"""
+    があれば、それも本人の言葉として取り出してよい(形 A も事業者の状態に持っていて、形 B〜D は high として入れるため)。"""
     items = []
     for f in persona["facts"]:
         unit = f"(数の項目。単位: {f['unit']})" if f["kind"] == "number" else "(数の項目)" if _numeric(f) else ""

@@ -14,14 +14,14 @@ import re
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import behavior, logic
-from dip_mcp.data import State
 from line_runtime.agent import PINNED_USER
+from provider_mcp import behavior, logic
+from provider_mcp.data import State
 from tests.test_handle import call, reply
 
 
 def _env(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from line_runtime import config, server
@@ -66,8 +66,8 @@ def test_two_browsers_get_scoped_scenario_users_and_cannot_touch_each_other(tmp_
         rb = b.post("/api/scenarios/F-follow-new/start").json()
         assert ra["user"] == f"{ua}:sim-new" and rb["user"] == f"{ub}:sim-new"  # 同じシナリオでも別ユーザー
         # 自分のユーザーは見られる。相手のユーザーとしては話せない・覗けない
-        assert a.post("/api/dip", json={"user_id": ra["user"]}).status_code == 200
-        assert a.post("/api/dip", json={"user_id": rb["user"]}).status_code == 403
+        assert a.post("/api/provider", json={"user_id": ra["user"]}).status_code == 200
+        assert a.post("/api/provider", json={"user_id": rb["user"]}).status_code == 403
         assert a.post("/api/event", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
         assert a.post("/api/event/stream", json={"user_id": rb["user"], "event": "message", "text": "hi"}).status_code == 403
         assert a.post("/api/voice/start", json={"user_id": rb["user"]}).status_code == 403
@@ -81,7 +81,7 @@ def test_reset_user_can_seed_a_browser_user_from_a_scenario_template(tmp_path):
     state.reset_user("w-aaaaaaaaaaaaaaaa:sim-browsing", template="sim-browsing")
     u = state.user("w-aaaaaaaaaaaaaaaa:sim-browsing")
     assert u["line_user_id"] == "w-aaaaaaaaaaaaaaaa:sim-browsing"
-    assert behavior.dip_id(state, "w-aaaaaaaaaaaaaaaa:sim-browsing") == "D1005"  # 同じ dip の会員として、シナリオの行動の要約を読む
+    assert behavior.provider_id(state, "w-aaaaaaaaaaaaaaaa:sim-browsing") == "D1005"  # 同じ事業者の会員として、シナリオの行動の要約を読む
     assert behavior.view(state, "w-aaaaaaaaaaaaaaaa:sim-browsing")["recent_views"]
     assert state.user("sim-browsing")["line_user_id"] == "sim-browsing"  # 元のシナリオユーザーはそのまま
 
@@ -112,7 +112,7 @@ U2 = "w-2222222222222222:sim-new"
 
 
 def test_two_users_talk_in_parallel_without_mixing(tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.ledger import Ledger
     from line_runtime.runtime import LineRuntime
 

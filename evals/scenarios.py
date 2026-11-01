@@ -1,6 +1,6 @@
 """シナリオの一覧(scenarios.json)と、シナリオを始める前の準備。画面(line_runtime.server)と評価(evals.run)で共通。
 
-どのシナリオも AI 側の1通目から始まる: 初回訪問・再訪の挨拶と、dip が許可したプッシュのどちらか。
+どのシナリオも AI 側の1通目から始まる: 初回訪問・再訪の挨拶と、事業者が許可したプッシュのどちらか。
 ペルソナの履歴書(evals/personas/*.json)はすべて架空。
 """
 
@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dip_mcp import arcade, logic
-from dip_mcp.data import State
+from provider_mcp import arcade, logic
+from provider_mcp.data import State
 
 HERE = Path(__file__).resolve().parent
 SCENARIOS = HERE / "scenarios.json"
@@ -40,7 +40,7 @@ def load_arcade_draft(name: str) -> dict:
 
 
 def seed_arcade_draft(state: State, user: str, d: dict) -> dict:
-    """前にゲームで下書きを保存したことにする(本番の保存と同じく、遊びを始めてから dip_mcp.arcade.save_draft で)。"""
+    """前にゲームで下書きを保存したことにする(本番の保存と同じく、遊びを始めてから provider_mcp.arcade.save_draft で)。"""
     from resume_arcade.draft import to_envelope
 
     play = arcade.start_play(state, user, d["game"], ai=False)
@@ -49,7 +49,7 @@ def seed_arcade_draft(state: State, user: str, d: dict) -> dict:
 
 def upload_resume(state: State, sc: dict, user: str | None = None) -> dict:
     """会話の途中で本人が履歴書をアップロードしたことにする(sc["upload_resume"])。
-    本番の /api/resume/.../upload と同じく dip に保存し、resume_upload のイベントに渡す事実を返す。"""
+    本番の /api/resume/.../upload と同じく事業者に保存し、resume_upload のイベントに渡す事実を返す。"""
     from line_runtime.resume_confirm import resume_bubbles
 
     user = user or sc["user"]
@@ -59,7 +59,7 @@ def upload_resume(state: State, sc: dict, user: str | None = None) -> dict:
 
 
 def prepare(state: State, sc: dict, user: str | None = None) -> None:
-    """そのユーザーの dip の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まる)。
+    """そのユーザーの事業者の状態を初期に戻す(前のプッシュが接触として残ると、3日間プッシュが止まる)。
     再訪のシナリオなら前に本人が話した希望(seed_preferences)と雇用区分(seed_track)を入れる。
     seed_resume は、前にアップロード済みの履歴書(会話の前から要約の uploaded_resume にある)。
     seed_arcade_draft は、前にゲームで保存した書類の下書き(会話の前から要約の arcade_draft にある。load_arcade_draft)。

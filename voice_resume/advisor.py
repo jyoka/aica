@@ -1,19 +1,19 @@
 """音声アドバイザー本体(LiveKit Agent)。
 
-会話の脳は Anthropic の Claude Sonnet 5.5(VOICE_RESUME_PROVIDER=openai なら OpenAI の gpt-6-sol。voice_resume/voice_llm.py)。指示は、区分によらない音声の決まりに、今の雇用区分の playbook(dip の
+会話の脳は Anthropic の Claude Sonnet 5.5(VOICE_RESUME_PROVIDER=openai なら OpenAI の gpt-6-sol。voice_resume/voice_llm.py)。指示は、区分によらない音声の決まりに、今の雇用区分の playbook(事業者の
 get_counseling_playbook(track, "voice"))を足したもの(prompts.advisor_instructions)。ツール:
-- set_search_track: 本人の発話から雇用区分を切り替えて dip に記録し、指示の playbook をその区分のものに入れ替える
-- save_user_preferences: 本人が話した希望と自分のこと(目的・強み・正社員の条件など)を、その場で dip に保存する
-- propose_jobs: 聞いた希望条件から dip の recommend_jobs(MCP)で今の区分の求人を最大3件出す。
-  0件なら dip の relax_conditions(読み取りだけ)で「どの条件を外すと何件になるか」を調べ、
+- set_search_track: 本人の発話から雇用区分を切り替えて事業者に記録し、指示の playbook をその区分のものに入れ替える
+- save_user_preferences: 本人が話した希望と自分のこと(目的・強み・正社員の条件など)を、その場で事業者に保存する
+- propose_jobs: 聞いた希望条件から事業者の recommend_jobs(MCP)で今の区分の求人を最大3件出す。
+  0件なら事業者の relax_conditions(読み取りだけ)で「どの条件を外すと何件になるか」を調べ、
   本人に選んでもらう選択肢として返す(当てずっぽうの再検索をさせない)
 - web_research / wage_average / research_company: 会話中に本人が気になったこと(仕事内容・資格など)、
   平均時給(全国と東京は参考データ data/wage_reference.json からすぐ答える)、気になる会社を web で調べて短く答える
 - finalize_interview: 文字起こしから下書き(正社員なら職務経歴書、それ以外は履歴書)を作り、希望条件・提案した求人IDと
-  一緒にトークへ返し(dip の状態に入る)、相談のまとめを dip に記録する。ファイルに書き出すのは開発のときだけ
+  一緒にトークへ返し(事業者の状態に入る)、相談のまとめを事業者に記録する。ファイルに書き出すのは開発のときだけ
   (config.WRITE_FILES)
 
-ツールのロジックはオフラインでテストする(dip と drafter の client を差し替えられる)。
+ツールのロジックはオフラインでテストする(事業者と drafter の client を差し替えられる)。
 """
 
 from __future__ import annotations
@@ -68,12 +68,12 @@ class ResumeAdvisor(Agent):
     """仕事探しの希望を聞き、求人を提案し、履歴書か職務経歴書の下書きを残すアドバイザー。"""
 
     def __init__(
-        self, *, dip=None, draft_client_factory=None, research_client_factory=None, room=None,
+        self, *, provider=None, draft_client_factory=None, research_client_factory=None, room=None,
         wage_reference: WageReference | None = None, user_id: str | None = None,
         stated_preferences: dict | None = None, uploaded_resume: dict | None = None, talk_poster=None,
         consultation_summary: dict | None = None, track: str = DEFAULT_TRACK, playbook: str | None = None,
     ) -> None:
-        # 今の雇用区分(dip の要約の search_track)と、その区分の音声版の playbook。区分が変わったら入れ替える
+        # 今の雇用区分(事業者の要約の search_track)と、その区分の音声版の playbook。区分が変わったら入れ替える
         self._track = track if track in TRACKS else DEFAULT_TRACK
         self._playbook = playbook
         # LINE から入った相談なら、前に本人が話した希望・相談で分かったこと、前の会話の相談のまとめ、
@@ -82,11 +82,11 @@ class ResumeAdvisor(Agent):
         self._consultation = consultation_summary
         self._resume = uploaded_resume
         super().__init__(instructions=self._build_instructions())
-        self._dip = dip  # DipMCP(またはテスト用スタブ)。None なら求人提案は不可の旨を返す
+        self._provider = provider  # ProviderMCP(またはテスト用スタブ)。None なら求人提案は不可の旨を返す
         self._draft_client_factory = draft_client_factory  # () -> AsyncAnthropic か AsyncOpenAI 互換
         self._research_client_factory = research_client_factory  # () -> AsyncAnthropic か AsyncOpenAI 互換
         self._room = room  # 画面表示用の data channel(無ければ音声のみ)
-        # トークから入った相談のユーザーID(匿名ユーザーID のスコープ)。あるときだけ dip に書き込み
+        # トークから入った相談のユーザーID(匿名ユーザーID のスコープ)。あるときだけ事業者に書き込み
         # (希望の保存・結果の記録)、終わりにトーク(line_runtime)へ結果を届ける。無ければ従来どおり読み取りだけ
         self._user_id = user_id
         self._talk_poster = talk_poster  # async (url, payload) -> None(テストで差し替え)
@@ -97,12 +97,12 @@ class ResumeAdvisor(Agent):
         self.relaxed: dict = {}  # 検索のためにゆるめた(外した)条件。希望(preferences)は書き換えない
         self.search_attempts: list[dict] = []  # 検索の経緯(使った条件と件数)
         # 出さない求人ID(propose_jobs の exclude_ids をこの面談の間ためる)。後で条件を変えて探すときに LLM が
-        # exclude_ids を付け忘れても、外した求人(電話が中心の求人など)が出ないように、毎回まとめて dip に渡す
+        # exclude_ids を付け忘れても、外した求人(電話が中心の求人など)が出ないように、毎回まとめて事業者に渡す
         self.excluded_ids: list[str] = []
         self.proposed_jobs: list[dict] = []
         self.finalized: dict | None = None
         self._finalize_reply: str | None = None  # finalize 済みなら2回目はこれを返す(副作用なし)
-        self.summary: str | None = None  # 相談のまとめ(finalize_interview で受け取り、dip に記録する)
+        self.summary: str | None = None  # 相談のまとめ(finalize_interview で受け取り、事業者に記録する)
         self.forgotten = False  # 面談の途中で本人が「すべて消す」をした(トークが結果を受け取らなかった)
         self.web_searches = 0  # この相談で web を調べた回数(config.MAX_WEB_SEARCHES まで)
         # 全国・東京の平均時給の参考データ(会話のたびには調べない)
@@ -115,7 +115,7 @@ class ResumeAdvisor(Agent):
 
     @property
     def _room_name(self) -> str | None:
-        """この通話の部屋の名前。dip への書き込みとトークへの結果に付ける(面談の途中で「すべて消す」をしたら、
+        """この通話の部屋の名前。事業者への書き込みとトークへの結果に付ける(面談の途中で「すべて消す」をしたら、
         その部屋の書き込みと結果は断られる)。"""
         return getattr(self._room, "name", None) or None
 
@@ -149,9 +149,9 @@ class ResumeAdvisor(Agent):
             return f"track は {' / '.join(TRACKS)} のどれか。"
         if track == self._track:
             return f"今の区分はすでに{track}です。切り替えていません。"
-        if self._dip is not None and self._user_id:
+        if self._provider is not None and self._user_id:
             try:
-                result = await self._dip.set_search_track(self._user_id, track, evidence, room=self._room_name)
+                result = await self._provider.set_search_track(self._user_id, track, evidence, room=self._room_name)
             except Exception as exc:  # noqa: BLE001 - 記録できなくても会話は続ける
                 logger.warning("set_search_track 失敗: %s", type(exc).__name__)
                 return "区分を切り替えられませんでした。今の区分のまま続けてください。"
@@ -165,7 +165,7 @@ class ResumeAdvisor(Agent):
         await self._publish({"type": "track", "track": track})
         return (
             f"雇用区分を「{before}」から「{track}」に切り替えました"
-            + ("(dip に記録済み)" if self._user_id else "")
+            + ("(事業者に記録済み)" if self._user_id else "")
             + f"。指示の相談の playbook を{track}(音声)のものに入れ替えたので、以降はそれに従う。"
             f"書類は「{document_name(track)}」と呼ぶ。本人には切り替えたことを1文で伝え、playbook の次の1問に進む。"
         )
@@ -190,7 +190,7 @@ class ResumeAdvisor(Agent):
         work_style: str | None = None,
         start_timing: str | None = None,
     ) -> str:
-        """本人が話した希望と自分のことを、その場で本人の言葉のまま保存する(チャットと同じ dip の項目。次の会話に
+        """本人が話した希望と自分のことを、その場で本人の言葉のまま保存する(チャットと同じ事業者の項目。次の会話に
         引き継がれる)。本人が言ったことだけを、短い文で入れる。こちらの言い換え・まとめ・推測・履歴書からの補完は入れない。
         同じ発言を複数の項目に重複して入れない。保存先は playbook の「保存先」(今の区分で使わない条件は保存されない)。
 
@@ -223,7 +223,7 @@ class ResumeAdvisor(Agent):
         if not stated:
             return "保存する項目がありませんでした。" + self._dropped_note(dropped)
         result = await self._save_stated_preferences(stated)
-        # 単体で動かすとき(ユーザー不明)は dip に書かず、この面談の希望としてだけ持つ
+        # 単体で動かすとき(ユーザー不明)は事業者に書かず、この面談の希望としてだけ持つ
         if result is None:
             names = "、".join(PREFERENCE_LABELS[k] for k in stated)
             return f"この面談の希望として記録しました: {names}。本人には言わずに会話を続ける。" + self._dropped_note(dropped)
@@ -291,7 +291,7 @@ class ResumeAdvisor(Agent):
             area: エリアか最寄り駅(本人が言った場合だけ)。地名は 新宿 / 渋谷 / 池袋 / 品川 /
                 上野 / 中野 / 高円寺 / 吉祥寺 / 横浜 / 川崎 / 大宮 のどれか、または駅名(例: 中野駅)。
                 「東京都内」「都内」「どこでも」のような広い言い方は、言い換えずそのまま渡す
-                (dip 側がその範囲の地名に広げて検索する)。一覧に無い地名はエラーになるので、
+                (事業者側がその範囲の地名に広げて検索する)。一覧に無い地名はエラーになるので、
                 そのときはエラーが示す一覧から選び直すか、area を外して検索する。
             time_band: 時間帯。早朝 / 日中 / 夕方 / 夜 / 深夜 のどれか1つ(アルバイト・パートの条件)
             min_wage: 希望の時給の下限(円)。本人が言った額のまま(アルバイト・パートの条件)
@@ -385,12 +385,12 @@ class ResumeAdvisor(Agent):
             args, relaxed = split_relaxed(args, relax)
         except ValueError as exc:
             return f"引数が不正です: {exc}"
-        if self._dip is None:
+        if self._provider is None:
             return "いま求人データにつながっていないため提案できません。その旨を伝えて会話を締めてください。"
         label = "🔍 条件を変えて探し直しています…" if (relax or search_only) else "🔍 ぴったりの求人を探しています…"
         async with self._working(label):
             if not search_only:
-                # 本人が言った希望だけを dip に保存する(検索のためにゆるめた条件や推測は保存しない)
+                # 本人が言った希望だけを事業者に保存する(検索のためにゆるめた条件や推測は保存しない)
                 await self._save_stated_preferences(stated)
             # 出さない求人は検索だけに渡す(希望でも検索の条件でもないので recommend_args には入れない)。
             # 前の呼び出しで外した分も合わせて渡す(0件のときの relax_conditions にも同じものが渡る)
@@ -398,7 +398,7 @@ class ResumeAdvisor(Agent):
             exclude = list(self.excluded_ids)
             search = {**args, "exclude_ids": exclude} if exclude else args
             try:
-                result = await self._dip.recommend_jobs(**self._with_user(search))
+                result = await self._provider.recommend_jobs(**self._with_user(search))
             except Exception as exc:  # noqa: BLE001 - 提案に失敗しても会話は続ける
                 logger.warning("recommend_jobs 失敗: %s", type(exc).__name__)
                 return "求人の検索に失敗しました。その旨を伝えて会話を締めてください。"
@@ -503,7 +503,7 @@ class ResumeAdvisor(Agent):
             )
         summary = (summary or "").strip() or None
         if summary and len(summary) > CONSULTATION_SUMMARY_MAX_CHARS:
-            # 途中で切ると「次に確かめること」が落ちる(dip も記録しない)。何も保存せず書き直してもらう
+            # 途中で切ると「次に確かめること」が落ちる(事業者も記録しない)。何も保存せず書き直してもらう
             return (f"summary(相談のまとめ)が{len(summary)}字です。{CONSULTATION_SUMMARY_MAX_CHARS}字以内に書き直して、"
                     "もう一度 finalize_interview を呼んでください(まだ何も保存していません。本人には何も言わなくてよい)。")
         transcript = self._transcript()
@@ -536,7 +536,7 @@ class ResumeAdvisor(Agent):
             }
         )
         # LINE から入った相談なら、トークへ求人と下書きを戻し、結果と相談のまとめを記録する。
-        # 面談の途中で本人が「すべて消す」をしていたら(トークが受け取らない)、dip に記録を作り直さない
+        # 面談の途中で本人が「すべて消す」をしていたら(トークが受け取らない)、事業者に記録を作り直さない
         await self._deliver_to_talk()
         if not self.forgotten:
             await self._record_outcome()
@@ -586,11 +586,11 @@ class ResumeAdvisor(Agent):
         finally:
             await self._publish({"type": "status", "done": True, "label": label})
 
-    # dip の save_user_preferences が受け付ける項目(dip_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)。
+    # 事業者の save_user_preferences が受け付ける項目(provider_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)。
     # 正社員のチャットのヒアリングだけが聞く項目(CAREER_PREFERENCE_KEYS: why_now・direction・team_style)は、面談では保存しない。
     # 面談では experience も聞く(flow.py の面談ステージ)。区分ごとの条件のうち、今の区分で使わないものは
-    # _on_track_items が落とす。other_wishes は dip の項目に無いので保存しない
-    _DIP_PREF_KEYS = ("area", "time_band", "job_type", "min_wage", "experience",
+    # _on_track_items が落とす。other_wishes は事業者の項目に無いので保存しない
+    _PROVIDER_PREF_KEYS = ("area", "time_band", "job_type", "min_wage", "experience",
                       "days_per_week", "skills", "certifications",
                       "purpose", "strengths", "wants", "avoids", "concerns",
                       "min_annual_salary", "work_style", "start_timing")
@@ -632,48 +632,48 @@ class ResumeAdvisor(Agent):
                 "区分が決まってから・区分に合う条件で聞き直す)")
 
     async def _load_playbook(self, track: str) -> str | None:
-        """その区分の音声版の playbook を dip から読む。読めなければ None(指示は最小の進め方になる)。"""
-        if self._dip is None:
+        """その区分の音声版の playbook を事業者から読む。読めなければ None(指示は最小の進め方になる)。"""
+        if self._provider is None:
             return None
         try:
-            result = await self._dip.get_counseling_playbook(track, "voice")
+            result = await self._provider.get_counseling_playbook(track, "voice")
         except Exception as exc:  # noqa: BLE001 - 読めなくても会話は続ける
             logger.warning("get_counseling_playbook 失敗: %s", type(exc).__name__)
             return None
         return result.get("playbook") or None
 
     def _with_user(self, args: dict) -> dict:
-        """ユーザーが分かるときは dip の呼び出しに付ける(本人の傾向が効く)。dip の引数名は line_user_id。"""
+        """ユーザーが分かるときは事業者の呼び出しに付ける(本人の傾向が効く)。事業者の引数名は line_user_id。"""
         if not self._user_id:
             return args
         return {"line_user_id": self._user_id, **args}
 
     async def _save_stated_preferences(self, stated: dict) -> dict | None:
-        """本人が言った希望を本人の言葉のまま dip に保存する(task 35 と同じ決まり)。dip の結果({"saved", "rejected"})を返す。
-        dip に書かなかった(ユーザー不明・項目なし・失敗)ときは None。
+        """本人が言った希望を本人の言葉のまま事業者に保存する(task 35 と同じ決まり)。事業者の結果({"saved", "rejected"})を返す。
+        事業者に書かなかった(ユーザー不明・項目なし・失敗)ときは None。
 
         渡すのは stated(本人が言った引数)だけ。検索のためにゆるめた条件(relax)や
         search_only の再検索の条件は、ここに来ない。失敗しても会話は続ける。
         """
-        if self._dip is None or not self._user_id:
+        if self._provider is None or not self._user_id:
             return None
-        prefs = {k: stated[k] for k in self._DIP_PREF_KEYS if k in stated}
+        prefs = {k: stated[k] for k in self._PROVIDER_PREF_KEYS if k in stated}
         if not prefs:
             return None
         try:
-            return await self._dip.save_user_preferences(self._user_id, prefs, room=self._room_name)
+            return await self._provider.save_user_preferences(self._user_id, prefs, room=self._room_name)
         except Exception as exc:  # noqa: BLE001 - 保存に失敗しても面談は続ける
             logger.warning("save_user_preferences 失敗: %s", type(exc).__name__)
             return None
 
     async def _record_outcome(self) -> None:
-        """会話の結果を dip に記録する(コードで決める。LLM の判断で wait にしない)。
+        """会話の結果を事業者に記録する(コードで決める。LLM の判断で wait にしない)。
 
         求人を提案できたら propose、提案なし(0件のままなど)は consult。
         wait はここからは決して記録しない(断っていない人を wait にしない決まり。
         旧リポジトリのコミット 7711b20 / 1750afd)。
         """
-        if self._dip is None or not self._user_id:
+        if self._provider is None or not self._user_id:
             return
         kind = self.document_kind
         # 既定はファイルに書き出さないので、トークに届かなかった下書きはどこにも残っていない
@@ -686,7 +686,7 @@ class ResumeAdvisor(Agent):
             outcome = "consult"
             reason = f"音声相談で希望を聞き取り、{draft}(条件に合う求人は提案できず)"
         try:
-            await self._dip.record_conversation_outcome(
+            await self._provider.record_conversation_outcome(
                 self._user_id, outcome, reason, confidence=1.0, summary=self.summary, room=self._room_name
             )
         except Exception as exc:  # noqa: BLE001 - 記録に失敗しても面談は締められる
@@ -700,12 +700,12 @@ class ResumeAdvisor(Agent):
             return
         payload = {
             "user_id": self._user_id,
-            "jobs": self.proposed_jobs,  # dip の recommend_jobs が返したカードの形のまま
+            "jobs": self.proposed_jobs,  # 事業者の recommend_jobs が返したカードの形のまま
             "draft_markdown": self.finalized["markdown"],
             "document_kind": self.document_kind,  # トークの吹き出し・ボタン・下書きページの題を書類に合わせる
             "files": self.finalized["files"],
-            # 本人が話した希望(トークに出す「話した内容のまとめ」。dip へ保存したのと同じ項目だけ)
-            "preferences": {k: v for k, v in self._on_track_items(self.preferences)[0].items() if k in self._DIP_PREF_KEYS},
+            # 本人が話した希望(トークに出す「話した内容のまとめ」。事業者へ保存したのと同じ項目だけ)
+            "preferences": {k: v for k, v in self._on_track_items(self.preferences)[0].items() if k in self._PROVIDER_PREF_KEYS},
             # この面談の部屋(トークのシートは、自分の部屋の結果だけを受け取る)
             "room": self._room_name,
         }
@@ -714,19 +714,19 @@ class ResumeAdvisor(Agent):
             await poster(f"{config.TALK_URL}/api/voice/result", payload)
             self.delivered_to_talk = True
         except TalkForgotten:
-            logger.info("面談の途中で本人がトークの記録をすべて消したため、結果を届けず dip にも記録せず、書き出したファイルも消す")
+            logger.info("面談の途中で本人がトークの記録をすべて消したため、結果を届けず事業者にも記録せず、書き出したファイルも消す")
             self.forgotten = True
             _remove_files(self.finalized["files"])
         except Exception as exc:  # noqa: BLE001 - トークへ戻せなくても下書きは保存済み
             logger.error("LINE のトークへの結果送信に失敗(まとめと下書きはトークに届かない): %s", post_failure(exc))
 
     async def _zero_hit_reply(self, args: dict) -> str:
-        """0件のとき: dip の relax_conditions(読み取りだけ)で、どの条件を外すと何件になるかを調べる。
+        """0件のとき: 事業者の relax_conditions(読み取りだけ)で、どの条件を外すと何件になるかを調べる。
 
         当てずっぽうの再検索ではなく、具体的な選択肢を本人に一度で選んでもらうための材料を返す。
         """
         try:
-            relax_result = await self._dip.relax_conditions(**self._with_user(args))
+            relax_result = await self._provider.relax_conditions(**self._with_user(args))
         except Exception as exc:  # noqa: BLE001 - 調べられなくても会話は続ける
             logger.warning("relax_conditions 失敗: %s", type(exc).__name__)
             relax_result = None

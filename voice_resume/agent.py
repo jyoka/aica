@@ -27,9 +27,9 @@ from line_runtime import line_channel
 from line_runtime.log_policy import quiet_sdk_loggers
 from voice_resume import config, voice_llm
 from voice_resume.advisor import ResumeAdvisor, _post_json, post_failure
-from voice_resume.dip import DipMCP
 from voice_resume.jobs import DEFAULT_TRACK
 from voice_resume.prompts import greeting_instructions
+from voice_resume.provider import ProviderMCP
 from voice_resume.stt import create_stt
 
 config.load_env()
@@ -61,7 +61,7 @@ def participant_user_id(participant) -> str | None:
     """参加者の metadata(JSON の {"user_id": ...})からユーザーID(匿名ユーザーID のスコープ)を読む。
 
     トークの音声相談のシートから入ると、line_runtime が接続トークンに載せる(voice_resume/livekit_token.py)。
-    metadata の無い参加者は None(dip に何も書かない相談になる)。
+    metadata の無い参加者は None(事業者に何も書かない相談になる)。
     """
     try:
         meta = json.loads(participant.metadata or "{}")
@@ -71,30 +71,30 @@ def participant_user_id(participant) -> str | None:
     return str(uid) if uid else None
 
 
-async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAdvisor, str]:
-    """面談を始める前の準備。dip の要約と、今の雇用区分の playbook(音声版)を読んで、アドバイザーと最初の発話への
+async def prepare_advisor(provider, user_id: str | None, room=None) -> tuple[ResumeAdvisor, str]:
+    """面談を始める前の準備。事業者の要約と、今の雇用区分の playbook(音声版)を読んで、アドバイザーと最初の発話への
     指示を組み立てる。"""
-    # 会話の前に dip の要約を読み、今の雇用区分(search_track)、前に話した希望・相談で分かったこと
+    # 会話の前に事業者の要約を読み、今の雇用区分(search_track)、前に話した希望・相談で分かったこと
     # (stated_preferences)、前の会話の相談のまとめ(consultation_summary)、トークでアップロードした履歴書
     # (uploaded_resume)があれば確認形で使う(LINE 側のプロンプトと同じ要約・同じ決まり。同じことを聞き直さない)
     stated: dict | None = None
     resume: dict | None = None
     consultation: dict | None = None
     track = DEFAULT_TRACK
-    if dip is not None and user_id:
+    if provider is not None and user_id:
         try:
-            summary = await dip.get_user_conversation_summary(user_id)
+            summary = await provider.get_user_conversation_summary(user_id)
             stated = summary.get("stated_preferences") or None
             resume = summary.get("uploaded_resume") or None
             consultation = summary.get("consultation_summary") or None
             track = summary.get("search_track") or DEFAULT_TRACK
         except Exception as exc:  # noqa: BLE001 - 要約が読めなくても面談は始める
             logger.warning("get_user_conversation_summary 失敗(希望・履歴書の確認なしで続行): %s", type(exc).__name__)
-    # 相談の進め方は、チャットと同じく dip が配る区分ごとの playbook(音声版)。読めなければ最小の進め方で始める
+    # 相談の進め方は、チャットと同じく事業者が配る区分ごとの playbook(音声版)。読めなければ最小の進め方で始める
     playbook: str | None = None
-    if dip is not None:
+    if provider is not None:
         try:
-            playbook = (await dip.get_counseling_playbook(track, "voice")).get("playbook") or None
+            playbook = (await provider.get_counseling_playbook(track, "voice")).get("playbook") or None
         except Exception as exc:  # noqa: BLE001
             logger.warning("get_counseling_playbook 失敗(最小の進め方で続行): %s", type(exc).__name__)
     # ログには値を出さない(あるかないかと項目の数だけ。docs/design/privacy.md の 3.4)
@@ -102,7 +102,7 @@ async def prepare_advisor(dip, user_id: str | None, room=None) -> tuple[ResumeAd
                 user_id or "(不明)", track, f"あり({len(stated)} 項目)" if stated else "なし",
                 "あり" if consultation else "なし", "あり" if resume else "なし", "あり" if playbook else "なし")
 
-    advisor = ResumeAdvisor(dip=dip, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume,
+    advisor = ResumeAdvisor(provider=provider, room=room, user_id=user_id, stated_preferences=stated, uploaded_resume=resume,
                             consultation_summary=consultation, track=track, playbook=playbook)
     return advisor, greeting_instructions(stated, resume, track)
 
@@ -205,15 +205,15 @@ class SessionGuard:
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
-    # 求人の提案: dip 側 MCP サーバー(dip_mcp)へつなぐ(stdio、DIP_MCP_URL があれば HTTP)。失敗しても面談は続ける
-    dip: DipMCP | None = DipMCP()
+    # 求人の提案: 事業者側 MCP サーバー(provider_mcp)へつなぐ(stdio、PROVIDER_MCP_URL があれば HTTP)。失敗しても面談は続ける
+    provider: ProviderMCP | None = ProviderMCP()
     try:
-        await dip.start()
+        await provider.start()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("dip MCP サーバーに接続できません(求人提案なしで続行): %s", type(exc).__name__)
-        dip = None
-    if dip is not None:
-        ctx.add_shutdown_callback(dip.aclose)
+        logger.warning("事業者の MCP サーバーに接続できません(求人提案なしで続行): %s", type(exc).__name__)
+        provider = None
+    if provider is not None:
+        ctx.add_shutdown_callback(provider.aclose)
 
     # どのユーザーの相談かを、参加者の metadata から受け取る(トークから入ったとき)
     await ctx.connect()
@@ -231,7 +231,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
         ctx.add_shutdown_callback(_ended)
 
-    advisor, greeting = await prepare_advisor(dip, user_id, room=ctx.room)
+    advisor, greeting = await prepare_advisor(provider, user_id, room=ctx.room)
     session = AgentSession(
         stt=create_stt(),
         llm=voice_llm.create_llm(),
@@ -260,7 +260,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         },
     )
     guard = SessionGuard(ctx, session, advisor, max_seconds=config.MAX_SESSION_MINUTES * 60)
-    # 本人が抜けてセッションが閉じたら、部屋が閉じるのを待たずにジョブも終える(プロセスと dip MCP の子プロセスを返し、
+    # 本人が抜けてセッションが閉じたら、部屋が閉じるのを待たずにジョブも終える(プロセスと事業者の MCP の子プロセスを返し、
     # トークへ ended を知らせる)。close は話しかけの途中の発話を止めた後に出るので、ここで終えても失うものは無い。
     # 時間切れで guard が閉じているときは何もしない(guard が部屋を消してからジョブを終える)
     session.on("close", lambda _ev: guard.closing_down or ctx.shutdown(reason="agent session closed"))

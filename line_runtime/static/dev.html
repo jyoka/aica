@@ -124,14 +124,14 @@
   .arch { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
   .arch h2 { font-size: 13px; margin: 0 0 8px; }
   .arch svg { width: 100%; height: auto; display: block; }
-  .zone { stroke: none; } .zone.line { fill: #ecfaf1; } .zone.dip { fill: #ebf3fc; }
-  .zl { font-size: 11px; font-weight: 800; letter-spacing: .04em; } .zl.line { fill: var(--ok-dark); } .zl.dip { fill: var(--tool); }
+  .zone { stroke: none; } .zone.line { fill: #ecfaf1; } .zone.provider { fill: #ebf3fc; }
+  .zl { font-size: 11px; font-weight: 800; letter-spacing: .04em; } .zl.line { fill: var(--ok-dark); } .zl.provider { fill: var(--tool); }
   .node rect.box { fill: #fff; stroke: #d3dae5; stroke-width: 1.5; transition: fill .25s, stroke .25s; }
   .node .nt { font-size: 12.5px; font-weight: 700; fill: var(--text); } .node .nd { font-size: 10px; fill: var(--sub); }
   .node .icon { fill: none; stroke: var(--faint); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: stroke .25s; }
   .node.on rect.box { stroke: var(--ok); fill: var(--ok-soft); stroke-width: 2.5; } .node.on .icon { stroke: var(--ok-dark); }
   .node.llm.on rect.box { stroke: var(--llm); fill: var(--llm-soft); } .node.llm.on .icon { stroke: var(--llm); }
-  .node.dip.on rect.box { stroke: var(--tool); fill: var(--tool-soft); } .node.dip.on .icon { stroke: var(--tool); }
+  .node.provider.on rect.box { stroke: var(--tool); fill: var(--tool-soft); } .node.provider.on .icon { stroke: var(--tool); }
   .node.gate.on rect.box { stroke: var(--gate); fill: var(--gate-soft); } .node.gate.on .icon { stroke: var(--gate); }
   .node.no rect.box { stroke: var(--warn); fill: var(--warn-soft); } .node.no .icon { stroke: var(--warn); }
   .link { fill: none; stroke: #b7c0ce; stroke-width: 2; transition: stroke .25s; }
@@ -175,11 +175,11 @@
   <aside class="panel">
     <div class="step">
       <h2><span class="n">1</span>シナリオを選ぶ</h2>
-      <div class="hint">押すと、そのユーザーの dip の状態を初期に戻し、AI 側の1通目(挨拶・プッシュ)から会話が始まります。</div>
+      <div class="hint">押すと、そのユーザーの事業者の状態を初期に戻し、AI 側の1通目(挨拶・プッシュ)から会話が始まります。</div>
       <div id="scenarios"></div>
     </div>
     <div class="step">
-      <h2><span class="n">2</span>dip から見た状態</h2>
+      <h2><span class="n">2</span>事業者から見た状態</h2>
       <div class="state" id="state"><div class="empty">-</div></div>
     </div>
     <div class="step">
@@ -188,8 +188,8 @@
     </div>
     <div class="step">
       <h2><span class="n">4</span>アカウント連携(偽物の LINE)</h2>
-      <div class="hint">本番のトーク画面(<a href="/">/</a>)の匿名ユーザーを、LINE と同じ流れ(linkToken → dip のログイン → nonce → accountLink)で dip の会員につなぎます。
-        ログインの例: <code>exit@dip.test</code> / <code>demo-pass-1002</code>(ほかの会員は README)。</div>
+      <div class="hint">本番のトーク画面(<a href="/">/</a>)の匿名ユーザーを、LINE と同じ流れ(linkToken → 事業者のログイン → nonce → accountLink)で事業者の会員につなぎます。
+        ログインの例: <code>exit@provider.test</code> / <code>demo-pass-1002</code>(ほかの会員は README)。</div>
       <div class="state" id="link-state"><div class="empty">-</div></div>
       <div class="linkrow">
         <button type="button" class="restart" id="link-start">連携を始める</button>
@@ -216,7 +216,7 @@
 
   <!-- 中央: LINE のトークルーム -->
   <div class="phone">
-    <header><span class="name">バイトル</span><small>AIアシスタント(シミュレーション)</small></header>
+    <header><span class="name">aica</span><small>AIアシスタント(シミュレーション)</small></header>
     <div id="log"></div>
     <form id="f"><input id="t" autocomplete="off" maxlength="5000" placeholder="メッセージを入力"><button id="send">送信</button></form>
   </div>
@@ -225,15 +225,15 @@
   <section class="arch">
     <div>
       <h2>システムの構成</h2>
-      <svg viewBox="0 0 440 330" role="img" aria-label="LINE 側と dip 側を MCP でつなぐ構成図">
+      <svg viewBox="0 0 440 330" role="img" aria-label="LINE 側と事業者側を MCP でつなぐ構成図">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="#8a93a3"/></marker>
         </defs>
         <rect class="zone line" x="6" y="6" width="202" height="318" rx="14"/>
-        <rect class="zone dip" x="232" y="6" width="202" height="318" rx="14"/>
+        <rect class="zone provider" x="232" y="6" width="202" height="318" rx="14"/>
         <text class="zl line" x="20" y="27">LINE(LY の AI モード)</text>
-        <text class="zl dip" x="246" y="27">dip(事業者)</text>
+        <text class="zl provider" x="246" y="27">事業者</text>
 
         <!-- 矢印 -->
         <path class="link" id="l-user" d="M107 98 V186" marker-start="url(#ah)" marker-end="url(#ah)"/>
@@ -254,7 +254,7 @@
           <path class="icon" d="M40 206 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 z"/>
           <circle class="spinner" cx="181" cy="203" r="6"/>
           <text class="nt" x="58" y="213">LINE 側 AI</text><text class="nd" x="58" y="230" id="n-llm-d">Claude・業務の知識なし</text></g>
-        <!-- dip の行動イベント -->
+        <!-- 事業者の行動イベント -->
         <g class="node gate" id="n-event"><rect class="box" x="246" y="42" width="174" height="56" rx="10"/>
           <path class="icon" d="M259 78 h16 M261 78 v-9 a6 6 0 0 1 12 0 v9 M265 82 h4"/>
           <text class="nt" x="284" y="65">行動イベント</text><text class="nd" x="284" y="82">フォーム離脱・選考の連絡</text></g>
@@ -262,16 +262,16 @@
         <g class="node gate" id="n-gate"><rect class="box" x="246" y="112" width="174" height="56" rx="10"/>
           <path class="icon" d="M267 126 l9 4 v7 c0 6 -4 9 -9 11 c-5 -2 -9 -5 -9 -11 v-7 z M263 138 l3 3 6 -6"/>
           <text class="nt" x="284" y="135">送ってよいか</text><text class="nd" x="284" y="152">push_trigger(コード)</text></g>
-        <!-- dip MCP サーバー -->
-        <g class="node dip" id="n-dip"><rect class="box" x="246" y="190" width="174" height="56" rx="10"/>
+        <!-- 事業者の MCP サーバー -->
+        <g class="node provider" id="n-provider"><rect class="box" x="246" y="190" width="174" height="56" rx="10"/>
           <rect class="icon" x="258" y="204" width="18" height="8" rx="2"/><rect class="icon" x="258" y="216" width="18" height="8" rx="2"/>
-          <text class="nt" x="284" y="213">dip MCP サーバー</text><text class="nd" x="284" y="230">ツール 11 個・LLM なし</text></g>
-        <!-- dip の状態 -->
-        <g class="node dip" id="n-state"><rect class="box" x="246" y="264" width="174" height="50" rx="10"/>
+          <text class="nt" x="284" y="213">事業者 MCP サーバー</text><text class="nd" x="284" y="230">ツール 11 個・LLM なし</text></g>
+        <!-- 事業者の状態 -->
+        <g class="node provider" id="n-state"><rect class="box" x="246" y="264" width="174" height="50" rx="10"/>
           <ellipse class="icon" cx="267" cy="279" rx="8" ry="3"/><path class="icon" d="M259 279 v12 a8 3 0 0 0 16 0 v-12"/>
-          <text class="nt" x="284" y="285">dip の状態</text><text class="nd" x="284" y="301">応募・保存・希望・会話結果</text></g>
+          <text class="nt" x="284" y="285">事業者の状態</text><text class="nd" x="284" y="301">応募・保存・希望・会話結果</text></g>
       </svg>
-      <div class="tools-h">dip のツール(呼ばれたものが光る)</div>
+      <div class="tools-h">事業者のツール(呼ばれたものが光る)</div>
       <div class="toolgrid" id="tools"></div>
     </div>
     <div>
@@ -298,10 +298,10 @@
   const log = $("log"), input = $("t"), sendBtn = $("send");
   // シナリオの1通目の出どころ: [まとめ, アイコンの文字, アイコンの色, 見出し]
   const GROUPS = [["greet", "V", "line-ic", "トークを開く(AI から挨拶)"],
-                  ["push", "P", "push-ic", "dip からのプッシュ(送るかは dip が判定)"]];
+                  ["push", "P", "push-ic", "事業者からのプッシュ(送るかは事業者が判定)"]];
   const groupOf = (event) => EVENT_LABEL[event] ? "greet" : "push";
   let scenarios = [], scenario = null, current = null, busy = false, t0 = 0, sums = null;
-  let track = null;  // 今のユーザーの雇用区分(dip の状態を読むたびに直す。「+」メニューの書類の呼び方に使う)
+  let track = null;  // 今のユーザーの雇用区分(事業者の状態を読むたびに直す。「+」メニューの書類の呼び方に使う)
 
   // トークの部品(吹き出し・求人カード・返信の描画・「+」メニュー・履歴書・音声)は本番の / と共通(talk-core.js)
   const talk = createTalk({
@@ -317,7 +317,7 @@
   }
 
   // ---------- 右: 構成図の点灯と処理の流れ ----------
-  const nodes = ["n-user", "n-llm", "n-dip", "n-state", "n-event", "n-gate"], links = ["l-user", "l-mcp", "l-state", "l-event", "l-gate"];
+  const nodes = ["n-user", "n-llm", "n-provider", "n-state", "n-event", "n-gate"], links = ["l-user", "l-mcp", "l-state", "l-event", "l-gate"];
   function light(ids, extra = {}) {
     nodes.forEach(n => $(n).classList.remove("on", "thinking", "no")); links.forEach(l => $(l).classList.remove("on"));
     document.querySelectorAll(".tchip").forEach(c => c.classList.toggle("on", (extra.tools || []).includes(c.dataset.tool)));
@@ -351,12 +351,12 @@
       const push = ev.event_kind === "push";
       $("n-llm-d").textContent = ev.model;
       light(push ? ["n-event"] : ["n-user"], {}); if (!push) $("l-user").classList.add("on");
-      traceRow("reply", push ? `dip のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : USER_EVENT_LABEL[ev.event] || ev.event,
+      traceRow("reply", push ? `事業者のイベント: ${PUSH_LABEL[ev.event]}` : EVENT_LABEL[ev.event] ? `イベント: ${EVENT_LABEL[ev.event]}` : USER_EVENT_LABEL[ev.event] || ev.event,
                `入口のシナリオ <code>${esc(ev.entry)}</code> ・ LINE 側 AI <code>${esc(ev.model)}</code>`, 0);
       if (!push) light(["n-llm"], { thinking: true });
     } else if (ev.kind === "gate") {
       light(["n-event", "n-gate"], { denied: !ev.allowed }); $("l-event").classList.add("on");
-      traceRow("gate", ev.allowed ? "dip の判定: 送ってよい" : "dip の判定: 送らない",
+      traceRow("gate", ev.allowed ? "事業者の判定: 送ってよい" : "事業者の判定: 送らない",
                ev.allowed ? `根拠の事実を LINE 側 AI に渡す: <code>${esc(JSON.stringify(ev.facts).slice(0, 140))}</code>` : esc(ev.reason), null);
       if (ev.allowed) { light(["n-gate", "n-llm"], { thinking: true }); $("l-gate").classList.add("on"); }
     } else if (ev.kind === "llm") {
@@ -364,16 +364,16 @@
       const tok = ev.input_tokens != null ? `入力 ${yen(ev.input_tokens)}(キャッシュから ${yen(ev.cache_read || 0)})・出力 ${yen(ev.output_tokens)} トークン` : "";
       const next = ev.tool_calls.length ? `→ ツールを呼ぶ: ${ev.tool_calls.map(t => `<code>${esc(t)}</code>`).join(" ")}` : "→ 返信を作った";
       traceRow("llm", "LINE 側 AI(LLM)", `${tok}<br>${next}`, ev.ms);
-      if (ev.tool_calls.length) { light(["n-llm", "n-dip"], { tools: ev.tool_calls }); $("l-mcp").classList.add("on"); }
+      if (ev.tool_calls.length) { light(["n-llm", "n-provider"], { tools: ev.tool_calls }); $("l-mcp").classList.add("on"); }
     } else if (ev.kind === "tool_start") {
       talk.onStep(ev, col);  // 待ちの表示を出す
     } else if (ev.kind === "tools") {
       talk.onStep(ev, col);  // 待ちの表示を消す(続きは通常の「…」)
-      for (const c of ev.calls) traceRow("tool", `dip のツール: ${c.name}`, `${esc(brief(c.args)) || "引数なし"}<br>→ ${esc(c.summary)}`, ev.ms);
-      light(["n-dip", "n-state"], { tools: ev.calls.map(c => c.name) }); $("l-state").classList.add("on");
+      for (const c of ev.calls) traceRow("tool", `事業者のツール: ${c.name}`, `${esc(brief(c.args)) || "引数なし"}<br>→ ${esc(c.summary)}`, ev.ms);
+      light(["n-provider", "n-state"], { tools: ev.calls.map(c => c.name) }); $("l-state").classList.add("on");
       setTimeout(() => { if (busy) light(["n-llm"], { thinking: true }); }, 350);  // 返信が先に届いていたら戻さない
     } else if (ev.kind === "reply") {
-      if (ev.sent === false) { col.parentElement.remove(); sys(`[dip] プッシュしない: ${ev.reason}`); light([], { denied: true }); }
+      if (ev.sent === false) { col.parentElement.remove(); sys(`[provider] プッシュしない: ${ev.reason}`); light([], { denied: true }); }
       else {
         if (ev.redacted) talk.redactedNote(col.parentElement);
         renderReply(ev, col);
@@ -411,12 +411,12 @@
     fire("message", text);
   }
 
-  // ---------- 左: シナリオと dip の状態 ----------
+  // ---------- 左: シナリオと事業者の状態 ----------
   async function post(url, body) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(res.status + " " + await res.text()); return res.json();
   }
-  const dip = (uid) => post("/api/dip", { user_id: uid });
+  const provider = (uid) => post("/api/provider", { user_id: uid });
   function segBadge(seg) { const [t, k] = SEGMENT[seg] || [seg, ""]; return el("span", `badge ${k}`, t); }
 
   function renderScenarios() {
@@ -435,7 +435,7 @@
   }
   async function refreshState() {
     try {
-      const d = await dip(current), s = d.summary;
+      const d = await provider(current), s = d.summary;
       const rows = [["状況", segBadge(s.segment)]];
       if (d.applications.length) rows.push(["応募", d.applications.map(a => `${a.job_id} ${a.status}`).join(" / ")]);
       if (d.saves.length) rows.push(["保存した求人", d.saves.map(x => x.job_id).join(", ")]);
@@ -473,7 +473,7 @@
     $("totals").innerHTML = ""; light([]);
     sys(`${sc.title}(${current} のトークルーム)`);
     refreshState();
-    sys(EVENT_LABEL[sc.event] ? `[イベント] ${EVENT_LABEL[sc.event]}` : `[dip のイベント] ${PUSH_LABEL[sc.event]}`);
+    sys(EVENT_LABEL[sc.event] ? `[イベント] ${EVENT_LABEL[sc.event]}` : `[事業者のイベント] ${PUSH_LABEL[sc.event]}`);
     fire(sc.event);
   }
 
@@ -483,8 +483,8 @@
   async function refreshLink() {
     try {
       const r = await (await fetch("/api/dev/link")).json();
-      $("link-state").textContent = r.dip_id ? `${r.user_id} は dip の会員 ${r.dip_id} と連携済み` : `${r.user_id} は未連携`;
-      $("link-start").disabled = !!r.dip_id; $("link-stop").disabled = !r.dip_id;
+      $("link-state").textContent = r.provider_id ? `${r.user_id} は事業者の会員 ${r.provider_id} と連携済み` : `${r.user_id} は未連携`;
+      $("link-start").disabled = !!r.provider_id; $("link-stop").disabled = !r.provider_id;
     } catch (e) { $("link-state").textContent = e.message; }
   }
   $("link-start").onclick = async () => {
@@ -495,7 +495,7 @@
     try { await post("/api/dev/link/unlink", {}); } catch (e) { $("link-state").textContent = e.message; return; }
     refreshLink(); if (current) refreshState();
   };
-  addEventListener("focus", refreshLink);  // dip のログインのタブから戻ったら読み直す
+  addEventListener("focus", refreshLink);  // 事業者のログインのタブから戻ったら読み直す
   $("f").onsubmit = (e) => { e.preventDefault(); send(input.value); };
 
   // ---------- 画面の幅に合わせたタブ ----------

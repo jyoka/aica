@@ -29,7 +29,7 @@ services:
       # Render のプロキシの後ろなので、IP を X-Forwarded-For の最後の値から取る
       - key: AICA_TRUST_PROXY
         value: "1"
-      # Web プロセス、dip の MCP サーバー、音声ワーカー(aica-voice が写す)が同じ値を読む
+      # Web プロセス、事業者の MCP サーバー、音声ワーカー(aica-voice が写す)が同じ値を読む
       - key: AICA_INTERNAL_KEY
         generateValue: true
       # 本番の文字起こしは Deepgram に固定する。openai にすると声そのものが OpenAI に届く(docs/design/privacy.md の 3.2)
@@ -45,8 +45,8 @@ services:
       # 今動いている相談を止めないため
       - key: VOICE_RESUME_MAX_JOBS
         value: "2"
-      # 音声ワーカーが private network でつなぐ dip の MCP サーバーのポート(scripts/container_start.sh)
-      - key: AICA_DIP_PORT
+      # 音声ワーカーが private network でつなぐ事業者の MCP サーバーのポート(scripts/container_start.sh)
+      - key: AICA_PROVIDER_PORT
         value: "8020"
       # 音声相談の鍵(docs/deploy/render.md の「音声相談」)。aica-voice はこのサービスから写すので、値はここにだけ入れる
       - key: LIVEKIT_URL
@@ -75,17 +75,17 @@ services:
       # build の引数。モデル(約 460MB)を image に入れる(Dockerfile)
       - key: AICA_VOICE_MODELS
         value: "1"
-      # 結果を返す先と dip の場所。Web サービスの private network の名前とポートを写す(scripts/voice_worker_start.sh)
+      # 結果を返す先と事業者の場所。Web サービスの private network の名前とポートを写す(scripts/voice_worker_start.sh)
       - key: AICA_WEB_HOSTPORT
         fromService:
           name: aica
           type: web
           property: hostport
-      - key: AICA_DIP_PORT
+      - key: AICA_PROVIDER_PORT
         fromService:
           name: aica
           type: web
-          envVarKey: AICA_DIP_PORT
+          envVarKey: AICA_PROVIDER_PORT
       - key: AICA_INTERNAL_KEY
         fromService:
           name: aica

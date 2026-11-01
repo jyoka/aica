@@ -1,8 +1,8 @@
-"""正社員のヒアリングのハーネス(dip_mcp/career)の回帰: モックの本人役 6 人 × 形 B、C、D(費用 0。実 API を呼ばない)。
+"""正社員のヒアリングのハーネス(provider_mcp/career)の回帰: モックの本人役 6 人 × 形 B、C、D(費用 0。実 API を呼ばない)。
 
     ./.venv/bin/python -m evals.career_sim                      # 表と合否。最後に「すべて合格」
     ./.venv/bin/python -m evals.career_sim --log evidence/career_sim   # 同じ。結果の JSON と会話ログを DIR にも書く
-    ./.venv/bin/python -m evals.career_sim --version c2         # 会話の層の版(dip_mcp/career/c2.py)で回す。既定は c1
+    ./.venv/bin/python -m evals.career_sim --version c2         # 会話の層の版(provider_mcp/career/c2.py)で回す。既定は c1
 
 設計メモ docs/design/fulltime-hearing.md の §6.2 の表の「モック ○」の行(完了率、推定時間、ターン、HARD が空、wasted、
 予算で止まること)と、PRD v4.1 の合否指標(§4-1)と v3 の受け入れチェック(§11.3 の 1〜3、5〜7)を正社員に置き換えたものを見る。
@@ -14,14 +14,14 @@
   (吹き出しが 80 字を超えた、もう答えた欄を聞かれた)だけ。5 分を超えるか、いらいらが 3 回で離脱
 - 読み取り(OracleLLM): 本人役が言いたかったことを、そのまま正解として返す。モックで確かめられるのはハーネスの動きだけ(§6.2)
 - 履歴書を先に送っている人(p5)は、resume.filled の欄を事実表の値で prefill する(1/5 の ScriptGood と同じ)
-- result に着いたら、職歴カードから職務経歴書の下書きを作る(dip_mcp/career/draft.py。task 247)。関門「数字を作った: 0 件」(§6.4)を
+- result に着いたら、職歴カードから職務経歴書の下書きを作る(provider_mcp/career/draft.py。task 247)。関門「数字を作った: 0 件」(§6.4)を
   コードで見る: 下書きに書く欄の数字が、本人役の発言(押したボタンのラベルも)と履歴書の欄に無ければ made_up_number に数える。
   下書きの空欄の数が、結果の「空欄はNつ」、形 D の完成のカルーセルの「空欄Nつ」、職歴カードの空欄(harness.blank_cards)と空欄に戻した
   数字の和のどれかと違えば draft_blanks に数える
 - c2(会話の層の版。task 358)は、読み取りを act の並び(llm.read)で返す。本人役が言いたかった値は、今の問いの欄なら answer、
   ほかの欄なら add、「特にない」は pass。c2 は問いの選び方をフェーズの上限(PHASE_CAP)から群とスコアに替えたので、
   関門 phase_mismatch はターンの数の合計だけを見る
-- 形 D(task 246)は、そのターンの Flex(dip_mcp/career/ui.py が選び、line_runtime/career_ui.py が作る)の中の字も本人役が読む
+- 形 D(task 246)は、そのターンの Flex(provider_mcp/career/ui.py が選び、line_runtime/career_ui.py が作る)の中の字も本人役が読む
   (§6.1)。「始める」の 1 枚は「始める」を押す。Flex の字数(職歴カード 60 字、帯 24 字、プロフィールカード 80 字)も見る。
   帯を切った形 D は run_one(band=False)
 """
@@ -35,14 +35,14 @@ import zlib
 from collections import Counter
 from pathlib import Path
 
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import draft as D
-from dip_mcp.career import harness as H
-from dip_mcp.career import ui as UI
 from evals.fulltime_hearing import judge as J
 from evals.fulltime_hearing.actor import SHORT_ANSWER, AIReply, Clock, fact_text
 from evals.fulltime_hearing.personas import hard_keys, load_personas
 from line_runtime import career_ui, progress_ui
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import draft as D
+from provider_mcp.career import harness as H
+from provider_mcp.career import ui as UI
 from resume_lines import blank_count, check_numbers
 
 FORMS = ("B", "C", "D")
@@ -216,8 +216,8 @@ def _flex_problems(part: dict | None, built: dict | None) -> list[str]:
 
 
 def run_one(persona: dict, form: str, bank=None, llm=None, roundtrip=False, band=True, version=H.VERSION) -> dict:
-    """1 つの会話。roundtrip=True は、毎ターンの前に状態を JSON にして戻す(dip が毎回保存した状態から始めるのと同じ)。
-    band=False は帯を切った形 D(dip_mcp.career.ui.BAND_ENV と同じ)。version はハーネスの版(c1 か c2)。"""
+    """1 つの会話。roundtrip=True は、毎ターンの前に状態を JSON にして戻す(事業者が毎回保存した状態から始めるのと同じ)。
+    band=False は帯を切った形 D(provider_mcp.career.ui.BAND_ENV と同じ)。version はハーネスの版(c1 か c2)。"""
     bank = bank or H.BANK
     M = VERSIONS[version]
     st = M.new_state(form=form, prefill=prefill(persona))

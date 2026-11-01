@@ -1,4 +1,4 @@
-"""正社員のヒアリング(dip_mcp/career、task 255)を、トークのターンとして通しで動かす。実 LLM なし、dip の MCP は本物。
+"""正社員のヒアリング(provider_mcp/career、task 255)を、トークのターンとして通しで動かす。実 LLM なし、事業者の MCP は本物。
 
 機能フラグ CAREER_HARNESS_VERSION=c1 のときの、本人から見た流れ: 正社員の相談に入る → トークの AI が playbook を読んで
 相談を始め、最初の吹き出しと選択肢はハーネスのもの → その後の発言はランタイムが career_turn に渡す(トークの AI は呼ばない)
@@ -18,13 +18,13 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic, profile
-from dip_mcp.career import harness as H
-from dip_mcp.career import session, store
-from dip_mcp.data import State
 from evals.checks import conversation_checks
 from line_runtime.career_chat import SCHEMAS, ExtractOut
 from line_runtime.line_channel import line_user
+from provider_mcp import logic, profile
+from provider_mcp.career import harness as H
+from provider_mcp.career import session, store
+from provider_mcp.data import State
 from tests.test_consult import ConsultModel
 from tests.test_handle import call, reply
 from tests.test_line_data import _ask, _say, _tap
@@ -262,7 +262,7 @@ def test_career_cards_in_the_summary_carry_their_number_after_card_1_is_deleted(
 
 
 def _rt_run(agent_script, llm, steps, tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -275,7 +275,7 @@ def _rt_run(agent_script, llm, steps, tmp_path):
 
 def test_without_the_flag_the_fulltime_hearing_is_the_playbook_as_before(tmp_path, monkeypatch):
     """フラグが無いとき(本番の既定): トークの AI に start_career_consultation を見せず、正社員の playbook は今までの
-    fulltime_chat.md(4問まで)。dip のツールを直に呼んでも始まらない。相談はトークの AI が受け持つ(career の印が付かない)。"""
+    fulltime_chat.md(4問まで)。事業者のツールを直に呼んでも始まらない。相談はトークの AI が受け持つ(career の印が付かない)。"""
     monkeypatch.delenv(logic.CAREER_HARNESS_FLAG)
     agent = [call("set_search_track", {"line_user_id": UID, "track": "正社員", "evidence": "正社員で転職したい"}, "t0"),
              call("get_counseling_playbook", {"track": "正社員", "channel": "chat"}, "pb"),
@@ -340,7 +340,7 @@ def test_later_typed_with_an_answer_keeps_the_answer(tmp_path):
     今の問いへの文の答えは、本人の文をそのまま入れる(ハーネスの決まり。設計メモ §3.2)。"""
     llm = FakeCareerLLM()
     st = State(tmp_path / "state.json")
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     logic.set_search_track(st, UID, "正社員", "正社員で転職したい")
     session.start(st, UID)
     for said in ("同じ仕事で上へ", TEXT["ib_why_now"]):
@@ -354,7 +354,7 @@ def test_later_typed_with_an_answer_keeps_the_answer(tmp_path):
 
 
 def _drive(st: State, uid: str, said: str, llm: FakeCareerLLM) -> dict:
-    """dip の career_turn を、ランタイムと同じく status=llm のあいだ呼び直して 1 ターン進める。"""
+    """事業者の career_turn を、ランタイムと同じく status=llm のあいだ呼び直して 1 ターン進める。"""
     outputs: list[dict] = []
     r = session.turn(st, uid, said)
     while r.get("status") == "llm":
@@ -435,7 +435,7 @@ def test_profile_changes_during_a_consultation_are_not_undone_when_it_closes(tmp
     消した・直した値(勤務地、なぜ今、segment)は、閉じた後もそのまま(前の値に戻らない)。この相談で答えた値は保存する。"""
     llm = FakeCareerLLM()
     st = State(tmp_path / "state.json")
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     logic.set_search_track(st, UID, "正社員", "正社員で転職したい")
     session.start(st, UID)
     for said in ("同じ仕事で上へ", TEXT["ib_why_now"], TEXT["hf_area"], H.LATER):

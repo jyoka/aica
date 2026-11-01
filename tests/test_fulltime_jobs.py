@@ -1,4 +1,4 @@
-"""正社員の求人データとスキーマ(aica v2 の A、ADR-0002)のテスト。実 LLM なし、dip の MCP は本物。
+"""正社員の求人データとスキーマ(aica v2 の A、ADR-0002)のテスト。実 LLM なし、事業者の MCP は本物。
 
 - 求人は1つの形に雇用区分(employment_type)と給与(pay {kind: 時給|月給|年収, min, max}、円)を持つ
 - 職種の一覧は区分ごと。区分ごとに一覧の中の完全一致
@@ -18,10 +18,10 @@ import sys
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic
-from dip_mcp.data import ROOT, State, annual_pay_mid, load_jobs, pay_text
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic
+from provider_mcp.data import ROOT, State, annual_pay_mid, load_jobs, pay_text
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_talk_actions import (  # noqa: F401  browser はフィクスチャ
     _free_port,
@@ -184,7 +184,7 @@ def test_answer_material_for_a_fulltime_job_uses_pay_and_the_fulltime_items():
 
 
 def test_recommend_jobs_tool_explains_employment_type_and_min_annual_salary():
-    from dip_mcp import server
+    from provider_mcp import server
 
     tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
     for name in ("recommend_jobs", "relax_conditions"):
@@ -201,7 +201,7 @@ MENU = ["求人を探す", "まず相談する", "今はいい"]
 
 
 class Recruiter(ScriptedModel):
-    """dip の Prompt どおりに動く偽のモデル(何度でも返す): 「正社員で年収600万以上」で正社員の求人を、
+    """事業者の Prompt どおりに動く偽のモデル(何度でも返す): 「正社員で年収600万以上」で正社員の求人を、
     「どちらも見たい」で区分を指定せずに両方の求人を、recommend_jobs が返したものだけカードにする。"""
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -296,13 +296,13 @@ def test_dev_screen_draws_pay_by_employment_type(served, browser):  # noqa: F811
 
 
 def test_mcp_server_serves_fulltime_jobs_over_stdio(tmp_path):
-    """本物の dip MCP サーバー(子プロセス)越しに、正社員の求人を区分と年収で絞れる。"""
+    """本物の事業者の MCP サーバー(子プロセス)越しに、正社員の求人を区分と年収で絞れる。"""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     async def go():
-        params = StdioServerParameters(command=sys.executable, args=["-m", "dip_mcp.server"], cwd=str(ROOT),
-                                       env={"DIP_STATE_PATH": str(tmp_path / "s.json"), "PATH": ""})
+        params = StdioServerParameters(command=sys.executable, args=["-m", "provider_mcp.server"], cwd=str(ROOT),
+                                       env={"PROVIDER_STATE_PATH": str(tmp_path / "s.json"), "PATH": ""})
         async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool("recommend_jobs", {"employment_type": "正社員", "min_annual_salary": 700})

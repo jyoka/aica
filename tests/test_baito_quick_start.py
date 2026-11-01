@@ -1,6 +1,6 @@
 """アルバイトの相談を 1 タップで始める(設計メモ docs/design/baito-quick-start.md §3〜§5・§9、task 265)。実 API なし。
 
-- ランタイムを通して(偽のモデル、dip の MCP は本物): 新しい相談は入口のカード(絵 4 枚と「どれもピンと来ない」)で始まり、
+- ランタイムを通して(偽のモデル、事業者の MCP は本物): 新しい相談は入口のカード(絵 4 枚と「どれもピンと来ない」)で始まり、
   1 タップで職種の結果(3 つとタグ、[近くで探す] [ほかのタイプも見る])が出る。[ほかのタイプも見る] で入口に戻り、
   [近くで探す] で今の流れ(icebreak)に入る。LINE は Flex(暗い色、static の PNG)、Web のトークは文とボタン
 - 職種(ハーネス): 年齢が不明なので未成年として扱い、18 歳からの職種と重い作業を出さない。「動いてたい」と「しゃべるの好き」は
@@ -17,14 +17,14 @@ import os
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import quick_start as Q
-from dip_mcp.baito import session
-from dip_mcp.data import State
 from line_runtime import baito_cards as C
 from line_runtime import config
 from line_runtime.line_channel import to_messages
+from provider_mcp import logic
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import quick_start as Q
+from provider_mcp.baito import session
+from provider_mcp.data import State
 from tests.test_baito_chat import GREET, START, UID, FakeBaitoLLM, _harness
 from tests.test_consult import ConsultModel
 
@@ -87,7 +87,7 @@ def names(r: dict) -> list[str]:
 
 
 def test_a_new_consultation_starts_with_the_entry_card_and_one_tap_shows_jobs(tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     baito = FakeBaitoLLM([{"reply": "黙々派ね。" + H.QUICK_RESULT_TEXT}])
@@ -368,7 +368,7 @@ def test_entry_tiles_send_the_label_as_the_users_words():
 def test_a_dropped_entry_answer_is_not_shown_as_undecided_in_the_profile():
     """しゃべるの好き → ほかのタイプも見る → 動いてたい → 近くで探すの 3 問 → もっと絞る: 外した「接客」を、プロフィールで
     「未定」にしない。帯は [もっと絞る] で今の流れに入ったターンから出す(task 266)。"""
-    from dip_mcp.baito import progress as P
+    from provider_mcp.baito import progress as P
 
     st, mem = H.new_state(quick=True), None
     said = ("しゃべるの好き", H.QUICK_OTHER, "動いてたい", H.QUICK_NEAR, "18歳以上", "東京", "昼", Q.DONE_BUTTON, H.NEAR_MORE)

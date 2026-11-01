@@ -1,6 +1,6 @@
 """1 回の音声相談の上限(セキュリティ監査 run-1 の 4 番、review-2026-10 の R6)のオフラインテスト。
 
-entrypoint を、偽の STT・LLM・TTS・AgentSession・JobContext・dip と、時計を進められるイベントループで動かす。
+entrypoint を、偽の STT・LLM・TTS・AgentSession・JobContext・事業者と、時計を進められるイベントループで動かす。
 実 API(LiveKit、OpenAI、Deepgram、Cartesia)は呼ばない。load_env が読む鍵にはダミー値を入れ、本物の .env は読まない。
 """
 
@@ -143,7 +143,7 @@ class FakeJobContext:
         return fut
 
 
-class FakeDip:
+class FakeProvider:
     async def start(self) -> None:
         pass
 
@@ -168,7 +168,7 @@ def agent_mod(tmp_path, monkeypatch):
 
     FakeSession.instances = []
     FakeSession.finish_replies = True
-    monkeypatch.setattr(agent, "DipMCP", FakeDip)
+    monkeypatch.setattr(agent, "ProviderMCP", FakeProvider)
     monkeypatch.setattr(agent, "AgentSession", FakeSession)
     monkeypatch.setattr(agent, "create_stt", lambda: SimpleNamespace(fake="stt"))
     monkeypatch.setattr(voice_llm, "lk_openai", SimpleNamespace(LLM=lambda **kw: SimpleNamespace(fake="llm", **kw)))
@@ -352,7 +352,7 @@ def test_stuck_closing_reply_is_cut_and_the_session_still_closes(agent_mod):
 
 def test_session_closed_by_the_user_stops_the_timer(agent_mod):
     """本人が切って session が先に閉じたら、上限の時刻になっても返答を作らず、部屋も消さない。
-    ジョブはすぐに終える(task 202: プロセスと dip MCP の子プロセスを返し、トークへ ended を知らせる)。"""
+    ジョブはすぐに終える(task 202: プロセスと事業者の MCP の子プロセスを返し、トークへ ended を知らせる)。"""
 
     async def scenario(loop):
         ctx, session = await start_session(agent_mod)

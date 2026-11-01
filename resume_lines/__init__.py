@@ -1,6 +1,6 @@
 """書類の行の決まり(docs/prd/resume-arcade.md): 数字の検出、数字の空欄(正社員の下書きでは言葉の空欄も)、事実を作っていないかの確かめ。
 
-ほかのパッケージに依存しない(dip_mcp と resume_arcade の両方が使い、dip_mcp が resume_arcade や line_runtime を
+ほかのパッケージに依存しない(provider_mcp と resume_arcade の両方が使い、provider_mcp が resume_arcade や line_runtime を
 import する形を作らないため)。LLM は使わない。
 
 - 数字の検出(find_metric)は、ゲームの共通部品 line_runtime/static/arcade/arcade-ja.js の findMetric を Python に写したもの。
@@ -22,7 +22,7 @@ PLACEHOLDER_YEN = "[X円 ← 数字を入れる]"
 PLACEHOLDER_COUNT = "[N件 ← 数字を入れる]"
 PLACEHOLDER_WHEN = "[時期 ← 数字を入れる]"
 PLACEHOLDER_RE = re.compile(r"\[[^\]]*(?:数字を入れる|add your number)[^\]]*\]")
-# 言葉の空欄(正社員のヒアリングの下書き。職歴カードでパスした「何をしていたか」「どうなったか」。dip_mcp/career/draft.py)。
+# 言葉の空欄(正社員のヒアリングの下書き。職歴カードでパスした「何をしていたか」「どうなったか」。provider_mcp/career/draft.py)。
 # 数字の空欄と合わせて、下書きの空欄に数える(BLANK_RE)。ゲームの書類には出ない
 WORDS_MARK = "言葉を入れる"
 BLANK_RE = re.compile(rf"\[[^\]]*(?:数字を入れる|{WORDS_MARK}|add your number)[^\]]*\]")

@@ -13,14 +13,14 @@ import json
 
 import pytest
 
-from dip_mcp.data import ROOT
 from evals.checks import conversation_checks, escape_only, turn_violations
 from evals.run import recheck
+from provider_mcp.data import ROOT
 
 BASELINE_221 = ROOT / "evals" / "baseline" / "sim-20261025-230120.json"
 BASELINE_H = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-COMMON_CHAT = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+COMMON_CHAT = (ROOT / "provider_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
 ONLY = "質問の選択肢が逃げ道だけ"
 EXTRA = "「今はいい」のほかに中身の無い逃げ道がある"
 NO_ESCAPE = "質問の選択肢に逃げ道(今はいい)がない"

@@ -1,4 +1,4 @@
-"""Resume Draft の形(docs/architecture/lld.md の 5.5)。読み取り、下書き、dip の保存が同じものを使う。
+"""Resume Draft の形(docs/architecture/lld.md の 5.5)。読み取り、下書き、事業者の保存が同じものを使う。
 
 旧リポジトリ jyoka/aica_ra_a2a_poc の task/29(PR #26)voice-resume/voice_resume/schema.py が元(format_version 1.0)。
 format_version 1.1(aica v2 の G)は envelope に任意項目 document_kind(履歴書 / 職務経歴書)を足しただけで、resume の形は同じ。

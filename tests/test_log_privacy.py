@@ -83,8 +83,8 @@ def logs(clean_logging, caplog):
 # ----------------------------- 音声相談 -----------------------------
 
 
-class LeakyDip:
-    """要約に目印の値の入った希望を返し、書き込みと検索はすべて、目印の値の入った文で失敗する dip。"""
+class LeakyProvider:
+    """要約に目印の値の入った希望を返し、書き込みと検索はすべて、目印の値の入った文で失敗する事業者。"""
 
     def __init__(self, fail_summary: bool = False):
         self.fail_summary = fail_summary
@@ -115,14 +115,14 @@ class LeakyDip:
         raise api_error()
 
 
-class ZeroHitDip(LeakyDip):
+class ZeroHitProvider(LeakyProvider):
     """検索は 0 件を返し、0 件のときの relax_conditions が失敗する。"""
 
     async def recommend_jobs(self, **args) -> dict:
         return {"total": 0, "jobs": []}
 
 
-class FoundDip(LeakyDip):
+class FoundProvider(LeakyProvider):
     async def recommend_jobs(self, **args) -> dict:
         return {"total": len(JOBS), "jobs": JOBS}
 
@@ -158,7 +158,7 @@ async def _failing_poster(url: str, payload: dict) -> None:
 
 def test_voice_start_logs_only_whether_the_stated_wishes_exist(logs):
     """面談の開始のログは、前回の希望を「あり / なし」と項目の数にする(値は出さない)。"""
-    advisor, _ = asyncio.run(agent.prepare_advisor(LeakyDip(), "w-1111111111111111"))
+    advisor, _ = asyncio.run(agent.prepare_advisor(LeakyProvider(), "w-1111111111111111"))
     assert advisor  # 希望が読めたので、指示には入る(ログに出さないだけ)
     started = [r.getMessage() for r in logs.records if "面談を開始" in r.getMessage()]
     assert started and "前回の希望=あり(2 項目)" in started[0]
@@ -166,32 +166,32 @@ def test_voice_start_logs_only_whether_the_stated_wishes_exist(logs):
 
 
 def test_voice_start_logs_only_the_type_of_a_failed_summary(logs):
-    asyncio.run(agent.prepare_advisor(LeakyDip(fail_summary=True), "w-1111111111111111"))
+    asyncio.run(agent.prepare_advisor(LeakyProvider(fail_summary=True), "w-1111111111111111"))
     assert "RuntimeError" in logs.text
     assert_no_marks(logs)
 
 
 def test_voice_tool_failures_log_only_the_exception_type(tmp_path, monkeypatch, logs):
-    """dip、web 検索、画面、トークへの送信、下書きが、目印の値の入った文で失敗しても、ログには型名だけが出る。"""
+    """事業者、web 検索、画面、トークへの送信、下書きが、目印の値の入った文で失敗しても、ログには型名だけが出る。"""
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
 
-    def advisor(dip) -> ResumeAdvisor:
-        return ResumeAdvisor(dip=dip, user_id="w-1111111111111111", room=_FailingRoom(),
+    def advisor(provider) -> ResumeAdvisor:
+        return ResumeAdvisor(provider=provider, user_id="w-1111111111111111", room=_FailingRoom(),
                              talk_poster=_failing_poster, draft_client_factory=_FailingClient,
                              research_client_factory=_FailingClient)
 
     async def run() -> list[str]:
-        a = advisor(LeakyDip())
+        a = advisor(LeakyProvider())
         replies = [
-            await a.set_search_track("正社員", SAID),  # dip の記録が失敗
+            await a.set_search_track("正社員", SAID),  # 事業者の記録が失敗
             await a.propose_jobs(area=ADDRESS, other_wishes=SAID),  # 希望の保存と検索が失敗
             await a.web_research(SAID),  # web 検索が失敗
         ]
-        z = advisor(ZeroHitDip())
+        z = advisor(ZeroHitProvider())
         replies.append(await z.propose_jobs(area=ADDRESS))  # 0 件の relax_conditions が失敗
         a._transcript = lambda: [*RELAXED_SEARCH_TRANSCRIPT, {"role": "user", "text": SAID}]
         replies.append(await a.finalize_interview(summary=SAID))  # 下書き(ValidationError)が失敗
-        f = ResumeAdvisor(dip=FoundDip(), user_id="w-1111111111111111", room=_FailingRoom(),
+        f = ResumeAdvisor(provider=FoundProvider(), user_id="w-1111111111111111", room=_FailingRoom(),
                           talk_poster=_failing_poster, draft_client_factory=_DraftOk)
         await f.propose_jobs(area="渋谷")
         f._transcript = lambda: [*RELAXED_SEARCH_TRANSCRIPT, {"role": "user", "text": SAID}]

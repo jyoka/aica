@@ -1,6 +1,6 @@
 """電話の扱いの計測(evals/probe.py。task 109)の読み出しのオフラインテスト。実 API なし。
 
-音声は LiveKit の AgentSession(文字のターン)に台本の LLM と本物の dip MCP をつないで、計測の配線を確かめる。
+音声は LiveKit の AgentSession(文字のターン)に台本の LLM と本物の事業者の MCP をつないで、計測の配線を確かめる。
 読み出し(observation)は、正しい振る舞いを悪い方に数えない負例も添える。
 """
 
@@ -80,7 +80,7 @@ def test_voice_observation_does_not_count_the_right_behaviour():
 
 
 def test_voice_probe_runs_offline_with_a_scripted_llm(app, tmp_path, monkeypatch):  # noqa: F811
-    """配線: 本物の advisor と dip MCP に台本の LLM と台本の本人をつなぎ、費用台帳に1行を載せて読み出す。"""
+    """配線: 本物の advisor と事業者の MCP に台本の LLM と台本の本人をつなぎ、費用台帳に1行を載せて読み出す。"""
 
     from evals import run
     from voice_resume import config, voice_llm

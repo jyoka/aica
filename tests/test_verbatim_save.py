@@ -1,9 +1,9 @@
-"""本人の言葉のままの保存(task 133)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""本人の言葉のままの保存(task 133)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
 H の評価(evals/baseline/sim-20261004-113109.json)の T-side-job T5 で、本人の「平日は19時以降か、土日なら働けます」を
 time_band=「平日は19時以降」と days_per_week=「平日か土日なら働けます」に分けて保存した。days_per_week の値は言い換えで、
 平日の「19時以降」の条件も落ちている。ここでは、
-(a) 1つの発言に複数の条件が入っているときの決まり(分けても言い換えない・条件を落とさない)が dip の Prompt と
+(a) 1つの発言に複数の条件が入っているときの決まり(分けても言い換えない・条件を落とさない)が事業者の Prompt と
     区分に共通の playbook(チャット・音声)にあり、台本の会話で LINE 側エージェントに届くこと。例文は評価のペルソナから離す、
 (b) 同じ T-side-job の発言に、H の保存の台本と直した決まりの台本で答えると、H は評価が作り話に数え、
     直した台本は違反が無く、保存した値がどれも発言から切り出した本人の言葉になること
@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import json
 
-from dip_mcp.data import ROOT
 from evals.checks import conversation_checks, preference_violations
+from provider_mcp.data import ROOT
 from tests.test_consult import MENU, ConsultModel, run, stated, switch_and_read
 from tests.test_handle import call, reply
 from tests.test_playbook import _between, _persona_text, _shared
 
 UID = "sim-new"
 BAITO = "アルバイト・パート"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+PLAYBOOKS = ROOT / "provider_mcp" / "playbooks"
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 RULE = "本人の1つの発言に複数の条件が入っているとき"
 SPLIT = "項目ごとに分けて保存してもよいが、どの値も発言から切り出した本人の言葉のままにする"
@@ -112,7 +112,7 @@ def test_example_matches_the_evaluator_and_does_not_echo_the_eval_personas():
 
 def test_rule_reaches_the_agent_in_the_prompt_and_the_playbook(tmp_path):
     turns, model = run_script(SAVE, tmp_path)
-    assert RULE in model.systems[0] and WHOLE in model.systems[0]  # dip の Prompt(システムプロンプト)
+    assert RULE in model.systems[0] and WHOLE in model.systems[0]  # 事業者の Prompt(システムプロンプト)
     read = next(t for t in turns[1]["tools"] if t["name"] == "get_counseling_playbook")
     assert read["result"]["track"] == BAITO and RULE in read["result"]["playbook"]  # 相談の入口で読んだ playbook
 

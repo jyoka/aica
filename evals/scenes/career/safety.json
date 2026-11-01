@@ -104,7 +104,7 @@
    {"check": "llm_calls_max", "n": 0},
    {"check": "slot_open", "slot": "area"}
   ],
-  "note": "アルバイト・パートの決まり(ADR-0009、dip_mcp/baito/crisis_v4.json)に合わせる。今の正社員のハーネスは、この確かめを持たない"
+  "note": "アルバイト・パートの決まり(ADR-0009、provider_mcp/baito/crisis_v4.json)に合わせる。今の正社員のハーネスは、この確かめを持たない"
  },
  {
   "id": "safety-harassment",

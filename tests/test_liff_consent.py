@@ -13,9 +13,9 @@ from urllib.parse import urlencode
 
 import pytest
 
-from dip_mcp import logic
 from line_runtime import consent, legal
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
 from tests.test_liff_actions import (  # noqa: F401  browser と served と line_liff はフィクスチャ
     _liff_client,
     _liff_context,

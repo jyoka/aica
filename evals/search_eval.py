@@ -1,6 +1,6 @@
 """求人検索(recommend_jobs の keywords と、属性・働き方・休日・年収の引数)の質を、正解つきの評価セットの上位3件の再現率で測る。
 
-模擬ユーザーも LINE 側 LLM も使わず、dip のツールの中身(logic.recommend)を直接呼ぶ。
+模擬ユーザーも LINE 側 LLM も使わず、事業者のツールの中身(logic.recommend)を直接呼ぶ。
 評価セットは evals/search_eval_set.json(問い合わせごとに、エージェントが渡す引数と、正解の求人・職種を決めてある)。
 
 再現率@3 = 上位3件のうち正解の件数 ÷ min(3, 正解の件数)。正解が1件の問い合わせは、それが3位以内なら 1.0。
@@ -32,9 +32,9 @@ from hashlib import sha1
 from pathlib import Path
 from statistics import mean
 
-from dip_mcp import embedding, logic
-from dip_mcp.data import FIXTURES, ROOT, BaitoJob, State, load_jobs, pay_text
 from evals import budget
+from provider_mcp import embedding, logic
+from provider_mcp.data import FIXTURES, ROOT, BaitoJob, State, load_jobs, pay_text
 
 HERE = Path(__file__).resolve().parent
 EVAL_SET = HERE / "search_eval_set.json"

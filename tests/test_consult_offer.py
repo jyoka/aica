@@ -19,7 +19,6 @@ import json
 
 import pytest
 
-from dip_mcp.data import ROOT
 from evals.checks import (
     CONSULT_QUESTIONS_MAX,
     SITUATION_QUESTIONS_MAX,
@@ -28,6 +27,7 @@ from evals.checks import (
 )
 from evals.run import SCENARIO_TURNS, recheck
 from evals.scenarios import load_scenarios
+from provider_mcp.data import ROOT
 
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}

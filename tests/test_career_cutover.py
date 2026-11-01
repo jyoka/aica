@@ -1,7 +1,7 @@
 """本番の切り替え: 正社員だけを c1 から c2 へ(設計メモ docs/design/conversation-layer.md §4.15、§5 の 10 枚目。task 363)。
 
 本番の組み合わせ(CAREER_HARNESS_FORM=D、BAITO_HARNESS_VERSION=v4、TALK_LAYER_VERSION なし)で、運営者が
-CAREER_HARNESS_VERSION を変えたときの動きを、LINE の Webhook と本物のランタイムと dip の MCP で通す(偽の LINE、偽のモデル。実 LLM なし)。
+CAREER_HARNESS_VERSION を変えたときの動きを、LINE の Webhook と本物のランタイムと事業者の MCP で通す(偽の LINE、偽のモデル。実 LLM なし)。
 - 切り替える前に始めた c1 の相談は、途中で c2 にしても c1 のまま完成まで進む。次に始める相談は c2。戻す(c2 → c1)ときも同じ
 - c2 の相談から、まだ古い版(v4)のアルバイト・パートへ移るときは、トークの AI がそのターンを受けて v4 を始める。v4 は引き継ぎの記録を読まない
 - v4 の相談の「やっぱり正社員で探したい」も、今と同じくトークの AI を通り、正社員の相談は c2 で始まる
@@ -14,12 +14,12 @@ from functools import partial
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.convo import switch as SW
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.convo import switch as SW
 from tests.test_baito_chat import FakeBaitoLLM
 from tests.test_career_c2 import FakeReadLLM, act
 from tests.test_career_chat import FakeCareerLLM, answer_for, current_qid, start_script
@@ -87,7 +87,7 @@ def answer(st, uid, fake) -> str:
 
 @pytest.mark.parametrize("before, after", [("c1", "c2"), ("c2", "c1")])
 def test_started_consultation_finishes_in_its_version_after_the_flag_changes(tmp_path, monkeypatch, before, after):
-    """切り替え(c1 → c2)と戻し(c2 → c1): 相談の途中で運営者が環境変数を変えて起こし直しても(dip の MCP は起動のときに
+    """切り替え(c1 → c2)と戻し(c2 → c1): 相談の途中で運営者が環境変数を変えて起こし直しても(事業者の MCP は起動のときに
     環境変数を読むので、本番と同じくサーバーを止めて起こし直す)、始めた相談は始めた版の読み方のまま完成まで進み、答えを保存する。
     次に始める相談は、新しいフラグの版。"""
     monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, before)

@@ -14,8 +14,8 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | 消すもの | 期間 | 定数 |
 |---|---|---|
 | 会話(`data/line_checkpoints.db`) | 会話ごとに、最後のやりとりから 30 日 | `line_runtime.purge.CONVERSATION_TTL` |
-| 使われなくなった人(`data/state.json` の行、連携、音声の下書きのファイル) | 最後の利用から 180 日 | `dip_mcp.retention.USER_TTL` |
-| 「すべて消す」で持ち越した部屋の名前 | 消した時刻から 1 日 | `dip_mcp.retention.FORGOTTEN_ROOMS_TTL` |
+| 使われなくなった人(`data/state.json` の行、連携、音声の下書きのファイル) | 最後の利用から 180 日 | `provider_mcp.retention.USER_TTL` |
+| 「すべて消す」で持ち越した部屋の名前 | 消した時刻から 1 日 | `provider_mcp.retention.FORGOTTEN_ROOMS_TTL` |
 | 費用台帳(`data/costs.jsonl`)のユーザーID | 90 日。過ぎたら日ごとの合計にする。「すべて消す」では、すぐにその人のユーザーIDを外す(金額は残す) | `line_runtime.ledger.ID_TTL` |
 | Cookie `aica_uid` | 最後に画面を開いた日から 180 日 | `line_runtime.server.ANON_COOKIE_MAX_AGE` |
 
@@ -36,8 +36,9 @@ Web プロセスが起動時と 1 日 1 回、期間を過ぎたものを消し�
 | `LINE_SIM_HOST` | `127.0.0.1` | Web サーバーが待ち受けるアドレス(コンテナでは `0.0.0.0`) | 不可 |
 | `AICA_SECURE_COOKIE` | なし(コンテナの image では `1`) | `1` のとき、匿名ユーザーIDの Cookie に Secure を付ける。https で公開するときに使う。http で開くと Cookie が送り返されない | 可 |
 | `LINE_SIM_DATA_DIR` | `data/` | 会話、費用台帳、ターン数の置き場 | 不可 |
-| `DIP_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの事業者の MCP サーバーの URL。Web プロセスと音声ワーカーが読む。音声ワーカーは `AICA_INTERNAL_KEY` を付けて送る(Render では `scripts/voice_worker_start.sh` が作る) | 不可 |
-| `DIP_STATE_PATH` | `data/state.json` | 事業者の状態。行動の元データと要約(`dip_events.db`、`dip_summaries.db`)、ログインと連携の表(`dip_accounts.db`)も同じディレクトリに置く | 不可 |
+| `PROVIDER_MCP_URL` | なし(stdio の子プロセス) | 別プロセスの事業者の MCP サーバーの URL。Web プロセスと音声ワーカーが読む。音声ワーカーは `AICA_INTERNAL_KEY` を付けて送る(Render では `scripts/voice_worker_start.sh` が作る) | 不可 |
+| `AICA_LEGACY_PREFIX` | なし | 旧い名前のデータを新しい名前に移すときだけ入れる、旧い接頭辞。起動のときに移す。`render.yaml` には書かない(値が旧い名前そのものなので、ダッシュボードで入れる)。移し終えたら消す。無いときに、`data/state.json` があって新しい名前のデータが無ければ、空のデータで動き始めずに起動で止まる([docs/deploy/render.md の「旧い名前からの移行」](deploy/render.md#旧い名前からの移行)) | 不可 |
+| `PROVIDER_STATE_PATH` | `data/state.json` | 事業者の状態。行動の元データと要約(`provider_events.db`、`provider_summaries.db`)、ログインと連携の表(`provider_accounts.db`)も同じディレクトリに置く | 不可 |
 | `SIM_NOW` | `2026-09-23T12:00:00+09:00` | シナリオユーザーと評価の事業者の時計(固定)。本番のユーザーは実際の時刻 | 不可 |
 | `RESUME_INTAKE_PROVIDER` | `LINE_SIM_PROVIDER` の値(既定 `anthropic`) | 履歴書の読み取りのプロバイダ(`anthropic`、`openai`) | 不可 |
 | `RESUME_INTAKE_MODEL` | `claude-sonnet-5-5`(openai なら `gpt-6-sol`) | 履歴書の読み取りのモデル | 不可 |
@@ -83,7 +84,7 @@ LINE 公式アカウントで使うものです。LINE で試さないなら要�
 | `VOICE_RESUME_STT_PROVIDER` | `deepgram` | 文字起こしの提供元。**本番は `deepgram` に固定する**(`render.yaml` も `deepgram`)。`openai` は開発の比較用で、声そのものが OpenAI に届く。替えるならプライバシーポリシーと音声相談の同意の文言も直す([privacy.md](design/privacy.md) の 3.2)。Deepgram には `mip_opt_out=true` を付けて送り、改善プログラムに使わせない | 不可 |
 | `CARTESIA_API_KEY` | なし(必須) | 読み上げ | 可 |
 | `AICA_VOICE_WORKER` | なし | コンテナで `1` のとき、Web プロセスと同じコンテナで音声ワーカーも動かす(`scripts/container_start.sh`。手元の docker 向け。Render では、音声ワーカーを別サービスに移し終えたら `0`) | 不可 |
-| `AICA_DIP_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの事業者の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
+| `AICA_PROVIDER_PORT` | なし | コンテナでこのポートに、別サービスの音声ワーカー向けの事業者の MCP サーバーを `0.0.0.0` で開く(`scripts/container_start.sh`)。`AICA_INTERNAL_KEY` が無いと開かない | 不可 |
 | `AICA_INTERNAL_KEY` | なし(音声相談の設定があるときは必須) | 内部の鍵(32 文字以上)。音声ワーカーが `POST /api/voice/result` と `POST /api/voice/session` に付け、Web サーバーが照合する。音声相談の設定(`LIVEKIT_*`)があるのに無い、短いときは、Web サーバーも音声ワーカーも起動で止まる。2 つのプロセスで値が違うと結果は 401 で届かず、ワーカーのログにエラーが出る。手で掃除を走らせる `python -m line_runtime.purge` も、`POST /api/internal/purge` に付ける | 可 |
 | `VOICE_RESUME_TALK_URL` | `http://127.0.0.1:8030` | 音声ワーカーが結果を返す Web サーバーの URL | 不可 |
 | `VOICE_RESUME_WRITE_FILES` | なし | `1` のときだけ、相談ごとの下書き、文字起こし、求人の提案を `VOICE_RESUME_OUT_DIR` に書き出す(開発用)。本番では付けない。無くても下書きは事業者の状態に入り、トークに届く([privacy.md](design/privacy.md) の 3.3) | 不可 |

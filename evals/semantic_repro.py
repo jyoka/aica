@@ -1,6 +1,6 @@
 """keywords の言い換えで、部分一致と意味検索(embedding)の結果を並べて比べる(task 28 の根拠)。
 
-模擬ユーザーも LINE 側 LLM も使わず、dip のツールの中身(logic.recommend)を直接呼ぶ。
+模擬ユーザーも LINE 側 LLM も使わず、事業者のツールの中身(logic.recommend)を直接呼ぶ。
 言い換えの問い合わせごとに、部分一致(意味検索を止めた状態)と意味検索ありを実行し、
 上位3件に関係する求人(職種・待遇・時間帯で判定)が入ったかを記録する。wait_repro.py と同じく結果をファイルに書く。
 
@@ -40,8 +40,8 @@ def _relevant(job, spec: dict) -> bool:
 
 
 def _run(state, q: str) -> dict:
-    from dip_mcp import logic
-    from dip_mcp.data import load_jobs
+    from provider_mcp import logic
+    from provider_mcp.data import load_jobs
 
     jobs = load_jobs()
     r = logic.recommend(state, None, keywords=q)
@@ -51,8 +51,8 @@ def _run(state, q: str) -> dict:
 
 
 def main(tag: str) -> None:
-    from dip_mcp import embedding
-    from dip_mcp.data import State
+    from provider_mcp import embedding
+    from provider_mcp.data import State
 
     state = State(Path(tempfile.mkdtemp()) / "state.json")
     state.reset()

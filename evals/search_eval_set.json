@@ -1,5 +1,5 @@
 {
-  "_note": "求人検索(recommend_jobs)の評価セット。evals/search_eval.py が上位3件の再現率を測る。q は本人の言葉、args は会話の指示(baitoru_assistant.md)どおりにエージェントが渡す引数、keywords は keywords に渡す文(省略すると q をそのまま渡す。null なら渡さない)、user は傾向を使うシナリオ用ユーザー。expected の job_ids・job_types・perks・time_bands・remote・weekends_holidays・max_overtime_hours・min_annual_salary(万円。年収の幅の中央値と比べる)のどれかに当たる求人を正解とする(employment_type を指定した問い合わせは、その区分の求人だけが正解)。kind が 無関係 の問い合わせは正解を持たず、0件か、keywords の点を除いた傾向の点の順に並んでいれば合格(再現率には入れない)。求人はすべて架空。",
+  "_note": "求人検索(recommend_jobs)の評価セット。evals/search_eval.py が上位3件の再現率を測る。q は本人の言葉、args は会話の指示(job_assistant.md)どおりにエージェントが渡す引数、keywords は keywords に渡す文(省略すると q をそのまま渡す。null なら渡さない)、user は傾向を使うシナリオ用ユーザー。expected の job_ids・job_types・perks・time_bands・remote・weekends_holidays・max_overtime_hours・min_annual_salary(万円。年収の幅の中央値と比べる)のどれかに当たる求人を正解とする(employment_type を指定した問い合わせは、その区分の求人だけが正解)。kind が 無関係 の問い合わせは正解を持たず、0件か、keywords の点を除いた傾向の点の順に並んでいれば合格(再現率には入れない)。求人はすべて架空。",
   "cases": [
     {"id": "quiet-ap", "q": "人と話さず黙々と作業したい", "employment_type": "アルバイト・パート", "args": {"max_talk_level": 1}, "keywords": null, "kind": "否定",
      "expected": {"job_ids": ["b0701", "b0703", "b0502", "b0504", "b0704", "b1201", "b1204"]},

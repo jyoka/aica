@@ -1,8 +1,8 @@
 {
-  "survey": "マイナビ「2026年8月度 アルバイト・パート平均時給レポート」",
+  "survey": "民間の平均時給調査",
   "period": "2026年8月",
-  "source": "マイナビキャリアリサーチLab",
-  "source_url": "https://career-research.mynavi.jp/wp-content/uploads/2026/09/heikinnzikyuu202608.pdf",
+  "source": "民間の平均時給調査",
+  "source_url": "",
   "entries": [
     {
       "area": "全国",

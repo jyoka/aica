@@ -251,7 +251,7 @@ def test_research_uses_web_search_with_a_small_max_uses():
     """調べものは web 検索のサーバーツール(web_search_20260209。dynamic filtering なし)。1 回の調べもので検索は 2 回まで、日本向け。
     思考は切る。読み上げるのは検索の後の答えだけ。"""
     client = FakeAnthropic(replies=[_search_reply(TEXT("調べますね。"), TOOL_USE, TOOL_RESULT,
-                                                  TEXT("品出しは商品を棚に並べる仕事です。"), TEXT("主な情報源はタウンワークです。"))])
+                                                  TEXT("品出しは商品を棚に並べる仕事です。"), TEXT("主な情報源は民間の平均時給調査です。"))])
     advisor = ResumeAdvisor(research_client_factory=lambda: client)
     reply = asyncio.run(advisor._research("調べもの", "品出しの仕事内容"))
     (kwargs,) = client.calls
@@ -261,7 +261,7 @@ def test_research_uses_web_search_with_a_small_max_uses():
                                 "user_location": {"type": "approximate", "country": "JP", "timezone": "Asia/Tokyo"}}]
     assert {k: kwargs[k] for k in ("thinking", "output_config")} == SONNET_OFF
     assert kwargs["messages"][0]["content"].endswith("品出しの仕事内容")
-    assert "品出しは商品を棚に並べる仕事です。主な情報源はタウンワークです。" in reply and "調べますね" not in reply
+    assert "品出しは商品を棚に並べる仕事です。主な情報源は民間の平均時給調査です。" in reply and "調べますね" not in reply
     assert advisor.web_searches == 1
     _assert_no_400_shapes(kwargs)
 

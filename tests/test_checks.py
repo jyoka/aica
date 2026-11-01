@@ -51,8 +51,8 @@ FULLTIME = ("recommend_jobs", {"total": 4, "jobs": [
      "pay": {"kind": "時給", "min": 1350, "max": None}, "pay_text": "時給1350円", "walk_min": 4}]})
 
 
-def test_annual_and_monthly_pay_from_dip_are_not_violations():
-    # dip の pay(円)を、万で書いても円で書いても根拠にする。幅の下限だけ・上限だけ・「〜」の片側に万が無い書き方も同じ
+def test_annual_and_monthly_pay_from_provider_are_not_violations():
+    # 事業者の pay(円)を、万で書いても円で書いても根拠にする。幅の下限だけ・上限だけ・「〜」の片側に万が無い書き方も同じ
     turns = [turn(["年収650万〜950万円のPMの求人と、月給26万〜35万円の営業の求人があります。"], [FULLTIME]),
              turn(["PMの求人は年収650〜950万円、下限は6,500,000円です。月給は35万円までです。"]),
              turn(["居酒屋は時給1,350円です。"])]
@@ -65,8 +65,8 @@ def test_pay_the_person_said_is_not_a_violation():
     assert fact_violations(turns, ["年収は600万以上がいい"], None) == []
 
 
-def test_annual_pay_not_from_dip_is_still_a_violation():
-    # 捏造の検出は今まで通り: dip が返していない年収・月給、幅の片側の書き換え、時給の作り話
+def test_annual_pay_not_from_provider_is_still_a_violation():
+    # 捏造の検出は今まで通り: 事業者が返していない年収・月給、幅の片側の書き換え、時給の作り話
     turns = [turn(["年収800万円も狙えます。"], [FULLTIME]),
              turn(["PMは年収650〜1000万円です。"]),
              turn(["月給40万円の求人もあります。", "時給1,600円です。"])]
@@ -78,7 +78,7 @@ def test_annual_pay_not_from_dip_is_still_a_violation():
 
 
 def test_monthly_pay_with_a_decimal_is_checked():
-    # 「月給27.5万円」のような小数の万も金額として照合する: dip の pay(275000 円)なら根拠あり、無ければ作り話
+    # 「月給27.5万円」のような小数の万も金額として照合する: 事業者の pay(275000 円)なら根拠あり、無ければ作り話
     decimal = ("recommend_jobs", {"jobs": [{"job_id": "f0105", "employment_type": "正社員",
                                             "pay": {"kind": "月給", "min": 275000, "max": 350000}}]})
     assert fact_violations([turn(["月給27.5万円からです。"], [decimal])], ["正社員で探したい"], None) == []
@@ -87,7 +87,7 @@ def test_monthly_pay_with_a_decimal_is_checked():
 
 
 def test_decimal_man_is_not_read_as_its_last_digits():
-    # 「1.5万」の「5万」を別の金額として拾わない(dip に5万が無くても、1.5万が根拠ありなら違反にしない)
+    # 「1.5万」の「5万」を別の金額として拾わない(事業者に5万が無くても、1.5万が根拠ありなら違反にしない)
     bonus = ("answer_job_question", {"job": {"pay": {"kind": "月給", "min": 260000, "max": 350000}},
                                      "answer": "資格手当は月1.5万円です。"})
     assert fact_violations([turn(["資格手当は月1.5万円です。"], [bonus])], ["手当は?"], None) == []
@@ -383,7 +383,7 @@ MONTHLY = ("recommend_jobs", {"jobs": [{"job_id": "f0104", "employment_type": "�
                                         "pay": {"kind": "月給", "min": 260000, "max": 350000}}]})
 
 
-def test_monthly_to_annual_conversion_of_dip_pay_is_allowed():
+def test_monthly_to_annual_conversion_of_provider_pay_is_allowed():
     turns = [turn(["月給35万円なので、12か月で年収420万円ほどです。"], [MONTHLY])]
     assert fact_violations(turns, ["年収にするとどのくらい?"], None) == []
 
@@ -403,7 +403,7 @@ def test_pay_is_matched_by_its_kind():
     assert any("26万円" in x for x in v)
 
 
-def test_general_knowledge_and_estimates_are_not_dip_claims():
+def test_general_knowledge_and_estimates_are_not_provider_claims():
     turns = [turn(["扶養内(年収103万円以下)で探しますね。"], [SUMMARY]),
              turn(["週3日・1日5時間なら月に約7万円です。"]),
              turn(["月1万5千円くらいのお小遣いになります。"])]
@@ -825,10 +825,10 @@ def test_area_wording_that_keeps_a_preference_is_not_left_open():
 
 
 def test_prompt_and_playbook_state_the_area_rule():
-    from dip_mcp.data import ROOT
+    from provider_mcp.data import ROOT
 
-    prompt = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-    common = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
+    prompt = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+    common = (ROOT / "provider_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
     assert "最低限の条件はエリア" in prompt and "エリアが無ければエリアだけを1問で聞いてから探す" in prompt
     # 「求人を探す」を選んだだけなら、エリアと仕事の希望を1つずつ聞く(条件は1問に1つ。task 233 で、まとめて聞く決まりを直した)
     assert "エリアと仕事の希望を1つずつ聞く" in prompt and "エリアと仕事の希望をまとめて1問で聞く" not in prompt

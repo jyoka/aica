@@ -1,6 +1,6 @@
 """時間が空いた後のボタンの答え(設計メモ docs/design/conversation-layer.md §4.16。task 415)。
 
-実 LLM なし。偽物の LINE に署名つきの webhook を送り、本物のランタイムと dip の MCP を、偽のトークの AI と偽のハーネスのモデルで動かす。
+実 LLM なし。偽物の LINE に署名つきの webhook を送り、本物のランタイムと事業者の MCP を、偽のトークの AI と偽のハーネスのモデルで動かす。
 - 本番のトーク(2026-10-30): [近くで探す] の年齢の問いの [18歳以上] を 6 時間後に押すと、前の会話を続けてエリアを聞く。
   答えた入口のカードを出し直さない。年齢を聞き直さない
 - 正社員(c2)、トークの AI(t1)、今の版(v4、c1)でも同じ決まり(版を見ないランタイムの決まり)
@@ -19,13 +19,13 @@ from functools import partial
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as BH
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import harness as CH
-from dip_mcp.career import session as career_session
 from line_runtime import line_channel, purge, turn
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.baito import harness as BH
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import harness as CH
+from provider_mcp.career import session as career_session
 from tests.test_career_c2 import FakeReadLLM, act
 from tests.test_consult import ConsultModel
 from tests.test_handle import call, reply

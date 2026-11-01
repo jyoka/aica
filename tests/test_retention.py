@@ -1,6 +1,6 @@
-"""期間で消す(task 208、docs/design/privacy.md の 3.3)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""期間で消す(task 208、docs/design/privacy.md の 3.3)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
-画面と同じ呼び方で使い、時計(dip_mcp.retention.clock)を差し替えて、Web プロセスの掃除(起動時・1 日 1 回・内部の口)が
+画面と同じ呼び方で使い、時計(provider_mcp.retention.clock)を差し替えて、Web プロセスの掃除(起動時・1 日 1 回・内部の口)が
 各期間の境目で消す・消さないを確かめる。
 - 会話: 最後のやりとりから 30 日はちょうどまで残り、過ぎたら消える。会話の DB は VACUUM され、ファイルに ID が残らない
 - 使われなくなった人: 最後の利用から 180 日はちょうどまで残り、過ぎたらシナリオユーザーの行、連携、会話、音声のファイル、
@@ -23,9 +23,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from dip_mcp import accounts, logic, retention
-from dip_mcp.data import State
 from line_runtime import ledger, purge
+from provider_mcp import accounts, logic, retention
+from provider_mcp.data import State
 from tests.test_revisit import Greeter, greet
 from tests.test_talk_page import WORKER, app, open_talk  # noqa: F401  app はフィクスチャ
 
@@ -70,7 +70,7 @@ def _users_on_disk(server) -> dict:
 
 def _links(server) -> dict:
     with sqlite3.connect(accounts.of(server.state).path) as db:
-        return dict(db.execute("SELECT user_id, dip_id FROM links").fetchall())
+        return dict(db.execute("SELECT user_id, provider_id FROM links").fetchall())
 
 
 def _db_bytes(server, name: str) -> bytes:
@@ -142,7 +142,7 @@ def test_user_unused_for_180_days_is_removed_whole_with_scenario_users_links_fil
         assert uid not in served.state.path.read_text(encoding="utf-8")  # state.json に行が残らない(#189 のレビュー)
         assert scenario not in _links(served)
         assert not draft.exists()
-        for name in ("line_checkpoints.db", "costs.jsonl", "dip_accounts.db"):
+        for name in ("line_checkpoints.db", "costs.jsonl", "provider_accounts.db"):
             assert uid.encode() not in _db_bytes(served, name), name
         assert "sim-browsing" in _users_on_disk(served)  # fixtures のユーザーそのものは消さない
         assert client.get("/api/profile").json()["sections"][1]["items"][0]["value"] is None  # 戻っても新規
@@ -163,7 +163,7 @@ def test_removing_a_user_also_erases_newer_conversations_memory_and_link_tokens(
         out = _purge(client)
         assert out["conversations"] == 0 and out["users"] == 1  # 会話は 30 日の掃除ではなく、人と一緒に消えた
         assert uid not in rt._threads and uid not in served.app.state.unread_uploads
-        for name in ("line_checkpoints.db", "dip_accounts.db"):
+        for name in ("line_checkpoints.db", "provider_accounts.db"):
             assert uid.encode() not in _db_bytes(served, name), name
 
 

@@ -1,6 +1,6 @@
-"""本番のトーク画面(/)と開発者画面(/dev)の台本テスト(task 90。実 LLM なし、dip の MCP は本物)。
+"""本番のトーク画面(/)と開発者画面(/dev)の台本テスト(task 90。実 LLM なし、事業者の MCP は本物)。
 
-本番の / はシナリオを選ばせない: 開いたブラウザの匿名ID そのものをユーザーにして、dip がそのユーザーの状態から
+本番の / はシナリオを選ばせない: 開いたブラウザの匿名ID そのものをユーザーにして、事業者がそのユーザーの状態から
 初回訪問か再訪かを決め(/api/talk/open)、画面はそのイベントで /api/event/stream を呼んで AI 側の1通目を受け取る。
 ここでは画面と同じ呼び方で、挨拶・ユーザーの分離・会話数の上限・保存した求人を確かめる。
 
@@ -16,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from dip_mcp import behavior, logic
-from dip_mcp.data import State
+from provider_mcp import behavior, logic
+from provider_mcp.data import State
 from tests.test_handle import call, reply
 from tests.test_revisit import OFFER_TEXT, Greeter, greet
 
@@ -31,7 +31,7 @@ WORKER = {"Authorization": f"Bearer {INTERNAL_KEY}"}
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     """server を一時ディレクトリの状態で動かす。set_model で偽のモデルを差し込む。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない(偽のモデルを差し込まないとき)
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from line_runtime import config, runtime, server
@@ -129,7 +129,7 @@ def test_production_user_is_the_anonymous_id_itself_and_starts_empty(app):
         opened = client.post("/api/talk/open").json()
     assert opened["user"] == uid and re.fullmatch(r"w-[0-9a-f]{16}", uid)  # 「匿名ID:sim-…」ではない
     u = app.state.user(uid)
-    assert behavior.dip_id(app.state, uid) is None and u["outcomes"] == [] and not u.get(behavior.WRITES)
+    assert behavior.provider_id(app.state, uid) is None and u["outcomes"] == [] and not u.get(behavior.WRITES)
     assert logic.saved_jobs(app.state, uid) == [] and behavior.view(app.state, uid)["applications"] == []
     assert not u.get("talk_opens")  # 開いた記録は挨拶が返ったときに残す(ここでは挨拶を呼んでいない)
 
@@ -145,7 +145,7 @@ def test_production_user_cannot_read_or_talk_as_another_user(app):
         ub = b.post("/api/talk/open").json()["user"]
         assert ua != ub
         assert a.get("/api/saved").status_code == 200  # 保存した求人は Cookie の本人の分だけ(ユーザーIDを受け取らない)
-        assert a.post("/api/dip", json={"user_id": ub}).status_code == 403
+        assert a.post("/api/provider", json={"user_id": ub}).status_code == 403
         assert a.post("/api/event/stream", json={"user_id": ub, "event": "revisit"}).status_code == 403
         assert a.post("/api/event", json={"user_id": ub, "event": "message", "text": "hi"}).status_code == 403
         assert a.post("/api/voice/start", json={"user_id": ub}).status_code == 403
@@ -278,7 +278,7 @@ def test_stale_check_also_holds_inside_the_turn_lock(tmp_path):
     import asyncio
     import os
 
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     model = Greeter(script=[greet, greet])
@@ -612,10 +612,10 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
         dev = client.get("/dev")
     assert root.status_code == dev.status_code == 200
     page = root.text
-    # dip の状態・構成図・トレース・シナリオ一覧は出さない(呼びもしない)
-    for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/dip", "restart"):
+    # 事業者の状態・構成図・トレース・シナリオ一覧は出さない(呼びもしない)
+    for dev_only in ('id="scenarios"', 'id="state"', 'id="trace"', "<svg", "/api/scenarios", "/api/provider", "restart"):
         assert dev_only not in page, dev_only
-    # 開いたら dip に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場(プロフィールは task 95)
+    # 開いたら事業者に初回訪問か再訪かを聞いて始める(30分以内なら履歴を描き直す)。ナビは3つの置き場(プロフィールは task 95)
     assert "/api/talk/open" in page and "/api/talk/history" in page
     for place in ("トーク", "保存した求人", "プロフィール", "/api/saved", "/api/profile"):
         assert place in page, place
@@ -631,5 +631,5 @@ def test_root_is_the_talk_only_screen_and_dev_keeps_the_simulator(app):
         assert client.get("/static/talk-core.css").status_code == 200
         assert client.get("/static/talk.html").status_code == 404  # 共通部品以外は出さない
     # /dev は今までの3列(シナリオの起動・状態・構成図と処理の流れ)
-    for part in ('id="scenarios"', 'id="state"', 'id="trace"', "/api/scenarios/", "/api/dip"):
+    for part in ('id="scenarios"', 'id="state"', 'id="trace"', "/api/scenarios/", "/api/provider"):
         assert part in dev.text, part

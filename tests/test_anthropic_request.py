@@ -6,7 +6,7 @@
 assistant の prefill、5 つ以上のキャッシュの区切り、返していない思考のブロック)。
 プロンプトキャッシュも真似る: 区切り(cache_control)までの前置き(tools → system → messages の順)を覚え、次の呼び出しの
 前置きが同じなら、その分を usage の cache_read_input_tokens で返す。トークン数は文字数から見積もる(3 文字で 1)。
-- エージェント: 本物の ChatAnthropic(agent.build_model)と本物の LineRuntime(dip の MCP)で 2 ターン話す
+- エージェント: 本物の ChatAnthropic(agent.build_model)と本物の LineRuntime(事業者の MCP)で 2 ターン話す
 - SDK を直に呼ぶところ(llm.parse。模擬ユーザー、ジャッジ、ゲームの AI): 本物の AsyncAnthropic で送る
 """
 
@@ -165,7 +165,7 @@ class FakeAnthropic:
 @pytest.fixture
 def runtime_on_fake_anthropic(tmp_path, monkeypatch):
     """既定の設定の ChatAnthropic(build_model)を偽の Anthropic につなぎ、LineRuntime を作る関数。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")
     from line_runtime import agent, config
     from line_runtime.runtime import LineRuntime

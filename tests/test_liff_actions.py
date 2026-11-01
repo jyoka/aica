@@ -21,10 +21,10 @@ from urllib.parse import urlencode
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import load_jobs
 from line_runtime import legal, line_channel
 from line_runtime.line_channel import LineLogin, line_user, to_messages
+from provider_mcp import logic
+from provider_mcp.data import load_jobs
 from tests.test_handle import reply
 from tests.test_liff import FakeLineLogin
 from tests.test_line_webhook import (
@@ -152,7 +152,7 @@ def test_line_buttons_follow_what_liff_can_open(monkeypatch):
     assert [m["type"] for m in to_messages(r, "")] == ["text", "flex"]  # 断りの文は無い
 
 
-# 初回訪問の挨拶(task 231)。本文は dip の Prompt(entries.json の visit)の例と同じ言い方(task 237 から本文で 3 つを並べない)
+# 初回訪問の挨拶(task 231)。本文は事業者の Prompt(entries.json の visit)の例と同じ言い方(task 237 から本文で 3 つを並べない)
 GREETING = ["お仕事探しの相談と、求人のご提案をします。",
             "ゲームは、遊びながら履歴書や職務経歴書の下書きを作れます。どれから始めますか?"]
 
@@ -243,17 +243,17 @@ def test_the_revisit_greeting_puts_the_offer_over_the_buttons_and_the_question_l
 
 
 def test_line_buttons_have_no_emoji_and_use_the_greetings_words():
-    """D3: LINE のボタンに絵文字を付けない。ボタンの文言は、挨拶の本文(dip の Prompt の例)と同じ言い方。
+    """D3: LINE のボタンに絵文字を付けない。ボタンの文言は、挨拶の本文(事業者の Prompt の例)と同じ言い方。
     評価の模擬ユーザーにも、LINE ではその文言で見せる(evals.run の ACTION_LABEL)。「文字で話す」の選択肢は Prompt から無くした。"""
-    from dip_mcp.server import baitoru_assistant
     from evals.checks import EMOJI
     from evals.run import ACTION_LABEL, _format_agent
+    from provider_mcp.server import job_assistant
 
     labels = [line_channel.LIFF_ACTIONS["voice_consult"][0], line_channel.LIFF_ACTIONS["resume_upload"][0],
               line_channel.ARCADE_LABEL]
     assert labels == ["音声で相談する", "履歴書を読み込む", "ゲームで書類を作る"]
     assert not any(EMOJI.search(x) for x in labels)
-    visit = baitoru_assistant("visit")
+    visit = job_assistant("visit")
     assert "「音声で相談する」「履歴書を読み込む」「ゲームで書類を作る」" in visit  # ボタンの名前の決まり(本文で並べない例にも出る)
     assert "Web のトーク画面は「話して伝える」「ファイルを選ぶ」「ゲームで書類を作る」" in visit  # Web は画面のボタンの名前
     assert f'{{"label": "{line_channel.ARCADE_LABEL}", "url": arcade_url}}' in visit  # ゲームのボタンの文言
@@ -465,7 +465,7 @@ def test_the_arcade_opens_in_liff_only_as_the_verified_line_user(line_liff, monk
 
 def test_the_three_liff_first_screens_share_one_frame_without_developer_words(line_liff):
     """リッチメニューから開く 3 つの最初の画面(音声相談、履歴書の読み込み、ゲームの一覧)と、その前の本人を確かめる殻は、
-    同じ枠(aica の帯、規約とポリシーへのリンク)で出し、開発用の言葉(「LIFF・dip の画面」)を出さない。
+    同じ枠(aica の帯、規約とポリシーへのリンク)で出し、開発用の言葉(「LIFF・事業者の画面」)を出さない。
     上から、何ができるか(1 行)、箇条書き、押すボタン 1 つの順。今までの説明文の事実は落とさない(task 241)。
     ゲームの一覧は、同意の前の画面だけがこの枠で、同意の後は Web と同じピクセルアートのハブ(雰囲気を残す。2026-10-26)。"""
     server, _, _, _ = line_liff
@@ -479,7 +479,7 @@ def test_the_three_liff_first_screens_share_one_frame_without_developer_words(li
     with _liff_client(server) as client:
         for path in facts:
             shell = client.get(path).text
-            assert "LINE で本人を確かめています" in shell and 'class="lf-head"' in shell and "LIFF・dip" not in shell
+            assert "LINE で本人を確かめています" in shell and 'class="lf-head"' in shell and "LIFF・事業者" not in shell
         assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
         hub = client.get("/liff/line/arcade").text
         assert 'class="lf-head"' not in hub and '"/liff/line/arcade/" + g.slug' in hub
@@ -487,7 +487,7 @@ def test_the_three_liff_first_screens_share_one_frame_without_developer_words(li
             if path == "/liff/line/arcade":
                 continue
             page = client.get(path).text
-            assert "LIFF・dip" not in page and "(LINE)" not in page, path
+            assert "LIFF・事業者" not in page and "(LINE)" not in page, path
             assert 'class="lf-head"' in page and legal.DEMO_NOTE in page and legal.links_html() in page, path
             intro = re.search(r'<section class="lf-card lf-intro">.*?</section>', page, re.DOTALL).group(0)
             assert len(re.findall(r'<p class="lf-lead">', intro)) == 1 and 2 <= intro.count("<li>") <= 4, path

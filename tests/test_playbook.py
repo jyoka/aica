@@ -1,7 +1,7 @@
-"""相談の playbook(aica v2 の F、ADR-0001)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""相談の playbook(aica v2 の F、ADR-0001)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
 確かめること:
-(1) 3つの playbook(正社員・アルバイト・パート・未定のチャット版)が dip にあり、get_counseling_playbook で
+(1) 3つの playbook(正社員・アルバイト・パート・未定のチャット版)が事業者にあり、get_counseling_playbook で
     LINE 側エージェントに配られる(区分に共通の決まりと、区分ごとの会話の決まりの値つき)
 (2) 区分ごとの会話の決まり(吹き出しの字数・分岐の期限)が、playbook・Prompt・評価の形式判定で同じ値
 (3) 台本の相談(経歴の厚い正社員志望): 目的を聞く / 掘り下げる / 選択肢が履歴書・発言から作られる /
@@ -23,8 +23,6 @@ import re
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import ROOT, State
 from evals import checks
 from evals.checks import (
     PROFILE_FOLLOW_UP,
@@ -34,6 +32,8 @@ from evals.checks import (
     turn_violations,
 )
 from evals.scenarios import load_scenarios, prepare
+from provider_mcp import logic
+from provider_mcp.data import ROOT, State
 from tests.test_consult import (
     CLOSING,
     ENTRIES,
@@ -52,13 +52,13 @@ from tests.test_handle import call, reply
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 UID = "sim-new"
 BAITO, SEISHAIN, MITEI = "アルバイト・パート", "正社員", "未定"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
 
 
-# ----------------------------- (1) 3つの playbook を dip のツールで配る -----------------------------
+# ----------------------------- (1) 3つの playbook を事業者のツールで配る -----------------------------
 
 
-def test_three_chat_playbooks_are_served_by_the_dip_tool(tmp_path):
+def test_three_chat_playbooks_are_served_by_the_provider_tool(tmp_path):
     model = ConsultModel(script=[
         calls(*[("get_counseling_playbook", {"track": t, "channel": "chat"}) for t in logic.TRACKS]),
         reply(["わかりました。"]),
@@ -133,7 +133,7 @@ def test_voice_playbooks_share_the_chat_skeleton_but_speak_shorter():
 
 def test_conversation_rules_match_between_playbooks_prompt_and_eval_format_checks():
     rules = logic.CONVERSATION_RULES
-    assert checks.FORMAT_RULES == rules  # 評価の形式判定は dip の値そのもの
+    assert checks.FORMAT_RULES == rules  # 評価の形式判定は事業者の値そのもの
     assert rules[BAITO] == rules[MITEI] == {"questions_max": 1, "bubble_max": 80, "branch_by": 3}  # v1 のまま
     assert rules[SEISHAIN] == {"questions_max": 1, "bubble_max": 120, "branch_by": 6}  # 正社員だけ緩める
     for track, r in rules.items():
@@ -739,7 +739,7 @@ def test_saved_blank_parent_conversations_entered_a_consult():
 # ----------------------------- (6) 例文を評価のペルソナから離す -----------------------------
 
 EVALS = ROOT / "evals"
-PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
+PLAYBOOKS = ROOT / "provider_mcp" / "playbooks"
 
 
 def _persona_text() -> str:

@@ -6,9 +6,9 @@
 
 - A: 今の正社員の相談(LINE 側のランタイムをそのまま。状態を持たないので captured は None)
 - script-good / script-bad: 台本の良い AI と悪い AI(実 API を使わない。本人役とジャッジだけが LLM)
-- B、C、D、D-noband: ハーネス(dip_mcp/career)を実 LLM(トークと同じ line_runtime.career_chat のモデル)でつないだもの
+- B、C、D、D-noband: ハーネス(provider_mcp/career)を実 LLM(トークと同じ line_runtime.career_chat のモデル)でつないだもの
   (FormHarness。5/5 のタスク)。D-noband は帯を切った形 D(CAREER_UI_BAND=off)。モックでの回帰は evals/career_sim.py(費用 0)。
-- D-c2: 形 D を会話の層の版(CAREER_HARNESS_VERSION=c2。dip_mcp/career/c2.py)で回すもの(設計メモ conversation-layer.md §5 の
+- D-c2: 形 D を会話の層の版(CAREER_HARNESS_VERSION=c2。provider_mcp/career/c2.py)で回すもの(設計メモ conversation-layer.md §5 の
   9 枚目。task 362)。比べるときは --form D,D-c2(どちらも本番の形 D)
 """
 
@@ -23,7 +23,7 @@ from evals.fulltime_hearing.personas import COMMON_HARD, SEGMENT_HARD, label
 PLANNED: dict[str, str] = {}  # これから足す形(名前 -> 足すタスク)。今は無い
 TARGET_SECONDS = {True: 180.0, False: 300.0}  # 目標時間(履歴書あり / なし。設計メモ §3.3)
 REVIEW_RESERVE = 90.0  # 質問を止める時刻 = 目標時間 - これ(まとめ 2 回分の 70 秒とゆとり 20 秒)
-A_USER = "sim-new"  # 形 A の本人(未連携の新規。会話ごとに dip の状態を戻す)
+A_USER = "sim-new"  # 形 A の本人(未連携の新規。会話ごとに事業者の状態を戻す)
 START_SAID = "正社員の仕事を探したい"  # 形 B〜D の会話の頭に置く、相談を始めた本人の発言(生成に渡す履歴だけ。本人役は打たない)
 DECLINES = {"今はいい", "今はいいです", "いまはいい", "いまはいいです"}  # 形 A の断り(common_chat.md の「今はいい」)
 
@@ -73,7 +73,7 @@ def declined(text: str) -> bool:
 
 
 class FormA:
-    """今の正社員の相談(dip_mcp/playbooks/fulltime_chat.md)。LINE のトークとして、LIFF の画面は使わない(チャットだけ)。
+    """今の正社員の相談(provider_mcp/playbooks/fulltime_chat.md)。LINE のトークとして、LIFF の画面は使わない(チャットだけ)。
     履歴書を先に送っている人(persona の resume)は、会話の前にアップロード済みにする。"""
 
     def __init__(self, rt, persona: dict):
@@ -86,8 +86,8 @@ class FormA:
         return reply
 
     async def start(self) -> AIReply:
-        from dip_mcp.data import State
         from evals.scenarios import prepare
+        from provider_mcp.data import State
 
         sc = {"user": A_USER, "event": "visit"}
         if self.persona.get("resume"):
@@ -291,7 +291,7 @@ class ScriptBad:
 
 
 def fixed_labels(H) -> list[str]:
-    """ハーネス(H = dip_mcp.career.harness)が誰にでも同じに出す答えの候補とボタンのラベル(重なりを除いて出る順)。
+    """ハーネス(H = provider_mcp.career.harness)が誰にでも同じに出す答えの候補とボタンのラベル(重なりを除いて出る順)。
     質問バンクの pages、pages_by_segment、explain_choices、escape と、決まったボタン(スキップ、他の候補など)。"""
     out = [H.START_GO, H.LATER, H.PASS, H.DONT_KNOW, H.MORE, H.REVIEW_OK, H.NOPREF]
     for q in H.BANK:
@@ -302,23 +302,23 @@ def fixed_labels(H) -> list[str]:
 
 
 class FormHarness:
-    """ハーネス(dip_mcp/career)を、トークと同じモデルの呼び方でつないだ形(B、C、D)。
-    1 ターンは dip_mcp.career.session.turn と同じく、ハーネスがモデルの出力を求めたら(NeedLLM)ターンの始めの状態に戻し、
+    """ハーネス(provider_mcp/career)を、トークと同じモデルの呼び方でつないだ形(B、C、D)。
+    1 ターンは provider_mcp.career.session.turn と同じく、ハーネスがモデルの出力を求めたら(NeedLLM)ターンの始めの状態に戻し、
     モデルを呼んで、それまでの出力を全部渡してやり直す。モデルの呼び方とメッセージは LINE 側のランタイム(_harness_turn)と同じ
     (line_runtime.career_chat.default_llm と baito_chat.messages_for。生成には直前のやりとりを渡す)。
-    dip の保存とトークの AI は通らない(相談の外のことなので)。履歴書を先に送っている人は、モックの回帰(evals/career_sim.py)と
+    事業者の保存とトークの AI は通らない(相談の外のことなので)。履歴書を先に送っている人は、モックの回帰(evals/career_sim.py)と
     同じく、履歴書の欄を事実表の値で prefill する(「履歴書の写真から始める」のつなぎはまだ無い。設計メモ §8)。
-    形 D は、ハーネスが選んだ部品(dip_mcp/career/ui.py)を LINE の Flex にして(line_runtime/career_ui.py)、中の字を本人役が読む。
+    形 D は、ハーネスが選んだ部品(provider_mcp/career/ui.py)を LINE の Flex にして(line_runtime/career_ui.py)、中の字を本人役が読む。
     result に着いたら完了。「あとで」で閉じたら、本人が断った離脱に数える。
     取れた値は、モックの回帰と同じく終わりの状態(harness.captured)。保存した文は、その文と、職歴カードから作った下書き。"""
 
     def __init__(self, persona: dict, form: str, band: bool = True, call=None, version: str = "c1"):
-        from dip_mcp.career import harness as H
-        from dip_mcp.career import ui as UI
         from evals.career_sim import VERSIONS, prefill
         from line_runtime import career_chat
+        from provider_mcp.career import harness as H
+        from provider_mcp.career import ui as UI
 
-        # H は版によらない部分(質問バンク、取れた値、欄)。M は版の 1 ターン(c1 は H、c2 は dip_mcp.career.c2)
+        # H は版によらない部分(質問バンク、取れた値、欄)。M は版の 1 ターン(c1 は H、c2 は provider_mcp.career.c2)
         self.H, self.M, self.UI = H, VERSIONS[version], UI
         self.persona, self.call = persona, call or career_chat.default_llm()
         self.st = self.M.new_state(form=form, prefill=prefill(persona))
@@ -345,14 +345,14 @@ class FormHarness:
         return self._reply(out, part)
 
     async def send(self, text: str, pressed: bool) -> AIReply:
-        from dip_mcp.baito.session import NeedLLM, ReplayLLM
         from line_runtime import baito_chat
+        from provider_mcp.baito.session import NeedLLM, ReplayLLM
 
         convo = baito_chat.recent(self.convo)
         outputs: list[dict] = []
         snap = self.st.to_dict()
         while True:
-            st = self.M.State.from_dict(snap)  # ターンの始めの状態からやり直す(dip が保存した状態から毎回始めるのと同じ)
+            st = self.M.State.from_dict(snap)  # ターンの始めの状態からやり直す(事業者が保存した状態から毎回始めるのと同じ)
             replay = ReplayLLM(outputs, self.M.render_prompt, lambda view: "say")
             prev = self.UI.before(st)
             try:
@@ -360,7 +360,7 @@ class FormHarness:
                 break
             except NeedLLM as need:
                 c = need.call
-                if len(outputs) >= 4:  # dip_mcp.career.session.MAX_LLM_CALLS
+                if len(outputs) >= 4:  # provider_mcp.career.session.MAX_LLM_CALLS
                     raise RuntimeError("正社員の相談のモデルの呼び出しが、1 ターンの上限を超えました") from None
                 # 本人の発言と直前のやりとりは、ハーネスが伏せたもの(c2 の model_text、model_history)があればそちら(ランタイムと同じ)
                 said = c.get("model_text", text)
@@ -384,7 +384,7 @@ class FormHarness:
         return fixed_labels(self.H)
 
     def saved_texts(self) -> list[str]:
-        from dip_mcp.career import draft
+        from provider_mcp.career import draft
 
         texts = [v["text"] for v in self.captured().values() if v["text"]]
         return texts + ([draft.build(self.st)[0]] if self.st.result is not None else [])

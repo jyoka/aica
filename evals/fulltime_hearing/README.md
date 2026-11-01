@@ -42,10 +42,10 @@
 
 | 形 | 中身 | 取れた事実の数え方 |
 |---|---|---|
-| `A` | 今の正社員の相談(`dip_mcp/playbooks/fulltime_chat.md`)。LINE のトークとして回し、LIFF の画面は使わない。本人役が読むのは LINE に送るメッセージ(`line_channel.to_messages`)の字 | 会話の記録と、先に送った履歴書から、ジャッジが事実を取り出す |
+| `A` | 今の正社員の相談(`provider_mcp/playbooks/fulltime_chat.md`)。LINE のトークとして回し、LIFF の画面は使わない。本人役が読むのは LINE に送るメッセージ(`line_channel.to_messages`)の字 | 会話の記録と、先に送った履歴書から、ジャッジが事実を取り出す |
 | `script-good` | 台本の良い AI。1 回に 1 問、80 字まで、聞き直さない、ボタンとパス、§3.3 の時間の予算 | 台本が本人の言葉のまま持つ |
 | `script-bad` | 台本の悪い AI。長い、2 つ聞く、聞き直す、面接口調 | 同上 |
-| `B`、`C`、`D`、`D-noband` | ハーネス(`dip_mcp/career/`)を、トークと同じモデルの呼び方(`line_runtime/career_chat.py`)でつないだもの(`forms.py` の `FormHarness`。5/5 のタスク)。`D-c2` は形 D を会話の層の版(`CAREER_HARNESS_VERSION=c2`。`dip_mcp/career/c2.py`)で回すもの(task 362。`--form D,D-c2` で今の版と比べる。言う段には、ランタイムと同じく層が渡す直前のやりとりと本人の発言を渡す)。1 ターンは `dip_mcp/career/session.py` の `turn` と同じく、モデルの出力が要るたびにターンの始めからやり直す。事業者の保存とトークの AI は通らない。形 D は Flex の中の字(`line_runtime/career_ui.py`)を本人役が読む。`D-noband` は帯を切った D(`CAREER_UI_BAND=off`)。履歴書を先に送っている人は、モックの回帰と同じく履歴書の欄を事実表の値で先に埋める。「あとで」で閉じたら、本人が断った離脱。モックの回帰は `python -m evals.career_sim`(費用 0) | ハーネスの終わりの状態(`harness.captured`) |
+| `B`、`C`、`D`、`D-noband` | ハーネス(`provider_mcp/career/`)を、トークと同じモデルの呼び方(`line_runtime/career_chat.py`)でつないだもの(`forms.py` の `FormHarness`。5/5 のタスク)。`D-c2` は形 D を会話の層の版(`CAREER_HARNESS_VERSION=c2`。`provider_mcp/career/c2.py`)で回すもの(task 362。`--form D,D-c2` で今の版と比べる。言う段には、ランタイムと同じく層が渡す直前のやりとりと本人の発言を渡す)。1 ターンは `provider_mcp/career/session.py` の `turn` と同じく、モデルの出力が要るたびにターンの始めからやり直す。事業者の保存とトークの AI は通らない。形 D は Flex の中の字(`line_runtime/career_ui.py`)を本人役が読む。`D-noband` は帯を切った D(`CAREER_UI_BAND=off`)。履歴書を先に送っている人は、モックの回帰と同じく履歴書の欄を事実表の値で先に埋める。「あとで」で閉じたら、本人が断った離脱。モックの回帰は `python -m evals.career_sim`(費用 0) | ハーネスの終わりの状態(`harness.captured`) |
 
 形は `start()`、`send(text, pressed)`、`captured()`、`saved_texts()`、`wasted()` を持ちます。`captured()` の形は `judge.py` の
 docstring にあります(`None` を返すと、会話の記録から取り出します)。形 A の完了と離脱は、次のように数えます。

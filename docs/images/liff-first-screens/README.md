@@ -7,10 +7,12 @@ iPhone の幅(390px)で、LIFF の SDK を偽物に差し替えたブラウザ(P
 | 画面 | 同意の前 | 同意の後 |
 |---|---|---|
 | 音声相談 `/liff/line/voice` | [before](before-voice-consent.png) / [after](after-voice-consent.png) | [before](before-voice.png) / [after](after-voice.png) |
-| 履歴書の読み込み `/liff/line/resume/upload` | [before](before-resume-consent.png) / [after](after-resume-consent.png) | [before](before-resume.png) / [after](after-resume.png)、ファイルを選んだ後 [before](before-resume-picked.png) / [after](after-resume-picked.png) |
-| ゲームの一覧 `/liff/line/arcade` | [before](before-arcade-consent.png) / [after](after-arcade-consent.png) | [before](before-arcade.png) / [after](after-arcade.png) |
+| 履歴書の読み込み `/liff/line/resume/upload` | [after](after-resume-consent.png) | [after](after-resume.png)、ファイルを選んだ後 [after](after-resume-picked.png) |
+| ゲームの一覧 `/liff/line/arcade` | [after](after-arcade-consent.png) | [before](before-arcade.png) / [after](after-arcade.png) |
 
 音声相談の同意の前は、画面の下から出る同意のシート(talk-core.js)で、「同意して始める」に移った位置の写真。
+
+履歴書の読み込みの before と、ゲームの一覧の同意の前の before は消しました。旧い名前が写っていたためです(task 424)。
 
 ゲームの一覧(同意の後)は、2026-10-26 に直す前の画面(before-arcade)に戻しました。ゲームの雰囲気が伝わらないためです(利用者の判断)。
 
@@ -24,4 +26,4 @@ iPhone の幅(390px)で、LIFF の SDK を偽物に差し替えたブラウザ(P
 
 | 音声相談 | 履歴書の読み込み | ゲームの一覧 |
 |---|---|---|
-| ![音声相談](before-voice.png) | ![履歴書の読み込み](before-resume-picked.png) | ![ゲームの一覧](before-arcade.png) |
+| ![音声相談](before-voice.png) | (写真なし) | ![ゲームの一覧](before-arcade.png) |

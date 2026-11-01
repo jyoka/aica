@@ -1,4 +1,4 @@
-"""履歴書と音声の導線を会話の中へ(task 91)の台本テスト。実 LLM なし、dip の MCP は本物、履歴書の読み取りはスタブ。
+"""履歴書と音声の導線を会話の中へ(task 91)の台本テスト。実 LLM なし、事業者の MCP は本物、履歴書の読み取りはスタブ。
 
 - AI は返信の actions で「履歴書を選ぶ」(resume_upload)「音声相談を始める」(voice_consult)を差し出せる。
   quick_replies(本人の発言として送る選択肢)とは別で、/ と /dev の両方の画面が同じ部品(talk-core.js)で描く。
@@ -21,10 +21,10 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic
 from evals.checks import turn_violations
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
 from tests.test_resume_upload import FILENAME, PII, clean_draft
@@ -41,7 +41,7 @@ MENU = ["求人を探す", "まず相談する", "応募履歴を確認", "今�
 
 
 class Advisor(ScriptedModel):
-    """dip の Prompt どおりに動く偽のモデル(何度でも返す): 挨拶はメニュー、「まず相談する」で経験を聞きながら
+    """事業者の Prompt どおりに動く偽のモデル(何度でも返す): 挨拶はメニュー、「まず相談する」で経験を聞きながら
     履歴書・音声を差し出し、アップロードのイベントでは要約を読み直して次の1問を返す。"""
 
     seen: list = []  # noqa: RUF012  モデルに渡った本人側の入力(ファイル名が混ざっていないかを見る)
@@ -173,9 +173,9 @@ def test_upload_is_the_users_turn_and_the_ai_continues_with_the_next_question(ad
         assert turn["upload"] == {"file": "履歴書(PDF)", "shown": up.json()["bubbles"], "view_url": "/liff/resume?rid=0"}
         assert up.json()["view_url"] == "/liff/resume?rid=0"
         assert turn["bot"]["bubbles"] == r["bubbles"]
-        # ファイル名(氏名が入りがち)はトーク・履歴・dip の状態のどこにも出ない
+        # ファイル名(氏名が入りがち)はトーク・履歴・事業者の状態のどこにも出ない
         for text in (up.text, json.dumps(evs, ensure_ascii=False), json.dumps(turn, ensure_ascii=False),
-                     client.post("/api/dip", json={"user_id": uid}).text, (tmp_path / "state.json").read_text(encoding="utf-8")):
+                     client.post("/api/provider", json={"user_id": uid}).text, (tmp_path / "state.json").read_text(encoding="utf-8")):
             assert FILENAME not in text and "佐藤" not in text
             assert not any(p in text for p in PII)
 
@@ -217,7 +217,7 @@ def test_an_unreadable_upload_still_continues_the_talk_with_one_question(advised
         turn = client.get("/api/talk/history").json()["turns"][-1]
         assert turn["upload"] == {"file": "履歴書(画像)", "shown": up.json()["bubbles"], "view_url": None, "empty": True}
         assert turn["bot"]["bubbles"] == r["bubbles"]
-        assert logic.resume_upload(advised.state, uid) is None  # 読めなかったものは dip に保存しない
+        assert logic.resume_upload(advised.state, uid) is None  # 読めなかったものは事業者に保存しない
         # 「読み取れなかった」の事実は使い終わり: アップロードなしの resume_upload は、読み取り結果が無いので断る
         assert client.post("/api/event/stream", json={"user_id": uid, "event": "resume_upload",
                                                        "thread": thread}).status_code == 400
@@ -360,6 +360,19 @@ def _talk_through_actions(page, context) -> None:
     assert FILENAME not in page.content() and "佐藤" not in page.content()
 
 
+def test_the_talk_screen_shows_the_name_aica_in_the_browser(served, browser, livekit):
+    """画面の題、ヘッダー、発言者の名前は aica、アバターの頭文字は a。"""
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto(served + "/")
+    page.locator("#log .chips button", has_text="まず相談する").wait_for()
+    assert page.title() == "aica AIアシスタント"
+    assert page.locator("header .name").inner_text() == "aica"
+    assert set(page.locator("#log .who").all_inner_texts()) == {"aica"}
+    assert set(page.locator("#log .avatar").all_inner_texts()) == {"a"}
+    context.close()
+
+
 def test_talk_screen_actions_and_plus_menu_in_the_browser(served, browser, livekit):
     context = browser.new_context()
     _fake_livekit(context)
@@ -414,7 +427,7 @@ def test_voice_sheet_closes_and_the_result_continues_the_same_talk(served, brows
     """音声相談はトークの上のシートで開き、面談が終わるとシートが閉じて、同じトークに AI の返信として
     「話した内容のまとめ」「求人カード」「職務経歴書の下書きを見る」が続く(実際の音声は使わない。
     音声ワーカーの代わりに /api/voice/result へ結果を送る)。常時の問い合わせはせず、待つのはシートを開いている間だけ。"""
-    from dip_mcp.data import load_jobs
+    from provider_mcp.data import load_jobs
 
     context = browser.new_context()
     requests = _fake_livekit(context)

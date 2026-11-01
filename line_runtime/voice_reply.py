@@ -5,15 +5,15 @@
 返信は render(runtime.py)と同じ形なので、画面は他の返信と同じ renderReply で描く。
 LLM は使わない(音声相談を始めたときに会話数を1つ使っている。ここで2つ目は使わない)。
 - 吹き出しはどれも80字以内(対話ルールと evals/checks.py の判定に合わせる)
-- まとめは音声で本人が話した希望(dip の相談プロファイルの項目)を、決まった順に短く並べる
-- 求人カードは dip の求人データから作り直したもの(dip_mcp.logic.record_voice_result)だけ
+- まとめは音声で本人が話した希望(事業者の相談プロファイルの項目)を、決まった順に短く並べる
+- 求人カードは事業者の求人データから作り直したもの(provider_mcp.logic.record_voice_result)だけ
 - 書類の呼び方は、下書きの document_kind(履歴書 / 職務経歴書)にそろえる(吹き出し・ボタン・下書きページの題)
 """
 
 from __future__ import annotations
 
-from dip_mcp.logic import PREFERENCE_KEYS, liff_url
 from line_runtime.resume_confirm import _clip
+from provider_mcp.logic import PREFERENCE_KEYS, liff_url
 from resume_draft.schema import document_kind_of
 
 MAX_CHARS = 80
@@ -83,7 +83,7 @@ def _draft_bubble(kind: str) -> str:
 
 
 def voice_reply(user_id: str, rec: dict, search_track: str | None = None) -> dict:
-    """音声相談の結果1件(dip に預けた形)から、トークに続ける返信(render と同じ形)を作る。
+    """音声相談の結果1件(事業者に預けた形)から、トークに続ける返信(render と同じ形)を作る。
     search_track は面談の後の雇用区分(次のターンの LLM に伝える。画面には出さない)。"""
     cards = rec.get("cards") or []
     bubbles = [summary_bubble(rec.get("preferences") or {})]

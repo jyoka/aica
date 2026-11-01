@@ -13,8 +13,8 @@ resume_lines.BLANK_RE)は行に残し、空欄のある行と勤務先ごとに 
 見出しと知らない節は Resume Draft に項目が無いので、Markdown にだけ残る。氏名と連絡先は聞かないので、personal は常に空
 (envelope がそうする)。
 
-dip_mcp(正社員のヒアリングの下書き。dip_mcp/career/draft.py)と resume_arcade(ゲームの下書き)の両方が使うので、
-LLM の部品を持つ resume_arcade ではなく、ここに置く(dip_mcp は resume_arcade を import しない)。
+provider_mcp(正社員のヒアリングの下書き。provider_mcp/career/draft.py)と resume_arcade(ゲームの下書き)の両方が使うので、
+LLM の部品を持つ resume_arcade ではなく、ここに置く(provider_mcp は resume_arcade を import しない)。
 """
 
 from __future__ import annotations

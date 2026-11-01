@@ -3,7 +3,7 @@
 - トークの発言の電話番号・メールアドレス・住所らしい所は、LLM に送る前、会話を保存する前に [個人情報を削除] に置き換わる
   (Web と LINE の入口の turn.accept。handle を直に呼ぶ評価も runtime.event_input で伏せる)。画面には伏せたことを知らせる
 - system prompt に LINE のユーザーIDを載せない。ツールの line_user_id は PinUserMiddleware が会話のユーザーに固定する
-- dip のツールの結果にもユーザーIDは入らない(LLM に届かない)
+- 事業者のツールの結果にもユーザーIDは入らない(LLM に届かない)
 - 音声相談の調べものの問いに個人情報らしい値があれば、web で調べずに断る。問いは LLM が書くので、住所は住む言葉が無くても形で断る
 - 住所らしい所は、同じ文に住んでいる所を言う言葉があるときだけ伏せる。電話番号とメールアドレスはいつも伏せる
 - 伏せても、求人の検索と会話の流れは変わらない(ふつうの条件の言い方、駅の名前、丁目は伏せない。
@@ -22,11 +22,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp import server as dip_server
-from dip_mcp.data import State, load_jobs
 from line_runtime import turn
 from line_runtime.agent import PINNED_USER
+from provider_mcp import logic
+from provider_mcp import server as provider_server
+from provider_mcp.data import State, load_jobs
 from resume_draft.pii import (
     REDACTED,
     has_pii,
@@ -35,8 +35,8 @@ from resume_draft.pii import (
     redact_personal,
 )
 from tests.test_arcade import _free_port, browser  # noqa: F401  browser はフィクスチャ
-from tests.test_dip_summary_read import TOOL_ARGS
 from tests.test_handle import ScriptedModel, call, reply, run
+from tests.test_provider_summary_read import TOOL_ARGS
 from tests.test_revisit import Greeter, greet, propose
 from tests.test_talk_page import app, open_talk, stream  # noqa: F401  app はフィクスチャ
 
@@ -97,7 +97,7 @@ def test_phone_numbers_are_redacted_however_they_are_written(phone):
     # 後ろに別の数が続いても、電話番号の所は伏せる
     t = turn.accept(DEPS, "w-0123456789abcdef", "message", f"電話は {phone} 2回かけた", None)
     assert t.text == f"電話は {REDACTED} 2回かけた", phone
-    # 本人の値の照合(dip の保存)と、調べものの問いも同じ決まりで当たる
+    # 本人の値の照合(事業者の保存)と、調べものの問いも同じ決まりで当たる
     assert has_pii(said) and personal_value(said), phone
     assert has_pii(f"調べること: {phone} だれの番号"), phone
 
@@ -402,21 +402,21 @@ def test_system_prompt_has_no_user_id_and_tools_still_reach_this_user(tmp_path):
 
 
 @pytest.mark.parametrize("uid", ["w-0123456789abcdef", "w-0123456789abcdef:sim-applied"])
-def test_dip_tools_do_not_return_the_user_id(tmp_path, monkeypatch, uid):
+def test_provider_tools_do_not_return_the_user_id(tmp_path, monkeypatch, uid):
     """どのツールの結果にも、呼んだユーザーのIDが入らない(結果は LLM に届くので)。
     開発者画面のシナリオユーザー(匿名ID:シナリオ)は、画面の URL にシナリオの名前だけが載り、匿名IDは載らない。"""
     state = State(tmp_path / "state.json")
     state.reset()
     if ":" in uid:
         state.reset_user(uid, template=uid.partition(":")[2])
-    monkeypatch.setattr(dip_server, "state", state)
+    monkeypatch.setattr(provider_server, "state", state)
     anon = uid.partition(":")[0]
-    tools = {t.name for t in asyncio.run(dip_server.mcp.list_tools())}
+    tools = {t.name for t in asyncio.run(provider_server.mcp.list_tools())}
     assert tools == set(TOOL_ARGS)  # ツールを足したら、ここでも確かめる
     for name, args in TOOL_ARGS.items():
         if name not in ("answer_job_question", "get_counseling_playbook"):
             args = {"line_user_id": uid, **args}
-        out = asyncio.run(dip_server.mcp.call_tool(name, args))
+        out = asyncio.run(provider_server.mcp.call_tool(name, args))
         assert anon not in json.dumps(out, ensure_ascii=False, default=str), name
 
 

@@ -1,10 +1,10 @@
-"""1会話の費用を下げる(task 132)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""1会話の費用を下げる(task 132)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
 H の評価(evals/baseline/sim-20261004-113109.json)では、1会話の LLM の呼び出しが 11.4 → 13.3 回に増えた。
 保存済みの会話を数え直すと、増えた場面は (1) 掘り下げの答えだけの save、(2) 同じターンの save の重複、
 (3) 相談に入る前の切り替えでの playbook、(4) 同じターンで条件を変えた検索、(5) 条件を1つずつ足した検索だった
 (区分が変わっていないのに playbook を読み直した回は 0)。ここでは、
-(a) 直した決まりが dip の Prompt と playbook にあること、
+(a) 直した決まりが事業者の Prompt と playbook にあること、
 (b) 同じ本人の発言に、H の振る舞いの台本と直した決まりの台本で答えると、save・playbook・LLM の呼び出しが減り、
     直した台本は評価の違反も呼び出しの重複(evals.checks.call_overlaps)も 0 になること、
 (c) 呼び出しの重複の数え方(H の保存済みの会話で場面ごとの回数)と、数えない場面
@@ -17,9 +17,9 @@ import asyncio
 import json
 from collections import Counter
 
-from dip_mcp import server
-from dip_mcp.data import ROOT
 from evals.checks import call_overlaps, conversation_checks, playbook_violations
+from provider_mcp import server
+from provider_mcp.data import ROOT
 from tests.test_consult import (
     CLOSING,
     MENU,
@@ -34,8 +34,8 @@ from tests.test_handle import call, reply
 
 UID = "sim-new"
 BAITO, SEISHAIN = "アルバイト・パート", "正社員"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-COMMON = (ROOT / "dip_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+COMMON = (ROOT / "provider_mcp" / "playbooks" / "common_chat.md").read_text(encoding="utf-8")
 H_BASELINE = ROOT / "evals" / "baseline" / "sim-20261004-113109.json"
 
 

@@ -13,7 +13,7 @@ import math
 
 import pytest
 
-from dip_mcp.data import State
+from provider_mcp.data import State
 
 DUMMY_ENV = {
     "OPENAI_API_KEY": "offline-test",
@@ -48,7 +48,7 @@ class _WaitForSpy:
 def client(tmp_path, monkeypatch):
     for k, v in DUMMY_ENV.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("LINE_SIM_DATA_DIR", str(tmp_path))
     from fastapi.testclient import TestClient
 

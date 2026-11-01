@@ -83,12 +83,12 @@ UX の刷新(本番はトーク1画面、履歴書・音声を会話の中へ、
 - それでも否定の言い方が拾えなければ、求人の属性(人と話す度合い・体を使う度合い)を足すかを、評価の結果を見て別に判断する
 
 ### playbook
-- 置き場は事業者側の `dip_mcp/playbooks/{区分}_{chat|voice}.md`。`get_counseling_playbook(track, channel)` で配る。未定の playbook は「区分を確かめる」ことを最初に書く
+- 置き場は事業者側の `provider_mcp/playbooks/{区分}_{chat|voice}.md`。`get_counseling_playbook(track, channel)` で配る。未定の playbook は「区分を確かめる」ことを最初に書く
 - 中身は「明らかにすること」と「掘り下げ方」。次に何を聞くかは決めない
   - 正社員: 目的・転職の理由 / 強み(履歴書と会話から本人の言葉で) / 次にやりたいこと・避けたいこと / 条件(年収・勤務地・働き方・時期) / 不安(ブランク・年齢・未経験職種への挑戦 など)
   - アルバイト: 目的(生活費・副業・経験・学業と両立 など) / 生活の制約(時間帯・曜日・エリア) / 興味・得意 / 経験 / 不安
 - 区分に共通の決まり: 目的とやりたいことは最低1回掘り下げる。選択肢は履歴書と本人の発言から作り、一般論の例を使わない。「分からない」には職種の列挙でなく掘り下げに戻る
-  (2026-10-26、会話の改善 C (4/10)、jyoka/tasks#225 で、相談の問いを 4 問までにし、掘り下げは 1 項目に 1 回までに変えた。今の決まりは `dip_mcp/playbooks/common_chat.md`)
+  (2026-10-26、会話の改善 C (4/10)、jyoka/tasks#225 で、相談の問いを 4 問までにし、掘り下げは 1 項目に 1 回までに変えた。今の決まりは `provider_mcp/playbooks/common_chat.md`)
 - 会話の決まりは区分ごと: 正社員は吹き出しの字数と「3回目の返信までに分岐」を緩める(値は実装タスクで決め、評価の形式判定も合わせる)。アルバイトは今のまま
 - チャットと音声は同じ骨格で、言い回しだけ変える(音声は短く、1問ずつ)。v1 の Prompt の「相談モード」節は playbook に置き換える
 
@@ -115,7 +115,7 @@ UX の刷新(本番はトーク1画面、履歴書・音声を会話の中へ、
   - まだ届いていない変更の知らせ(`profile_changes`。次のターンで AI に渡すもの)
 - 消した後は、次に開くと初回訪問として始まる
 - 消さないのは、会話数の上限の数(quota)と費用台帳だけ。消すと上限を迂回できるため。費用台帳はトークン数と費用だけを持ち、発言の中身を持たない
-- 実装: `line_runtime/server.py` の `/api/profile/forget` が、`dip_mcp/profile.py` の `forget_all`(`reset_user` でその人の事業者の状態をまるごと初期化)と、会話のチェックポイントの削除を呼ぶ
+- 実装: `line_runtime/server.py` の `/api/profile/forget` が、`provider_mcp/profile.py` の `forget_all`(`reset_user` でその人の事業者の状態をまるごと初期化)と、会話のチェックポイントの削除を呼ぶ
 - 同じブラウザ(同じ Cookie の匿名ID)の `/dev` のシナリオ利用者「匿名ID:シナリオユーザー」(例 `匿名ID:sim-new`。`/dev` のトークから入った音声相談の記録もここに入る)も、本人の記録なのでまとめて消す。評価シナリオ(`evals/scenarios.py` の `load_scenarios`)にあるシナリオユーザーごとに、上と同じ消し方(事業者の状態・会話・読み取れなかった直前のアップロード(メモリ上の `unread_uploads`)・音声の下書きのファイル)をする。別のブラウザのシナリオ利用者は消せない(jyoka/tasks#122)。本番の `/` の音声相談は匿名ID そのもの(`w-…`)に入り、上の消し方で消える
 
 ### 音声の下書き
@@ -140,12 +140,12 @@ UX の刷新(本番はトーク1画面、履歴書・音声を会話の中へ、
 
 | # | タスク | 主に触る場所 | Blocked by |
 |---|---|---|---|
-| A | 正社員の求人データとスキーマ(employment_type・pay・区分ごとの職種・正社員の項目・架空の40件・ベクトルの作り直し・recommend_jobs の引数・カードと回答と事実照合の年収対応) | dip_mcp/data.py・logic.py・server.py、fixtures、scripts、talk-core.js のカード | #91(カードの描画が talk-core.js に移ってから) |
-| B | 検索の質(検索評価セット・embedding の設定の比較と選定・下限の見直し) | dip_mcp/embedding.py・logic.py、evals の検索評価 | A |
-| C | 雇用区分の記録と検知(set_search_track・切り替えの履歴・要約への反映・再訪で引き継ぎ・Prompt の合図の決まり) | dip_mcp/logic.py・server.py・prompts | なし |
-| D | 保存項目の拡張と相談のまとめ(新項目・正社員の条件・相談のまとめ・個人情報の防御・聞き直し判定の拡張。#61 を吸収) | dip_mcp/logic.py・server.py、evals/checks.py | C(同じ logic と要約を触る) |
+| A | 正社員の求人データとスキーマ(employment_type・pay・区分ごとの職種・正社員の項目・架空の40件・ベクトルの作り直し・recommend_jobs の引数・カードと回答と事実照合の年収対応) | provider_mcp/data.py・logic.py・server.py、fixtures、scripts、talk-core.js のカード | #91(カードの描画が talk-core.js に移ってから) |
+| B | 検索の質(検索評価セット・embedding の設定の比較と選定・下限の見直し) | provider_mcp/embedding.py・logic.py、evals の検索評価 | A |
+| C | 雇用区分の記録と検知(set_search_track・切り替えの履歴・要約への反映・再訪で引き継ぎ・Prompt の合図の決まり) | provider_mcp/logic.py・server.py・prompts | なし |
+| D | 保存項目の拡張と相談のまとめ(新項目・正社員の条件・相談のまとめ・個人情報の防御・聞き直し判定の拡張。#61 を吸収) | provider_mcp/logic.py・server.py、evals/checks.py | C(同じ logic と要約を触る) |
 | E | 評価の仕組みとペルソナ(ペルソナ約5本・区分の機械判定・深さのジャッジ項目・安いモデル・ターン上限・--only・費用の累計と $4 での停止)と**基準の計測**(全14本×2) | evals/ | A、C、D |
-| F | チャットの playbook(正社員・アルバイト・未定の chat 版・get_counseling_playbook・Prompt の相談モード節の置き換え・区分ごとの会話の決まり)と、playbook の調整(5本×最大5回) | dip_mcp/playbooks、prompts、evals/checks.py | E |
+| F | チャットの playbook(正社員・アルバイト・未定の chat 版・get_counseling_playbook・Prompt の相談モード節の置き換え・区分ごとの会話の決まり)と、playbook の調整(5本×最大5回) | provider_mcp/playbooks、prompts、evals/checks.py | E |
 | G | 音声の playbook と下書き(voice 版 playbook・音声が set_search_track / get_counseling_playbook / save を使う・document_kind と format_version 1.1・下書きの表示) | voice_resume/、docs/design/resume-draft-schema.md(今は LLD の 5.5) | F、#92(音声の配信が line_runtime 配下に移ってから) |
 | H | 完了時の計測(全14本×2、基準と比較、PRD の完了判定)。jyoka/tasks#65 を置き換える | evals/ | B、F、G |
 

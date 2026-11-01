@@ -88,17 +88,17 @@ MAX_SESSION_MINUTES = float(os.environ.get("VOICE_RESUME_MAX_SESSION_MINUTES", "
 # 1 回の相談で web を調べる回数の上限(web_research / wage_average / research_company の合計)
 MAX_WEB_SEARCHES = int(os.environ.get("VOICE_RESUME_MAX_WEB_SEARCHES", "5"))
 
-# --- dip ---
-# 別プロセスの dip の MCP サーバーの URL(line_runtime.config と同じ環境変数)。無ければ相談ごとに stdio の子プロセスを起動する。
-# Render では音声ワーカーが別サービスなので、Web サービスのコンテナの dip につなぐ(scripts/voice_worker_start.sh)
-DIP_MCP_URL = os.environ.get("DIP_MCP_URL", "").strip()
+# --- provider ---
+# 別プロセスの事業者の MCP サーバーの URL(line_runtime.config と同じ環境変数)。無ければ相談ごとに stdio の子プロセスを起動する。
+# Render では音声ワーカーが別サービスなので、Web サービスのコンテナの事業者につなぐ(scripts/voice_worker_start.sh)
+PROVIDER_MCP_URL = os.environ.get("PROVIDER_MCP_URL", "").strip()
 
 # --- トーク・出力先 ---
 # トークのシミュレーター(line_runtime.server)。面談の結果(求人・下書き)をトークへ戻す先
 TALK_URL = os.environ.get("VOICE_RESUME_TALK_URL", "http://127.0.0.1:8030")
 
 # 面談ごとの下書き・文字起こし・求人提案を OUT_DIR に書き出すか。`1` のときだけ書く(開発用)。
-# 既定は書かない: 同じ下書きは dip の状態(voice_results)に入り、文字起こしは下書きを作った後に使わない
+# 既定は書かない: 同じ下書きは事業者の状態(voice_results)に入り、文字起こしは下書きを作った後に使わない
 # (docs/design/privacy.md の 3.3)
 WRITE_FILES = os.environ.get("VOICE_RESUME_WRITE_FILES", "").strip() == "1"
 # 書き出す先(個人の話を含むので data/ の下。git には入らない)
@@ -109,7 +109,7 @@ RESULTS_DIR = ROOT / "voice_resume" / "results"
 LIVEKIT_ROOM_PREFIX = "voice-resume"
 
 # --- ワーカーの同時ジョブ数とメモリ(agent.worker_options)---
-# 部屋ごとに、ジョブのプロセスと dip MCP の子プロセス(DIP_MCP_URL が無いとき)が 1 つずつできる。マシンを圧迫しないように、
+# 部屋ごとに、ジョブのプロセスと事業者の MCP の子プロセス(PROVIDER_MCP_URL が無いとき)が 1 つずつできる。マシンを圧迫しないように、
 # 同時に受けるジョブを MAX_JOBS までにする(dev で起動しても満員を報告する)。1 人が開ける部屋は Web 側で同時に 1 つまで
 MAX_JOBS = int(os.environ.get("VOICE_RESUME_MAX_JOBS", "4"))
 # ジョブのプロセスのメモリの上限(MB)。超えたらそのジョブを止める(0 で上限なし。警告は livekit-agents の既定の 1000MB)
@@ -128,6 +128,6 @@ def load_env() -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
-def dip_server_command() -> list[str]:
-    """dip 側 MCP サーバー(stdio)の起動コマンド。同じリポジトリ・同じ venv の python で動かす。"""
-    return [sys.executable, "-m", "dip_mcp.server"]
+def provider_server_command() -> list[str]:
+    """事業者側 MCP サーバー(stdio)の起動コマンド。同じリポジトリ・同じ venv の python で動かす。"""
+    return [sys.executable, "-m", "provider_mcp.server"]

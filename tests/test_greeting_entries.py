@@ -2,7 +2,7 @@
 
 - 評価の判定(evals/checks.py の greeting_entry_violations): 初回訪問も再訪も窓口で使える入口を全部ボタンで出す。再訪で文で
   勧めるのは summary に合わせて 1 つだけ。全部を並べるのは 1 つの会話で 1 回だけ(会話の改善 D (3/3)、task 234)
-- dip の Prompt: 入口V と入口R が、挨拶の入口の決まりを指している
+- 事業者の Prompt: 入口V と入口R が、挨拶の入口の決まりを指している
 - LINE の友だち追加の挨拶: 入口は LIFF 画面へのボタンになり、使えないもの(LiveKit が無いときの音声)は出ない。文字の選択肢も残る
 - 再訪(ゲームの下書きに空欄): 要約を読んでから、下書きの続きだけを勧める
 - 挨拶の言い方と並び(会話の改善 C (6/10)、task 227。evals/checks.py の greeting_wording_violations): 連絡した言い方をしない、
@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import pytest
 
-from dip_mcp import arcade
-from dip_mcp.data import State
 from evals.checks import (
     available_entries,
     conversation_checks,
@@ -32,6 +30,8 @@ from evals.checks import (
 )
 from evals.scenarios import load_scenarios, prepare
 from line_runtime import line_channel
+from provider_mcp import arcade
+from provider_mcp.data import State
 from tests.test_handle import reply, run
 from tests.test_liff_actions import (
     CHANNEL,
@@ -387,13 +387,13 @@ def test_emoji_in_buttons_and_choices_is_flagged_and_the_report_has_line_counts(
     assert conversation_checks(SCENARIOS["F-follow-new"], [good], [None])["line_messages"] is None
 
 
-# ----------------------------- dip の Prompt -----------------------------
+# ----------------------------- 事業者の Prompt -----------------------------
 
 
 def test_entries_point_to_the_greeting_rules():
-    from dip_mcp.server import baitoru_assistant
+    from provider_mcp.server import job_assistant
 
-    visit, revisit = baitoru_assistant("visit"), baitoru_assistant("revisit")
+    visit, revisit = job_assistant("visit"), job_assistant("revisit")
     for p in (visit, revisit):
         assert "## 挨拶の入口(初回訪問・再訪)" in p
         # task 237: ボタンはコードが付ける(やり終えていないものだけ)。LLM は入口を付けず、本文で3つを並べない
@@ -553,7 +553,7 @@ def test_revisit_with_a_draft_offers_only_to_fill_the_blanks(tmp_path):
     assert greeting_mentions(t1) == ["blanks"] and "空欄を埋める" in t1["quick_replies"]
     assert "今はいい" in t1["quick_replies"] and len(t1["quick_replies"]) <= 4
     assert greeting_entry_violations(sc, [t1]) == []
-    assert arcade.drafts(State(tmp_path / "state.json"), uid)  # 種の下書きは dip に保存された
+    assert arcade.drafts(State(tmp_path / "state.json"), uid)  # 種の下書きは事業者に保存された
 
 
 # ----------------------------- Web: 音声相談の設定が無ければ勧めない -----------------------------

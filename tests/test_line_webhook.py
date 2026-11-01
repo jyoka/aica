@@ -1,5 +1,5 @@
 """LINE 公式アカウントの webhook(task 177)。実 LINE も実 LLM も呼ばない: LINE の API は偽物(httpx.MockTransport)、
-LLM は決められた順に返す偽のモデル、dip の MCP は本物。LINE のサーバーと同じく、署名を付けた webhook を POST する。"""
+LLM は決められた順に返す偽のモデル、事業者の MCP は本物。LINE のサーバーと同じく、署名を付けた webhook を POST する。"""
 
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
-from dip_mcp import data
-from dip_mcp.data import State, load_jobs
 from line_runtime import line_channel
 from line_runtime.fake_line import FakeLinePlatform
 from line_runtime.line_channel import LINE_ID, LineApi, line_user, to_messages
 from line_runtime.quota import JST
+from provider_mcp import data
+from provider_mcp.data import State, load_jobs
 from tests.test_handle import call, reply
 from tests.test_revisit import Greeter, _tool_result, greet, propose
 
@@ -80,7 +80,7 @@ class FakeLine:
 
 
 def _server(tmp_path, monkeypatch, model, fake: FakeLine | None = None, configured: bool = True, **env: str):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")
     for k in LINE_ENVS + QUOTA_ENVS:
@@ -124,7 +124,7 @@ def _post(client, events: list[dict], signature: str | None = "sign") -> httpx.R
 
 
 def _search_and_propose(uid: str) -> Greeter:
-    """「渋谷で日中」に、dip の recommend_jobs で探して、返った求人をカードにして返す偽のモデル。"""
+    """「渋谷で日中」に、事業者の recommend_jobs で探して、返った求人をカードにして返す偽のモデル。"""
     return Greeter(script=[call("recommend_jobs", {"line_user_id": uid, "area": "渋谷", "time_band": "日中"}, "rec"),
                            propose])
 
@@ -148,7 +148,7 @@ def test_signed_text_message_is_answered_once_with_text_quick_replies_and_job_fl
     texts = [m for m in body["messages"] if m["type"] == "text"]
     (flex,) = [m for m in body["messages"] if m["type"] == "flex"]
     assert [t["text"] for t in texts] == ["条件に合う求人です。気になるものはありますか?"]
-    # 求人は、このターンに dip の recommend_jobs が返したもの(偽のモデルはツールの結果の ID をそのまま返す)
+    # 求人は、このターンに事業者の recommend_jobs が返したもの(偽のモデルはツールの結果の ID をそのまま返す)
     bubbles = flex["contents"]["contents"]
     assert flex["contents"]["type"] == "carousel" and 1 <= len(bubbles) <= 3
     saves = [re.fullmatch(r"「(.+)」\((\w+)\)を保存して", b["footer"]["contents"][1]["action"]["text"]) for b in bubbles]
@@ -159,7 +159,7 @@ def test_signed_text_message_is_answered_once_with_text_quick_replies_and_job_fl
     assert len(body["messages"]) <= 5
 
 
-def test_cards_are_only_jobs_dip_returned(tmp_path, monkeypatch):
+def test_cards_are_only_jobs_provider_returned(tmp_path, monkeypatch):
     """モデルが作った求人 ID はカードにしない(render の決まりのまま)。"""
     model = Greeter(script=[reply(["こちらはいかがですか?"], job_ids=["zz999"])])
     server, fake = _server(tmp_path, monkeypatch, model)
@@ -390,7 +390,7 @@ def test_first_text_without_follow_starts_a_conversation_and_the_next_one_contin
 
 def test_new_conversation_after_30_minutes_still_gets_saved_preferences_and_the_consultation_summary(
         tmp_path, monkeypatch):
-    """前の会話で保存した希望と相談のまとめは、31 分後に始まった新しい会話でも dip の要約からエージェントに渡る。"""
+    """前の会話で保存した希望と相談のまとめは、31 分後に始まった新しい会話でも事業者の要約からエージェントに渡る。"""
     uid = line_user(RAW_USER)
     note = "渋谷で日中のカフェを探している。次は週の日数を確かめる。"
     got: dict = {}
@@ -478,7 +478,7 @@ def test_without_line_settings_the_server_starts_without_an_id_key(tmp_path, mon
 def test_line_user_ids_are_made_only_by_line_user():
     """LINE のユーザーID(l-…)を作るのは line_channel.line_user だけ(ほかの所で鍵なしの ID を作らない)。"""
     root = Path(__file__).resolve().parents[1]
-    makers = [p.relative_to(root).as_posix() for d in ("dip_mcp", "line_runtime", "evals", "voice_resume", "scripts")
+    makers = [p.relative_to(root).as_posix() for d in ("provider_mcp", "line_runtime", "evals", "voice_resume", "scripts")
               for p in (root / d).rglob("*.py") if re.search(r"[\"']l-[\"']", p.read_text(encoding="utf-8"))]
     assert makers == ["line_runtime/line_channel.py"]
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>バイトル AIアシスタント</title>
+<title>aica AIアシスタント</title>
 <style>
   /* LINE トークルーム風(スマホ前提の1画面)。端末のダークモードに関係なくこの配色で固定。
      開発者画面(/dev の dev.html)と同じ部品・配色を使う */
@@ -122,7 +122,7 @@
 </head>
 <body>
 <div class="app">
-  <header><span class="name">バイトル</span><span class="track" id="track" hidden></span></header>
+  <header><span class="name">aica</span><span class="track" id="track" hidden></span></header>
   <p class="legal-bar" id="legal-bar">テスト用の公開です。求人は架空のデモで、応募しても実際の応募にはなりません。
     <a href="/legal/terms" target="_blank" rel="noopener">利用規約</a> · <a href="/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a></p>
   <main>
@@ -162,7 +162,7 @@
   const { el, sys, me, botCol, disableChips, renderReply } = talk;
   function setBusy(on) { busy = on; sendBtn.disabled = on || !current; talk.setEnabled(!on && !!current); }
 
-  // ヘッダーの今の雇用区分(dip の記録。開いたとき・返信・切り替えの取り消し・プロフィールで変えたときに直す)。
+  // ヘッダーの今の雇用区分(事業者の記録。開いたとき・返信・切り替えの取り消し・プロフィールで変えたときに直す)。
   // 未定のときは出さない(区分はプロフィールで確かめられる)
   const TRACK_HEADER = { "正社員": "正社員で相談中", "アルバイト・パート": "アルバイト・パートで相談中" };
   function setTrack(t) {
@@ -475,10 +475,10 @@
     try { await api("POST", profileUrl("/forget")); }
     catch (e) { alert(e.message); return; }
     log.innerHTML = ""; thread = null; setTrack("未定");
-    showView("talk"); start();  // 開き直す: dip は初回訪問として挨拶から始める
+    showView("talk"); start();  // 開き直す: 事業者は初回訪問として挨拶から始める
   }
 
-  // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを dip が決めて AI 側の1通目から始める ----------
+  // ---------- 開いたら: 30分以内なら今の会話を続け、それ以外は初回訪問か再訪かを事業者が決めて AI 側の1通目から始める ----------
   // 使い始める同意がまだなら(初めて開いたとき、版が上がったとき)、挨拶の前に同意の画面を出す。押すまで LLM を呼ばない
   async function start() {
     setBusy(true);

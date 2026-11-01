@@ -30,7 +30,7 @@ JOBS = [
 ]
 
 
-class FakeDip:
+class FakeProvider:
     """recommend_jobs / relax_conditions / 書き込みツールの呼び出しを記録して、決まった結果を返す。"""
 
     def __init__(
@@ -66,7 +66,7 @@ class FakeDip:
         self, user_id: str, outcome: str, reason: str, confidence: float, summary: str | None = None,
         room: str | None = None,
     ) -> dict:
-        if outcome not in ("propose", "consult"):  # 実物の DipMCP と同じ制限
+        if outcome not in ("propose", "consult"):  # 実物の ProviderMCP と同じ制限
             raise ValueError("voice-resume から記録できる outcome は propose / consult だけ")
         self.outcome_calls.append({
             "line_user_id": user_id, "outcome": outcome, "reason": reason,
@@ -75,7 +75,7 @@ class FakeDip:
         return {"recorded": {"outcome": outcome}}
 
 
-class SequenceDip:
+class SequenceProvider:
     """呼び出しごとに決まった結果を順に返す(検索し直しの台本用)。"""
 
     def __init__(self, results: list[dict]):
@@ -114,15 +114,15 @@ def test_tool_docs_require_same_turn_call():
 
 def test_propose_jobs_builds_args_from_heard_wishes():
     """会話で聞いた希望から recommend_jobs の引数が作られる(検索に使わない項目は渡さない)。"""
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(
         advisor.propose_jobs(
             job_type="カフェ", time_band="夕方", min_wage=1100,
             days_per_week=2, other_wishes="平日に入りたい",
         )
     )
-    assert dip.calls == [{"job_type": "カフェ", "time_band": "夕方", "min_wage": 1100}]
+    assert provider.calls == [{"job_type": "カフェ", "time_band": "夕方", "min_wage": 1100}]
     # 希望条件は日数やその他の希望も含めて記録される(out/ の job-proposal に入る)
     assert advisor.preferences == {
         "job_type": "カフェ", "time_band": "夕方", "min_wage": 1100,
@@ -134,38 +134,38 @@ def test_propose_jobs_builds_args_from_heard_wishes():
     assert "時給1120円" in reply
 
 
-def test_propose_jobs_passes_wide_area_through_to_dip():
-    """会話ログ(2026-09-26)の「東京都内」は、言い換えず dip 側へ渡す(dip が範囲の地名に広げる)。"""
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+def test_propose_jobs_passes_wide_area_through_to_provider():
+    """会話ログ(2026-09-26)の「東京都内」は、言い換えず事業者側へ渡す(事業者が範囲の地名に広げる)。"""
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="東京都内", time_band="日中"))
-    assert dip.calls == [{"job_type": "カフェ", "area": "東京都内", "time_band": "日中"}]
+    assert provider.calls == [{"job_type": "カフェ", "area": "東京都内", "time_band": "日中"}]
 
 
-def test_propose_jobs_rejects_unknown_job_type_without_calling_dip():
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+def test_propose_jobs_rejects_unknown_job_type_without_calling_provider():
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="喫茶店"))
     assert "引数が不正" in reply
-    assert dip.calls == []
+    assert provider.calls == []
 
 
 def test_propose_jobs_limits_to_three():
-    dip = FakeDip(result={"total": 9, "jobs": JOBS + JOBS})
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider(result={"total": 9, "jobs": JOBS + JOBS})
+    advisor = ResumeAdvisor(provider=provider)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert len(advisor.proposed_jobs) == 3
 
 
-def test_propose_jobs_passes_through_dip_error():
-    dip = FakeDip(result={"error": "職種「カフェ屋」は一覧にありません", "job_types": []})
-    advisor = ResumeAdvisor(dip=dip)
+def test_propose_jobs_passes_through_provider_error():
+    provider = FakeProvider(result={"error": "職種「カフェ屋」は一覧にありません", "job_types": []})
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "検索エラー" in reply
 
 
-def test_propose_jobs_without_dip_degrades_gracefully():
-    advisor = ResumeAdvisor(dip=None)
+def test_propose_jobs_without_provider_degrades_gracefully():
+    advisor = ResumeAdvisor(provider=None)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "提案できません" in reply
 
@@ -179,14 +179,14 @@ def test_zero_hits_calls_relax_conditions_and_offers_concrete_options():
     2026-09-26 の会話の再現: エリア「東京都内」で0件のまま、AI が当てずっぽうで
     時給や職種を変えて検索し続け、一度もエリアに手を付けなかった。
     """
-    dip = FakeDip(
+    provider = FakeProvider(
         result=ZERO,
         relax_result={"total_now": 0, "options": [{"remove": "area", "current": "東京都内", "total_after": 5}]},
     )
-    advisor = ResumeAdvisor(dip=dip)
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ", area="東京都内", min_wage=1400))
     # 検索と同じ条件で relax_conditions が呼ばれる
-    assert dip.relax_calls == [{"job_type": "カフェ", "area": "東京都内", "min_wage": 1400}]
+    assert provider.relax_calls == [{"job_type": "カフェ", "area": "東京都内", "min_wage": 1400}]
     # 「エリアを外すと5件」のように具体的に伝わり、本人に一度で選んでもらう
     assert "エリア(東京都内)を外すと5件" in reply
     assert "選んで" in reply
@@ -196,17 +196,17 @@ def test_zero_hits_calls_relax_conditions_and_offers_concrete_options():
 
 def test_zero_hits_without_relax_options_says_so_honestly():
     """どの条件を外しても増えないときは、そう伝えて当てずっぽうの再検索をさせない。"""
-    dip = FakeDip(result=ZERO, relax_result={"total_now": 0, "options": []})
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider(result=ZERO, relax_result={"total_now": 0, "options": []})
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
-    assert dip.relax_calls == [{"job_type": "カフェ"}]
+    assert provider.relax_calls == [{"job_type": "カフェ"}]
     assert "見つかりませんでした" in reply
     assert "当てずっぽう" in reply
 
 
 def test_zero_hits_when_relax_conditions_fails_keeps_the_conversation_going():
-    dip = FakeDip(result=ZERO, relax_error=RuntimeError("boom"))
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider(result=ZERO, relax_error=RuntimeError("boom"))
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "見つかりませんでした" in reply
     # 調べられなかったのに「増えないことも確認済み」と嘘をつかない
@@ -216,8 +216,8 @@ def test_zero_hits_when_relax_conditions_fails_keeps_the_conversation_going():
 
 def test_zero_hits_when_relax_conditions_returns_error_does_not_claim_checked():
     """relax_conditions が error を返したときも「確認済み」と言わず、正直に伝える。"""
-    dip = FakeDip(result=ZERO, relax_result={"error": "だめでした"})
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider(result=ZERO, relax_result={"error": "だめでした"})
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "見つかりませんでした" in reply
     assert "確認済み" not in reply
@@ -226,26 +226,26 @@ def test_zero_hits_when_relax_conditions_returns_error_does_not_claim_checked():
 
 def test_relax_drops_condition_from_search_but_keeps_the_wish():
     """ゆるめた条件は「検索のために外した」として持ち、本人の希望は書き換えない(タスク34)。"""
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="東京都内", min_wage=1400, relax=["area"]))
-    assert dip.calls == [{"job_type": "カフェ", "min_wage": 1400}]  # 検索からはエリアを外す
+    assert provider.calls == [{"job_type": "カフェ", "min_wage": 1400}]  # 検索からはエリアを外す
     assert advisor.preferences["area"] == "東京都内"  # 希望はそのまま
     assert advisor.relaxed == {"area": "東京都内"}  # 外したことが分かる
     assert advisor.recommend_args == {"job_type": "カフェ", "min_wage": 1400}
 
 
-def test_relax_rejects_unknown_condition_name_without_calling_dip():
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+def test_relax_rejects_unknown_condition_name_without_calling_provider():
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ", relax=["salary"]))
     assert "引数が不正" in reply
-    assert dip.calls == []
+    assert provider.calls == []
 
 
 def test_new_search_without_relax_clears_the_previous_relaxed():
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="東京都内", relax=["area"]))
     assert advisor.relaxed == {"area": "東京都内"}
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="中野"))
@@ -258,8 +258,8 @@ def test_finalize_writes_draft_preferences_and_job_ids(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
     monkeypatch.setattr(config, "WRITE_FILES", True)
     draft_client = _FakeDraftClient()
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip, draft_client_factory=lambda: draft_client)
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider, draft_client_factory=lambda: draft_client)
     asyncio.run(advisor.propose_jobs(
         job_type="カフェ", area="東京都内", time_band="夕方", min_wage=1100, relax=["area"]
     ))
@@ -294,10 +294,10 @@ def test_finalize_writes_draft_preferences_and_job_ids(tmp_path, monkeypatch):
 
 def test_propose_jobs_without_job_type_searches_without_guessing():
     """職種を決めていない人には、職種の条件を付けずに検索する(推測で埋めない)。"""
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip)
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider)
     asyncio.run(advisor.propose_jobs(time_band="日中", min_wage=1500))
-    assert dip.calls == [{"time_band": "日中", "min_wage": 1500}]
+    assert provider.calls == [{"time_band": "日中", "min_wage": 1500}]
     assert "job_type" not in advisor.preferences
 
 
@@ -323,12 +323,12 @@ def test_zero_hit_research_keeps_already_proposed_jobs(tmp_path, monkeypatch):
     job-proposal の proposed_job_ids に最初の提案が残る。
     """
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
-    dip = SequenceDip([
+    provider = SequenceProvider([
         {"total": 3, "jobs": JOBS},
         {"total": 0, "jobs": []},
     ])
     draft_client = _FakeDraftClient()
-    advisor = ResumeAdvisor(dip=dip, draft_client_factory=lambda: draft_client)
+    advisor = ResumeAdvisor(provider=provider, draft_client_factory=lambda: draft_client)
 
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "3件" in reply
@@ -354,13 +354,13 @@ def test_relaxed_search_does_not_rewrite_stated_wishes(tmp_path, monkeypatch):
     検索の経緯(1500 → 1400 → 下限なし+カフェ)は search_attempts 側に分かれて残る。
     """
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
-    dip = SequenceDip([
+    provider = SequenceProvider([
         {"total": 0, "jobs": []},
         {"total": 0, "jobs": []},
         {"total": 3, "jobs": JOBS},
     ])
     draft_client = _FakeDraftClient()
-    advisor = ResumeAdvisor(dip=dip, draft_client_factory=lambda: draft_client)
+    advisor = ResumeAdvisor(provider=provider, draft_client_factory=lambda: draft_client)
 
     # 本人が言った希望で検索(職種は決めていないので入れない)
     reply = asyncio.run(
@@ -426,7 +426,7 @@ def _statuses(room: _FakeRoom) -> list[dict]:
 def test_propose_jobs_shows_what_it_is_doing_then_clears_it():
     """求人検索の間、画面に「探しています…」が出て、終わると消える(始まり → 結果 → 終わり)。"""
     room = _FakeRoom()
-    advisor = ResumeAdvisor(dip=FakeDip(), room=room)
+    advisor = ResumeAdvisor(provider=FakeProvider(), room=room)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert [m["type"] for m in room.published] == ["status", "jobs", "status"]
     start, done = _statuses(room)
@@ -438,7 +438,7 @@ def test_propose_jobs_shows_what_it_is_doing_then_clears_it():
 def test_research_shows_a_relaxed_label_and_clears_even_on_zero_hits():
     """条件を変えた再検索(relax / search_only)は「探し直しています…」。0件でも表示は消える。"""
     room = _FakeRoom()
-    advisor = ResumeAdvisor(dip=FakeDip(result=ZERO), room=room)
+    advisor = ResumeAdvisor(provider=FakeProvider(result=ZERO), room=room)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="東京都内", relax=["area"]))
     start, done = _statuses(room)
     assert start["label"] == "🔍 条件を変えて探し直しています…"
@@ -446,9 +446,9 @@ def test_research_shows_a_relaxed_label_and_clears_even_on_zero_hits():
 
 
 def test_propose_jobs_failure_still_clears_the_working_status():
-    """dip が落ちても(タイムアウト・接続断)、表示が残り続けない。"""
+    """事業者が落ちても(タイムアウト・接続断)、表示が残り続けない。"""
     room = _FakeRoom()
-    advisor = ResumeAdvisor(dip=FakeDip(error=RuntimeError("timeout")), room=room)
+    advisor = ResumeAdvisor(provider=FakeProvider(error=RuntimeError("timeout")), room=room)
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "失敗" in reply
     assert _statuses(room)[-1]["done"] is True
@@ -457,7 +457,7 @@ def test_propose_jobs_failure_still_clears_the_working_status():
 def test_invalid_args_do_not_flash_the_working_status():
     """引数の検証で即返るときは、表示を出さない(一瞬で消える表示を出さない)。"""
     room = _FakeRoom()
-    advisor = ResumeAdvisor(dip=FakeDip(), room=room)
+    advisor = ResumeAdvisor(provider=FakeProvider(), room=room)
     asyncio.run(advisor.propose_jobs(job_type="喫茶店"))
     assert _statuses(room) == []
 
@@ -520,20 +520,20 @@ class _FakePoster:
         self.calls.append((url, payload))
 
 
-def _talk_advisor(dip, poster=None, stated=None, tmp_out=None, monkeypatch=None):
+def _talk_advisor(provider, poster=None, stated=None, tmp_out=None, monkeypatch=None):
     if tmp_out is not None:
         monkeypatch.setattr(config, "OUT_DIR", tmp_out)
     return ResumeAdvisor(
-        dip=dip, user_id="sim-new", stated_preferences=stated,
+        provider=provider, user_id="sim-new", stated_preferences=stated,
         talk_poster=poster or _FakePoster(),
         draft_client_factory=_FakeDraftClient,
     )
 
 
 def test_propose_jobs_with_line_user_saves_stated_wishes_and_searches_as_that_user():
-    """LINE から入った相談では、本人が言った希望が dip に保存され、検索も本人のIDで行われる。"""
-    dip = FakeDip()
-    advisor = _talk_advisor(dip)
+    """LINE から入った相談では、本人が言った希望が事業者に保存され、検索も本人のIDで行われる。"""
+    provider = FakeProvider()
+    advisor = _talk_advisor(provider)
     asyncio.run(advisor.propose_jobs(
         job_type="カフェ", area="東京都内", time_band="夕方", min_wage=1400,
         days_per_week=3, experience="コンビニで1年半", skills="レジ打ちと品出し",
@@ -541,13 +541,13 @@ def test_propose_jobs_with_line_user_saves_stated_wishes_and_searches_as_that_us
     ))
     # 検索は本人の user_id つき(本人の傾向・応募済み除外が効く)。
     # experience / skills / certifications は検索条件には入れない(プロフィールとして保存するだけ)
-    assert dip.calls == [{
+    assert provider.calls == [{
         "line_user_id": "sim-new", "job_type": "カフェ", "area": "東京都内",
         "time_band": "夕方", "min_wage": 1400,
     }]
-    # 保存されるのは dip の項目(area / time_band / job_type / min_wage / experience /
-    # days_per_week / skills / certifications)だけ。other_wishes は dip の項目に無いので保存しない
-    assert dip.save_calls == [{
+    # 保存されるのは事業者の項目(area / time_band / job_type / min_wage / experience /
+    # days_per_week / skills / certifications)だけ。other_wishes は事業者の項目に無いので保存しない
+    assert provider.save_calls == [{
         "line_user_id": "sim-new",
         "preferences": {"job_type": "カフェ", "area": "東京都内", "time_band": "夕方",
                         "min_wage": 1400, "days_per_week": 3, "experience": "コンビニで1年半",
@@ -557,49 +557,49 @@ def test_propose_jobs_with_line_user_saves_stated_wishes_and_searches_as_that_us
 
 def test_relaxed_or_guessed_search_conditions_are_not_saved_as_wishes():
     """検索のためにゆるめた条件や、検索のためだけの職種(search_only)は希望として保存されない。"""
-    dip = FakeDip()
-    advisor = _talk_advisor(dip)
+    provider = FakeProvider()
+    advisor = _talk_advisor(provider)
     # 本人が言った希望(時給1500・日中)。エリアは検索のために外す(relax)
     asyncio.run(advisor.propose_jobs(area="東京都内", time_band="日中", min_wage=1500, relax=["area"]))
     # 保存されるのは本人が言った値のまま(外したことは保存に影響しない)
-    assert dip.save_calls == [{
+    assert provider.save_calls == [{
         "line_user_id": "sim-new",
         "preferences": {"area": "東京都内", "time_band": "日中", "min_wage": 1500},
     }]
     # 見つからず、本人の同意を得て検索条件だけを変える(時給を下げ、職種カフェで試す)
     asyncio.run(advisor.propose_jobs(time_band="日中", min_wage=1400, job_type="カフェ", search_only=True))
     # search_only の条件(下げた時給・試した職種)は希望として保存されない
-    assert len(dip.save_calls) == 1
+    assert len(provider.save_calls) == 1
     assert advisor.preferences == {"area": "東京都内", "time_band": "日中", "min_wage": 1500}
 
 
-def test_standalone_advisor_never_writes_to_dip(tmp_path, monkeypatch):
-    """単体(ユーザー不明)の相談では、従来どおり dip に何も書かない(task 31 の決まりのまま)。"""
+def test_standalone_advisor_never_writes_to_provider(tmp_path, monkeypatch):
+    """単体(ユーザー不明)の相談では、従来どおり事業者に何も書かない(task 31 の決まりのまま)。"""
     monkeypatch.setattr(config, "OUT_DIR", tmp_path)
-    dip = FakeDip()
+    provider = FakeProvider()
     poster = _FakePoster()
-    advisor = ResumeAdvisor(dip=dip, draft_client_factory=_FakeDraftClient, talk_poster=poster)
+    advisor = ResumeAdvisor(provider=provider, draft_client_factory=_FakeDraftClient, talk_poster=poster)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", min_wage=1100))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     asyncio.run(advisor.finalize_interview())
-    assert dip.save_calls == [] and dip.outcome_calls == []
+    assert provider.save_calls == [] and provider.outcome_calls == []
     assert poster.calls == [] and advisor.delivered_to_talk is False
-    assert "line_user_id" not in dip.calls[0]
+    assert "line_user_id" not in provider.calls[0]
 
 
 def test_finalize_records_propose_and_returns_the_result_to_the_talk(tmp_path, monkeypatch):
     """終わると、結果が propose で記録され、求人カードと下書きがトークへ戻る。"""
-    dip = FakeDip()
+    provider = FakeProvider()
     poster = _FakePoster()
-    advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
+    advisor = _talk_advisor(provider, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", min_wage=1100))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     reply = asyncio.run(advisor.finalize_interview())
 
     # 記録は propose(求人を提案した)。wait は決して記録しない(断っていない人を wait にしない)
-    assert [c["outcome"] for c in dip.outcome_calls] == ["propose"]
-    assert "音声相談" in dip.outcome_calls[0]["reason"]
-    # トークへ戻す中身: dip が返した求人カードのまま + 下書きの Markdown
+    assert [c["outcome"] for c in provider.outcome_calls] == ["propose"]
+    assert "音声相談" in provider.outcome_calls[0]["reason"]
+    # トークへ戻す中身: 事業者が返した求人カードのまま + 下書きの Markdown
     (url, payload), = poster.calls
     assert url.endswith("/api/voice/result")
     assert payload["user_id"] == "sim-new"
@@ -615,9 +615,9 @@ def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):
     """締めの後に「面談を終える」ボタンなどで finalize がもう一度呼ばれても、
     OUT_DIR への追記(開発で書き出すとき)・結果の記録・トークへの送信は1回分のまま(2回目は前回の結果を返すだけ)。"""
     monkeypatch.setattr(config, "WRITE_FILES", True)
-    dip = FakeDip()
+    provider = FakeProvider()
     poster = _FakePoster()
-    advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
+    advisor = _talk_advisor(provider, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", min_wage=1100))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     first = asyncio.run(advisor.finalize_interview())
@@ -626,7 +626,7 @@ def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):
 
     second = asyncio.run(advisor.finalize_interview())
     # 副作用は1回分のまま: 結果の記録・トークへの送信・out/ のファイル
-    assert len(dip.outcome_calls) == 1
+    assert len(provider.outcome_calls) == 1
     assert len(poster.calls) == 1
     assert sorted(p.name for p in tmp_path.iterdir()) == files_after_first
     # 2回目は保存済みであることを伝えつつ、前回の結果(締めの案内)を返す
@@ -635,20 +635,20 @@ def test_finalize_twice_saves_and_records_only_once(tmp_path, monkeypatch):
 
 
 def test_finalize_without_proposals_records_consult(tmp_path, monkeypatch):
-    dip = FakeDip(result=ZERO)
-    advisor = _talk_advisor(dip, tmp_out=tmp_path, monkeypatch=monkeypatch)
+    provider = FakeProvider(result=ZERO)
+    advisor = _talk_advisor(provider, tmp_out=tmp_path, monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     asyncio.run(advisor.finalize_interview())
-    assert [c["outcome"] for c in dip.outcome_calls] == ["consult"]
+    assert [c["outcome"] for c in provider.outcome_calls] == ["consult"]
 
 
 def test_finalize_keeps_the_draft_when_the_talk_delivery_fails(tmp_path, monkeypatch):
     """開発で書き出すとき、トーク(line_runtime)が落ちていても、下書きは OUT_DIR に残り、面談は締められる。"""
     monkeypatch.setattr(config, "WRITE_FILES", True)
-    dip = FakeDip()
+    provider = FakeProvider()
     poster = _FakePoster(error=RuntimeError("connection refused"))
-    advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
+    advisor = _talk_advisor(provider, poster=poster, tmp_out=tmp_path, monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     reply = asyncio.run(advisor.finalize_interview())
@@ -660,17 +660,17 @@ def test_finalize_keeps_the_draft_when_the_talk_delivery_fails(tmp_path, monkeyp
 def test_by_default_a_failed_talk_delivery_is_not_told_as_saved(tmp_path, monkeypatch):
     """既定(書き出さない)で、トークに届かなかったら下書きはどこにも残らない。面談は締めるが「保存した」とは言わない。"""
     monkeypatch.setattr(config, "WRITE_FILES", False)
-    dip = FakeDip()
+    provider = FakeProvider()
     poster = _FakePoster(error=RuntimeError("connection refused"))
-    advisor = _talk_advisor(dip, poster=poster, tmp_out=tmp_path / "voice-resume", monkeypatch=monkeypatch)
+    advisor = _talk_advisor(provider, poster=poster, tmp_out=tmp_path / "voice-resume", monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     reply = asyncio.run(advisor.finalize_interview())
     assert advisor.delivered_to_talk is False and advisor.finalized["files"] == []
     assert "保存しました" not in reply and "残せませんでした" in reply
     assert not (tmp_path / "voice-resume").exists()
-    # dip の記録にも「保存した」とは書かない
-    assert "保存した" not in dip.outcome_calls[0]["reason"] and "残っていない" in dip.outcome_calls[0]["reason"]
+    # 事業者の記録にも「保存した」とは書かない
+    assert "保存した" not in provider.outcome_calls[0]["reason"] and "残っていない" in provider.outcome_calls[0]["reason"]
 
 
 def test_a_rejected_talk_delivery_is_logged_as_an_error_without_the_contents(tmp_path, monkeypatch, caplog):
@@ -684,8 +684,8 @@ def test_a_rejected_talk_delivery_is_logged_as_an_error_without_the_contents(tmp
     info = aiohttp.RequestInfo(url, "POST", CIMultiDictProxy(CIMultiDict()), url)
     rejected = aiohttp.ClientResponseError(info, (), status=401, message="Unauthorized")
     monkeypatch.setattr(config, "WRITE_FILES", False)
-    dip = FakeDip()
-    advisor = _talk_advisor(dip, poster=_FakePoster(error=rejected), tmp_out=tmp_path, monkeypatch=monkeypatch)
+    provider = FakeProvider()
+    advisor = _talk_advisor(provider, poster=_FakePoster(error=rejected), tmp_out=tmp_path, monkeypatch=monkeypatch)
     asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
     caplog.set_level("INFO", logger="voice-resume")
@@ -814,7 +814,7 @@ def test_research_with_personal_values_is_refused_without_searching(monkeypatch)
 
 
 REF = WageReference(
-    survey="マイナビ アルバイト・パート平均時給レポート", period="2026年8月", source="マイナビキャリアリサーチLab",
+    survey="民間の平均時給調査", period="2026年8月", source="民間の平均時給調査",
     entries=[WageEntry(area="全国", average_wage=1303), WageEntry(area="東京都", average_wage=1428)],
 )
 
@@ -855,12 +855,12 @@ def test_fetch_reference_uses_web_search_and_stamps_the_date():
 
     async def parse(**kwargs):
         captured.update(kwargs)
-        return SimpleNamespace(output_parsed=REF.model_copy(update={"source": "マイナビ ([m.jp](https://m.jp/x.pdf))"}))
+        return SimpleNamespace(output_parsed=REF.model_copy(update={"source": "民間の平均時給調査 ([m.jp](https://m.jp/x.pdf))"}))
 
     client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
     ref = asyncio.run(fetch_reference(client, "gpt-6-sol", "2026-09-26"))
     assert ref.fetched_at == "2026-09-26"
-    assert ref.source == "マイナビ"  # 読み上げる情報源にリンクを残さない
+    assert ref.source == "民間の平均時給調査"  # 読み上げる情報源にリンクを残さない
     assert captured["tools"] == [{"type": "web_search"}] and captured["text_format"] is WageReference
     assert captured["store"] is False
 
@@ -887,53 +887,53 @@ def test_propose_jobs_passes_work_style_only_in_a_fulltime_interview():
     """正社員の音声でも働き方・休日(remote / weekends_holidays / max_overtime_hours)で絞る。
     負例: アルバイト・パートの面談では渡さない(アルバイト・パートの求人には働き方の情報が無く、渡すと全部外れる)。
     属性(人と話す量・体を使う量)はどちらの区分でも渡す。"""
-    fulltime = FakeDip()
-    asyncio.run(ResumeAdvisor(dip=fulltime, track="正社員").propose_jobs(
+    fulltime = FakeProvider()
+    asyncio.run(ResumeAdvisor(provider=fulltime, track="正社員").propose_jobs(
         job_type="営業", min_annual_salary=400, **STYLE, **ATTRS))
     assert fulltime.calls[0].items() >= {**STYLE, **ATTRS}.items()
 
-    parttime = FakeDip()
-    asyncio.run(ResumeAdvisor(dip=parttime, track="アルバイト・パート").propose_jobs(
+    parttime = FakeProvider()
+    asyncio.run(ResumeAdvisor(provider=parttime, track="アルバイト・パート").propose_jobs(
         job_type="カフェ", **STYLE, **ATTRS))
     assert parttime.calls[0].items() >= ATTRS.items()
     assert not set(STYLE) & set(parttime.calls[0])
 
-    unasked = FakeDip()  # 言っていない働き方・休日は正社員でも付けない
-    asyncio.run(ResumeAdvisor(dip=unasked, track="正社員").propose_jobs(job_type="営業", weekends_holidays=False))
+    unasked = FakeProvider()  # 言っていない働き方・休日は正社員でも付けない
+    asyncio.run(ResumeAdvisor(provider=unasked, track="正社員").propose_jobs(job_type="営業", weekends_holidays=False))
     assert not set(STYLE) & set(unasked.calls[0])
 
 
 def test_attribute_and_style_args_are_not_saved_as_preferences():
     """属性と働き方・休日は検索だけの引数: save_user_preferences にも、記録する希望にも入らない。
     負例: 一緒に言った職種と年収の下限は保存する。"""
-    dip = FakeDip()
-    advisor = ResumeAdvisor(dip=dip, track="正社員", user_id="u-test")
+    provider = FakeProvider()
+    advisor = ResumeAdvisor(provider=provider, track="正社員", user_id="u-test")
     asyncio.run(advisor.propose_jobs(job_type="営業", min_annual_salary=400, **STYLE, **ATTRS))
-    assert dip.calls and dip.save_calls
-    saved = {k for c in dip.save_calls for k in c["preferences"]}
+    assert provider.calls and provider.save_calls
+    saved = {k for c in provider.save_calls for k in c["preferences"]}
     assert "job_type" in saved and "min_annual_salary" in saved
     assert not saved & {*STYLE, *ATTRS}
     assert not set(advisor.preferences) & {*STYLE, *ATTRS}
 
 
 def test_excluded_jobs_are_searched_out_and_remembered_for_later_searches(tmp_path, monkeypatch):
-    """exclude_ids(出さない求人)は dip の検索に渡り、advisor が覚えて後の検索(0件のときの relax_conditions も)に
+    """exclude_ids(出さない求人)は事業者の検索に渡り、advisor が覚えて後の検索(0件のときの relax_conditions も)に
     合わせて渡す。検索の条件(recommend_args)には入れず、検索の経緯(search_attempts)に残す。
     0件の探し直しでは前の提案をそのまま残す(ユーザーの決定、2026-10-04)。"""
-    dip = FakeDip()
-    advisor = _talk_advisor(dip, tmp_out=tmp_path, monkeypatch=monkeypatch)
+    provider = FakeProvider()
+    advisor = _talk_advisor(provider, tmp_out=tmp_path, monkeypatch=monkeypatch)
 
     reply = asyncio.run(advisor.propose_jobs(job_type="カフェ"))
     assert "1件目(求人ID b0305)" in reply and "exclude_ids" in reply
-    dip.result = {"total": 0, "jobs": []}
+    provider.result = {"total": 0, "jobs": []}
     asyncio.run(advisor.propose_jobs(job_type="カフェ", exclude_ids=["b0304", "b0304"], search_only=True))
-    # 後で条件を変えて、exclude_ids を付けずに探しても、外した求人は dip に渡る(新しく外した分は足す)
+    # 後で条件を変えて、exclude_ids を付けずに探しても、外した求人は事業者に渡る(新しく外した分は足す)
     asyncio.run(advisor.propose_jobs(job_type="カフェ", area="中野", search_only=True))
     asyncio.run(advisor.propose_jobs(job_type="カフェ", exclude_ids=["b0301"], search_only=True))
 
-    assert "exclude_ids" not in dip.calls[0] and dip.calls[1]["exclude_ids"] == ["b0304"]
-    assert dip.calls[2]["exclude_ids"] == ["b0304"] and dip.calls[3]["exclude_ids"] == ["b0304", "b0301"]
-    assert [c["exclude_ids"] for c in dip.relax_calls] == [["b0304"], ["b0304"], ["b0304", "b0301"]]
+    assert "exclude_ids" not in provider.calls[0] and provider.calls[1]["exclude_ids"] == ["b0304"]
+    assert provider.calls[2]["exclude_ids"] == ["b0304"] and provider.calls[3]["exclude_ids"] == ["b0304", "b0301"]
+    assert [c["exclude_ids"] for c in provider.relax_calls] == [["b0304"], ["b0304"], ["b0304", "b0301"]]
     assert advisor.recommend_args == {"job_type": "カフェ"}
     assert [a.get("exclude_ids") for a in advisor.search_attempts] == [None, ["b0304"], ["b0304"], ["b0304", "b0301"]]
     # 0件の探し直しでは、前の提案(外した求人を含む)を変えない

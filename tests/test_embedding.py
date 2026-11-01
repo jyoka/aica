@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from dip_mcp import embedding, logic
-from dip_mcp.data import State, load_jobs
+from provider_mcp import embedding, logic
+from provider_mcp.data import State, load_jobs
 
 
 @pytest.fixture(autouse=True)
@@ -99,13 +99,13 @@ def test_missing_vectors_file_means_substring_only(state, monkeypatch, tmp_path)
 
 
 def test_keyword_searches_are_traced_only_when_the_eval_asks(state, monkeypatch, tmp_path):
-    """評価(evals/run.py)が DIP_KEYWORDS_TRACE を渡したときだけ、keywords の検索ごとに最高値 - 中央値と、意味検索を
+    """評価(evals/run.py)が PROVIDER_KEYWORDS_TRACE を渡したときだけ、keywords の検索ごとに最高値 - 中央値と、意味検索を
     使ったか(SIM_PEAK)を1行ずつ残す(task 109)。ツールの結果は変えない。"""
     trace = tmp_path / "keywords.jsonl"
     monkeypatch.setattr(embedding, "_api_embed", lambda *a, **kw: _stored_vector("b0701"))
     plain = logic.recommend(state, None, keywords="もくもくと働きたい")
     assert not trace.exists()
-    monkeypatch.setenv("DIP_KEYWORDS_TRACE", str(trace))
+    monkeypatch.setenv("PROVIDER_KEYWORDS_TRACE", str(trace))
     assert logic.recommend(state, None, keywords="もくもくと働きたい") == plain
     monkeypatch.setattr(embedding, "_api_embed", _fail_api)
     logic.recommend(state, None, keywords="まかない")  # API が使えないとき: peak は None、部分一致だけ
@@ -128,7 +128,7 @@ def test_sim_peak_is_judged_on_the_unrounded_gap(state, monkeypatch, tmp_path):
     plain = logic.recommend(state, None, keywords="zzz無関係な語zzz")
     assert plain["total"] == 0
     trace = tmp_path / "keywords.jsonl"
-    monkeypatch.setenv("DIP_KEYWORDS_TRACE", str(trace))
+    monkeypatch.setenv("PROVIDER_KEYWORDS_TRACE", str(trace))
     assert logic.recommend(state, None, keywords="zzz無関係な語zzz") == plain
     row = json.loads(trace.read_text(encoding="utf-8"))
     assert row["peak"] == round(gap, 3) == logic.SIM_PEAK and not row["semantic"] and row["kept"] == 0

@@ -17,7 +17,7 @@ python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 - 既定(`LINE_SIM_PROVIDER=anthropic`)では、`ANTHROPIC_API_KEY` が無いと Web プロセスは起動の途中で止まります。
 - 求人の意味検索(埋め込み)には OpenAI の鍵が要ります。Anthropic には埋め込みの API がないので、ここだけは
-  プロバイダの設定によらず OpenAI です(`dip_mcp/embedding.py`)。`OPENAI_API_KEY` が無くても起動し、検索は止まらず、
+  プロバイダの設定によらず OpenAI です(`provider_mcp/embedding.py`)。`OPENAI_API_KEY` が無くても起動し、検索は止まらず、
   言い換えを拾わない部分一致の検索に戻ります
 - トーク画面を初めて開くと、まず同意の画面が出ます(「同意して始める」を押すまで実 API を呼びません)。
   押すと、エージェントが挨拶のために実 API を呼び、費用がかかります(最後のやりとりから 30 分以内の開き直しは除く)。
@@ -262,10 +262,10 @@ LINE のユーザーと事業者の会員を、LINE の「アカウント連携�
 
 | ログインID | パスワード | 会員 | 行動 |
 |---|---|---|---|
-| `yoru@dip.test` | `demo-pass-1001` | D1001 | シーンA: 新宿の居酒屋に応募・夜希望 |
-| `exit@dip.test` | `demo-pass-1002` | D1002 | シーンB: コンビニ夜勤の応募フォームで離脱 |
-| `applied@dip.test` | `demo-pass-1004` | D1004 | シーンD: 居酒屋に応募・連絡待ち |
-| `browsing@dip.test` | `demo-pass-1005` | D1005 | 比較検討層: 閲覧・保存あり |
+| `yoru@provider.test` | `demo-pass-1001` | D1001 | シーンA: 新宿の居酒屋に応募・夜希望 |
+| `exit@provider.test` | `demo-pass-1002` | D1002 | シーンB: コンビニ夜勤の応募フォームで離脱 |
+| `applied@provider.test` | `demo-pass-1004` | D1004 | シーンD: 居酒屋に応募・連絡待ち |
+| `browsing@provider.test` | `demo-pass-1005` | D1005 | 比較検討層: 閲覧・保存あり |
 
 - 続けて 5 回まちがえると、15 分ログインできません
 - LINE と Web の匿名ユーザーは実際の時計なので、fixtures の会員の「2 時間前に離脱」などは、何日も前の出来事として読まれます。
@@ -281,7 +281,7 @@ LINE のユーザーと事業者の会員を、LINE の「アカウント連携�
 | LIFF 画面 | `/liff/*` | 事業者の画面のモック。応募フォーム、読み取り結果、下書き。Web のブラウザでは Cookie の匿名ユーザー、LINE のアプリでは `/liff/line/*`(LIFF の ID トークンで確かめた LINE のユーザー。音声相談と履歴書の読み込みの画面もある。上の「LINE で LIFF 画面を開く」) |
 | マイクの確認 | `/liff/line/mic-check` | LINE の LIFF の中でマイクと通話の部品が使えるかを試す。本人を決めない。LIFF の設定があるときだけ(上の「LINE の中でマイクが使えるかを確かめる」) |
 | レジュメ・アーケード | `/liff/arcade` | 遊びながら職務経歴書を作るゲームのハブ。先にトーク画面(`/`)を開いてから `http://127.0.0.1:8030/liff/arcade` を開くと、ハブの 2 本は AI(`LINE_SIM_PROVIDER` のプロバイダ)で遊べて、できた書類をプロフィールに保存できる。API キーが無い、上限に達した、AI が失敗したときは簡易分析で続く。プロフィールの「ゲームで作った下書き」からも入れる。ハブに出ない 6 本は開発者画面の左からリンクする(AI なし) |
-| 事業者のログイン | `/dip/login` | 事業者の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
+| 事業者のログイン | `/provider/login` | 事業者の画面のモック。アカウント連携のログイン(上の「アカウント連携を試す」) |
 | LINE の webhook | `POST /line/webhook` | 画面ではなく、LINE プラットフォームが呼ぶ口。設定したときだけ開く(上の「LINE で試す」) |
 
 - ブラウザごとに匿名ユーザーIDを Cookie で発行します。aica のログインはありません(URL を知っている知人だけが使う前提)。
@@ -299,13 +299,14 @@ LINE のユーザーと事業者の会員を、LINE の「アカウント連携�
 |---|---|---|
 | `python -m line_runtime.server` | Web プロセスを起動する(`127.0.0.1:8030`) | 挨拶と会話で使う |
 | `python -m voice_resume.agent dev` | 音声ワーカーを起動する | 使う |
-| `python -m dip_mcp.server --http 8020` | 事業者の MCP サーバーを別プロセスで起動する。Web プロセスには `DIP_MCP_URL=http://127.0.0.1:8020/mcp` を渡す。`--host 0.0.0.0` で外に開くときは `AICA_INTERNAL_KEY` が要り、鍵の無い要求は 401 | - |
+| `python -m provider_mcp.server --http 8020` | 事業者の MCP サーバーを別プロセスで起動する。Web プロセスには `PROVIDER_MCP_URL=http://127.0.0.1:8020/mcp` を渡す。`--host 0.0.0.0` で外に開くときは `AICA_INTERNAL_KEY` が要り、鍵の無い要求は 401 | - |
+| `python -m provider_mcp.legacy` | 旧い名前のデータを移すか、今のデータで起動してよいかを確かめる。Web プロセスの起動でも同じことをする。手元の `data/` が旧い名前のままなら `AICA_LEGACY_PREFIX` を付けて動かす([docs/deploy/render.md の「旧い名前からの移行」](deploy/render.md#旧い名前からの移行)) | 使わない |
 | `python -m pytest -q` | テスト | 使わない |
 | `node --test tests/js/arcade-ja.test.js` | レジュメ・アーケードの日本語の判定のテスト(pytest からも回る) | 使わない |
 | `python -m evals.run [--only B-exit] [--judge] [--repeat 2]` | 評価。模擬ユーザーとシナリオを会話させて採点する。予算台帳の累計が $4 で止まる | 使う |
 | `python -m evals.run --only F-follow-new --channel line --features resume_upload,arcade` | 評価を LINE のトークの窓口で回す(`--features` は LIFF 画面で使えるもの)。`--ledger <台帳> --limit-usd 1.0` で、PRD とは別の予算のカードの台帳と止める額を使う | 使う |
 | `python -m evals.run --rejudge 結果.json` | 保存した会話を、ジャッジだけで判定し直す | 使う |
-| `python -m evals.career_sim [--log DIR] [--version c2]` | 正社員のヒアリングのハーネス(`dip_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
+| `python -m evals.career_sim [--log DIR] [--version c2]` | 正社員のヒアリングのハーネス(`provider_mcp/career/`)の回帰。1/5 の事実表のペルソナ 6 人 × 形 B、C、D を、モックの本人役とモックの読み取りで回す。形 D は Flex の中の字も本人役が読む。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
 | `python -m evals.career_choices [--version c2]` | 正社員のヒアリングの評価シナリオ(答えの候補、スキップと中断、「他の候補」、あいまいな問い、聞き返し、PdM の規模の聞き返しの回帰、短気な本人役のモックの回帰)。全部の問い × 形 B、C、D。`--version c2` は会話の層の版(既定は c1)。最後に「すべて合格」 | 使わない |
 | `python -m evals.scenes [--entry career --version c1] [--version career=c2 --version baito=v5] [--scene ID] [-v] [--log DIR]` | 会話の層の場面の一覧(`evals/scenes/`)を回して、コードの条件を判定し、入り口と版ごとの点を出す。版は career が `c1`(既定)と `c2`、baito が `v4`(既定)と `v5`。「入り口=版」で渡した版は、入り口を移す先の版にもなる(baito の `v5` は、渡さなければ移る先の正社員を `c2` にする)。台本の LLM で回す(トークの AI はモック。判定は守りの前処理と、相談を始めないことだけ)。採点の条件は判定しない([evals/scenes/README.md](../evals/scenes/README.md)) | 使わない |
 | `python -m evals.scenes --real --entry career --version c2 --tag 名前 --ledger evals/budget-conversation-layer.jsonl --limit-usd 21 [--read-model claude-haiku-5-5] [--repeat 2]` | 場面の一覧を実モデルで回し、採点の条件もジャッジで判定する(設計メモ conversation-layer.md §5 の 9 枚目)。結果は `evals/results/scenes-real-<名前>.jsonl`。`python -m evals.scenes.real summary 結果.jsonl…` で点の表(費用 0) | 使う |
@@ -326,10 +327,11 @@ LINE のユーザーと事業者の会員を、LINE の「アカウント連携�
 | `python -m scripts.career_stamp` | 職歴カードの「完成」のスタンプ(16×16 のドット絵を 4 倍にした PNG。アーケードと同じ色)を `line_runtime/static/career/stamp.png` に作り直す。`/static/career/stamp.png` で出る | 使わない |
 | `python -m scripts.progress_ui_preview [--segment homemaker]` | アルバイト・パートの相談の、プロフィールが育つ UI(帯、プロフィールカード、完成)の写真を `docs/images/progress-ui/` に作る(偽のモデルで相談を進め、LINE の Flex をまねた HTML を撮る。Playwright が要る) | 使わない |
 | `python -m scripts.baito_icons [--sheet docs/images/baito-quick-start/icons.png]` | アルバイト・パートの相談の入口と結果のカードのアイコン(64×64 の PNG 5 枚)を、`docs/images/baito-quick-start/sprites.json` から `line_runtime/static/baito/` に作り直す。`/static/baito/{名前}.png` で出る。`--sheet` は 5 枚を並べた見本も作る | 使わない |
+| `python scripts/check_names.py --list <一覧のファイル>` | 一覧の名前(1 行に 1 つの正規表現)が、追跡中のファイルの中身と名前、画像のメタデータに残っていないかを調べる。見つかれば場所を出して 0 以外で終わる。[CONTRIBUTING.md](../CONTRIBUTING.md#固有の名前を確かめる) | 使わない |
 | `python -m scripts.gen_jobs` | 架空のアルバイト・パートの求人(`fixtures/jobs.json`)を作り直す | 使う |
 | `python -m scripts.gen_job_vectors` | 求人のベクトルを作り直す。求人を変えたら回す | 使う |
-| `python -m scripts.gen_dip_events [--members 1000] [--months 6] [--seed 0] [--replace]` | 事業者の行動の元データ(`data/dip_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
-| `python -m dip_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/dip_summaries.db`)を全員分作り直す。事業者のツールが読むのはこの要約で、会話の中で書いたこと(保存、応募など)は次のバッチまで本人の分だけ重ねて読む。要約が無ければ、最初にツールを使うときにシナリオのユーザーの分を作る。`data/` で回すと、開発者画面のシナリオユーザーが書いた分も要約に入る(シナリオの初期に戻すには `data/dip_events.db` と `data/dip_summaries.db` を消す) | 使わない |
+| `python -m scripts.gen_provider_events [--members 1000] [--months 6] [--seed 0] [--replace]` | 事業者の行動の元データ(`data/provider_events.db`)を作る。同じ種なら同じデータ。`--replace` で作り直したら、要約のバッチも回す | 使わない |
+| `python -m provider_mcp.summarize [--as-of 2026-09-23T12:00:00+09:00]` | 要約のバッチ。行動の元データから、会員 1 人 1 行の状況の要約(`data/provider_summaries.db`)を全員分作り直す。事業者のツールが読むのはこの要約で、会話の中で書いたこと(保存、応募など)は次のバッチまで本人の分だけ重ねて読む。要約が無ければ、最初にツールを使うときにシナリオのユーザーの分を作る。`data/` で回すと、開発者画面のシナリオユーザーが書いた分も要約に入る(シナリオの初期に戻すには `data/provider_events.db` と `data/provider_summaries.db` を消す) | 使わない |
 
 評価の判定と回し方は [LLD の 4.8](architecture/lld.md#48-評価の-1-シナリオevalsrunrun_scenario)、テストの仕組みは
 [LLD の 10 章](architecture/lld.md#10-テストと評価の仕組み)にあります。
@@ -349,7 +351,7 @@ README の「ドキュメント」の表より細かい、主な文書の一覧�
 | シナリオごとの会話設計と経緯 | [docs/design/line-sim-scenarios.md](design/line-sim-scenarios.md) |
 | aica v2(正社員まで広げる)の要件と予算 | [docs/prd/aica-v2-fulltime.md](prd/aica-v2-fulltime.md)(PRD) |
 | レジュメ・アーケード(遊びながら職務経歴書を作るゲーム)の要件 | [docs/prd/resume-arcade.md](prd/resume-arcade.md)(PRD) |
-| 決めたことの記録 | [ADR-0001](adr/0001-track-and-playbook-as-provider-tools.md) 雇用区分と playbook を事業者のツールにする、[ADR-0002](adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](adr/0006-tools-read-summary-and-overlay-own-writes.md) 事業者のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から dip_id を引く、[ADR-0008](adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
+| 決めたことの記録 | [ADR-0001](adr/0001-track-and-playbook-as-provider-tools.md) 雇用区分と playbook を事業者のツールにする、[ADR-0002](adr/0002-one-job-model-with-employment-type.md) 正社員の求人を同じ形で扱う、[ADR-0005](adr/0005-separate-event-log-and-member-summary.md) 行動の元データと状況の要約を分ける、[ADR-0006](adr/0006-tools-read-summary-and-overlay-own-writes.md) 事業者のツールは要約だけを読み、会話の中で書いたことは本人の分だけ重ねる、[ADR-0007](adr/0007-line-account-link-table.md) LINE のアカウント連携で結び、連携の表から provider_id を引く、[ADR-0008](adr/0008-keyed-line-user-id.md) LINE のユーザーIDは aica 専用の鍵つきのハッシュで作る |
 | イベントの受け付けと Resume Draft の契約を 1 か所にする設計メモ | [docs/design/consolidate-resume-draft-and-event-turn.md](design/consolidate-resume-draft-and-event-turn.md) |
 | 応募の先の設計の調査 | [docs/research/apply-flow.md](research/apply-flow.md) |
 | 個人情報の流れ、保存の期間、同意の設計(公開の前) | [docs/design/privacy.md](design/privacy.md) |

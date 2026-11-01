@@ -1,6 +1,6 @@
-"""正社員ヒアリングの c2(会話の層。dip_mcp/career/c2.py、設計メモ docs/design/conversation-layer.md §5 の 2 枚目)。
+"""正社員ヒアリングの c2(会話の層。provider_mcp/career/c2.py、設計メモ docs/design/conversation-layer.md §5 の 2 枚目)。
 
-実 LLM なし。本人から見た流れを、LINE の Webhook と本物のランタイムと dip の MCP で通す(偽の LINE、偽のモデル)。
+実 LLM なし。本人から見た流れを、LINE の Webhook と本物のランタイムと事業者の MCP で通す(偽の LINE、偽のモデル)。
 - 1 回の発言の複数の値: 勤務地の問いに「東京で500万以上、リモートがいい」→ 勤務地は「東京」だけ。年収とリモートは推測で入り、
   年収の問いを聞かない。まとめの「これでOK」で確かめた値として保存する
 - 危ない言葉: モデルを呼ばずに相談窓口の文(丁寧語)。「続ける」で同じ問いに戻る
@@ -19,15 +19,15 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.convo import guard
-from dip_mcp.data import State
 from line_runtime import baito_chat
 from line_runtime.career_chat import SCHEMAS, ReadOut
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.convo import guard
+from provider_mcp.data import State
 from tests.test_career_chat import USAGE, answer_for, current_qid, start_script
 from tests.test_consult import ConsultModel
 from tests.test_line_data import _say
@@ -135,7 +135,7 @@ def test_line_webhook_c2_reads_several_values_guards_the_crisis_and_saves_only_e
     assert State(tmp_path / "state.json").user(uid)["career_profile"]["items"]["career1.role"]["text"] == "物流会社で現場リーダー"
 
 
-# ----------------------------- 相談のツール(dip_mcp.career.session)で -----------------------------
+# ----------------------------- 相談のツール(provider_mcp.career.session)で -----------------------------
 UID = "w-0000000000000c2a"
 
 
@@ -235,7 +235,7 @@ def test_read_stage_messages_carry_only_the_current_utterance():
 def test_read_out_type_names_every_act():
     from typing import get_args
 
-    from dip_mcp.convo import acts as A
+    from provider_mcp.convo import acts as A
 
     names = get_args(ReadOut.model_fields["acts"].annotation.__args__[0].model_fields["act"].annotation)
     assert set(names) == set(A.ACTS)
@@ -511,9 +511,9 @@ def test_c2_passes_every_code_check_of_the_card_3_scenes():
 def test_suspended_c2_keeps_no_consultation_so_a_deleted_item_is_gone_at_once(tmp_path):
     """c2 の「中断」は相談を取っておかない(続きから再開しない)。勤務地を答えて「中断」し、プロフィール画面で勤務地を消すと、
     その時点で保存のどこにも残らない(バイトの v5 の「あとで」と同じ目で見る。jyoka/tasks#375)。"""
-    from dip_mcp import profile
-    from dip_mcp.baito import session as baito_session
-    from dip_mcp.convo import switch as SW
+    from provider_mcp import profile
+    from provider_mcp.baito import session as baito_session
+    from provider_mcp.convo import switch as SW
 
     st = State(tmp_path / "state.json")
     to_salary(st)

@@ -1,6 +1,6 @@
 """シナリオの一覧(evals/scenarios.json)と、シナリオを始める準備(evals/scenarios.py)。実 LLM なし。
 
-どのシナリオも AI 側の1通目(初回訪問・再訪の挨拶、dip のプッシュ)から始まること、
+どのシナリオも AI 側の1通目(初回訪問・再訪の挨拶、事業者のプッシュ)から始まること、
 同じシナリオを何度始めても前回の接触でプッシュが止まらないことを確かめる。
 """
 
@@ -12,10 +12,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from dip_mcp import behavior, logic
-from dip_mcp.data import State
 from evals.scenarios import load_scenarios, prepare
 from line_runtime.runtime import EVENTS
+from provider_mcp import behavior, logic
+from provider_mcp.data import State
 
 SCENARIOS = load_scenarios()
 
@@ -74,7 +74,7 @@ def test_revisit_scenario_seeds_preferences_after_reset(state):
 
 
 def test_start_endpoint_resets_the_user(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from fastapi.testclient import TestClient
@@ -115,7 +115,7 @@ class _FakeMessages:
 
 
 def test_eval_harness_runs_every_scenario_offline(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from langchain_core.language_models.chat_models import BaseChatModel
     from langchain_core.messages import AIMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
@@ -151,7 +151,7 @@ def test_eval_harness_runs_every_scenario_offline(tmp_path, monkeypatch):
 
 def test_scenarios_after_a_server_restart_start_a_fresh_conversation(tmp_path, monkeypatch):
     """シナリオを何度か始めてからサーバーを再起動しても、次のシナリオは前の会話に積まれない。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from fastapi.testclient import TestClient
 
     from line_runtime import config, runtime, server

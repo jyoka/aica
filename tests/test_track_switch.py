@@ -1,15 +1,15 @@
-"""雇用区分の切り替えを見せて取り消せる(task 96)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""雇用区分の切り替えを見せて取り消せる(task 96)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
 確かめること:
 (1) 区分が切り替わったターンの返信にだけ、切り替えの表示(track_switch)が付く。切り替わらないターン・今と同じ区分で
     呼んだターン・根拠の無い呼び出しで記録されなかったターンには付かない
-(2) 表示は dip の記録(set_search_track の recorded)から作り、返信文には依存しない(文で「切り替えた」と言っても、
+(2) 表示は事業者の記録(set_search_track の recorded)から作り、返信文には依存しない(文で「切り替えた」と言っても、
     記録が無ければ出さない。文で何も言わなくても、記録があれば出す)
-(3) 表示のボタン(/api/talk/track/undo)で元の区分に戻り、dip に取り消しとして記録される(根拠はボタンを
+(3) 表示のボタン(/api/talk/track/undo)で元の区分に戻り、事業者に取り消しとして記録される(根拠はボタンを
     押したこと)。次のターンの前に知らせが届き、AI は要約を読み直して、戻した区分で続ける(同じ切り替えを繰り返さない)
 (4) 直前の切り替えでなければ(後に別の切り替え・取り消し済み・記録ごと消した)取り消さない。他人は取り消せない
 (5) ブラウザ: ヘッダーに今の区分が出て(未定のときは出さない)、表示は AI の返信の前に出て、ボタンで戻る。
-    元が未定ならボタンは「元に戻す」で、戻すと「区分を決めない相談に戻しました」。再読み込みしても dip の記録どおり。
+    元が未定ならボタンは「元に戻す」で、戻すと「区分を決めない相談に戻しました」。再読み込みしても事業者の記録どおり。
     プロフィールの「記録ごと消す」は取り消しと別のもの(確認つき)
 (6) 追記(プロフィールのレビューから): 音声のシートを結果の前に閉じても、END_WAIT_MS を過ぎたら履歴の読み直しをやめる
 """
@@ -19,9 +19,9 @@ from __future__ import annotations
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import logic, profile
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic, profile
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_talk_actions import (  # noqa: F401  フィクスチャ
     _free_port,
@@ -37,7 +37,7 @@ from tests.test_track import switch
 
 NOTICE = "[お知らせ: 本人がトークの表示のボタンで"
 WELCOME = "こんにちは。お仕事探しをお手伝いします。何をしますか?"
-# 本人の発言 → 台本のモデルが呼ぶ set_search_track(区分, 根拠)。根拠が空なら dip が記録しない
+# 本人の発言 → 台本のモデルが呼ぶ set_search_track(区分, 根拠)。根拠が空なら事業者が記録しない
 SWITCHES = {"正社員で探したい": ("正社員", "正社員で探したい"), "転職を考えています": ("正社員", "転職を考えています"),
             "バイトを探しています": ("アルバイト・パート", "バイトを探しています"),
             "正社員でお願いします": ("正社員", "正社員でお願いします"), "根拠なしで切り替えて": ("正社員", ""),
@@ -98,7 +98,7 @@ def _last_record(app, uid: str) -> dict:  # noqa: F811
     return app.state.user(uid)["track_history"][-1]
 
 
-# ----------------------------- (1)(2) 切り替わったターンにだけ、dip の記録から出す -----------------------------
+# ----------------------------- (1)(2) 切り替わったターンにだけ、事業者の記録から出す -----------------------------
 
 
 def test_the_switch_shows_only_on_the_turn_that_switched(switched):
@@ -112,13 +112,13 @@ def test_the_switch_shows_only_on_the_turn_that_switched(switched):
         assert r["track_switch"] == {"id": rec["id"], "from": "未定", "track": "正社員", "undo": False, "status": "undoable"}
         assert r["search_track"] == "正社員"
 
-        # 切り替わらないターン・今と同じ区分で呼んだターン(dip は記録しない)には出ない
+        # 切り替わらないターン・今と同じ区分で呼んだターン(事業者は記録しない)には出ない
         for said in ("ありがとう", "正社員でお願いします"):
             r = stream(client, uid, "message", th, said)[-1]
             assert r["track_switch"] is None and r["search_track"] == "正社員", said
         assert len(switched.state.user(uid)["track_history"]) == 1
 
-        # 次の切り替えが出ると、前の表示はもう取り消せない(再読み込みの履歴も dip の記録どおり)
+        # 次の切り替えが出ると、前の表示はもう取り消せない(再読み込みの履歴も事業者の記録どおり)
         r = stream(client, uid, "message", th, "バイトを探しています")[-1]
         assert r["track_switch"]["from"] == "正社員" and r["track_switch"]["status"] == "undoable"
         turns = client.get("/api/talk/history").json()
@@ -133,14 +133,14 @@ def test_the_switch_shows_only_on_the_turn_that_switched(switched):
         assert r["track_switch"]["track"] == "正社員" and r["track_switch"]["status"] == "undoable"
 
 
-def test_the_switch_comes_from_the_dip_record_not_from_the_reply_text(switched):
+def test_the_switch_comes_from_the_provider_record_not_from_the_reply_text(switched):
     with _client(switched) as client:
         opened, greeting = open_talk(client)
         uid, th = opened["user"], greeting["thread"]
-        # 返信で「切り替えました」と言っても、dip に記録が無ければ出さない
+        # 返信で「切り替えました」と言っても、事業者に記録が無ければ出さない
         r = stream(client, uid, "message", th, CLAIM)[-1]
         assert "切り替えました" in r["bubbles"][0] and r["track_switch"] is None and r["search_track"] == "未定"
-        # 根拠の無い呼び出しは dip が断る(記録なし)ので出さない
+        # 根拠の無い呼び出しは事業者が断る(記録なし)ので出さない
         r = stream(client, uid, "message", th, "根拠なしで切り替えて")[-1]
         assert "error" in r["tools"][0]["result"] and r["track_switch"] is None
 
@@ -166,7 +166,7 @@ def test_the_button_undoes_the_switch_and_the_next_reply_continues_in_the_restor
         r = client.post("/api/talk/track/undo", json={"user_id": uid, "id": shown["id"]})
         assert r.status_code == 200
         assert r.json() == {"search_track": "アルバイト・パート", "undone": "正社員", "status": "undone"}
-        # dip に取り消しとして記録(根拠はボタンを押したこと)。LLM は呼ばず、会話数も使わない
+        # 事業者に取り消しとして記録(根拠はボタンを押したこと)。LLM は呼ばず、会話数も使わない
         s = logic.conversation_summary(switched.state, uid)
         assert s["search_track"] == "アルバイト・パート"
         assert s["track_history"][-1] | {"when": None} == {"when": None, "from": "正社員", "track": "アルバイト・パート",
@@ -303,7 +303,7 @@ def test_the_switch_and_its_undo_in_the_browser(switched, browser, served_switch
     page.get_by_text("アルバイト・パートのお仕事で考えますね。").wait_for()
     assert page.locator(".track-switch").count() == 1  # この返信では切り替わっていない
 
-    # 再読み込みしても、dip の記録どおり(取り消し済みでボタンは出ない)
+    # 再読み込みしても、事業者の記録どおり(取り消し済みでボタンは出ない)
     page.reload()
     page.locator(".track-switch", has_text="取り消して、アルバイト・パートに戻しました").wait_for()
     assert page.locator(".track-switch button").count() == 0

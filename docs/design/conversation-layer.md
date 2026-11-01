@@ -8,7 +8,7 @@ LINE のトークで本人と話す全部の入り口(アルバイト・パー�
 
 ## 1. 結論
 
-- **会話の層を、全部の入り口に共通の部品にする。** 置き場所は事業者の `dip_mcp/convo/`(新しい)。入り口ごとに違うもの
+- **会話の層を、全部の入り口に共通の部品にする。** 置き場所は事業者の `provider_mcp/convo/`(新しい)。入り口ごとに違うもの
   (欄、質問バンク、事実、言い回しの調子、決まった文、上限、画面)は「入り口の定義」(データ)にする。新しい入り口は、
   層を作り直さずに、入り口の定義を足すだけで同じ振る舞いになる(§4.1)
 - **1 ターンは 3 段(読む → 決める → 言う)のまま、段ごとの受け持ちを広げる。** 何を聞くか、値の確かさ、いつ終えるかは、
@@ -38,11 +38,11 @@ LINE のトークで本人と話す全部の入り口(アルバイト・パー�
 調べたのは 2026-10-28 の main(`86ba60e`)。読んだもの:
 
 - 正社員: [fulltime-hearing.md](fulltime-hearing.md)、[ADR-0010](../adr/0010-fulltime-hearing-harness.md)、
-  `dip_mcp/career/harness.py`、`bank.json`、`session.py`、`store.py`、`dip_mcp/prompts/career/`、`line_runtime/career_chat.py`
-- アルバイト・パート: [ADR-0009](../adr/0009-baito-consultation-harness.md)、`dip_mcp/baito/harness.py`、`session.py`、
+  `provider_mcp/career/harness.py`、`bank.json`、`session.py`、`store.py`、`provider_mcp/prompts/career/`、`line_runtime/career_chat.py`
+- アルバイト・パート: [ADR-0009](../adr/0009-baito-consultation-harness.md)、`provider_mcp/baito/harness.py`、`session.py`、
   `bank_v4.json`、`crisis_v4.json`、`line_runtime/baito_chat.py`、`baito_cards.py`
 - 振り分けとほかの入り口: `line_runtime/server.py`、`turn.py`、`runtime.py`、`agent.py`、`resume_confirm.py`、`arcade_reply.py`、
-  `voice_reply.py`、`voice_rooms.py`、`consent.py`、`dip_mcp/prompts/entries.json`、`dip_mcp/logic.py`
+  `voice_reply.py`、`voice_rooms.py`、`consent.py`、`provider_mcp/prompts/entries.json`、`provider_mcp/logic.py`
 - 音声相談: `voice_resume/agent.py`、`advisor.py`、`config.py`
 
 このメモでは、1 ターンの 3 段を「読む」(今の抽出、Stage 1)、「決める」(判断、Stage 2)、「言う」(生成、Stage 3)と呼ぶ。
@@ -157,12 +157,12 @@ flowchart TD
   「わからない」の行き先は無い。まとめ(review)の外で、今の問いでない欄を言い直すと推測(low)になり、確かめた値(high)を上書きしない(`apply_update` の `low_over_high`)
 - LLM の呼び出しは、ボタンの答えで 1 回、打った文で 2 回、上限 4 回(`session.MAX_LLM_CALLS`)。入口のカードと近くで探すは 0 回
 - 上限は `MAX_TURNS = 15`、`MAX_ASIDES = 3`、フェーズごとの `PHASE_CAP`。時間の予算は無い(正社員だけにある)
-- プロンプト 4 種(`dip_mcp/prompts/baito/`)は PRD の原文のまま。`evals/baito_sim.py` が PRD の単体チェック 131 件と 20 人のペルソナを回す(ADR-0009)
+- プロンプト 4 種(`provider_mcp/prompts/baito/`)は PRD の原文のまま。`evals/baito_sim.py` が PRD の単体チェック 131 件と 20 人のペルソナを回す(ADR-0009)
 - 言い回しはくだけた話し言葉(「〜だよ」「〜してね」)。正社員は丁寧語。調子は入り口ごとに違ってよい
 
 ### 2.4 トークの AI と、そのほかの入り口
 
-- **トークの AI**(`agent.py`)は、LangGraph のエージェント。プロンプトは `PLATFORM_PROMPT`、事業者の Prompt(`baitoru_assistant.md` と
+- **トークの AI**(`agent.py`)は、LangGraph のエージェント。プロンプトは `PLATFORM_PROMPT`、事業者の Prompt(`job_assistant.md` と
   `entries.json`)、`channel_note` をつなぐ。事実は事業者のツールで取る(ADR-0003)。何をするかが開いている(求人を探す、使い方、データ、
   相談を始める)ので、質問バンクで聞くことを決める作りではない
 - **最初のひとこと。** 入口 A(`entries.json` の `A`)は、挨拶だけで意図が分からないとき、メニュー代わりの選択肢を LLM が出す。
@@ -321,10 +321,10 @@ LLM の呼び方(`baito_chat.default_llm`、`messages_for`、`history`)、ラン
 
 ### 4.1 層の分け方: 共通の部分と、入り口ごとのデータ
 
-会話の層は、事業者の新しいパッケージ `dip_mcp/convo/` に置く。入り口(正社員、アルバイト・パート、これから足す入り口)は、
+会話の層は、事業者の新しいパッケージ `provider_mcp/convo/` に置く。入り口(正社員、アルバイト・パート、これから足す入り口)は、
 入り口の定義(データ)と、必要なら入り口の決まり(小さなコード)を渡すだけにする。
 
-| 共通の部分(`dip_mcp/convo/`) | 中身 | 今の場所 |
+| 共通の部分(`provider_mcp/convo/`) | 中身 | 今の場所 |
 |---|---|---|
 | 守りの前処理 | 危ない言葉、伏せた印、やめる言葉、「あとで」 | `baito/harness.crisis_hit`、両方の `session._exits` |
 | 読む | act の型(§4.3)、読む段のプロンプトの骨組み、出力の検証(部分文字列、数字、知っている欄か) | 両方の `validate_extract`、`ExtractOut` |
@@ -353,7 +353,7 @@ LLM の呼び方(`baito_chat.default_llm`、`messages_for`、`history`)、ラン
 
 - **これから足す入り口は、入り口の定義だけで動く。** たとえば「派遣」や「応募の前の確かめ」を足すなら、欄、質問バンク、事実、調子、決まった文、
   上限、移る先をデータで書く。読む、計画、問いの選び方、言う、守りは層がそのまま受け持つ。決まりが要るときだけ、入り口の決まりを足す
-- **データの形を 1 つにする。** 入り口の定義は `dip_mcp/<入り口>/entry.json`(新しい)と質問バンクにする。形は層の側で確かめる
+- **データの形を 1 つにする。** 入り口の定義は `provider_mcp/<入り口>/entry.json`(新しい)と質問バンクにする。形は層の側で確かめる
   (知らない欄、言い方の無い問い、事実の無い逆質問の答え)。質問バンクの形は、今の 2 つ(`bank.json` と `bank_v4.json`)の差を
   層の読み込みで吸う(書き換えない。アルバイト・パートのバンクは PRD の原文なので)
 - **トークの AI と音声相談は、入り口の定義を持たない**(§4.13)。共通の部分のうち、守りの前処理と事実と共通の値だけを使う
@@ -481,7 +481,7 @@ CONTEXT.md の「区分の切り替え」(本人に見える形で起き、本�
 - 相談の外から始めるとき(「正社員で年収500万以上の仕事を探したい」)は、トークの AI が `start_*` に本人の発言(`text`)を渡す。
   層は、それを最初の発言として読み、値を当ててから最初の問いを選ぶ(場面 talk-fulltime-with-salary)
 
-作りの細部(task 359。§5 の 6 枚目。部品は `dip_mcp/convo/switch.py`、正社員は `dip_mcp/career/c2.py` と `session.py`):
+作りの細部(task 359。§5 の 6 枚目。部品は `provider_mcp/convo/switch.py`、正社員は `provider_mcp/career/c2.py` と `session.py`):
 
 - 移る先の `start` は、ランタイムが移る先の相談のツールを `switch_in` つきで呼ぶ形にした(正社員は `career_turn` の `switch_in`。
   `session.switch_in`)。移る先の最初の返事の言う段も、ふつうのターンと同じ呼び直し(status=llm)で回すため。トークの AI には見せない
@@ -543,7 +543,7 @@ CONTEXT.md の「区分の切り替え」(本人に見える形で起き、本�
 | やめる、あとで | 決まった文 | 閉じる | - |
 
 - **渡す事実はデータにだけ置く。** aica とこの相談の事実(誰か、何に使うか、保存の期間と消し方、求人は架空のデモであること)を
-  入り口ごとの `facts.json` に置き、運営者が確かめる。aica 全体の事実は `dip_mcp/convo/facts.json` に 1 つ置き、入り口は足すだけにする。
+  入り口ごとの `facts.json` に置き、運営者が確かめる。aica 全体の事実は `provider_mcp/convo/facts.json` に 1 つ置き、入り口は足すだけにする。
   言う段はここにある事実だけで答える。無い事実は「お答えできません」と言う
 - **「急ぐ」(疲れたとき)。** 本人が疲れたと言ったら、HARD のほかの問いを聞かずにまとめへ進む(正社員は `can_ask` が HARD だけを通す)。
   note で「「中断」と送れば、ここまで残ります」を 1 回だけ添える
@@ -583,7 +583,7 @@ CONTEXT.md の「区分の切り替え」(本人に見える形で起き、本�
 - **推せる欄は聞かない。** 前の答えから推せる欄は、low で入れて聞かず、まとめで確かめる。推し方は 3 つだけにする
   1. ボタンの効き目を、ほかの欄にも書く(`choice_effects`。「年収を上げたい」は上げたいもの「年収」を low)。効き目はデータで、
      ほかの欄に low で入れるのはハーネス(§4.4)。task 355 では、c1 と同じ質問バンクを変えないように、c2 だけが読む入り口の定義の
-     `infer`(`dip_mcp/career/entry.json`)に「年収を上げたい」→「年収」の 1 つだけを置いた。`choice_effects` にまとめるかは 5 枚目のカードで決める。
+     `infer`(`provider_mcp/career/entry.json`)に「年収を上げたい」→「年収」の 1 つだけを置いた。`choice_effects` にまとめるかは 5 枚目のカードで決める。
      5 枚目(task 358)で、入り口の定義の `infer` に残すと決めた。質問バンクは c1 と共有で、c1 の `_apply_choice` は `choice_effects` に書いた欄だけを
      当てる(書くと、ラベルが問いの欄に入らなくなる)うえ、直接聞く問いでは high で入れるため。c2 は、`choice_effects` のうち問いの欄でない欄も、
      `infer` と同じく空の欄にだけ low で入れ、ラベルは問いの欄の値にする(c1 は変えない)
@@ -626,7 +626,7 @@ CONTEXT.md の「区分の切り替え」(本人に見える形で起き、本�
   + 注意 + 区切り + 問いの言い方(順に回す)。今の「問いの原文だけ」より自然で、同じ文が続かない
 - **ハーネスの決まった文のまま残すもの。** まとめ、結果、閉じる文、危ない言葉の文、闇バイトと未成年の注意。字数と時間と法務を守るため。
   正社員の「他の候補」の前置きは、LLM を呼ばずに問いの短い名前から作る(「年収のほかの区切りです。」。#326 の 1)
-- **作りの細部(task 357 で決めた。`dip_mcp/convo/reply.py`)**
+- **作りの細部(task 357 で決めた。`provider_mcp/convo/reply.py`)**
   - 言い方は、質問バンクの問いに `variants`(text のほかの言い方 1〜2 通り)として置く。text が 1 つ目の言い方で、合わせて 2〜3 通り。
     c1 は `variants` を読まない。区分ごとの文(`text_by_segment`)や履歴書の仕事の言葉を引く文(`text_known`)に変わった問いは、その文だけ
   - どの言い方を使うかはハーネスが勧め(新しい問いは text、出し直しは前の言い方の次)、モデルは使ってよい言い方(出し直しでは前の言い方を除く)の
@@ -645,13 +645,13 @@ CONTEXT.md の「区分の切り替え」(本人に見える形で起き、本�
     ランタイムの会話の記録(8 件)には伏せる前の発言が残るため(§4.11)
   - 渡す事実は 3 枚目のカードの `facts.json`(§4.6)。事実を渡すターンはモデルに答えを書かせ、答えの無い返事を落とす。2 回落ちたときと、
     渡す事実が無いときは、入り口の定義の決まった文(「そのご質問には、ここではお答えできません。」)を答えの場所に置く
-  - 相づちの種類は、応じ方の計画(§4.6。`dip_mcp/convo/plan.py` の `ACKS`)の語と同じ(`short`、`done`、`light`、`empathy`、`apology`)。
+  - 相づちの種類は、応じ方の計画(§4.6。`provider_mcp/convo/plan.py` の `ACKS`)の語と同じ(`short`、`done`、`light`、`empathy`、`apology`)。
     入り口の定義の決まった相づちも、同じ種類で 3 つずつ置く。直したターン(`done`)の決まった組み立ては、計画の about の文を先に試す
   - 計画の `mention`(相づちに必ず入れる言葉。今は、移った先の最初の返事の引き継いだ値だけ。§4.5)があれば、相づちにどれか 1 つが無い返事を落とす。
     相づちの無い返事も落とす。about の文の数字は、出どころのある数に数える(ハーネスが記録の文から作った文なので)(task 379)
 - **代替を減らす直し(task 376。アルバイト・パートの v5。9 枚目の実モデルの P3 で、代替の理由が相づちの終わりの繰り返し、カードに無い職種、ほめ言葉だった)**
   - 入り口の定義の調子は、決まった終わり方(「〜なんだね」)を勧めない。例の文の終わりを散らす。言う段のプロンプトの後ろに
-    アルバイト・パートの決まり(`dip_mcp/prompts/baito/prompt_say_v5_ja.txt`)をつなぎ、直前の相づちの終わり 4 字(「んだね。」)を名指しで渡す
+    アルバイト・パートの決まり(`provider_mcp/prompts/baito/prompt_say_v5_ja.txt`)をつなぎ、直前の相づちの終わり 4 字(「んだね。」)を名指しで渡す
   - やり直しには、1 回目の返事と落ちた理由(終わりの 4 字、ほめ言葉、職種)を渡す。同じ入力では同じ返事になり、やり直しが効かなかったため。
     相づちが思いつかなければ使ってよい決まった相づち(決まった組み立てが次に使うもの)も添える(`retry_note`)
   - 検証で落とす前に、ハーネスが相づちだけを決まった相づちに差し替える形も考えたが、入れなかった。相づちだけの返事では決まった組み立てと同じ文になり、
@@ -757,7 +757,7 @@ v5 は v4 を書き換えず、別の版として層に載せる。
   v5 のテストとして移す。`turn()` の形とプロンプトの原文を見る検査は、v5 にはかけない(§6 で運営者が決める)
 - 20 人のペルソナ(`evals/baito_sim.py`)は v4 と v5 の両方で回す
 
-作りの細部(task 360。§5 の 7 枚目。`dip_mcp/baito/v5.py`、`entry.json`、`facts.json`、`session.py`):
+作りの細部(task 360。§5 の 7 枚目。`provider_mcp/baito/v5.py`、`entry.json`、`facts.json`、`session.py`):
 
 - v5 は v4 の関数をそのまま呼ぶ: 守りの前処理(危ない言葉の表と文、闇バイトの言葉と注意)、入口のカード、職種の結果、近くで探す、フェーズの流れと上限
   (`next_phase`、`PHASE_CAP`。PRD の流れ。§4.7 の群はフェーズと同じにした)、年齢の決まり(task 258)、区切りの境目の聞き直し、区分の確かめと保留、
@@ -801,18 +801,18 @@ v5 は v4 を書き換えず、別の版として層に載せる。
 **トークの AI(t1)。** 足すのは 3 つだけ。
 
 1. 守りの前処理(危ない言葉)を、`agent.astream` の前に通す。当たれば LLM を呼ばずに決まった文(場面 talk-crisis)
-2. プロンプトに、aica の事実(`dip_mcp/convo/facts.json`)と、区分が分からないときは入り口を選ぶボタン(「アルバイト・パート」「正社員」)で 1 問だけ聞く決まりを足す
+2. プロンプトに、aica の事実(`provider_mcp/convo/facts.json`)と、区分が分からないときは入り口を選ぶボタン(「アルバイト・パート」「正社員」)で 1 問だけ聞く決まりを足す
    (場面 talk-hello、talk-job-search)。ボタンの文は入り口の定義の「移る先」の文を使う
 3. `start_*` に本人の発言を渡す(§4.5。場面 talk-fulltime-with-salary)
 
-作りの細部(task 361。§5 の 8 枚目。`dip_mcp/convo/talk.py`、`talk.json`、`line_runtime/runtime.py`):
+作りの細部(task 361。§5 の 8 枚目。`provider_mcp/convo/talk.py`、`talk.json`、`line_runtime/runtime.py`):
 
 - 切り替えは `TALK_LAYER_VERSION=t1`(`logic.talk_layer_on`)。Web プロセス(ランタイム)、事業者、音声ワーカーのどれもこの値を読む。無ければ今のまま
 - 守りの前処理: ランタイムの `_turn` が、ハーネスの相談がこのターンを受けなかったとき(相談の外と、相談をやめて閉じた後)に、
   `agent.astream` の前に `talk.crisis_reply` で照らす。当たれば、トークの AI を呼ばずに決まった文を 1 つの吹き出しで返す(ボタンなし)。
-  前後の文は `dip_mcp/convo/talk.json` の丁寧語、窓口は層の表(`crisis.json`)と同じ。本人の発言と返信は会話に残し、次のターンにトークの AI が読む。
+  前後の文は `provider_mcp/convo/talk.json` の丁寧語、窓口は層の表(`crisis.json`)と同じ。本人の発言と返信は会話に残し、次のターンにトークの AI が読む。
   会話の最初のターンなら、入口とユーザーも会話に書く(次のターンのツールが、この人の状態を読めるように)。c1 と v4 の相談の中は、今のまま
-- プロンプト: 事業者の Prompt(`baitoru_assistant`)の後ろに `talk.prompt_section` を足す。中身は、区分が分からないときの 1 問とボタン、
+- プロンプト: 事業者の Prompt(`job_assistant`)の後ろに `talk.prompt_section` を足す。中身は、区分が分からないときの 1 問とボタン、
   `start_*` の `text` の渡し方、aica の事実(aica 全体の `facts.json` だけ)、危ない言葉の後の振る舞い。ボタンの文は入り口の定義の移る先の
   `label`(正社員の定義の「アルバイト・パートで探す」と、アルバイト・パートの定義の「正社員で探す」。`talk.entry_buttons`)。
   入口 A のメニュー代わりの選択肢より、この 1 問を先にする
@@ -976,7 +976,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 | # | カード | 満たす設計の基準 | 確かめる場面 |
 |---|---|---|---|
 | 1 | 場面の一覧を回す仕組みと、今の作りの点(費用 0) | 場面の条件をすべて判定できる。正社員 c1、アルバイト・パート v4、トークの AI の今の点が出る | すべて(コードの条件)。採点の条件は台本の LLM でテスト |
-| 2 | 共通の層の土台と、正社員の読む段(`dip_mcp/convo/`、act、直前のやりとり、守りの前処理、値の当て方、入り口の定義の読み込み) | §4.1、§4.3、§4.4、§4.11 の危ない言葉と個人情報 | career の multi-\*、correct-\*(go-back を除く)、safety-crisis、safety-health、safety-pii-redacted、safety-full-name、safety-third-party-name、chat-grumble |
+| 2 | 共通の層の土台と、正社員の読む段(`provider_mcp/convo/`、act、直前のやりとり、守りの前処理、値の当て方、入り口の定義の読み込み) | §4.1、§4.3、§4.4、§4.11 の危ない言葉と個人情報 | career の multi-\*、correct-\*(go-back を除く)、safety-crisis、safety-health、safety-pii-redacted、safety-full-name、safety-third-party-name、chat-grumble |
 | 3 | 応じ方の計画(事実のデータ、脱線、感情、急ぐ、不満、断る、あとで) | §4.6、§4.11 の事実 | career の chat-\*、ask-\*、emotion-\*、safety-falsify、safety-harassment、safety-refuse-salary、correct-go-back、flow-\* |
 | 4 | 返事を組む(言う段のプロンプト、調子、問いの言い方、順、重複、決まった組み立て) | §4.8、§4.10 の自然さ | t326-\*、career の short-\*、correct-vague-why、chat-three-in-a-row、emotion-angry-reask、emotion-long-story |
 | 5 | 問いの選び方と候補(群とスコア、ほかの欄への効き目、候補の決まり、本人の言葉の候補) | §4.7、§4.10 の賢さ | multi-infer-raise-target、multi-career-in-why-now、t326-salary-reask、t326-more-lead、flow-more-typed、short-ok-ambiguous、`evals.career_sim` の 6 人 |
@@ -994,27 +994,27 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
    場面の条件そのものが運営者の考えと合うかも、ここで運営者に見てもらう。
    (task 354 で作った。版の名前は、正社員 `c1`、アルバイト・パート `v4`、トークの AI の今の動きは `t0`(`TALK_LAYER_VERSION` が無いとき)。
    新しい版は `runner.VERSIONS` に回し方を足す。点の数え方と結果は §7)
-2. **共通の層の土台と、正社員の読む段。** `dip_mcp/convo/` に、状態の器、`_call_llm`、`match_button`、守りの前処理(危ない言葉の確かめを
+2. **共通の層の土台と、正社員の読む段。** `provider_mcp/convo/` に、状態の器、`_call_llm`、`match_button`、守りの前処理(危ない言葉の確かめを
    `baito/harness.crisis_hit` から移す。アルバイト・パートは同じ関数を読み込む形にし、v4 の動きは変えない)、act の型、読む段の検証、
    入り口の定義の読み込みを置く。正社員の c2 の読む段のプロンプトと型、直前のやりとりを渡す、値の当て方。c1 の動きは変えない
 3. **応じ方の計画。** 計画の型、`facts.json`(運営者が確かめる)、act ごとの部品(§4.6 の表)、脱線と急ぐの数え方。
    LINE のスタンプを「[スタンプ]」の文にしてハーネスに渡す(`line_runtime/server.py` の `_line_kind`。新しい版の相談の間だけ)
-4. **返事を組む。** 言う段のプロンプトの骨組みと正社員の調子、質問バンクの `variants`、返事の検証(`dip_mcp/convo/reply.py`)、決まった組み立て、
+4. **返事を組む。** 言う段のプロンプトの骨組みと正社員の調子、質問バンクの `variants`、返事の検証(`provider_mcp/convo/reply.py`)、決まった組み立て、
    「他の候補」の前置き。#326 で直したところと重なるので、#326 のマージの後に始める
 5. **問いの選び方と候補。** 群とスコア、話題のおまけ、`choice_effects` のほかの欄への効き目、候補の決まりのテスト、本人の言葉の候補。
    モックの回帰(`evals.career_sim`、`evals.career_choices`)が c1 より悪くならないこと
-   (task 358 で作った。`dip_mcp/convo/pick.py` と c2。モックの回帰は `--version c2` で c2 を回せる。結果は §7)
+   (task 358 で作った。`provider_mcp/convo/pick.py` と c2。モックの回帰は `--version c2` で c2 を回せる。結果は §7)
 6. **入り口を移す。** `switch` の act、`EXIT_REQUEST` の当たりを `switch` にする、引き継ぎの記録(事業者の状態、消し方)、入り口の定義の値の対応、
    `runtime._turn` の直の移り、区分を層が書く。c2 からは、v4 へ移るときは今と同じくトークの AI を通る
-   (task 359 で作った。`dip_mcp/convo/switch.py`、c2、`session.switch_in`、`runtime._switch_in`。作りの細部は §4.5、結果は §7)
+   (task 359 で作った。`provider_mcp/convo/switch.py`、c2、`session.switch_in`、`runtime._switch_in`。作りの細部は §4.5、結果は §7)
 7. **アルバイト・パートを移す。** v5 の入り口の定義(`bank_v4.json` と欄と調子と決まった文を読む)、入り口の決まり(未成年、闇バイト、区分の確かめ、
    入口のカード、近くで探す、職種の結果)、始めるときに希望の項目と引き継ぎの記録を読む、「あとで」。v4 は残す。
    PRD の結果の検査を v5 のテストに移す(運営者の判断の後。§6)
-   (task 360 で作った。`dip_mcp/baito/v5.py`、`entry.json`、`facts.json`、`session.switch_in`。20 人のペルソナは `evals.baito_sim --version v5`。
+   (task 360 で作った。`provider_mcp/baito/v5.py`、`entry.json`、`facts.json`、`session.switch_in`。20 人のペルソナは `evals.baito_sim --version v5`。
    作りの細部は §4.13、§4.5。結果は §7)
 8. **トークの AI。** `TALK_LAYER_VERSION=t1` で、守りの前処理を `agent.astream` の前に通す、プロンプトに事実と入り口を選ぶ問いの決まりを足す、
    `start_*` に本人の発言を渡す。音声相談の指示(`voice_resume/prompts.py`)に、事実と危ない言葉の決まった文を足す(音声の会話の作りは変えない)
-   (task 361 で作った。`dip_mcp/convo/talk.py`、`talk.json`、`runtime._turn` と `_fixed_turn`、`session.start` の `text`、`read_opening`、
+   (task 361 で作った。`provider_mcp/convo/talk.py`、`talk.json`、`runtime._turn` と `_fixed_turn`、`session.start` の `text`、`read_opening`、
    場面の一覧の `runner.TalkT1`。作りの細部は §4.13、結果は §7)
 9. **実モデルで比べる。** 場面の一覧とペルソナを、入り口ごとに今と新しい作りで回す。新しい台帳(`evals/budget-conversation-layer.jsonl`)と上限を、
    運営者が決めてから回す。読む段を Haiku 5.5 にした回も比べる。結果を §7 に書き、入り口ごとに §4.10 の合格の線に届いたかを報告する。
@@ -1155,9 +1155,9 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 355。§5 の 2 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: `dip_mcp/convo/`(守りの前処理 `guard`、act の型と読む段の検証 `acts`、値の当て方 `values`、入り口の定義の読み込み `entry`、
-  状態の器 `state`、呼び直しの部品 `turn`)と、正社員の c2(`dip_mcp/career/c2.py`、`entry.json`、読む段のプロンプト
-  `dip_mcp/prompts/convo/read_ja.txt` と `prompts/career/prompt_read_ja.txt`、出力の形 `line_runtime/career_chat.ReadOut`)。
+- 作ったもの: `provider_mcp/convo/`(守りの前処理 `guard`、act の型と読む段の検証 `acts`、値の当て方 `values`、入り口の定義の読み込み `entry`、
+  状態の器 `state`、呼び直しの部品 `turn`)と、正社員の c2(`provider_mcp/career/c2.py`、`entry.json`、読む段のプロンプト
+  `provider_mcp/prompts/convo/read_ja.txt` と `prompts/career/prompt_read_ja.txt`、出力の形 `line_runtime/career_chat.ReadOut`)。
   c2 は c1 の決める段(問いの選び方、予算、まとめ、結果)と言う段を使い、守りの前処理、読む段、値の当て方だけを層に替えた
 - 確かめる場面(career の multi-\* 6、correct-\* の go-back を除く 7、safety-crisis、safety-health、safety-pii-redacted、safety-full-name、
   safety-third-party-name、chat-grumble の 19 場面)と emotion-long-story のコードの条件が、c2 で全部合格する(`tests/test_career_c2.py`)
@@ -1183,7 +1183,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 - 今の版は変えていない: c1、v4、トークの AI の今のテストは、そのまま通る(変えたのは場面の一覧のテスト 2 つで、知らない版の例に使っていた
   「c2」を「c9」にした)。モックの回帰 `evals.baito_sim`(20 人)と `evals.career_sim`(6 人 × 形 B〜D)は「すべて合格」のまま。
   c1 と v4 の `_call_llm`、c1 の `match_button`、v4 の危ない言葉の確かめは、同じ中身の層の関数を読み込む形にした
-- 危ない言葉の表: 層の表(`dip_mcp/convo/crisis.json`)は、v4 の表(`dip_mcp/baito/crisis_v4.json`)と同じ言葉と窓口にした。
+- 危ない言葉の表: 層の表(`provider_mcp/convo/crisis.json`)は、v4 の表(`provider_mcp/baito/crisis_v4.json`)と同じ言葉と窓口にした。
   v4 のテストが `crisis_v4.json` を読むので、v4 の表は残し、2 つが同じであることをテストで確かめる
 - 決めたこと(設計に細かく書いていなかったところ)
   - 確かめた値(high)のある文の欄への言い足し(`add`)は、つないだ値を推測(low)にする(§4.4 の「前の値の低い方」を、言い足しの low と比べる、と読んだ)。
@@ -1197,9 +1197,9 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 356。§5 の 3 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: 応じ方の計画(`dip_mcp/convo/plan.py`。§4.6 の表を `respond` にした)、事実のデータ(`dip_mcp/convo/facts.py`、
-  aica 全体の `dip_mcp/convo/facts.json`、正社員の `dip_mcp/career/facts.json`。入り口の定義の `facts` で読む)、c2 の計画の使い方
-  (`dip_mcp/career/c2.py`。言う段のプロンプトに計画の決まり `prompts/career/prompt_say_plan_ja.txt` をつなぐ)、注意の文
+- 作ったもの: 応じ方の計画(`provider_mcp/convo/plan.py`。§4.6 の表を `respond` にした)、事実のデータ(`provider_mcp/convo/facts.py`、
+  aica 全体の `provider_mcp/convo/facts.json`、正社員の `provider_mcp/career/facts.json`。入り口の定義の `facts` で読む)、c2 の計画の使い方
+  (`provider_mcp/career/c2.py`。言う段のプロンプトに計画の決まり `prompts/career/prompt_say_plan_ja.txt` をつなぐ)、注意の文
   (`entry.json` の `note_pause`、`note_falsify`)、LINE のスタンプ(`line_runtime/server.py` の `_line_kind` が c2 の相談の間だけ `sticker` にする)
 - 確かめる場面(career の chat-\* 8、ask-\* 8、emotion-\* 6、flow-\* 9、safety-falsify、safety-harassment、safety-refuse-salary、correct-go-back の 35 場面)の
   コードの条件が、c2 で 1 つを除いて全部合格する(`tests/test_career_c2.py`)。残る 1 つは chat-three-in-a-row の `ack_varies`
@@ -1246,7 +1246,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめていないこと:
 
-- 事実のデータ(`dip_mcp/convo/facts.json`、`dip_mcp/career/facts.json`)の中身を、運営者がまだ確かめていない(どちらも `checked` が null)。
+- 事実のデータ(`provider_mcp/convo/facts.json`、`provider_mcp/career/facts.json`)の中身を、運営者がまだ確かめていない(どちらも `checked` が null)。
   task 359 で、運営者の代わりにプライバシーポリシーと突き合わせ、`checked` に 2026-10-29 を書いた(jyoka/tasks#356 の Decision。学習の事実に
   「外部の事業者の扱いは、プライバシーポリシーの 5 のとおりです」を添えた)。
   プライバシーポリシー(`docs/legal/privacy-policy.md`)と README に合わせて書いた。注意の文(`note_pause`、`note_falsify`)も同じ
@@ -1257,9 +1257,9 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 357。§5 の 4 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: 言う段の部品 `dip_mcp/convo/reply.py`(計画、問いの言い方の選び方、返事の確かめ、決まった組み立て、「他の候補」の前置き)、
-  言う段のプロンプトの骨組み `dip_mcp/prompts/convo/say_ja.txt`、正社員の調子と決まった相づちと決まった文(`dip_mcp/career/entry.json` の
-  `tone` と `texts`)、全部の問いの言い方(`dip_mcp/career/bank.json` の `variants`)。c2 の言う段をこれに替えた。細部は §4.8 の「作りの細部」
+- 作ったもの: 言う段の部品 `provider_mcp/convo/reply.py`(計画、問いの言い方の選び方、返事の確かめ、決まった組み立て、「他の候補」の前置き)、
+  言う段のプロンプトの骨組み `provider_mcp/prompts/convo/say_ja.txt`、正社員の調子と決まった相づちと決まった文(`provider_mcp/career/entry.json` の
+  `tone` と `texts`)、全部の問いの言い方(`provider_mcp/career/bank.json` の `variants`)。c2 の言う段をこれに替えた。細部は §4.8 の「作りの細部」
 - 確かめる場面(t326-\* 4、career の short-\* 8、correct-vague-why、chat-three-in-a-row、emotion-angry-reask、emotion-long-story の 16 場面)の
   コードの条件は、次の 3 つのほかは c2 で全部合格する(`tests/test_career_c2_reply.py`)。3 つは、設計メモで別のカードの仕事にしたもの
   - chat-three-in-a-row の 3 回目の「中断」の注意(§4.6 の脱線が続いたとき。3 枚目)
@@ -1316,8 +1316,8 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 358。§5 の 5 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: `dip_mcp/convo/pick.py`(群とスコアで選ぶ `best`、話題のおまけ `bonus`、本人の言葉を最初のページの頭に置く `put_first`)、
-  入り口の定義の `groups`、`topics`、`mention_questions`(形は `dip_mcp/convo/entry.py` が確かめる)、層の覚えの `mentions`。
+- 作ったもの: `provider_mcp/convo/pick.py`(群とスコアで選ぶ `best`、話題のおまけ `bonus`、本人の言葉を最初のページの頭に置く `put_first`)、
+  入り口の定義の `groups`、`topics`、`mention_questions`(形は `provider_mcp/convo/entry.py` が確かめる)、層の覚えの `mentions`。
   c2 の `advance` と `pick_question`(フェーズの順と上限をやめた)、ほかの欄への効き目、二択の「どっちでも」、本人の言葉の候補
 - 確かめる場面 6 つ(multi-infer-raise-target、multi-career-in-why-now、t326-salary-reask、t326-more-lead、flow-more-typed、short-ok-ambiguous)の
   コードの条件は、t326-salary-reask の `ack_varies` のほか、c2 で全部合格する(`tests/test_career_c2_pick.py`)。`ack_varies`(相づちの終わりが
@@ -1343,7 +1343,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 - 実モデルの読む段が、本人の言葉(`mentions`)を設計どおりに返すか(職種や経験の名詞を 10 字までで)。本人の言葉の候補を本人がどう感じるか(9 枚目と運営者の実機の確かめ)
 - 話題の分け方(`topics`)が、実際の会話で自然な順になるか。場面の一覧には話題のおまけを見る場面が無い(単体のテストだけ)
 - フェーズの上限をやめたことで、予算が残る会話(履歴書があって速く答える人など)の推定時間と事実の数がどう変わるか。モックの 18 会話では差が出ていない
-- 正社員の危ない言葉の文(丁寧語。`dip_mcp/career/entry.json` の texts)は、利用者がまだ確かめていない(§4.11。アルバイト・パートの文と一緒に確かめる)。
+- 正社員の危ない言葉の文(丁寧語。`provider_mcp/career/entry.json` の texts)は、利用者がまだ確かめていない(§4.11。アルバイト・パートの文と一緒に確かめる)。
   c2 は本番に出していない
 - 実モデルが、c2 の読む段のプロンプトで、場面の `reading` のとおりに act を読むか(9 枚目のカード)。出力の形(`ReadOut`)を実モデルの
   構造化出力に通していない
@@ -1367,10 +1367,10 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 359。§5 の 6 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: 入り口を移す部品 `dip_mcp/convo/switch.py`(want と consider の読み分け、移る強い頼み、引き継ぎの記録の書き方と読み方と消し方、
-  値の対応 `carry`)、入り口の定義の `switch` の `track` と `note`、`carry`(形は `dip_mcp/convo/entry.py` が確かめる)、応じ方の計画の `offer`
-  (`dip_mcp/convo/plan.py`)、c2 の移り方(`dip_mcp/career/c2.py` の `asked_to_switch`、`_switch`、`take_handoff`、`enter`)、
-  session の記録と直の移り(`dip_mcp/career/session.py` の `_switch`、`switch_in`。事業者のツール `career_turn` の `switch_in`)、
+- 作ったもの: 入り口を移す部品 `provider_mcp/convo/switch.py`(want と consider の読み分け、移る強い頼み、引き継ぎの記録の書き方と読み方と消し方、
+  値の対応 `carry`)、入り口の定義の `switch` の `track` と `note`、`carry`(形は `provider_mcp/convo/entry.py` が確かめる)、応じ方の計画の `offer`
+  (`provider_mcp/convo/plan.py`)、c2 の移り方(`provider_mcp/career/c2.py` の `asked_to_switch`、`_switch`、`take_handoff`、`enter`)、
+  session の記録と直の移り(`provider_mcp/career/session.py` の `_switch`、`switch_in`。事業者のツール `career_turn` の `switch_in`)、
   `logic.layer_on`、ランタイムの直の移り(`line_runtime/runtime.py` の `_turn` と `_switch_in`)、場面の一覧の直の移り(`evals/scenes/runner.py`)。
   作りの細部は §4.5
 - 確かめる場面(`tests/test_career_c2_switch.py`):
@@ -1430,10 +1430,10 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 360。§5 の 7 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: アルバイト・パートの v5(`dip_mcp/baito/v5.py`)と入り口の定義(`dip_mcp/baito/entry.json`。欄の説明と区切りのキー、くだけた話し言葉の調子と
-  決まった相づち、決まった文、問いの言い方 `variants`、移る先と値の対応、話題)、事実のデータ(`dip_mcp/baito/facts.json`)、読む段の決まり
-  (`dip_mcp/prompts/baito/prompt_read_v5_ja.txt`)と出力の形(`line_runtime/baito_chat.ReadOut`)、session の版の分け方と記録と直の移り
-  (`dip_mcp/baito/session.py` の `_new`、`_switch`、`switch_in`。事業者のツール `baito_turn` の `switch_in`)、`logic.baito_harness_version` と
+- 作ったもの: アルバイト・パートの v5(`provider_mcp/baito/v5.py`)と入り口の定義(`provider_mcp/baito/entry.json`。欄の説明と区切りのキー、くだけた話し言葉の調子と
+  決まった相づち、決まった文、問いの言い方 `variants`、移る先と値の対応、話題)、事実のデータ(`provider_mcp/baito/facts.json`)、読む段の決まり
+  (`provider_mcp/prompts/baito/prompt_read_v5_ja.txt`)と出力の形(`line_runtime/baito_chat.ReadOut`)、session の版の分け方と記録と直の移り
+  (`provider_mcp/baito/session.py` の `_new`、`_switch`、`switch_in`。事業者のツール `baito_turn` の `switch_in`)、`logic.baito_harness_version` と
   `LAYER_VERSIONS` の v5、LINE のスタンプ(`server._line_kind` が v5 の相談の間も「[スタンプ]」にする)、場面の一覧の v5 の回し方(`runner.BaitoV5`。
   `--version career=c2 --version baito=v5` で入り口を移す先の版も渡せる)、20 人のペルソナの v5 の回し方(`evals.baito_sim --version v5`。
   `docs/prd/baito_harness/aica_port_v5.py` が、v4 の抽出のモックを v5 の読む段の形に写す)。v4 のコード(`harness.py`)は変えていない
@@ -1480,7 +1480,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
   - フェーズの流れと上限は v4 のまま(PRD の 20 人の基準値に合わせるため)。§4.7 の群はフェーズと同じにし、区切りの 1 行は出さない(v4 に無い)
   - 「やめる」もハーネスが決まった文で閉じる(場面 baito-flow-stop がモデルを呼ばないことを求めているため。v4 はトークの AI に渡す)
   - 引き継いだ値は推測でも聞き直さない(v4 のスコアでは推測の HARD をもう一度聞くので、v5 では空き具合を 0 にした)
-  - 事実のデータ(`dip_mcp/baito/facts.json`)は、運営者がまだ確かめていない(`checked` が null)
+  - 事実のデータ(`provider_mcp/baito/facts.json`)は、運営者がまだ確かめていない(`checked` が null)
   - 移る強い頼みは、v4 の `EXIT_REQUEST` のうち正社員の部分だけ(`session.CAREER_REQUEST_RE`)。「求人を見せて」は v4 と同じく相談を閉じてトークの AI に渡す
   - 中学生以下で止めた後(結果の後も閉じない)も、「やめる」「中断」で閉じる(v4 と同じ。止めた印は残す)。結果の後の読む段の `crisis` にも窓口の文を返す
   - 前の相談の値と引き継いだ値のうち、未成年の決まりで変わる値(深夜を含む時間帯、体力仕事もOK)は入れない。年齢が分からない間に入れると、深夜を黙って落とした値が
@@ -1493,7 +1493,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 - 実モデルの読む段が、区切りのキー(`value`)を設計どおりに返すか。構造化出力の `value` の型(文、数、文の list)を実モデルに通していない(9 枚目)
 - 実モデルの言う段が、くだけた話し言葉の調子(入り口の定義の `tone`)で相づちを書くか。足した問いの言い方(`variants`)と決まった相づちが、運営者の考える
   アルバイト・パートの調子に合うか(運営者に見てもらう)
-- 事実のデータ(`dip_mcp/baito/facts.json`)の中身(運営者が確かめる)
+- 事実のデータ(`provider_mcp/baito/facts.json`)の中身(運営者が確かめる)
 - 実モデルで 20 人を v5 で回したときの、生成の合格率と代替率(PRD §16-1 の 12。9 枚目。モックの言う段は同じ相づちを返すので、モックの代替の数は目安にならない)
 - 移ってきた最初の返事(入口のカード)の相づちが、引き継いだ値に触れるか(採点の条件 `acknowledges_prior`。計画の about は「アルバイト・パートで探すね」だけ)
 - v5 で、まとめ(review)の中の脱線、境目の聞き直しへの打った答え、結果の後の年齢の訂正は、v4 の作りを呼ぶだけで、v5 の場面とテストでは通していない(20 人のペルソナでは通る)
@@ -1507,9 +1507,9 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 確かめたこと(task 361。§5 の 8 枚目。費用 0。偽の LLM と台本の LLM):
 
-- 作ったもの: トークの AI の t1(`dip_mcp/convo/talk.py` と `talk.json`。機能フラグ `logic.TALK_LAYER_FLAG`)、ランタイムの守りの前処理と
+- 作ったもの: トークの AI の t1(`provider_mcp/convo/talk.py` と `talk.json`。機能フラグ `logic.TALK_LAYER_FLAG`)、ランタイムの守りの前処理と
   同じターンの始め方(`line_runtime/runtime.py` の `_turn`、`_fixed_turn`、`started_by_talk`、`said_of`、`chat_tools`)、相談を始めるツールの `text`
-  (`dip_mcp/server.py`、`career/session.start`、`baito/session.start`)、トークの AI からの記録(`convo/switch.talk_record`、`unread`、`carry`)、
+  (`provider_mcp/server.py`、`career/session.start`、`baito/session.start`)、トークの AI からの記録(`convo/switch.talk_record`、`unread`、`carry`)、
   始めた発言を読む段(`career/c2.read_opening`、`baito/v5.read_opening`)、音声相談の指示(`voice_resume/prompts.layer_section`)、
   場面の一覧の t1 の回し方(`evals/scenes/runner.TalkT1`。台本のトークの AI `TalkScript` と、移る先の台本の LLM `HarnessScript`)
 - 確かめる場面(talk の全部の 6 場面)は、t1 でコードの条件がすべて合格する(`tests/test_talk_t1.py`)。モックで判定しない条件も無い
@@ -1698,7 +1698,7 @@ Web のトーク画面では起きない。Web の発言は新しい会話を始
 
 - 本番での切り替えそのもの(運営者がする)。Render で環境変数を保存したときに止まる秒と、止まっている間に届いた LINE のイベントの扱い
 - 運営者の実機の確かめ(§4.10 の最後の線)。手順の 4 に置いた
-- 危ない言葉の決まった文(`dip_mcp/career/entry.json` の `texts`)の、運営者の確かめ。手順の 1 に置いた
+- 危ない言葉の決まった文(`provider_mcp/career/entry.json` の `texts`)の、運営者の確かめ。手順の 1 に置いた
 - 戻した後に残る c2 の相談の数と期間。返事をしないまま止まった相談は、新しい会話か会話の外のイベントで閉じるまで残り、その後の発言は c2 で続く
   (作りから読んだ。本番の状態は見ていない)。c2 のコードを消すと、残った相談は読めずに閉じる(`_load`)ので、手順に「消さない」と書いた
 - アルバイト・パートの v5 とトークの AI の t1 の切り替えの E2E(線に届いてから。jyoka/tasks#376、#377)

@@ -9,17 +9,17 @@ import json
 import re
 from decimal import Decimal
 
-from dip_mcp.data import ROOT, load_jobs
-from dip_mcp.logic import AREAS, CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
 from line_runtime import line_channel
-from resume_draft.pii import PII_VALUE as DIP_PII_VALUE
+from provider_mcp.data import ROOT, load_jobs
+from provider_mcp.logic import AREAS, CONVERSATION_RULES, FULLTIME_JOB_TYPES, JOB_TYPES
+from resume_draft.pii import PII_VALUE as PROVIDER_PII_VALUE
 from resume_draft.pii import fold_pii, has_pii
 
 QUICK_MAX = 4
 JOBS_MAX = 3
 # 形式の決まり(1ターンの質問の数・吹き出しの字数・何ターン目までに分岐するか)を雇用区分ごとに持つ。
 # そのターンの返信を書いたときの区分(set_search_track で切り替えたターンは切り替えた後の区分)の値で判定する。
-# 値は dip の会話の決まり(dip_mcp.logic.CONVERSATION_RULES。playbook と Prompt に書いた値)をそのまま使う
+# 値は事業者の会話の決まり(provider_mcp.logic.CONVERSATION_RULES。playbook と Prompt に書いた値)をそのまま使う
 FORMAT_RULES = {track: dict(rules) for track, rules in CONVERSATION_RULES.items()}
 JOB_TYPE_NAMES = set(JOB_TYPES) | set(FULLTIME_JOB_TYPES)
 DEFAULT_TRACK = "未定"
@@ -63,14 +63,14 @@ HESITATION = re.compile(r"迷|悩|うーん|ううん|どうしよう|気にな|
 # 絵文字(記号の絵文字・顔・物・旗など)。ボタンと選択肢の文言に使わない(トークの決まりの「絵文字なし」、task 231 の D3)
 EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]")
 PII_FIELDS = ("電話番号", "氏名", "住所", "メールアドレス", "生年月日")
-# dip と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
+# 事業者と同じ電話番号・メールの判定に、「@」だけでも数える(トークで受け取らない項目の送り先を広めに見る)。
 # 年収の桁表記(「年収3000000円」)は電話番号に数えない(resume_draft/pii.py の PII_VALUE)。
-# 全角の数字・ハイフン(「０９０－１２３４－５６７８」「090ー1234ー5678」)も dip と同じく半角にそろえてから見る(pii)
-PII_VALUE = re.compile(DIP_PII_VALUE.pattern + r"|@")
+# 全角の数字・ハイフン(「０９０－１２３４－５６７８」「090ー1234ー5678」)も事業者と同じく半角にそろえてから見る(pii)
+PII_VALUE = re.compile(PROVIDER_PII_VALUE.pattern + r"|@")
 
 
 def pii(text: str) -> bool:
-    """評価で個人情報とみなす値か(dip の判定 + 「@」。全角もそろえてから見る)。"""
+    """評価で個人情報とみなす値か(事業者の判定 + 「@」。全角もそろえてから見る)。"""
     return PII_VALUE.search(fold_pii(text)) is not None
 # 再訪の挨拶で行動履歴に触れる言い方(「最近はカフェのお仕事を見ていましたか?」「ご覧になりましたか?」「見てましたか?」
 # 「チェックされていましたか?」)。会話を通して1回だけ。本人がしたことを指す過去・進行の形だけを数える。
@@ -309,7 +309,7 @@ DATES = (  # 年つきの日付を先に。月/日 は数字や / に挟まれ�
     re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?![\d/])"),
     re.compile(r"(\d{1,2})月(\d{1,2})日"),
 )
-# 返信の中の「事実の主張」: 単位ごとに、根拠として認める dip のデータの項目名と、文中の書き方
+# 返信の中の「事実の主張」: 単位ごとに、根拠として認める事業者のデータの項目名と、文中の書き方
 UNITS = {
     # 求人の給与は pay(下の _pay_amounts)。hourly_wage は pay に移す前(v1)の会話の記録を読むため
     "円": ({"hourly_wage", "min_wage"}, re.compile(r"(\d[\d,]*)\s*円")),
@@ -330,7 +330,7 @@ PAY_LABEL = re.compile(r"時給|月給|月収|年収")
 # 一般知識の金額: 扶養・社会保険の「壁」(年収103万・106万・123万・130万・150万・160万)。この話の文の中でだけ認める
 FUYO_CONTEXT = re.compile(r"扶養|の壁|社会保険")
 FUYO_MAN = {103, 106, 123, 130, 150, 160}
-# 本人の働き方から計算した月・週の収入の目安(「月に約7万円」「月1万5千円くらい」)は dip の事実の主張ではない。
+# 本人の働き方から計算した月・週の収入の目安(「月に約7万円」「月1万5千円くらい」)は事業者の事実の主張ではない。
 # 目安の言い方(約・くらい・なら など)がある文だけ。求人の給与・手当の話(「月給」「交通費は月1万5千円まで」
 # 「月28万円の求人」)は目安に数えない
 ESTIMATE_HEAD = re.compile(r"(月|週)に?(約|およそ|だいたい|大体)?$")
@@ -347,7 +347,7 @@ _KANJI_DIGIT = {c: i for i, c in enumerate("〇一二三四五六七八九")}
 _KANJI_UNIT = {"十": 10, "百": 100, "千": 1000}
 # 算用数字が混じった言い方(「1千万」「3千円」「1千2百万」)も1つの数として読む(「1千万」を「11000万」にしない)
 KANJI_NUM = re.compile(r"\d*[〇一二三四五六七八九十百千][\d〇一二三四五六七八九十百千]*")
-_DIP_PROMPTS = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "dip_mcp" / "prompts").iterdir())
+_PROVIDER_PROMPTS = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "provider_mcp" / "prompts").iterdir())
                        if p.suffix in (".md", ".json"))
 
 
@@ -410,7 +410,7 @@ def _users_work_basis(sentence: str, said_nums: set[int]) -> bool:
 
 
 def _not_a_claim(text: str, pos: int, value: Decimal, said_nums: set[int]) -> bool:
-    """扶養の「壁」の一般知識と、月・週の収入の計算の目安は、dip の事実の主張として照合しない。"""
+    """扶養の「壁」の一般知識と、月・週の収入の計算の目安は、事業者の事実の主張として照合しない。"""
     sentence = _sentence_at(text, pos)
     if FUYO_CONTEXT.search(sentence) and value in FUYO_MAN:
         return True
@@ -428,7 +428,7 @@ def _dates(text: str) -> set[tuple[int, int]]:
 
 
 def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool = False) -> None:
-    """dip のデータから、指定した項目名の数値と、文字列(FAQ の文など)を集める。
+    """事業者のデータから、指定した項目名の数値と、文字列(FAQ の文など)を集める。
     lengths=True(件数)のときは、データの中のリストの長さ(求人の件数など)も根拠にする。"""
     if isinstance(value, dict):
         for k, v in value.items():
@@ -445,7 +445,7 @@ def _walk(value, keys: set[str], out: set[int], texts: list[str], lengths: bool 
 
 
 def _pay_amounts(value, out: dict[str, set[int]]) -> None:
-    """dip のデータの中の給与(pay = {kind: 時給|月給|年収, min, max}、円)の金額を、給与の種類ごとに集める。
+    """事業者のデータの中の給与(pay = {kind: 時給|月給|年収, min, max}、円)の金額を、給与の種類ごとに集める。
     min / max はどこにでもある名前なので、pay の形の辞書の中だけを見る。"""
     if isinstance(value, dict):
         if (kind := value.get("kind")) in PAY_KINDS:
@@ -465,12 +465,12 @@ def _job_names() -> set[str]:
 
 
 def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None) -> list[str]:
-    """返信に出てくる金額・徒歩分数・件数・日付・求人名が、この会話で dip から来た情報(ツールの結果・プッシュの
+    """返信に出てくる金額・徒歩分数・件数・日付・求人名が、この会話で事業者から来た情報(ツールの結果・プッシュの
     根拠の事実)かユーザーの発言にあるかを照合する。無ければ作り話として違反。
     金額は、円で書いたもの(時給1,350円)は円の値と、万で書いたもの(年収450万〜650万円・月給28万円)は万の値と照合する。
-    dip の給与(pay、円)は両方の根拠にする(4500000 円 = 450万、275000 円 = 27.5万)。
+    事業者の給与(pay、円)は両方の根拠にする(4500000 円 = 450万、275000 円 = 27.5万)。
     数字は同じ単位の値とだけ照合する(ID や日付に含まれる数字を、徒歩の分数や件数の根拠にしない)。
-    dip の Prompt(ルール)は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
+    事業者の Prompt(ルール)は同じ単位で書かれた数字だけを根拠にし、例文の日付は根拠にしない。
     架空の求人名そのものは文字列では見分けにくいので、求人一覧に実在する求人をこの会話で受け取らずに出したものを捕まえる。"""
     # 条件の問いの選択肢の候補(condition_options の「500万円〜」など)は区切りで、求人の事実ではないので根拠にしない
     data = [{k: v for k, v in t["result"].items() if k != "condition_options"} if isinstance(t["result"], dict)
@@ -484,7 +484,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
         for item in data:  # data 自体(ツール結果を並べただけのリスト)の長さは数えない
             _walk(item, keys, nums, texts, lengths=label == "件")
         text = "\n".join(texts)
-        nums |= {_int(x) for x in rx.findall(text + _DIP_PROMPTS)} | said_nums
+        nums |= {_int(x) for x in rx.findall(text + _PROVIDER_PROMPTS)} | said_nums
         if label == "円":
             nums |= {_int(x) for x in RANGE_YEN.findall(text)}
         known[label] = nums
@@ -494,10 +494,10 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
     known["円"] |= pay
     texts: list[str] = []
     _walk(data, set(), set(), texts)
-    man_text = "\n".join(texts) + _DIP_PROMPTS
-    # 種類を問わない根拠: 本人の発言と、dip の文章・Prompt に書かれた万の金額
+    man_text = "\n".join(texts) + _PROVIDER_PROMPTS
+    # 種類を問わない根拠: 本人の発言と、事業者の文章・Prompt に書かれた万の金額
     known_man = {Decimal(n) for n in said_nums} | {v for v, _ in _man_claims(man_text + "\n" + said)}
-    # 給与の種類ごとの根拠(dip の pay)。月給から年収への換算(12か月分)は計算なので年収の根拠にする
+    # 給与の種類ごとの根拠(事業者の pay)。月給から年収への換算(12か月分)は計算なので年収の根拠にする
     monthly = {Decimal(y) / 10000 for y in pay_by_kind.get("月給", ())}
     by_kind = {k: {Decimal(y) / 10000 for y in v} for k, v in pay_by_kind.items()}
     by_kind["年収"] = by_kind.get("年収", set()) | {m * 12 for m in monthly}
@@ -517,7 +517,7 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
             for n in dict.fromkeys(claims):
                 if n not in known[label]:
                     shown = f"徒歩{n}分" if label == "徒歩分" else f"{n}{label}"
-                    out.append(f"T{i + 1}: dip の情報にない「{shown}」")
+                    out.append(f"T{i + 1}: 事業者の情報にない「{shown}」")
         bad = []
         for n, pos in _man_claims(text):
             kind = _pay_kind(text, pos)
@@ -525,9 +525,9 @@ def fact_violations(turns: list[dict], user_msgs: list[str], facts: dict | None)
             if n not in allowed and not _not_a_claim(text, pos, n, said_nums):
                 bad.append(n)
         for n in dict.fromkeys(bad):
-            out.append(f"T{i + 1}: dip の情報にない「{n:f}万円」")
+            out.append(f"T{i + 1}: 事業者の情報にない「{n:f}万円」")
         for m, d in sorted(_dates(text) - known_dates):
-            out.append(f"T{i + 1}: dip の情報にない日付「{m}/{d}」")
+            out.append(f"T{i + 1}: 事業者の情報にない日付「{m}/{d}」")
         for n in sorted(n for n in names if n in text and n not in source):
             out.append(f"T{i + 1}: この会話で受け取っていない求人「{n}」")
     return out
@@ -964,7 +964,7 @@ def consult_questions(turns: list[dict], user_msgs: list[str | None]) -> dict | 
     伝えたターン。求人を見るかを聞いた直後の「もう少し相談したい」は入口に数えない(本人が続けたいと言えば続けてよい)。
     数えるのは問いのある返信(1ターン1問)。本人が切り上げたら
     (今はいい・お礼・「求人を見せて」)、そこで数えるのをやめる。
-    正社員のヒアリングのハーネスのターン(返信に career が付く。dip_mcp/career)は数えない。問いの数はハーネスが
+    正社員のヒアリングのハーネスのターン(返信に career が付く。provider_mcp/career)は数えない。問いの数はハーネスが
     時間とターンの予算で決めるので、4問の上限は当てはまらない(設計メモ docs/design/fulltime-hearing.md §3)。
     返り値: start は入口のターン、asked は求人を見るかの問いより前の問いのターン、offer は求人を見るかを聞いた・探したターン
     (どれも1始まり)、offer_at はそれが相談の何問目か(聞いていなければ None)。相談に入っていなければ None。"""
@@ -1192,11 +1192,11 @@ def upload_violations(turns: list[dict], upload: dict | None) -> list[str]:
 # 否定の言い方(〜したくない・避けたい・苦手・〜しない・以外・なし・〜がない・〜のない)を見る。
 # 「経験なし」「資格なし」「免許なし」「スキルなし」(求められない条件)と「少ない」は避けたいことではない。
 # 「分からないことは教えてもらえる」の「分からない」も、本人のことで避けたいことではない。
-# 「まかない(付き)」は食事の補助で、dip の keywords の説明が例に挙げている(dip_mcp/server.py)
+# 「まかない(付き)」は食事の補助で、事業者の keywords の説明が例に挙げている(provider_mcp/server.py)
 _NOT_REQUIRED = "".join(f"(?<!{w})(?<!{w}[がのは])" for w in ("経験", "資格", "免許", "スキル"))
 AVOID_IN_KEYWORDS = re.compile(r"たくない|避け|苦手|嫌|以外|NG|抜き|(?<!少)(さ|し|(?<!ま)か|た|わ|(?<!分か)(?<!わか)ら)ない"
                                rf"|{_NOT_REQUIRED}([がの](ない|無い)|なし|無し)")
-# 本人の言葉 -> 当てるべき属性の引数(dip の Prompt「避けたいこと・やりたいことから絞り込みの引数を埋める」と同じ対応)。
+# 本人の言葉 -> 当てるべき属性の引数(事業者の Prompt「避けたいこと・やりたいことから絞り込みの引数を埋める」と同じ対応)。
 # max_* は値がそれ以下、min_* はそれ以上なら当てたとみなす
 ATTRIBUTE_SAYINGS = (
     (re.compile(r"人と話す(の|こと)が苦手|黙々と"), "max_talk_level", 1),
@@ -1334,7 +1334,7 @@ def search_arg_violations(turns: list[dict], user_msgs: list[str | None]) -> lis
 
 # ----------------------------- 最初の求人はエリアが分かってから(task 224) -----------------------------
 
-# dip が area に受ける地名と、求人の駅名(「中野駅」の「中野」)。本人の発言・要約にあれば、エリアは分かっている
+# 事業者が area に受ける地名と、求人の駅名(「中野駅」の「中野」)。本人の発言・要約にあれば、エリアは分かっている
 AREA_NAMES = set(AREAS) | {j.station.removesuffix("駅") for j in load_jobs().values() if j.station}
 # エリアを聞く問い(保存済みの聞き直しの REASK["area"] に、「エリア」「最寄り」「働く場所」などの言い方を足す)。
 # 「どちらで探しますか?」は区分の問い(正社員とアルバイト)にも、「どこが気になりますか?」は迷いの問いにも使うので数えない
@@ -1593,7 +1593,7 @@ def available_entries(channel: str = "web", features: list[str] | tuple[str, ...
     return ENTRIES if channel != "line" and not features else tuple(e for e in ENTRIES if e in features)
 
 
-# シナリオの種(前の会話でやったこと)→ やり終えた入口(task 237。dip_mcp.logic.used_entries と同じ決め方を、種から決める)
+# シナリオの種(前の会話でやったこと)→ やり終えた入口(task 237。provider_mcp.logic.used_entries と同じ決め方を、種から決める)
 SEEDED_ENTRIES = {"seed_voice_draft": "voice_consult", "seed_resume": "resume_upload", "seed_arcade_draft": "arcade"}
 
 
@@ -1808,7 +1808,7 @@ def _answered_number(r: dict, m: str | None) -> bool:
 
 def draft_number_violations(sc: dict, turns: list[dict], user_msgs: list[str | None], channel: str = "web",
                             features: list[str] | tuple[str, ...] = ()) -> list[str]:
-    """下書きの空欄の数字(baitoru_assistant.md の「ゲームで書類を作る」)。
+    """下書きの空欄の数字(job_assistant.md の「ゲームで書類を作る」)。
     - 「下書きを見る」は 1 つの会話で 1 回だけ
     - 空欄の数字を聞いて本人が答えたら(数字か、数字を示した確認形に「はい」)、その返信に「下書きを見る」がある
       (本人が画面で数字を入れる)。下書きの画面を開けない窓口(LIFF の無い LINE。features に arcade が無い)では問わない

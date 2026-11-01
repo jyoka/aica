@@ -1,7 +1,7 @@
 """挨拶の 3 つの入口のボタンは、本人の記録を見てコードで付ける(会話の改善 E、task 237)。実 LLM・実 LINE は呼ばない
-(dip の MCP は本物)。
+(事業者の MCP は本物)。
 
-- dip: やり終えた入口(logic.used_entries)は今ある記録だけから決まる。開いただけ・途中でやめたものは数えない。要約にも出る
+- provider: やり終えた入口(logic.used_entries)は今ある記録だけから決まる。開いただけ・途中でやめたものは数えない。要約にも出る
 - ランタイム: 挨拶のターンの返信に、やり終えていない入口のうち窓口で使えるものを付ける。LLM の actions と buttons に頼らない
   (LLM が付けなくても付き、やり終えた入口を LLM が付けても出ない)。同じ会話の 2 回目からの返信には付けない
 - 記録を消す(項目ごと・すべて消す・期間で消す掃除)と、また案内される
@@ -16,8 +16,6 @@ from datetime import timedelta
 
 import pytest
 
-from dip_mcp import arcade, logic, profile, retention
-from dip_mcp.data import State
 from evals.scenarios import (
     RESUME_FILE,
     load_arcade_draft,
@@ -26,6 +24,8 @@ from evals.scenarios import (
 )
 from line_runtime import line_channel
 from line_runtime.runtime import greeting_entries, usable_entries
+from provider_mcp import arcade, logic, profile, retention
+from provider_mcp.data import State
 from tests.test_handle import reply
 from tests.test_revisit import VISIT_MENU, Greeter
 
@@ -39,7 +39,7 @@ def plain(messages):
 
 
 def seed(state: State, uid: str, used) -> None:
-    """入口をやり終えたことにする: 音声相談の下書き、履歴書の読み込み、ゲームの下書きの保存(本番と同じ dip の関数で)。"""
+    """入口をやり終えたことにする: 音声相談の下書き、履歴書の読み込み、ゲームの下書きの保存(本番と同じ事業者の関数で)。"""
     if "voice_consult" in used:
         logic.record_voice_result(state, uid, [], "# [氏名]\n## 職務経歴\n- 経理を7年担当した\n", document_kind="職務経歴書")
     if "resume_upload" in used:
@@ -54,8 +54,8 @@ def offered(r: dict) -> list[str]:
 
 
 def greet_each(tmp_path, model, calls, between=None):
-    """1 つのランタイムで挨拶を順に返す。between(i, state) は i 回目の前に dip の記録を変える。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    """1 つのランタイムで挨拶を順に返す。between(i, state) は i 回目の前に事業者の記録を変える。"""
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -70,7 +70,7 @@ def greet_each(tmp_path, model, calls, between=None):
     return asyncio.run(go())
 
 
-# ----------------------------- dip: やり終えた入口 -----------------------------
+# ----------------------------- provider: やり終えた入口 -----------------------------
 
 
 def test_used_entries_come_only_from_finished_records(tmp_path):
@@ -121,7 +121,7 @@ def test_greeting_gets_buttons_for_every_unfinished_entry_even_if_the_llm_adds_n
     for (uid, used), r in zip(users.items(), replies, strict=True):
         assert offered(r) == [e for e in ENTRIES if e not in used], used
         assert r["bubbles"] == BODY and r["quick_replies"] == VISIT_MENU  # 本文と文字の選択肢は LLM のまま
-        if "arcade" not in used:  # ゲームのボタンは dip の要約の arcade_url(本人の区分のゲーム)
+        if "arcade" not in used:  # ゲームのボタンは事業者の要約の arcade_url(本人の区分のゲーム)
             assert r["buttons"] == [{"label": line_channel.ARCADE_LABEL, "url": arcade.game_url(uid)}]
 
 
@@ -138,7 +138,7 @@ def test_llm_entries_are_replaced_and_other_buttons_kept(tmp_path):
 
 def test_only_the_greeting_turn_gets_the_buttons_and_a_reload_shows_the_same(tmp_path):
     """同じ会話の 2 回目からの返信には付けない(LLM の actions はそのまま)。画面の描き直し(conversation)も同じボタン。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     seed(State(tmp_path / "state.json"), "w-two", ["resume_upload"])
     ask = reply(["これまでのお仕事を教えてください。"], quick_replies=["今はいい"], actions=["voice_consult"])
     from line_runtime.runtime import LineRuntime

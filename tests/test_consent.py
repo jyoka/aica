@@ -16,11 +16,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from line_runtime import consent, legal, line_channel
 from line_runtime.line_channel import line_user
 from line_runtime.runtime import LineRuntime
+from provider_mcp import logic
+from provider_mcp.data import State
 from tests.test_handle import ScriptedModel, reply
 from tests.test_liff_actions import (  # noqa: F401  line_liff はフィクスチャ
     CHANNEL,

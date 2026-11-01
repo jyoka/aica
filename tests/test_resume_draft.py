@@ -1,7 +1,7 @@
 """Resume Draft の契約(形、envelope、電話・メール・郵便番号を消す決まり)のテスト。実 API は呼ばない。
 
 アップロードの読み取り(resume_intake)と音声の下書き(voice_resume)の 2 つの経路に、LLM の偽物から同じ下書きを返させ、
-同じ形で出て、個人情報が消えることを確かめる。dip に保存するとき(save_resume_upload)も同じ決まりで消す。
+同じ形で出て、個人情報が消えることを確かめる。事業者に保存するとき(save_resume_upload)も同じ決まりで消す。
 docs/design/consolidate-resume-draft-and-event-turn.md の「振る舞いを変えないことの確かめ方」。
 """
 
@@ -16,8 +16,8 @@ from types import SimpleNamespace
 import pytest
 from openai.lib._pydantic import to_strict_json_schema
 
-from dip_mcp import logic
-from dip_mcp.data import State
+from provider_mcp import logic
+from provider_mcp.data import State
 from resume_draft.pii import PII_VALUE, SCRUB_PATTERNS, fold_pii
 from resume_draft.schema import document_kind_of
 from resume_intake import extract
@@ -203,7 +203,7 @@ def test_scrub_pii_keeps_structure():
 
 @pytest.mark.parametrize("text", [t for t, _ in KEPT + FULLWIDTH if not t.startswith("〒１")])
 def test_scrub_pii_removes_what_has_pii_finds(text):
-    """fold_pii した文字の中で PII_VALUE に当たる範囲は、scrub_pii で消える(dip の決まりより弱くない)。
+    """fold_pii した文字の中で PII_VALUE に当たる範囲は、scrub_pii で消える(事業者の決まりより弱くない)。
     郵便番号は PII_VALUE の対象外なので、全角の郵便番号は test_scrub_pii_fullwidth だけで見る。"""
     spans = [m.span() for m in PII_VALUE.finditer(fold_pii(text))]
     for scrub in (extract.scrub_pii, drafter.scrub_pii):
@@ -225,7 +225,7 @@ def test_both_paths_scrub_the_same_way(text):
 
 
 def test_save_resume_upload_scrubs_again(tmp_path):
-    """読み取りをすり抜けた値が来ても、dip に保存するときにもう一度消す。"""
+    """読み取りをすり抜けた値が来ても、事業者に保存するときにもう一度消す。"""
     state = State(tmp_path / "state.json")
     leaked = {"format_version": "1.0", "source": "upload", "created_at": "2026-09-23T12:00:00+09:00",
               "personal": {"phone": "090-1234-5678"}, "resume": _raw("連絡先 090-1234-5678")}

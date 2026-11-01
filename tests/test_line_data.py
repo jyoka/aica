@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from dip_mcp import accounts, arcade, behavior, logic
 from line_runtime import line_channel
 from line_runtime.line_channel import line_user
+from provider_mcp import accounts, arcade, behavior, logic
 from resume_arcade.draft import to_envelope
 from tests.test_handle import reply
 from tests.test_line_webhook import (  # noqa: F401  line_id_key はフィクスチャ(LINE のユーザーIDの鍵)
@@ -45,7 +45,7 @@ def _fill(server, uid: str, files: list[str] | None = None) -> None:
     job_id = next(iter(logic.load_jobs()))
     behavior.record(st, uid, "save", job_id)
     behavior.record(st, uid, "apply", job_id, status="応募済み")
-    accounts.of(st).set_link(uid, "dip-fake-0001")
+    accounts.of(st).set_link(uid, "provider-fake-0001")
 
 
 def _texts(fake) -> list[list[str]]:
@@ -85,7 +85,7 @@ def test_view_data_sends_a_summary_of_what_is_saved_without_the_llm(tmp_path, mo
     job = next(iter(logic.load_jobs().values()))
     for want in (line_channel.VIEW_INTRO, "■ 雇用区分\nアルバイト・パート", "バイトを探しています", "エリア・駅: みほん駅",
                  NOTE, "■ 履歴書の読み取り結果", "に読み取り", "■ 音声相談の下書き\n・", "■ ゲームで作った下書き\n・", "「仕事の収穫」の職務経歴書", f"■ 保存した求人\n・{job.title}",
-                 f"■ 応募した求人\n・{job.title}", "■ dip の会員との連携\nあり", "このトークでの、あなたの発言と aica の返信",
+                 f"■ 応募した求人\n・{job.title}", "■ 事業者の会員との連携\nあり", "このトークでの、あなたの発言と aica の返信",
                  line_channel.FORGET_DATA_TEXT):
         assert want in text, want
     assert RAW_USER not in text and uid not in text  # LINE の userId も aica のユーザーIDも出さない
@@ -101,7 +101,7 @@ def test_view_data_for_a_new_user_says_none_and_writes_nothing(tmp_path, monkeyp
     ((_, body),) = fake.sent()
     text = "\n".join(m["text"] for m in body["messages"])
     assert "■ 雇用区分\n未定" in text and "■ 会話\nなし" in text and "■ 保存した求人\nなし" in text
-    assert uid not in server.state.user_ids()  # 見るだけでは dip の状態にユーザーを作らない
+    assert uid not in server.state.user_ids()  # 見るだけでは事業者の状態にユーザーを作らない
 
 
 def test_view_data_fits_in_five_line_messages_even_when_long_and_keeps_every_section():
@@ -124,7 +124,7 @@ def test_view_data_fits_in_five_line_messages_even_when_long_and_keeps_every_sec
     text = "\n".join(m["text"] for m in msgs)
     assert msgs[0]["text"].startswith(line_channel.VIEW_INTRO) and text.endswith(line_channel.VIEW_OUTRO)
     for title in ("雇用区分", "目的", "希望", "経歴", "相談のまとめ", "履歴書の読み取り結果", "音声相談の下書き",
-                  "ゲームで作った下書き", "保存した求人", "応募した求人", "dip の会員との連携\nあり", "会話\nこのトーク"):
+                  "ゲームで作った下書き", "保存した求人", "応募した求人", "事業者の会員との連携\nあり", "会話\nこのトーク"):
         assert f"■ {title}" in text, title
     assert any(f"ほか {200 - cap} 件" in text for cap in line_channel.VIEW_CAPS)  # 保存した求人 200 件のうち、出せなかった分
 
@@ -163,7 +163,7 @@ def _ask(client, fake, n: int, user: str = RAW_USER) -> str:
 
 
 def test_forget_data_asks_first_and_then_erases_the_same_as_the_web_forget_all(tmp_path, monkeypatch):
-    """LINE の「データを消す」→「すべて消す」の後の dip の状態と連携と会話は、Web のプロフィール画面の「すべて消す」の後と同じ。
+    """LINE の「データを消す」→「すべて消す」の後の事業者の状態と連携と会話は、Web のプロフィール画面の「すべて消す」の後と同じ。
     次の友だち追加は初回訪問の挨拶になる。"""
     from voice_resume import config as voice_config
 
@@ -202,10 +202,10 @@ def test_forget_data_asks_first_and_then_erases_the_same_as_the_web_forget_all(t
 
         assert after(uid) == after(WEB_USER)  # 残るのは、どちらも同じ(初期の値と、持ち越す連番)
         gone = ("track_history", "preferences", "resume_upload", "voice_results", "arcade_drafts", "arcade_plays",
-                "dip_writes", "talk_opens")
+                "provider_writes", "talk_opens")
         assert not any(after(uid).get(k) for k in gone) and "resume_upload_seq" in after(uid)
         assert not any(o.get("summary") for o in after(uid).get("outcomes", []))
-        assert behavior.dip_id(server.state, uid) is None is behavior.dip_id(server.state, WEB_USER)
+        assert behavior.provider_id(server.state, uid) is None is behavior.provider_id(server.state, WEB_USER)
 
         _post(client, [_event("follow", event_id="01F9", token="reply-token-f")])
     assert model.script == []
@@ -268,7 +268,7 @@ def test_unfollow_keeps_the_data_and_following_again_continues(tmp_path, monkeyp
         before = server.state.user(uid)
         _post(client, [_event("unfollow", event_id="01U1")])
         assert server.state.user(uid) == before
-        assert behavior.dip_id(server.state, uid) == "dip-fake-0001"
+        assert behavior.provider_id(server.state, uid) == "provider-fake-0001"
         assert client.portal.call(server.app.state.rt.current_thread, uid) == 1
         _post(client, [_event("follow", event_id="01F2", token="reply-token-2")])
     assert len(fake.sent()) == 2  # unfollow には何も送らない(送れない)

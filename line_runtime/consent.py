@@ -6,7 +6,7 @@
 - resume: 履歴書のファイルを送る直前
 - voice: 音声相談を始める直前
 
-記録は dip の状態(state.json)の本人の行の consents に、{kind: {"version": {"terms": "1.0", "privacy": "1.0"}, "at": ISO の時刻}}。
+記録は事業者の状態(state.json)の本人の行の consents に、{kind: {"version": {"terms": "1.0", "privacy": "1.0"}, "at": ISO の時刻}}。
 版は line_runtime.legal の TERMS_VERSION と PRIVACY_VERSION。どちらかが上がったら 3 つとも取り直す(記録の版が今の版と違えば、
 同意していない扱い)。同意は人(匿名ID、LINE のユーザーID)ごとに 1 つで、/dev のシナリオユーザー(「匿名ID:シナリオユーザー」)は
 匿名IDの行の同意を見る。画面と LINE は版を tag()(例 "terms=1.0;privacy=1.0")で送り返す。示した版が今の版と違えば記録しない
@@ -19,9 +19,9 @@
 
 from __future__ import annotations
 
-from dip_mcp import retention
-from dip_mcp.data import State
 from line_runtime import config, legal
+from provider_mcp import retention
+from provider_mcp.data import State
 from resume_intake import config as resume_config
 from voice_resume import config as voice_config
 
