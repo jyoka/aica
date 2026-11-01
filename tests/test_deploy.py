@@ -66,6 +66,7 @@ def test_the_image_and_the_blueprint_match_the_code():
 def test_the_voice_worker_is_a_service_of_its_own_that_reaches_the_web_service():
     """音声ワーカー(aica-voice)は同じ image の別サービス。Web サービスの名前、dip のポート、共有鍵を写し、ディスクは持たない。"""
     web, voice = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))["services"]
+    assert voice["numInstances"] == 2  # 1 台が LiveKit との接続を失っている間も、もう 1 台が新しい相談を受ける
     assert voice["type"] == "worker" and voice["runtime"] == "docker" and "disk" not in voice
     assert voice["dockerfilePath"] == web["dockerfilePath"] and voice["region"] == web["region"]
     assert (ROOT / voice["dockerCommand"]).is_file()

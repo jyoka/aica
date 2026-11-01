@@ -70,7 +70,8 @@ services:
     dockerfilePath: ./Dockerfile
     dockerCommand: scripts/voice_worker_start.sh
     autoDeployTrigger: "off"
-    numInstances: 1
+    # 2 台にする。LiveKit への接続は時々切れる(1006)ので、1 台が切れている間ももう 1 台が新しい相談を受ける。同時の相談は合わせて 4 件まで
+    numInstances: 2
     envVars:
       # build の引数。モデル(約 460MB)を image に入れる(Dockerfile)
       - key: AICA_VOICE_MODELS
