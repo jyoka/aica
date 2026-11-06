@@ -150,7 +150,7 @@ Render の文書に書いてある、戻るものと戻らないものです。
 ### 4.4 `aica` のコンテナの中の事業者の MCP サーバーが落ちる
 
 - 気づき方: 知らせは来ません。利用者から「音声相談で、希望が保存されない」「要約が出ない」など
-- 見る場所: `aica` の「Logs」で `WARNING: dip MCP server for the voice worker exited; restarting in 10s` が繰り返し出ていないか。
+- 見る場所: `aica` の「Logs」で `WARNING: provider MCP server for the voice worker exited; restarting in 10s` が繰り返し出ていないか。
   `aica-voice` の「Logs」で、事業者の呼び出しの失敗(15 秒で諦める)が出ていないか
 - 戻し方:
   - 10 秒後にループが起動し直します。音声相談は、事業者の道具なしで続きます

@@ -1,4 +1,4 @@
-"""わたしのプロフィール(task 95)の台本テスト。実 LLM なし、dip の MCP は本物、履歴書の読み取りはスタブ。
+"""わたしのプロフィール(task 95)の台本テスト。実 LLM なし、事業者の MCP は本物、履歴書の読み取りはスタブ。
 
 aica が本人について覚えていること(雇用区分・目的・希望・経歴・相談のまとめ・履歴書・音声の下書き・保存・応募)を、
 本人が見て、直して、消せる。確かめること:
@@ -25,10 +25,10 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import behavior, logic, profile
-from dip_mcp.data import JST
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import behavior, logic, profile
+from provider_mcp.data import JST
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import StubClient
 from tests.test_resume_upload import FILENAME, clean_draft
@@ -259,7 +259,7 @@ def test_track_and_consultation_summary_can_be_edited_and_deleted(remembered):
 
 def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered, tmp_path):
     from voice_resume.agent import prepare_advisor
-    from voice_resume.dip import DipMCP
+    from voice_resume.provider import ProviderMCP
 
     with _client(remembered) as client:
         opened, greeting = open_talk(client)
@@ -281,14 +281,14 @@ def test_deleted_resume_is_used_neither_in_the_chat_nor_in_the_voice(remembered,
         assert client.post("/api/event/stream", json={"user_id": uid, "event": "resume_upload",
                                                       "thread": again["thread"]}).status_code == 400
 
-    # 音声: 同じ要約を読むので、面談の指示にも入らない(本物の dip MCP)
+    # 音声: 同じ要約を読むので、面談の指示にも入らない(本物の事業者の MCP)
     async def start():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            return await prepare_advisor(dip, uid)
+            return await prepare_advisor(provider, uid)
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     advisor, _ = asyncio.run(start())
     assert "コンビニみほん駅前店" not in advisor.instructions
@@ -522,7 +522,7 @@ def test_a_close_that_fails_midway_deletes_nothing_and_the_old_conversations_do_
 def test_a_resume_delete_that_fails_after_closing_closes_again_when_pressed_again(remembered, monkeypatch):
     """会話を閉じた後、読み取り結果を消すところで失敗した: 履歴書は残っているので、もう一度押せば会話を閉じ直して
     消せる(先に読み取り結果を消して、閉じる前に失敗すると、もう一度押しても消すものが無く閉じられなかった)。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     with _client(remembered) as client:
         uid, th = _talk_with_resume(client)
@@ -530,7 +530,7 @@ def test_a_resume_delete_that_fails_after_closing_closes_again_when_pressed_agai
         delete_resume = profile.delete_resume
 
         def broken(*a, **kw):
-            raise RuntimeError("dip の状態を書けない")
+            raise RuntimeError("事業者の状態を書けない")
 
         monkeypatch.setattr(profile, "delete_resume", broken)
         with pytest.raises(RuntimeError):
@@ -641,7 +641,7 @@ def test_forget_all_starts_over_as_a_first_visit(remembered):
 
 def test_forget_all_that_fails_midway_deletes_no_conversation_and_can_be_pressed_again(remembered, monkeypatch):
     """「すべて消す」が会話の記録を消すトランザクションの途中で失敗した: 会話は1つも消えず(番号も戻らない)、
-    dip の状態(希望・保存)も消えていない(消えたものが無いので、30分以内に開き直して前の会話が続いても、消したはずの
+    事業者の状態(希望・保存)も消えていない(消えたものが無いので、30分以内に開き直して前の会話が続いても、消したはずの
     ものが戻ることはない)。もう一度押せば全部消えて1番から始まる。"""
     import sqlite3
 
@@ -664,7 +664,7 @@ def test_forget_all_that_fails_midway_deletes_no_conversation_and_can_be_pressed
             client.post("/api/profile/forget")
         _heal(monkeypatch)
         assert _checkpoint_rows(rt, uid) == before
-        assert client.get("/api/profile").json() == profile_before  # dip の状態も消えていない
+        assert client.get("/api/profile").json() == profile_before  # 事業者の状態も消えていない
         rt._threads.clear()  # 再起動
         assert asyncio.run(rt.current_thread(uid)) == 2
 
@@ -679,9 +679,9 @@ def test_forget_all_that_fails_midway_deletes_no_conversation_and_can_be_pressed
 
 
 def test_forget_all_that_fails_after_erasing_the_conversations_does_not_bring_them_back(remembered, monkeypatch):
-    """「すべて消す」が会話を消した後、dip の状態を消すところで失敗した: 30分以内に開き直しても前の会話は続かず
-    (描かず、文脈にも入らない)、新しい会話が1番から始まる。もう一度押せば dip の状態も消える。"""
-    from dip_mcp import profile
+    """「すべて消す」が会話を消した後、事業者の状態を消すところで失敗した: 30分以内に開き直しても前の会話は続かず
+    (描かず、文脈にも入らない)、新しい会話が1番から始まる。もう一度押せば事業者の状態も消える。"""
+    from provider_mcp import profile
 
     with _client(remembered) as client:
         client.get("/")
@@ -693,7 +693,7 @@ def test_forget_all_that_fails_after_erasing_the_conversations_does_not_bring_th
         forget_all = profile.forget_all
 
         def broken(*a, **kw):
-            raise RuntimeError("dip の状態を書けない")
+            raise RuntimeError("事業者の状態を書けない")
 
         monkeypatch.setattr(profile, "forget_all", broken)
         with pytest.raises(RuntimeError):
@@ -715,7 +715,7 @@ def test_forget_all_that_fails_after_erasing_the_conversations_does_not_bring_th
 
 def test_forget_all_also_clears_the_dev_scenario_users_of_this_browser(remembered):
     """/dev のシナリオ利用者(「匿名ID:シナリオユーザー」)も同じ Cookie の本人の記録なので、「すべて消す」で /dev に
-    見えていた記録(dip の状態・会話)も消える。別のブラウザのシナリオ利用者の記録は、名乗っても消せない。"""
+    見えていた記録(事業者の状態・会話)も消える。別のブラウザのシナリオ利用者の記録は、名乗っても消せない。"""
     with _client(remembered) as a:
         b = _client(remembered)
         a.get("/dev"), b.get("/dev")
@@ -731,22 +731,22 @@ def test_forget_all_also_clears_the_dev_scenario_users_of_this_browser(remembere
             logic.save_preferences(remembered.state, r["user"], {"area": "新宿"})
             logic.save_job(remembered.state, r["user"], "a003")
             logic.submit_application(remembered.state, r["user"], "a003")
-        seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
+        seen = a.post("/api/provider", json={"user_id": mine["user"]}).json()
         assert seen["summary"]["stated_preferences"] and seen["saves"] and seen["applications"]
         assert behavior.view(remembered.state, mine["user"])["recent_views"] and a.portal.call(rt.current_thread, mine["user"]) == 1
 
         assert a.post("/api/profile/forget", params={"user_id": theirs["user"]},
                       json={"user_id": theirs["user"]}).json() == {"forgotten": True}
-        seen = a.post("/api/dip", json={"user_id": mine["user"]}).json()
+        seen = a.post("/api/provider", json={"user_id": mine["user"]}).json()
         assert seen["summary"]["stated_preferences"] == {} and seen["summary"]["linked"] is False
         assert seen["saves"] == seen["applications"] == seen["outcomes"] == [] and seen["last_contact"] is None
         assert not behavior.view(remembered.state, mine["user"])["recent_views"]
         assert a.portal.call(rt.current_thread, mine["user"]) == 0  # 会話も消える
         # 別のブラウザのシナリオ利用者はそのまま
-        kept = b.post("/api/dip", json={"user_id": theirs["user"]}).json()
+        kept = b.post("/api/provider", json={"user_id": theirs["user"]}).json()
         assert kept["summary"]["stated_preferences"] and kept["saves"] and kept["applications"]
         assert a.portal.call(rt.current_thread, theirs["user"]) == 1
-        assert a.post("/api/dip", json={"user_id": theirs["user"]}).status_code == 403
+        assert a.post("/api/provider", json={"user_id": theirs["user"]}).status_code == 403
 
 
 # ----------------------------- (5) 本人の Cookie のユーザーだけ -----------------------------
@@ -1025,7 +1025,7 @@ def test_forget_all_keeps_the_link_numbers_so_an_old_link_opens_nothing(remember
         assert logic.conversation_summary(remembered.state, uid)["stated_preferences"] == {}
 
 
-def test_forget_all_clears_scenario_users_found_only_in_dip(remembered):
+def test_forget_all_clears_scenario_users_found_only_in_provider(remembered):
     """「すべて消す」で、同じブラウザの /dev のシナリオ用ユーザー(「匿名ID:シナリオユーザー」)の状態と会話も消える。
     負例: 別のブラウザのシナリオ用ユーザーは消えない。"""
     with _client(remembered) as client:

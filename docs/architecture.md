@@ -31,7 +31,7 @@ aica の運用の決定を、アーキテクチャの 7 つの関門に沿って
 | もの | 今 | 出典 |
 |---|---|---|
 | Web サービス `aica` | Docker、Standard(2GB)、Singapore、`numInstances: 1`。ヘルスチェック `/healthz`。自動デプロイは off | `render.yaml` |
-| `aica` のコンテナの中 | Web プロセス(uvicorn、ワーカー 1 つ)、事業者の子プロセス、音声ワーカー向けの事業者の MCP サーバー(`AICA_DIP_PORT=8020`)、移す間の音声ワーカー(`AICA_VOICE_WORKER=1`) | `scripts/container_start.sh` |
+| `aica` のコンテナの中 | Web プロセス(uvicorn、ワーカー 1 つ)、事業者の子プロセス、音声ワーカー向けの事業者の MCP サーバー(`AICA_PROVIDER_PORT=8020`)、移す間の音声ワーカー(`AICA_VOICE_WORKER=1`) | `scripts/container_start.sh` |
 | 音声ワーカー `aica-voice` | Docker のバックグラウンドワーカー、Standard(2GB)、1 台。ヘルスチェックなし、ディスクなし。相談は同時 2 件、1 件 400MB まで | `render.yaml` |
 | ストレージ | 永続ディスク `aica-data` 2GB を `/app/data` に。SQLite 4 つ(会話、事業者のイベント、要約、アカウント)と、JSON と JSONL(`state.json`、`quota.json`、`costs.jsonl`、`line_events.json`)。マネージド DB はない | `render.yaml`、[HLD の 4.6](architecture/hld.md#46-保存するデータ) |
 | バックアップ | Render のディスクのスナップショットだけ(Render の文書では 24 時間ごと、7 日残る)。リポジトリに手順はなく、復元を試したことはない | [Render の Persistent Disks](https://render.com/docs/disks) |

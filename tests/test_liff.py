@@ -21,8 +21,6 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from line_runtime import line_channel
 from line_runtime.line_channel import (
     IdKeyError,
@@ -32,6 +30,8 @@ from line_runtime.line_channel import (
     line_user,
     to_messages,
 )
+from provider_mcp import logic
+from provider_mcp.data import State
 
 ID_KEY = "offline-test-aica-id-key-0123456789abcdef"
 LIFF_ID = "2000000000-OfflineT"
@@ -81,7 +81,7 @@ class FakeLineLogin:
 @pytest.fixture
 def liff(tmp_path, monkeypatch):
     """LIFF の設定がある Web サーバー(lifespan は回さない。LIFF 画面は会話を使わない)。(server, 偽物の LINE)"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")
     for k in (*LIFF_ENVS, line_channel.LIFF_CHANNEL_ENV, *LINE_ENVS):

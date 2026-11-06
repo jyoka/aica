@@ -1,6 +1,6 @@
 """正社員のヒアリングの形 D(設計メモ docs/design/fulltime-hearing.md §5.2)の部品を、LINE の Flex と文の形にする。task 246。
 
-何を付けるかは dip のハーネスの側(dip_mcp/career/ui.py)が決め、返信の ui に入れてくる。ここは数えずに描くだけ。
+何を付けるかは事業者のハーネスの側(provider_mcp/career/ui.py)が決め、返信の ui に入れてくる。ここは数えずに描くだけ。
 返すものは progress_ui.build と同じ形 {kind, flex, text}(line_channel.to_messages が Flex を 1 つ足し、Web のトーク
 talk-core.js は text を吹き出しに足す)。Web のトークには押せる Flex が無いので、まとめの「直す」のボタンは quick_replies
 (選択肢に足すもの)にする。
@@ -16,7 +16,7 @@ talk-core.js は text を吹き出しに足す)。Web のトークには押せ�
   review       まとめ。行ごとに「直す」(職歴カードの行は「仕事」「規模」「結果」)を押すと、その欄を直す文を送る
   complete     全部の完成のカルーセル。先頭は条件のプロフィールカード(と空欄の数)、続けて職歴カード
 
-Flex の中の字(flex_lines)は、ハーネスが本人の推定時間に数えた字(dip_mcp/career/ui.py の read_chars)と同じになるようにする
+Flex の中の字(flex_lines)は、ハーネスが本人の推定時間に数えた字(provider_mcp/career/ui.py の read_chars)と同じになるようにする
 (帯とプロフィールカードは見積もり)。評価の本人役は flex_text で読む(fulltime-hearing.md §6.1)。
 得点、順位、ほめ言葉は出さない。
 """
@@ -36,7 +36,7 @@ STAMP_PATH = "/static/career/stamp.png"
 STAMP_COLOR = "#ff5fa2"  # アーケードの --neon(スタンプのチェックと同じ色)
 LINK = "#3d5a99"
 CHIP_BACK = "#e6f9ee"  # 帯の「＋なぜ今」の札の地(P.BAR_COLOR の薄い色)
-NEXT_LABEL, DONE_MARK = "これから", "✓"  # dip_mcp/career/ui.py の NEXT_LABEL、DONE_MARK と同じ
+NEXT_LABEL, DONE_MARK = "これから", "✓"  # provider_mcp/career/ui.py の NEXT_LABEL、DONE_MARK と同じ
 ALT_MAX = 400
 WEB_FIX_MAX = 11  # Web のトークで「直す」を足す数(まとめの選択肢 2 つと合わせて 13 個まで)
 
@@ -158,7 +158,7 @@ def band_text(b: dict) -> str:
 
 def _profile_rows(p: dict) -> list[tuple[str, str]]:
     """プロフィールカードの行 [(グループの名前, 値)]。最後の「まだ」の行は、相談の途中なら「これから」にする(完成のカードは
-    「まだ」のまま)。頭の字(dip の profile_head)と合わせて P.CARD_MAX 字までに切る(切り方は progress_ui.profile_rows)。"""
+    「まだ」のまま)。頭の字(事業者の profile_head)と合わせて P.CARD_MAX 字までに切る(切り方は progress_ui.profile_rows)。"""
     g = p["growth"]
     todo = P.TODO if p.get("complete") else NEXT_LABEL
     head = len(g["icon"]) + len(P.HEAD) + len(g["head"]) + len(_done(p)) * len(DONE_MARK)

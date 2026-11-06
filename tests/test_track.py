@@ -1,8 +1,8 @@
-"""雇用区分の記録と、発話からの切り替え(set_search_track、ADR-0001)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""雇用区分の記録と、発話からの切り替え(set_search_track、ADR-0001)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
 合図の強弱の判断は LLM の仕事で、ここでは台本がその判断を演じる。確かめるのは、
-(1) 切り替えの合図の決まりが dip の Prompt から LINE 側エージェントに届いていること、
-(2) 台本どおりに呼んだ set_search_track が区分・根拠・取り消しを dip に記録し、要約の search_track に出ること、
+(1) 切り替えの合図の決まりが事業者の Prompt から LINE 側エージェントに届いていること、
+(2) 台本どおりに呼んだ set_search_track が区分・根拠・取り消しを事業者に記録し、要約の search_track に出ること、
 (3) 切り替えない場面(弱い合図・履歴書だけ)で区分が未定のまま残ること、(4) 次の会話(再訪)に区分が引き継がれること、
 (5) 他人のユーザーとして記録できないこと。LLM が合図を正しく見分けるかは、評価(実 API)で測る。
 """
@@ -14,12 +14,12 @@ import json
 import pytest
 from langchain_core.messages import AIMessage
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from evals.checks import conversation_checks, turn_violations
 from evals.scenarios import load_scenarios
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic
+from provider_mcp.data import State
 from resume_draft.schema import ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply, run
 
@@ -70,7 +70,7 @@ def _summary_in_turn(messages) -> dict:
                 if m.type == "tool" and m.name == "get_user_conversation_summary")
 
 
-# ----------------------------- dip のツールと要約 -----------------------------
+# ----------------------------- 事業者のツールと要約 -----------------------------
 
 
 def test_new_user_starts_undecided_and_set_search_track_records_track_and_evidence(tmp_path):
@@ -149,7 +149,7 @@ def test_explicit_or_strong_signal_switches_in_one_turn(tmp_path, said, track):
     ])
     t1, t2 = run(model, [(UID, "visit", None), (UID, "message", said)], tmp_path)
 
-    system = model.systems[-1]  # 合図の決まりが dip の Prompt から届いている
+    system = model.systems[-1]  # 合図の決まりが事業者の Prompt から届いている
     assert "## 雇用区分" in system and "set_search_track" in system
     assert "年収・キャリア・転職の時期の話 → 正社員" in system and "シフト・時給・学校との両立の話 → アルバイト・パート" in system
     assert tool_names(t1) == [] and tool_names(t2) == ["set_search_track"]
@@ -290,7 +290,7 @@ def test_revisit_greeting_starts_from_the_recorded_track(tmp_path):
 
 def test_another_browser_cannot_switch_someone_elses_track(tmp_path, monkeypatch):
     """ブラウザ A の会話で切り替えた区分は A のユーザーにだけ残る。B は A のユーザーとして話せない(=記録できない)。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from fastapi.testclient import TestClient
 
     from line_runtime import config, runtime, server
@@ -317,7 +317,7 @@ def test_another_browser_cannot_switch_someone_elses_track(tmp_path, monkeypatch
         for path in ("/api/event", "/api/event/stream"):
             denied = b.post(path, json={"user_id": ua, "event": "message", "text": "やっぱりバイトで"})
             assert denied.status_code == 403
-        assert b.post("/api/dip", json={"user_id": ua}).status_code == 403  # 区分を覗くこともできない
+        assert b.post("/api/provider", json={"user_id": ua}).status_code == 403  # 区分を覗くこともできない
         assert model.script == []
 
     assert summary(tmp_path, ua)["search_track"] == "正社員"

@@ -12,9 +12,9 @@ import json
 
 import pytest
 
-from dip_mcp.baito import harness as B
-from dip_mcp.career import harness as H
 from evals import scenes as S
+from provider_mcp.baito import harness as B
+from provider_mcp.career import harness as H
 
 SCENES = S.load_scenes()
 BY_ID = {s["id"]: s for s in SCENES}

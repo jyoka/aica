@@ -14,11 +14,11 @@ import json
 
 import pytest
 
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import harness as H
-from dip_mcp.convo import entry as E
-from dip_mcp.convo import pick as P
-from dip_mcp.convo import state as CS
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import harness as H
+from provider_mcp.convo import entry as E
+from provider_mcp.convo import pick as P
+from provider_mcp.convo import state as CS
 from tests.test_convo import CAREER_ENTRY
 
 CARD5_SCENES = ("multi-infer-raise-target", "multi-career-in-why-now", "t326-salary-reask", "t326-more-lead", "flow-more-typed",

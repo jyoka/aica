@@ -1,8 +1,8 @@
 """LINE でレジュメ・アーケードを使う(task 219)。実 LINE・実 LLM は呼ばない。
 
 LINE の Messaging API と ID トークンの検証は偽物の LINE(httpx.MockTransport)、会話のモデルは台本の偽物、ゲームの AI は台本のスタブ
-(tests/test_arcade_ai.StubLLM)。dip の MCP は本物(子プロセス。環境変数も同じものを読む)。
-- LIFF の設定があれば、dip の要約は LINE のユーザーにもゲームの URL(arcade_url)を渡し、LINE のトークでは LIFF URL のボタンになる。
+(tests/test_arcade_ai.StubLLM)。事業者の MCP は本物(子プロセス。環境変数も同じものを読む)。
+- LIFF の設定があれば、事業者の要約は LINE のユーザーにもゲームの URL(arcade_url)を渡し、LINE のトークでは LIFF URL のボタンになる。
   無ければ今までどおり渡さない
 - LIFF の中のゲームは、AI と保存を LIFF の本人(LINE のユーザー)で呼ぶ。回数の上限は Web と同じ。下書きはその本人の要約と
   プロフィール(「データを見る」)に出て、ほかの人の下書きにはならない
@@ -17,12 +17,12 @@ import json
 import pytest
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from dip_mcp import arcade, logic, profile
-from dip_mcp.data import State
 from line_runtime import line_channel
 from line_runtime.agent import PINNED_USER
 from line_runtime.line_channel import line_user
 from line_runtime.runtime import _tool_payload
+from provider_mcp import arcade, logic, profile
+from provider_mcp.data import State
 from tests.test_arcade_ai import MD, StubLLM
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_liff_actions import (  # noqa: F401  browser と served と line_liff はフィクスチャ
@@ -53,12 +53,12 @@ ASK = "職務経歴書を作りたい"
 GUIDE = "遊びながら書類を作れます"
 
 
-# ----------------------------- dip の要約のゲームの URL -----------------------------
+# ----------------------------- 事業者の要約のゲームの URL -----------------------------
 
 
 def test_line_users_get_the_game_url_only_when_liff_is_configured(tmp_path, monkeypatch):
     """LIFF の設定(LIFF ID とチャネル ID)があるときだけ、LINE のユーザーの要約に arcade_url が載る。Web のユーザーは今までどおり。
-    dip の LIFF の判定は、LINE の口(line_channel.liff_configured)と同じ答えになる。"""
+    事業者の LIFF の判定は、LINE の口(line_channel.liff_configured)と同じ答えになる。"""
     _no_liff(monkeypatch)
     st = State(tmp_path / "state.json")
     st.reset()
@@ -87,7 +87,7 @@ def test_line_users_get_the_game_url_only_when_liff_is_configured(tmp_path, monk
 
 
 class GameGuide(ScriptedModel):
-    """dip の Prompt の「ゲームで書類を作る」どおりに動く偽のモデル(何度でも返す)。本人が書類を作りたいと言ったら要約を読み、
+    """事業者の Prompt の「ゲームで書類を作る」どおりに動く偽のモデル(何度でも返す)。本人が書類を作りたいと言ったら要約を読み、
     arcade_url があればそのままボタンにする(無ければ出さない)。ほかの発言には 1 問だけ返す。"""
 
     systems: list = []  # noqa: RUF012  モデルに渡ったシステムプロンプト

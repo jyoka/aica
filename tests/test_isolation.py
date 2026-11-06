@@ -2,11 +2,11 @@
 
 - ブラウザから呼ぶ経路は、正しい形式の Cookie が必須(無い・不正なら 401)。他人の匿名IDを本文や URL に入れても
   読めない・話せない(403 か、Cookie の本人の分だけ)。
-- Cookie 無しの /api/talk/open は ID を発行せず、dip の状態ファイルにユーザーを増やさない。
+- Cookie 無しの /api/talk/open は ID を発行せず、事業者の状態ファイルにユーザーを増やさない。
 - サーバー間の経路(音声ワーカー → /api/voice/result)は共有鍵が無いと 401。
 - 会話数の上限は、Cookie 無しや ID の詐称で迂回できない。
 - 本人のデータを指す URL(音声の入口・下書き・履歴書の読み取り結果・応募フォーム)にユーザーIDが出ない。
-- dip のツールの line_user_id は会話のユーザーに固定する(LLM が別の ID を渡しても他人のデータに触れない)。
+- 事業者のツールの line_user_id は会話のユーザーに固定する(LLM が別の ID を渡しても他人のデータに触れない)。
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import os
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from dip_mcp import logic
-from dip_mcp.data import State
+from provider_mcp import logic
+from provider_mcp.data import State
 from resume_draft.pii import (
     address_spans,
     has_pii,
@@ -55,7 +55,7 @@ def _routes(uid: str) -> list[tuple[str, str, dict]]:
         ("POST", "/api/talk/open", {}),
         ("GET", "/api/talk/history", {}),
         ("GET", "/api/saved", {}),
-        ("POST", "/api/dip", {"json": {"user_id": uid}}),
+        ("POST", "/api/provider", {"json": {"user_id": uid}}),
         ("POST", "/api/scenarios/F-follow-new/start", {}),
         ("POST", "/api/event", {"json": {"user_id": uid, "event": "message", "text": "hi"}}),
         ("POST", "/api/event/stream", {"json": {"user_id": uid, "event": "message", "text": "hi"}}),
@@ -83,7 +83,7 @@ def _routes(uid: str) -> list[tuple[str, str, dict]]:
 @pytest.mark.parametrize("cookies", [{}, {"aica_uid": "x"}, {"aica_uid": "w-XYZ"}, {"aica_uid": f"{OTHER}:sim-new"}],
                          ids=["no-cookie", "malformed", "not-hex", "scenario-user-as-cookie"])
 def test_every_browser_route_needs_a_well_formed_cookie(app, cookies):  # noqa: F811
-    """Cookie が無い・形式が不正なら、どの経路も 401。LLM も呼ばず、dip の状態ファイルにも書かない。"""
+    """Cookie が無い・形式が不正なら、どの経路も 401。LLM も呼ばず、事業者の状態ファイルにも書かない。"""
     from fastapi.testclient import TestClient
 
     model = Greeter(script=[])  # 呼ばれたら台本が尽きて落ちる
@@ -286,12 +286,12 @@ def test_an_old_upload_link_does_not_open_a_newer_resume(app, monkeypatch):  # n
         assert "コンビニみほん駅前店" in me.get(second).text
 
 
-# ----------------------------- dip のツールは会話のユーザーに固定 -----------------------------
+# ----------------------------- 事業者のツールは会話のユーザーに固定 -----------------------------
 
 
-def test_dip_tools_are_pinned_to_the_conversation_user(tmp_path):
+def test_provider_tools_are_pinned_to_the_conversation_user(tmp_path):
     """LLM が別のユーザーIDをツールに渡しても(プロンプトインジェクションなど)、読み書きするのは会話のユーザーだけ。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     me, victim = "w-3333333333333333", "sim-applied"  # 被害者は応募履歴のあるユーザー
@@ -380,7 +380,7 @@ def test_the_consultation_summary_drops_addresses(tmp_path):
 ])
 def test_one_address_rule_for_preferences_summary_form_and_track(tmp_path, value, personal):
     """希望の保存、まとめを直す、フォームの続き、雇用区分の根拠が、同じ決まり(resume_draft/pii.py)で個人情報を見分ける。"""
-    from dip_mcp import profile
+    from provider_mcp import profile
 
     assert personal_value(value) is personal
     state = State(tmp_path / "state.json")

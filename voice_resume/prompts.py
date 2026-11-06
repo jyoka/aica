@@ -6,8 +6,8 @@
 - 個人情報(氏名・住所・電話番号・メール・生年月日)は聞かない・保存しない。
 - 出来上がった下書きは本人が確認・修正してから使う。
 
-相談の進め方(何を明らかにするか・掘り下げ方・保存先・下書きの書類)は、チャットと同じく dip が配る雇用区分ごとの
-playbook(dip_mcp/playbooks/{区分}_voice.md、get_counseling_playbook(track, "voice"))に書き、ここには区分によらない
+相談の進め方(何を明らかにするか・掘り下げ方・保存先・下書きの書類)は、チャットと同じく事業者が配る雇用区分ごとの
+playbook(provider_mcp/playbooks/{区分}_voice.md、get_counseling_playbook(track, "voice"))に書き、ここには区分によらない
 音声の決まり(話し方・ツールの呼び方・0件のとき・誠実性・雇用区分の切り替え)だけを置く(aica v2 の G)。
 アルバイト・パートの面談はタスク 31 からの決まり(全体3〜5分・6〜8問・深掘りは1テーマ最大1回)のまま。
 """
@@ -47,16 +47,16 @@ STAGES = (
 # 区分ごとの、探しているものの呼び方(挨拶と役割の説明に使う)
 SEARCH_LABEL = {"アルバイト・パート": "バイト探し", "正社員": "転職・仕事探し", "未定": "仕事探し"}
 
-# dip の playbook が読めないとき(dip につながらない・単体で動かすとき)の最小の進め方
+# 事業者の playbook が読めないとき(事業者につながらない・単体で動かすとき)の最小の進め方
 FALLBACK_PLAYBOOK = """\
-(dip から相談の playbook を読めなかったため、最小の進め方で続ける)
+(事業者から相談の playbook を読めなかったため、最小の進め方で続ける)
 - 目的・希望条件(職種・エリアなど)・経験・できること・資格を、1問ずつ短く聞く。
 - 聞いたことを短く要約して確かめてから propose_jobs で求人を出し、締める前に finalize_interview を呼ぶ。"""
 
 
-# 会話の層の t1(TALK_LAYER_VERSION=t1。dip_mcp.logic.TALK_LAYER_FLAG と同じ名前。設計メモ docs/design/conversation-layer.md §4.13)。
-# 音声の会話の作りは変えず、指示に aica の事実と、危ない言葉の表と決まった文を足す。voice_resume は dip のコードを読み込まないので
-# 写しを持つ(事実は dip_mcp/convo/facts.json の ask_service と ask_advice、言葉と窓口は dip_mcp/convo/crisis.json。
+# 会話の層の t1(TALK_LAYER_VERSION=t1。provider_mcp.logic.TALK_LAYER_FLAG と同じ名前。設計メモ docs/design/conversation-layer.md §4.13)。
+# 音声の会話の作りは変えず、指示に aica の事実と、危ない言葉の表と決まった文を足す。voice_resume は事業者のコードを読み込まないので
+# 写しを持つ(事実は provider_mcp/convo/facts.json の ask_service と ask_advice、言葉と窓口は provider_mcp/convo/crisis.json。
 # tests/voice/test_prompts.py で同じことを確かめる)。無ければ今のまま
 TALK_LAYER_FLAG = "TALK_LAYER_VERSION"
 TALK_LAYER_VERSIONS = ("t1",)
@@ -127,7 +127,7 @@ def advisor_instructions(track: str = DEFAULT_TRACK, playbook: str | None = None
     doc = document_name(track)
     search = SEARCH_LABEL.get(track, SEARCH_LABEL[DEFAULT_TRACK])
     return f"""\
-あなたは求人サイト「バイトル」のキャリアアドバイザーです(アルバイト・パートから正社員まで)。
+あなたは求人サイト「aica」のキャリアアドバイザーです(アルバイト・パートから正社員まで)。
 音声で日本語の会話をしながら、{search}の相談に乗り、本人の希望と{doc}に書ける事実を短く聞き、
 最後に条件に合う求人を提案します。会話が終わると{doc}の下書きが作られます。
 今の雇用区分: {track}
@@ -148,7 +148,7 @@ def advisor_instructions(track: str = DEFAULT_TRACK, playbook: str | None = None
 - 本人が「やっぱりバイトで」のように別の区分を言ったら、その発言を根拠に切り替える。
 
 ## 求人が0件だったとき
-- propose_jobs の結果に、どの条件を外すと何件見つかるか(dip で調べた事実)が入っている。
+- propose_jobs の結果に、どの条件を外すと何件見つかるか(事業者で調べた事実)が入っている。
   その数字をそのまま具体的に伝える(例:「エリアを外すと5件あります」)。
 - どの条件を外すかは本人に一度で選んでもらう。「探してもよいですか?」のような
   許可の確認を繰り返さない。当てずっぽうで条件を変えて探し直さない。
@@ -217,7 +217,7 @@ finalize_interview ツールを呼んで下書きを保存し(summary に相談�
 """
 
 
-# dip に保存できる希望の項目と呼び名(dip_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)
+# 事業者に保存できる希望の項目と呼び名(provider_mcp/logic.py の PREFERENCE_KEYS と同期。テストで確認)
 # experience(これまで何をしてきたか)/ skills(本人が「できる」と言った作業)/
 # certifications(持っている資格・免許)は分けて保存する(task 41)
 PREFERENCE_LABELS = {
@@ -234,7 +234,7 @@ PROFILE_KEYS = ("purpose", "strengths", "wants", "avoids", "concerns")
 
 
 def _stated_value(v) -> str:
-    """dip の stated_preferences の値({"value": ..., "saved": ...} か生の値)を文字列にする。"""
+    """事業者の stated_preferences の値({"value": ..., "saved": ...} か生の値)を文字列にする。"""
     if isinstance(v, dict):
         return str(v.get("value", ""))
     return str(v)
@@ -250,7 +250,7 @@ def _stated_lines(stated: dict | None, profile: bool, track: str = DEFAULT_TRACK
 
 
 def stated_preferences_note(stated: dict | None, track: str = DEFAULT_TRACK) -> str:
-    """前に本人が話した希望と、相談で分かった本人のこと(dip の要約の stated_preferences)を、指示への追記にする。
+    """前に本人が話した希望と、相談で分かった本人のこと(事業者の要約の stated_preferences)を、指示への追記にする。
 
     LINE 側のプロンプトと同じ決まり: 確認形で1回だけ使い、同じことを聞き直さない。
     今の雇用区分で使わない条件(区分が違うときに保存した希望年収・時給など)は入れない。
@@ -260,7 +260,7 @@ def stated_preferences_note(stated: dict | None, track: str = DEFAULT_TRACK) -> 
     items = _stated_lines(stated, profile=False, track=track)
     if items:
         note += (
-            "\n## 前に本人が話した希望(dip に保存済み)\n"
+            "\n## 前に本人が話した希望(事業者に保存済み)\n"
             + "\n".join(items)
             + "\n"
             "- これは前の会話(LINE や音声)で本人が話した希望。確認形で1回だけ触れ"
@@ -271,7 +271,7 @@ def stated_preferences_note(stated: dict | None, track: str = DEFAULT_TRACK) -> 
     profile = _stated_lines(stated, profile=True)
     if profile:
         note += (
-            "\n## 前の相談で本人が話したこと(dip に保存済み)\n"
+            "\n## 前の相談で本人が話したこと(事業者に保存済み)\n"
             + "\n".join(profile)
             + "\n"
             "- これは前の会話(LINE や音声)で本人が自分の言葉で話したこと。同じことを聞き直さず、"
@@ -281,12 +281,12 @@ def stated_preferences_note(stated: dict | None, track: str = DEFAULT_TRACK) -> 
     return note
 
 
-# 指示に入れる相談のまとめの上限(dip の record_conversation_outcome と同じ 200字)
+# 指示に入れる相談のまとめの上限(事業者の record_conversation_outcome と同じ 200字)
 CONSULTATION_SUMMARY_MAX_CHARS = 200
 
 
 def consultation_summary_note(summary: dict | None) -> str:
-    """前の会話の相談のまとめ(dip の要約の consultation_summary)を、指示への追記にする。無ければ空文字。"""
+    """前の会話の相談のまとめ(事業者の要約の consultation_summary)を、指示への追記にする。無ければ空文字。"""
     text = str((summary or {}).get("text") or "").strip()[:CONSULTATION_SUMMARY_MAX_CHARS]
     if not text:
         return ""
@@ -332,7 +332,7 @@ def _latest_education(resume: dict) -> dict | None:
 
 
 def _resume_facts(resume: dict) -> list[tuple[str, str]]:
-    """dip の要約の uploaded_resume から、面談に使う要点を大事な順に (項目名, 行) で拾う。
+    """事業者の要約の uploaded_resume から、面談に使う要点を大事な順に (項目名, 行) で拾う。
 
     決まった項目だけを読む(personal や未知の項目は読まない = 氏名・連絡先は指示に入らない)。
     短くて大事な項目(資格・読み取れなかった点・できること・学歴)を先に、次に職歴(新しい順に
@@ -394,9 +394,9 @@ def _fit(lines: list[tuple[str, str]], limit: int) -> list[str]:
 
 
 def uploaded_resume_note(resume: dict | None) -> str:
-    """本人がトークでアップロードした履歴書(dip の要約の uploaded_resume)を、指示への追記にする。
+    """本人がトークでアップロードした履歴書(事業者の要約の uploaded_resume)を、指示への追記にする。
 
-    LINE 側のプロンプト(baitoru_assistant.md の uploaded_resume の決まり)と同じ考え方:
+    LINE 側のプロンプト(job_assistant.md の uploaded_resume の決まり)と同じ考え方:
     書いてある経験・資格・スキルは聞き直さず、確認形で使って次の1問や提案につなげる。
     要点は RESUME_NOTE_MAX_CHARS 文字に収まる行だけを入れる。履歴書が無ければ空文字(追記しない)。
     """

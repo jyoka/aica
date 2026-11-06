@@ -10,10 +10,10 @@
 | 事実 | 場所 |
 |---|---|
 | 求人カードのボタンは「詳しく見る / 保存」の2つだけ。応募ボタンは無い | `line_runtime/static/talk.html` の `jobCard()` |
-| 「応募の続き」フローは B-exit 用に一式ある: 非PIIだけトークで受け取り(`resume_application_form`)、PII は専用画面 `/liff/apply` に回し、画面から `submit_application` で確定 | `dip_mcp/logic.py` の `resume_form` / `submit_application`、`line_runtime/server.py` の `/liff/apply` |
-| PII ガードレール確立済み: 電話番号・氏名・住所・メール・生年月日はトークで受け取らない。項目名に関係なく値が電話番号・メールなら拒否 | `dip_mcp/data.py` の `PII_FIELDS` / `PII_VALUE`、評価シナリオ `pii` |
+| 「応募の続き」フローは B-exit 用に一式ある: 非PIIだけトークで受け取り(`resume_application_form`)、PII は専用画面 `/liff/apply` に回し、画面から `submit_application` で確定 | `provider_mcp/logic.py` の `resume_form` / `submit_application`、`line_runtime/server.py` の `/liff/apply` |
+| PII ガードレール確立済み: 電話番号・氏名・住所・メール・生年月日はトークで受け取らない。項目名に関係なく値が電話番号・メールなら拒否 | `provider_mcp/data.py` の `PII_FIELDS` / `PII_VALUE`、評価シナリオ `pii` |
 | トークに出せるボタンは `/liff/` で始まる事業者の画面 URL だけ(モデルが作った URL は表示しない) | `line_runtime/runtime.py` |
-| 会話の骨格: 1返信1質問、選択肢は最大4つで逃げ道つき、応募を迫らない。ゴールは応募数ではなく「次に開いてもらえる関係」 | `dip_mcp/prompts/baitoru_assistant.md` |
+| 会話の骨格: 1返信1質問、選択肢は最大4つで逃げ道つき、応募を迫らない。ゴールは応募数ではなく「次に開いてもらえる関係」 | `provider_mcp/prompts/job_assistant.md` |
 | v1 は架空求人(fixtures)のまま。実応募先(求人サービスの API・ATS)は無い。CRM プッシュは削除される | PRD #54 |
 
 ### B-exit(応募フォームの途中離脱)シナリオの知見
@@ -103,4 +103,4 @@ aica の会話骨格(1返信1質問・クイックリプライ)は、この「�
 - [リクオプ: 応募フォーム最適化(EFO)](https://recop.jp/feature/efo/)
 - [採用係長: 採用エントリーフォームの作り方(項目数と完了率の負の相関)](https://saiyo-kakaricho.com/wp/application-form/)
 - LINE ヤフーの公式の事例: 求人サービスの LINE 活用(応募件数が約80%増えた)
-- 内部: `docs/design/line-sim-scenarios.md`(B-exit / pii の設計)、`dip_mcp/logic.py`、`line_runtime/server.py`、`line_runtime/static/talk.html`、PRD jyoka/tasks#54
+- 内部: `docs/design/line-sim-scenarios.md`(B-exit / pii の設計)、`provider_mcp/logic.py`、`line_runtime/server.py`、`line_runtime/static/talk.html`、PRD jyoka/tasks#54

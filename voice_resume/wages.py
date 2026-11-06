@@ -24,7 +24,7 @@ class WageEntry(BaseModel):
 
 
 class WageReference(BaseModel):
-    survey: str = Field(description="調査の名前(例: マイナビ アルバイト・パート平均時給レポート)")
+    survey: str = Field(description="調査の名前(例: 民間の平均時給調査)")
     period: str = Field(description="調査の時期(例: 2026年8月)")
     source: str = Field(description="情報源のサイト名だけ(URL やリンクは入れない)。読み上げに使う")
     source_url: str = Field(default="", description="情報源の URL(確かめる用。読み上げない)")

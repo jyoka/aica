@@ -1,7 +1,7 @@
 [
-  {"line_user_id": "sim-yoru", "dip_id": "D1001", "label": "シーンA: 7月に新宿の居酒屋に応募・夜希望", "outcomes": []},
-  {"line_user_id": "sim-exit", "dip_id": "D1002", "label": "シーンB: 2時間前にコンビニ夜勤の応募フォームで離脱", "outcomes": []},
-  {"line_user_id": "sim-applied", "dip_id": "D1004", "label": "シーンD: 9/19に居酒屋に応募・連絡待ち", "outcomes": []},
-  {"line_user_id": "sim-browsing", "dip_id": "D1005", "label": "比較検討層: 閲覧・保存あり、応募なし", "outcomes": []},
-  {"line_user_id": "sim-new", "dip_id": null, "label": "dip ID 未連携の新規ユーザー", "outcomes": []}
+  {"line_user_id": "sim-yoru", "provider_id": "D1001", "label": "シーンA: 7月に新宿の居酒屋に応募・夜希望", "outcomes": []},
+  {"line_user_id": "sim-exit", "provider_id": "D1002", "label": "シーンB: 2時間前にコンビニ夜勤の応募フォームで離脱", "outcomes": []},
+  {"line_user_id": "sim-applied", "provider_id": "D1004", "label": "シーンD: 9/19に居酒屋に応募・連絡待ち", "outcomes": []},
+  {"line_user_id": "sim-browsing", "provider_id": "D1005", "label": "比較検討層: 閲覧・保存あり、応募なし", "outcomes": []},
+  {"line_user_id": "sim-new", "provider_id": null, "label": "事業者 ID 未連携の新規ユーザー", "outcomes": []}
 ]

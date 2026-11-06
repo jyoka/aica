@@ -130,9 +130,9 @@ if __name__ == "__main__":
     from line_runtime.config import load_env
 
     load_env()
-    # 形 A の dip の状態は実行ごとの一時ファイルに(開発中の data/state.json を汚さない)
+    # 形 A の事業者の状態は実行ごとの一時ファイルに(開発中の data/state.json を汚さない)
     tmp = Path(tempfile.mkdtemp())
-    os.environ["DIP_STATE_PATH"] = str(tmp / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp / "state.json")
     a = parse_args()
     try:
         sys.exit(asyncio.run(main(a.forms, a.persona, a.repeat, a.limit_usd, a.ledger, a.max_turns, a.same_samples,

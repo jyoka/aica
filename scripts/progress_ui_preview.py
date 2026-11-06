@@ -1,6 +1,6 @@
 """プロフィールが育つ UI(帯、プロフィールカード、完成。line_runtime/progress_ui.py)の画面の写真を作る(task 259)。
 
-アルバイト・パートの相談(dip_mcp/baito)を、偽のモデルとボタンだけで最後まで進め、帯・プロフィールカード・完成が付く
+アルバイト・パートの相談(provider_mcp/baito)を、偽のモデルとボタンだけで最後まで進め、帯・プロフィールカード・完成が付く
 ターンの返信(吹き出し 1 つと Flex 1 つ、クイックリプライ)を、LINE のトークに近い見た目の HTML に描いて PNG にする。
 Flex は LINE の Flex の決まり(bubble の size、box の layout・width・backgroundColor、text の size など)をまねて描くだけで、
 LINE の実機の描き方ではない(実機では確かめていない)。帯の size(micro / kilo)とバーの色の見比べも 1 枚作る。
@@ -17,9 +17,9 @@ import html
 import json
 from pathlib import Path
 
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import progress as P
 from line_runtime import progress_ui as U
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import progress as P
 
 SEGMENTS = {"student": "学生", "homemaker": "家のこと中心（主婦・主夫など）", "side_job": "本業あり副業探し",
             "other": "フリーター・求職中・その他"}
@@ -128,7 +128,7 @@ def scene_html(title: str, s: dict) -> str:
     qr = "".join(f"<span>{html.escape(c)}</span>" for c in s["choices"])
     return (f'<div class="phone" id="shot"><div class="cap">{html.escape(title)}</div>'
             f'<div class="row me"><div class="bubble">{html.escape(s["said"])}</div></div>'
-            f'<div class="row"><div class="avatar">B</div><div class="col"><div class="bubble">{html.escape(s["reply"])}</div>'
+            f'<div class="row"><div class="avatar">a</div><div class="col"><div class="bubble">{html.escape(s["reply"])}</div>'
             f'{flex_html(s["ui"]["flex"])}</div></div>' + (f'<div class="qr">{qr}</div>' if qr else "") + "</div>")
 
 

@@ -1,31 +1,31 @@
 """希望条件 → recommend_jobs の引数づくりと、求人の読み上げ文。
 
-職種は dip 側(`dip_mcp/logic.py` の JOB_TYPES / FULLTIME_JOB_TYPES)と
+職種は事業者側(`provider_mcp/logic.py` の JOB_TYPES / FULLTIME_JOB_TYPES)と
 完全一致させる(PR #25: 一覧に無い値はエラーになる)。ここにコピーを持ち、
-テストで dip 側とずれていないことを確かめる(dip_mcp のコードには依存しない)。
+テストで事業者側とずれていないことを確かめる(provider_mcp のコードには依存しない)。
 エリアの一覧(AREAS)と広い言い方(AREA_PHRASES)、雇用区分(TRACKS)も同じやり方で持つ(task 33・aica v2 の G)。
 求人の属性(人と話す量・体を使う量)と正社員の働き方・休日の引数も同じやり方で持つ(task 111)。
 """
 
 from __future__ import annotations
 
-# dip_mcp/logic.py の JOB_TYPES と同じ12種類(テストで同期を確認)
+# provider_mcp/logic.py の JOB_TYPES と同じ12種類(テストで同期を確認)
 JOB_TYPES = (
     "アパレル販売", "イベントスタッフ", "オフィス事務", "カフェ", "コンビニ", "コールセンター",
     "スーパー・販売", "倉庫・軽作業", "塾講師・家庭教師", "配送・デリバリー", "飲食キッチン", "飲食ホール",
 )
 
-# dip_mcp/logic.py の FULLTIME_JOB_TYPES と同じ正社員の10種類(テストで同期を確認)
+# provider_mcp/logic.py の FULLTIME_JOB_TYPES と同じ正社員の10種類(テストで同期を確認)
 FULLTIME_JOB_TYPES = (
     "営業", "企画・PM", "エンジニア", "事務・管理", "販売・サービス", "製造・技術", "医療・介護", "教育",
     "クリエイティブ", "物流",
 )
 
-# 雇用区分(dip_mcp/logic.py の TRACKS と同期)。求人の区分は未定を除く2つ
+# 雇用区分(provider_mcp/logic.py の TRACKS と同期)。求人の区分は未定を除く2つ
 TRACKS = ("アルバイト・パート", "正社員", "未定")
 DEFAULT_TRACK = "未定"
 EMPLOYMENT_TYPES = ("アルバイト・パート", "正社員")
-# 区分ごとの条件(dip_mcp/logic.py の FULLTIME_PREFERENCE_KEYS と同期)。区分が決まっていれば、もう一方の区分の条件は
+# 区分ごとの条件(provider_mcp/logic.py の FULLTIME_PREFERENCE_KEYS と同期)。区分が決まっていれば、もう一方の区分の条件は
 # 聞かない・保存しない・検索に入れない。未定のあいだはどちらもありうるので落とさない(聞くのは区分が決まってから。playbook)
 PARTTIME_ONLY_KEYS = ("time_band", "min_wage", "days_per_week")
 FULLTIME_ONLY_KEYS = ("min_annual_salary", "work_style", "start_timing")
@@ -50,28 +50,28 @@ def on_track(key: str, value, track: str | None) -> bool:
     return True
 
 
-# dip_mcp/logic.py の AREAS と同じ11の地名(テストで同期を確認)
+# provider_mcp/logic.py の AREAS と同じ11の地名(テストで同期を確認)
 AREAS = ("新宿", "渋谷", "池袋", "品川", "上野", "中野", "高円寺", "吉祥寺", "横浜", "川崎", "大宮")
-# dip 側がその範囲の地名に広げて検索する広い言い方(dip_mcp/logic.py の AREA_GROUPS のキーと同期)
+# 事業者側がその範囲の地名に広げて検索する広い言い方(provider_mcp/logic.py の AREA_GROUPS のキーと同期)
 AREA_PHRASES = ("東京都内", "都内", "東京", "東京都", "神奈川", "神奈川県", "埼玉", "埼玉県", "どこでも", "指定なし")
 
 TIME_BANDS = ("早朝", "日中", "夕方", "夜", "深夜")
 
-# dip_mcp/logic.py の ATTRIBUTE_ARGS・LEVELS と同じ(テストで同期を確認)。人と話す量・体を使う量(1〜3)の上限と下限
+# provider_mcp/logic.py の ATTRIBUTE_ARGS・LEVELS と同じ(テストで同期を確認)。人と話す量・体を使う量(1〜3)の上限と下限
 ATTRIBUTE_ARGS = ("max_talk_level", "min_talk_level", "max_physical_level", "min_physical_level")
 LEVELS = (1, 2, 3)
-# dip_mcp/logic.py の FULLTIME_STYLE_ARGS・REMOTE_CHOICES のキーと同じ。正社員の求人だけに効く
+# provider_mcp/logic.py の FULLTIME_STYLE_ARGS・REMOTE_CHOICES のキーと同じ。正社員の求人だけに効く
 # (アルバイト・パートの求人には働き方の情報が無く、渡すと全部外れる。propose_jobs はアルバイト・パートの面談では落とす)
 FULLTIME_STYLE_ARGS = ("remote", "weekends_holidays", "max_overtime_hours")
 REMOTE_CHOICES = ("可", "一部可")
 
-# dip_mcp/logic.py の MINOR_ARG と同じ(テストで同期を確認)。未成年の決まりで絞る引数。ゆるめる条件(RELAXABLE)には入れない
+# provider_mcp/logic.py の MINOR_ARG と同じ(テストで同期を確認)。未成年の決まりで絞る引数。ゆるめる条件(RELAXABLE)には入れない
 MINOR_ARG = "minor"
 
 MAX_PROPOSALS = 3
 
 # 検索のためにゆるめられる(外せる)条件と、読み上げ用の呼び名。
-# dip の relax_conditions の options[].remove と同じ名前を使う。
+# 事業者の relax_conditions の options[].remove と同じ名前を使う。
 RELAXABLE = ("area", "time_band", "job_type", "min_wage", "min_annual_salary", *ATTRIBUTE_ARGS, *FULLTIME_STYLE_ARGS)
 CONDITION_LABELS = {
     "area": "エリア", "time_band": "時間帯", "job_type": "職種",
@@ -107,9 +107,9 @@ def build_recommend_args(
     両方の区分から探す)。
     人と話す量・体を使う量は 1〜3、remote は 可 / 一部可 だけを許す。weekends_holidays と minor(未成年の決まり)は
     true のときだけ入れる。
-    area はここでは一覧チェックをしない(駅名も許され、駅名の一覧は dip 側だけが持つ。
-    一覧に無い値は dip 側がエラーと一覧を返す)。
-    指定の無い条件は引数に入れない(dip 側で絞り込みされない)。
+    area はここでは一覧チェックをしない(駅名も許され、駅名の一覧は事業者側だけが持つ。
+    一覧に無い値は事業者側がエラーと一覧を返す)。
+    指定の無い条件は引数に入れない(事業者側で絞り込みされない)。
     """
     types = job_types_for(track)
     if job_type is not None and job_type not in types:
@@ -182,7 +182,7 @@ def spoken_job_line(job: dict) -> str:
     parts = [f"{job.get('job_type', '')}のお仕事"]
     if place:
         parts.append(f"場所は{place}")
-    if job.get("pay_text"):  # dip の求人カードの給与の表示(時給1350円 など)
+    if job.get("pay_text"):  # 事業者の求人カードの給与の表示(時給1350円 など)
         parts.append(job["pay_text"])
     if note:
         parts.append(note)

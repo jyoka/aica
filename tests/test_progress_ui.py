@@ -1,6 +1,6 @@
 """アルバイト・パートの相談で、プロフィールが育つのを見せる UI(設計メモ docs/design/hearing-progress-ui.md、task 259)。実 LLM なし。
 
-- ハーネスの側(dip_mcp/baito/progress.py): 何を数えるか、どのターンにプロフィールカードを付けるか(§4・§5)
+- ハーネスの側(provider_mcp/baito/progress.py): 何を数えるか、どのターンにプロフィールカードを付けるか(§4・§5)
 - 共通の部品(line_runtime/progress_ui.py): どれを付けるか(§3.4)、Flex と文の形、字数と LINE の上限
 - LINE への返信(line_channel.to_messages)と、Web のトーク(talk-core.js。ブラウザは Playwright があるときだけ)
 トークのターンとして通しで動かすテストは tests/test_baito_chat.py にある。
@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import progress as P
 from line_runtime import progress_ui as U
 from line_runtime.line_channel import to_messages
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import progress as P
 from tests.test_baito_harness import LLM, fresh
 
 QM = H.qmap(H.BANK)

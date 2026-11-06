@@ -1,6 +1,6 @@
 """トークからの履歴書アップロード(resume-intake の移植, task 63)。実 API は呼ばない。
 
-アップロード → 読み取り(OpenAI はスタブ)→ dip の状態に保存 → 読み取り結果の確認ページ、と
+アップロード → 読み取り(OpenAI はスタブ)→ 事業者の状態に保存 → 読み取り結果の確認ページ、と
 保存した読み取り結果を同じユーザーの会話が get_user_conversation_summary で参照することを確かめる。
 個人情報(personal・電話・メール・郵便番号・ファイル名)がどこにも残らないことも見る。
 """
@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import State
+from provider_mcp import logic
+from provider_mcp.data import State
 from resume_draft.schema import PERSONAL_KEYS, ResumeDraft
 from tests.test_handle import ScriptedModel, call, reply
 from tests.test_resume_intake import CLEAN, StubClient
@@ -33,7 +33,7 @@ def clean_draft() -> ResumeDraft:
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from line_runtime import config, server
@@ -89,8 +89,8 @@ def test_upload_reads_saves_and_shows_the_result(app, tmp_path):
         assert page.status_code == 200
         assert "コンビニみほん駅前店" in page.text and "みほん県立第一高等学校" in page.text
         assert not any(p in page.text for p in PII)
-        # 左の「dip から見た状態」にも出る
-        assert client.post("/api/dip", json={"user_id": user}).json()["summary"]["uploaded_resume"]["uploaded"] == "9/23"
+        # 左の「事業者から見た状態」にも出る
+        assert client.post("/api/provider", json={"user_id": user}).json()["summary"]["uploaded_resume"]["uploaded"] == "9/23"
         # 費用台帳にアップロード分の行が付く(誰の利用か分かる)
         rows = [json.loads(x) for x in (tmp_path / "costs.jsonl").read_text(encoding="utf-8").splitlines()]
         assert rows[-1]["event"] == "resume_upload" and rows[-1]["user_id"] == user and rows[-1]["cost_usd"] > 0
@@ -221,7 +221,7 @@ def test_unreadable_upload_is_marked_empty_and_keeps_the_earlier_result(app, mon
 
 
 def test_save_resume_upload_blanks_personal_and_scrubs_pii(tmp_path):
-    """読み取り側をすり抜けた値が来ても、dip に保存する時点で personal は空欄・文字列中の連絡先は消える。"""
+    """読み取り側をすり抜けた値が来ても、事業者に保存する時点で personal は空欄・文字列中の連絡先は消える。"""
     state = State(tmp_path / "state.json")
     leaked = {"format_version": "1.0", "source": "upload", "created_at": "2026-09-23T12:00:00+09:00",
               "personal": {"name": "佐藤 美咲", "phone": "090-0000-1111", "email": "misaki.sato@example.com"},
@@ -238,8 +238,8 @@ def test_save_resume_upload_blanks_personal_and_scrubs_pii(tmp_path):
 
 def test_uploaded_resume_is_referenced_in_the_same_users_conversation(tmp_path):
     """アップロードした読み取り結果は、同じユーザーの会話の要約(uploaded_resume)に載り、別ユーザーには載らない。
-    dip の MCP は本物(子プロセス)、LLM は決められた順に返事をする偽物。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    事業者の MCP は本物(子プロセス)、LLM は決められた順に返事をする偽物。"""
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     state = State(tmp_path / "state.json")
@@ -270,10 +270,10 @@ def test_uploaded_resume_is_referenced_in_the_same_users_conversation(tmp_path):
 
 
 def test_prompt_tells_the_agent_to_use_the_uploaded_resume():
-    from dip_mcp.server import baitoru_assistant
+    from provider_mcp.server import job_assistant
 
     for entry in ("A", "visit", "revisit", "D"):
-        text = baitoru_assistant(entry)
+        text = job_assistant(entry)
         assert "uploaded_resume" in text and "[イベント: 本人が履歴書(PDF)をアップロード]" in text
         # いつ履歴書・音声を差し出すか(返信の actions)の決まりがある
         assert "resume_upload" in text and "voice_consult" in text and "今はいい" in text

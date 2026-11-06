@@ -14,12 +14,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 
-from dip_mcp import logic, profile, retention
-from dip_mcp.data import State
 from line_runtime import consent, line_channel, purge
 from line_runtime.quota import DailyQuota, limit_reply
 from line_runtime.resume_confirm import RESUME_LABEL, resume_bubbles
 from line_runtime.runtime import EVENTS, LineRuntime
+from provider_mcp import logic, profile, retention
+from provider_mcp.data import State
 from resume_draft.pii import redact_personal
 
 LIMIT_REASON = "本日の会話数の上限に達している"
@@ -115,11 +115,11 @@ async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
     LineRuntime を回し始めてから終わるまでの例外は、LineRuntime の ValueError を BadTurn に、ほかを TurnFailed に包む(from e)。"""
     facts = turn.facts
     if turn.kind == "push":
-        # 上限に達していたら、接触として記録する前(dip に聞く前)に送らないと決める
+        # 上限に達していたら、接触として記録する前(事業者に聞く前)に送らないと決める
         if not deps.quota.available(turn.user_id, deps.ip):
             yield {"kind": "reply", "sent": False, "reason": LIMIT_REASON}
             return
-        # ここは dip のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを dip が決める。
+        # ここは事業者のバックエンドの代わり: 行動イベントを検知し、プッシュしてよいかを事業者が決める。
         gate = logic.push_trigger(deps.state, turn.user_id, turn.event)
         yield {"kind": "gate", **gate}
         if not gate["allowed"]:
@@ -134,7 +134,7 @@ async def run(deps: TurnDeps, turn: Turn) -> AsyncIterator[dict]:
     if limited is not None:  # 上限を超えたら LLM を呼ばずに案内だけ返す
         yield {"kind": "reply", **limit_reply(turn.entry, limited)}
         return
-    if turn.kind != "push":  # 本人のターン(プッシュは dip から)は最後の利用。会話数を数えた後に書く(上限の人の行を増やさない)
+    if turn.kind != "push":  # 本人のターン(プッシュは事業者から)は最後の利用。会話数を数えた後に書く(上限の人の行を増やさない)
         retention.touch(deps.state, turn.user_id)
     changes, notice = profile_notice(deps.state, turn)
     try:
@@ -195,7 +195,7 @@ def profile_notice(state: State, turn: Turn) -> tuple[int, str | None]:
 
 def record_open(deps: TurnDeps, turn: Turn, reply: dict, changes: int = 0) -> None:
     """返信が返ったら: そのターンで渡したプロフィールの変更の知らせ(changes 件)は渡し終えた。
-    本番のトーク画面の挨拶なら、開いたことを dip に記録する(次からは再訪)。
+    本番のトーク画面の挨拶なら、開いたことを事業者に記録する(次からは再訪)。
     読み取れなかったアップロードに続くターンなら、その事実は使い終わり(次のアップロードのターンに持ち越さない)。"""
     profile.take_changes(deps.state, turn.user_id, changes)
     if turn.thread is not None and turn.kind == "greet":
@@ -205,7 +205,7 @@ def record_open(deps: TurnDeps, turn: Turn, reply: dict, changes: int = 0) -> No
 
 
 def track_status(state: State, user_id: str, reply: dict | None) -> dict | None:
-    """返信の切り替えの表示(track_switch)に、今の状態(取り消せるか・取り消したか)を dip の記録から足す。"""
+    """返信の切り替えの表示(track_switch)に、今の状態(取り消せるか・取り消したか)を事業者の記録から足す。"""
     sw = (reply or {}).get("track_switch")
     if sw:
         sw["status"] = profile.switch_status(state, user_id, sw["id"])
@@ -214,9 +214,9 @@ def track_status(state: State, user_id: str, reply: dict | None) -> dict | None:
 
 def upload_facts(deps: TurnDeps, user_id: str) -> dict:
     """履歴書のアップロードのターンに渡す事実: ファイルの表示名・トークに出した確認の吹き出し・読み取り結果の番号。
-    どれも dip に保存した読み取り結果から作る(画面からは受け取らない。ファイル名はどこにも無い)。
+    どれも事業者に保存した読み取り結果から作る(画面からは受け取らない。ファイル名はどこにも無い)。
     会話の記録にそのまま残るので、読み取り結果の画面の URL は入れない(履歴を返すときに番号から組み立てる)。
-    直前のアップロードが読み取れなかった(empty)ときは、そのとき出した案内と empty を渡す(dip には保存していない)。
+    直前のアップロードが読み取れなかった(empty)ときは、そのとき出した案内と empty を渡す(事業者には保存していない)。
     読み取り結果が無ければ、会話数を使う前に断る(BadTurn)。"""
     unread = deps.unread_uploads.get(user_id)
     if unread is not None:  # 直前のアップロードは読み取れなかった: その前提で AI が1問返す

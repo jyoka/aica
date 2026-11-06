@@ -1,13 +1,13 @@
 """アドバイザー指示(ヒアリングの方針)と下書きプロンプトの決まりごとのテスト。
 
-指示は、区分によらない音声の決まり(prompts.advisor_instructions)に、dip が配る今の雇用区分の音声版の playbook を
+指示は、区分によらない音声の決まり(prompts.advisor_instructions)に、事業者が配る今の雇用区分の音声版の playbook を
 足したもの。アルバイト・パートの面談の決まり(タスク 31〜38)は parttime_voice.md にあるので、ここではアルバイト・パートの
 面談の指示(PARTTIME)で確かめる。
 """
 
 from __future__ import annotations
 
-from dip_mcp import logic
+from provider_mcp import logic
 from voice_resume.prompts import (
     CAREER_DRAFTER_SYSTEM,
     DRAFTER_SYSTEM,
@@ -23,7 +23,7 @@ BAITO, SEISHAIN, MITEI = "アルバイト・パート", "正社員", "未定"
 
 
 def _instructions(track: str) -> str:
-    """dip が配る音声版の playbook を入れた、その区分のアドバイザーの指示。"""
+    """事業者が配る音声版の playbook を入れた、その区分のアドバイザーの指示。"""
     return advisor_instructions(track, logic.counseling_playbook(track, "voice")["playbook"])
 
 

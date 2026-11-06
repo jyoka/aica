@@ -1,10 +1,10 @@
 """正社員のヒアリングの形 D(LINE の Flex。設計メモ docs/design/fulltime-hearing.md §5.2、hearing-progress-ui.md、task 246)。
 実 LLM なし。
 
-- dip の側(dip_mcp/career/ui.py): どのターンに何を付けるか(§3.4 の順、1 ターンに 0〜1 つ)、何を数えるか(§4)、読む時間
-- ハーネス(dip_mcp/career/harness.py)の形 D: 「始める」の 1 枚、まとめの「直す」、形 C と D の切り替え
+- 事業者の側(provider_mcp/career/ui.py): どのターンに何を付けるか(§3.4 の順、1 ターンに 0〜1 つ)、何を数えるか(§4)、読む時間
+- ハーネス(provider_mcp/career/harness.py)の形 D: 「始める」の 1 枚、まとめの「直す」、形 C と D の切り替え
 - LINE 側(line_runtime/career_ui.py): Flex の形と LINE の上限、字数、文の形(Web のトークと評価の本人役)
-- LINE の Webhook を通した通し(偽の LINE、偽のモデル、本物の dip の MCP)と、Web のトーク(talk-core.js。Playwright があるときだけ)
+- LINE の Webhook を通した通し(偽の LINE、偽のモデル、本物の事業者の MCP)と、Web のトーク(talk-core.js。Playwright があるときだけ)
 """
 
 from __future__ import annotations
@@ -17,17 +17,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.career import ui as UI
-from dip_mcp.data import State
 from evals import career_sim
 from evals.fulltime_hearing.personas import load_personas
 from line_runtime import career_ui as C
 from line_runtime import line_channel
 from line_runtime import progress_ui as P
 from line_runtime.line_channel import line_user, to_messages
+from provider_mcp import logic
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.career import ui as UI
+from provider_mcp.data import State
 from tests.test_career_chat import (
     TEXT,
     FakeCareerLLM,
@@ -116,7 +116,7 @@ def test_form_setting_switches_between_c_and_d(monkeypatch):
 
 
 def test_session_reads_the_form_and_band_settings_when_it_starts(tmp_path, monkeypatch):
-    """dip のツールの start で、形と帯の設定を相談に覚える(始めた相談は、設定を変えても最後まで同じ)。"""
+    """事業者のツールの start で、形と帯の設定を相談に覚える(始めた相談は、設定を変えても最後まで同じ)。"""
     monkeypatch.setenv(logic.CAREER_HARNESS_FLAG, "c1")
     monkeypatch.setenv(H.FORM_ENV, "D")
     monkeypatch.setenv(UI.BAND_ENV, "off")
@@ -509,7 +509,7 @@ def test_long_values_are_clipped_to_60_chars_in_the_career_card():
 
 
 def test_shared_limits_match_progress_ui():
-    """dip は line_runtime を import しないので、帯とプロフィールカードの上限と字を写して持つ。同じ値か。"""
+    """事業者は line_runtime を import しないので、帯とプロフィールカードの上限と字を写して持つ。同じ値か。"""
     assert (UI.BAND_MAX, UI.BAND_ITEM_MAX, UI.PROFILE_MAX) == (P.BAND_MAX, P.BAND_ITEM_MAX, P.CARD_MAX)
     assert (UI.BAND_HEAD, UI.PROFILE_HEAD, UI.TODO) == (P.BAND_HEAD, P.HEAD, P.TODO)
     assert (UI.NEXT_LABEL, UI.DONE_MARK) == (C.NEXT_LABEL, C.DONE_MARK)

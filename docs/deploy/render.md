@@ -8,7 +8,7 @@ aica を Render に公開する手順です。Web サービス `aica`(ディス�
 | もの | 中身 |
 |---|---|
 | `Dockerfile` | Python 3.12 の image。Web プロセス(`line_runtime.server`)と、その子プロセスの事業者の MCP サーバーが入る。2 つのサービスで同じものを使う。`AICA_VOICE_MODELS=1` で build すると、音声のモデルも入る |
-| `scripts/container_start.sh` | Web サービスの起動。`0.0.0.0:$PORT` で Web プロセスを動かす。`AICA_DIP_PORT` があれば、音声ワーカー向けの事業者の MCP サーバーも動かす。`AICA_VOICE_WORKER=1` なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間) |
+| `scripts/container_start.sh` | Web サービスの起動。`0.0.0.0:$PORT` で Web プロセスを動かす。`AICA_PROVIDER_PORT` があれば、音声ワーカー向けの事業者の MCP サーバーも動かす。`AICA_VOICE_WORKER=1` なら音声ワーカーも同じコンテナで動かす(手元の docker と、Render で別サービスに移す間) |
 | `scripts/voice_worker_start.sh` | 音声ワーカーのサービスの起動(`render.yaml` の `dockerCommand`)。Web サービスの private network の名前から、結果を返す先と事業者の URL を作る |
 | `scripts/check_image_certs.py` | image の CA 証明書の確かめ。certifi と ca-certificates の版(実 API は使わない。下の「CA 証明書の版を確かめる」) |
 | `render.yaml` | Render の Blueprint。Web サービス 1 つ、永続ディスク 1 つ、ヘルスチェック、音声ワーカー 1 つ、環境変数 |
@@ -361,7 +361,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | 環境変数 | サービス | 値 | 入れる者 |
 |---|---|---|---|
 | `AICA_VOICE_WORKER` | `aica` | 移す間は `1`(Web のコンテナでも音声ワーカーを動かす)。移し終えたら `0` | Blueprint |
-| `AICA_DIP_PORT` | `aica` | `8020`(音声ワーカー向けの事業者の口) | Blueprint |
+| `AICA_PROVIDER_PORT` | `aica` | `8020`(音声ワーカー向けの事業者の口) | Blueprint |
 | `LIVEKIT_URL`、`LIVEKIT_API_KEY`、`LIVEKIT_API_SECRET` | `aica` | LiveKit Cloud のプロジェクト | **【運営者】** Blueprint を作るとき |
 | `DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | `aica` | 文字起こしと読み上げ | **【運営者】** Blueprint を作るとき |
 | `ANTHROPIC_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY` | `aica-voice` | `aica` から写す。`aica` の値を変えたら、Blueprint の「Manual sync」で写し直し、`aica-voice` を「Manual Deploy」する | Blueprint(`fromService`) |
@@ -369,7 +369,7 @@ Render の「Environment」に置きます。`.env` はコンテナに入れま�
 | `VOICE_RESUME_MAX_JOBS` | 両方 | `2`(同時に受ける相談と、温めておくプロセスの数) | Blueprint |
 | `VOICE_RESUME_JOB_MEMORY_LIMIT_MB` | `aica-voice` | `400`(相談 1 件のプロセスの上限。`aica` は既定の 2000) | Blueprint |
 | `AICA_VOICE_MODELS` | `aica-voice` | `1`(build のときにモデルを image に入れる) | Blueprint |
-| `AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
+| `AICA_WEB_HOSTPORT`、`AICA_PROVIDER_PORT`、`AICA_INTERNAL_KEY` | `aica-voice` | `aica` から写す | Blueprint(`fromService`) |
 | `TALK_LAYER_VERSION` | `aica-voice` | `t1`(音声の指示に aica の事実と危ない言葉の決まった文を足す)。`aica` はダッシュボードの値なので写せない。変えるときはそろえる | Blueprint |
 
 LINE 公式アカウントもつなぐときに足すものです(README の「LINE で試す」)。Webhook URL は `https://<名前>.onrender.com/line/webhook` です。
@@ -404,8 +404,8 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 
 ### 正社員を c2 に切り替える
 
-1. 危ない言葉の決まった文を読み、よいか確かめます。文は `dip_mcp/career/entry.json` の `texts`(`crisis_lead`、`crisis_tail`、`crisis_resume`)、
-   窓口は `dip_mcp/convo/crisis.json` です。組み立てた文は `./.venv/bin/python -c "from dip_mcp.career import c2; print(c2.CRISIS_TEXT)"` で出ます(実 API は使わない)。
+1. 危ない言葉の決まった文を読み、よいか確かめます。文は `provider_mcp/career/entry.json` の `texts`(`crisis_lead`、`crisis_tail`、`crisis_resume`)、
+   窓口は `provider_mcp/convo/crisis.json` です。組み立てた文は `./.venv/bin/python -c "from provider_mcp.career import c2; print(c2.CRISIS_TEXT)"` で出ます(実 API は使わない)。
    直すときは、切り替える前に PR で直します(jyoka/tasks#355 の Decision)
 2. 本番に出している版が、jyoka/tasks#375(消した値を、取っておいた相談からも消す)を含む main であることを確かめます。含まなければ、先に「Manual Deploy」で最新の main を出し、
    `/healthz` が 200 を返すことを確かめます
@@ -431,7 +431,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
   LLM はすべてサーバーから呼びます
 - 事業者の MCP サーバー(Web プロセスの子プロセスと、音声ワーカー向けの HTTP の口)は、Web のコンテナで親の環境変数を受け取ります。
   音声ワーカーは別サービスで、`render.yaml` に書いた環境変数だけを持ちます(`OPENAI_API_KEY` は持たない)
-- 音声ワーカー向けの事業者の口(`AICA_DIP_PORT`)は Render の private network にだけ開き、`AICA_INTERNAL_KEY` を付けない要求には
+- 音声ワーカー向けの事業者の口(`AICA_PROVIDER_PORT`)は Render の private network にだけ開き、`AICA_INTERNAL_KEY` を付けない要求には
   401 を返します。鍵が無ければ、その口は開きません
 - `/dev`(開発者画面)も公開 URL で開けます。キーは出ませんが、誰でもシナリオを動かせて費用がかかります
   ([review-2026-10.md の R10](../architecture/review-2026-10.md#r10-本番の-web-サーバーが評価のパッケージと開発者画面を抱えている))
@@ -442,14 +442,14 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 同じコンテナに置くと、相談の数だけ増えるメモリで Web も一緒に落ちるためです(2026-10-27 に、待機中だけで 2GB のうち 1.83GB を使っていた)。
 
 - 音声ワーカーは、Render の private network で Web サービスにつなぎます。相談の結果は `aica` の `/api/voice/result` へ、
-  事業者(本人の要約、希望の保存、結果の記録)は `aica` のコンテナの事業者の MCP サーバー(`AICA_DIP_PORT`)へ送ります。
+  事業者(本人の要約、希望の保存、結果の記録)は `aica` のコンテナの事業者の MCP サーバー(`AICA_PROVIDER_PORT`)へ送ります。
   事業者の状態は `aica` のディスクにだけあります([review-2026-10.md の R9](../architecture/review-2026-10.md#r9-音声ワーカーがweb-プロセスと同じマシンにいる前提で作られている))
 - モデル(VAD、turn detector。約 460MB)は build のときに image に入れます。`aica-voice` にディスクは要らず、起動のたびに取りません
 - LiveKit の環境変数が無ければ、音声のボタンを押すと「準備ができていません」(503)と出て、ターンは使いません。
   LiveKit の環境変数は `aica` に入れ、`aica-voice` は Blueprint が写します(`aica-voice` に無いと、部屋に入っても答えるワーカーがいません)
 - `aica-voice` が落ちても、Render が起動し直します。`aica` は止まりません
 - `aica` を入れ替える間(ディスクつきなので数秒止まる)の事業者の呼び出しは、15 秒で諦めます。相談は、その道具なしで続きます
-  (`voice_resume/dip.py` の `CALL_TIMEOUT`)
+  (`voice_resume/provider.py` の `CALL_TIMEOUT`)
 
 ### メモリの見積もり
 
@@ -461,7 +461,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 | 音声ワーカーの本体と forkserver | 約 300MB |
 | 温めておく相談のプロセス(1 つ) | 約 124MB |
 | Web プロセスと事業者の子プロセス | 約 210MB |
-| 音声ワーカー向けの事業者の MCP サーバー(`AICA_DIP_PORT`) | 測っていない(手元で import しただけで約 61MB RSS) |
+| 音声ワーカー向けの事業者の MCP サーバー(`AICA_PROVIDER_PORT`) | 測っていない(手元で import しただけで約 61MB RSS) |
 
 `aica-voice`(2GB)は、待機中は約 1.4GB(推論 + 本体 + 待機 2 つ)の見込みです。相談中は待機のプロセスが相談のプロセスになり、
 1 つ `VOICE_RESUME_JOB_MEMORY_LIMIT_MB`(400MB)まで使えます。2 件で約 1.9GB です。
@@ -480,7 +480,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 
 **1 つ目の PR(`aica-voice` を足す)**
 
-`main` に入れると、Render が `aica-voice` を作り、`aica` に `AICA_DIP_PORT=8020` と `VOICE_RESUME_MAX_JOBS=2` を入れて
+`main` に入れると、Render が `aica-voice` を作り、`aica` に `AICA_PROVIDER_PORT=8020` と `VOICE_RESUME_MAX_JOBS=2` を入れて
 デプロイし直します。`aica` の音声ワーカーは残るので、2 つのワーカーが LiveKit に登録され、相談はどちらかが受けます。
 
 `aica-voice` は、登録した時点で本番の相談を受けます。なので、相談の少ない時間にマージし、すぐに 1〜5 をします。
@@ -488,10 +488,10 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 
 1. Blueprint の「Syncs」で、同期が成功したことを見る(失敗していれば何も変わっていない。`fromService` の写し方を Render に断られたときも、ここで分かる)
 2. `aica` の「Events」で、入れたコミットのデプロイが `Deploy live` になったことを見る。なっていなければ「Manual Deploy」→
-   「Deploy latest commit」でする(事業者の口は新しいコードで開く)。「Logs」に `WARNING: dip MCP server` が繰り返し出ないことも見る
+   「Deploy latest commit」でする(事業者の口は新しいコードで開く)。「Logs」に `WARNING: provider MCP server` が繰り返し出ないことも見る
 3. `aica-voice` の「Environment」に、`aica` から写した値(`ANTHROPIC_API_KEY`、`LIVEKIT_*`、`DEEPGRAM_API_KEY`、`CARTESIA_API_KEY`、
-   `AICA_INTERNAL_KEY`、`AICA_WEB_HOSTPORT`、`AICA_DIP_PORT`)が入っていることを見る。空のものがあれば、Blueprint の「Manual sync」を
-   押してから `aica-voice` を「Manual Deploy」する(`AICA_DIP_PORT` は同じ同期で `aica` に入るので、写す順番によっては空になりうる)
+   `AICA_INTERNAL_KEY`、`AICA_WEB_HOSTPORT`、`AICA_PROVIDER_PORT`)が入っていることを見る。空のものがあれば、Blueprint の「Manual sync」を
+   押してから `aica-voice` を「Manual Deploy」する(`AICA_PROVIDER_PORT` は同じ同期で `aica` に入るので、写す順番によっては空になりうる)
 4. `aica-voice` の「Logs」で、ワーカーが LiveKit に登録されたことを見る。build のログにモデルの取得(`download-files`)が
    出ていることも見る(Render は環境変数を build の引数として渡す。出ていなければ image にモデルが無いので、`AICA_VOICE_MODELS=1` を確かめる)
 5. トークの音声相談のボタンから相談し、`aica-voice` の「Logs」に相談が出て、結果がトークに届くことを確かめる。
@@ -522,6 +522,71 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 - `aica` は、音声ワーカーが抜けたので Starter(512MB)で足りる見込みです。確かめるまで Standard のままにしています
 - 音声相談の費用は、まだ費用台帳に載りません([review-2026-10.md の R6](../architecture/review-2026-10.md#r6-音声相談の費用が台帳に載らず上限も効かない))
 
+## 旧い名前からの移行 **【運営者】**
+
+コードの名前を一般の語に変えた PR(task 424)を入れるときに、1 回だけする手順です。本番のディスクには、旧い名前のファイル(SQLite、ロック)と、JSON のキー、SQLite の列があります。
+新しいコードは起動のときに `AICA_LEGACY_PREFIX` の接頭辞の名前を新しい名前に移します。値は旧い名前そのものなので、`render.yaml` にも、この文書にも書きません。`aica` の「Environment」でだけ入れます。
+
+入れないままマージしても、データは変わりません。`state.json` があって新しい名前のデータが無いので、`aica` は理由をログに出して起動で止まります(デプロイが失敗します)。
+
+移すもの:
+
+- ファイル: `<接頭辞>_accounts.db`、`<接頭辞>_events.db`、`<接頭辞>_summaries.db`、`<接頭辞>_events.lock` → `provider_…`
+- SQLite の列(`<接頭辞>_id` → `provider_id`)と、要約の行の中の JSON のキー
+- `state.json` の中の、書いた分のキー(`<接頭辞>_writes` → `provider_writes` と、その中の `<接頭辞>_id` → `provider_id`)
+- 会員のログインID のドメイン(`@<接頭辞>.test` → `@provider.test`)。パスワードは変わりません。文書の例(`docs/usage.md`)のとおりに入れます
+
+会話のチェックポイント(`line_checkpoints.db`)は名前を変えないので、触らず、そのまま読めます。
+
+### 順番
+
+1. **ダッシュボードで両サービスの設定を確かめ、`aica` に `AICA_LEGACY_PREFIX` を入れる。** `aica` と `aica-voice` の「Environment」を見ます。
+   - `aica` に `AICA_LEGACY_PREFIX` を入れます。値は、`data/` の中の `<値>_accounts.db` の `<値>` です(`line_checkpoints.db` の `line` ではありません)。保存で再デプロイを聞かれたら、保存だけにします(今のコードはこの値を読みません)
+   - 名前に旧い名前を含む環境変数を探します。Blueprint に書いたポートの変数は、マージの同期で `AICA_PROVIDER_PORT` が入ります。Blueprint の外で手で入れた変数があれば、`PROVIDER_` で始まる名前(`AICA_` で始まるものは `AICA_PROVIDER_`)でも入れておきます。旧い名前の変数は 5 で消します
+   - `aica-voice` には `AICA_LEGACY_PREFIX` を入れません(ディスクがありません)
+2. **ディスクのスナップショットを確かめる。** `aica` の「Disks」の「Snapshots」で、直近のスナップショットの時刻を見ます。相談の少ない時間を選び、直前の変更が消えてもよいかを決めます。
+   スナップショットからの復元はまだ試していないので(`docs/architecture.md`)、`aica` の「Shell」で写しも作ります。
+
+   ```bash
+   tar czf /app/data/before-rename.tgz -C /app/data --exclude=./cache --exclude=./before-rename.tgz .
+   ```
+
+3. **マージする。** Auto Sync で配信されます。Blueprint の「Syncs」で同期の成功を見て、`aica` の「Events」で `Deploy live` を見ます。なっていなければ「Manual Deploy」→「Deploy latest commit」をします。
+   `aica-voice` の「Environment」に `AICA_PROVIDER_PORT` が入っていることも見ます。空なら「Manual sync」を押してから `aica-voice` を「Manual Deploy」します。`aica-voice` は `aica` の後に新しいコードにします(MCP の Prompt と Resource の名前が新しくなるため)。
+4. **起動のログと、連携済みの本人の表示を確かめる。**
+   - `aica` の「Logs」に `旧い名前のデータを移しました: ファイル N 個、JSON M 個` が 1 回出て、`ERROR:` が出ていないこと。N は `data/` の中の旧い名前のファイルの数です
+   - 連携済みの本人の LINE で「データを見る」と送り、「事業者の会員との連携」が「あり」で、保存した求人と応募がマージの前と同じこと
+   - トークの続きを開き、前の会話が読めること。`aica-voice` から音声相談が 1 回通ること
+5. **環境変数を消す。** 戻さないと決めてからします。`aica` の `AICA_LEGACY_PREFIX` を消してデプロイし直し、起動で止まらないことを見ます。旧い名前の環境変数も両方のサービスから消します。確かめ終えたら、`aica` の「Shell」で `rm /app/data/before-rename.tgz` をします。
+
+### 途中で止まったとき
+
+- 起動のたびに続きから移します。何度動いても同じ結果です。`AICA_LEGACY_PREFIX` を入れたまま、デプロイし直します
+- `旧い名前のファイルと新しい名前のファイル … が両方あります` で止まったら、何も変わっていません。両方を見比べ(新しい方は、環境変数の無いまま起動して作られた空のデータのはずです)、要らない方を退けてからデプロイし直します
+- `… 新しい名前のデータがありません` で止まったら、`AICA_LEGACY_PREFIX` が無いか、値が違います。値を直してデプロイし直します
+- `途中で止まった移行と … の値が違います` で止まったら、値を前に入れたものに戻してデプロイし直します
+- `同じ JSON のオブジェクトに新旧のキーが両方あります` で止まったら、何も変わっていません。戻すときの間に新しいコードが書いた分です。`state.json` のその行を見て、どちらかに 1 つにまとめてからデプロイし直します
+- `… の値が新しい名前の値とぶつかりました` で止まったら、その SQLite は元のままです。表示された値の行を見て、要らない方を消してからデプロイし直します
+
+### 戻し方
+
+**新しいコードのまま直せるなら、直します。** 戻すと、移した後の変更が消えるためです。古いコードは新しい名前のデータを読めず、そのまま戻すと空のデータで動き始めます。戻すときは、データを先に戻します。
+
+1. `aica` の `AICA_LEGACY_PREFIX` を消します(保存だけ)。残したまま新しいコードが起動し直すと、戻したデータをもう一度移します
+2. `aica` の「Shell」で写しを戻します。
+
+   ```bash
+   cd /app/data && rm -f provider_accounts.db provider_events.db provider_summaries.db provider_events.lock provider_migration.inprogress && tar xzf before-rename.tgz
+   ```
+
+   写しが無い、壊れているときは、「Disks」の「Snapshots」からマージの前のスナップショットを戻します(試していない手順です)
+3. すぐに `aica` と `aica-voice` の「Rollbacks」で、マージの前のデプロイに戻します。2 と 3 の間に動いたプロセスが新しい名前のファイルを作っていたら、戻した後に消します
+4. `main` の PR を revert します(Auto Sync が新しいコードと設定を配り直さないように)
+
+写しを作った後に書かれた分(会話、プロフィール、ログイン)は戻りません。
+
+5 の後で戻すときは、写しが無いのでスナップショットからになります(試していない手順です)。消した旧い名前のポートの変数は、4 の revert の同期で入り直します。入るまで `aica-voice` は起動できません。
+
 ## 置くデータ(プライバシーの説明に入れること)
 
 公開する前に、使う人向けのプライバシーの説明を用意します。説明の文と、保存の期間は運営者が決めます
@@ -531,7 +596,7 @@ LINE 公式アカウントもつなぐときに足すものです(README の「L
 | 場所 | 中身 | 消えるとき |
 |---|---|---|
 | `/app/data/line_checkpoints.db` | 会話 | 本人が「すべて消す」。履歴書を消すと、その前の会話も消える |
-| `/app/data/state.json`、`dip_*.db` | プロフィール(希望、経歴、履歴書の読み取り結果、保存した求人、応募) | 本人が消す、「すべて消す」 |
+| `/app/data/state.json`、`provider_*.db` | プロフィール(希望、経歴、履歴書の読み取り結果、保存した求人、応募) | 本人が消す、「すべて消す」 |
 | `/app/data/voice-resume/` | 本番では書かない。`VOICE_RESUME_WRITE_FILES` を付けないと、音声相談の下書きと文字起こしをファイルに書き出さない(下書きは `state.json` に入る) | - |
 | `/app/data/costs.jsonl` | 匿名ユーザーIDごとの費用 | 消さない(上限を逃れられないように) |
 | `/app/data/quota.json` | 当日のターン数と、当日の接続元の IP | 日付(日本時間)が変わった後、最初にターンかプロフィールの書き込みがあったときに書き直されて消える(それまではファイルに残る) |

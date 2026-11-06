@@ -1,8 +1,8 @@
-"""バイト探しの相棒(dip_mcp/baito)の検査: PRD v4.1 の参照資料の単体チェックとシミュレーターで、aica の移植版を回す。
+"""バイト探しの相棒(provider_mcp/baito)の検査: PRD v4.1 の参照資料の単体チェックとシミュレーターで、aica の移植版を回す。
 
     ./.venv/bin/python -m evals.baito_sim                 # 単体チェック 131 件 + 20 ペルソナ(モック LLM。費用 0)
     ./.venv/bin/python -m evals.baito_sim --log evidence/baito_sim   # 同じ。出力と会話ログを DIR にも書く(CI)
-    ./.venv/bin/python -m evals.baito_sim --version v5    # 20 ペルソナを v5(会話の層の版。dip_mcp/baito/v5.py)で(モック。費用 0)
+    ./.venv/bin/python -m evals.baito_sim --version v5    # 20 ペルソナを v5(会話の層の版。provider_mcp/baito/v5.py)で(モック。費用 0)
     ./.venv/bin/python -m evals.baito_sim --real --runs 3 --ledger evals/budget-baito-v4.jsonl --limit-usd 8
                                                           # P3: 実 LLM で 18 ペルソナ × runs 回(費用がかかる。
                                                           # 台帳と上限はカード 242 で決めたもの。1 会話 約 $0.08・35 秒)
@@ -27,7 +27,7 @@ pytest は tests/test_baito_v5.py が回す。
   検証で落ちた出力(段、何回目、問題、出力の頭 300 字)は結果の rejected に残す(task 376)
 - 基準は §16-1 の 12(生成合格率 95% 以上、代替率 2% 以下、抽出合格率 98% 以上)と、§4-1 の合否指標がすべて 0
 - --version v5(task 362): 移植版の入口を aica_port_v5 にする。実 LLM は読む段(read)をそのまま読む(ReadAdapter が写さない)。
-  段の数え方は、v5 が層の call_llm(dip_mcp.convo.turn)を通るので、そこを包む。抽出合格率は読む段(read)の 1 回目の合格率
+  段の数え方は、v5 が層の call_llm(provider_mcp.convo.turn)を通るので、そこを包む。抽出合格率は読む段(read)の 1 回目の合格率
 """
 
 from __future__ import annotations
@@ -182,12 +182,12 @@ class Transcript:
 
 class StageCounter:
     """段ごとの 1 回目の呼び出しと、その合否・代替を数える(ハーネスの _call_llm を包む。やり直しで消えるログに頼らない)。
-    v5 は、層の call_llm(dip_mcp.convo.turn。v5 は名前で読み込んでいるので dip_mcp.baito.v5 の方も)を包む
+    v5 は、層の call_llm(provider_mcp.convo.turn。v5 は名前で読み込んでいるので provider_mcp.baito.v5 の方も)を包む
     (まとめと結果は v4 の _call_llm が同じ層の call_llm を呼ぶ)。"""
 
     def __init__(self, harness, version: str = "v4"):
-        from dip_mcp.baito import v5
-        from dip_mcp.convo import turn as convo_turn
+        from provider_mcp.baito import v5
+        from provider_mcp.convo import turn as convo_turn
 
         # 包むもの(モジュール, 名前)
         self.targets = [(harness, "_call_llm")] if version == "v4" else [(convo_turn, "call_llm"), (v5, "call_llm")]

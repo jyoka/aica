@@ -3,7 +3,7 @@
 - recommend / relax が属性・働き方・休日の引数で絞り、API が使えないとき(部分一致だけ)も同じに動く
 - keywords に「在宅」「土日祝休み」が入ったときも、API が使えないときの部分一致で当たる
 - 意味の近い求人が無い問い合わせ(求人の情報に無い希望)は、近いだけの求人を出さず部分一致だけにする
-- 引数の名前が dip(logic・MCP の recommend_jobs / relax_conditions)と音声(voice_resume/jobs.py・propose_jobs)でそろっている
+- 引数の名前が事業者(logic・MCP の recommend_jobs / relax_conditions)と音声(voice_resume/jobs.py・propose_jobs)でそろっている
 """
 
 from __future__ import annotations
@@ -13,9 +13,9 @@ import inspect
 
 import pytest
 
-from dip_mcp import embedding, logic, server
-from dip_mcp.data import PHYSICAL_LEVELS, TALK_LEVELS, State, load_jobs
 from evals import search_eval
+from provider_mcp import embedding, logic, server
+from provider_mcp.data import PHYSICAL_LEVELS, TALK_LEVELS, State, load_jobs
 from voice_resume import jobs as voice_jobs
 from voice_resume.advisor import ResumeAdvisor
 
@@ -222,10 +222,10 @@ def test_related_wish_still_uses_semantic_search(state, monkeypatch):
     assert all(c["score_breakdown"]["keywords"] > 0 for c in r["jobs"])
 
 
-# ----------------------------- dip と音声の引数の同期 -----------------------------
+# ----------------------------- 事業者と音声の引数の同期 -----------------------------
 
-def test_voice_argument_table_matches_dip():
-    """音声(voice_resume/jobs.py)が持つ引数の名前と値の一覧が、dip(dip_mcp/logic.py)と同じ。"""
+def test_voice_argument_table_matches_provider():
+    """音声(voice_resume/jobs.py)が持つ引数の名前と値の一覧が、事業者(provider_mcp/logic.py)と同じ。"""
     assert voice_jobs.ATTRIBUTE_ARGS == logic.ATTRIBUTE_ARGS
     assert voice_jobs.FULLTIME_STYLE_ARGS == logic.FULLTIME_STYLE_ARGS
     assert voice_jobs.LEVELS == logic.LEVELS
@@ -235,7 +235,7 @@ def test_voice_argument_table_matches_dip():
 
 
 def test_voice_propose_jobs_takes_the_attribute_args():
-    """音声の相談(アルバイト・パートと正社員の両方)で、属性の引数を受け取って dip に渡せる。"""
+    """音声の相談(アルバイト・パートと正社員の両方)で、属性の引数を受け取って事業者に渡せる。"""
     params = inspect.signature(ResumeAdvisor.propose_jobs).parameters
     assert set(logic.ATTRIBUTE_ARGS) <= set(params)
     doc = ResumeAdvisor.propose_jobs.__doc__ or ""

@@ -6,7 +6,7 @@
     ./.venv/bin/python -m evals.scenes.real summary evals/results/scenes-real-*.jsonl   # 点の表(費用 0)
 
 回し方は台本の LLM の回(runner.py)と同じで、モデルだけを実モデルにする:
-- career と baito: dip の相談のツールの呼び直しで、ハーネスが求めた段(読む、言う、まとめ、結果)を実モデルで呼ぶ。メッセージは
+- career と baito: 事業者の相談のツールの呼び直しで、ハーネスが求めた段(読む、言う、まとめ、結果)を実モデルで呼ぶ。メッセージは
   ランタイム(line_runtime.runtime._harness_turn)と同じ: 本人の発言(ハーネスが伏せたもの model_text があればそちら)と、
   画面に出た直前のやりとり(場面の前の会話 history と、その場面の返信。ハーネスの覚え model_history があればそちら)。
   モデルとスキーマもランタイムと同じ(line_runtime.config.MODEL、baito_chat / career_chat の SCHEMAS、思考なし)。
@@ -14,7 +14,7 @@
 - 呼び出しの失敗(通信、形の崩れた出力)は、ランタイムと同じく失敗の印として渡す(ハーネスが 1 回と数える)
 - 本人がやめて相談を閉じ、トークの AI がそのターンを受けたときは、台本の回と同じく判定しない(トークの AI を回さない)。
   採点の条件も、そのターンの返信を見るものは判定しない(skip)
-- talk: 本物のランタイムを、本番と同じ実モデルのトークの AI で回す(ツールも本物の dip の MCP)。どのコードの条件も判定する
+- talk: 本物のランタイムを、本番と同じ実モデルのトークの AI で回す(ツールも本物の事業者の MCP)。どのコードの条件も判定する
 - 採点の条件は、実モデルのジャッジ(evals/scenes/judge.py。evals.run の JUDGE_MODEL)で判定する。1 場面 1 回の呼び出し
 - 費用: evals/meter.py で全部の呼び出し(ハーネス、トークの AI、ジャッジ)を数え、1 場面ごとに台帳へ 1 行足す。
   場面を始める前に累計が上限に達していたら止める(talk はまとめて回すので、始める前に 1 回だけ見る)
@@ -210,7 +210,7 @@ def run(entries: list[str] | None, versions: dict | None, ids: list[str] | None,
     try:
         with tempfile.TemporaryDirectory(prefix="scenes-real-") as tmp:
             for rep in range(repeat):
-                path = Path(tmp) / f"state-{rep}.json"  # 回ごとに新しい dip の状態(場面の本人の id は回によらず同じなので)
+                path = Path(tmp) / f"state-{rep}.json"  # 回ごとに新しい事業者の状態(場面の本人の id は回によらず同じなので)
                 for entry in S.ENTRIES:
                     mine = [s for s in scenes if s["entry"] == entry]
                     if not mine or stopped:
@@ -268,13 +268,13 @@ def known_facts(entry: str) -> list[str]:
     """入り口の事実のデータ(言う段が逆質問に答えるときに選ぶ事実の全部)。talk は aica 全体の事実だけ。アルバイト・パートは、
     PRD の決まった文(v4 と v5 のハーネスがそのまま出す注意文 NOTICE。年齢の決まり、闇バイト、扶養など)も足す(task 379。
     中学生以下で止める文を、ジャッジが作った事実と判定していた)。"""
-    from dip_mcp.convo import facts as F
+    from provider_mcp.convo import facts as F
 
-    path = {"career": "dip_mcp/career/facts.json", "baito": "dip_mcp/baito/facts.json"}.get(entry)
+    path = {"career": "provider_mcp/career/facts.json", "baito": "provider_mcp/baito/facts.json"}.get(entry)
     d = F.load(HERE.parent / path if path else None)
     fixed: list[str] = []
     if entry == "baito":
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         fixed = list(B.NOTICE.values())
     return list(dict.fromkeys([*d["ask_service"], *d["ask_advice"], *d["where"].values(), *([d["known"]] if d["known"] else []),

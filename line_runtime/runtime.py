@@ -1,10 +1,10 @@
-"""LINE 側ランタイム: イベント(トーク・初回訪問・再訪・dip からのプッシュ)を受けて会話を進める。
+"""LINE 側ランタイム: イベント(トーク・初回訪問・再訪・事業者からのプッシュ)を受けて会話を進める。
 
-- dip の MCP サーバーとは1本のセッションを張りっぱなしにする(呼び出しごとに子プロセスを起こさない)。
+- 事業者の MCP サーバーとは1本のセッションを張りっぱなしにする(呼び出しごとに子プロセスを起こさない)。
 - 会話は AsyncSqliteSaver に保存。入口となるイベント(トーク以外)が来たら新しい会話を始め、
-  その入口に合う dip のシナリオを使う。トークの続きはそのまま同じ会話。
-- こちらから話しかけるのは初回訪問・再訪の挨拶と dip からのプッシュだけ。プッシュしてよいかは dip が決め
-  (dip_mcp.logic.push_trigger)、ここには許可されたものが根拠の事実つきで来る。LINE 側は判断しない。
+  その入口に合う事業者のシナリオを使う。トークの続きはそのまま同じ会話。
+- こちらから話しかけるのは初回訪問・再訪の挨拶と事業者からのプッシュだけ。プッシュしてよいかは事業者が決め
+  (provider_mcp.logic.push_trigger)、ここには許可されたものが根拠の事実つきで来る。LINE 側は判断しない。
 - LLM の呼び出しは費用台帳(data/costs.jsonl)に1回1行、誰の会話に使ったか(user_id)つきで記録する。
 """
 
@@ -28,19 +28,6 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from dip_mcp.baito.session import MAX_LLM_CALLS as BAITO_LLM_CALLS
-from dip_mcp.baito.session import RUNTIME_TOOLS as BAITO_RUNTIME_TOOLS
-from dip_mcp.career.session import MAX_LLM_CALLS as CAREER_LLM_CALLS
-from dip_mcp.career.session import RUNTIME_TOOLS as CAREER_RUNTIME_TOOLS
-from dip_mcp.convo import talk as talk_layer
-from dip_mcp.logic import (
-    ENTRIES,
-    VOICE_ROOM_ARG,
-    baito_harness_on,
-    career_harness_on,
-    liff_url,
-    talk_layer_on,
-)
 from line_runtime import (
     baito_cards,
     baito_chat,
@@ -54,6 +41,19 @@ from line_runtime.arcade_reply import arcade_history_reply
 from line_runtime.ledger import Ledger
 from line_runtime.line_channel import ARCADE_LABEL
 from line_runtime.voice_reply import voice_history_reply
+from provider_mcp.baito.session import MAX_LLM_CALLS as BAITO_LLM_CALLS
+from provider_mcp.baito.session import RUNTIME_TOOLS as BAITO_RUNTIME_TOOLS
+from provider_mcp.career.session import MAX_LLM_CALLS as CAREER_LLM_CALLS
+from provider_mcp.career.session import RUNTIME_TOOLS as CAREER_RUNTIME_TOOLS
+from provider_mcp.convo import talk as talk_layer
+from provider_mcp.logic import (
+    ENTRIES,
+    VOICE_ROOM_ARG,
+    baito_harness_on,
+    career_harness_on,
+    liff_url,
+    talk_layer_on,
+)
 from resume_draft.pii import REDACTED, redact_personal
 
 log = logging.getLogger(__name__)  # 値は出さない(line_runtime.log_policy)
@@ -62,8 +62,8 @@ _SERDE = JsonPlusSerializer(allowed_msgpack_modules=[
 ])
 
 # イベント種別 -> (入口, エージェントへの入力。None ならユーザーの発言そのもの)
-# 種別: user = ユーザーの発言で始まる / greet = トークを開いた(こちらから挨拶する) / push = dip からのプッシュ依頼
-# / upload = 本人が履歴書をアップロードした(読み取り結果は dip に保存済み。本人の1ターンとして今の会話に入る)
+# 種別: user = ユーザーの発言で始まる / greet = トークを開いた(こちらから挨拶する) / push = 事業者からのプッシュ依頼
+# / upload = 本人が履歴書をアップロードした(読み取り結果は事業者に保存済み。本人の1ターンとして今の会話に入る)
 EVENTS = {
     "message": ("A", "user"),
     "resume_upload": ("A", "upload"),
@@ -77,15 +77,15 @@ STARTS_NEW_CONVERSATION = {e for e, (_, kind) in EVENTS.items() if kind in ("gre
 FIRST_MESSAGE = "ユーザーはまだ何も書いていません。こちらから最初のメッセージを送ってください。"
 GREETINGS = {"visit": "初回訪問(はじめてトークを開いた)", "revisit": "再訪(トークを開き直した)"}
 GREET_ENTRIES = {EVENTS[e][0] for e in GREETINGS}  # 挨拶で始まった会話の入口(会話の state の entry)
-SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む dip の要約(task 237)
-# アルバイト・パートの相談(バイト探しの相棒。dip_mcp/baito、task 242)。BAITO_HARNESS_VERSION=v4 のときだけ、トークの AI が
+SUMMARY_TOOL = "get_user_conversation_summary"  # 挨拶の入口のボタンを決めるために読む事業者の要約(task 237)
+# アルバイト・パートの相談(バイト探しの相棒。provider_mcp/baito、task 242)。BAITO_HARNESS_VERSION=v4 のときだけ、トークの AI が
 # start で始める。その後の本人の発言はランタイムが baito_turn に渡す(相談の間はトークの AI を呼ばない。始めた相談はフラグを
 # 戻しても最後まで進める)。新しい会話と会話の外のイベント(挨拶・プッシュ・アップロード、音声相談に入った・音声とゲームの結果)で end する
 BAITO_START, BAITO_TURN, BAITO_END = "start_baito_consultation", "baito_turn", "end_baito_consultation"
-# 正社員の相談(職務経歴書の材料を集めるヒアリング。dip_mcp/career、task 255)。CAREER_HARNESS_VERSION=c1 のときだけ、
+# 正社員の相談(職務経歴書の材料を集めるヒアリング。provider_mcp/career、task 255)。CAREER_HARNESS_VERSION=c1 のときだけ、
 # トークの AI が start で始める。あとはアルバイト・パートと同じ(ランタイムが career_turn に渡し、新しい会話で end する)
 CAREER_START, CAREER_TURN, CAREER_END = "start_career_consultation", "career_turn", "end_career_consultation"
-# 相談を始めるツールの本人の発言の引数(TALK_LAYER_VERSION=t1 のときだけトークの AI に見せる。dip_mcp/convo/talk.py)。
+# 相談を始めるツールの本人の発言の引数(TALK_LAYER_VERSION=t1 のときだけトークの AI に見せる。provider_mcp/convo/talk.py)。
 # 始めるツールの結果に switch_to があれば、ランタイムが同じターンで移る先の switch_in で相談を始める(設計メモ §4.5、§4.13)
 START_TEXT_ARG = "text"
 STARTS = {BAITO_START: "baito", CAREER_START: "career"}
@@ -125,19 +125,19 @@ def event_input(event: str, text: str | None, facts: dict | None) -> str:
         if not facts:
             raise ValueError(f"{event} には読み取り結果の facts が必要です")
         if facts.get("empty"):
-            return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取れた項目がありませんでした(dip には保存して"
+            return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取れた項目がありませんでした(事業者には保存して"
                     f"いません)。トークには次の案内を出しました: {json.dumps(facts['shown'], ensure_ascii=False)} "
                     "この案内は繰り返さず、読み取れなかった前提で、経歴か希望を1問だけ聞いて会話を続けてください。")
-        return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取り結果は dip に保存済みで、トークには次の確認を"
+        return (f"[イベント: 本人が{facts['file']}をアップロード] 読み取り結果は事業者に保存済みで、トークには次の確認を"
                 f"出しました: {json.dumps(facts['shown'], ensure_ascii=False)} "
                 "この確認は繰り返さず、読み取り結果を見て会話を続けてください。")
     if facts is None:
-        raise ValueError(f"{event} は dip が許可したプッシュなので facts が必要です")
-    return f"[イベント: dip からのプッシュ依頼 {event}] 根拠の事実: {json.dumps(facts, ensure_ascii=False)} {FIRST_MESSAGE}"
+        raise ValueError(f"{event} は事業者が許可したプッシュなので facts が必要です")
+    return f"[イベント: 事業者からのプッシュ依頼 {event}] 根拠の事実: {json.dumps(facts, ensure_ascii=False)} {FIRST_MESSAGE}"
 
 
 # 音声相談の結果をトークに続けたターンの、本人側の記録(LLM は呼ばない。次のターンから LLM が読む文脈になる)
-VOICE_EVENT = ("[イベント: 本人が音声相談を終えた] 音声で聞いた希望・経験は dip に保存済み(要約の stated_preferences)。"
+VOICE_EVENT = ("[イベント: 本人が音声相談を終えた] 音声で聞いた希望・経験は事業者に保存済み(要約の stated_preferences)。"
                "トークには次の返信を出しました。同じことを聞き直さず、続きから会話してください。")
 
 
@@ -154,7 +154,7 @@ def voice_event(reply: dict) -> str:
 
 
 # ゲームで下書きを保存したターンの、本人側の記録(LLM は呼ばない。次のターンから LLM が読む文脈になる)
-ARCADE_EVENT = ("[イベント: 本人がゲーム(レジュメ・アーケード)で書類の下書きを保存した] 下書きは dip に保存済み"
+ARCADE_EVENT = ("[イベント: 本人がゲーム(レジュメ・アーケード)で書類の下書きを保存した] 下書きは事業者に保存済み"
                 "(要約の arcade_draft)。トークには次の返信を出しました。同じことを聞き直さず、続きから会話してください。")
 
 
@@ -163,7 +163,7 @@ def arcade_event(reply: dict) -> str:
 
 
 def usable_entries(channel: str | None, features: list[str] | tuple[str, ...] = ()) -> tuple[str, ...]:
-    """窓口で使える入口(dip_mcp.logic.ENTRIES の並び)。LINE は features(line_channel.liff_features)にあるものだけ。
+    """窓口で使える入口(provider_mcp.logic.ENTRIES の並び)。LINE は features(line_channel.liff_features)にあるものだけ。
     Web は features が空なら 3 つとも(評価と開発者画面の既定。agent.channel_note と同じ決まり)、空でなければ features
     (本番のトーク画面の line_channel.web_features。音声相談は LiveKit の設定があるときだけ)。"""
     if channel != "line" and not features:
@@ -188,15 +188,15 @@ def is_arcade_entry(url: str) -> bool:
     return (path == "/liff/arcade" or path.startswith("/liff/arcade/")) and not path.startswith("/liff/arcade/draft")
 
 
-def dip_connection() -> dict:
-    if config.DIP_MCP_URL:
-        return {"transport": "streamable_http", "url": config.DIP_MCP_URL}
-    return {"transport": "stdio", "command": sys.executable, "args": ["-m", "dip_mcp.server"],
+def provider_connection() -> dict:
+    if config.PROVIDER_MCP_URL:
+        return {"transport": "streamable_http", "url": config.PROVIDER_MCP_URL}
+    return {"transport": "stdio", "command": sys.executable, "args": ["-m", "provider_mcp.server"],
             "cwd": str(config.ROOT), "env": dict(os.environ)}
 
 
 def chat_tools(tools: list) -> list:
-    """トークの AI に渡す dip のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。
+    """トークの AI に渡す事業者のツール。音声ワーカーだけが渡す部屋の引数(VOICE_ROOM_ARG)は、AI に見せない。
     ランタイムだけが呼ぶバイトの相談のツール(baito_turn・end_baito_consultation)も外す。ハーネスの機能フラグが
     v4 でなければ、相談を始めるツール(start_baito_consultation)も外す(本番は今までどおり playbook で相談する)。
     正社員の相談のツールも同じ(career_turn・end_career_consultation は外し、CAREER_HARNESS_VERSION=c1 でなければ
@@ -228,17 +228,17 @@ class LineRuntime:
         self._running: set[asyncio.Task] = set()  # 進行中のターン(受け取り手が切れても最後まで進める)
         self.agent = None
         self.tools = []
-        self._dip_tools: dict = {}  # dip のすべてのツール(ランタイムだけが呼ぶものも)
+        self._provider_tools: dict = {}  # 事業者のすべてのツール(ランタイムだけが呼ぶものも)
 
     async def __aenter__(self) -> Self:
-        client = MultiServerMCPClient({"dip": dip_connection()})
-        session = await self._stack.enter_async_context(client.session("dip"))
+        client = MultiServerMCPClient({"provider": provider_connection()})
+        session = await self._stack.enter_async_context(client.session("provider"))
         tools = await load_mcp_tools(session)
-        self._dip_tools = {t.name: t for t in tools}
+        self._provider_tools = {t.name: t for t in tools}
         self.tools = chat_tools(tools)
         scenarios = {}
         for entry in EVENTS.values():
-            msgs = await load_mcp_prompt(session, "baitoru_assistant", arguments={"entry": entry[0]})
+            msgs = await load_mcp_prompt(session, "job_assistant", arguments={"entry": entry[0]})
             scenarios[entry[0]] = msgs[0].content
         if self._in_memory:
             path = ":memory:"
@@ -259,15 +259,15 @@ class LineRuntime:
         await self._stack.aclose()
 
     async def _read_summary(self, user_id: str) -> dict:
-        """dip の要約(get_user_conversation_summary)を、エージェントと同じ MCP のツールで読む(LLM は呼ばない)。"""
-        return await self._dip(SUMMARY_TOOL, {"line_user_id": user_id})
+        """事業者の要約(get_user_conversation_summary)を、エージェントと同じ MCP のツールで読む(LLM は呼ばない)。"""
+        return await self._provider(SUMMARY_TOOL, {"line_user_id": user_id})
 
-    async def _dip(self, name: str, args: dict) -> dict:
-        """dip のツールをコードから呼ぶ(LLM は呼ばない)。結果は dict。"""
-        msg = await self._dip_tools[name].ainvoke({"type": "tool_call", "name": name, "args": args, "id": f"runtime-{name}"})
+    async def _provider(self, name: str, args: dict) -> dict:
+        """事業者のツールをコードから呼ぶ(LLM は呼ばない)。結果は dict。"""
+        msg = await self._provider_tools[name].ainvoke({"type": "tool_call", "name": name, "args": args, "id": f"runtime-{name}"})
         result = _tool_payload(msg)
         if not isinstance(result, dict):
-            raise TypeError(f"dip の {name} を読めませんでした: {str(result)[:200]}")
+            raise TypeError(f"事業者の {name} を読めませんでした: {str(result)[:200]}")
         return result
 
     @staticmethod
@@ -305,7 +305,7 @@ class LineRuntime:
                 raise
 
     def user_lock(self, user_id: str) -> asyncio.Lock:
-        """そのユーザーのターンと同じ排他。ターンの途中で dip の状態を初期に戻さないために使う。"""
+        """そのユーザーのターンと同じ排他。ターンの途中で事業者の状態を初期に戻さないために使う。"""
         return self._locks[user_id]
 
     async def new_conversation(self, user_id: str) -> None:
@@ -371,12 +371,12 @@ class LineRuntime:
             await self._end_consultations(user_id)
 
     def _harnesses(self) -> list[str]:
-        """dip にあるハーネスの相談(ハーネスの相談のツールが無い dip(前の版)なら空)。"""
-        return [k for k, h in HARNESSES.items() if h["turn"] in self._dip_tools]
+        """事業者にあるハーネスの相談(ハーネスの相談のツールが無い事業者(前の版)なら空)。"""
+        return [k for k, h in HARNESSES.items() if h["turn"] in self._provider_tools]
 
     async def _end_consultations(self, user_id: str) -> None:
         for kind in self._harnesses():
-            await self._dip(HARNESSES[kind]["end"], {"line_user_id": user_id})
+            await self._provider(HARNESSES[kind]["end"], {"line_user_id": user_id})
 
     async def close_conversation(self, user_id: str) -> None:
         """今の会話を閉じる(プロフィールで履歴書を消したとき)。空の会話 n+1 を書いて今の会話にし、それまでの会話
@@ -483,7 +483,7 @@ class LineRuntime:
         これと違う(別のタブで新しい会話が始まった)ときは、発言を会話に入れず LLM も呼ばずに stale(今の会話番号)を
         出して終わる。None でなければ、LLM を呼ぶ前に thread(このターンの会話番号)を出す(挨拶が途中で失敗しても、
         画面は新しい会話の番号を知って、次の発言を stale にしない)。
-        notice: 本人が画面(プロフィール画面・トークの切り替えの表示のボタン)で覚えていることを変えたときの知らせ(dip_mcp.profile.notice)。会話の続きの
+        notice: 本人が画面(プロフィール画面・トークの切り替えの表示のボタン)で覚えていることを変えたときの知らせ(provider_mcp.profile.notice)。会話の続きの
         ターンなら、本人の入力の直前に置く(画面の履歴には出さない)。新しい会話を始めるターンでは使わない
         (最初に要約を読むので要らない)。
         new_conversation: 発言でも新しい会話を始める(LINE の発言で、最後のやりとりから間が空いたとき)。
@@ -529,7 +529,7 @@ class LineRuntime:
                     # 同じターンで移る先の相談を始める(設計メモ docs/design/conversation-layer.md §4.5、§4.15)。
                     # 移る先が今の版(v4)なら、今と同じくトークの AI がこのターンを受ける
                     for kind in harnesses:
-                        r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content})
+                        r = await self._provider(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content})
                         if r.get("active"):
                             r = await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice)
                             if r is None:
@@ -559,7 +559,7 @@ class LineRuntime:
                 if first:
                     payload |= {"entry": entry, "line_user_id": user_id}
                 if EVENTS[event][1] == "greet":
-                    # 挨拶の入口のボタンは LLM に任せず、dip の要約(やり終えた入口)と窓口から決める(task 237)。
+                    # 挨拶の入口のボタンは LLM に任せず、事業者の要約(やり終えた入口)と窓口から決める(task 237)。
                     # 会話の state に残し、render がこのターンの返信にだけ付ける(画面の描き直しも同じボタンになる)
                     payload |= {"greeting_entries": greeting_entries(await self._read_summary(user_id), channel, features)}
                 payload |= {"channel": channel, "channel_features": list(features)}
@@ -614,18 +614,18 @@ class LineRuntime:
 
     async def _switch_in(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
                          notice: str | None, human: bool = True) -> bool:
-        """別の入り口から移ってきた相談を、同じターンで始める(dip の {kind}_turn の switch_in。引き継ぎの記録を読み、区分を書き、
+        """別の入り口から移ってきた相談を、同じターンで始める(事業者の {kind}_turn の switch_in。引き継ぎの記録を読み、区分を書き、
         最初の問いを返す)。移る先が始めなかったら(層の版でなくなったなど)False(呼んだ側がトークの AI に渡す)。
         トークの AI が始めた相談(t1)は、本人の発言をもう会話に保存しているので human=False(返信だけを足す)。"""
         args = {"switch_in": True}
-        r = await self._dip(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content, **args})
+        r = await self._provider(HARNESSES[kind]["turn"], {"line_user_id": user_id, "text": content, **args})
         if not r.get("active"):
             return False
         return await self._harness_turn(kind, queue, user_id, event, cfg, content, r, notice, args, human) is None
 
     async def _harness_turn(self, kind: str, queue: asyncio.Queue, user_id: str, event: str, cfg: dict, content: str,
                             r: dict, notice: str | None, args: dict | None = None, human: bool = True) -> dict | None:
-        """ハーネスの相談(kind = baito / career)の1ターン。ハーネス(dip の baito_turn / career_turn)がモデルの出力を求める間
+        """ハーネスの相談(kind = baito / career)の1ターン。ハーネス(事業者の baito_turn / career_turn)がモデルの出力を求める間
         (status=llm)、そのシステムプロンプトでモデルを呼び、それまでの出力を全部渡して呼び直す(抽出 → 判断 → 生成。
         PRD v4.1 §5-4)。呼び出しが失敗したら、失敗の印を渡す(ハーネスが 1 回だけやり直し、だめなら質問の原文を出す)。
         返信の文と選択肢はハーネスのものをそのまま出す(正社員はまとめのカードで吹き出しが 2 つ以上になる)。
@@ -653,7 +653,7 @@ class LineRuntime:
             except Exception as e:  # noqa: BLE001  ハーネスが失敗 1 回として数える(やり直し・原文で返す)
                 log.warning("%sのモデルを呼べなかった(%s): %s", h["what"], call["stage"], type(e).__name__)
                 outputs.append({"stage": call["stage"], "error": type(e).__name__})
-            r = await self._dip(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs, **(args or {})})
+            r = await self._provider(h["turn"], {"line_user_id": user_id, "text": content, "llm_outputs": outputs, **(args or {})})
             if not r.get("active"):
                 if r.get("switch_to"):
                     return r
@@ -667,7 +667,7 @@ class LineRuntime:
         ui = progress_ui.build(r.get("progress")) if kind == "baito" else career_ui.build(r.get("ui"))
         # 入口のカードと職種の結果(ハーネスの card。設計メモ baito-quick-start.md §9)も、同じく additional_kwargs に置く
         card = r.get("card") if kind == "baito" else None
-        # 「近くで探す」の求人(dip の recommend が返した求人カード。task 266)も同じく。render が求人のカルーセル(cards)にする
+        # 「近くで探す」の求人(事業者の recommend が返した求人カード。task 266)も同じく。render が求人のカルーセル(cards)にする
         found = r.get("jobs") if kind == "baito" else None
         kept = ({"progress": ui} if ui else {}) | ({"baito_card": card} if card else {}) | (
             {"baito_jobs": found} if found else {})
@@ -742,7 +742,7 @@ CARD_KEYS = {"job_id", "title", "employer", "shift", "station", "walk_min", "rea
 
 
 def _cards_in(value) -> list[dict]:
-    """dip が返したデータの中にある求人カード(dip_mcp.logic.job_card の形)をすべて拾う。"""
+    """事業者が返したデータの中にある求人カード(provider_mcp.logic.job_card の形)をすべて拾う。"""
     if isinstance(value, dict):
         found = [value] if CARD_KEYS <= value.keys() else []
         return found + [c for v in value.values() for c in _cards_in(v)]
@@ -768,7 +768,7 @@ def history(messages: list, user_id: str, greeting: dict | None = None) -> list[
     返信が保存されていなければ None)。イベントで始まる会話でも、イベントは最初の1件だけ。
     アップロードのターンには upload(file: 「履歴書(PDF)」のような表示名、shown: 読み取り結果の確認の吹き出し、
     view_url: そのアップロードの読み取り結果の画面)も付く。音声相談の結果のターン(add_voice_result)は、保存した返信を
-    そのまま bot にする。カードは render と同じく、そのターンまでに dip のツールが返した求人だけ。
+    そのまま bot にする。カードは render と同じく、そのターンまでに事業者のツールが返した求人だけ。
     本人のデータの画面の URL(読み取り結果・下書き)は会話の記録から取らず、ここで組み立てる(ユーザーIDを載せない形。
     ユーザーID入りの URL を保存していた古い記録も、返すときには載せない)。
     プロフィールを変えた知らせ(profile_notice)は AI への入力なので、画面には出さない(前のターンの区切りにだけ使う)。
@@ -809,7 +809,7 @@ def history(messages: list, user_id: str, greeting: dict | None = None) -> list[
 
 
 def track_switch(turn_tools: list[dict]) -> dict | None:
-    """そのターンで雇用区分が切り替わったなら、dip が記録した切り替え(set_search_track の recorded の、id・元の区分・
+    """そのターンで雇用区分が切り替わったなら、事業者が記録した切り替え(set_search_track の recorded の、id・元の区分・
     今の区分・取り消しか)。画面はこれで AI の返信の前に切り替えの表示を出す。返信文からは推測しない。
     1ターンに何度か切り替えたら、最後のもの(表示のボタンが取り消せるのは直前の切り替えだけなので)。切り替わらなければ None。"""
     recs = [t["result"]["recorded"] for t in turn_tools if t["name"] == "set_search_track"
@@ -820,7 +820,7 @@ def track_switch(turn_tools: list[dict]) -> dict | None:
 
 
 def started_by_talk(state: dict) -> tuple[str, str] | None:
-    """このターンにトークの AI が本人の発言を渡して、相談を始めるツールを呼び、dip が始めずに switch_to を返したか(t1。dip_mcp/convo/talk.py)
+    """このターンにトークの AI が本人の発言を渡して、相談を始めるツールを呼び、事業者が始めずに switch_to を返したか(t1。provider_mcp/convo/talk.py)
     -> (移る先の入り口, 渡した発言)。無ければ None。"""
     msgs = state.get("messages") or []
     last_human = max((i for i, m in enumerate(msgs) if m.type == "human"), default=-1)
@@ -849,11 +849,11 @@ def render(state: dict) -> dict:
     reply: LineReply = state.get("structured_response") or LineReply(bubbles=["(返信を生成できませんでした)"])
     msgs = state["messages"]
     last_human = max(i for i, m in enumerate(msgs) if m.type == "human")
-    # カードにできるのは dip のツールが返した求人(と、音声相談の結果として dip の求人データから作り直したカード)だけ。
+    # カードにできるのは事業者のツールが返した求人(と、音声相談の結果として事業者の求人データから作り直したカード)だけ。
     # モデルが作った求人は出さない。
     sources = [_tool_payload(m) for m in msgs if m.type == "tool"]
     sources += [m.additional_kwargs["voice"]["cards"] for m in msgs if m.type == "human" and "voice" in m.additional_kwargs]
-    # アルバイトの相談の「近くで探す」で出した求人(dip の recommend の結果。_harness_turn が置く)も、後のターンで使える
+    # アルバイトの相談の「近くで探す」で出した求人(事業者の recommend の結果。_harness_turn が置く)も、後のターンで使える
     sources += [m.additional_kwargs["baito_jobs"] for m in msgs if m.type == "ai" and "baito_jobs" in m.additional_kwargs]
     jobs: dict[str, dict] = {}
     for c in (c for src in sources for c in _cards_in(src)):
@@ -861,7 +861,7 @@ def render(state: dict) -> dict:
     args = {tc["id"]: tc["args"] for m in msgs[last_human:] if m.type == "ai" for tc in (m.tool_calls or [])}
     turn_tools = [{"name": m.name, "args": args.get(m.tool_call_id, {}), "result": _tool_payload(m)}
                   for m in msgs[last_human:] if m.type == "tool"]
-    # ボタンは dip の画面(LIFF)の URL だけを通す。モデルが作った URL は表示しない。
+    # ボタンは事業者の画面(LIFF)の URL だけを通す。モデルが作った URL は表示しない。
     buttons = [b.model_dump() for b in reply.buttons if b.url.startswith("/liff/")]
     actions = list(dict.fromkeys(reply.actions))
     quick_replies = reply.quick_replies

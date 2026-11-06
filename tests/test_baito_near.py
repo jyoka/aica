@@ -1,7 +1,7 @@
 """アルバイトの相談の「近くで探す」と本物の求人(設計メモ docs/design/baito-quick-start.md §6・§7、task 266)。実 API なし。
 
-- ランタイムを通して(偽のモデル、dip の MCP は本物): 入口から絵 → [近くで探す] → 年齢 → エリア → 時間帯(いくつでも押して
-  [これで探す]。task 287)で、dip の recommend が返した本物の求人(選んだ時間帯のどれかに合う求人)が、今の求人のカルーセル
+- ランタイムを通して(偽のモデル、事業者の MCP は本物): 入口から絵 → [近くで探す] → 年齢 → エリア → 時間帯(いくつでも押して
+  [これで探す]。task 287)で、事業者の recommend が返した本物の求人(選んだ時間帯のどれかに合う求人)が、今の求人のカルーセル
   (line_channel._cards_message)と件数の吹き出しで出る
 - 時間帯は押すたびに足し、[これで探す] で決める。[どれでもOK] は出しているものを全部。打った「昼 夕方 夜全部OK」も読む。
   前の相談(near の time が 1 つの文字)も読める
@@ -21,12 +21,12 @@ import os
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import quick_start as Q
-from dip_mcp.baito import session
-from dip_mcp.data import State
 from line_runtime.line_channel import _cards_message, to_messages
+from provider_mcp import logic
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import quick_start as Q
+from provider_mcp.baito import session
+from provider_mcp.data import State
 from tests.test_baito_chat import GREET, START, UID, FakeBaitoLLM, _harness
 from tests.test_consult import ConsultModel
 
@@ -84,7 +84,7 @@ def jobs_of(state: State, **cond) -> dict:
 
 
 def test_taps_from_the_entry_card_show_real_jobs_for_every_picked_time(tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     baito = FakeBaitoLLM()
@@ -110,7 +110,7 @@ def test_taps_from_the_entry_card_show_real_jobs_for_every_picked_time(tmp_path)
     assert p2["bubbles"][0].startswith("昼・夕方ね！") and p2["quick_replies"] == [DONE, "朝", "夜", "深夜", Q.ANY_BUTTON,
                                                                               Q.RESET_BUTTON]
     assert all("progress" not in r and r["cards"] == [] for r in (r1, r2, r3, r4, p1, p2))
-    # [これで探す]: dip の recommend が返した本物の求人(エリア、§6.2 で直した時間帯のどれか、絵の値、未成年でない)
+    # [これで探す]: 事業者の recommend が返した本物の求人(エリア、§6.2 で直した時間帯のどれか、絵の値、未成年でない)
     want = jobs_of(State(), area="東京", time_band=["日中", "夕方"], max_physical_level=1, minor=False)
     day = jobs_of(State(), area="東京", time_band="日中", max_physical_level=1, minor=False)
     evening = jobs_of(State(), area="東京", time_band="夕方", max_physical_level=1, minor=False)
@@ -136,7 +136,7 @@ def test_taps_from_the_entry_card_show_real_jobs_for_every_picked_time(tmp_path)
 
 def test_more_then_continues_the_harness_flow_without_asking_entered_values_again(tmp_path):
     """[もっと絞る] で今の流れに入り、帯が出始める。年齢と時間帯は聞かない(区分、残りの HARD、MID を聞く)。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     picks = {H.QUICK_PICK: "動いてたい", H.NEAR_AGE: "15〜17歳", H.NEAR_AREA: "東京", H.NEAR_TIME: "夕方だけ",

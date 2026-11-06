@@ -4,7 +4,7 @@
 ハーネスがターンの結果に足した progress から、そのターンに付ける部品を 0〜1 つ選び(§3.4。choose)、LINE の Flex と、
 Flex を使わないときの文(Web のトーク、Flex を切った形。§5)を作る(build)。ここでは数えない(数えるのはハーネス)。
 
-progress の形(アルバイトは dip_mcp.baito.progress.update が作る):
+progress の形(アルバイトは provider_mcp.baito.progress.update が作る):
   filled, total   埋まった数と全体の数
   added           このターンに埋まった項目 [{label, value, inferred}](表の上から)
   groups          プロフィールのグループ [{name, items: [{label, value, inferred, undecided}]}]。value が None なら

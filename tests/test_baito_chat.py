@@ -1,4 +1,4 @@
-"""アルバイト・パートの相談(バイト探しの相棒。PRD v4.1)を、トークのターンとして通しで動かす。実 LLM なし、dip の MCP は本物。
+"""アルバイト・パートの相談(バイト探しの相棒。PRD v4.1)を、トークのターンとして通しで動かす。実 LLM なし、事業者の MCP は本物。
 
 機能フラグ BAITO_HARNESS_VERSION=v4 のときの、本人から見た流れ: 「まず相談する」→ トークの AI が playbook を読んで相談を
 始め、最初の質問(バンクの原文と選択肢)を出す → 選択肢を押すたびに、ハーネスが決めた次の質問がバンクの選択肢つきで返る
@@ -17,9 +17,6 @@ from collections.abc import Iterator
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import quick_start as Q
 from line_runtime.baito_chat import (
     SCHEMAS,
     BaitoLLMError,
@@ -27,6 +24,9 @@ from line_runtime.baito_chat import (
     history,
     messages_for,
 )
+from provider_mcp import logic
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import quick_start as Q
 from tests.test_consult import ConsultModel
 from tests.test_handle import call, reply
 
@@ -78,7 +78,7 @@ class FakeBaitoLLM:
 
 
 def _run(agent_script, baito, steps, tmp_path, after=None):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -90,8 +90,8 @@ def _run(agent_script, baito, steps, tmp_path, after=None):
 
 
 def _harness():
-    from dip_mcp.baito.session import KEY
-    from dip_mcp.data import State
+    from provider_mcp.baito.session import KEY
+    from provider_mcp.data import State
 
     d = State().user(UID).get(KEY)
     return H.State.from_dict(d["harness"]) if d else None
@@ -103,7 +103,7 @@ START = [
     call("get_counseling_playbook", {"track": "アルバイト・パート", "channel": "chat"}, "pb"),
     call("start_baito_consultation", {"line_user_id": UID}),
     # モデルが付けた選択肢は使われず、ハーネスの入口のカードの選択肢になる。問いはカードにあるので、AI は 1 文だけ
-    # (dip_mcp.baito.session.QUICK_START_NOTE)
+    # (provider_mcp.baito.session.QUICK_START_NOTE)
     reply(["合いそうなバイトを、一緒に探しましょう。"], quick_replies=["趣味", "貯金"]),
 ]
 # 新しい相談は入口のカードから始まる(task 265)。[近くで探す] の後は「近くで探す」の 3 問と本物の求人(task 266)で、今の流れ
@@ -116,11 +116,11 @@ NEAR = [(UID, "message", s) for s in (H.QUICK_NONE, H.QUICK_NEAR, "18歳以上",
 @pytest.fixture
 def prd_start(tmp_path):
     """入口のカードを通さずに、PRD の icebreak から始まる人にする: 前の相談で中学生以下で止めた印(session.BLOCK_KEY)が
-    残っている人は、職種を出す前に年齢を聞く今の流れから始まる(task 265)。dip は別のプロセスなので、状態のファイルに置く。"""
-    from dip_mcp.baito import session
-    from dip_mcp.data import State
+    残っている人は、職種を出す前に年齢を聞く今の流れから始まる(task 265)。事業者は別のプロセスなので、状態のファイルに置く。"""
+    from provider_mcp.baito import session
+    from provider_mcp.data import State
 
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     State().update(UID, lambda u: u.__setitem__(session.BLOCK_KEY, {"blocked": "under_15"}))
 
 
@@ -243,9 +243,9 @@ def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
     """入口のカードから「近くで探す」で 15〜17歳を選ぶと、本物の求人(未成年に出せる求人だけ)が出る。[もっと絞る] から
     最後まで進むと、おすすめ 3 つ(深夜専用・18歳以上・重労働なし)が出て、相談を閉じ、避けたいことに「深夜シフト」
     「重量物・危険な作業」が保存される。深夜・夜の選択肢は一度も出ない。年齢は「近くで探す」の 1 回だけ聞く。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
-    from dip_mcp.data import State
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
+    from provider_mcp.data import State
 
     picks = {H.QUICK_PICK: "座ってじっくり", H.NEAR_AGE: "15〜17歳", H.NEAR_AREA: "東京",
              H.NEAR_TIME: iter(["夕方", "昼", Q.DONE_BUTTON]),  # 時間帯は押して足し、[これで探す] で決める(task 287)
@@ -282,12 +282,12 @@ def test_minor_reaches_the_result_by_buttons_and_the_rule_ng_is_saved(tmp_path):
 
 
 def test_agent_sees_the_start_tool_only_with_the_flag(tmp_path, monkeypatch):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
         async with LineRuntime(model=ConsultModel(script=[]), in_memory=True) as rt:
-            return {t.name for t in rt.tools}, set(rt._dip_tools)
+            return {t.name for t in rt.tools}, set(rt._provider_tools)
 
     agent_tools, all_tools = asyncio.run(go())
     assert "start_baito_consultation" in agent_tools
@@ -366,7 +366,7 @@ def test_profile_grows_in_the_talk_with_band_card_and_complete(tmp_path):
     from line_runtime import progress_ui as U
     from line_runtime.line_channel import to_messages
 
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     first, turns, conv = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
     # トークの AI のターン(挨拶、相談を始めたターン)と、入口から求人までのタップには付けない。[もっと絞る] で今の流れに
     # 入ったターンから出す(設計メモ baito-quick-start.md §7。「近くで探す」で入った年齢・時間帯が、もう埋まっている)
@@ -420,7 +420,7 @@ def test_progress_text_mode_sends_no_flex(tmp_path, monkeypatch):
     from line_runtime import progress_ui as U
     from line_runtime.line_channel import to_messages
 
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     monkeypatch.setenv(U.MODE_ENV, "text")
     _, turns, _ = _to_result({"q_segment": "学生", "hf_age": "18歳以上"})
     shown = [r for r in turns if r.get("progress")]

@@ -2,7 +2,7 @@
 
 本人役の発話を TTS(OpenAI gpt-4o-mini-tts)で音声合成し、本番と同じ部品で1会話を回す:
 - Deepgram STT(nova-3, ja + バイト用語の keyterm)で文字起こし(livekit プラグインの recognize)
-- ResumeAdvisor(Claude Sonnet 5.5。VOICE_RESUME_PROVIDER=openai なら gpt-6-sol + dip MCP の recommend_jobs)をテキストターンで実行
+- ResumeAdvisor(Claude Sonnet 5.5。VOICE_RESUME_PROVIDER=openai なら gpt-6-sol + 事業者の MCP の recommend_jobs)をテキストターンで実行
 - アドバイザーの返答を Cartesia TTS(sonic-3.5 日本語ボイス・少し遅め)で音声合成
 - 終わりに finalize_interview → 履歴書の下書き・希望条件・求人IDが out/ に出る
 
@@ -12,7 +12,7 @@ LiveKit(WebRTC の転送・ターン判定)だけはここでは通らないの�
     ./.venv/bin/python scripts/voice/e2e_audio_session.py
 
 --user <ユーザーID> を付けると、トークの「音声で相談」から入った相談として通す
-(dip の要約を読み、希望を保存し、結果をトークへ戻す。line_runtime.server を 8030 で起動し、
+(事業者の要約を読み、希望を保存し、結果をトークへ戻す。line_runtime.server を 8030 で起動し、
 画面でシナリオを始めたユーザー(例 `w-…:sim-new`)を渡すとトークに結果が届く):
 
     ./.venv/bin/python scripts/voice/e2e_audio_session.py --user sim-new
@@ -38,9 +38,9 @@ from openai import AsyncOpenAI
 from resume_draft.schema import JST
 from voice_resume import config, voice_llm
 from voice_resume.agent import prepare_advisor
-from voice_resume.dip import DipMCP
 from voice_resume.flow import verify_flow
 from voice_resume.outputs import history_transcript
+from voice_resume.provider import ProviderMCP
 from voice_resume.stt import create_stt
 
 RESULTS = config.RESULTS_DIR
@@ -111,15 +111,15 @@ async def _run_conversation(user: str | None = None) -> None:
         sample_rate=SAMPLE_RATE,
     )
 
-    dip = DipMCP()
-    await dip.start()
+    provider = ProviderMCP()
+    await provider.start()
     # トークから入った相談として通すとき: ワーカー(voice_resume.agent)と同じ準備で、会話の前に
-    # dip の要約から前回の希望と、トークでアップロードした履歴書を読み、確認形で使わせる
+    # 事業者の要約から前回の希望と、トークでアップロードした履歴書を読み、確認形で使わせる
     if user:
-        summary = await dip.get_user_conversation_summary(user)
+        summary = await provider.get_user_conversation_summary(user)
         print(f"ユーザー: {user} / 前回の希望: {summary.get('stated_preferences') or 'なし'}"
               f" / 履歴書: {'あり' if summary.get('uploaded_resume') else 'なし'}")
-    advisor, _ = await prepare_advisor(dip, user)
+    advisor, _ = await prepare_advisor(provider, user)
 
     session = AgentSession(
         llm=voice_llm.create_llm()
@@ -154,7 +154,7 @@ async def _run_conversation(user: str | None = None) -> None:
             llm_tokens["in"] += usage.input_tokens
             llm_tokens["out"] += usage.output_tokens
     await session.aclose()
-    await dip.aclose()
+    await provider.aclose()
 
     # ---- アドバイザーの声(Cartesia・少し遅め)を合成して残す。live と同じ設定 ----
     assistant_lines = [t["text"] for t in transcript if t["role"] == "assistant"]

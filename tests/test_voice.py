@@ -3,15 +3,15 @@
 音声相談はトークの上のシートで開く: シートが POST /api/voice/start で接続トークンを受け取り(本人の
 Cookie のユーザーだけ。会話数を1つ使う)、開いている間だけ POST /api/voice/wait で結果を待つ(ユーザーIDは本文)。
 voice-resume が面談の結果を /api/voice/result に共有鍵つきで送ると、今の会話に AI の返信として続く(再読み込みでも残る)。
-トークに出る求人は dip の求人データから作り直す(dip に無い求人はトークに出さない)。
+トークに出る求人は事業者の求人データから作り直す(事業者に無い求人はトークに出さない)。
 """
 
 from __future__ import annotations
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import State, load_jobs
+from provider_mcp import logic
+from provider_mcp.data import State, load_jobs
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ DRAFT = "# 履歴書の下書き\n\n- カフェで1年勤務\n"
 
 
 def _voice_jobs():
-    """dip の実データの求人2件を、voice-resume が送る形(カード)で。"""
+    """事業者の実データの求人2件を、voice-resume が送る形(カード)で。"""
     jobs = load_jobs()
     ids = sorted(jobs)[:2]
     return [{"job_id": i, "title": jobs[i].title, "reasons": ["夕方の勤務"]} for i in ids], ids
@@ -34,8 +34,8 @@ def _voice_jobs():
 # ----------------------------- logic -----------------------------
 
 
-def test_record_voice_result_rebuilds_cards_from_dip_jobs_only(state):
-    """カードは dip の求人データから作り直し、dip に無い求人ID(でっち上げ)は捨てる。"""
+def test_record_voice_result_rebuilds_cards_from_provider_jobs_only(state):
+    """カードは事業者の求人データから作り直し、事業者に無い求人ID(でっち上げ)は捨てる。"""
     jobs, ids = _voice_jobs()
     fake = {"job_id": "zzz999", "title": "存在しない求人", "hourly_wage": 9999}
     r = logic.record_voice_result(state, "sim-new", jobs + [fake], DRAFT, ["out/resume.md"])
@@ -43,7 +43,7 @@ def test_record_voice_result_rebuilds_cards_from_dip_jobs_only(state):
     results = state.user("sim-new")["voice_results"]
     cards = results[0]["cards"]
     assert [c["job_id"] for c in cards] == ids
-    # カードの中身(時給・駅など)は dip の求人データの値。理由は voice 側の検索時のものを使う
+    # カードの中身(時給・駅など)は事業者の求人データの値。理由は voice 側の検索時のものを使う
     assert cards[0]["pay"] == load_jobs()[ids[0]].pay.model_dump()
     assert cards[0]["reasons"] == ["夕方の勤務"]
 
@@ -82,7 +82,7 @@ def test_record_voice_result_keeps_only_safe_preferences(state):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from fastapi.testclient import TestClient
@@ -182,7 +182,7 @@ def test_the_old_voice_tab_and_polling_are_gone(client):
 
 
 def test_voice_cards_stay_usable_in_later_turns():
-    """音声相談の結果のカードは、次のターンの返信でも(dip のツールを呼び直さずに)カードとして出せる。
+    """音声相談の結果のカードは、次のターンの返信でも(事業者のツールを呼び直さずに)カードとして出せる。
     LLM には求人のID と名前が伝わる。"""
     from langchain_core.messages import AIMessage, HumanMessage
 
@@ -228,7 +228,7 @@ def test_voice_result_round_trip_over_the_api(client):
         "preferences": {"job_type": "カフェ", "time_band": "夕方"},
     })
     assert r.status_code == 200 and r.json()["cards"] == 2
-    assert r.json()["talk"] is False  # まだ会話が無いユーザー: トークには続けない(dip には預かる)
+    assert r.json()["talk"] is False  # まだ会話が無いユーザー: トークには続けない(事業者には預かる)
 
     got = client.post("/api/voice/wait", json={"user_id": uid, "since": 0, "timeout": 0}).json()
     assert got["next"] == 1

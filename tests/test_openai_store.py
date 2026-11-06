@@ -5,7 +5,7 @@
 つなぐ。偽の OpenAI は、store=False のときの本物の決まりを真似る: 応答を残さないので、前の応答の ID
 (previous_response_id)も、前の応答の項目の ID だけの参照(メッセージの ID、中身の無い reasoning)も解決できず 400 を返す。
 reasoning のあるモデルがツールを呼んだら、次の呼び出しでその reasoning を送り返さないと 400 を返す。
-会話は本物の LineRuntime(ファイルの会話の記録と dip の MCP)で進め、2 ターン目は会話の記録から読み直した全文を送る。
+会話は本物の LineRuntime(ファイルの会話の記録と事業者の MCP)で進め、2 ターン目は会話の記録から読み直した全文を送る。
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ class FakeOpenAI:
 @pytest.fixture
 def runtime_on_fake_openai(tmp_path, monkeypatch):
     """本物の ChatOpenAI(build_model)を偽の OpenAI につなぎ、会話の記録をファイルに書く LineRuntime を作る関数。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     from line_runtime import agent, config

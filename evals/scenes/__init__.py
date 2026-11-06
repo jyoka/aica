@@ -10,12 +10,12 @@
 - form: 形(B / C / D)。career だけ。無ければ C
 - segment: 始めの区分。career は same_path / change / return / early / unknown、baito は student / homemaker / side_job /
   other / unknown。talk には置かない
-- known: 始めに分かっている欄({slot: {...}})。slot はその入り口の欄の名前(career は dip_mcp.career.harness.SLOTS、
-  baito は dip_mcp.baito.harness.SLOTS と近くで探すのエリア near.area)。career は {"text", "status", "confidence",
+- known: 始めに分かっている欄({slot: {...}})。slot はその入り口の欄の名前(career は provider_mcp.career.harness.SLOTS、
+  baito は provider_mcp.baito.harness.SLOTS と近くで探すのエリア near.area)。career は {"text", "status", "confidence",
   "number", "range", "unit", "from"}、baito は {"value", "confidence", "from"}(value は SLOTS の区切りのキー)。
   status の既定は filled、confidence の既定は high。from は出どころ(入り口をまたいで引き継いだ値なら、元の入り口の名前)
-- profile: 共通の値(入り口をまたいで dip に残っている値。{key: text}。key は common_keys():
-  区分 track と、dip の希望の項目 stated_preferences の名前 dip_mcp.logic.PREFERENCE_KEYS)。任意
+- profile: 共通の値(入り口をまたいで事業者に残っている値。{key: text}。key は common_keys():
+  区分 track と、事業者の希望の項目 stated_preferences の名前 provider_mcp.logic.PREFERENCE_KEYS)。任意
 - history: 架空の前の会話([{"who": "agent" | "user", "text"}]。judge._log と同じ形)
 - asking: 今出している問いの id(その入り口の質問バンクの id。career の職歴カードは card_role1 のように広げた名前)。
   まとめは review。talk には置かない
@@ -45,14 +45,14 @@ import re
 import unicodedata
 from pathlib import Path
 
-from dip_mcp.convo import acts as convo_acts
+from provider_mcp.convo import acts as convo_acts
 
 DIR = Path(__file__).resolve().parent
 
 # 入り口(設計メモ §2.1)。場面のフォルダの名前
 ENTRIES = {
-    "career": "正社員ヒアリング(dip_mcp/career/)",
-    "baito": "アルバイト・パートの相談(dip_mcp/baito/、v4 と v5)",
+    "career": "正社員ヒアリング(provider_mcp/career/)",
+    "baito": "アルバイト・パートの相談(provider_mcp/baito/、v4 と v5)",
     "talk": "トークの AI(相談の外。最初のひとこと、相談の前後)",
 }
 # 場面の種類
@@ -84,7 +84,7 @@ SEGMENTS = {
 }
 STATUSES = ("filled", "passed", "dont_know")
 CONFIDENCES = ("high", "low")
-# 共通の値(設計メモ §4.5)は、区分(search_track)と dip の希望の項目(stated_preferences)。名前は common_keys()
+# 共通の値(設計メモ §4.5)は、区分(search_track)と事業者の希望の項目(stated_preferences)。名前は common_keys()
 BAITO_EXTRA_SLOTS = {"near.area"}  # 近くで探すのエリア(SLOTS には無く、state.near に入る)
 
 # コードで判定する条件。値は {引数: 型}。型の後ろの ? は任意
@@ -144,7 +144,7 @@ ORDER_PARTS = ("ack", "answer", "note", "phase_line", "ask")  # 相づち、逆�
 TYPES = {"str": str, "list": list, "int": int, "num": (int, float), "any": (str, int, float)}
 STATE_CHECKS = ("asks", "not_asks", "slot", "slot_not_high", "slot_open")  # entry を書ける(入り口を移した後を見る)
 
-# 読む段の正解の act(設計メモ §4.3)。会話の層の読む段と同じ型(dip_mcp/convo/acts.py)。値は {引数: 型}
+# 読む段の正解の act(設計メモ §4.3)。会話の層の読む段と同じ型(provider_mcp/convo/acts.py)。値は {引数: 型}
 ACTS, VALUE_ACTS, VALUE_ARGS = convo_acts.ACTS, convo_acts.VALUE_ACTS, convo_acts.VALUE_ARGS
 FEELINGS, STRENGTHS = convo_acts.FEELINGS, convo_acts.STRENGTHS
 HOOK_MAX, MENTION_MAX = convo_acts.HOOK_MAX, convo_acts.MENTION_MAX  # 相づちに使う本人の言葉と、候補に使う本人の言葉の字数
@@ -154,15 +154,15 @@ def is_code(check: dict) -> bool:
     return check["check"] in CODE_CHECKS
 
 
-# ---- 入り口ごとの欄と問い。harness を読むのはここだけ(読み込むだけなら dip_mcp を要らないように) ----
+# ---- 入り口ごとの欄と問い。harness を読むのはここだけ(読み込むだけなら provider_mcp を要らないように) ----
 
 def _slots(entry: str) -> set[str]:
     if entry == "career":
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         return set(H.ALL_SLOTS)
     if entry == "baito":
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         return set(B.ALL_SLOTS) | BAITO_EXTRA_SLOTS
     return set()
@@ -171,7 +171,7 @@ def _slots(entry: str) -> set[str]:
 def _question_ids(entry: str, form: str | None = None, segment: str | None = None) -> set[str]:
     """その入り口で出せる問いの id。segment が None なら、区分によらずバンクの全部。"""
     if entry == "career":
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         st = H.new_state(form or "C")
         st.segment = segment or "unknown"
@@ -179,7 +179,7 @@ def _question_ids(entry: str, form: str | None = None, segment: str | None = Non
         ok = qs if segment is None else [q for q in qs if H._segment_ok(q, st)]
         return {q["id"] for q in ok} | {"review", "start"}
     if entry == "baito":
-        from dip_mcp.baito import harness as B
+        from provider_mcp.baito import harness as B
 
         st = B.new_state()
         st.segment = segment or "unknown"
@@ -190,7 +190,7 @@ def _question_ids(entry: str, form: str | None = None, segment: str | None = Non
 
 def _choices(entry: str, qid: str, form: str | None, segment: str) -> set[str]:
     if entry == "career":
-        from dip_mcp.career import harness as H
+        from provider_mcp.career import harness as H
 
         if qid == "review":
             return {H.REVIEW_OK}
@@ -200,7 +200,7 @@ def _choices(entry: str, qid: str, form: str | None, segment: str) -> set[str]:
         st.segment = segment
         q = H.qmap(st, H.BANK)[qid]
         return set(q["choices"]) | set(q.get("escape", [])) | {H.MORE}
-    from dip_mcp.baito import harness as B
+    from provider_mcp.baito import harness as B
 
     if qid == "review":
         return {B.REVIEW_OK}
@@ -208,15 +208,15 @@ def _choices(entry: str, qid: str, form: str | None, segment: str) -> set[str]:
 
 
 def common_keys() -> set[str]:
-    """共通の値の名前: 区分(track)と、dip の希望の項目(dip_mcp.logic.PREFERENCE_KEYS)。"""
-    from dip_mcp import logic
+    """共通の値の名前: 区分(track)と、事業者の希望の項目(provider_mcp.logic.PREFERENCE_KEYS)。"""
+    from provider_mcp import logic
 
     return {"track"} | set(logic.PREFERENCE_KEYS)
 
 
 def _baito_values(slot: str) -> set | None:
     """baito の欄の区切りのキー(near.area はエリアのボタン)。"""
-    from dip_mcp.baito import harness as B
+    from provider_mcp.baito import harness as B
 
     if slot == "near.area":
         return set(B.NEAR_AREAS)

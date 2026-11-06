@@ -1,9 +1,9 @@
-"""条件の問いは1問に1つ聞き、必ず選択肢を付ける(会話の改善 D (2/3)、jyoka/tasks#233)のテスト。実 LLM なし、dip の MCP は本物。
+"""条件の問いは1問に1つ聞き、必ず選択肢を付ける(会話の改善 D (2/3)、jyoka/tasks#233)のテスト。実 LLM なし、事業者の MCP は本物。
 
     ./.venv/bin/python -m pytest -q tests/test_condition_options.py
 
 確かめること:
-(a) dip の要約(get_user_conversation_summary)と区分の切り替え(set_search_track)が、区分ごとの条件の問いの選択肢の候補
+(a) 事業者の要約(get_user_conversation_summary)と区分の切り替え(set_search_track)が、区分ごとの条件の問いの選択肢の候補
     (condition_options)を返す。エリアは本人の話・行動のものが先で、無ければ区分の求人に多いエリア
 (b) 給与の区切りが、求人データの分布に合う(どの区切りも求人を絞り、区切りが上がるほど残る求人が減る)
 (c) 偽の LLM の台本(アルバイト・パートと正社員)で、エリアと時給・年収の問いに候補が付き、評価の判定に違反が無い
@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import ROOT, State, load_jobs
 from evals import checks
 from evals.checks import conversation_checks, turn_violations
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic
+from provider_mcp.data import ROOT, State, load_jobs
 from tests.test_consult import (
     CLOSING,
     ConsultModel,
@@ -32,8 +32,8 @@ from tests.test_consult import (
 from tests.test_handle import call, reply
 
 BAITO, SEISHAIN, MITEI = "アルバイト・パート", "正社員", "未定"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-PLAYBOOKS = ROOT / "dip_mcp" / "playbooks"
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+PLAYBOOKS = ROOT / "provider_mcp" / "playbooks"
 MENU = ["求人を探す", "まず相談する", "今はいい"]
 SC = {"expect_outcome": ["propose"]}
 # LINE の実機(2026-10-26 07:36)で「条件を決めて探す」の後に返った返信。quick_replies は空だった
@@ -361,7 +361,7 @@ def test_tool_descriptions_mention_the_options():
     """ツールの説明(毎回の要求で LLM に渡る)にも、候補があることを書く。"""
     import asyncio
 
-    from dip_mcp import server
+    from provider_mcp import server
 
     tools = {t.name: t.description for t in asyncio.run(server.mcp.list_tools())}
     assert "condition_options" in tools["get_user_conversation_summary"]

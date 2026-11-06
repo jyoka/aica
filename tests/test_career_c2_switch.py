@@ -1,7 +1,7 @@
 """入り口を移す(設計メモ docs/design/conversation-layer.md §4.5、§4.15、§5 の 6 枚目。task 359)。
 
-実 LLM なし。正社員の c2 の相談のツール(dip_mcp.career.session)と、本物のランタイムと dip の MCP で確かめる(偽のモデル)。
-- 確かめる場面: career の switch-*(c2)。baito-switch-hold と baito-switch-also-fulltime は、層の決まり(dip_mcp.convo.switch と
+実 LLM なし。正社員の c2 の相談のツール(provider_mcp.career.session)と、本物のランタイムと事業者の MCP で確かめる(偽のモデル)。
+- 確かめる場面: career の switch-*(c2)。baito-switch-hold と baito-switch-also-fulltime は、層の決まり(provider_mcp.convo.switch と
   応じ方の計画)に場面の発言と読みを当てて確かめる(アルバイト・パートの相談を層に載せるのは 7 枚目。v4 は今のまま)
 - c2 の「とりあえずバイトでいい。週3くらいで」: 引き継ぎの記録(閉じたときの値と、発言の中の値)を書き、確かめた値を保存して閉じる。
   移る先の v4 は層の版でないので、今と同じくトークの AI がこのターンを受ける
@@ -21,15 +21,15 @@ from functools import partial
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import c2 as C2
-from dip_mcp.career import harness as H
-from dip_mcp.career import session
-from dip_mcp.convo import plan as P
-from dip_mcp.convo import switch as SW
-from dip_mcp.data import State, now
 from line_runtime.line_channel import line_user
+from provider_mcp import logic
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import c2 as C2
+from provider_mcp.career import harness as H
+from provider_mcp.career import session
+from provider_mcp.convo import plan as P
+from provider_mcp.convo import switch as SW
+from provider_mcp.data import State, now
 from tests.test_career_c2 import FakeReadLLM, act, say_question, scripted
 from tests.test_career_chat import current_qid, start_script
 from tests.test_consult import ConsultModel
@@ -289,7 +289,7 @@ def test_carry_maps_only_the_entry_definition_and_never_converts_numbers():
 def test_mentions_pick_the_said_values_then_the_area_and_never_a_converted_number():
     """触れる言葉は、記録の文と勤務地の文のまま。先の入り口が入れた欄(take_handoff が返す欄)の、条件の欄だけ。移る発言の値を先に選び、
     並べるときは勤務地を先に。2 つまで。写らない値(年収と時給)と、長い文の値と、言い換えの重なる言葉は触れない。"""
-    from dip_mcp.baito import v5 as V5
+    from provider_mcp.baito import v5 as V5
 
     talk = SW.talk_record("career", "正社員で年収500万以上の仕事を探したい", now(UID)) | {
         "acts": [{"act": "add", "slot": "min_annual_salary", "text": "年収500万以上", "number": 500, "unit": "万"}]}
@@ -344,7 +344,7 @@ def test_mentions_never_take_the_values_restored_from_the_prior_record():
 
 
 def test_switched_in_about_fits_the_ack_and_drops_values_from_the_back():
-    from dip_mcp.convo import reply as RP
+    from provider_mcp.convo import reply as RP
 
     texts = C2.ENTRY.texts
     assert RP.switched_in(texts, ["名古屋", "年収500万以上"]) == ("名古屋、年収500万以上で、正社員で探します", ["名古屋", "年収500万以上"])
@@ -380,7 +380,7 @@ def test_switch_in_puts_the_carried_values_in_the_ack_and_the_fallback_keeps_the
 
 
 def test_entry_definition_checks_the_switch_and_carry_shape(tmp_path):
-    from dip_mcp.convo import entry as E
+    from provider_mcp.convo import entry as E
 
     d = json.loads((H.HERE / "entry.json").read_text(encoding="utf-8"))
     for broken, word in ((lambda d: d["switch"][0].pop("track"), "移る先"),
@@ -424,7 +424,7 @@ def test_line_webhook_c2_casual_switch_to_v4_goes_through_the_talk_ai(tmp_path, 
 def test_runtime_starts_the_layer_destination_in_the_same_turn_without_the_talk_ai(tmp_path, monkeypatch):
     """移る先が層の版(c2)なら、ランタイムはトークの AI を呼ばずに、同じターンで移る先の相談を始める(switch_in)。返信は移る先の
     最初の問いで、区分の切り替えの表示が付く。移る元はアルバイト・パートの層の版(v5。7 枚目)の代わりに、baito_turn の結果を差し替える。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     st = State(tmp_path / "state.json")
     logic.set_search_track(st, UID, "アルバイト・パート", evidence="バイトを探したい")
     handoff(st)
@@ -434,13 +434,13 @@ def test_runtime_starts_the_layer_destination_in_the_same_turn_without_the_talk_
 
     async def go():
         async with LineRuntime(model=model, in_memory=True, career_llm=llm) as rt:
-            real = rt._dip
+            real = rt._provider
 
-            async def dip(name, args):
+            async def provider(name, args):
                 if name == "baito_turn":
                     return {"active": False, "ended": "switch", "switch_to": "career", "direct": True}
                 return await real(name, args)
-            rt._dip = dip
+            rt._provider = provider
             return await rt.handle(UID, "message", "やっぱり正社員で探したい")
 
     out = asyncio.run(go())

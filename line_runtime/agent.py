@@ -1,7 +1,7 @@
 """LINE 側ランタイム(LY Runtime のスタンドイン)のエージェント。
 
-LINE が持つのは「会話の声・安全・入口」。事業者(dip)の業務知識は一切持たず、MCP で受け取った
-Prompt(シナリオ)と Tool だけで動く。ここにバイトル固有のルールを書かないことが、このシミュレーションの肝。
+LINE が持つのは「会話の声・安全・入口」。事業者の業務知識は一切持たず、MCP で受け取った
+Prompt(シナリオ)と Tool だけで動く。ここに aica 固有のルールを書かないことが、このシミュレーションの肝。
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ USER_NOTE = (f"# このユーザー\nツールの line_user_id には「{PINNED_
 
 
 class ScenarioMiddleware(AgentMiddleware):
-    """会話の入口に応じた dip のシナリオ(MCP の Prompt)と、今の窓口(Web / LINE)をシステムプロンプトに付ける。
+    """会話の入口に応じた事業者のシナリオ(MCP の Prompt)と、今の窓口(Web / LINE)をシステムプロンプトに付ける。
     ユーザーIDは載せない(USER_NOTE: ツールの line_user_id は PinUserMiddleware が固定するので、LLM が知る必要がない)。
     どれも会話の途中で変わらず、ユーザーごとにも変わらないので、プロンプトキャッシュを壊さない(窓口はシナリオの後に置き、
     シナリオまではどの窓口の会話でも同じにする)。"""
@@ -111,13 +111,13 @@ class ScenarioMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request: ModelRequest, handler):
         entry = request.state.get("entry", "A")
         note = channel_note(request.state.get("channel"), request.state.get("channel_features") or ())
-        text = (f"{PLATFORM_PROMPT}\n# 事業者(dip)の対話シナリオ\n{self.scenarios.get(entry, self.scenarios['A'])}\n"
+        text = (f"{PLATFORM_PROMPT}\n# 事業者の対話シナリオ\n{self.scenarios.get(entry, self.scenarios['A'])}\n"
                 f"# 窓口\n{note}\n" + USER_NOTE)
         return await handler(request.override(system_message=SystemMessage(text)))
 
 
 class PinUserMiddleware(AgentMiddleware):
-    """dip のツールの line_user_id を、この会話のユーザー(state の line_user_id)に固定する。
+    """事業者のツールの line_user_id を、この会話のユーザー(state の line_user_id)に固定する。
     LLM が別のユーザーIDを渡しても(プロンプトインジェクションなど)、他人の状態を読み書きさせない。
     line_user_id を引数に持つツールだけが対象。会話のユーザーが分からなければ、ツールを呼ばずにエラーを返す。"""
 

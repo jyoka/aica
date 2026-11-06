@@ -21,50 +21,50 @@ from voice_resume.jobs import (
     spoken_job_line,
 )
 
-DIP_LOGIC = Path(config.ROOT) / "dip_mcp" / "logic.py"
+PROVIDER_LOGIC = Path(config.ROOT) / "provider_mcp" / "logic.py"
 
 
 def _line_sim_assign(name: str) -> ast.expr:
-    """dip 側の代入(JOB_TYPES など)を、コードを import せずソースから読む。"""
-    tree = ast.parse(DIP_LOGIC.read_text(encoding="utf-8"))
+    """事業者側の代入(JOB_TYPES など)を、コードを import せずソースから読む。"""
+    tree = ast.parse(PROVIDER_LOGIC.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == name for t in node.targets
         ):
             return node.value
-    raise AssertionError(f"dip_mcp/logic.py の {name} が見つからない")
+    raise AssertionError(f"provider_mcp/logic.py の {name} が見つからない")
 
 
 def test_job_types_match_line_sim():
-    """職種の一覧が dip 側(dip_mcp/logic.py の JOB_TYPES)と完全一致している(PR #25)。"""
+    """職種の一覧が事業者側(provider_mcp/logic.py の JOB_TYPES)と完全一致している(PR #25)。"""
     assert JOB_TYPES == tuple(ast.literal_eval(_line_sim_assign("JOB_TYPES")))
 
 
 def test_areas_match_line_sim():
-    """エリアの一覧が dip 側(dip_mcp/logic.py の AREAS)と完全一致している(task 33)。"""
+    """エリアの一覧が事業者側(provider_mcp/logic.py の AREAS)と完全一致している(task 33)。"""
     assert AREAS == tuple(ast.literal_eval(_line_sim_assign("AREAS")))
 
 
 def test_area_phrases_match_line_sim_group_keys():
-    """広い言い方の一覧が dip 側(dip_mcp/logic.py の AREA_GROUPS のキー)と完全一致している。"""
+    """広い言い方の一覧が事業者側(provider_mcp/logic.py の AREA_GROUPS のキー)と完全一致している。"""
     keys = tuple(ast.literal_eval(k) for k in _line_sim_assign("AREA_GROUPS").keys)
     assert AREA_PHRASES == keys
 
 
 def test_preference_labels_match_line_sim_preference_keys():
-    """保存できる希望の項目と呼び名が dip 側(dip_mcp/logic.py の PREFERENCE_KEYS)と一致している(task 40)。"""
+    """保存できる希望の項目と呼び名が事業者側(provider_mcp/logic.py の PREFERENCE_KEYS)と一致している(task 40)。"""
     from voice_resume.prompts import PREFERENCE_LABELS
 
     assert PREFERENCE_LABELS == ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS"))
 
 
-def test_dip_pref_keys_cover_all_line_sim_preference_keys():
-    """保存方向も dip 側と同期している: save_user_preferences に渡す項目(_DIP_PREF_KEYS)が
-    dip の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。
+def test_provider_pref_keys_cover_all_line_sim_preference_keys():
+    """保存方向も事業者側と同期している: save_user_preferences に渡す項目(_PROVIDER_PREF_KEYS)が
+    事業者の PREFERENCE_KEYS の全項目を、同じ並びでカバーしている(experience を落とさない)。
     正社員の条件(FULLTIME_PREFERENCE_KEYS)も、音声が正社員の面談をするので受け取る(aica v2 の G)。
     正社員のチャットのヒアリングだけが聞く項目(CAREER_PREFERENCE_KEYS。task 255)は、面談では保存しない。"""
     career = ast.literal_eval(_line_sim_assign("CAREER_PREFERENCE_KEYS"))
-    assert ResumeAdvisor._DIP_PREF_KEYS == tuple(k for k in ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS"))
+    assert ResumeAdvisor._PROVIDER_PREF_KEYS == tuple(k for k in ast.literal_eval(_line_sim_assign("PREFERENCE_KEYS"))
                                                  if k not in career)
     assert FULLTIME_ONLY_KEYS == tuple(ast.literal_eval(_line_sim_assign("FULLTIME_PREFERENCE_KEYS")))
     # 面談で聞く項目は propose_jobs と save_user_preferences の引数としても受け取れる(受け取れないと保存に乗らない)
@@ -72,12 +72,12 @@ def test_dip_pref_keys_cover_all_line_sim_preference_keys():
 
     for tool in (ResumeAdvisor.propose_jobs, ResumeAdvisor.save_user_preferences):
         params = inspect.signature(tool).parameters
-        for key in ResumeAdvisor._DIP_PREF_KEYS:
+        for key in ResumeAdvisor._PROVIDER_PREF_KEYS:
             assert key in params, (tool.__name__, key)
 
 
 def test_fulltime_job_types_and_tracks_match_line_sim():
-    """正社員の職種の一覧と雇用区分が dip 側(FULLTIME_JOB_TYPES・TRACKS)と完全一致している。"""
+    """正社員の職種の一覧と雇用区分が事業者側(FULLTIME_JOB_TYPES・TRACKS)と完全一致している。"""
     assert FULLTIME_JOB_TYPES == tuple(ast.literal_eval(_line_sim_assign("FULLTIME_JOB_TYPES")))
     assert TRACKS == tuple(ast.literal_eval(_line_sim_assign("TRACKS")))
     doc = ResumeAdvisor.propose_jobs.__doc__ or ""
@@ -125,8 +125,8 @@ def test_build_args_drops_unspecified():
     assert build_recommend_args(area="中野") == {"area": "中野"}
 
 
-def test_build_args_passes_area_through_for_dip_to_validate():
-    """「東京都内」のような広い言い方や駅名は、言い換えずそのまま dip 側へ渡す(task 33)。"""
+def test_build_args_passes_area_through_for_provider_to_validate():
+    """「東京都内」のような広い言い方や駅名は、言い換えずそのまま事業者側へ渡す(task 33)。"""
     assert build_recommend_args(area="東京都内") == {"area": "東京都内"}
     assert build_recommend_args(area="みなとみらい駅") == {"area": "みなとみらい駅"}
 

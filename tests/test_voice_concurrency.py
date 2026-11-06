@@ -1,6 +1,6 @@
 """音声セッションの同時数の上限のテスト(task 202、セキュリティ監査 run-1 の要確認 5 番)。実 API は呼ばない。
 
-1 人が音声の部屋を同時にいくつも開けると、部屋ごとに worker のジョブ(プロセス)と dip MCP の子プロセスが 1 つずつでき、
+1 人が音声の部屋を同時にいくつも開けると、部屋ごとに worker のジョブ(プロセス)と事業者の MCP の子プロセスが 1 つずつでき、
 同じマシンでほかの利用者の音声や Web の処理を圧迫しうる。
 - Web: POST /api/voice/start は、その人(quota.person と同じ単位)に、まだ終わっていない部屋があれば 409 で断る。
 - worker: 同時に受けるジョブの数に上限がある(dev で起動しても満員を報告する)。
@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import pytest
 
-from dip_mcp.data import State
+from provider_mcp.data import State
 
 LIVEKIT = {"LIVEKIT_URL": "wss://example.livekit.cloud", "LIVEKIT_API_KEY": "k",
            "LIVEKIT_API_SECRET": "offline-test-secret-offline-test-secret"}
@@ -38,7 +38,7 @@ def offline_env(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch, offline_env):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     from fastapi.testclient import TestClient
 
     from line_runtime import config, server
@@ -265,16 +265,16 @@ def fake_worker(client, monkeypatch):
         assert r.status_code == 200, r.text
         return r.json()
 
-    async def no_advisor(dip, user_id, room=None):
+    async def no_advisor(provider, user_id, room=None):
         return object(), "挨拶"
 
-    class NoDip:
+    class NoProvider:
         async def start(self):
-            raise OSError("テストでは dip MCP の子プロセスを起動しない")
+            raise OSError("テストでは事業者の MCP の子プロセスを起動しない")
 
     monkeypatch.setattr(agent, "_post_json", poster)
     monkeypatch.setattr(agent, "prepare_advisor", no_advisor)
-    monkeypatch.setattr(agent, "DipMCP", NoDip)
+    monkeypatch.setattr(agent, "ProviderMCP", NoProvider)
     monkeypatch.setattr(agent, "AgentSession", FakeSession)
     monkeypatch.setattr(FakeSession, "started", [])
     for name in ("create_stt", "MultilingualModel"):

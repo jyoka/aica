@@ -10,7 +10,7 @@
 - 新しいブラウザでは /api/talk/open が同意を求め(入口は無い)、/api/consent で今の版に同意してから開き直すと visit を返し、
   /api/event/stream で挨拶(吹き出し)が返る
 - 画面と返信の中に API キーの値が出てこない
-- コンテナを再起動しても、会話(/api/talk/history)と同意と dip の状態(/app/data/state.json)が残る。/app/data は別につないだボリューム
+- コンテナを再起動しても、会話(/api/talk/history)と同意と事業者の状態(/app/data/state.json)が残る。/app/data は別につないだボリューム
 
 公開 URL では、http が https に飛ぶことも確かめる。--cookie に前回の匿名ユーザーIDを渡すと、同じブラウザで開き直したときと
 同じになる(最後のやりとりから 30 分を過ぎていれば再訪の挨拶。--expect revisit で確かめる)。
@@ -42,7 +42,7 @@ CONTAINER_PORT = "10000"  # Render が渡す PORT の既定
 # コンテナに渡す環境変数(あれば)。値はコマンドの引数に載せず、docker に環境変数として渡す
 PASS_ENV = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LINE_SIM_PROVIDER", "LINE_SIM_MODEL", "LINE_SIM_EFFORT")
 BUILD_TIMEOUT = 1200  # 初回の build(pip install)は数分かかる
-START_TIMEOUT = 180  # 起動(dip の MCP サーバーを立ち上げ、Prompt を読む)を待つ上限
+START_TIMEOUT = 180  # 起動(事業者の MCP サーバーを立ち上げ、Prompt を読む)を待つ上限
 REPLY_TIMEOUT = 180  # 挨拶の 1 往復(LLM)を待つ上限
 HTTP_TIMEOUT = 30
 
@@ -249,7 +249,7 @@ def local_smoke(image: str, build: bool) -> None:
         check("terms" not in opened["consent"]["needed"], "再起動の後も同意が残っている")
         check(opened["event"] is None and opened["thread"] == hist["thread"], "再起動の後に開き直すと、今の会話の続きになる")
         state = in_container(name, "import json; print(json.dumps(sorted(json.load(open('/app/data/state.json'))['users'])))")
-        check(uid in json.loads(state), "再起動の後も dip の状態(/app/data/state.json)に本人がいる")
+        check(uid in json.loads(state), "再起動の後も事業者の状態(/app/data/state.json)に本人がいる")
         files = in_container(name, "import os; print(sorted(os.listdir('/app/data')))")
         step(f"/app/data の中身: {files}")
     except Exception:  # どこで失敗しても、コンテナのログを出してから片付ける

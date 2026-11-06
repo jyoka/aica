@@ -1,4 +1,4 @@
-"""「電話はしたくない」を人と話す量の上限に当てず、1問で確かめる(task 126)の台本テスト。実 API なし、dip の MCP は本物。
+"""「電話はしたくない」を人と話す量の上限に当てず、1問で確かめる(task 126)の台本テスト。実 API なし、事業者の MCP は本物。
 
 人と話す量の3には接客(レジ・ホール・販売)と電話がまとめて入っている。「電話はしたくない」を max_talk_level=2 に当てると、
 「電話は嫌だがレジは平気」な人からも店頭の求人が消える(アルバイト・パート63件 → 24件)。そこで、
@@ -10,10 +10,10 @@
 を確かめる。
 
 task 127: 電話だけを避けたい人に、電話が中心の求人(コールセンター)を出さない。コールセンターが上位に来る条件
-(深夜。dip の上位3件は b0401 コンビニ・b0903 コールセンター・b0203 飲食キッチン)で、
+(深夜。事業者の上位3件は b0401 コンビニ・b0903 コールセンター・b0203 飲食キッチン)で、
 (2) チャットはカードから除き、(4) 音声は propose_jobs の exclude_ids で外して呼び直し、トークに届く提案に入れない。
 (5) 音声の advisor は外した求人を覚え、後で exclude_ids を付けずに条件を変えて探しても出さない。
-(6) 「ほかには?」で出した求人を外して探し直し0件なら、前の提案を残す(トークに届き、dip の記録は propose)。
+(6) 「ほかには?」で出した求人を外して探し直し0件なら、前の提案を残す(トークに届き、事業者の記録は propose)。
 
 task 131: 本人が外した求人・前の提案の求人に戻りたがったとき、届かない求人を「トークに出ます」と言わない。
 (8) 音声の playbook に答え方があり、propose_jobs の結果に、トークに届く求人IDと外した求人ID(読み上げない)が入る。
@@ -27,10 +27,10 @@ import re
 
 import pytest
 
-from dip_mcp import logic, server
-from dip_mcp.data import ROOT, State, load_jobs
 from evals.checks import conversation_checks
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic, server
+from provider_mcp.data import ROOT, State, load_jobs
 from tests.test_consult import ConsultModel, calls, run, switch_and_read
 from tests.test_handle import reply
 from tests.test_talk_page import app  # noqa: F401  フィクスチャ
@@ -39,11 +39,11 @@ from tests.voice.test_advisor import _FakeDraftClient, _FakePoster
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor
 from voice_resume.agent import prepare_advisor
-from voice_resume.dip import DipMCP
+from voice_resume.provider import ProviderMCP
 
 BAITO = "アルバイト・パート"
-PROMPT = (ROOT / "dip_mcp" / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
-COMMON_VOICE = (ROOT / "dip_mcp" / "playbooks" / "common_voice.md").read_text(encoding="utf-8")
+PROMPT = (ROOT / "provider_mcp" / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
+COMMON_VOICE = (ROOT / "provider_mcp" / "playbooks" / "common_voice.md").read_text(encoding="utf-8")
 PHONE = "「電話はしたくない」"
 CONFIRM = "お客様と話すレジや接客は大丈夫ですか?"
 CONFIRM_FULLTIME = "お客様や取引先と話す仕事は大丈夫ですか?"  # 正社員の人と話す量の3は営業・企画・教育など(task 109 の計測)
@@ -132,7 +132,7 @@ def test_chat_confirms_service_with_one_question_before_setting_the_talk_level(t
     assert shown and all(j.job_type != "コールセンター" for j in shown)
     found = [j["job_id"] for j in rec["result"]["jobs"]]
     dropped = [i for i in found if i not in {j.job_id for j in shown}]
-    # 深夜では dip の上位3件にコールセンターが入り、カードからはそれだけが除かれる
+    # 深夜では事業者の上位3件にコールセンターが入り、カードからはそれだけが除かれる
     assert dropped == ([CALL_CENTER] if time_band else [])
     if level:
         assert all(j.talk_level <= 2 for j in shown)
@@ -145,7 +145,7 @@ def test_chat_confirms_service_with_one_question_before_setting_the_talk_level(t
 
 @pytest.mark.parametrize("answer", list(ANSWERS))
 def test_voice_confirms_service_with_one_question_before_setting_the_talk_level(app, answer):  # noqa: F811
-    """LiveKit の AgentSession(文字のターン)で、本物の dip MCP につなぐ。区分は未定(両方の区分から探す)。"""
+    """LiveKit の AgentSession(文字のターン)で、本物の事業者の MCP につなぐ。区分は未定(両方の区分から探す)。"""
     from livekit.agents import AgentSession
 
     uid = "w-6666666666666666"
@@ -158,10 +158,10 @@ def test_voice_confirms_service_with_one_question_before_setting_the_talk_level(
     ])
 
     async def go():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor, _ = await prepare_advisor(dip, uid)
+            advisor, _ = await prepare_advisor(provider, uid)
             session = AgentSession(llm=model)
             await session.start(agent=advisor)
             await session.run(user_input="電話はしたくないです")
@@ -170,7 +170,7 @@ def test_voice_confirms_service_with_one_question_before_setting_the_talk_level(
             await session.aclose()
             return advisor, before
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     advisor, before = asyncio.run(go())
     assert CONFIRM in model.instructions[0]  # 音声の playbook(区分に共通の決まり)が指示に入っている
@@ -192,7 +192,7 @@ def test_voice_playbook_says_how_to_exclude_phone_centred_jobs():
     assert "電話が中心の求人を外すとき、すでに出した求人を外すとき" in doc
 
 
-def test_dip_relax_does_not_count_excluded_jobs():
+def test_provider_relax_does_not_count_excluded_jobs():
     """0件のときの「外すと何件」も、exclude_ids の求人を数えない(音声の propose_jobs は同じ exclude_ids を渡す)。"""
     state = server.state
     base = logic.relax(state, None, time_band="深夜", job_type="コールセンター")
@@ -203,7 +203,7 @@ def test_dip_relax_does_not_count_excluded_jobs():
 
 
 def _run_voice(uid: str, model, said: list[str], tmp_path, monkeypatch):
-    """LiveKit の AgentSession(文字のターン)で本物の dip MCP につなぎ、said を順に話す。
+    """LiveKit の AgentSession(文字のターン)で本物の事業者の MCP につなぎ、said を順に話す。
     (advisor, ツールの結果の文, トークへの送信)。"""
     from livekit.agents import AgentSession
 
@@ -211,10 +211,10 @@ def _run_voice(uid: str, model, said: list[str], tmp_path, monkeypatch):
     poster = _FakePoster()
 
     async def go():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor, _ = await prepare_advisor(dip, uid)
+            advisor, _ = await prepare_advisor(provider, uid)
             advisor._talk_poster = poster
             advisor._draft_client_factory = _FakeDraftClient
             session = AgentSession(llm=model)
@@ -225,7 +225,7 @@ def _run_voice(uid: str, model, said: list[str], tmp_path, monkeypatch):
             await session.aclose()
             return advisor, outputs
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     advisor, outputs = asyncio.run(go())
     return advisor, outputs, poster
@@ -238,7 +238,7 @@ def _delivered(poster) -> list[str]:
 
 def test_voice_excludes_call_centers_from_the_proposal_delivered_to_the_talk(app, tmp_path, monkeypatch):  # noqa: F811
     """「深夜で探したい。電話はしたくない」→ 1問 →「レジは大丈夫」。深夜の上位3件に入るコールセンターを exclude_ids で外して
-    呼び直し、トークに届く提案に b0903 が入らない。LiveKit の AgentSession(文字のターン)で、本物の dip MCP につなぐ。"""
+    呼び直し、トークに届く提案に b0903 が入らない。LiveKit の AgentSession(文字のターン)で、本物の事業者の MCP につなぐ。"""
     model = _scripted_llm([
         ("tool", "save_user_preferences", {"time_band": "深夜", "avoids": "電話"}),
         ("say", CONFIRM),
@@ -301,7 +301,7 @@ def test_voice_keeps_excluded_jobs_out_when_searching_again_without_exclude_ids(
 
 def test_voice_keeps_the_previous_proposal_when_excluding_shown_jobs_finds_nothing(app, tmp_path, monkeypatch):  # noqa: F811
     """「中野のコンビニ」で2件出した後、「ほかには?」で2件を外して探し直すと0件。本人が聞いた2件はトークに届き、
-    dip の記録は propose(consult(提案できず)にしない)。ユーザーの決定(2026-10-04)。"""
+    事業者の記録は propose(consult(提案できず)にしない)。ユーザーの決定(2026-10-04)。"""
     uid = "w-9999999999999999"
     shown = [j["job_id"] for j in logic.recommend(server.state, None, job_type="コンビニ", area="中野")["jobs"]]
     assert len(shown) == 2
@@ -323,10 +323,10 @@ def test_voice_keeps_the_previous_proposal_when_excluding_shown_jobs_finds_nothi
     assert [o["outcome"] for o in outcomes] == ["propose"]
 
 
-# ----------------------------- (7) dip: relax_conditions が exclude_ids を数えない(task 127) -----------------------------
+# ----------------------------- (7) provider: relax_conditions が exclude_ids を数えない(task 127) -----------------------------
 
 
-def test_dip_server_relax_conditions_passes_exclude_ids():
+def test_provider_server_relax_conditions_passes_exclude_ids():
     """MCP の relax_conditions(server)が exclude_ids を logic に渡す。深夜のコールセンターは b0903 の1件だけ。"""
     cond = {"time_band": "深夜", "job_type": "コールセンター"}
     assert server.relax_conditions("sim-new", **cond)["total_now"] == 1
@@ -360,7 +360,7 @@ def test_voice_tells_the_llm_which_jobs_reach_the_talk_after_showing_others(app,
     """probe-20261004-114613 の V-phone-night: 深夜でコールセンターを外し、「ほかには?」で出した3件(最初が中野のコンビニ
     b0401)を外して探し直した後に、本人が「さっきの最初の求人に戻りたい」と言う。最後の結果文に、トークに届くのは
     最後の3件だけで、b0401 は外したのでこの面談では出せず届かないことが入る。LiveKit の AgentSession(文字のターン)で、
-    本物の dip MCP につなぐ。"""
+    本物の事業者の MCP につなぐ。"""
     night = [j["job_id"] for j in logic.recommend(server.state, None, time_band="深夜", exclude_ids=[CALL_CENTER])["jobs"]]
     assert night[0] == "b0401" and JOBS["b0401"].job_type == "コンビニ"  # 最初に読み上げるのが中野のコンビニ
     excluded = [CALL_CENTER, *night]

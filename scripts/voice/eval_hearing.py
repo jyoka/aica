@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # isort: skip
 
 from openai import AsyncOpenAI
 
-from dip_mcp.logic import counseling_playbook
+from provider_mcp.logic import counseling_playbook
 from voice_resume import config
 from voice_resume.flow import count_experience_probes, find_leading_questions
 from voice_resume.prompts import advisor_instructions, greeting_instructions

@@ -1,5 +1,5 @@
 """ハーネスの相談の途中で、音声相談やゲームの結果がトークに入った後の、本人の次の発言の行き先(task 364。設計メモ
-docs/design/conversation-layer.md の §2.4)。実 LINE・実 LiveKit・実 LLM は呼ばない。dip の MCP は本物。
+docs/design/conversation-layer.md の §2.4)。実 LINE・実 LiveKit・実 LLM は呼ばない。事業者の MCP は本物。
 
 今の本番の組み合わせ(BAITO_HARNESS_VERSION=v4、CAREER_HARNESS_VERSION=c1、CAREER_HARNESS_FORM=D)で、本人から見た流れを通す:
 LINE のトークでアルバイト・パート(または正社員)の相談を始め、途中まで答える → LIFF の画面で音声相談をする(音声ワーカーが
@@ -17,14 +17,14 @@ from functools import partial
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as BH
-from dip_mcp.baito import session as baito_session
-from dip_mcp.career import harness as CH
-from dip_mcp.career import session as career_session
-from dip_mcp.career import store as career_store
 from line_runtime.arcade_reply import QUICK_REPLIES as ARCADE_QUICK
 from line_runtime.line_channel import LineLogin, line_user
+from provider_mcp import logic
+from provider_mcp.baito import harness as BH
+from provider_mcp.baito import session as baito_session
+from provider_mcp.career import harness as CH
+from provider_mcp.career import session as career_session
+from provider_mcp.career import store as career_store
 from tests.test_arcade_ai import MD
 from tests.test_baito_chat import FakeBaitoLLM
 from tests.test_career_chat import FakeCareerLLM
@@ -105,9 +105,9 @@ def _buttons(fake) -> list[str]:
 
 
 def _voice(client, server, uid: str, preferences: dict) -> None:
-    """LIFF の画面で音声相談をする。音声ワーカーは、本人が部屋に入ったことを知らせ、面談の中で話した希望をその場で dip に
+    """LIFF の画面で音声相談をする。音声ワーカーは、本人が部屋に入ったことを知らせ、面談の中で話した希望をその場で事業者に
     保存し(save_user_preferences)、終わりに結果を送る(求人なし)。ワーカーの経路は共有鍵で守る。
-    どれもトークのランタイムと同じイベントループで呼ぶ(相談を閉じるときに dip の MCP を呼ぶ。本番の Web プロセスも 1 つのループ)。"""
+    どれもトークのランタイムと同じイベントループで呼ぶ(相談を閉じるときに事業者の MCP を呼ぶ。本番の Web プロセスも 1 つのループ)。"""
     assert client.post("/api/liff/session", json={"id_token": "good"}).status_code == 200
     r = client.post("/api/liff/voice/start", json={"user_id": uid, "id_token": "good"})
     assert r.status_code == 200, r.text

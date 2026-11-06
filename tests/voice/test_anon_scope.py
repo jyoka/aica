@@ -2,7 +2,7 @@
 
 本番のトーク(`/`)の「音声で相談」は匿名ID そのもの(`w-…`)に入り、`/dev` のシナリオから入ると
 ブラウザ専用の「匿名ID:シナリオユーザー」(例 `w-…:sim-new`)に入る。ここでは後者で確かめる。
-音声で話した希望・経験・できること・資格(dip の相談プロファイル8項目)は、dip の MCP サーバー(本物、stdio)経由で
+音声で話した希望・経験・できること・資格(事業者の相談プロファイル8項目)は、事業者の MCP サーバー(本物、stdio)経由で
 このユーザーに保存され、別のブラウザ(同じシナリオでも別の匿名ID)や元のシナリオユーザーには混ざらない。
 次のテキストの会話(line_runtime)は、同じユーザーの要約からそれを読む(聞き直さない)。
 """
@@ -14,20 +14,20 @@ from pathlib import Path
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from evals.scenarios import load_scenarios, prepare
+from provider_mcp import logic
+from provider_mcp.data import State
 from tests.test_handle import ScriptedModel, call, reply
 from voice_resume import config
 from voice_resume.advisor import ResumeAdvisor
-from voice_resume.dip import DipMCP
+from voice_resume.provider import ProviderMCP
 
 from .test_advisor import RELAXED_SEARCH_TRANSCRIPT, _FakeDraftClient, _FakePoster
 
 U1 = "w-1111111111111111:sim-new"  # 音声で相談したブラウザ
 U2 = "w-2222222222222222:sim-new"  # 同じシナリオを使っている別のブラウザ
 
-# 音声の面談で本人が話したこと(propose_jobs の引数 = dip の相談プロファイル8項目)
+# 音声の面談で本人が話したこと(propose_jobs の引数 = 事業者の相談プロファイル8項目)
 VOICE_WISHES = {
     "job_type": "カフェ", "area": "渋谷", "time_band": "日中", "min_wage": 1200, "days_per_week": 3,
     "experience": "コンビニで1年半", "skills": "レジ打ちと品出し", "certifications": "普通自動車免許",
@@ -36,7 +36,7 @@ VOICE_WISHES = {
 
 def _voice_session(tmp_path, monkeypatch) -> tuple[State, _FakePoster]:
     """2つのブラウザが同じシナリオ(初回訪問・sim-new)を始め、U1 だけが音声で相談して締める。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))  # dip の子プロセスも同じ状態を使う
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))  # 事業者の子プロセスも同じ状態を使う
     monkeypatch.setattr(config, "OUT_DIR", tmp_path / "out")
     state = State(tmp_path / "state.json")
     sc = next(s for s in load_scenarios() if s["id"] == "F-follow-new")
@@ -45,15 +45,15 @@ def _voice_session(tmp_path, monkeypatch) -> tuple[State, _FakePoster]:
     poster = _FakePoster()
 
     async def run():
-        dip = DipMCP()
-        await dip.start()
+        provider = ProviderMCP()
+        await provider.start()
         try:
-            advisor = ResumeAdvisor(dip=dip, user_id=U1, talk_poster=poster, draft_client_factory=_FakeDraftClient)
+            advisor = ResumeAdvisor(provider=provider, user_id=U1, talk_poster=poster, draft_client_factory=_FakeDraftClient)
             await advisor.propose_jobs(**VOICE_WISHES)
             advisor._transcript = lambda: RELAXED_SEARCH_TRANSCRIPT
             await advisor.finalize_interview()
         finally:
-            await dip.aclose()
+            await provider.aclose()
 
     asyncio.run(run())
     return state, poster
@@ -94,8 +94,8 @@ def test_next_text_conversation_reads_the_voice_wishes_instead_of_asking_again(t
     (tool,) = r["tools"]
     stated = tool["result"]["stated_preferences"]
     assert {k: v["value"] for k, v in stated.items()} == {k: str(v) for k, v in VOICE_WISHES.items()}
-    # 聞き直さない決まりは dip の Prompt が持つ(LINE 側はこれに従って確認形で1回だけ触れる)
-    assert "同じことを聞き直さない" in (Path(logic.__file__).parent / "prompts" / "baitoru_assistant.md").read_text(encoding="utf-8")
+    # 聞き直さない決まりは事業者の Prompt が持つ(LINE 側はこれに従って確認形で1回だけ触れる)
+    assert "同じことを聞き直さない" in (Path(logic.__file__).parent / "prompts" / "job_assistant.md").read_text(encoding="utf-8")
 
 
 def test_voice_token_carries_the_user_to_the_worker(monkeypatch):
@@ -116,7 +116,7 @@ def test_voice_token_carries_the_user_to_the_worker(monkeypatch):
     assert participant_user_id(type("P", (), {"metadata": claims["metadata"]})()) == U1
     # 部屋は毎回新しく作る
     assert issue_token(U1)["room"] != r["room"]
-    # metadata の無い参加者(ユーザー不明)は dip に何も書かない相談になる
+    # metadata の無い参加者(ユーザー不明)は事業者に何も書かない相談になる
     assert participant_user_id(type("P", (), {"metadata": ""})()) is None
     # キーが無ければ発行しない
     monkeypatch.delenv("LIVEKIT_API_SECRET")

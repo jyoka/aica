@@ -2,7 +2,7 @@
 
 シナリオ評価(evals/run.py)の15本には電話を避けたい人がいないので、task 126・127 の PR レビューで頼まれたことを
 ここで見る。チャットは evals.run.run_scenario をそのまま使い(LINE 側エージェントは本番のモデル)、
-音声は LiveKit の AgentSession(文字のターン。STT・TTS なし)に本番と同じ advisor と dip の MCP をつなぐ。
+音声は LiveKit の AgentSession(文字のターン。STT・TTS なし)に本番と同じ advisor と事業者の MCP をつなぐ。
 本人の発言は模擬ユーザー(evals.run.SIM_MODEL の安いモデル)がペルソナから作る。
 職務経歴書の下書きとトークへの送信は差し替える(ここで見ることと関係がなく、費用を使わない)。
 
@@ -197,7 +197,7 @@ def _items(history) -> list[dict]:
 
 def voice_observation(sc: dict, items: list[dict], attempts: list[dict], delivered: list[dict]) -> dict:
     """音声の1本から、電話の扱いとコールセンターを外す流れを読み出す。"""
-    from dip_mcp.data import load_jobs
+    from provider_mcp.data import load_jobs
 
     jobs = load_jobs()
     cc = {jid for jid, j in jobs.items() if j.job_type == CALL_CENTER}
@@ -266,14 +266,14 @@ def _voice_cost(session) -> float:
 async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save) -> bool:
     from livekit.agents import AgentSession
 
-    from dip_mcp.data import State
     from evals.meter import Meter
     from evals.run import run_cases, sim_reply
     from evals.scenarios import prepare
     from line_runtime import llm
+    from provider_mcp.data import State
     from voice_resume import voice_llm
     from voice_resume.agent import prepare_advisor
-    from voice_resume.dip import DipMCP
+    from voice_resume.provider import ProviderMCP
 
     meter = Meter().install()  # 模擬ユーザー(line_runtime.llm)の分
     client = llm.client()
@@ -282,11 +282,11 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
     async def run_one(p: dict, rep: int) -> None:
         uid = f"probe-{p['id']}"
         prepare(State(), {"user": "sim-new"}, user=uid)  # 区分は未定・希望なしから
-        dip = DipMCP()
+        provider = ProviderMCP()
         session = None
         try:
-            await dip.start()
-            advisor, greeting = await prepare_advisor(dip, uid)
+            await provider.start()
+            advisor, greeting = await prepare_advisor(provider, uid)
             poster = _NoPoster()
             advisor._talk_poster = poster
             advisor._draft_client_factory = _NoDraft
@@ -325,7 +325,7 @@ async def run_voice(probes: list[dict], ledger: Path, results: list[dict], save)
                 paid["voice"] += cost
                 if results and results[-1]["id"] == p["id"]:
                     results[-1]["cost_usd"] = round(cost, 4)
-            await dip.aclose()
+            await provider.aclose()
 
     return await run_cases([(p, 0) for p in probes], run_one,
                            lambda: meter.summary()["cost_usd"] + paid["voice"], ledger,
@@ -409,8 +409,8 @@ if __name__ == "__main__":
 
     load_env()
     tmp = Path(tempfile.mkdtemp())
-    os.environ["DIP_STATE_PATH"] = str(tmp / "state.json")
-    os.environ["DIP_KEYWORDS_TRACE"] = str(tmp / "keywords.jsonl")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp / "state.json")
+    os.environ["PROVIDER_KEYWORDS_TRACE"] = str(tmp / "keywords.jsonl")
     os.environ.setdefault("VOICE_RESUME_OUT_DIR", str(tmp / "voice-out"))
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="回す ID(カンマ区切り)")

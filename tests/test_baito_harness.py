@@ -1,4 +1,4 @@
-"""バイト探しの相棒のハーネス(PRD v4.1。dip_mcp/baito)。LLM は偽物(呼ばれた順に台本の JSON を返す)。
+"""バイト探しの相棒のハーネス(PRD v4.1。provider_mcp/baito)。LLM は偽物(呼ばれた順に台本の JSON を返す)。
 
 (1) データとプロンプト: 質問バンク・職種カタログ(JSON)とプロンプト 4 種が、PRD の資料(docs/prd/baito_harness)の原文のまま。
     プロンプトに質問とカタログを書いていない
@@ -9,7 +9,7 @@
     中学生以下として止める(task 258)
 (4) 移植で直したところの回帰: M-16(「推し活・趣味」)、M-5・M-6・M-3・N-17・B-2
 (5) ユーザーの決定: ng_removals、§12-2(解けない矛盾は「未定」と候補)
-(6) dip の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存。
+(6) 事業者の相談(session.py): モデルの出力を受け取りながら turn() をやり直す流れ、機能フラグ、保存。
     PRD の流れ(icebreak から)を見るので、入口のカード(task 265。tests/test_baito_quick_start.py)を通さずに始める(quick=False)
 (7) 希死念慮・自傷の言葉(task 256): 自由入力なら、どのフェーズでも質問を進めずに相談窓口の決まった文。ボタンには当てない。
     「続ける」で続きから。行列の質問の選択肢は「今すぐ抜けたい」
@@ -32,11 +32,11 @@ import sys
 
 import pytest
 
-from dip_mcp import logic
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import session
-from dip_mcp.data import ROOT, State
 from evals import baito_sim
+from provider_mcp import logic
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import session
+from provider_mcp.data import ROOT, State
 
 REF = ROOT / "docs" / "prd" / "baito_harness"
 SEGMENTS = ("student", "homemaker", "side_job", "other", "unknown")
@@ -890,7 +890,7 @@ def test_rule_ng_goes_away_when_the_age_is_corrected_to_adult():
     assert st.slots["age_band"]["value"] == "18_plus" and st.derived_ng == []
 
 
-# ----------------------------- (6) dip の相談(session.py) -----------------------------
+# ----------------------------- (6) 事業者の相談(session.py) -----------------------------
 
 
 @pytest.fixture
@@ -1020,7 +1020,7 @@ def test_session_free_text_with_every_model_call_failing_ends_in_four_calls(stat
 def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state, monkeypatch):
     """中学生以下で止めた後に「やめる」・新しい会話で相談を閉じても、トークの AI が探す求人は出ない(印が残る)。
     後の相談で 15 歳以上と確かめたら出す。"""
-    from dip_mcp import server
+    from provider_mcp import server
 
     monkeypatch.setattr(server, "state", state)
     session.start(state, UID, quick=False)
@@ -1043,7 +1043,7 @@ def test_junior_high_block_outlives_the_consultation_and_stops_job_search(state,
 def test_leaving_during_the_junior_high_reask_keeps_jobs_hidden(state, monkeypatch):
     """自動の敵対レビュー: 年齢の質問に「中2です」と答えて聞き直している途中で「やめる」と、止める前でも印を残し、
     トークの AI が探す求人を出さない(task 258 の前は、その場で止めて印を残していた)。"""
-    from dip_mcp import server
+    from provider_mcp import server
 
     monkeypatch.setattr(server, "state", state)
     session.start(state, UID, quick=False)
@@ -1133,8 +1133,8 @@ def test_real_llm_runner_writes_a_relative_ledger_where_it_was_called(tmp_path, 
 def test_real_llm_runner_v5_reads_with_the_layer_and_counts_its_stages(tmp_path):
     """--real --version v5(task 362): 実 LLM は読む段(read)をそのまま読む(シミュレーターの抽出を写さない)。段は層の call_llm で
     数え、抽出合格率は読む段で出す。言う段には、層の覚えの直前のやりとり(model_history)を渡す。包みは外れる。"""
-    from dip_mcp.baito import v5 as V5
-    from dip_mcp.convo import turn as convo_turn
+    from provider_mcp.baito import v5 as V5
+    from provider_mcp.convo import turn as convo_turn
 
     seen: list[tuple[str, list[dict]]] = []
 
@@ -1211,7 +1211,7 @@ def test_crisis_word_list_is_kept_in_hiragana_and_kanji():
 
 def test_crisis_guidance_text_is_data_with_the_official_source():
     """決まった文と言葉の一覧はデータ(crisis_v4.json)。窓口は「まもろうよ こころ」を出典にし、プロンプトには書かない。"""
-    data = json.loads((ROOT / "dip_mcp" / "baito" / "crisis_v4.json").read_text(encoding="utf-8"))
+    data = json.loads((ROOT / "provider_mcp" / "baito" / "crisis_v4.json").read_text(encoding="utf-8"))
     assert H.CRISIS == data and data["source"] == "https://www.mhlw.go.jp/mamorouyokokoro/"
     assert data["source"] in H.CRISIS_TEXT and "続きから" in H.CRISIS_TEXT
     for f in ("prompt_main_v4_ja.txt", "prompt_extract_v4_ja.txt", "prompt_review_v4_ja.txt", "prompt_result_v4_ja.txt"):
@@ -1303,7 +1303,7 @@ def test_the_line_choice_now_reads_get_out_with_the_same_effects():
     goto(st, "sc_line")
     H.turn(st, "今すぐ抜けたい", H.BANK, LLM())
     assert st.slots["customer_facing"]["value"] == "avoid" and st.slots["pace"]["value"] == "calm"
-    files = [*(ROOT / "dip_mcp").rglob("*.py"), *(ROOT / "dip_mcp").rglob("*.json"), *(ROOT / "dip_mcp").rglob("*.txt"),
+    files = [*(ROOT / "provider_mcp").rglob("*.py"), *(ROOT / "provider_mcp").rglob("*.json"), *(ROOT / "provider_mcp").rglob("*.txt"),
              *(ROOT / "line_runtime").rglob("*.py"), *(ROOT / "evals").glob("*.py"), *REF.glob("*.py"),
              *(REF / "transcripts").glob("v4_*.txt")]
     assert [str(f) for f in files if old in f.read_text(encoding="utf-8")] == []

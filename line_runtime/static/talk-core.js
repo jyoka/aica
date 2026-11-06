@@ -9,7 +9,7 @@
 //     send(text), fire(event),  // 本人の発言を送る / イベントで1ターン進める(履歴書のアップロードの後に使う)
 //     showTalk,                 // (任意)トークの表示に切り替える(本番の下のナビ)
 //     getThread, onStale,       // (任意)表示中の会話の番号 / 別のタブで会話が替わっていたとき(本番だけ)
-//     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は dip の状態を読み直す)
+//     afterTurn,                // (任意)アップロード・音声の結果の後に呼ぶ(/dev は事業者の状態を読み直す)
 //     beforeTurn,               // (任意)本人のターン(発言・アップロード)の前に呼ぶ(本番: 閉じたシートの結果を描き直す)
 //     onTrack(track),           // (任意)切り替えの表示のボタンで雇用区分を戻したとき(本番: ヘッダーの区分を直す)
 //     getTrack,                 // (任意)今の雇用区分(「+」メニューの音声相談の説明で、書類の呼び方を合わせる)
@@ -47,7 +47,7 @@ function createTalk(o) {
   function meFile(label, time = now()) { const b = el("div", "bubble file"); b.append(el("span", "fi", "📄"), el("span", null, label)); meRow(b, time); }
   function botCol() {
     const r = el("div", "row bot"), c = el("div", "col");
-    r.append(el("div", "avatar", "B"), c); c.appendChild(el("span", "who", "バイトル"));
+    r.append(el("div", "avatar", "a"), c); c.appendChild(el("span", "who", "aica"));
     log.appendChild(r); scroll(); return c;
   }
   // AI 側の「入力中」(返信・読み取りを待つ間)
@@ -94,7 +94,7 @@ function createTalk(o) {
 
   // ---------- 求人カード(LINE の Flex Message のカルーセル風) ----------
   // 給与を雇用区分に合わせて出す: 時給(アルバイト・パート)は「時給 1,350円」、月給・年収(正社員)は「年収 450万〜650万円」。
-  // 金額は dip の pay(円)から作る。v1 の会話の記録(hourly_wage だけのカード)も時給として描く
+  // 金額は事業者の pay(円)から作る。v1 の会話の記録(hourly_wage だけのカード)も時給として描く
   const man = (n) => `${Number(n) / 10000}万`;
   function payParts(j) {
     const p = j.pay || { kind: "時給", min: j.hourly_wage, max: null };
@@ -176,9 +176,9 @@ function createTalk(o) {
     scroll();
   }
 
-  // ---------- 雇用区分の切り替えの表示(AI の返信の前に出す。元は dip の記録で、返信文からは推測しない) ----------
-  // 例: 「正社員の相談に切り替えました [アルバイトで探す]」。ボタンで元の区分に戻す(dip に取り消しとして記録。
-  // LLM は呼ばない。AI には次のターンの前に伝わる)。status(サーバーが dip の記録から足す): undoable = 取り消せる /
+  // ---------- 雇用区分の切り替えの表示(AI の返信の前に出す。元は事業者の記録で、返信文からは推測しない) ----------
+  // 例: 「正社員の相談に切り替えました [アルバイトで探す]」。ボタンで元の区分に戻す(事業者に取り消しとして記録。
+  // LLM は呼ばない。AI には次のターンの前に伝わる)。status(サーバーが事業者の記録から足す): undoable = 取り消せる /
   // undone = 取り消した / past・gone = 後に別の切り替えがある・記録が消された(ボタンを出さない)
   // ボタン: 元が未定のときは「元に戻す」(TRACK_BUTTON に無い区分はそれになる)
   const TRACK_BUTTON = { "アルバイト・パート": "アルバイトで探す", "正社員": "正社員で探す" };
@@ -200,7 +200,7 @@ function createTalk(o) {
   async function undoSwitch(sw, box, b) {
     const user = o.getUser();
     if (!user || o.isBusy()) return;
-    b.disabled = true; o.setBusy(true);  // 取り消しが dip に届く前に次の発言を送らない(AI への知らせが間に合うように)
+    b.disabled = true; o.setBusy(true);  // 取り消しが事業者に届く前に次の発言を送らない(AI への知らせが間に合うように)
     try {
       const res = await fetch("/api/talk/track/undo", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: user, id: sw.id }) });
@@ -320,7 +320,7 @@ function createTalk(o) {
 
   // ---------- 履歴書のアップロード(resume-intake) ----------
   // アップロードそのものが本人の1ターン: 本人側にファイルの吹き出し(「履歴書(PDF)」。ファイル名は出さない)→
-  // AI 側の「入力中」の間に /api/resume/upload で読み取り(dip の状態に保存。会話数を1つ使う)→
+  // AI 側の「入力中」の間に /api/resume/upload で読み取り(事業者の状態に保存。会話数を1つ使う)→
   // 読み取り結果の確認(要点だけ)を AI 側に出す → resume_upload のイベントで会話を続け、AI が次の1問を返す。
   // 定型文を本人の発言として送ることはしない。氏名・連絡先は保存されないので、トークにも出さない。
   const fileInput = el("input"); fileInput.type = "file"; fileInput.id = "resume-file"; fileInput.hidden = true;

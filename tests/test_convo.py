@@ -1,4 +1,4 @@
-"""会話の層の共通の部品(dip_mcp/convo/。設計メモ docs/design/conversation-layer.md §4.1、§4.3、§4.4、§4.8、§4.11)。"""
+"""会話の層の共通の部品(provider_mcp/convo/。設計メモ docs/design/conversation-layer.md §4.1、§4.3、§4.4、§4.8、§4.11)。"""
 
 from __future__ import annotations
 
@@ -7,21 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from dip_mcp.baito import harness as B
-from dip_mcp.career import harness as H
-from dip_mcp.convo import acts as A
-from dip_mcp.convo import entry as E
-from dip_mcp.convo import facts as F
-from dip_mcp.convo import guard
-from dip_mcp.convo import plan as P
-from dip_mcp.convo import reply as R
-from dip_mcp.convo import state as CS
-from dip_mcp.convo import turn as T
-from dip_mcp.convo import values as V
 from evals import scenes as S
+from provider_mcp.baito import harness as B
+from provider_mcp.career import harness as H
+from provider_mcp.convo import acts as A
+from provider_mcp.convo import entry as E
+from provider_mcp.convo import facts as F
+from provider_mcp.convo import guard
+from provider_mcp.convo import plan as P
+from provider_mcp.convo import reply as R
+from provider_mcp.convo import state as CS
+from provider_mcp.convo import turn as T
+from provider_mcp.convo import values as V
 
 ROOT = Path(__file__).resolve().parent.parent
-CAREER_ENTRY = ROOT / "dip_mcp" / "career" / "entry.json"
+CAREER_ENTRY = ROOT / "provider_mcp" / "career" / "entry.json"
 
 
 # ----------------------------- 守りの前処理 -----------------------------

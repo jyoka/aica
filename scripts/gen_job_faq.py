@@ -15,9 +15,9 @@ import json
 
 from pydantic import BaseModel, Field
 
-from dip_mcp.data import FIXTURES, load_job_faq, load_jobs
 from line_runtime import config, llm
 from line_runtime.config import load_env
+from provider_mcp.data import FIXTURES, load_job_faq, load_jobs
 
 BATCH = 6
 

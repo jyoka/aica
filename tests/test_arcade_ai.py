@@ -1,11 +1,11 @@
 """レジュメ・アーケードの AI と下書き(docs/prd/resume-arcade.md の (3/3)、task 188)の台本テスト。実 API は呼ばない。
 
 LLM は台本のスタブ(Anthropic の SDK の形。server.arcade_client を差し替える)。画面と同じ API(/api/arcade/start → /ai → /save)
-から入り、本人から見える結果(API の返事、プロフィール、dip の要約、トークの履歴、下書きの画面)と、スタブに届いた入力を見る。
+から入り、本人から見える結果(API の返事、プロフィール、事業者の要約、トークの履歴、下書きの画面)と、スタブに届いた入力を見る。
 - 事実の確かめ: 本人の答えに無い数字は空欄になり、置き換えた数が記録される。本人が書いた数字(1,200 と 1200、全角、三割)は消さない
 - 費用の上限: 1 回の遊びの反応の回数、1 人 1 日の AI つきの遊び、AI を止める設定、ターン数の上限、まとめの 4,000 字。どれも LLM を呼ばない
 - 遊びの番号: 無い・ほかの人の・24 時間を過ぎた・置き換えられた番号では LLM を呼ばず、保存は 403(24 時間を過ぎても保存はできる)
-- 保存: プロフィール、dip の要約、トークに出る。雇用区分で書類の種類が決まり、区分は変わらない。「すべて消す」で消え、古いリンクは開かない
+- 保存: プロフィール、事業者の要約、トークに出る。雇用区分で書類の種類が決まり、区分は変わらない。「すべて消す」で消え、古いリンクは開かない
 - LINE: LIFF の設定が無ければ、要約にゲームの URL が無く、LINE のメッセージにゲームのボタンが出ない(あるときは tests/test_arcade_liff.py)
 - 画面を押すテスト(Playwright。入っていなければ飛ばす): AI の道で質問・反応・評決・保存まで行き、再読み込みで start を呼び直さない
 """
@@ -21,8 +21,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import arcade, logic
 from line_runtime import line_channel
+from provider_mcp import arcade, logic
 from resume_lines import PLACEHOLDER, check_numbers, find_metric
 from tests.test_arcade import _phone, _visible, browser, served  # noqa: F401  フィクスチャ
 from tests.test_revisit import Greeter, greet
@@ -143,7 +143,7 @@ def set_track(arc_, track):
 
 
 def test_start_answer_and_save_reach_the_profile_the_summary_and_the_talk(arc):
-    """始めて、答えて、保存すると、プロフィールと dip の要約に下書きが出て、トークに「下書きができました」が足される。"""
+    """始めて、答えて、保存すると、プロフィールと事業者の要約に下書きが出て、トークに「下書きができました」が足される。"""
     c = arc.client
     open_talk(c)  # トークの会話がある(挨拶だけ)
     set_track(arc, "正社員")
@@ -391,7 +391,7 @@ def test_ai_without_a_valid_play_spends_nothing(arc, monkeypatch):
     _offline(ai(arc.client, "番号" + p["play"][2:]), "no_play")  # ASCII でない番号も断る
     stranger = TestClient(arc.client.app, cookies={"aica_uid": "w-00000000000000ff"})
     _offline(ai(stranger, p["play"]), "no_play")
-    assert "w-00000000000000ff" not in arc.server.state.user_ids()  # 番号の無い呼び出しで dip の状態にユーザーを作らない
+    assert "w-00000000000000ff" not in arc.server.state.user_ids()  # 番号の無い呼び出しで事業者の状態にユーザーを作らない
     other = TestClient(arc.client.app)
     other.get("/")
     _offline(ai(other, p["play"]), "no_play")
@@ -535,9 +535,9 @@ def test_forget_all_removes_drafts_and_plays_and_old_links_never_open_new_drafts
 
 
 def test_line_users_get_no_game_url_and_no_game_buttons(tmp_path, monkeypatch):
-    """LINE のユーザーには、dip の要約にゲームの URL が無く、LIFF の設定が無ければ LINE のメッセージにも /liff/arcade のボタンが出ない
+    """LINE のユーザーには、事業者の要約にゲームの URL が無く、LIFF の設定が無ければ LINE のメッセージにも /liff/arcade のボタンが出ない
     (LIFF の設定があるときは tests/test_liff.py と tests/test_liff_actions.py)。"""
-    from dip_mcp.data import State
+    from provider_mcp.data import State
 
     for k in (line_channel.LIFF_ID_ENV, line_channel.LIFF_CHANNEL_ENV, line_channel.LOGIN_CHANNEL_ENV):
         monkeypatch.delenv(k, raising=False)

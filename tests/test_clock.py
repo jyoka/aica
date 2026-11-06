@@ -1,4 +1,4 @@
-"""dip の時計の台本テスト(R4、ADR-0004)。実 LLM なし、実 API なし(履歴書の読み取りはスタブ)。
+"""事業者の時計の台本テスト(R4、ADR-0004)。実 LLM なし、実 API なし(履歴書の読み取りはスタブ)。
 
 - 本番のユーザー(匿名ユーザーID `w-…`)は実際の時刻: 保存、希望の保存日、履歴書のアップロード、音声相談の結果、
   区分の切り替えの時刻と、90 日、7 日、3 日の判定
@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import accounts, behavior, logic, summarize
-from dip_mcp.data import JST, SIM_NOW, State, now, parse_ts
 from evals.scenarios import load_scenarios, prepare
+from provider_mcp import accounts, behavior, logic, summarize
+from provider_mcp.data import JST, SIM_NOW, State, now, parse_ts
 from tests.test_resume_upload import _open, _upload
 from tests.test_resume_upload import app as upload_app  # noqa: F401  フィクスチャ
 from tests.test_voice import INTERNAL_KEY, WORKER
@@ -37,17 +37,17 @@ def _real(ts: str, before: datetime, after: datetime) -> bool:
 
 def test_production_user_records_use_real_time(app):
     """本番のトーク画面のユーザーが希望を直す、区分を切り替える、履歴書を上げる、音声相談を終える、求人を保存すると、
-    dip に残る時刻は実際の時刻(前は、どれも SIM_NOW の 2026-09-23 12:00 になっていた)。"""
+    事業者に残る時刻は実際の時刻(前は、どれも SIM_NOW の 2026-09-23 12:00 になっていた)。"""
     with TestClient(app.app) as client:
         uid = _open(client)
-        before = datetime.now(JST).replace(microsecond=0)  # dip の行動のイベントの時刻は秒まで
+        before = datetime.now(JST).replace(microsecond=0)  # 事業者の行動のイベントの時刻は秒まで
         assert client.put("/api/profile/items/area", json={"value": "新宿"}).status_code == 200
         assert client.put("/api/profile/track", json={"track": "正社員"}).status_code == 200
         assert _upload(client, uid).status_code == 200
         r = TestClient(app.app).post("/api/voice/result", json={"user_id": uid, "draft_markdown": "# 履歴書"},
                                      headers=WORKER)
         assert r.status_code == 200
-        logic.save_job(app.state, uid, "b0101")  # トークの「保存」(dip の MCP の save_job と同じ)
+        logic.save_job(app.state, uid, "b0101")  # トークの「保存」(事業者の MCP の save_job と同じ)
         after = datetime.now(JST)
 
     u = app.state.user(uid)
@@ -68,15 +68,15 @@ def test_production_user_periods_count_from_real_time(app):
     real = datetime.now(JST).replace(microsecond=0)
     # 連携済みの本番のユーザー(プッシュの判定まで進むように)の行動の元データと、実際の時刻で回した要約のバッチ
     events, summaries = behavior.stores(app.state)
-    events.add_members([("dip-prod-1", real - timedelta(days=200))])
-    events.extend([("dip-prod-1", "apply", real - timedelta(days=100), "b0101", {"status": "不採用"}),
-                   ("dip-prod-1", "apply", real - timedelta(days=2), "b0102", {"status": "応募済み(店舗からの連絡待ち)"}),
-                   ("dip-prod-1", "form_exit", real - timedelta(hours=5), "b0103",
+    events.add_members([("provider-prod-1", real - timedelta(days=200))])
+    events.extend([("provider-prod-1", "apply", real - timedelta(days=100), "b0101", {"status": "不採用"}),
+                   ("provider-prod-1", "apply", real - timedelta(days=2), "b0102", {"status": "応募済み(店舗からの連絡待ち)"}),
+                   ("provider-prod-1", "form_exit", real - timedelta(hours=5), "b0103",
                     {"completed": ["氏名"], "remaining": ["電話番号"]}),
-                   ("dip-prod-1", "contact", real - timedelta(days=4), None,
+                   ("provider-prod-1", "contact", real - timedelta(days=4), None,
                     {"channel": "LINE AI通知", "message": "form_exit"})])
     summarize.run(events, summaries, real)
-    accounts.of(app.state).set_link(uid, "dip-prod-1")
+    accounts.of(app.state).set_link(uid, "provider-prod-1")
     assert [(a["job_id"], a["days_ago"]) for a in logic.recent_applications(app.state, uid)] == [("b0102", 2)]
     assert logic.conversation_summary(app.state, uid)["form_exit"]["hours_ago"] == 5
     # 最後の接触は 4 日前なので、3 日の間隔を過ぎている(前は SIM_NOW から見て「未来の接触」で、ずっと断っていた)

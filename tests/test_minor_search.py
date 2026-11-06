@@ -4,7 +4,7 @@
 - 未成年(minor)のとき、深夜の帯・22 時より後に終わる・5 時より前に始まる・時刻の読めない shift・physical_level 3 の求人が出ない
 - 成人のとき(minor を付けない・false)は今までと同じ結果
 - relax は未成年の決まりを外す候補にしない
-- 引数の名前が dip(logic・MCP の recommend_jobs / relax_conditions)と音声(voice_resume/jobs.py)でそろっている
+- 引数の名前が事業者(logic・MCP の recommend_jobs / relax_conditions)と音声(voice_resume/jobs.py)でそろっている
 - 時間帯のボタン → ハーネスの time_slots → 検索の time_band が §6.2 の表どおり
 """
 
@@ -15,10 +15,10 @@ import inspect
 
 import pytest
 
-from dip_mcp import embedding, logic, server
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import quick_start as Q
-from dip_mcp.data import State, load_jobs
+from provider_mcp import embedding, logic, server
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import quick_start as Q
+from provider_mcp.data import State, load_jobs
 from voice_resume import jobs as voice_jobs
 
 # 未成年に出してよい求人(17:00〜22:00、深夜の帯なし、physical_level 2)を元に、1 つずつ決まりに当たる求人を作る
@@ -142,7 +142,7 @@ def test_relax_never_offers_removing_the_minor_rule(state):
         {"remove": "time_band", "current": "深夜", "total_after": logic.recommend(state, None, minor=True)["total"]}]}
 
 
-def test_minor_arg_names_match_between_dip_mcp_and_voice(state, monkeypatch):
+def test_minor_arg_names_match_between_provider_mcp_and_voice(state, monkeypatch):
     assert voice_jobs.MINOR_ARG == logic.MINOR_ARG == "minor"
     for fn in (logic.recommend, logic.relax, server.recommend_jobs, server.relax_conditions,
                voice_jobs.build_recommend_args):

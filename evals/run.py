@@ -1,6 +1,6 @@
 """シナリオ評価: 模擬ユーザー(LLM)と LINE 側ランタイムを会話させ、設計書のルールと KPI で採点する。
 
-各シナリオはそのユーザーの dip の状態を初期に戻してから走る(評価全体で独立した一時ファイル)。
+各シナリオはそのユーザーの事業者の状態を初期に戻してから走る(評価全体で独立した一時ファイル)。
 シナリオの一覧は画面と共通(scenarios.json)。どれも AI 側の1通目(挨拶・プッシュ)から始まる(evals/scenarios.py)。
 指標の cost_usd・llm_calls はランタイム側の LLM 呼び出しだけ(模擬ユーザーとジャッジは除く)。
 
@@ -130,14 +130,14 @@ def _usage(meter, marks: list[tuple[int, int]]) -> dict:
 
 
 def _trace_size() -> int:
-    """keywords の検索の記録(DIP_KEYWORDS_TRACE、dip_mcp.logic._trace_keywords)の今の大きさ。"""
-    path = os.environ.get("DIP_KEYWORDS_TRACE")
+    """keywords の検索の記録(PROVIDER_KEYWORDS_TRACE、provider_mcp.logic._trace_keywords)の今の大きさ。"""
+    path = os.environ.get("PROVIDER_KEYWORDS_TRACE")
     return Path(path).stat().st_size if path and Path(path).is_file() else 0
 
 
 def _trace_since(offset: int) -> list[dict]:
     """offset より後に足された keywords の検索の記録(この会話の分。シナリオは順に1本ずつ回す)。"""
-    path = os.environ.get("DIP_KEYWORDS_TRACE")
+    path = os.environ.get("PROVIDER_KEYWORDS_TRACE")
     if not path or not Path(path).is_file():
         return []
     with open(path, encoding="utf-8") as f:
@@ -156,19 +156,19 @@ def _wants_upload(sc: dict, r: dict, n_turns: int) -> bool:
 async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: int = MAX_TURNS,
                        judge_samples: int | None = None, channel: str = "web",
                        features: tuple[str, ...] = ()) -> dict:
-    from dip_mcp import logic
-    from dip_mcp.data import State
     from evals.checks import conversation_checks, conversation_end
     from evals.judge import judge
     from evals.scenarios import load_resume, prepare, upload_resume
     from line_runtime.runtime import EVENTS
+    from provider_mcp import logic
+    from provider_mcp.data import State
 
     prepare(State(), sc)  # 新しい会話は最初のイベント(visit・revisit・プッシュ)が始める
     push_facts = None
-    if EVENTS[sc["event"]][1] == "push":  # 本番と同じく、プッシュしてよいかは dip が決める
+    if EVENTS[sc["event"]][1] == "push":  # 本番と同じく、プッシュしてよいかは事業者が決める
         gate = logic.push_trigger(State(), sc["user"], sc["event"])
         if not gate["allowed"]:
-            raise RuntimeError(f"dip がプッシュを許可しなかった: {gate['reason']}")
+            raise RuntimeError(f"事業者がプッシュを許可しなかった: {gate['reason']}")
         push_facts = gate["facts"]
     cap = min(sc.get("max_turns", SCENARIO_TURNS), max_turns)
     trace_at = _trace_size()
@@ -190,7 +190,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
     ended_by_user = False  # 模擬ユーザー(か台本)が終えたか、何も返さなかった(False のまま上限に達したら、上限で切れた)
     while len(turns) < cap:
         if sc.get("upload_resume") and upload is None and _wants_upload(sc, turns[-1], len(turns)):
-            facts = upload_resume(State(), sc)  # 本番の /api/resume/.../upload と同じく dip に保存してから
+            facts = upload_resume(State(), sc)  # 本番の /api/resume/.../upload と同じく事業者に保存してから
             upload = {"turn": len(turns), "shown": facts["shown"]}
             transcript.append({"who": "user", "text": f"[{facts['file']}をアップロード]"})
             user_msgs.append(None)
@@ -221,7 +221,7 @@ async def run_scenario(rt, client, meter, sc: dict, use_judge: bool, max_turns: 
               "tools": [[t["name"] for t in r["tools"]] for r in turns],
               # 評価器を直したあとでオフラインで再判定するための生の材料(ツールの args と result を含む。recheck)
               "turn_log": turns, "user_msgs": user_msgs, "upload": upload,
-              # keywords の検索ごとの最高値 - 中央値と、意味の近さを使ったか(SIM_PEAK の余裕を見る。dip が記録する)
+              # keywords の検索ごとの最高値 - 中央値と、意味の近さを使ったか(SIM_PEAK の余裕を見る。事業者が記録する)
               "keyword_searches": _trace_since(trace_at)}
     if use_judge:
         resume = sc.get("upload_resume") or sc.get("seed_resume")
@@ -362,7 +362,7 @@ def report(doc: dict) -> str:
         for t in d["transcript"]:
             who = "AI" if t["who"] == "agent" else "ユーザー"
             lines.append(f"- {who}: " + t["text"].replace("\n", " / "))
-        lines.append(f"- (dip ツール: {' | '.join(', '.join(x) for x in d['tools'])})")
+        lines.append(f"- (事業者ツール: {' | '.join(', '.join(x) for x in d['tools'])})")
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -573,10 +573,10 @@ if __name__ == "__main__":
     from line_runtime.config import load_env
 
     load_env()
-    # dip の状態は評価ごとの一時ファイルに(開発中の data/state.json を汚さない)。MCP 子プロセスにも継承される。
+    # 事業者の状態は評価ごとの一時ファイルに(開発中の data/state.json を汚さない)。MCP 子プロセスにも継承される。
     tmp = Path(tempfile.mkdtemp())
-    os.environ["DIP_STATE_PATH"] = str(tmp / "state.json")
-    os.environ["DIP_KEYWORDS_TRACE"] = str(tmp / "keywords.jsonl")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp / "state.json")
+    os.environ["PROVIDER_KEYWORDS_TRACE"] = str(tmp / "keywords.jsonl")
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="回すシナリオの ID(カンマ区切り)")
     ap.add_argument("--judge", action="store_true", help="相談の深さの LLM ジャッジも回す(安いモデル)")

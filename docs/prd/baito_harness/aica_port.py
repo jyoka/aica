@@ -1,4 +1,4 @@
-"""aica の移植版(dip_mcp/baito/harness.py)を、この参照資料の検査で回すための入口(PRD §11-4)。
+"""aica の移植版(provider_mcp/baito/harness.py)を、この参照資料の検査で回すための入口(PRD §11-4)。
 
     BAITO_HARNESS=aica_port python3 unit_checks_v4.py
     BAITO_HARNESS=aica_port python3 simulate.py v4   # results_v4.json と transcripts/ を上書きするので、写しの中で回す
@@ -14,6 +14,6 @@ if os.environ.get("AICA_ROOT"):
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from dip_mcp.baito import harness as _harness
+from provider_mcp.baito import harness as _harness
 
 sys.modules[__name__] = _harness

@@ -1,8 +1,8 @@
 """ゲームの段を 1 回、aica の LLM のプロバイダで進める(指示を組み立てる → 構造化出力で呼ぶ → 事実を確かめる)。
 
 段の種類(kind)は費用の上限の数え方: reaction はゲームの中の反応(安いモデル、1 回の遊びで REACTIONS_MAX 回まで)、
-summary は証拠のまとめと最後のまとめ(LINE_SIM_MODEL、1 回の遊びで SUMMARIES_MAX 回)。回数を数えるのは dip の関数
-(dip_mcp.arcade)で、ここは 1 回呼ぶだけ。
+summary は証拠のまとめと最後のまとめ(LINE_SIM_MODEL、1 回の遊びで SUMMARIES_MAX 回)。回数を数えるのは事業者の関数
+(provider_mcp.arcade)で、ここは 1 回呼ぶだけ。
 
 事実の確かめ(resume_lines.check_numbers / quote_in): AI が書いた文の数字が本人の言葉(sources)に無ければ数字の空欄に
 置き換え、引用が無ければ捨てる。置き換えた数と捨てた数を replaced で返す(成功の指標の「事実でない数字」)。

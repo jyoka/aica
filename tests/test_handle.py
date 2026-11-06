@@ -1,4 +1,4 @@
-"""LineRuntime.handle を、決められた順に返事をする偽のモデルで通しで動かす(実 LLM なし、dip の MCP は本物)。"""
+"""LineRuntime.handle を、決められた順に返事をする偽のモデルで通しで動かす(実 LLM なし、事業者の MCP は本物)。"""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def reply(bubbles: list[str], job_ids=(), quick_replies=("今はいい",), actio
 
 
 def run(model, steps, tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -97,7 +97,7 @@ def test_ima_wa_ii_ends_the_conversation_politely(tmp_path):
 
 
 def test_handle_stream_reports_llm_and_tool_steps_before_the_reply(tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     model = ScriptedModel(script=[
@@ -138,20 +138,20 @@ def test_talk_screen_handles_tool_start_and_has_per_tool_wait_labels():
 
 
 def test_stream_endpoint_reports_a_denied_push_without_calling_the_llm(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from fastapi.testclient import TestClient
 
-    from dip_mcp.data import State
     from line_runtime import config, server
+    from provider_mcp.data import State
 
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # 会話数の数(quota.json)・会話を本物の data/ に書かない
     server.state = State(tmp_path / "state.json")
     server.state.reset()
     with TestClient(server.app) as client:
         client.get("/dev")
-        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]  # dip ID 未連携の新規
+        user = client.post("/api/scenarios/F-follow-new/start").json()["user"]  # 事業者 ID 未連携の新規
         r = client.post("/api/event/stream", json={"user_id": user, "event": "form_exit"})
         evs = [json.loads(line) for line in r.text.splitlines()]
     assert [e["kind"] for e in evs] == ["start", "gate", "reply"]
@@ -161,7 +161,7 @@ def test_stream_endpoint_reports_a_denied_push_without_calling_the_llm(tmp_path,
 
 def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tmp_path, monkeypatch):
     """ツールが始まった後に落ちても error イベントが届く(画面は「探しています…」を出しっぱなしにしない)。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "offline-test")  # モデルは作るが呼ばない
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test")
     from fastapi.testclient import TestClient
@@ -191,7 +191,7 @@ def test_stream_endpoint_turns_a_failure_after_tool_start_into_an_error_event(tm
 
 def test_turn_finishes_even_if_the_client_stops_listening(tmp_path):
     """画面との接続が切れて途中で受け取りをやめても、ターンは最後まで進む(ツールの結果が無いまま保存されない)。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     model = ScriptedModel(script=[

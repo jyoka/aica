@@ -1,7 +1,7 @@
 """プロフィールの「データを書き出す」と、「すべて消す」の後の費用台帳(task 216、docs/design/privacy.md の 3.7 と 3.3)。
-実 LLM なし、dip の MCP は本物。会話と費用台帳はファイルに書く本物の LineRuntime で、値はすべて架空。
+実 LLM なし、事業者の MCP は本物。会話と費用台帳はファイルに書く本物の LineRuntime で、値はすべて架空。
 
-- 書き出す: 本人の保存内容(プロフィール、dip の状態の行、連携、会話、費用台帳の行)を 1 つの JSON のファイルで受け取れる。
+- 書き出す: 本人の保存内容(プロフィール、事業者の状態の行、連携、会話、費用台帳の行)を 1 つの JSON のファイルで受け取れる。
   範囲は「すべて消す」と同じ(本人と、同じ Cookie の /dev のシナリオ利用者)。他人の分は入らない。見るだけなので状態を変えない
 - すべて消す: 費用台帳のその人の行のユーザーIDを deleted に置き換える。金額、トークン数、行の数は変わらない
 - 期間で消す掃除(task 208)と食い違わない: 外した行も、90 日を過ぎたら日ごとの合計にまとまる。合計は変わらない
@@ -16,9 +16,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import retention
 from line_runtime import ledger, purge
 from line_runtime.quota import person
+from provider_mcp import retention
 from tests.test_profile_page import Rememberer, _items, remembered, served_profile  # noqa: F401  後の 2 つはフィクスチャ
 from tests.test_talk_actions import browser  # noqa: F401  フィクスチャ
 from tests.test_talk_page import WORKER, app, open_talk, stream  # noqa: F401  app はフィクスチャ
@@ -98,7 +98,7 @@ def test_export_is_one_json_file_of_everything_saved_for_this_browser_and_nothin
         assert set(stored["users"]) == {ua, scenario}  # 保存しているそのままの形。シナリオ利用者の行も
         assert stored["users"][ua]["preferences"]["area"]["value"] == "みほん駅"
         assert stored["users"][ua][retention.LAST_SEEN] == T0.isoformat()
-        assert set(stored["links"]) == {scenario}  # シナリオ利用者は dip の会員と連携済み
+        assert set(stored["links"]) == {scenario}  # シナリオ利用者は事業者の会員と連携済み
 
         talks = {(c["user_id"], c["thread"]): c for c in data["conversations"]}
         assert set(talks) == {(ua, 1), (scenario, 1)}

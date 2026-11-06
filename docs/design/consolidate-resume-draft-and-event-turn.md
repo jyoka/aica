@@ -179,7 +179,7 @@ def track_status(state, user_id, reply) -> dict | None:  # server._track_status 
 - `line_runtime/static/talk.html:269`(「サーバーの _profile_notice」)
 
 変えないもの: `line_runtime/runtime.py`(`handle` は評価が使う)、`line_runtime/quota.py`(`available`、`try_take`、`refund`、`limit_reply` はそのまま)、
-`dip_mcp/logic.py`(`push_trigger`、`record_talk_open`、`search_track` はそのまま)、画面の JS(`talk.html:269` のコメントのほか)。
+`provider_mcp/logic.py`(`push_trigger`、`record_talk_open`、`search_track` はそのまま)、画面の JS(`talk.html:269` のコメントのほか)。
 
 Web サーバーの 2 つの API は、次のようになります。
 
@@ -320,7 +320,7 @@ LineRuntime と、`reply` と `stale` の行の副作用(`_record_open`、`_trac
 
 ### 今の main での重複
 
-| もの | 読み取り(`resume_intake/`) | 下書き(`voice_resume/`) | 事業者の保存(`dip_mcp/`) |
+| もの | 読み取り(`resume_intake/`) | 下書き(`voice_resume/`) | 事業者の保存(`provider_mcp/`) |
 |---|---|---|---|
 | 型(5 つの部品の型と `ResumeDraft`) | `schema.py:25-78` | `schema.py:48-101` | `resume_intake.schema` を import(`logic.py:43`) |
 | `JST`、`PERSONAL_KEYS` | `schema.py:19`、`:22` | `schema.py:42`、`:45` | `PERSONAL_KEYS` を import |
@@ -374,8 +374,8 @@ merge を除くと 3 つです。うち 2 つは移植(`bde3f6b`、`6caf047`)で
 
 ### モジュールの形
 
-新しいパッケージ `resume_draft/` を作ります。`dip_mcp` にも `voice_resume` にも依存させません。
-`voice_resume` は `dip_mcp` を import しない決まりがあるからです(HLD 3.2)。
+新しいパッケージ `resume_draft/` を作ります。`provider_mcp` にも `voice_resume` にも依存させません。
+`voice_resume` は `provider_mcp` を import しない決まりがあるからです(HLD 3.2)。
 
 ```python
 # resume_draft/schema.py  Resume Draft の形(docs/design/resume-draft-schema.md)
@@ -400,8 +400,8 @@ def document_kind_of(env: dict | None) -> str:
 ```
 
 ```python
-# resume_draft/pii.py  個人情報の決まり(読み取り、下書き、dip で同じものを使う)
-PII_VALUE = ...                  # dip_mcp/data.py:30-42 から移す
+# resume_draft/pii.py  個人情報の決まり(読み取り、下書き、事業者で同じものを使う)
+PII_VALUE = ...                  # provider_mcp/data.py:30-42 から移す
 def fold_pii(text) -> str: ...   # data.py:44-54 から移す(_PII_FOLD も)
 def has_pii(text) -> bool: ...   # data.py:57-59 から移す
 def redact_pii(text, repl=..., extra=None) -> str: ...  # data.py:62-77 から移す
@@ -416,7 +416,7 @@ def scrub_pii(value): ...
 - `fold_pii` の表に無い文字だけの文字列では、`scrub_pii` の結果は今と変わりません。`fold_pii` がその文字列を変えないからです
 - `fold_pii` した文字の中で `PII_VALUE` に当たる範囲は、新しい `scrub_pii` がすべて消すようにします。テストで確かめます(下)。
   ただし消した後に残りの文字がつながり、新しくメールの形になることはあります(今の main でも、半角だけの文字列で起きる)
-- `dip_mcp/data.py` の `PII_FIELDS`(項目名の一覧)は事業者の画面の決まりなので、`data.py` に残します
+- `provider_mcp/data.py` の `PII_FIELDS`(項目名の一覧)は事業者の画面の決まりなので、`data.py` に残します
 
 `document_kind_for(track)`、`document_name(track)`、`UNDECIDED_DOCUMENT_NAME`(`voice_resume/schema.py:23-33`)は、音声相談で
 雇用区分から書類を選ぶ決まりです。Resume Draft の形ではないので、`voice_resume/prompts.py` へ移します。
@@ -451,12 +451,12 @@ def scrub_pii(value): ...
 | `voice_resume/outputs.py:18` | `DEFAULT_DOCUMENT_KIND`、`JST` を `resume_draft.schema` から import する |
 | `voice_resume/prompts.py:20` | `document_name` をここで定義する(`document_kind_for`、`UNDECIDED_DOCUMENT_NAME` も)。`document_kind_for` が使う `DEFAULT_DOCUMENT_KIND` を `resume_draft.schema` から import する |
 | `voice_resume/advisor.py:48` | `document_kind_for`、`document_name` を `voice_resume.prompts` から import する |
-| `dip_mcp/data.py:30-77` | `PII_VALUE`、`_PII_FOLD`、`fold_pii`、`has_pii`、`redact_pii` を `resume_draft/pii.py` へ移す |
-| `dip_mcp/logic.py:32-43` | `fold_pii`、`has_pii`、`redact_pii`、`scrub_pii`、`PERSONAL_KEYS`、`ResumeDraft` を `resume_draft` から import する。`resume_intake` を import しなくなる |
-| `dip_mcp/logic.py:920-923`、`:952`、`:997-1000` | 書類の種類の写しと `document_kind` を消し、`resume_draft.schema` の `DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`document_kind_of` を使う |
-| `dip_mcp/profile.py:23`、`:61` | `fold_pii`、`has_pii` を `resume_draft.pii` から import する。`logic.document_kind(r)` を `document_kind_of(r)` にする |
+| `provider_mcp/data.py:30-77` | `PII_VALUE`、`_PII_FOLD`、`fold_pii`、`has_pii`、`redact_pii` を `resume_draft/pii.py` へ移す |
+| `provider_mcp/logic.py:32-43` | `fold_pii`、`has_pii`、`redact_pii`、`scrub_pii`、`PERSONAL_KEYS`、`ResumeDraft` を `resume_draft` から import する。`resume_intake` を import しなくなる |
+| `provider_mcp/logic.py:920-923`、`:952`、`:997-1000` | 書類の種類の写しと `document_kind` を消し、`resume_draft.schema` の `DOCUMENT_KINDS`、`DEFAULT_DOCUMENT_KIND`、`document_kind_of` を使う |
+| `provider_mcp/profile.py:23`、`:61` | `fold_pii`、`has_pii` を `resume_draft.pii` から import する。`logic.document_kind(r)` を `document_kind_of(r)` にする |
 | `line_runtime/server.py:740` | `logic.document_kind(r)` を `document_kind_of(r)` にする |
-| `line_runtime/voice_reply.py:15`、`:73`、`:96` | `from dip_mcp.logic import ... document_kind ...` から `document_kind` を外し、`resume_draft.schema` の `document_kind_of` を使う。直さないと `voice_reply` の import が失敗し、それを import する `line_runtime/server.py:61` と `line_runtime/runtime.py:34` も読み込めなくなる |
+| `line_runtime/voice_reply.py:15`、`:73`、`:96` | `from provider_mcp.logic import ... document_kind ...` から `document_kind` を外し、`resume_draft.schema` の `document_kind_of` を使う。直さないと `voice_reply` の import が失敗し、それを import する `line_runtime/server.py:61` と `line_runtime/runtime.py:34` も読み込めなくなる |
 | `evals/checks.py:12-13` | `PII_VALUE`、`fold_pii`、`has_pii` を `resume_draft.pii` から import する |
 | `scripts/voice/e2e_audio_session.py:44`、`scripts/voice/eval_stt.py:37` | `JST` を `resume_draft.schema` から import する |
 | `ruff.toml:4` | `known-first-party` に `resume_draft` を足す |
@@ -465,7 +465,7 @@ def scrub_pii(value): ...
 
 古い置き場を指す docstring とコメントも直します。
 
-- `line_runtime/server.py:827`、`line_runtime/resume_confirm.py:72`、`dip_mcp/logic.py:1018`、`evals/scenarios.py:33`、`voice_resume/render.py:28`
+- `line_runtime/server.py:827`、`line_runtime/resume_confirm.py:72`、`provider_mcp/logic.py:1018`、`evals/scenarios.py:33`、`voice_resume/render.py:28`
 - `line_runtime/static/talk-core.js:189`(「`voice_resume/schema.py` の `document_name` と同じ」を `voice_resume/prompts.py` に)
 - `voice_resume/README.md:43`
 
@@ -535,7 +535,7 @@ def scrub_pii(value): ...
 - 6 章「個人情報」: 「個人情報を見分ける決まりは 2 種類あります」を、1 か所になったことに書き換える
 - 9 章「Resume Draft の形」: 一緒に変えるものを「`resume_intake/schema.py` と `voice_resume/schema.py` の両方」から `resume_draft/schema.py` にする
 
-`docs/research/apply-flow.md:14` は時点の記録なので、`dip_mcp/data.py` の `PII_VALUE` を指したままにします。
+`docs/research/apply-flow.md:14` は時点の記録なので、`provider_mcp/data.py` の `PII_VALUE` を指したままにします。
 
 ## 実装の順番
 
@@ -562,7 +562,7 @@ def scrub_pii(value): ...
 - `OutputParserException` と `pydantic.ValidationError` が `ValueError` の子であること。`raise BadTurn(...) from e` の後に `__cause__` から元の文が取れること
 - 未連携のユーザーへのプッシュの見送り。`F-follow-new` の `prepare` で写したユーザーに `logic.push_trigger(..., "form_exit")` を呼ぶと、
   「事業者 ID と未連携なので行動イベントがない」で断られる。`B-exit` で写したユーザーは許可される(`.venv` で確かめた)
-- `logic.document_kind` を使う場所(`dip_mcp/profile.py:61`、`line_runtime/server.py:740`、`line_runtime/voice_reply.py:73`、`:96`)
+- `logic.document_kind` を使う場所(`provider_mcp/profile.py:61`、`line_runtime/server.py:740`、`line_runtime/voice_reply.py:73`、`:96`)
 
 確かめていないこと:
 

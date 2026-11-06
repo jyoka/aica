@@ -396,7 +396,7 @@ def test_form_a_reply_is_what_line_shows():
 
 
 def test_form_a_ends_when_the_ai_closes_without_a_result(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     persona = PERSONAS["p4-short"]
     wait = {"name": "record_conversation_outcome", "args": {"outcome": "wait", "reason": "対象外"}}
     rt = FakeRuntime([line_reply(["こんにちは。何を相談しますか?"], ["正社員の仕事", "今はいい"]),
@@ -411,7 +411,7 @@ def test_form_a_ends_when_the_ai_closes_without_a_result(tmp_path, monkeypatch):
 @pytest.mark.parametrize("answered", [0, 1])
 def test_form_a_counts_a_decline_as_leaving_however_many_answers(tmp_path, monkeypatch, answered):
     """「今はいい」で切り上げたら、0 問(playbook は wait)でも 1 問以上(consult と summary)でも、本人の断りの離脱。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     persona = PERSONAS["p1-sales"]
     replies = [line_reply(["こんにちは。何を相談しますか?"], ["正社員の仕事", "今はいい"])]
     if answered:
@@ -479,7 +479,7 @@ def test_turn_cap_counts_ai_replies_and_sends_no_extra(done_at, completed, left,
 
 
 def test_form_a_runs_through_the_line_runtime_and_extracts_facts_from_the_log(tmp_path, monkeypatch):
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))  # prepare が dip の状態を戻す
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))  # prepare が事業者の状態を戻す
     persona = PERSONAS["p1-sales"]
     rt = FakeRuntime([
         line_reply(["こんにちは。何を相談しますか?"], ["正社員の仕事", "アルバイト"]),
@@ -642,14 +642,14 @@ def test_render_is_what_the_actor_reads():
     assert render(r) == "何人くらいのチームでしたか?\n[カード] 職歴1 / まだ\n[ボタン] 5人くらい / パス"
 
 
-def test_form_a_through_the_real_runtime_and_dip(tmp_path, monkeypatch):
-    """形 A を本物の LINE 側のランタイムと dip の MCP で(エージェントのモデルだけ台本)。履歴書を先に送っている人は、
-    会話の前に dip にアップロード済みになり、保存した希望とまとめから関門を数える。"""
+def test_form_a_through_the_real_runtime_and_provider(tmp_path, monkeypatch):
+    """形 A を本物の LINE 側のランタイムと事業者の MCP で(エージェントのモデルだけ台本)。履歴書を先に送っている人は、
+    会話の前に事業者にアップロード済みになり、保存した希望とまとめから関門を数える。"""
     from line_runtime.runtime import LineRuntime
     from tests.test_handle import ScriptedModel, call
     from tests.test_handle import reply as agent_reply
 
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     persona = PERSONAS["p5-resume"]
     model = ScriptedModel(script=[
         agent_reply(["こんにちは。今日はどうしますか?"], quick_replies=["正社員の仕事を探す", "今はいい"]),
@@ -673,8 +673,8 @@ def test_form_a_through_the_real_runtime_and_dip(tmp_path, monkeypatch):
         async with LineRuntime(model=model, in_memory=True) as rt:
             form = FormA(rt, persona)
             r = await run_conversation(form, persona, client, "sim", "judge")
-            from dip_mcp import logic
-            from dip_mcp.data import State
+            from provider_mcp import logic
+            from provider_mcp.data import State
 
             return r, logic.conversation_summary(State(), "sim-new")
 
@@ -782,9 +782,9 @@ def test_harness_form_later_is_leaving_not_completing():
 
 
 def test_harness_form_c2_runs_the_layer_and_sends_its_masked_history():
-    """形 D-c2(task 362)は、会話の層の版(dip_mcp/career/c2.py)で回す。言う段のメッセージは、ランタイムと同じく
+    """形 D-c2(task 362)は、会話の層の版(provider_mcp/career/c2.py)で回す。言う段のメッセージは、ランタイムと同じく
     層が渡す直前のやりとり(model_history)と本人の発言(model_text)。読む段は今の発言だけ。"""
-    from dip_mcp.career import c2
+    from provider_mcp.career import c2
 
     calls: list = []
 

@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from dip_mcp import embedding, logic
-from dip_mcp.data import EMPLOYMENT_TYPES, State, load_jobs, load_users
 from evals import search_eval
+from provider_mcp import embedding, logic
+from provider_mcp.data import EMPLOYMENT_TYPES, State, load_jobs, load_users
 
 # task 105 の前の設定(text-embedding-3-small・512 次元・給与まで入れた文面・下限 0.30・重み 6)の再現率は 0.551。
 # task 105 で選んだ設定は 0.753(task 111 はこれを下回らない)

@@ -12,7 +12,7 @@ LINE 側と事業者側の境界は、HLD の最初の版では「LINE 側は業
 
 ## Consequences
 
-- `line_runtime` が `dip_mcp` の `logic`、`profile`、`State` を import するのは、認めた形になる(HLD の 3.2)
+- `line_runtime` が `provider_mcp` の `logic`、`profile`、`State` を import するのは、認めた形になる(HLD の 3.2)
 - エージェントの指示(`agent.py` の LINE の共通ルール)とエージェントへの入力に、LINE 側で組み立てた業務の事実を足さない。足したい事実は事業者のツールか事業者の関数の結果にする
 - イベントの入力の文言は LINE 側に置くが、書くのは何が起きたかと、画面に出したものを繰り返さない指示までにする。今のコードには会話の決まりを書いたところが 2 か所あり(`runtime.py` の `event_input` の読み取れなかったアップロード、`voice_event` の雇用区分)、触るときに事業者の Prompt か playbook に移す(HLD の 1.1)
 - R8 を案 A と一緒に解く道は閉じない。事業者の状態を書くプロセスを 1 つにするときに、もう一度考える

@@ -1,4 +1,4 @@
-"""正社員のヒアリングのハーネス(dip_mcp/career、設計メモ docs/design/fulltime-hearing.md、ADR-0010)。LLM は偽物。
+"""正社員のヒアリングのハーネス(provider_mcp/career、設計メモ docs/design/fulltime-hearing.md、ADR-0010)。LLM は偽物。
 
 (1) 質問バンク: どの問いも答えの候補を 3 ページ以上持つ。スキップと中断の区別。あいまいな問いが無い。ボタンと吹き出しの字数の予算。
     HARD の欄が評価の事実表と同じ
@@ -17,10 +17,10 @@ import re
 
 import pytest
 
-from dip_mcp.career import harness as H
 from evals import career_sim
 from evals.fulltime_hearing import actor
 from evals.fulltime_hearing import personas as P
+from provider_mcp.career import harness as H
 
 PERSONAS = {p["id"]: p for p in P.load_personas()}
 
@@ -631,7 +631,7 @@ def test_internal_error_rolls_back(monkeypatch):
 
 @pytest.mark.parametrize("form", H.FORMS)
 def test_state_round_trip_and_determinism(form):
-    """毎ターンの前に状態を JSON にして戻しても、同じ出力で同じ道をたどる(2b の dip のツールが、保存した状態から
+    """毎ターンの前に状態を JSON にして戻しても、同じ出力で同じ道をたどる(2b の事業者のツールが、保存した状態から
     出力を受け取りながらやり直すため)。"""
     for p in PERSONAS.values():
         a = career_sim.run_one(p, form)["state"]

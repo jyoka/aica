@@ -4,7 +4,7 @@
 - GET /legal/terms と GET /legal/privacy が原文を HTML にして出す。Markdown の印は残らず、原文どうしのリンクは画面の URL になる。
   Cookie を発行しない。知らない名前は 404
 - Web のトーク画面と LIFF の画面(_page の画面、LINE の音声相談の画面、アーケードのハブ)から、規約とポリシーを開ける。
-  dip のログインの画面(aica ではない役の画面)には置かない
+  事業者のログインの画面(aica ではない役の画面)には置かない
 - 応募フォームの体験: 欄に架空の値が最初から入り、架空の求人であることと「本物の情報は入れない」が出る。送った値は保存しない
 - ブラウザ(Playwright)で、トーク画面のリンクを押すと規約とポリシーが別のタブで開く
 """
@@ -18,8 +18,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import logic
 from line_runtime import legal, line_channel
+from provider_mcp import logic
 from tests.test_arcade import _free_port, browser  # noqa: F401  browser はフィクスチャ
 from tests.test_revisit import Greeter
 from tests.test_talk_page import app  # noqa: F401  app はフィクスチャ
@@ -83,7 +83,7 @@ def test_the_talk_screen_and_liff_screens_link_to_the_terms_and_policy(app, monk
     assert _links(client.get("/liff/arcade").text)
     page = app._page("履歴書の読み取り結果", "<p>本文</p>")
     assert _links(page) and legal.DEMO_NOTE in page
-    assert not _links(client.get("/dip/login", params={"linkToken": "x" * 20}).text)  # dip の画面には置かない
+    assert not _links(client.get("/provider/login", params={"linkToken": "x" * 20}).text)  # 事業者の画面には置かない
     # LINE のアプリで開く LIFF 画面(殻と音声相談)
     monkeypatch.setenv(line_channel.LIFF_ID_ENV, "2000000000-OfflineT")
     monkeypatch.setenv(line_channel.LIFF_CHANNEL_ENV, "2000000000")
@@ -108,7 +108,7 @@ def test_the_apply_form_is_a_demo_with_made_up_values_that_are_not_kept(app, tmp
         sent = {"job": job, "scenario_user": "sim-exit"} | {f"f_{f}": f"{marker} {f}" for f in exit_["remaining_fields"]}
         done = client.post("/liff/apply", data=sent)
         assert done.status_code == 200 and app.APPLY_DONE_TEXT in done.text
-        assert logic.form_exit(app.state, user) is None  # 応募の確定だけは dip の状態に書く
+        assert logic.form_exit(app.state, user) is None  # 応募の確定だけは事業者の状態に書く
     for f in tmp_path.rglob("*"):
         if f.is_file():
             assert marker.encode() not in f.read_bytes(), f

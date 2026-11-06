@@ -1,7 +1,7 @@
 """アルバイト・パートの相談を 1 タップで始めるカード(設計メモ docs/design/baito-quick-start.md §4・§5・§8・§9。task 265)。
 
-何を出すか(入口の絵 4 枚と下のボタン、合いそうな職種 3 つとタグ、ボタン)は dip のハーネスが決め、ターンの結果の card にする
-(dip_mcp.baito.harness の _quick_entry・_quick_result)。ここはそれを LINE の Flex(flex)と、Flex を描かない Web のトークの
+何を出すか(入口の絵 4 枚と下のボタン、合いそうな職種 3 つとタグ、ボタン)は事業者のハーネスが決め、ターンの結果の card にする
+(provider_mcp.baito.harness の _quick_entry・_quick_result)。ここはそれを LINE の Flex(flex)と、Flex を描かない Web のトークの
 文の形(text)にするだけで、職種もタグも選ばない。
 
 - 入口(kind=entry): 問いと一言、絵 4 枚(2 × 2)、下のボタン「どれもピンと来ない」。押すと、その文字を本人の発言として送る

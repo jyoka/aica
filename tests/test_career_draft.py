@@ -1,4 +1,4 @@
-"""正社員のヒアリングの職歴カードから作る、職務経歴書の下書き(dip_mcp/career/draft.py、task 247)。実 LLM・実 LINE は呼ばない。
+"""正社員のヒアリングの職歴カードから作る、職務経歴書の下書き(provider_mcp/career/draft.py、task 247)。実 LLM・実 LINE は呼ばない。
 
 設計メモ docs/design/fulltime-hearing.md の §4(職歴カード)と §5.2(全部の完成の「下書きを開く」)、§6.4 の関門「数字を作った: 0 件」。
 - result に着くと、職歴カードから下書きを作り、ゲームの下書きと同じ場所に保存する。「下書きを開く」のボタンは、形 D は完成の
@@ -15,12 +15,12 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from dip_mcp import arcade, logic, profile
-from dip_mcp.career import draft, session, store
-from dip_mcp.career import harness as H
-from dip_mcp.data import State
 from evals.checks import draft_number_violations
 from line_runtime.line_channel import line_user
+from provider_mcp import arcade, logic, profile
+from provider_mcp.career import draft, session, store
+from provider_mcp.career import harness as H
+from provider_mcp.data import State
 from resume_lines import BLANK_RE, check_numbers, number_blank, words_blank
 from tests.test_arcade_liff import _links
 from tests.test_career_chat import (  # noqa: F401  harness_on はフィクスチャ(フラグ c1)

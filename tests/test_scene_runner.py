@@ -1,6 +1,6 @@
 """場面の一覧を回す仕組み(evals/scenes/runner.py、checks.py、judge.py。設計メモ docs/design/conversation-layer.md §5 の 1 枚目)。
 
-実 API は呼ばない。career と baito は dip の相談のツールを台本の LLM で回し、talk は本物のランタイムをモックのトークの AI で回す。
+実 API は呼ばない。career と baito は事業者の相談のツールを台本の LLM で回し、talk は本物のランタイムをモックのトークの AI で回す。
 ここで確かめるのは、条件を判定できること(判定の中身が正しいこと)と、今の版の点が設計メモ §2.6 と §7 で確かめた振る舞いと
 合うこと。今の版の点そのもの(合格の数)は、設計メモ §7 に書く(テストでは数を固定しない)。
 """
@@ -418,8 +418,8 @@ def test_judge_can_be_given_the_entry_fact_data(harness_rows):
 def test_baito_known_facts_include_the_prd_fixed_notices():
     """アルバイト・パートの知っている事実には、ハーネスがそのまま出す PRD の決まった文(中学生以下で止める文など)も入る(task 379)。
     正社員には入らない。"""
-    from dip_mcp.baito import harness as B
     from evals.scenes import real as RL
+    from provider_mcp.baito import harness as B
 
     facts = RL.known_facts("baito")
     assert B.NOTICE["under_15"] in facts and B.NOTICE["rules_only"] in facts
@@ -474,7 +474,7 @@ def _offline_real_run(monkeypatch, tmp_path, score):
 
 
 def test_real_run_uses_a_fresh_state_for_each_repeat(monkeypatch, tmp_path):
-    """--repeat の回ごとに新しい dip の状態で回す(場面の本人の id は回によらず同じなので、前の回の保存が混ざらないように)。"""
+    """--repeat の回ごとに新しい事業者の状態で回す(場面の本人の id は回によらず同じなので、前の回の保存が混ざらないように)。"""
     row = {"scene": "chat-weather", "entry": "career", "category": "chat", "version": "c1", "results": [], "replies": [], "error": None}
     paths, rows = _offline_real_run(monkeypatch, tmp_path, lambda s, rec, j: dict(row))
     assert len(paths) == 2 and paths[0] != paths[1]

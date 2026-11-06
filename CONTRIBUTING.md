@@ -77,6 +77,18 @@ python -m evals.baito_sim           # アルバイト・パートのハーネス
   `./.venv/bin/pip install playwright==1.63.0` を入れて手元で回します
 - 全部の pytest は数分かかります。作業中は関係するファイルだけを回し、最後に 1 回だけ全部を回します
 
+## 固有の名前を確かめる
+
+コード、画面、プロンプト、テスト、データ、画像、文書に、特定の企業名とサービス名を出しません。語は「事業者」(文)、`provider`(コード)、製品の呼び名は `aica` です。
+
+PR の前に手元で動かします。一覧がリポジトリの外にあるので、CI では動かしません。一覧の中身と、当たった文字はリポジトリに入れません。
+
+```bash
+python scripts/check_names.py --list ~/.config/aica/banned-names.txt
+```
+
+0 件なら 0 で終わります。見つかれば場所(ファイルと行、または画像のメタデータ)と一覧の行番号を出して 1 で終わります。
+
 ## 回帰の合格基準
 
 回帰が通ったかどうかは、自分の worktree での実行ではなく、PR の CI(`.github/workflows/ci.yml`)の結果で判断します。
@@ -89,7 +101,7 @@ CI は API キーを持たない環境で、次の 3 つを回します。すべ
 | バイトのハーネスの回帰 | `python -m evals.baito_sim` | 終了コード 0。最後に「すべて合格」と出る |
 
 `evals.baito_sim` は、PRD v4.1(`docs/prd/baito_harness/PRD_baito_agent_v4.md`)の参照資料を一時ディレクトリに写し、
-移植版(`BAITO_HARNESS=aica_port`。本体は `dip_mcp/baito/harness.py`)で次の 2 つを回します。写しの中で回すので、
+移植版(`BAITO_HARNESS=aica_port`。本体は `provider_mcp/baito/harness.py`)で次の 2 つを回します。写しの中で回すので、
 基準値のファイル(`results_v4.json`、`transcripts/v4_*.txt`)は上書きしません。
 
 - 単体チェック `unit_checks_v4.py`: 131/131 が合格する
@@ -101,7 +113,7 @@ CI は API キーを持たない環境で、次の 3 つを回します。すべ
 CI は `--log evidence/baito_sim` を付けて回し、単体チェックとシミュレーターの出力、移植版の結果、会話ログの写し、合否を
 証跡に残します。pytest の `tests/test_baito_harness.py` も同じ検査を回します。
 
-会話の層の版 v5(`dip_mcp/baito/v5.py`)は、`python -m evals.baito_sim --version v5` で 20 ペルソナを同じ基準値に照らします
+会話の層の版 v5(`provider_mcp/baito/v5.py`)は、`python -m evals.baito_sim --version v5` で 20 ペルソナを同じ基準値に照らします
 (`BAITO_HARNESS=aica_port_v5`。単体チェックは v4 だけ)。pytest の `tests/test_baito_v5.py` が回し、PRD の結果の検査
 (未成年の NG、深夜、中学生以下、金額、カードに無い職種)もそこで確かめます。
 

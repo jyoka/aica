@@ -1,9 +1,9 @@
-"""相談(playbook に沿って進める)の台本テスト。実 LLM なし、dip の MCP は本物。
+"""相談(playbook に沿って進める)の台本テスト。実 LLM なし、事業者の MCP は本物。
 
-相談は別のエージェントではなく、dip の Prompt(入口と「playbook を読む」指示)と、雇用区分ごとの playbook
-(get_counseling_playbook)で動く。ここでは (1) dip の Prompt が LINE 側エージェントに届いていること、
+相談は別のエージェントではなく、事業者の Prompt(入口と「playbook を読む」指示)と、雇用区分ごとの playbook
+(get_counseling_playbook)で動く。ここでは (1) 事業者の Prompt が LINE 側エージェントに届いていること、
 (2) 台本どおりに進めた会話(入口で playbook を読み、区分が決まったら読み直し、目的を聞いて掘り下げる)が評価の機械判定を
-通ること、(3) 相談で話した内容が dip のプロフィールに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、
+通ること、(3) 相談で話した内容が事業者のプロフィールに残り、次の会話の要約に出ること、(4) 判定が悪い振る舞いを捕まえること、
 を確かめる。区分ごとの playbook の中身と深さの台本は tests/test_playbook.py。
 """
 
@@ -19,7 +19,7 @@ from tests.test_handle import ScriptedModel, call, reply
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
 MENU = ["求人を探す", "まず相談する", "今はいい"]
-# 初回訪問の挨拶に付く、Web で使える 3 つの入口(task 237 からコードが付ける。dip の Prompt の「挨拶の入口」)
+# 初回訪問の挨拶に付く、Web で使える 3 つの入口(task 237 からコードが付ける。事業者の Prompt の「挨拶の入口」)
 ENTRIES = {"actions": ["voice_consult", "resume_upload"], "buttons": [{"label": "ゲームで書類を作る", "url": "/liff/arcade"}]}
 CLOSING = ["求人を探す", "応募履歴を確認", "使い方"]
 CONFIRM = "正社員の仕事と、空いた時間のアルバイト、どちらを考えていますか?"
@@ -29,7 +29,7 @@ BAITO = "アルバイト・パート"
 
 class ConsultModel(ScriptedModel):
     """ScriptedModel に加えて、台本の要素に関数を置けば、それまでのメッセージから返事を作る
-    (dip が返した求人の ID をカードにするため)。受け取ったシステムプロンプトも残す。"""
+    (事業者が返した求人の ID をカードにするため)。受け取ったシステムプロンプトも残す。"""
 
     systems: list = []  # noqa: RUF012  pydantic の項目
 
@@ -65,7 +65,7 @@ def switch_and_read(uid: str, track: str, evidence: str, *more) -> object:
 
 
 def run(model, steps, tmp_path):
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from line_runtime.runtime import LineRuntime
 
     async def go():
@@ -77,7 +77,7 @@ def run(model, steps, tmp_path):
 
 def run_eval_scenario(model, sc, tmp_path) -> dict:
     """評価ハーネス(evals.run.run_scenario)で、台本のあるシナリオを最後まで回す(模擬ユーザーの LLM は呼ばない)。"""
-    os.environ["DIP_STATE_PATH"] = str(tmp_path / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(tmp_path / "state.json")
     from evals.meter import Meter
     from evals.run import run_scenario
     from line_runtime.runtime import LineRuntime
@@ -90,8 +90,8 @@ def run_eval_scenario(model, sc, tmp_path) -> dict:
 
 
 def stated(tmp_path, user: str) -> dict:
-    from dip_mcp import logic
-    from dip_mcp.data import State
+    from provider_mcp import logic
+    from provider_mcp.data import State
 
     return {k: v["value"] for k, v in logic.stated_preferences(State(tmp_path / "state.json").user(user)).items()}
 
@@ -104,7 +104,7 @@ def playbooks_read(turn: dict) -> list[str]:
     return [t["result"]["track"] for t in turn["tools"] if t["name"] == "get_counseling_playbook"]
 
 
-# ----------------------------- dip の Prompt(相談の入口と playbook を読む指示) -----------------------------
+# ----------------------------- 事業者の Prompt(相談の入口と playbook を読む指示) -----------------------------
 
 
 def test_consult_prompt_reaches_the_agent_on_first_visit(tmp_path):
@@ -130,7 +130,7 @@ def test_consult_from_menu_confirms_the_track_rereads_the_playbook_and_proposes(
     """「まず相談する」(区分は未定)→ 未定の playbook で区分を1問で確かめる → 答えで切り替えて playbook を読み直す →
     目的を聞く → 生活の制約をまとめて1問 → 4問目で求人を見るかを聞いて提案(相談の問いは4問まで。task 225)。
     3ターンを超えても締めない。
-    相談で話したことは dip に保存され、提案の条件にそのまま使われ、次の会話の要約にも出る。"""
+    相談で話したことは事業者に保存され、提案の条件にそのまま使われ、次の会話の要約にも出る。"""
     uid = "sim-new"
     model = ConsultModel(script=[
         reply(["はじめまして。お仕事探しをお手伝いします。どうしますか?"], quick_replies=MENU, **ENTRIES),

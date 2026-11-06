@@ -3,7 +3,7 @@
 2026-10-25 の見直し(jyoka/tasks#221)で、ターンの上限 8 で相談のシナリオ 5 件が途中で切れ、相談から提案、
 その後の反応までを評価が見ていなかった。また T-switch-to-fulltime の模擬ユーザーが、設定の指示文をそのまま発言にした。
 ここでは、(a) シナリオの上限と台本の付け方、(b) 上限で切れたことと指示文の発言を見る判定(evals/checks.py)、
-(c) 評価の会話の回し方(evals/run.py の run_scenario。エージェントと模擬ユーザーは偽物、dip の MCP は本物)を確かめる。
+(c) 評価の会話の回し方(evals/run.py の run_scenario。エージェントと模擬ユーザーは偽物、事業者の MCP は本物)を確かめる。
 """
 
 from __future__ import annotations
@@ -13,10 +13,10 @@ import re
 
 import pytest
 
-from dip_mcp.data import ROOT
 from evals.checks import conversation_end, sim_leaks
 from evals.run import DIRECTIONS, MAX_TURNS, SCENARIO_TURNS, report, to_run
 from evals.scenarios import load_scenarios
+from provider_mcp.data import ROOT
 from tests.test_eval_harness import CareerAgent, FakeClient, _run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}

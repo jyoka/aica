@@ -4,7 +4,7 @@
 ターンの返信(吹き出しと Flex)を、LINE のトークに近い見た目の HTML に描いて PNG にする。Flex は LINE の Flex の決まり
 (bubble の size、box の layout・padding・border、image の size など)をまねて描くだけで、LINE の実機の描き方ではない
 (実機では確かめていない)。絵は line_runtime/static/baito/ の PNG を、そのままの大きさで出す。
-「近くで探す」(task 266)は、3 問(ボタンはクイックリプライ)・本物の求人(dip の求人データを recommend で探した結果を、
+「近くで探す」(task 266)は、3 問(ボタンはクイックリプライ)・本物の求人(事業者の求人データを recommend で探した結果を、
 今の求人のカルーセル line_channel._cards_message で)・0 件(relax の 1 つ)の 3 枚。状態は一時ファイルに置く。
 
     ./.venv/bin/python -m scripts.baito_quick_preview [--out docs/images/baito-quick-start]
@@ -20,13 +20,13 @@ import json
 import tempfile
 from pathlib import Path
 
-from dip_mcp.baito import harness as H
-from dip_mcp.baito import quick_start as QS
-from dip_mcp.baito import session
-from dip_mcp.data import State
 from line_runtime import baito_cards as C
 from line_runtime import config
 from line_runtime.line_channel import _cards_message
+from provider_mcp.baito import harness as H
+from provider_mcp.baito import quick_start as QS
+from provider_mcp.baito import session
+from provider_mcp.data import State
 from scripts.progress_ui_preview import BUBBLE_W, SPACE_PX, TEXT_PX
 
 ICONS = config.ROOT / "line_runtime" / "static" / "baito"
@@ -74,7 +74,7 @@ NEAR_USER = "preview"
 
 
 def near_scenes() -> dict[str, list[dict]]:
-    """「近くで探す」の場面ごとの [{said, reply, choices, cards}]。求人は dip の求人データを session.near_search で探す。"""
+    """「近くで探す」の場面ごとの [{said, reply, choices, cards}]。求人は事業者の求人データを session.near_search で探す。"""
     out = {}
     with tempfile.TemporaryDirectory() as tmp:
         for name, (_, taps, shown) in NEAR_SCENES.items():
@@ -175,7 +175,7 @@ body { margin: 0; background: #e9ecf2; font-family: -apple-system, "Hiragino San
 def scene_html(title: str, s: dict) -> str:
     return (f'<div class="phone" id="shot"><div class="cap">{html.escape(title)}</div>'
             f'<div class="row me"><div class="bubble">{html.escape(s["said"])}</div></div>'
-            f'<div class="row"><div class="avatar">B</div><div class="col"><div class="bubble">{html.escape(s["reply"])}</div>'
+            f'<div class="row"><div class="avatar">a</div><div class="col"><div class="bubble">{html.escape(s["reply"])}</div>'
             f'{flex_html(C.flex(s["card"], BASE))}</div></div></div>')
 
 
@@ -185,7 +185,7 @@ def near_html(title: str, steps: list[dict]) -> str:
     for s in steps:
         flex = flex_html(_cards_message(s["cards"])) if s["cards"] else ""
         rows.append(f'<div class="row me"><div class="bubble">{html.escape(s["said"])}</div></div>'
-                    f'<div class="row"><div class="avatar">B</div><div class="col"><div class="bubble">'
+                    f'<div class="row"><div class="avatar">a</div><div class="col"><div class="bubble">'
                     f'{html.escape(s["reply"])}</div>{flex}</div></div>'
                     f'<div class="note">ボタン(クイックリプライ)</div>'
                     f'<div class="chips">{"".join(f"<span class=chip>{html.escape(c)}</span>" for c in s["choices"])}</div>')

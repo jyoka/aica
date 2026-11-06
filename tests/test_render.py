@@ -1,4 +1,4 @@
-"""求人カードの描画: dip のツールが返した求人(どのツールでも)だけをカードにする。LLM は使わない。"""
+"""求人カードの描画: 事業者のツールが返した求人(どのツールでも)だけをカードにする。LLM は使わない。"""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import json
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from dip_mcp import logic
 from line_runtime.agent import LineReply
 from line_runtime.runtime import render
+from provider_mcp import logic
 
 
 def _state(tool_name: str, result: dict, job_ids: list[str]) -> dict:

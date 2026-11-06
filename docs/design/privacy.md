@@ -71,8 +71,8 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
   なので、この設計では、ユーザーにひも付くデータはすべて個人情報として扱います
 - 履歴書とトークには、病歴、障害、犯罪歴などの要配慮個人情報が入りえます(例: 「持病があるので夜勤は避けたい」)。
   aica からは聞きませんが、本人が書くことは止められません
-- 事業者の行動の元データ(`data/dip_events.db`)と会員のログインは、今はシミュレーションの架空のデータです。
-  ただし、公開した aica の本番のユーザーが書いた分(保存、応募など)は `data/state.json` の `dip_writes` に入ります
+- 事業者の行動の元データ(`data/provider_events.db`)と会員のログインは、今はシミュレーションの架空のデータです。
+  ただし、公開した aica の本番のユーザーが書いた分(保存、応募など)は `data/state.json` の `provider_writes` に入ります
 
 ## 2. 個人情報の流れの棚卸し
 
@@ -84,7 +84,7 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 |---|---|---|---|---|---|
 | 1 | 履歴書・職務経歴書のファイル本体(PDF、JPEG、PNG、10MB まで)。氏名、住所、写真、生年月日、電話、メール、学歴、職歴を含みうる | Anthropic(既定。Messages API の `document` か `image` のブロックに base64 で埋め込む。task 236)。`RESUME_INTAKE_PROVIDER=openai` なら OpenAI(Responses API に base64 で埋め込む)。テキストのある PDF はテキストだけ(3.2 の案 B) | しない(メモリだけ) | - | `line_runtime/server.py:955`、`:966`、`resume_intake/extract.py:64-70`、`:94-100` |
 | 2 | 履歴書のファイル名(氏名が入りがち) | 送らない(Anthropic のブロックには名前の欄が無い。OpenAI には形式だけの固定の名前 `resume.pdf`) | しない。トークには「履歴書(PDF)」のような種類だけ | - | `resume_intake/extract.py:69`、`line_runtime/server.py:950-952`、`:979` |
-| 3 | 履歴書の読み取り結果(学歴、職歴、勤務先、資格、自己 PR など)。`personal` は空、電話、メール、郵便番号は消す。氏名や住所が出力に混ざったときは、コードでは消えない | 毎ターン、要約の `uploaded_resume` として LLM へ(エージェントと音声アドバイザー) | `data/state.json` の `resume_upload`(最新の 1 件) | プロフィールで履歴書を消す、「すべて消す」まで | `resume_intake/extract.py:27-28`、`:102`、`dip_mcp/logic.py:1044-1057`、`:1087-1092`、`dip_mcp/profile.py:229-242` |
+| 3 | 履歴書の読み取り結果(学歴、職歴、勤務先、資格、自己 PR など)。`personal` は空、電話、メール、郵便番号は消す。氏名や住所が出力に混ざったときは、コードでは消えない | 毎ターン、要約の `uploaded_resume` として LLM へ(エージェントと音声アドバイザー) | `data/state.json` の `resume_upload`(最新の 1 件) | プロフィールで履歴書を消す、「すべて消す」まで | `resume_intake/extract.py:27-28`、`:102`、`provider_mcp/logic.py:1044-1057`、`:1087-1092`、`provider_mcp/profile.py:229-242` |
 | 4 | Web のトークの本文 | Anthropic(既定。`LINE_SIM_PROVIDER=openai` なら OpenAI)。今の会話の全文を毎ターン送る | `data/line_checkpoints.db` | 「すべて消す」、履歴書を消したときまで。それ以外は消さない | `line_runtime/runtime.py:69-75`、`:142`、`:321-329`、`line_runtime/agent.py:98-104` |
 | 5 | LINE のトークの本文 | LINE プラットフォーム(本人が LINE で送る)、Anthropic(既定)か OpenAI | 4 と同じ | 4 と同じ | `line_runtime/server.py:481-496`、`:555-575` |
 | 6 | LINE の userId(LINE が付ける本人の ID) | LINE(返信と push の宛先) | しない。処理の間だけメモリ | - | `line_runtime/server.py:481-485`、`line_runtime/line_channel.py:5-7` |
@@ -95,21 +95,21 @@ aica を外に公開する前に、個人情報をどこへ送り、どこに、
 | 11 | 音声の文字起こし | Anthropic(既定。`VOICE_RESUME_PROVIDER=openai` なら OpenAI)。音声アドバイザーの会話で毎ターン、相談の終わりの下書き | `data/voice-resume/transcript-<時刻>.json` | 下書きを消す、「すべて消す」まで。トークに届かなかった相談(410 以外)のファイルは、事業者の状態から指されず消えない | `voice_resume/agent.py:107`、`voice_resume/drafter.py:31-40`、`voice_resume/outputs.py:62-77`、`voice_resume/advisor.py:689-690` |
 | 12 | 音声アドバイザーが話す文(本人の話をくり返すことがある) | Cartesia(読み上げ) | しない | - | `voice_resume/agent.py:108-114` |
 | 13 | 会話中の調べものの問い(会社名、エリアなど) | Anthropic の web 検索(既定。検索エンジンにも届く)か OpenAI の web 検索 | しない | - | `voice_resume/advisor.py:423-472`、`:726-744` |
-| 14 | 本人が話した希望と本人について(16 項目。経験、不安、目的など。task 255 で正社員のヒアリングのなぜ今、次にやりたいこと、人と働く形を足して 19 項目) | 毎ターン、要約の `stated_preferences` として LLM へ | `data/state.json` の `preferences` | プロフィールの各項目、「すべて消す」まで。直すのは Web はプロフィール画面、LINE はトークで言い直す(トークの AI が `save_user_preferences` で上書きする。足した 3 つも同じ) | `dip_mcp/logic.py:822-857`、`dip_mcp/profile.py:106-131` |
-| 15 | 雇用区分の根拠(本人の発言そのまま、200 字まで。電話とメールだけ伏せる。住所は伏せない) | 毎ターン、要約の `track_history`(直近 5 件)として LLM へ | `data/state.json` の `track_history` | 「すべて消す」まで | `dip_mcp/logic.py:876-913` |
-| 16 | 相談のまとめと会話の結果の理由(電話、メール、住所らしい所は伏せる) | 毎ターン、要約の `consultation_summary` として LLM へ | `data/state.json` の `outcomes` | 「すべて消す」まで | `dip_mcp/logic.py:1107-1138` |
-| 17 | 音声相談の結果(下書き、話した希望、求人、ファイルのパス、部屋) | - | `data/state.json` の `voice_results`、`data/voice-resume/` の 4 つのファイル | 下書きを消す、「すべて消す」まで | `dip_mcp/logic.py:960-1001`、`voice_resume/outputs.py:62-77` |
-| 18 | 保存した求人、応募、応募フォームの続き | 連携した人は、事業者の行動の元データへ | `data/state.json` の `dip_writes`、`data/dip_events.db`(追記だけ) | `dip_writes` は「すべて消す」まで。元データは消さない。フォームの続きは項目名だけを書き、値は書かない(値は会話の 4 に残る) | `dip_mcp/behavior.py:149-169`、`dip_mcp/logic.py:714-731` |
-| 19 | 事業者の会員のログイン ID、パスワードのハッシュ、連携の表 | - | `data/dip_accounts.db` | 連携の解除、「すべて消す」まで(シミュレーション) | `dip_mcp/accounts.py:49-80` |
+| 14 | 本人が話した希望と本人について(16 項目。経験、不安、目的など。task 255 で正社員のヒアリングのなぜ今、次にやりたいこと、人と働く形を足して 19 項目) | 毎ターン、要約の `stated_preferences` として LLM へ | `data/state.json` の `preferences` | プロフィールの各項目、「すべて消す」まで。直すのは Web はプロフィール画面、LINE はトークで言い直す(トークの AI が `save_user_preferences` で上書きする。足した 3 つも同じ) | `provider_mcp/logic.py:822-857`、`provider_mcp/profile.py:106-131` |
+| 15 | 雇用区分の根拠(本人の発言そのまま、200 字まで。電話とメールだけ伏せる。住所は伏せない) | 毎ターン、要約の `track_history`(直近 5 件)として LLM へ | `data/state.json` の `track_history` | 「すべて消す」まで | `provider_mcp/logic.py:876-913` |
+| 16 | 相談のまとめと会話の結果の理由(電話、メール、住所らしい所は伏せる) | 毎ターン、要約の `consultation_summary` として LLM へ | `data/state.json` の `outcomes` | 「すべて消す」まで | `provider_mcp/logic.py:1107-1138` |
+| 17 | 音声相談の結果(下書き、話した希望、求人、ファイルのパス、部屋) | - | `data/state.json` の `voice_results`、`data/voice-resume/` の 4 つのファイル | 下書きを消す、「すべて消す」まで | `provider_mcp/logic.py:960-1001`、`voice_resume/outputs.py:62-77` |
+| 18 | 保存した求人、応募、応募フォームの続き | 連携した人は、事業者の行動の元データへ | `data/state.json` の `provider_writes`、`data/provider_events.db`(追記だけ) | `provider_writes` は「すべて消す」まで。元データは消さない。フォームの続きは項目名だけを書き、値は書かない(値は会話の 4 に残る) | `provider_mcp/behavior.py:149-169`、`provider_mcp/logic.py:714-731` |
+| 19 | 事業者の会員のログイン ID、パスワードのハッシュ、連携の表 | - | `data/provider_accounts.db` | 連携の解除、「すべて消す」まで(シミュレーション) | `provider_mcp/accounts.py:49-80` |
 | 20 | 費用台帳(ユーザーID、イベントの種類、モデル、トークン数) | - | `data/costs.jsonl` | 消さない。「すべて消す」でも残る | `line_runtime/ledger.py:70-84`、`line_runtime/server.py:793-794` |
-| 21 | 意味検索の問い(エージェントが作るキーワード) | OpenAI(embedding) | しない(プロセスのメモリに 512 件まで) | - | `dip_mcp/embedding.py:60-84`、`dip_mcp/logic.py:405` |
-| 22 | 画面で直したときの知らせ(直した値) | 次のターンで LLM へ | `data/state.json` の `profile_changes`(最大 20) | 渡し終えたら消す | `dip_mcp/profile.py:91-104`、`:312-319` |
+| 21 | 意味検索の問い(エージェントが作るキーワード) | OpenAI(embedding) | しない(プロセスのメモリに 512 件まで) | - | `provider_mcp/embedding.py:60-84`、`provider_mcp/logic.py:405` |
+| 22 | 画面で直したときの知らせ(直した値) | 次のターンで LLM へ | `data/state.json` の `profile_changes`(最大 20) | 渡し終えたら消す | `provider_mcp/profile.py:91-104`、`:312-319` |
 | 23 | ログ | ホスティングのログ(公開後) | 標準出力 | ホスティングの決まり(不明) | 3.4 の表 |
 | 24 | 将来: LLM への全リクエスト | Cloudflare AI Gateway | - | 3.5 の決まりで、本文は残さない | - |
 | 25 | 応募フォームの続きの入力値(`/liff/apply`)。残りの項目名が「氏名」「電話番号」などのことがあり、その欄が必須の入力になる。task 207 から、欄には架空の値(`DEMO_FORM_VALUES`)を最初から入れ、「本物の情報は入れないでください」と出す | - | しない。受け取って捨て、応募の確定だけを書く | - | `line_runtime/server.py` の `_apply_form_page`、`_apply_submit` |
-| 26 | 正社員のヒアリングの職歴カード(直近の職歴 2 件の、何をしていたか・どのくらい・どうなったか。勤め先の名前を含みうる)、今のあなたに近いの(segment)、segment だけの問いの答え(上げたいもの、変えたい理由など)。task 255 で足した。電話、メール、住所らしい値と 200 字を超える値は入れない | 毎ターン、要約の `career_profile` として LLM へ。相談の間は、本人の発言として Anthropic(既定)へ | `data/state.json` の `career_profile`。進めている相談の状態は `career`(閉じたら消す) | 最後の利用から 180 日(1 人の行ごと)。プロフィールの各欄、「すべて消す」、LINE の「データを消す」。ポリシー 1.4 の §2 の「相談で話した希望や、ご自身のこと」、§6 の「希望、相談のまとめ、読み取った経歴」と同じ扱いで、版を上げずに範囲に入る。§7 の見る・直す・消す・書き出すは、Web はプロフィール画面(欄ごと)と「データを書き出す」。LINE は「データを見る」(書き出すも兼ねる)、トークで言い直す(トークの AI が事業者のツール `update_career_card` で、保存している欄を本人の言葉のまま上書きする。数と区切りは作らない。保存していない欄は作らない)、「データを消す」 | `dip_mcp/career/store.py` の `update`、`dip_mcp/profile.py` の `edit_career_item`、`delete_career_item` |
+| 26 | 正社員のヒアリングの職歴カード(直近の職歴 2 件の、何をしていたか・どのくらい・どうなったか。勤め先の名前を含みうる)、今のあなたに近いの(segment)、segment だけの問いの答え(上げたいもの、変えたい理由など)。task 255 で足した。電話、メール、住所らしい値と 200 字を超える値は入れない | 毎ターン、要約の `career_profile` として LLM へ。相談の間は、本人の発言として Anthropic(既定)へ | `data/state.json` の `career_profile`。進めている相談の状態は `career`(閉じたら消す) | 最後の利用から 180 日(1 人の行ごと)。プロフィールの各欄、「すべて消す」、LINE の「データを消す」。ポリシー 1.4 の §2 の「相談で話した希望や、ご自身のこと」、§6 の「希望、相談のまとめ、読み取った経歴」と同じ扱いで、版を上げずに範囲に入る。§7 の見る・直す・消す・書き出すは、Web はプロフィール画面(欄ごと)と「データを書き出す」。LINE は「データを見る」(書き出すも兼ねる)、トークで言い直す(トークの AI が事業者のツール `update_career_card` で、保存している欄を本人の言葉のまま上書きする。数と区切りは作らない。保存していない欄は作らない)、「データを消す」 | `provider_mcp/career/store.py` の `update`、`provider_mcp/profile.py` の `edit_career_item`、`delete_career_item` |
 
-`data/dip_summaries.db`(`dip_mcp/summarize.py:30`)は、#18 の元データ(`data/dip_events.db`)からバッチで作る会員ごとの要約です。#18 の元データと同じ扱いにします(連携した人の行動だけが入る)。
+`data/provider_summaries.db`(`provider_mcp/summarize.py:30`)は、#18 の元データ(`data/provider_events.db`)からバッチで作る会員ごとの要約です。#18 の元データと同じ扱いにします(連携した人の行動だけが入る)。
 LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付ける乱数で、ユーザーが分からないので個人情報に入れません(`line_runtime/line_channel.py:108-112`)。
 評価の会話(`evals/results/`)は架空のペルソナで、本番のユーザーは通らないので対象外です。
 
@@ -163,14 +163,14 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
   - ファイル名を送らない。`content_part` の `filename` を、形式だけの固定の名前(例 `resume.pdf`)にする(`resume_intake/extract.py:69`)
   - `responses.parse` に `store=False` を付ける(OpenAI に応答を残さない)
 - 理由
-  - 氏名はコードでは確実に見分けられません(`dip_mcp/logic.py:791` のコメントと同じ判断)。C と D は「消したつもりで届く」失敗が見えにくい
+  - 氏名はコードでは確実に見分けられません(`provider_mcp/logic.py:791` のコメントと同じ判断)。C と D は「消したつもりで届く」失敗が見えにくい
   - E は本人が選べ、何が届くかを本人が分かります
   - B は写真を確実に外せる場面(テキストのある PDF)だけに効きます。読み取りの質が落ちないかを、`resume_intake/samples` で比べてから入れます
 
 #### トークの本文(#4、#5)
 
 - **推奨: 本人の発言を会話に入れる前に、電話、メール、住所らしい所を `[個人情報を削除]` に置き換える。**
-  置き換えは `redact_pii(text, extra=address_spans)`(相談のまとめと同じ決まり。`dip_mcp/logic.py:1124`)で、`turn.accept` の中で行う
+  置き換えは `redact_pii(text, extra=address_spans)`(相談のまとめと同じ決まり。`provider_mcp/logic.py:1124`)で、`turn.accept` の中で行う
 - 理由: aica は電話、メール、住所を使いません。LINE の共通ルールも聞き出さない決まりです(`line_runtime/agent.py:28`)。
   伏せれば、LLM にも会話の保存にも届きません
 - 画面: 伏せたときは、本人の吹き出しに「電話番号などは送らないようにしました」と小さく出す。本人が書いた文と保存された文が違う理由が分かるようにする
@@ -227,7 +227,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | 費用台帳(`data/costs.jsonl`) | 費用を人ごと、日ごとに数える | ユーザーIDは 90 日。過ぎたら日ごとの合計だけ残す | 掃除が 90 日を過ぎた行を日ごとの合計の行に置き換える |
 | ターン数(`data/quota.json`) | その日の上限 | 今のまま(日付が変わると数え直す) | - |
 | Cookie `aica_uid` | 同じブラウザを同じ人として扱う | 最後に画面を開いた日から 180 日(ユーザーの期間に合わせる) | `ANON_COOKIE_MAX_AGE` を 180 日にし、画面を開くたびに同じ ID で Cookie を書き直して期限を延ばす(下の注) |
-| 連携の表(`data/dip_accounts.db`) | 連携している間、事業者の会員を引く | 連携の間。ユーザーを消すときに外す | 今のまま(`State.reset_user` が外す) |
+| 連携の表(`data/provider_accounts.db`) | 連携している間、事業者の会員を引く | 連携の間。ユーザーを消すときに外す | 今のまま(`State.reset_user` が外す) |
 | アクセスログ、アプリのログ | 障害と不正利用の調べ | ホスティングの保持に任せ、30 日以内の設定にする | ホスティングの設定(Render の保持は要確認) |
 | バックアップ | 壊れたときの戻し | 7 日 | 消したものも、バックアップから 7 日以内に消える、とポリシーに書く |
 
@@ -261,18 +261,18 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
   - 案 b: CLI は Web プロセスの内部の口(例 `POST /api/internal/purge`)を呼ぶだけにする。口は `AICA_INTERNAL_KEY` で守る(`_require_internal`、`line_runtime/server.py:158`)。消す処理は Web プロセスの中で `user_lock` を取って行う(推奨)
   - 案 b にしたのは、本番の Web プロセスは止めずに動き続けるので、案 a では CLI を使える時がほぼ無いからです。消す道も 1 本になり、`_threads` と `unread_uploads` の片付けも `profile_forget` と同じ所でできます
 - SQLite は消した後に VACUUM する。しないと、消した行がファイルの空き領域に残る
-- `state.json` は書くたびに全体を書き直すので、消した値はファイルに残らない(`dip_mcp/data.py:213-217`)
+- `state.json` は書くたびに全体を書き直すので、消した値はファイルに残らない(`provider_mcp/data.py:213-217`)
   - ただし、ファイルを置き換えた後も、ディスクの空きブロックには古い中身が残りえます。VACUUM の後の SQLite も同じです。Render のディスクが暗号化されているかを、6 章の Render の確認と一緒に見ます
 - 掃除のログは件数だけを出す(「会話 12 件、ユーザー 3 人を消した」)
 
 #### 期間で消すときは、ユーザーの行を丸ごと外す
 
-- 今の「すべて消す」の `profile.forget_all`(`dip_mcp/profile.py:286-306`)は、ユーザーの行を消し切りません
-  - `state.reset_user` の後、同じユーザーIDの行に `_KEPT_ON_FORGET`(`dip_mcp/profile.py:283`)の連番と `forgotten_voice_rooms` を書き戻します(`:296-305`)
+- 今の「すべて消す」の `profile.forget_all`(`provider_mcp/profile.py:286-306`)は、ユーザーの行を消し切りません
+  - `state.reset_user` の後、同じユーザーIDの行に `_KEPT_ON_FORGET`(`provider_mcp/profile.py:283`)の連番と `forgotten_voice_rooms` を書き戻します(`:296-305`)
   - 例: 架空の `w-0000000000000000` に音声の部屋が 1 つある状態で `forget_all` を呼ぶと、`state.json` の `users` にそのIDの行が `forgotten_voice_rooms` つきで残ります
   - なので、期間で消す掃除が `forget_all` をそのまま呼ぶと、180 日を過ぎたユーザーの行がいつまでも残ります
 - **推奨: 期間で消す掃除は `forget_all` を使わず、ユーザーの行を丸ごと外す。**
-  - 外すのは、そのユーザーと、同じブラウザのシナリオ用ユーザー(`{ID}:…`)の行です。`state.json` の `users` から外し、連携の表(`data/dip_accounts.db`)も外します。会話、音声のファイル、`_threads`、`unread_uploads` は `profile_forget` と同じ順番で片付けます
+  - 外すのは、そのユーザーと、同じブラウザのシナリオ用ユーザー(`{ID}:…`)の行です。`state.json` の `users` から外し、連携の表(`data/provider_accounts.db`)も外します。会話、音声のファイル、`_threads`、`unread_uploads` は `profile_forget` と同じ順番で片付けます
   - 持ち越す値も残しません。理由: 180 日も使われていなければ、消す前に始めた音声相談の結果が後から届くことはありません(部屋のトークンの期限は 5 分、`voice_resume/livekit_token.py:19`)。古いリンクの番号がぶつかる心配も、Cookie が同じ 180 日で切れるのでほぼありません
   - fixtures のユーザーそのもの(評価用の架空のユーザー、例 `sim-new`)は掃除しません。個人情報ではなく、消すと評価が壊れるためです
 - 本人が「すべて消す」をしたときに持ち越す行は、残す理由と期限を決める
@@ -313,7 +313,7 @@ LINE の webhook のイベント ID(`data/line_events.json`)は LINE が付け�
 | `voice_resume/advisor.py:516` | 例外の文(`{exc}`)をツールの結果として LLM に返す。会話の履歴にも残る | 決まった文だけを返す(「下書きの保存に失敗しました。その旨を伝えて謝ってください。」)。例外の文は LLM にも渡さない |
 | `line_runtime/server.py:492` | `log.exception` で LINE のイベントの失敗のトレースバックを出す。最後の行の例外の文に、LLM の API のエラーの文が入りうる(上の推測と同じ) | 型名だけにする(`line_channel.py:299` と同じ形) |
 | livekit-agents と OpenAI の SDK のログ | 本番で INFO のまま(`voice_resume/agent.py:156`) | 本番では `livekit`、`openai`、`httpx` のロガーを WARNING にする。livekit-agents が INFO で発話を出すかは確かめていない |
-| uvicorn のアクセスログ | IP とパスとクエリを出す(`/dip/login?linkToken=…` を含む) | 残す。値は 10 分で切れる linkToken と番号だけ。保持はホスティングで 30 日以内にする |
+| uvicorn のアクセスログ | IP とパスとクエリを出す(`/provider/login?linkToken=…` を含む) | 残す。値は 10 分で切れる linkToken と番号だけ。保持はホスティングで 30 日以内にする |
 
 - テスト: 架空の目印の値(例 `みほん市みほん町1-2-3`、`090-0000-0000`)を発言、希望、文字起こしに入れて流れを動かし、`caplog` にその値が出ないことを確かめる
 - 新しくログを足すときの決まりとして、LLD の 8 章に書く
@@ -406,10 +406,10 @@ LIFF の画面に出す最初の同意は、LINE の文言です。
 |---|---|---|
 | `event_input` が本人の文をそのまま会話に入れ、会話を消すのは「すべて消す」と履歴書を消すときだけ | そのまま(`line_runtime/runtime.py:69-75`、`:239-260`) | 電話、メール、住所らしい所を伏せてから入れる(3.2)。会話ごとに 30 日で消す(3.3) |
 | `voice_resume/outputs.py` が文字起こしを `data/voice-resume/` に書き、消すのはプロフィールの操作だけ | そのまま(`voice_resume/outputs.py:62-77`) | 本番では書き出さない(3.3)。トークに届かなかった相談のファイルが残る穴(2.1 の #11)も、書かなければ起きない |
-| 事業者の状態に、ユーザーを消す期限が無い | そのまま(`dip_mcp/data.py:227-261`) | 最後の利用から 180 日で消す(3.3) |
+| 事業者の状態に、ユーザーを消す期限が無い | そのまま(`provider_mcp/data.py:227-261`) | 最後の利用から 180 日で消す(3.3) |
 | `voice_resume/agent.py` が本人が話した希望を INFO で出す | そのまま(`voice_resume/agent.py:79-81`) | 「あり / なし」と数にする(3.4) |
-| 音声相談の途中で「すべて消す」をしても、その後の通話で保存した雇用区分と希望は事業者に残る | そのまま。消した部屋を見るのは `server.voice_result_in`(`line_runtime/server.py:902`)だけで、`DipMCP.set_search_track`、`save_user_preferences`(`voice_resume/dip.py:66-84`)は見ない。止まるのは `_record_outcome` だけ(`voice_resume/advisor.py:527-529`) | 下の「音声相談の途中で消したとき」 |
-| `resume_form` が住所らしい値を断らない | 半分直っている。task 181 から、事業者には答えた項目名だけを書き、値は書かない(`dip_mcp/logic.py:714-731`)。ただし住所らしい値の項目も「入力済み」になり、値は会話に残る。希望の保存とまとめの決まり(`ADDRESS_LIKE`)とずれたまま | 下の「住所の決まりを 1 つにする」 |
+| 音声相談の途中で「すべて消す」をしても、その後の通話で保存した雇用区分と希望は事業者に残る | そのまま。消した部屋を見るのは `server.voice_result_in`(`line_runtime/server.py:902`)だけで、`ProviderMCP.set_search_track`、`save_user_preferences`(`voice_resume/provider.py:66-84`)は見ない。止まるのは `_record_outcome` だけ(`voice_resume/advisor.py:527-529`) | 下の「音声相談の途中で消したとき」 |
+| `resume_form` が住所らしい値を断らない | 半分直っている。task 181 から、事業者には答えた項目名だけを書き、値は書かない(`provider_mcp/logic.py:714-731`)。ただし住所らしい値の項目も「入力済み」になり、値は会話に残る。希望の保存とまとめの決まり(`ADDRESS_LIKE`)とずれたまま | 下の「住所の決まりを 1 つにする」 |
 | `docs/design/resume-draft-schema.md` と `resume_intake/schema.py:21` が「個人情報を事業者に保存しない方針」と書く | 直っている。2 つのファイルはもう無い。決まりは LLD の 5.5 と `resume_draft/schema.py:25`(「本人記入欄。読み取っても、会話に出ても保存しない」)にあり、範囲を書いている | 何もしない。HLD の 6 章の書き直し(4 章)で、範囲の言い方をこのメモに合わせる |
 
 #### 音声相談の途中で消したとき
@@ -429,7 +429,7 @@ LIFF の画面に出す最初の同意は、LINE の文言です。
 
 #### 住所の決まりを 1 つにする
 
-- `ADDRESS_LIKE` と `address_spans` を `dip_mcp/logic.py:794-819` から `resume_draft/pii.py` に移し、「個人情報らしい値か」を 1 つの関数にする(例 `personal_value(text) -> bool`)
+- `ADDRESS_LIKE` と `address_spans` を `provider_mcp/logic.py:794-819` から `resume_draft/pii.py` に移し、「個人情報らしい値か」を 1 つの関数にする(例 `personal_value(text) -> bool`)
 - 希望の保存(`_preference_error`)、まとめを直す(`profile.edit_summary`)、フォームの続き(`resume_form`)、雇用区分の根拠(`set_search_track`。今は電話とメールだけ伏せる)が、同じ関数を使う
 - `resume_form` で住所らしい値の項目は `rejected_pii` に入れ、「入力済み」にしない(LIFF 画面で入れてもらう)
 - HLD の 6 章の「個人情報の決まりは `resume_draft/pii.py` の 1 か所」が、住所についても正しくなる

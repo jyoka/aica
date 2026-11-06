@@ -15,9 +15,9 @@ import json
 
 from pydantic import BaseModel
 
-from dip_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, BaitoJob, Pay
 from line_runtime import config, llm
 from line_runtime.config import load_env
+from provider_mcp.data import FIXTURES, PHYSICAL_LEVELS, TALK_LEVELS, BaitoJob, Pay
 
 MODEL = {"openai": "gpt-6-sol", "anthropic": "claude-sonnet-5-5"}
 

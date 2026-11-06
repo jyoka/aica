@@ -28,8 +28,8 @@ SEARCH_TOOLS = ("recommend_jobs", "relax_conditions")
 
 
 async def run_once(rt, meter) -> dict:
-    from dip_mcp.data import State
     from evals.scenarios import prepare
+    from provider_mcp.data import State
 
     prepare(State(), {"user": CASE["user"], "event": CASE["event"]})
     k = meter.mark()
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     from line_runtime.config import load_env
 
     load_env()
-    os.environ["DIP_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
+    os.environ["PROVIDER_STATE_PATH"] = str(Path(tempfile.mkdtemp()) / "state.json")
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5)
     ap.add_argument("--tag", required=True)

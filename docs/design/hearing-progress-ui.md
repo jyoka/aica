@@ -6,8 +6,8 @@
 
 対象は、LINE のトークでの 2 つの相談の見せ方。
 
-- アルバイト・パートの相談(`dip_mcp/baito/`、PRD v4.1)
-- 正社員のヒアリング(`dip_mcp/career/`、[fulltime-hearing.md](fulltime-hearing.md))
+- アルバイト・パートの相談(`provider_mcp/baito/`、PRD v4.1)
+- 正社員のヒアリング(`provider_mcp/career/`、[fulltime-hearing.md](fulltime-hearing.md))
 
 ## 1. 結論
 
@@ -106,7 +106,7 @@ review のターンには、帯を付けない。正社員の職歴カードは�
 
 ## 5. ハーネスとランタイムの受け持ち
 
-- **ハーネス**(`dip_mcp/baito/`、`dip_mcp/career/`): ターンの結果に `progress` を足す。中身は、表示に要るものだけ。
+- **ハーネス**(`provider_mcp/baito/`、`provider_mcp/career/`): ターンの結果に `progress` を足す。中身は、表示に要るものだけ。
   - `filled`、`total`: §4 の数
   - `added`: このターンに埋まった項目の表示名と値
   - `groups`: グループの名前と、項目の表示名・値・推し量ったか・未定か
@@ -116,7 +116,7 @@ review のターンには、帯を付けない。正社員の職歴カードは�
 - **ランタイム**(`line_runtime/`): `progress` から、§3.4 の順で Flex を 0〜1 つ選び、返信に足す。Flex を作る関数は 1 つのモジュールにまとめ、アルバイトと正社員で使う。
 - **Flex を切った形と Web のトーク**(`talk-core.js`): 帯は、吹き出しの最後の 1 行「(6/10 ＋働ける時間)」に落とす。プロフィールカードと完成は、短い文に落とす。
 - Flex の中の字を文にする関数を用意する。評価の本人役(fulltime-hearing.md §6.1)が読めるようにするため。
-- **正社員(task 246)**: どの部品を付けるか(§3.4)も、事業者のハーネスの側(`dip_mcp/career/ui.py`)が決める。正社員は Flex の中の字を本人の
+- **正社員(task 246)**: どの部品を付けるか(§3.4)も、事業者のハーネスの側(`provider_mcp/career/ui.py`)が決める。正社員は Flex の中の字を本人の
   推定時間に数えて質問を止める時刻を決めるので、何を見せるかを先に知る要があるため。帯とプロフィールカードは、task 288 から正社員だけの形
   (数字の「n/13」を出さず、育ち方の絵 🌱 → 🌿 → 🌷 → 🌸 と一言で見せる。行の切り方は `progress_ui.profile_rows` を使う)にし、
   職歴カード、まとめ、全部の完成と一緒に `line_runtime/career_ui.py` が描く。アルバイトの帯とカードは変えていない。

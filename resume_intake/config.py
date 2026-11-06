@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# line_runtime.config.DATA_DIR と同じ場所(dip_mcp からも import されるので line_runtime には依存しない)
+# line_runtime.config.DATA_DIR と同じ場所(provider_mcp からも import されるので line_runtime には依存しない)
 DATA_DIR = Path(os.environ.get("LINE_SIM_DATA_DIR", HERE.parent / "data"))
 SAMPLES = HERE / "samples"
 

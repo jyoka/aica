@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 
-from dip_mcp import embedding
-from dip_mcp.data import load_jobs
 from line_runtime.config import load_env
+from provider_mcp import embedding
+from provider_mcp.data import load_jobs
 
 
 def main() -> None:

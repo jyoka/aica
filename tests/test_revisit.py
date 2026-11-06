@@ -1,8 +1,8 @@
-"""入口イベント(初回訪問 / 再訪)と再訪の挨拶の台本テスト(実 LLM なし、dip の MCP は本物)。
+"""入口イベント(初回訪問 / 再訪)と再訪の挨拶の台本テスト(実 LLM なし、事業者の MCP は本物)。
 
-挨拶は偽のモデルが、ランタイムから受け取ったものだけで決める: システムプロンプトに入った dip の入口のシナリオ
+挨拶は偽のモデルが、ランタイムから受け取ったものだけで決める: システムプロンプトに入った事業者の入口のシナリオ
 (入口V / 入口R)と、get_user_conversation_summary の結果(前に話した希望 / 最近の閲覧)。
-なので「挨拶が変わる」ことは、イベント → 入口のシナリオ → dip のプロフィールと行動履歴 のつながりを確かめている。
+なので「挨拶が変わる」ことは、イベント → 入口のシナリオ → 事業者のプロフィールと行動履歴 のつながりを確かめている。
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ import re
 
 from langchain_core.messages import AIMessage
 
-from dip_mcp import logic
-from dip_mcp.data import State
 from evals.checks import conversation_checks
 from evals.scenarios import load_scenarios, prepare
 from line_runtime.agent import PINNED_USER
 from line_runtime.runtime import _tool_payload
+from provider_mcp import logic
+from provider_mcp.data import State
 from tests.test_handle import ScriptedModel, call, reply, run
 
 SCENARIOS = {sc["id"]: sc for sc in load_scenarios()}
@@ -57,7 +57,7 @@ def usable_entries(system: str) -> list[str]:
 
 
 def entry_offer(summary: dict, usable: list[str]) -> str | None:
-    """再訪で勧める入口を 1 つ(dip の Prompt の「挨拶の入口」の順)。勧めるのはボタンが付く入口(使えて、used_entries に無い)だけ。"""
+    """再訪で勧める入口を 1 つ(事業者の Prompt の「挨拶の入口」の順)。勧めるのはボタンが付く入口(使えて、used_entries に無い)だけ。"""
     if summary.get("segment") in ("applied_waiting", "form_exit"):
         return None
     knows_career = summary.get("uploaded_resume") or "experience" in (summary.get("stated_preferences") or {})
@@ -73,7 +73,7 @@ def entry_offer(summary: dict, usable: list[str]) -> str | None:
     return next((k for k, hit in candidates if hit and (k == "blanks" or (k in usable and k not in used))), None)
 
 
-# 再訪の勧めの1文(dip の Prompt の「挨拶の入口」の例)
+# 再訪の勧めの1文(事業者の Prompt の「挨拶の入口」の例)
 OFFER_TEXT = {"blanks": "ゲームで作った下書きに、数字の空欄が残っています。",
               "resume_upload": "履歴書を読み込むと、経歴を一から書かずに探せます。",
               "voice_consult": "下の「音声で相談する」から、話して相談もできます(約5分)。",
@@ -91,7 +91,7 @@ def revisit_reply(question: str, offer: str | None, quick_replies: list[str]) ->
 
 
 def greet(messages) -> AIMessage:
-    """dip の入口のシナリオどおりに挨拶する(初回訪問はメニュー、再訪は要約を読んでから勧めの1文)。入口のボタンは付けない
+    """事業者の入口のシナリオどおりに挨拶する(初回訪問はメニュー、再訪は要約を読んでから勧めの1文)。入口のボタンは付けない
     (task 237 からコードが付ける)。"""
     system = messages[0].content
     uid = PINNED_USER  # system prompt にユーザーIDは無い。LINE 側(PinUserMiddleware)が置き換える
@@ -140,7 +140,7 @@ def close(uid: str) -> list[AIMessage]:
 
 def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatch):
     """画面と同じ呼び方(シナリオを始める → /api/event/stream)で、入口ごとに挨拶が変わる。"""
-    monkeypatch.setenv("DIP_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("PROVIDER_STATE_PATH", str(tmp_path / "state.json"))
     for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):  # 音声相談の設定は無い(挨拶の入口に音声は出ない)
         monkeypatch.delenv(k, raising=False)
     from fastapi.testclient import TestClient
@@ -173,7 +173,7 @@ def test_talk_ui_greets_first_visit_and_revisit_differently(tmp_path, monkeypatc
     assert first["bubbles"] == ["こんにちは。バイト探しをお手伝いします。何をしますか?"]
     assert first["quick_replies"] == VISIT_MENU
     # 入口のボタンは台本の LLM ではなくコードが付ける(task 237)。LiveKit の設定が無いので、本番のトーク画面では音声相談を
-    # 出さない(line_channel.web_features)。履歴書とゲームは出す(ゲームは dip の要約の arcade_url)
+    # 出さない(line_channel.web_features)。履歴書とゲームは出す(ゲームは事業者の要約の arcade_url)
     assert first["actions"] == ["resume_upload"] and [b["label"] for b in first["buttons"]] == [ARCADE_BUTTON["label"]]
     assert first["buttons"][0]["url"].startswith("/liff/arcade")
     for r in (back_prefs, back_views):  # 再訪は要約(プロフィールと行動履歴)を読んでから挨拶する
@@ -213,7 +213,7 @@ def test_revisit_with_preferences_confirms_and_takes_only_the_difference(tmp_pat
     rec = next(t for t in t2["tools"] if t["name"] == "recommend_jobs")
     assert rec["args"] == {"line_user_id": uid, "area": "渋谷", "time_band": "夕方", "job_type": "カフェ"}
     assert t2["cards"] and [c["job_id"] for c in t2["cards"]] == [j["job_id"] for j in rec["result"]["jobs"]]
-    from dip_mcp.data import load_jobs
+    from provider_mcp.data import load_jobs
 
     jobs = load_jobs()
     assert all("夕方" in jobs[c["job_id"]].time_bands and jobs[c["job_id"]].job_type == "カフェ" for c in t2["cards"])

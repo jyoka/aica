@@ -1,6 +1,6 @@
 """面談の終わりに作る成果物。config.WRITE_FILES(VOICE_RESUME_WRITE_FILES=1、開発用)のときだけ OUT_DIR へ書き出す。
 
-既定は書き出さない。下書きはトーク経由で dip の状態(voice_results)に入る(docs/design/privacy.md の 3.3)。
+既定は書き出さない。下書きはトーク経由で事業者の状態(voice_results)に入る(docs/design/privacy.md の 3.3)。
 書き出すときのファイル:
 
 - resume-draft-<ts>.json / .md: 下書き(履歴書か職務経歴書。形は docs/architecture/lld.md の 5.5 の format_version 1.1)
